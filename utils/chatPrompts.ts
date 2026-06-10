@@ -25,7 +25,9 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'image': return '[图片]';
         case 'emoji': return '[表情]';
         case 'interaction': return '[戳了戳]';
-        case 'transfer': return `[转账${meta.amount ?? ''}]`;
+        case 'transfer': return meta.kind === 'redpacket' ? `[红包${meta.amount ?? ''}]` : `[转账${meta.amount ?? ''}]`;
+        case 'location': return `[位置分享${m.content ? '：' + m.content : ''}]`;
+        case 'voice': return meta.transcript ? `[语音: ${String(meta.transcript).slice(0, 100)}]` : '[语音]';
         case 'social_card': return `[分享帖子${meta.post?.title ? '：' + meta.post.title : ''}]`;
         case 'chat_forward': return '[转发的聊天记录]';
         case 'xhs_card': return '[小红书笔记]';
@@ -787,8 +789,25 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                 
                 if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') content = `${content}\n\n${timeGapHint}`; 
                 
-                if (m.type === 'interaction') content = `${timeStr} [系统: 用户戳了你一下]`; 
-                else if (m.type === 'transfer') content = `${timeStr} [系统: 用户转账 ${m.metadata?.amount}]`;
+                if (m.type === 'interaction') content = `${timeStr} [系统: 用户戳了你一下]`;
+                else if (m.type === 'transfer') {
+                    const isRedPacket = m.metadata?.kind === 'redpacket';
+                    const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? `，附言「${m.metadata.note.trim()}」` : '';
+                    content = isRedPacket
+                        ? `${timeStr} [系统: 用户给你发了一个红包 ${m.metadata?.amount}${note}。请对红包做出符合你性格的反应]`
+                        : `${timeStr} [系统: 用户转账 ${m.metadata?.amount}${note}]`;
+                }
+                else if (m.type === 'location') {
+                    const address = typeof m.metadata?.address === 'string' && m.metadata.address.trim() ? `（${m.metadata.address.trim()}）` : '';
+                    content = `${timeStr} [系统: 用户分享了位置——${m.content || '未知地点'}${address}。这是用户此刻所在/想让你知道的地点，请自然地回应]`;
+                }
+                else if (m.type === 'voice') {
+                    const transcript = typeof m.metadata?.transcript === 'string' ? m.metadata.transcript.trim() : '';
+                    const dur = typeof m.metadata?.durationSec === 'number' && m.metadata.durationSec > 0 ? `（${m.metadata.durationSec}秒）` : '';
+                    content = transcript
+                        ? `${timeStr} [用户发来一条语音消息${dur}，内容是]: ${transcript}`
+                        : `${timeStr} [用户发来一条语音消息${dur}，没听清内容，可以让用户再说一遍或打字]`;
+                }
                 else if (m.type === 'social_card') {
                     const post = m.metadata?.post || {};
                     // Look up this character's own Spark handles (sub-accounts) so the model can

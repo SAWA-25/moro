@@ -11,6 +11,11 @@ interface ChatModalsProps {
     // Data Props
     transferAmt: string;
     setTransferAmt: (v: string) => void;
+    // 转账/红包模式切换 + 红包附言（Kakao Pay 风格）
+    transferMode: 'transfer' | 'redpacket';
+    setTransferMode: (v: 'transfer' | 'redpacket') => void;
+    transferNote: string;
+    setTransferNote: (v: string) => void;
     emojiImportText: string;
     setEmojiImportText: (v: string) => void;
     settingsContextLimit: number;
@@ -120,6 +125,7 @@ interface ChatModalsProps {
 const ChatModals: React.FC<ChatModalsProps> = ({
     modalType, setModalType,
     transferAmt, setTransferAmt,
+    transferMode, setTransferMode, transferNote, setTransferNote,
     emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
     settingsHideSysLogs, setSettingsHideSysLogs,
@@ -244,10 +250,22 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
     return (
         <>
-            <Modal 
-                isOpen={modalType === 'transfer'} title="Credits 转账" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onTransfer} className="flex-1 py-3 bg-orange-500 text-white rounded-2xl">确认</button></>}
-            ><input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus /></Modal>
+            <Modal
+                isOpen={modalType === 'transfer'} title={transferMode === 'redpacket' ? '发红包' : 'Credits 转账'} onClose={() => setModalType('none')}
+                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onTransfer} className={`flex-1 py-3 text-white rounded-2xl font-bold ${transferMode === 'redpacket' ? 'bg-[#3c1e1e]' : 'bg-orange-500'}`}>{transferMode === 'redpacket' ? '塞进红包' : '确认'}</button></>}
+            >
+                <div className="space-y-3">
+                    {/* 模式切换：普通转账 / Kakao Pay 红包 */}
+                    <div className="flex bg-slate-100 rounded-2xl p-1">
+                        <button onClick={() => setTransferMode('transfer')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'transfer' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400'}`}>转账</button>
+                        <button onClick={() => setTransferMode('redpacket')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'redpacket' ? 'bg-[#ffeb00] text-[#3c1e1e] shadow-sm' : 'text-slate-400'}`}>红包</button>
+                    </div>
+                    <input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} placeholder="金额" className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus />
+                    {transferMode === 'redpacket' && (
+                        <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（恭喜发财，大吉大利）" maxLength={30} className="w-full bg-slate-100 rounded-2xl px-5 py-3 text-sm" />
+                    )}
+                </div>
+            </Modal>
 
             {/* New Category Modal */}
             <Modal 

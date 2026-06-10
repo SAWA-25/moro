@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, GearSix, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { AcnhActionTile } from '../os/acnhIcons';
@@ -26,6 +26,8 @@ interface ChatInputAreaProps {
     activeThemeId: string;
     onPanelAction: (type: string, payload?: any) => void;
     onImageSelect: (file: File) => void;
+    /** 用户录音语音消息：audio 是 data URI（webm/opus），transcript 来自录音时的实时语音识别（可能为空） */
+    onSendVoice?: (audio: string, durationSec: number, transcript: string) => void;
     isSummarizing: boolean;
     // Categories Support
     categories?: EmojiCategory[];
@@ -55,7 +57,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     showPanel, setShowPanel, onSend, onDeleteSelected, onForwardSelected, selectedCount,
     emojis, characters, activeCharacterId, onCharSelect,
     customThemes, onUpdateTheme, onRemoveTheme, activeThemeId,
-    onPanelAction, onImageSelect, isSummarizing,
+    onPanelAction, onImageSelect, onSendVoice, isSummarizing,
     categories = [], activeCategory = 'default',
     onReroll, canReroll,
     isProactiveActive,
@@ -79,6 +81,117 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const actionsSwipeStart = useRef<{ x: number; y: number } | null>(null);
     const actionsSwipeMoved = useRef(false);
     const useIOSStandaloneInputFix = isIOSStandaloneWebApp();
+
+    // --- 语音消息录音（MediaRecorder + Web Speech API 实时转写）---
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordSecs, setRecordSecs] = useState(0);
+    const [liveTranscript, setLiveTranscript] = useState('');
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordChunksRef = useRef<Blob[]>([]);
+    const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const recognitionRef = useRef<any>(null);
+    const transcriptRef = useRef('');
+    const recordCancelledRef = useRef(false);
+    const MAX_RECORD_SECS = 60;
+
+    const cleanupRecording = () => {
+        if (recordTimerRef.current) { clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+        recognitionRef.current = null;
+        const rec = mediaRecorderRef.current;
+        if (rec) {
+            try { rec.stream.getTracks().forEach(t => t.stop()); } catch { /* ignore */ }
+        }
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+        setRecordSecs(0);
+        setLiveTranscript('');
+    };
+
+    // 组件卸载（切角色/退出聊天）时确保麦克风被释放
+    useEffect(() => () => cleanupRecording(), []);
+
+    const startRecording = async () => {
+        if (isRecording) return;
+        let stream: MediaStream;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch {
+            onPanelAction('voice-record-denied');
+            return;
+        }
+        recordChunksRef.current = [];
+        transcriptRef.current = '';
+        recordCancelledRef.current = false;
+        const recorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = recorder;
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) recordChunksRef.current.push(e.data); };
+        recorder.onstop = () => {
+            const durationSec = Math.max(1, recordSecsRef.current);
+            const cancelled = recordCancelledRef.current;
+            const blob = new Blob(recordChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+            stream.getTracks().forEach(t => t.stop());
+            if (!cancelled && blob.size > 0) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    if (typeof reader.result === 'string') {
+                        onSendVoice?.(reader.result, durationSec, transcriptRef.current.trim());
+                    }
+                };
+                reader.readAsDataURL(blob);
+            }
+            cleanupRecording();
+        };
+
+        // 实时转写：浏览器支持 SpeechRecognition 时同步识别，识别文字随消息一起发给 AI。
+        // 不支持（如 Firefox / 部分 WebView）时静默跳过，语音照发、只是没有转写。
+        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SR) {
+            try {
+                const recognition = new SR();
+                recognition.lang = 'zh-CN';
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.onresult = (event: any) => {
+                    let finalText = '';
+                    let interim = '';
+                    for (let i = 0; i < event.results.length; i++) {
+                        const r = event.results[i];
+                        if (r.isFinal) finalText += r[0].transcript;
+                        else interim += r[0].transcript;
+                    }
+                    transcriptRef.current = finalText + interim;
+                    setLiveTranscript(transcriptRef.current);
+                };
+                recognition.onerror = () => { /* 转写失败不影响录音 */ };
+                recognition.start();
+                recognitionRef.current = recognition;
+            } catch { /* ignore */ }
+        }
+
+        recorder.start();
+        setIsRecording(true);
+        setRecordSecs(0);
+        recordSecsRef.current = 0;
+        recordTimerRef.current = setInterval(() => {
+            recordSecsRef.current += 1;
+            setRecordSecs(recordSecsRef.current);
+            if (recordSecsRef.current >= MAX_RECORD_SECS) stopRecording(true);
+        }, 1000);
+    };
+    const recordSecsRef = useRef(0);
+
+    const stopRecording = (send: boolean) => {
+        const rec = mediaRecorderRef.current;
+        if (!rec) { cleanupRecording(); return; }
+        recordCancelledRef.current = !send;
+        if (recordTimerRef.current) { clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+        if (rec.state !== 'inactive') {
+            try { rec.stop(); return; } catch { /* fallthrough */ }
+        }
+        cleanupRecording();
+    };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -370,6 +483,33 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {emojiSelectionMode && (
             <div className={`fixed inset-0 z-[-1] ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />
         )}
+        {/* 语音消息录音浮层 */}
+        {isRecording && (
+            <div className="fixed inset-0 z-[120] flex flex-col items-center justify-end pb-24 bg-black/40 backdrop-blur-sm">
+                <div className="w-72 bg-white rounded-3xl shadow-2xl p-6 flex flex-col items-center gap-4">
+                    <div className="relative">
+                        <div className="absolute inset-0 rounded-full bg-rose-400/30 animate-ping" />
+                        <div className="relative w-16 h-16 rounded-full bg-rose-500 flex items-center justify-center">
+                            <Microphone className="w-7 h-7 text-white" weight="fill" />
+                        </div>
+                    </div>
+                    <div className="text-2xl font-bold text-slate-700 tabular-nums">{Math.floor(recordSecs / 60)}:{String(recordSecs % 60).padStart(2, '0')}</div>
+                    {liveTranscript ? (
+                        <div className="max-h-16 w-full overflow-y-auto no-scrollbar text-xs text-slate-500 text-center leading-relaxed">{liveTranscript}</div>
+                    ) : (
+                        <div className="text-xs text-slate-400">正在录音… 说完点 ✓ 发送</div>
+                    )}
+                    <div className="flex gap-4 w-full">
+                        <button onClick={() => stopRecording(false)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
+                            <X className="w-5 h-5" weight="bold" /> 取消
+                        </button>
+                        <button onClick={() => stopRecording(true)} className="flex-1 py-3 rounded-2xl bg-rose-500 text-white font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
+                            <StopCircle className="w-5 h-5" weight="fill" /> 发送
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         <div className={`sully-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
             
             {selectionMode ? (
@@ -628,6 +768,38 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     <CalendarBlank className="w-6 h-6" weight="bold" />
                                 </div>)}
                                 <span className="text-xs font-bold">日程</span>
+                            </button>
+
+                            {/* Voice Message (record & send) */}
+                            <button onClick={() => { setShowPanel('none'); startRecording(); }} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-rose-300 border-rose-400/20' : 'bg-rose-50 text-rose-400 border-rose-100'}`}>
+                                    <Microphone className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">语音</span>
+                            </button>
+
+                            {/* Location Share */}
+                            <button onClick={() => onPanelAction('location')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-emerald-300 border-emerald-400/20' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
+                                    <MapPin className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">位置</span>
+                            </button>
+
+                            {/* AI Image Generation */}
+                            <button onClick={() => onPanelAction('image-gen')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-fuchsia-300 border-fuchsia-400/20' : 'bg-fuchsia-50 text-fuchsia-400 border-fuchsia-100'}`}>
+                                    <MagicWand className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">AI 画图</span>
+                            </button>
+
+                            {/* Peek Inner Voice */}
+                            <button onClick={() => onPanelAction('inner-voice')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${acnh ? 'text-[#725d42]' : isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-violet-300 border-violet-400/20' : 'bg-violet-50 text-violet-400 border-violet-100'}`}>
+                                    <Detective className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">偷看心声</span>
                             </button>
 
                           </div>

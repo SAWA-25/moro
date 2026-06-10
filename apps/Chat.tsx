@@ -25,6 +25,9 @@ import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
+import { ContextBuilder } from '../utils/context';
+import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
+import { InnerVoiceEntry } from '../types';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 type InstantToolUiStatus = {
@@ -84,6 +87,28 @@ const Chat: React.FC = () => {
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     const [allHistoryMessages, setAllHistoryMessages] = useState<Message[]>([]);
     const [transferAmt, setTransferAmt] = useState('');
+    const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
+    const [transferNote, setTransferNote] = useState('');
+
+    // 位置分享 modal
+    const [showLocationModal, setShowLocationModal] = useState(false);
+    const [locationName, setLocationName] = useState('');
+    const [locationDetail, setLocationDetail] = useState('');
+
+    // AI 画图 modal
+    const [showImageGenModal, setShowImageGenModal] = useState(false);
+    const [imageGenPrompt, setImageGenPrompt] = useState('');
+    const [imageGenModel, setImageGenModel] = useState<string>(() => {
+        try { return localStorage.getItem(IMAGE_GEN_MODEL_KEY) || DEFAULT_IMAGE_GEN_MODEL; } catch { return DEFAULT_IMAGE_GEN_MODEL; }
+    });
+    const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+    const [imageGenPreview, setImageGenPreview] = useState<string | null>(null);
+
+    // 偷看心声 modal（角色不知情：结果不写进聊天上下文，仅存 inner_voices）
+    const [showInnerVoiceModal, setShowInnerVoiceModal] = useState(false);
+    const [innerVoiceLoading, setInnerVoiceLoading] = useState(false);
+    const [innerVoiceCurrent, setInnerVoiceCurrent] = useState<InnerVoiceEntry | null>(null);
+    const [innerVoiceHistory, setInnerVoiceHistory] = useState<InnerVoiceEntry[]>([]);
     const [emojiImportText, setEmojiImportText] = useState('');
     const [settingsContextLimit, setSettingsContextLimit] = useState(500);
     const [settingsHideSysLogs, setSettingsHideSysLogs] = useState(false);
@@ -1000,6 +1025,110 @@ const Chat: React.FC = () => {
                 setShowThinkingChainModal(true);
                 break;
             }
+            case 'location': setShowPanel('none'); setShowLocationModal(true); break;
+            case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
+            case 'inner-voice': setShowPanel('none'); openInnerVoiceModal(); break;
+            case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
+        }
+    };
+
+    // --- 语音消息：录音结束后落库发送（转写文字进 metadata，AI 上下文可读）---
+    const handleSendVoice = async (audio: string, durationSec: number, transcript: string) => {
+        await handleSendText('[语音消息]', 'voice', { voiceAudio: audio, durationSec, transcript });
+    };
+
+    // --- 位置分享 ---
+    const handleSendLocation = async () => {
+        const name = locationName.trim();
+        if (!name) { addToast('填一下地点名称', 'info'); return; }
+        await handleSendText(name, 'location', { address: locationDetail.trim() });
+        setShowLocationModal(false);
+        setLocationName('');
+        setLocationDetail('');
+    };
+
+    // --- AI 画图：生成 → 预览 → 确认发送（发送走 image 通道，自动存相册）---
+    const handleGenerateImage = async () => {
+        const prompt = imageGenPrompt.trim();
+        if (!prompt) { addToast('描述一下想画什么', 'info'); return; }
+        setIsGeneratingImage(true);
+        try {
+            try { localStorage.setItem(IMAGE_GEN_MODEL_KEY, imageGenModel.trim()); } catch {}
+            const dataUri = await generateImage(prompt, apiConfig, imageGenModel);
+            setImageGenPreview(dataUri);
+        } catch (e: any) {
+            showError('AI 画图失败', e?.message || String(e));
+        } finally {
+            setIsGeneratingImage(false);
+        }
+    };
+    const handleSendGeneratedImage = async () => {
+        if (!imageGenPreview) return;
+        await handleSendText(imageGenPreview, 'image', { aiGenerated: true, genPrompt: imageGenPrompt.trim() });
+        setShowImageGenModal(false);
+        setImageGenPreview(null);
+        setImageGenPrompt('');
+    };
+
+    // --- 偷看心声：用完整人设 + 最近对话生成角色"没说出口的内心独白"。
+    //     结果只存 inner_voices，不进聊天上下文 —— 角色"不知道"被偷看过。 ---
+    const openInnerVoiceModal = async () => {
+        setShowInnerVoiceModal(true);
+        setInnerVoiceCurrent(null);
+        if (activeCharacterId) {
+            try { setInnerVoiceHistory(await DB.getInnerVoicesByCharId(activeCharacterId)); } catch { setInnerVoiceHistory([]); }
+        }
+        generateInnerVoice();
+    };
+    const generateInnerVoice = async () => {
+        if (!char || innerVoiceLoading) return;
+        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        setInnerVoiceLoading(true);
+        try {
+            try {
+                const { injectMemoryPalace } = await import('../utils/memoryPalace/pipeline');
+                await injectMemoryPalace(char);
+            } catch { /* 记忆宫殿未启用时跳过 */ }
+            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const allMsgs = await DB.getMessagesByCharId(char.id);
+            const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
+            const fullPrompt = `${context}
+
+### [最近的对话]
+${recent || '（你们还没怎么聊过）'}
+
+### [Task: 内心独白]
+此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称，写一段此刻真实的内心独白（150-250字）：
+- 写那些你**没有说出口**的想法：对刚才对话的真实感受、藏起来的情绪、对用户的真实看法、心里盘算的小心思
+- 必须与你的人设和最近对话强相关，可以坦率、可以矛盾、可以有不想承认的部分
+- 不要写成对用户说话的语气，这是你自己脑内的声音
+- 直接输出独白正文，不要任何前缀、引号或解释`;
+            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({
+                    model: apiConfig.model,
+                    messages: [{ role: 'user', content: fullPrompt }],
+                    temperature: 0.9,
+                }),
+            });
+            if (!response.ok) throw new Error(`API ${response.status}`);
+            const data = await safeResponseJson(response);
+            const content = (extractContent(data) || '').trim();
+            if (!content) throw new Error('返回为空');
+            const entry: InnerVoiceEntry = {
+                id: `iv-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+                charId: char.id,
+                content,
+                timestamp: Date.now(),
+            };
+            await DB.saveInnerVoice(entry);
+            setInnerVoiceCurrent(entry);
+            setInnerVoiceHistory(prev => [entry, ...prev]);
+        } catch (e: any) {
+            showError('偷看失败', e?.message || String(e));
+        } finally {
+            setInnerVoiceLoading(false);
         }
     };
 
@@ -2218,9 +2347,76 @@ const Chat: React.FC = () => {
                  </div>
              )}
 
+             {/* 位置分享 Modal */}
+             <Modal
+                isOpen={showLocationModal} title="分享位置" onClose={() => setShowLocationModal(false)}
+                footer={<><button onClick={() => setShowLocationModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={handleSendLocation} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-2xl">发送位置</button></>}
+             >
+                <div className="space-y-3">
+                    <input value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="地点名称（如：江汉路 星巴克）" maxLength={40} className="w-full bg-slate-100 rounded-2xl px-5 py-3.5 text-sm font-bold" autoFocus />
+                    <input value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="详细地址 / 补充说明（可选）" maxLength={80} className="w-full bg-slate-100 rounded-2xl px-5 py-3 text-sm" />
+                    <p className="text-[11px] text-slate-400 leading-relaxed px-1">对方会收到一张位置卡片，并知道你此刻在哪儿。</p>
+                </div>
+             </Modal>
+
+             {/* AI 画图 Modal */}
+             <Modal
+                isOpen={showImageGenModal} title="AI 画图" onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
+                footer={imageGenPreview
+                    ? <><button onClick={() => setImageGenPreview(null)} className="flex-1 py-3 bg-slate-100 rounded-2xl">重画</button><button onClick={handleSendGeneratedImage} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl">发送图片</button></>
+                    : <button onClick={handleGenerateImage} disabled={isGeneratingImage} className={`w-full py-3 font-bold rounded-2xl text-white ${isGeneratingImage ? 'bg-fuchsia-300' : 'bg-fuchsia-500'}`}>{isGeneratingImage ? '生成中…' : '生成'}</button>}
+             >
+                <div className="space-y-3">
+                    {imageGenPreview ? (
+                        <img src={imageGenPreview} className="w-full rounded-2xl border border-slate-100 shadow-sm" alt="AI 生成预览" />
+                    ) : (
+                        <>
+                            <textarea value={imageGenPrompt} onChange={e => setImageGenPrompt(e.target.value)} placeholder="描述想画的画面（如：雨后的城市天台，霓虹灯倒映在水洼里）" rows={3} className="w-full bg-slate-100 rounded-2xl px-5 py-3.5 text-sm resize-none" autoFocus />
+                            <input value={imageGenModel} onChange={e => setImageGenModel(e.target.value)} placeholder={`生图模型（默认 ${DEFAULT_IMAGE_GEN_MODEL}）`} className="w-full bg-slate-100 rounded-2xl px-5 py-2.5 text-xs font-mono" />
+                            <p className="text-[11px] text-slate-400 leading-relaxed px-1">走当前 API 的 /images/generations 端点，模型名需支持图片生成。生成的图片会作为聊天图片发送并存入相册。</p>
+                        </>
+                    )}
+                </div>
+             </Modal>
+
+             {/* 偷看心声 Modal */}
+             <Modal
+                isOpen={showInnerVoiceModal} title={`${char?.name || 'TA'} 的心声`} onClose={() => setShowInnerVoiceModal(false)}
+                footer={<><button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">悄悄合上</button><button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-3 font-bold rounded-2xl text-white ${innerVoiceLoading ? 'bg-violet-300' : 'bg-violet-500'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button></>}
+             >
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto no-scrollbar">
+                    {innerVoiceLoading && !innerVoiceCurrent && (
+                        <div className="flex flex-col items-center gap-2 py-8 text-violet-400">
+                            <div className="w-6 h-6 border-2 border-violet-300 border-t-violet-500 rounded-full animate-spin" />
+                            <span className="text-xs">正在窥探 {char?.name} 的内心…</span>
+                        </div>
+                    )}
+                    {innerVoiceCurrent && (
+                        <div className="p-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-fuchsia-50">
+                            <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap italic">「{innerVoiceCurrent.content}」</p>
+                            <p className="text-[10px] text-violet-300 mt-2 text-right">{new Date(innerVoiceCurrent.timestamp).toLocaleString('zh-CN')}</p>
+                        </div>
+                    )}
+                    {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).length > 0 && (
+                        <div className="space-y-2">
+                            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider px-1">之前偷看到的</p>
+                            {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).slice(0, 10).map(h => (
+                                <div key={h.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                    <p className="text-[12px] text-slate-500 leading-relaxed whitespace-pre-wrap line-clamp-3">{h.content}</p>
+                                    <p className="text-[9px] text-slate-300 mt-1.5 text-right">{new Date(h.timestamp).toLocaleString('zh-CN')}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-[10px] text-slate-300 text-center pt-1">{char?.name} 不会知道你偷看过 ——「心声」不会进入对话。</p>
+                </div>
+             </Modal>
+
              <ChatModals
                 modalType={modalType} setModalType={setModalType}
                 transferAmt={transferAmt} setTransferAmt={setTransferAmt}
+                transferMode={transferMode} setTransferMode={setTransferMode}
+                transferNote={transferNote} setTransferNote={setTransferNote}
                 emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
                 settingsHideSysLogs={settingsHideSysLogs} setSettingsHideSysLogs={setSettingsHideSysLogs}
@@ -2238,7 +2434,17 @@ const Chat: React.FC = () => {
                 newCategoryName={newCategoryName} setNewCategoryName={setNewCategoryName} onAddCategory={handleAddCategory}
                 selectedCategory={selectedCategory}
 
-                onTransfer={() => { if(transferAmt) handleSendText(`[转账]`, 'transfer', { amount: transferAmt }); setModalType('none'); }}
+                onTransfer={() => {
+                    if (transferAmt) {
+                        handleSendText(
+                            transferMode === 'redpacket' ? `[红包]` : `[转账]`,
+                            'transfer',
+                            { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined } : {}) }
+                        );
+                    }
+                    setModalType('none');
+                    setTransferNote('');
+                }}
                 onImportEmoji={handleImportEmoji}
                 onSaveSettings={saveSettings} onBgUpload={handleBgUpload} onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
                 onClearHistory={handleClearHistory} onArchive={handleFullArchive}
@@ -2632,6 +2838,7 @@ const Chat: React.FC = () => {
                     onRemoveTheme={removeCustomTheme} activeThemeId={currentThemeId}
                     onPanelAction={handlePanelAction}
                     onImageSelect={handleImageSelect}
+                    onSendVoice={handleSendVoice}
                     isSummarizing={isSummarizing}
                     categories={visibleCategories}
                     activeCategory={activeCategory}
