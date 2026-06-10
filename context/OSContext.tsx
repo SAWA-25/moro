@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile } from '../types';
 import { DB } from '../utils/db';
+import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
@@ -221,6 +222,9 @@ interface OSContextType {
   addWorldbook: (wb: Worldbook) => void;
   updateWorldbook: (id: string, updates: Partial<Worldbook>) => Promise<void>;
   deleteWorldbook: (id: string) => void;
+  /** 整书开关（按分组/书名，false = 整书关闭；undefined = 开） */
+  worldbookGroupToggles: Record<string, boolean>;
+  setWorldbookGroupEnabled: (category: string, enabled: boolean) => void;
 
   // Novels (NEW)
   novels: NovelBook[];
@@ -608,7 +612,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, [activeCharacterId]);
   
   const [groups, setGroups] = useState<GroupProfile[]>([]); 
-  const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]); 
+  const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
+  // 整书开关（按 category 分组），持久化在 localStorage（见 worldbookRuntime）
+  const [worldbookGroupToggles, setWorldbookGroupToggles] = useState<Record<string, boolean>>(() => loadGroupTogglesFromStorage());
   const [novels, setNovels] = useState<NovelBook[]>([]); // New
   const [songs, setSongs] = useState<SongSheet[]>([]);
 
@@ -2080,6 +2086,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       await DB.saveWorldbook(wb);
   };
 
+  const setWorldbookGroupEnabled = (category: string, enabled: boolean) => {
+      setWorldbookGroupToggles(prev => {
+          const next = { ...prev };
+          if (enabled) delete next[category];  // 开 = 默认态，不留冗余键
+          else next[category] = false;
+          saveGroupTogglesToStorage(next);
+          return next;
+      });
+  };
+
+  // 世界书注册表镜像：让 ContextBuilder / chatRequestPayload 这些非 React 模块
+  // 能读到最新的全量世界书与整书开关（全局作用域、条目开关都依赖它）
+  useEffect(() => {
+      WorldbookRuntime.sync(worldbooks, worldbookGroupToggles);
+  }, [worldbooks, worldbookGroupToggles]);
+
   const updateWorldbook = async (id: string, updates: Partial<Worldbook>) => {
       // Compute the updated entity up-front. Relying on a closure side-effect
       // inside a setState updater is unsafe — React calls updaters lazily
@@ -3385,6 +3407,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     worldbooks,
     addWorldbook,
     updateWorldbook,
+    worldbookGroupToggles,
+    setWorldbookGroupEnabled,
     deleteWorldbook,
     novels,
     addNovel,

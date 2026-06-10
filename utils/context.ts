@@ -2,6 +2,7 @@
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
 import { normalizeUserImpression } from './impression';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
+import { WorldbookRuntime } from './worldbookRuntime';
 
 /**
  * Memory Central
@@ -105,9 +106,29 @@ export const ContextBuilder = {
             skipWorldview?: boolean;
             skipWorldbookIds?: Set<string>;
             headerOverride?: string;
+            /**
+             * 主聊天链路置 true：@Depth 世界书条目不内联进 system prompt，
+             * 改由 buildChatRequestPayload 按深度插成独立消息。
+             * 其他单 prompt 调用方保持默认（内联降级到扩展设定集块）。
+             */
+            omitDepthWorldbooks?: boolean;
         },
     ): string => {
         let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
+
+        // 世界书分段（局部 = 挂载生效 / 全局 = 注册表内全局条目，开关与位置见 worldbookRuntime）
+        // 群聊场景（传了 skipWorldbookIds）下全局条目由 buildGroupSharedScene 统一渲染一次，
+        // 各角色块里跳过，避免成员数 × 全局条目的重复。
+        const wbSections = WorldbookRuntime.buildPromptSections(char, {
+            skipIds: groupOptions?.skipWorldbookIds,
+            skipGlobal: !!groupOptions?.skipWorldbookIds,
+            inlineDepth: !groupOptions?.omitDepthWorldbooks,
+        });
+
+        // 0. 角色定义之前的世界书（position='before_char'）
+        if (wbSections.beforeChar) {
+            context += wbSections.beforeChar;
+        }
 
         // 1. 核心身份 (Identity)
         context += `### 你的身份 (Character)\n`;
@@ -133,29 +154,10 @@ export const ContextBuilder = {
             context += `### 世界观与设定 (World Settings)\n${char.worldview}\n\n`;
         }
 
-        // [NEW] 挂载的世界书 (Mounted Worldbooks) - GROUPED BY CATEGORY
-        // 群聊场景下：共享世界书已被 buildGroupSharedScene 提取到顶部场景块，这里跳过去重 ID
-        const skipBookIds = groupOptions?.skipWorldbookIds;
-        const filteredBooks = (char.mountedWorldbooks || []).filter(wb => !skipBookIds || !skipBookIds.has(wb.id));
-        if (filteredBooks.length > 0) {
-            context += `### 扩展设定集 (Worldbooks)\n`;
-
-            // Group books by category
-            const groupedBooks: Record<string, typeof filteredBooks> = {};
-            filteredBooks.forEach(wb => {
-                const cat = wb.category || '通用设定 (General)';
-                if (!groupedBooks[cat]) groupedBooks[cat] = [];
-                groupedBooks[cat].push(wb);
-            });
-
-            // Output grouped content
-            Object.entries(groupedBooks).forEach(([category, books]) => {
-                context += `#### [${category}]\n`;
-                books.forEach(wb => {
-                    context += `**Title: ${wb.title}**\n${wb.content}\n---\n`;
-                });
-                context += `\n`;
-            });
+        // 挂载的世界书（局部，先写）+ 全局世界书（后写）— position='after_char' 的条目
+        // 开关 / 作用域 / 顺序的解析都在 WorldbookRuntime.buildPromptSections 里完成
+        if (wbSections.afterChar) {
+            context += wbSections.afterChar;
         }
 
         // 3. 用户画像 (User Profile)
@@ -311,10 +313,12 @@ export const ContextBuilder = {
         }
 
         // 1. 找出共享的世界书（被 2+ 角色挂载，按 id 计）
+        // 经由 WorldbookRuntime 解析（resolveForChar 已应用条目/整书开关、剔除转为
+        // global 的条目并以 live 内容为准），全局条目稍后统一渲染一次。
         const wbCount = new Map<string, { count: number; entry: { id: string; title: string; content: string; category?: string } }>();
         for (const m of members) {
-            for (const wb of (m.mountedWorldbooks || [])) {
-                if (!wb.id) continue;
+            const { local } = WorldbookRuntime.resolveForChar(m, { skipGlobal: true });
+            for (const wb of local) {
                 const existing = wbCount.get(wb.id);
                 if (existing) existing.count += 1;
                 else wbCount.set(wb.id, { count: 1, entry: wb });
@@ -363,6 +367,13 @@ export const ContextBuilder = {
                 });
                 text += `\n`;
             });
+        }
+
+        // 全局世界书：先写局部（上面的共享挂载块），再写全局，整场只渲染一次。
+        // 各成员的 buildCoreContext 因传入 skipWorldbookIds 而跳过全局段。
+        const globalBlock = WorldbookRuntime.buildGlobalSharedBlock(sharedWorldbookIds);
+        if (globalBlock) {
+            text += globalBlock;
         }
 
         return { text, sharedWorldbookIds, worldviewIsShared };

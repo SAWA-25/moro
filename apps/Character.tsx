@@ -228,32 +228,16 @@ const Character: React.FC = () => {
       });
   };
 
-  // Worldbook Logic
-  const mountWorldbook = (bookId: string) => {
-      if (!formData) return;
-      const book = worldbooks.find(b => b.id === bookId);
-      if (!book) return;
-
-      const currentBooks = formData.mountedWorldbooks || [];
-      if (currentBooks.some(b => b.id === book.id)) {
-          addToast('已挂载该世界书', 'info');
-          return;
-      }
-
-      // CACHE THE CONTENT, include category
-      const newBookEntry = { 
-          id: book.id, 
-          title: book.title, 
-          content: book.content,
-          category: book.category 
-      };
-      handleChange('mountedWorldbooks', [...currentBooks, newBookEntry]);
-      setShowWorldbookModal(false);
-      addToast(`已挂载: ${book.title}`, 'success');
+  // Worldbook Logic —— 「扩展设定」按整本世界书（= 分组 category）操作。
+  // 挂载 = 把该书全部条目（含暂时禁用的）写入 mountedWorldbooks；注入时由
+  // WorldbookRuntime 以 live 记录为准过滤开关/作用域，所以这里不挑条目。
+  const mountedBookCategory = (m: { id: string; category?: string }): string => {
+      // live 记录优先（书可能改过名），快照分组兜底
+      const live = worldbooks.find(b => b.id === m.id);
+      return (live?.category || m.category || '未分类设定 (General)');
   };
 
-  // New: Mount entire category
-  const mountCategory = (category: string) => {
+  const mountBook = (category: string) => {
       if (!formData) return;
       const booksToMount = worldbooks.filter(b => (b.category || '未分类设定 (General)') === category);
       if (booksToMount.length === 0) return;
@@ -276,17 +260,19 @@ const Character: React.FC = () => {
 
       if (addedCount > 0) {
           handleChange('mountedWorldbooks', [...currentBooks, ...newEntries]);
-          addToast(`已批量挂载 ${addedCount} 本世界书`, 'success');
+          addToast(`已挂载《${category}》（${addedCount} 条）`, 'success');
       } else {
-          addToast('该组世界书已全部挂载', 'info');
+          addToast('该世界书已全部挂载', 'info');
       }
       setShowWorldbookModal(false);
   };
 
-  const unmountWorldbook = (bookId: string) => {
+  const unmountBook = (category: string) => {
       if (!formData) return;
       const currentBooks = formData.mountedWorldbooks || [];
-      handleChange('mountedWorldbooks', currentBooks.filter(b => b.id !== bookId));
+      const remaining = currentBooks.filter(b => mountedBookCategory(b) !== category);
+      handleChange('mountedWorldbooks', remaining);
+      addToast(`已卸载《${category}》`, 'info');
   };
 
   // ... (Other handlers unchanged)
@@ -888,8 +874,9 @@ ${isInitialGeneration ? `
   };
 
   /**
-   * SillyTavern 卡导入：世界书条目全部写入全局世界书库（含禁用条目与卡片元信息，
-   * 原始局部/全局设置保留在 stData），启用条目按插入顺序挂载到新角色。
+   * SillyTavern 卡导入：世界书条目全部写入全局世界书库（默认局部作用域，开关/
+   * 位置/顺序按原卡映射，原始设置另存 stData），有内容的条目按插入顺序挂载到
+   * 新角色；ST 里禁用的条目 enabled=false，挂载但不注入。
    */
   const importSillyTavernCard = async (parsed: ParsedSTCard, avatarDataUrl: string) => {
       const result = convertSTCardToCharacter(parsed, { userName: userProfile.name });
@@ -1210,21 +1197,28 @@ ${isInitialGeneration ? `
                                 </div>
                                 <div className="space-y-2">
                                    {formData.mountedWorldbooks && formData.mountedWorldbooks.length > 0 ? (
-                                       formData.mountedWorldbooks.map(wb => (
-                                           <div key={wb.id} className="flex items-center justify-between bg-white px-4 py-3 rounded-2xl border border-indigo-50 shadow-sm group">
+                                       // 同一本世界书（分组）的条目收录到一起，按整本展示
+                                       Object.entries((formData.mountedWorldbooks).reduce((acc, m) => {
+                                           const cat = mountedBookCategory(m);
+                                           if (!acc[cat]) acc[cat] = [];
+                                           acc[cat].push(m);
+                                           return acc;
+                                       }, {} as Record<string, NonNullable<typeof formData.mountedWorldbooks>>)).map(([category, entries]) => (
+                                           <div key={category} className="flex items-center justify-between bg-white px-4 py-3 rounded-2xl border border-indigo-50 shadow-sm group">
                                                <div className="flex items-center gap-2 min-w-0">
                                                    <BookOpen size={20} className="shrink-0 text-indigo-400" />
                                                    <div className="flex flex-col min-w-0">
-                                                       <span className="text-sm font-bold text-slate-700 truncate">{wb.title}</span>
-                                                       {wb.category && <span className="text-[9px] text-slate-400">{wb.category}</span>}
+                                                       <span className="text-sm font-bold text-slate-700 truncate">{category}</span>
+                                                       <span className="text-[9px] text-slate-400">整本世界书 · {entries.length} 条条目</span>
                                                    </div>
                                                </div>
-                                               <button onClick={() => unmountWorldbook(wb.id)} className="text-slate-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 ml-2">×</button>
+                                               <button onClick={() => unmountBook(category)} className="text-slate-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1 ml-2" title="卸载整本">×</button>
                                            </div>
                                        ))
                                    ) : (
                                        <div className="text-center py-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
-                                           暂未挂载任何世界书
+                                           暂未挂载任何世界书<br/>
+                                           <span className="text-[10px] text-slate-300">（设为「全局」的世界书条目无需挂载，会自动注入所有对话）</span>
                                        </div>
                                    )}
                                </div>
@@ -1369,47 +1363,45 @@ ${isInitialGeneration ? `
             title="挂载世界书" 
             onClose={() => setShowWorldbookModal(false)} 
         >
-            <div className="max-h-[50vh] overflow-y-auto no-scrollbar space-y-4 p-1">
+            <div className="max-h-[50vh] overflow-y-auto no-scrollbar space-y-3 p-1">
                 {worldbooks.length === 0 ? (
                     <div className="text-center text-slate-400 text-xs py-8">
                         还没有世界书，请去桌面【世界书】App 创建。
                     </div>
                 ) : (
-                    // Group books for UI
+                    // 同一本世界书（= 分组）的条目收录到一起，只展示整本
                     Object.entries(worldbooks.reduce((acc, wb) => {
                         const cat = wb.category || '未分类设定 (General)';
                         if (!acc[cat]) acc[cat] = [];
                         acc[cat].push(wb);
                         return acc;
-                    }, {} as Record<string, typeof worldbooks>)).map(([category, books]) => (
-                        <div key={category} className="space-y-2">
-                            <div className="flex justify-between items-center px-1">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{category}</h4>
-                                <button 
-                                    onClick={() => mountCategory(category)}
-                                    className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-bold hover:bg-indigo-100"
-                                >
-                                    挂载整组
-                                </button>
-                            </div>
-                            {books.map(wb => {
-                                const isMounted = formData?.mountedWorldbooks?.some(m => m.id === wb.id);
-                                return (
-                                    <button 
-                                        key={wb.id} 
-                                        onClick={() => !isMounted && mountWorldbook(wb.id)}
-                                        disabled={isMounted}
-                                        className={`w-full p-4 rounded-xl border text-left transition-all ${isMounted ? 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-indigo-100 hover:border-indigo-300 shadow-sm active:scale-95'}`}
-                                    >
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="font-bold text-slate-700 text-sm truncate">{wb.title}</span>
-                                            {isMounted && <span className="text-[10px] text-slate-400">已挂载</span>}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    ))
+                    }, {} as Record<string, typeof worldbooks>)).map(([category, books]) => {
+                        const mountedCount = books.filter(wb => formData?.mountedWorldbooks?.some(m => m.id === wb.id)).length;
+                        const fullyMounted = mountedCount === books.length;
+                        const globalCount = books.filter(wb => wb.scope === 'global').length;
+                        return (
+                            <button
+                                key={category}
+                                onClick={() => !fullyMounted && mountBook(category)}
+                                disabled={fullyMounted}
+                                className={`w-full p-4 rounded-xl border text-left transition-all ${fullyMounted ? 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed' : 'bg-white border-indigo-100 hover:border-indigo-300 shadow-sm active:scale-95'}`}
+                            >
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="font-bold text-slate-700 text-sm truncate flex items-center gap-1.5">
+                                        <BookOpen size={16} className="shrink-0 text-indigo-400" />{category}
+                                    </span>
+                                    {fullyMounted
+                                        ? <span className="text-[10px] text-slate-400 shrink-0">已挂载</span>
+                                        : <span className="text-[10px] text-indigo-500 font-bold shrink-0">挂载整本</span>}
+                                </div>
+                                <div className="text-[10px] text-slate-400 pl-5">
+                                    {books.length} 条条目
+                                    {mountedCount > 0 && !fullyMounted && ` · 已挂载 ${mountedCount} 条`}
+                                    {globalCount > 0 && ` · 含 ${globalCount} 条全局条目（无需挂载即生效）`}
+                                </div>
+                            </button>
+                        );
+                    })
                 )}
             </div>
         </Modal>

@@ -21,6 +21,7 @@ import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
+import { WorldbookRuntime } from './worldbookRuntime';
 
 export interface UserListeningContext {
     songName: string;
@@ -200,6 +201,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         userListeningContext ?? null,
         !!isListeningTogether,
         musicCfg,
+        /* omitDepthWorldbooks */ true,  // @Depth 世界书在第 10 步插成独立消息
     );
 
     // ── 4. 双语指令注入 ───────────────────────────────────
@@ -267,6 +269,12 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         { role: 'system', content: systemPrompt },
         ...cleanedApiMessages,
     ];
+
+    // @Depth 世界书条目：以指定 role 插到聊天历史的对应深度（同 ST 的 @D 语义）。
+    // buildSystemPrompt 已用 omitDepthWorldbooks 跳过内联，这里是唯一注入点。
+    const { depthEntries } = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
+    WorldbookRuntime.spliceDepthMessages(fullMessages, depthEntries);
+
     if (bilingualActive) {
         fullMessages.push({
             role: 'system',
