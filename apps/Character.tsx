@@ -19,6 +19,7 @@ import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { normalizeUserImpression } from '../utils/impression';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
 
 const CharacterCard: React.FC<{
     char: CharacterProfile;
@@ -886,73 +887,124 @@ ${isInitialGeneration ? `
           addToast('角色卡已生成并下载', 'success');
   };
 
+  /**
+   * SillyTavern 卡导入：世界书条目全部写入全局世界书库（含禁用条目与卡片元信息，
+   * 原始局部/全局设置保留在 stData），启用条目按插入顺序挂载到新角色。
+   */
+  const importSillyTavernCard = async (parsed: ParsedSTCard, avatarDataUrl: string) => {
+      const result = convertSTCardToCharacter(parsed, { userName: userProfile.name });
+
+      for (const wb of result.worldbooks) {
+          await addWorldbook(wb);
+      }
+
+      const newChar: CharacterProfile = {
+          id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: result.name,
+          avatar: avatarDataUrl || result.avatarFallback,
+          description: result.description,
+          systemPrompt: result.systemPrompt,
+          worldview: result.worldview,
+          memories: [],
+          refinedMemories: {},
+          activeMemoryMonths: [],
+          mountedWorldbooks: result.mountedWorldbooks,
+          contextLimit: 500,
+          emotionConfig: { enabled: true },
+      };
+
+      await DB.saveCharacter(newChar);
+      const wbSuffix = result.worldbooks.length > 0
+          ? `，导入世界书 ${result.worldbooks.length} 条（挂载 ${result.mountedWorldbooks.length} 条）`
+          : '';
+      addToast(`SillyTavern 角色 ${newChar.name} 导入成功${wbSuffix}`, 'success');
+      setTimeout(() => window.location.reload(), 600);
+  };
+
   const handleImportCard = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
+      (async () => {
           try {
-              const json = ev.target?.result as string;
-              const data: CharacterExportData = JSON.parse(json);
-              
-              if (data.type !== 'sully_character_card') {
-                  throw new Error('无效的角色卡文件');
-              }
-
-              if (data.embeddedTheme) {
-                  const exists = customThemes.some(t => t.id === data.embeddedTheme!.id);
-                  if (!exists) {
-                      addCustomTheme(data.embeddedTheme);
+              const isPng = file.type === 'image/png' || /\.png$/i.test(file.name);
+              if (isPng) {
+                  // SillyTavern PNG 卡：角色数据在 tEXt 元数据块里，图片本身作头像
+                  const cardJson = extractCardJsonFromPng(await file.arrayBuffer());
+                  const parsed = parseSillyTavernCard(cardJson);
+                  if (!parsed) throw new Error('PNG 内的元数据不是可识别的 SillyTavern 角色卡');
+                  let avatar = '';
+                  try {
+                      avatar = await processImage(file);
+                  } catch (imgErr) {
+                      console.warn('[ST Import] 头像处理失败，使用兜底头像', imgErr);
                   }
+                  await importSillyTavernCard(parsed, avatar);
+                  return;
               }
 
-              // Sync mounted worldbooks into the global worldbook app so they
-              // appear under their original category (or the character's name
-              // as a sensible fallback when the card has no category set).
-              const incomingMounted = (data.mountedWorldbooks || []).map(wb => ({ ...wb }));
-              const fallbackCategory = `${data.name || '导入角色'} 的世界书`;
-              let importedWbCount = 0;
-              for (const wb of incomingMounted) {
-                  if (!wb.id || worldbooks.some(existing => existing.id === wb.id)) continue;
-                  const category = wb.category && wb.category.trim() ? wb.category : fallbackCategory;
-                  wb.category = category;
-                  await addWorldbook({
-                      id: wb.id,
-                      title: wb.title || '未命名设定',
-                      content: wb.content || '',
-                      category,
-                      createdAt: Date.now(),
-                      updatedAt: Date.now(),
-                  });
-                  importedWbCount++;
+              const data = JSON.parse(await file.text());
+              if (data?.type === 'sully_character_card') {
+                  await importSullyCard(data as CharacterExportData);
+                  return;
               }
-
-              const newChar: CharacterProfile = {
-                  ...data,
-                  id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                  memories: [],
-                  refinedMemories: {},
-                  activeMemoryMonths: [],
-                  mountedWorldbooks: incomingMounted,
-                  embeddedTheme: undefined
-              } as CharacterProfile;
-
-              await DB.saveCharacter(newChar);
-              addCharacter(); // Force refresh (naive)
-              setTimeout(() => window.location.reload(), 500);
-
-              const wbToastSuffix = importedWbCount > 0 ? `，并同步 ${importedWbCount} 本世界书` : '';
-              addToast(`角色 ${newChar.name} 导入成功${wbToastSuffix}`, 'success');
-
+              const parsed = parseSillyTavernCard(data);
+              if (!parsed) throw new Error('无法识别的角色卡格式（支持 Sully 卡 JSON、SillyTavern 卡 PNG / JSON）');
+              await importSillyTavernCard(parsed, '');
           } catch (err: any) {
               console.error(err);
               addToast(err.message || '导入失败', 'error');
           } finally {
               if (cardImportRef.current) cardImportRef.current.value = '';
           }
-      };
-      reader.readAsText(file);
+      })();
+  };
+
+  const importSullyCard = async (data: CharacterExportData) => {
+      if (data.embeddedTheme) {
+          const exists = customThemes.some(t => t.id === data.embeddedTheme!.id);
+          if (!exists) {
+              addCustomTheme(data.embeddedTheme);
+          }
+      }
+
+      // Sync mounted worldbooks into the global worldbook app so they
+      // appear under their original category (or the character's name
+      // as a sensible fallback when the card has no category set).
+      const incomingMounted = (data.mountedWorldbooks || []).map(wb => ({ ...wb }));
+      const fallbackCategory = `${data.name || '导入角色'} 的世界书`;
+      let importedWbCount = 0;
+      for (const wb of incomingMounted) {
+          if (!wb.id || worldbooks.some(existing => existing.id === wb.id)) continue;
+          const category = wb.category && wb.category.trim() ? wb.category : fallbackCategory;
+          wb.category = category;
+          await addWorldbook({
+              id: wb.id,
+              title: wb.title || '未命名设定',
+              content: wb.content || '',
+              category,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+          });
+          importedWbCount++;
+      }
+
+      const newChar: CharacterProfile = {
+          ...data,
+          id: `char-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          memories: [],
+          refinedMemories: {},
+          activeMemoryMonths: [],
+          mountedWorldbooks: incomingMounted,
+          embeddedTheme: undefined
+      } as CharacterProfile;
+
+      await DB.saveCharacter(newChar);
+      addCharacter(); // Force refresh (naive)
+      setTimeout(() => window.location.reload(), 500);
+
+      const wbToastSuffix = importedWbCount > 0 ? `，并同步 ${importedWbCount} 本世界书` : '';
+      addToast(`角色 ${newChar.name} 导入成功${wbToastSuffix}`, 'success');
   };
 
   return (
@@ -963,12 +1015,12 @@ ${isInitialGeneration ? `
                <div className="px-6 pt-16 pb-4 shrink-0 flex items-center justify-between">
                    <div><h1 className="text-2xl font-light text-slate-800 tracking-tight">神经链接</h1><p className="text-xs text-slate-400 mt-1">已建立 {characters.length} 个角色连接</p></div>
                    <div className="flex gap-2">
-                        <button onClick={() => cardImportRef.current?.click()} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors text-slate-600" title="导入角色卡">
+                        <button onClick={() => cardImportRef.current?.click()} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors text-slate-600" title="导入角色卡（Sully JSON / SillyTavern PNG·JSON）">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                             </svg>
                         </button>
-                        <input type="file" ref={cardImportRef} className="hidden" accept=".json" onChange={handleImportCard} />
+                        <input type="file" ref={cardImportRef} className="hidden" accept=".json,.png,image/png,application/json" onChange={handleImportCard} />
                         
                         <button onClick={closeApp} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button>
                    </div>

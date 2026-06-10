@@ -253,6 +253,46 @@ const WorldbookApp: React.FC = () => {
                                     {previewBookId === book.id && (
                                         <div className="px-4 pb-4 pt-0 animate-fade-in">
                                             <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-3"></div>
+                                            {/* SillyTavern 导入条目：展示原卡的局部/全局设置（Moro 不执行关键词激活，仅存档展示） */}
+                                            {book.source === 'sillytavern' && (
+                                                <div className="mb-3 flex flex-wrap gap-1.5 text-[9px] font-mono">
+                                                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 border border-indigo-100 font-bold">SillyTavern</span>
+                                                    {book.stData?.entry && (
+                                                        <>
+                                                            <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">
+                                                                {book.stData.entry.constant ? '🔵 常驻 (constant)' : '🟢 关键词触发'}
+                                                            </span>
+                                                            {book.stData.entry.enabled === false && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-400 border border-red-100">原卡已禁用</span>
+                                                            )}
+                                                            {(book.stData.entry.keys?.length || 0) > 0 && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">关键词: {book.stData.entry.keys!.join(', ')}</span>
+                                                            )}
+                                                            {(book.stData.entry.secondaryKeys?.length || 0) > 0 && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">过滤词: {book.stData.entry.secondaryKeys!.join(', ')}</span>
+                                                            )}
+                                                            {book.stData.entry.insertionOrder !== undefined && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">顺序: {book.stData.entry.insertionOrder}</span>
+                                                            )}
+                                                            {book.stData.entry.position !== undefined && (
+                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">位置: {String(book.stData.entry.position)}</span>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {book.stData?.bookName && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">书: {book.stData.bookName}</span>
+                                                    )}
+                                                    {book.stData?.scanDepth !== undefined && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">scan_depth: {book.stData.scanDepth}</span>
+                                                    )}
+                                                    {book.stData?.tokenBudget !== undefined && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">token_budget: {book.stData.tokenBudget}</span>
+                                                    )}
+                                                    {book.stData?.recursiveScanning !== undefined && (
+                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">递归扫描: {book.stData.recursiveScanning ? '开' : '关'}</span>
+                                                    )}
+                                                </div>
+                                            )}
                                             <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap font-light select-text">
                                                 {book.content || <span className="italic text-slate-400">暂无内容...</span>}
                                             </p>

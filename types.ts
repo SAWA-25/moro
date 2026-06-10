@@ -562,13 +562,49 @@ export interface PhoneEvidence {
     value?: string; 
 }
 
+/**
+ * SillyTavern 角色卡内嵌世界书 (character_book / lorebook) 的原始设定。
+ * Moro 的世界书是「挂载即全文注入」，没有 ST 的关键词扫描激活机制，
+ * 导入时把条目级（局部）+ 书级（全局）设置原样保留在这里：
+ * 一来保证「全部设定信息」不丢，二来为以后实现关键词激活留好数据。
+ */
+export interface WorldbookSTData {
+    // ---- 书级（全局）设置 ----
+    bookName?: string;
+    bookDescription?: string;
+    scanDepth?: number;
+    tokenBudget?: number;
+    recursiveScanning?: boolean;
+    bookExtensions?: Record<string, any>;
+    // ---- 条目级（局部）设置 ----
+    entry?: {
+        id?: number | string;
+        name?: string;
+        comment?: string;
+        keys?: string[];           // 触发关键词
+        secondaryKeys?: string[];  // 二级过滤词
+        selective?: boolean;       // 需同时命中二级词
+        constant?: boolean;        // 常驻（蓝灯）
+        enabled?: boolean;         // ST 里是否启用
+        insertionOrder?: number;   // 插入顺序
+        caseSensitive?: boolean;
+        priority?: number;
+        position?: string | number; // 'before_char' / 'after_char' / ST 内部数字位
+        extensions?: Record<string, any>; // ST 私有字段（depth/probability 等）全量兜底
+    };
+}
+
 export interface Worldbook {
     id: string;
     title: string;
-    content: string; 
-    category: string; 
+    content: string;
+    category: string;
     createdAt: number;
     updatedAt: number;
+    /** 'sillytavern' = 从 SillyTavern 角色卡导入的条目 */
+    source?: 'sillytavern';
+    /** SillyTavern 原始设定信息（仅 source === 'sillytavern' 时存在） */
+    stData?: WorldbookSTData;
 }
 
 // --- NOVEL / CO-WRITING TYPES ---
