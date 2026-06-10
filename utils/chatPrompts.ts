@@ -114,6 +114,10 @@ export const ChatPrompts = {
         // MusicContext 的 cfg —— 用来给 char 自己的"此刻在听"拉稳定的歌词片段。
         // 不传也能用，只是 char 的 block 2 只有歌名 + 艺人，没有歌词。
         musicCfg?: MusicCfg,
+        // buildChatRequestPayload 置 true：@Depth 世界书不内联进 system prompt，
+        // 由它在 fullMessages 组装后按深度插成独立消息。其他调用方（如主动消息的
+        // 文本化 prompt）保持默认 false → 内联降级，条目不丢。
+        omitDepthWorldbooks?: boolean,
     ) => {
         // ── 分段计时（定位瓶颈用）──
         const perfT0 = performance.now();
@@ -126,7 +130,8 @@ export const ChatPrompts = {
 
         // 记忆宫殿检索结果现在从 char.memoryPalaceInjection 读取，由 buildCoreContext 统一注入
         const coreT0 = performance.now();
-        let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true);
+        let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true, undefined,
+            omitDepthWorldbooks ? { omitDepthWorldbooks: true } : undefined);
         timings.buildCoreContext = Math.round(performance.now() - coreT0);
 
         // 情绪底色（buffInjection）已移入 ContextBuilder.buildCoreContext()，所有 App 统一注入

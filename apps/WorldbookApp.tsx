@@ -1,12 +1,34 @@
 import React, { useState, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
-import { Worldbook } from '../types';
+import { Worldbook, WorldbookPosition } from '../types';
 import Modal from '../components/os/Modal';
 import { DiamondsFour, BookOpen } from '@phosphor-icons/react';
 
+const POSITION_OPTIONS: { value: WorldbookPosition; label: string }[] = [
+    { value: 'before_char', label: '角色定义前 (↑Char)' },
+    { value: 'after_char', label: '角色定义后 (↓Char · 默认)' },
+    { value: 'depth_system', label: '@深度 · 系统 (@D System)' },
+    { value: 'depth_user', label: '@深度 · 用户 (@D User)' },
+    { value: 'depth_assistant', label: '@深度 · AI (@D Assistant)' },
+];
+
+const positionLabel = (p?: WorldbookPosition) =>
+    POSITION_OPTIONS.find(o => o.value === (p || 'after_char'))?.label || '角色定义后';
+
+/** 小型开关（条目/整书共用） */
+const MiniToggle: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string }> = ({ on, onChange, title }) => (
+    <button
+        onClick={(e) => { e.stopPropagation(); onChange(!on); }}
+        title={title}
+        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${on ? 'bg-indigo-500' : 'bg-slate-300'}`}
+    >
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`}></span>
+    </button>
+);
+
 const WorldbookApp: React.FC = () => {
-    const { closeApp, worldbooks, addWorldbook, updateWorldbook, deleteWorldbook, addToast } = useOS();
-    
+    const { closeApp, worldbooks, addWorldbook, updateWorldbook, deleteWorldbook, addToast, worldbookGroupToggles, setWorldbookGroupEnabled } = useOS();
+
     // View State
     const [isEditing, setIsEditing] = useState(false);
     const [editingBook, setEditingBook] = useState<Worldbook | null>(null);
@@ -17,6 +39,11 @@ const WorldbookApp: React.FC = () => {
     const [tempTitle, setTempTitle] = useState('');
     const [tempContent, setTempContent] = useState('');
     const [tempCategory, setTempCategory] = useState('');
+    const [tempEnabled, setTempEnabled] = useState(true);
+    const [tempScope, setTempScope] = useState<'local' | 'global'>('local');
+    const [tempPosition, setTempPosition] = useState<WorldbookPosition>('after_char');
+    const [tempDepth, setTempDepth] = useState(4);
+    const [tempOrder, setTempOrder] = useState(100);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     // Grouping Logic
@@ -39,10 +66,15 @@ const WorldbookApp: React.FC = () => {
     }, [worldbooks]);
 
     const handleCreate = () => {
-        setEditingBook(null); 
+        setEditingBook(null);
         setTempTitle('');
         setTempContent('');
         setTempCategory(''); // Default empty
+        setTempEnabled(true);
+        setTempScope('local');
+        setTempPosition('after_char');
+        setTempDepth(4);
+        setTempOrder(100);
         setIsEditing(true);
     };
 
@@ -51,6 +83,11 @@ const WorldbookApp: React.FC = () => {
         setTempTitle(book.title);
         setTempContent(book.content);
         setTempCategory(book.category || '');
+        setTempEnabled(book.enabled !== false);
+        setTempScope(book.scope === 'global' ? 'global' : 'local');
+        setTempPosition(book.position || 'after_char');
+        setTempDepth(typeof book.depth === 'number' ? book.depth : 4);
+        setTempOrder(typeof book.order === 'number' ? book.order : 100);
         setIsEditing(true);
     };
 
@@ -61,12 +98,20 @@ const WorldbookApp: React.FC = () => {
         }
 
         const category = tempCategory.trim() || '未分类设定 (General)';
+        const settings = {
+            enabled: tempEnabled,
+            scope: tempScope,
+            position: tempPosition,
+            depth: tempPosition.startsWith('depth_') ? Math.max(0, tempDepth) : undefined,
+            order: tempOrder,
+        };
 
         if (editingBook) {
             await updateWorldbook(editingBook.id, {
                 title: tempTitle,
                 content: tempContent,
-                category: category
+                category: category,
+                ...settings,
             });
             addToast('已保存 (同步至相关角色)', 'success');
         } else {
@@ -76,10 +121,11 @@ const WorldbookApp: React.FC = () => {
                 content: tempContent,
                 category: category,
                 createdAt: Date.now(),
-                updatedAt: Date.now()
+                updatedAt: Date.now(),
+                ...settings,
             };
             addWorldbook(newBook);
-            addToast('新书已创建', 'success');
+            addToast('新条目已创建', 'success');
         }
         setIsEditing(false);
     };
@@ -148,7 +194,76 @@ const WorldbookApp: React.FC = () => {
                                     ))}
                                 </datalist>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-1 pl-1">输入相同名称可自动归入已有分组。</p>
+                            <p className="text-[10px] text-slate-400 mt-1 pl-1">输入相同名称可自动归入已有分组（同一分组 = 同一本世界书）。</p>
+                        </div>
+
+                        {/* 条目级设置：开关 / 作用域 / 位置 / 深度 / 顺序 */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block">条目开关 (Enabled)</label>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">关闭后任何场景都不会注入此条目</p>
+                                </div>
+                                <MiniToggle on={tempEnabled} onChange={setTempEnabled} />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">作用域 (Scope)</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setTempScope('local')}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempScope === 'local' ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    >
+                                        局部 (需角色挂载)
+                                    </button>
+                                    <button
+                                        onClick={() => setTempScope('global')}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempScope === 'global' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    >
+                                        全局 (所有对话)
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                                    局部：仅当角色在神经链接「扩展设定」里挂载本书后注入。全局：任意发消息都带上，无需挂载。两者同时生效时，系统提示先写局部、再写全局。
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className={tempPosition.startsWith('depth_') ? '' : 'col-span-2'}>
+                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">插入位置 (Position)</label>
+                                    <select
+                                        value={tempPosition}
+                                        onChange={e => setTempPosition(e.target.value as WorldbookPosition)}
+                                        className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
+                                    >
+                                        {POSITION_OPTIONS.map(o => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {tempPosition.startsWith('depth_') && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">深度 (Depth)</label>
+                                        <input
+                                            type="number" min={0}
+                                            value={tempDepth}
+                                            onChange={e => setTempDepth(parseInt(e.target.value) || 0)}
+                                            className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">插入顺序 (Order)</label>
+                                <input
+                                    type="number"
+                                    value={tempOrder}
+                                    onChange={e => setTempOrder(parseInt(e.target.value) || 0)}
+                                    className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1">同一位置内数值小的排前面（与 SillyTavern 最终生效顺序一致）。@深度位置 = 以所选角色身份插到聊天历史倒数第 N 条处（深度 0 = 最末尾）。</p>
+                            </div>
                         </div>
 
                         <div>
@@ -198,10 +313,12 @@ const WorldbookApp: React.FC = () => {
                     </div>
                 )}
 
-                {Object.entries(groupedBooks).map(([category, books]) => (
-                    <div key={category} className="animate-slide-up">
-                        {/* Category Header */}
-                        <div 
+                {Object.entries(groupedBooks).map(([category, books]) => {
+                    const bookEnabled = worldbookGroupToggles[category] !== false;
+                    return (
+                    <div key={category} className={`animate-slide-up ${bookEnabled ? '' : 'opacity-60'}`}>
+                        {/* Category Header（分组 = 一本世界书） */}
+                        <div
                             onClick={() => toggleCategory(category)}
                             className="flex items-center gap-2 py-2 px-1 cursor-pointer select-none group"
                         >
@@ -210,6 +327,15 @@ const WorldbookApp: React.FC = () => {
                             </div>
                             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">{category}</h3>
                             <span className="text-[9px] bg-white/50 px-1.5 rounded text-slate-400 border border-white/50">{books.length}</span>
+                            {!bookEnabled && <span className="text-[9px] bg-red-50 px-1.5 rounded text-red-400 border border-red-100 font-bold">整书已关</span>}
+                            <div className="ml-auto flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                <span className="text-[9px] text-slate-400">整书开关</span>
+                                <MiniToggle
+                                    on={bookEnabled}
+                                    onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `《${category}》整书已开启` : `《${category}》整书已关闭（所有条目暂停注入）`, 'info'); }}
+                                    title="关闭后本书所有条目（含全局条目）都不再注入"
+                                />
+                            </div>
                         </div>
 
                         {/* Group Items */}
@@ -224,13 +350,33 @@ const WorldbookApp: React.FC = () => {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <div className={`w-1.5 h-1.5 rounded-full ${previewBookId === book.id ? 'bg-indigo-400' : 'bg-slate-300'}`}></div>
-                                                <h4 className={`text-sm font-bold truncate transition-colors ${previewBookId === book.id ? 'text-indigo-700' : 'text-slate-700'}`}>{book.title}</h4>
+                                                <h4 className={`text-sm font-bold truncate transition-colors ${book.enabled === false ? 'text-slate-400 line-through' : previewBookId === book.id ? 'text-indigo-700' : 'text-slate-700'}`}>{book.title}</h4>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const next = book.scope === 'global' ? 'local' : 'global';
+                                                        updateWorldbook(book.id, { scope: next });
+                                                        addToast(next === 'global' ? `「${book.title}」已切为全局（所有对话生效）` : `「${book.title}」已切回局部（需角色挂载）`, 'info');
+                                                    }}
+                                                    title="点击切换 局部 / 全局"
+                                                    className={`text-[9px] px-1.5 py-0.5 rounded font-bold border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-indigo-50 text-indigo-500 border-indigo-100'}`}
+                                                >
+                                                    {book.scope === 'global' ? '全局' : '局部'}
+                                                </button>
                                             </div>
-                                            <div className="text-[10px] text-slate-400 font-mono pl-3.5">
-                                                Updated: {new Date(book.updatedAt).toLocaleDateString()}
+                                            <div className="text-[10px] text-slate-400 font-mono pl-3.5 truncate">
+                                                {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}
                                             </div>
                                         </div>
-                                        
+
+                                        <div className="flex items-center gap-2 ml-2" onClick={e => e.stopPropagation()}>
+                                            <MiniToggle
+                                                on={book.enabled !== false}
+                                                onChange={(on) => updateWorldbook(book.id, { enabled: on })}
+                                                title="条目开关"
+                                            />
+                                        </div>
+
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleEdit(book); }} 
@@ -302,7 +448,8 @@ const WorldbookApp: React.FC = () => {
                             ))}
                         </div>
                     </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Delete Confirmation Modal */}

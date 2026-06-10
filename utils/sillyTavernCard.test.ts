@@ -203,17 +203,30 @@ describe('convertSTCardToCharacter', () => {
         expect(airship.content).toBe('小满的飞艇名叫「云雀号」。');
     });
 
-    it('仅启用条目按 insertion_order 挂载，禁用条目与卡片信息不挂载', () => {
-        expect(result.mountedWorldbooks).toHaveLength(2);
-        expect(result.mountedWorldbooks[0].title).toBe('核心世界观'); // order 1
-        expect(result.mountedWorldbooks[1].title).toBe('飞艇设定');   // order 5
+    it('有内容的条目全部按 insertion_order 挂载（禁用条目挂载但 enabled=false），卡片信息不挂载', () => {
+        expect(result.mountedWorldbooks).toHaveLength(3);
+        expect(result.mountedWorldbooks.map(w => w.title)).toEqual(['核心世界观', '禁用条目', '飞艇设定']); // order 1, 2, 5
+        const disabled = result.worldbooks.find(w => w.title === '禁用条目')!;
+        expect(disabled.enabled).toBe(false);
     });
 
-    it('卡片信息条目包含创作者备注', () => {
+    it('工作字段映射：默认局部作用域，开关 / 位置 / 顺序来自原卡', () => {
+        const airship = result.worldbooks.find(w => w.title === '飞艇设定')!;
+        expect(airship.scope).toBe('local');
+        expect(airship.enabled).toBe(true);
+        expect(airship.position).toBe('after_char');
+        expect(airship.order).toBe(5);
+        const core = result.worldbooks.find(w => w.title === '核心世界观')!;
+        expect(core.position).toBe('before_char');
+        expect(core.order).toBe(1);
+    });
+
+    it('卡片信息条目包含创作者备注，默认关闭不进 prompt', () => {
         const info = result.worldbooks.find(w => w.title === '【卡片信息】小满')!;
         expect(info.content).toContain('作者: tester');
         expect(info.content).toContain('标签: 原创, 画家');
         expect(info.content).toContain('建议搭配低温度使用');
+        expect(info.enabled).toBe(false);
     });
 });
 
@@ -246,6 +259,17 @@ describe('兼容 ST World Info 对象映射格式的 character_book', () => {
                             order: 20,
                             disable: true,
                         },
+                        '2': {
+                            uid: 2,
+                            key: ['耳语'],
+                            comment: '深度耳语',
+                            content: '有人在耳边低语。',
+                            order: 30,
+                            disable: false,
+                            position: 4,
+                            role: 2,
+                            depth: 6,
+                        },
                     },
                 },
             },
@@ -260,9 +284,17 @@ describe('兼容 ST World Info 对象映射格式的 character_book', () => {
             insertionOrder: 10,
             position: 0,
         });
+        // WI 数值位 0 = before_char
+        expect(castle.position).toBe('before_char');
         const disabled = res.worldbooks.find(w => w.title === '已禁用')!;
         expect(disabled.stData?.entry?.enabled).toBe(false);
-        expect(res.mountedWorldbooks.map(w => w.title)).toEqual(['城堡']);
+        expect(disabled.enabled).toBe(false);
+        // @Depth(role=2 AI, depth=6) → depth_assistant
+        const whisper = res.worldbooks.find(w => w.title === '深度耳语')!;
+        expect(whisper.position).toBe('depth_assistant');
+        expect(whisper.depth).toBe(6);
+        // 有内容的条目（含禁用）全部挂载
+        expect(res.mountedWorldbooks.map(w => w.title)).toEqual(['城堡', '已禁用', '深度耳语']);
     });
 });
 

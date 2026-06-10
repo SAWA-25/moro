@@ -7,7 +7,7 @@
  * 纯函数、零依赖（手写 PNG chunk 解析），可在 node 测试环境直接跑。
  */
 
-import { CharacterProfile, Worldbook, WorldbookSTData } from '../types';
+import { CharacterProfile, Worldbook, WorldbookPosition, WorldbookSTData } from '../types';
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -34,6 +34,9 @@ interface STBookEntryNorm {
     priority?: number;
     position?: string | number;
     extensions?: Record<string, any>;
+    /** 映射到 Moro 的插入位置 / 深度（原始值仍保留在 position / extensions） */
+    moroPosition: WorldbookPosition;
+    moroDepth: number;
 }
 
 interface STBookNorm {
@@ -56,7 +59,11 @@ export interface STImportResult {
     avatarFallback: string;
     /** 需要写入全局世界书库的全部条目（含 ST 里禁用的条目和创作者备注） */
     worldbooks: Worldbook[];
-    /** 需要挂载到角色身上的条目（仅 ST 里启用且有内容的，按插入顺序排序） */
+    /**
+     * 需要挂载到角色身上的条目（有内容的全部条目，按插入顺序排序）。
+     * ST 里禁用的条目也在内（enabled=false 由注入时的条目开关拦截），
+     * 用户后续在世界书 App 打开开关即可生效。
+     */
     mountedWorldbooks: NonNullable<CharacterProfile['mountedWorldbooks']>;
 }
 
@@ -190,6 +197,27 @@ const makeFallbackAvatar = (seed: string): string => {
 // ---------------------------------------------------------------------------
 
 /**
+ * ST 位置 → Moro 位置映射。
+ * ST 数值位（world_info_position）：0=角色前 1=角色后 2/3=作者注释 4=@Depth 5/6=示例消息 7=outlet；
+ * @Depth 的 role：0=system 1=user 2=assistant。规范卡的真实位置在 extensions.position
+ * （字符串 position 只有 before_char/after_char 两档），ST 原生 WI 格式则直接在条目顶层。
+ * Moro 没有作者注释 / 示例消息锚点，2/3/5/6/7 一律降级为角色定义后。
+ */
+function resolveMoroPosition(rawPos: any, rawRole: any): WorldbookPosition {
+    if (typeof rawPos === 'number') {
+        if (rawPos === 0) return 'before_char';
+        if (rawPos === 4) {
+            if (rawRole === 1) return 'depth_user';
+            if (rawRole === 2) return 'depth_assistant';
+            return 'depth_system';
+        }
+        return 'after_char';
+    }
+    if (rawPos === 'before_char') return 'before_char';
+    return 'after_char';
+}
+
+/**
  * 兼容两种条目载体：
  * - 规范 V2/V3：entries 为数组，字段 keys / secondary_keys / insertion_order / enabled…
  * - ST 内部 World Info 形态：entries 为 { uid: entry } 映射，字段 key / keysecondary / order / disable…
@@ -204,22 +232,30 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
     list = list.filter(e => e && typeof e === 'object');
     if (list.length === 0) return null;
 
-    const entries: STBookEntryNorm[] = list.map(e => ({
-        id: e.id ?? e.uid,
-        name: strOrU(e.name),
-        comment: strOrU(e.comment),
-        keys: toStrArray(e.keys ?? e.key),
-        secondaryKeys: toStrArray(e.secondary_keys ?? e.keysecondary),
-        content: typeof e.content === 'string' ? e.content : '',
-        constant: !!e.constant,
-        selective: !!e.selective,
-        enabled: e.enabled !== undefined ? !!e.enabled : !e.disable,
-        insertionOrder: numOrU(e.insertion_order ?? e.order) ?? 100,
-        caseSensitive: boolOrU(e.case_sensitive ?? e.caseSensitive),
-        priority: numOrU(e.priority),
-        position: typeof e.position === 'string' || typeof e.position === 'number' ? e.position : undefined,
-        extensions: objOrU(e.extensions),
-    }));
+    const entries: STBookEntryNorm[] = list.map(e => {
+        // 规范卡：真实位置/角色/深度在 extensions；ST 原生 WI 格式：直接在条目顶层
+        const rawPos = e.extensions?.position ?? e.position;
+        const rawRole = e.extensions?.role ?? e.role;
+        const rawDepth = numOrU(e.extensions?.depth ?? e.depth);
+        return {
+            id: e.id ?? e.uid,
+            name: strOrU(e.name),
+            comment: strOrU(e.comment),
+            keys: toStrArray(e.keys ?? e.key),
+            secondaryKeys: toStrArray(e.secondary_keys ?? e.keysecondary),
+            content: typeof e.content === 'string' ? e.content : '',
+            constant: !!e.constant,
+            selective: !!e.selective,
+            enabled: e.enabled !== undefined ? !!e.enabled : !e.disable,
+            insertionOrder: numOrU(e.insertion_order ?? e.order) ?? 100,
+            caseSensitive: boolOrU(e.case_sensitive ?? e.caseSensitive),
+            priority: numOrU(e.priority),
+            position: typeof e.position === 'string' || typeof e.position === 'number' ? e.position : undefined,
+            extensions: objOrU(e.extensions),
+            moroPosition: resolveMoroPosition(rawPos, rawRole),
+            moroDepth: rawDepth ?? 4,
+        };
+    });
 
     return {
         name: strOrU(book.name),
@@ -242,8 +278,9 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
  * - description + personality + mes_example + 开场白 + system_prompt 等 → systemPrompt（分节拼接）
  * - scenario → worldview
  * - creator / character_version / tags → description（列表页一行摘要）
- * - creator_notes 及卡片元信息 → 一条**不挂载**的世界书（保留信息但不进 prompt）
- * - character_book → 全部条目导入世界书库；启用的条目按 insertion_order 挂载到角色
+ * - creator_notes 及卡片元信息 → 一条 enabled=false 的世界书（保留信息但不进 prompt）
+ * - character_book → 全部条目导入世界书库（默认局部作用域），有内容的条目按
+ *   insertion_order 挂载到角色；开关 / 位置(@Depth 含 role) / 顺序按原卡映射
  */
 export function convertSTCardToCharacter(
     parsed: ParsedSTCard,
@@ -317,6 +354,13 @@ export function convertSTCardToCharacter(
                 category,
                 createdAt: now,
                 updatedAt: now,
+                // 工作字段：导入的角色书默认「局部」，可在世界书 App 手动切全局；
+                // 开关 / 位置 / 深度 / 顺序按原卡映射（原始值另存 stData 备查）
+                enabled: entry.enabled,
+                scope: 'local',
+                position: entry.moroPosition,
+                depth: entry.moroPosition.startsWith('depth_') ? entry.moroDepth : undefined,
+                order: entry.insertionOrder,
                 source: 'sillytavern',
                 stData: {
                     ...bookMeta,
@@ -338,9 +382,10 @@ export function convertSTCardToCharacter(
                 },
             };
             worldbooks.push(wb);
-            // Moro 没有关键词扫描：启用且有内容的条目全部挂载（常驻与关键词条目同等对待），
-            // 禁用条目只入库不挂载，原 enabled 状态留在 stData 里
-            if (entry.enabled && content) {
+            // Moro 没有关键词扫描：有内容的条目全部挂载（常驻与关键词条目同等对待）。
+            // ST 里禁用的条目也挂载，但 enabled=false —— 注入时被条目开关拦下，
+            // 用户在世界书 App 里打开开关即可生效，无需重新挂载。
+            if (content) {
                 mountable.push({ wb, order: entry.insertionOrder });
             }
         });
@@ -381,6 +426,9 @@ export function convertSTCardToCharacter(
             category,
             createdAt: now,
             updatedAt: now,
+            // 创作者备注是给用户看的，默认关闭——即使整本书被挂载也不会进 prompt
+            enabled: false,
+            scope: 'local',
             source: 'sillytavern',
         });
     }

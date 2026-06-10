@@ -594,6 +594,21 @@ export interface WorldbookSTData {
     };
 }
 
+/**
+ * 世界书条目的插入位置（对齐 SillyTavern 的 position 语义）：
+ * - 'before_char'：角色定义（### 你的身份）之前
+ * - 'after_char'：角色定义之后（默认，即现有「扩展设定集」块的位置）
+ * - 'depth_system' / 'depth_user' / 'depth_assistant'：以指定 role 注入到聊天历史
+ *   倒数第 depth 条消息处（@Depth）。仅主聊天链路真正按深度插消息；
+ *   其他只产出单条 system prompt 的调用方会内联降级到 after_char 块。
+ */
+export type WorldbookPosition =
+    | 'before_char'
+    | 'after_char'
+    | 'depth_system'
+    | 'depth_user'
+    | 'depth_assistant';
+
 export interface Worldbook {
     id: string;
     title: string;
@@ -601,6 +616,24 @@ export interface Worldbook {
     category: string;
     createdAt: number;
     updatedAt: number;
+    /**
+     * 条目开关：false = 关闭（任何场景都不注入）。undefined 视为 true（向后兼容）。
+     * 整本书的开关不存在条目上 —— 按 category 存在 localStorage
+     * （见 utils/worldbookRuntime.ts 的 GROUP_TOGGLES_KEY）。
+     */
+    enabled?: boolean;
+    /**
+     * 作用域：
+     * - 'local'（默认）：仅当角色在神经链接「扩展设定」里挂载后才注入
+     * - 'global'：任意角色任意消息都注入（仍尊重条目/整书开关），无需挂载
+     */
+    scope?: 'local' | 'global';
+    /** 插入位置，undefined = 'after_char' */
+    position?: WorldbookPosition;
+    /** position 为 depth_* 时的注入深度（倒数第几条消息前），默认 4（同 ST） */
+    depth?: number;
+    /** 同一位置内的插入顺序，小的在前（同 ST 的最终生效顺序），默认 100 */
+    order?: number;
     /** 'sillytavern' = 从 SillyTavern 角色卡导入的条目 */
     source?: 'sillytavern';
     /** SillyTavern 原始设定信息（仅 source === 'sillytavern' 时存在） */
