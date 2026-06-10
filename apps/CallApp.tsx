@@ -462,6 +462,20 @@ const CallApp: React.FC = () => {
       clearSuspendedCall();
     }
   }, [suspendedCall]);
+  // 电话 App 拨号跳转：读取并消费 sessionStorage 握手键，直接选中角色并接通。
+  // 有挂起通话时优先恢复（上面的 effect），不抢占；键不存在时行为与原来完全一致。
+  useEffect(() => {
+    try {
+      const dialCharId = sessionStorage.getItem('moro_phone_dial_char_id');
+      if (!dialCharId) return;
+      sessionStorage.removeItem('moro_phone_dial_char_id');
+      if (suspendedCall) return;
+      const target = characters.find(c => c.id === dialCharId);
+      if (!target) return;
+      setSelectedCharId(target.id);
+      setViewMode('in-call');
+    } catch { /* sessionStorage 不可用时静默忽略 */ }
+  }, []);
   useEffect(() => () => {
     if (currentBlobUrlRef.current) {
       URL.revokeObjectURL(currentBlobUrlRef.current);

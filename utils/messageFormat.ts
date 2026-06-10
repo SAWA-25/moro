@@ -25,13 +25,26 @@ export function normalizeMessageContent(
     // 纯视觉/音频类：给个占位，别让 URL / base64 污染 LLM 上下文
     if (type === 'image') return '[图片]';
     if (type === 'emoji') return '[表情包]';
-    if (type === 'voice') return '[语音]';
+    if (type === 'voice') {
+        // 用户录音消息带实时转写（Web Speech API）时把文字带上，否则只留占位
+        const transcript = typeof msg.metadata?.transcript === 'string' ? msg.metadata.transcript.trim() : '';
+        return transcript ? `[语音消息] ${transcript}` : '[语音]';
+    }
+
+    // 位置分享：content 是地点名，metadata.address 是补充描述
+    if (type === 'location') {
+        const address = typeof msg.metadata?.address === 'string' ? msg.metadata.address.trim() : '';
+        return `[位置分享] ${msg.content || '未知地点'}${address ? `（${address}）` : ''}`;
+    }
 
     // 系统交互事件
     if (type === 'interaction') return `[系统: ${userName}戳了${charName}一下]`;
     if (type === 'transfer') {
         const amt = msg.metadata?.amount;
-        return amt !== undefined ? `[系统: ${userName}转账 ${amt}]` : `[系统: ${userName}转账]`;
+        const isRedPacket = msg.metadata?.kind === 'redpacket';
+        const note = typeof msg.metadata?.note === 'string' && msg.metadata.note.trim() ? `，附言「${msg.metadata.note.trim()}」` : '';
+        if (isRedPacket) return `[系统: ${userName}发了一个红包${amt !== undefined ? ` ${amt}` : ''}${note}]`;
+        return amt !== undefined ? `[系统: ${userName}转账 ${amt}${note}]` : `[系统: ${userName}转账${note}]`;
     }
 
     // 结算卡：几种 app 产生，用字段逐一翻成自然文本
@@ -171,7 +184,9 @@ export function formatMessageWithTime(
  */
 export function isMessageSemanticallyRelevant(msg: Message): boolean {
     const type = msg.type as string;
-    if (type === 'image' || type === 'emoji' || type === 'voice') return false;
+    if (type === 'image' || type === 'emoji') return false;
+    // 语音：只有带转写文字的（用户录音）才有语义价值
+    if (type === 'voice') return !!(typeof msg.metadata?.transcript === 'string' && msg.metadata.transcript.trim());
     // 有内容或有结构化 metadata 才算
     return !!(msg.content?.trim() || msg.metadata?.scoreCard || msg.metadata?.amount || msg.metadata?.song || msg.metadata?.trpg);
 }

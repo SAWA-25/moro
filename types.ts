@@ -37,6 +37,8 @@ export enum AppID {
   HotNews = 'hot_news', // 热点 — 分时段召回的多平台热榜可视化（决定角色可能聊起的话题）
   VRWorld = 'vrworld', // 彼方 — 角色自主登入的虚拟世界（定时驱动，房间里看小说/听歌/留言，产出活动卡注入聊天+记忆）
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
+  Phone = 'phone', // 电话 — 拨号键盘 / 通话记录（拨出·接听·未接）/ 通话录音回放与逐字稿
+  ExchangeDiary = 'exchange_diary', // 日记社 — 多角色交换日记本（角色视角日记 + 每日对话总结）
 }
 
 export interface SystemLog {
@@ -2015,7 +2017,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice';
 
 export interface Message {
     id: number;
@@ -2031,6 +2033,55 @@ export interface Message {
         content: string;
         name: string;
     };
+}
+
+/** 电话 App：一条通话记录（拨出 / 接听 / 未接）。
+ *  与 CallApp 的通话消息（metadata.callSessionId）互补：CallApp 落详细逐字稿，
+ *  这里只落"通话发生过"的轻量条目，供电话 App 的通话记录列表展示与回拨。 */
+export interface PhoneCallLog {
+    id: string;
+    charId?: string;        // 已知角色时关联；手动拨陌生号码时为空
+    name: string;           // 显示名（角色名或号码本身）
+    number: string;         // 虚拟号码（角色号码由 charId 确定性生成）
+    direction: 'outgoing' | 'incoming' | 'missed';
+    timestamp: number;
+    durationSec: number;    // 未接 = 0
+    sessionId?: string;     // 关联 CallApp 的 callSessionId（有录音/逐字稿时可跳转）
+}
+
+/** 日记社：一篇日记（用户或角色视角） */
+export interface ExchangeDiaryEntry {
+    id: string;
+    author: 'user' | 'char';
+    charId: string;         // author === 'char' 时为角色 id；user 篇记录"写给谁看"的当前活跃角色
+    authorName: string;
+    avatar?: string;
+    mood?: string;          // sunny / rainy / starry / cozy / wild
+    seals?: string[];       // secret / gratitude / courage / dream / routine
+    content: string;
+    date: string;           // YYYY-MM-DD
+    timestamp: number;
+    isSummary?: boolean;    // 由"今日对话总结"自动生成的篇目
+}
+
+/** 日记社：一本多角色共写的交换日记本 */
+export interface ExchangeDiaryBook {
+    id: string;
+    title: string;
+    charIds: string[];      // 参与的角色
+    activeCharId: string;   // 当前对话/回应的角色
+    paperStyle?: string;    // plain / grid / lined / pink / dark
+    entries: ExchangeDiaryEntry[];
+    createdAt: number;
+    updatedAt: number;
+}
+
+/** 偷看心声：一次"窥探角色内心"的生成结果（角色不知情，不进聊天上下文） */
+export interface InnerVoiceEntry {
+    id: string;
+    charId: string;
+    content: string;
+    timestamp: number;
 }
 
 export interface EmojiCategory {
@@ -2093,7 +2144,10 @@ export interface FullBackupData {
     vrSettings?: any[];                        // 彼方设置（独立 API + 调用记录）
     vrPostOffice?: Record<string, string>;     // 邮局本机配置：身份 deviceId / 后端地址（存 localStorage）
     songs?: SongSheet[]; // Songwriting app data
-    
+    phoneCallLogs?: PhoneCallLog[];           // 电话 App 通话记录
+    exchangeDiaryBooks?: ExchangeDiaryBook[]; // 日记社多角色交换日记本
+    innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
+
     // Bank Data
     bankState?: BankFullState;
     bankDollhouse?: DollhouseState;

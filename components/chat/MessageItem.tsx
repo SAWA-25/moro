@@ -6,6 +6,93 @@ import { Message, ChatTheme } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import McdCard from './McdCard';
 
+/** 用户录音语音条：metadata.voiceAudio 存 data URI，自带播放器（与 AI 的 TTS 语音条独立）。 */
+const UserVoiceBubble: React.FC<{
+    audioSrc?: string;
+    durationSec?: number;
+    transcript?: string;
+    isUser: boolean;
+}> = ({ audioSrc, durationSec, transcript, isUser }) => {
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [showText, setShowText] = useState(false);
+
+    const togglePlay = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!audioSrc) return;
+        if (!audioRef.current) {
+            audioRef.current = new Audio(audioSrc);
+            audioRef.current.onended = () => setIsPlaying(false);
+            audioRef.current.onerror = () => setIsPlaying(false);
+        }
+        if (isPlaying) {
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            setIsPlaying(false);
+        } else {
+            audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+        }
+    };
+
+    const accent = isUser ? '#10b981' : '#64748b';
+    return (
+        <div className="max-w-[260px]">
+            <div
+                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl select-none"
+                style={{
+                    background: isPlaying ? 'linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(52,211,153,0.08) 100%)' : 'linear-gradient(135deg, rgba(0,0,0,0.03) 0%, rgba(0,0,0,0.06) 100%)',
+                    border: isPlaying ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(0,0,0,0.05)',
+                }}
+            >
+                <button
+                    onClick={togglePlay}
+                    disabled={!audioSrc}
+                    className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center active:scale-[0.92] transition-transform ${!audioSrc ? 'opacity-40' : ''}`}
+                    style={{ backgroundColor: isPlaying ? accent : 'rgba(148,163,184,0.2)' }}
+                >
+                    {isPlaying ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white"><path d="M5.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75A.75.75 0 0 0 7.25 3h-1.5ZM12.75 3a.75.75 0 0 0-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 .75-.75V3.75a.75.75 0 0 0-.75-.75h-1.5Z" /></svg>
+                    ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={accent} className="w-3 h-3 ml-0.5"><path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" /></svg>
+                    )}
+                </button>
+                <div className="flex-1 flex items-center gap-[3px] h-5 overflow-hidden">
+                    {[4, 10, 6, 14, 8, 12, 5, 11, 7, 13, 4, 9, 6, 11, 5, 8].map((h, i) => (
+                        <div
+                            key={i}
+                            className={`w-[2.5px] rounded-full ${isPlaying ? 'animate-pulse' : ''}`}
+                            style={{
+                                height: isPlaying ? `${h}px` : `${Math.max(2, h * 0.4)}px`,
+                                backgroundColor: isPlaying ? accent : `rgba(148, 163, 184, ${0.25 + (h / 14) * 0.35})`,
+                                animationDelay: `${i * 60}ms`,
+                            }}
+                        />
+                    ))}
+                </div>
+                {typeof durationSec === 'number' && durationSec > 0 && (
+                    <span className="text-[10px] shrink-0 text-slate-400">{durationSec}″</span>
+                )}
+                {transcript && (
+                    <div
+                        className={`shrink-0 ml-0.5 px-1.5 py-0.5 rounded-lg text-[9px] font-medium cursor-pointer ${showText ? 'ring-1 ring-current/20' : ''}`}
+                        style={{ color: 'rgba(100,116,139,0.7)', backgroundColor: showText ? 'rgba(0,0,0,0.08)' : 'rgba(0,0,0,0.04)' }}
+                        onClick={(e) => { e.stopPropagation(); setShowText(v => !v); }}
+                    >
+                        {showText ? '收起' : '转文字'}
+                    </div>
+                )}
+            </div>
+            {showText && transcript && (
+                <div className="mt-1.5 px-3 py-2 rounded-xl text-[11px] leading-relaxed whitespace-pre-wrap"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.02)', color: '#475569', border: '1px solid rgba(0,0,0,0.04)' }}
+                >
+                    {transcript}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // 思考链卡片支持的 4 种风格预设 — 同时被 MessageItem 与 ThinkingChainSettingsModal 复用
 export type ThinkingChainStyleId = 'echo' | 'whisper' | 'minimal' | 'custom';
 export interface ThinkingChainStyleSpec {
@@ -1895,6 +1982,63 @@ const MessageItem = React.memo(({
             );
         }
 
+    }
+
+    if (m.type === 'voice') {
+        return commonLayout(
+            <UserVoiceBubble
+                audioSrc={m.metadata?.voiceAudio}
+                durationSec={m.metadata?.durationSec}
+                transcript={m.metadata?.transcript}
+                isUser={isUser}
+            />
+        );
+    }
+
+    if (m.type === 'location') {
+        const address = typeof m.metadata?.address === 'string' ? m.metadata.address : '';
+        return commonLayout(
+            <div className="w-64 bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 active:scale-[0.98] transition-transform">
+                {/* 仿地图头图：网格 + 中心定位针（本地虚拟手机，不接真实地图服务） */}
+                <div className="h-24 relative bg-gradient-to-br from-emerald-50 to-sky-100"
+                    style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(100,116,139,0.08) 0 1px, transparent 1px 18px), repeating-linear-gradient(90deg, rgba(100,116,139,0.08) 0 1px, transparent 1px 18px)' }}
+                >
+                    <div className="absolute left-0 right-0 top-9 h-2.5 bg-amber-200/60 -rotate-6" />
+                    <div className="absolute top-2 bottom-2 left-16 w-2 bg-sky-200/70 rotate-12" />
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#ef4444" className="w-8 h-8 drop-shadow-md"><path fillRule="evenodd" d="m11.54 22.351.07.04.028.016a.76.76 0 0 0 .723 0l.028-.015.071-.041a16.975 16.975 0 0 0 1.144-.742 19.58 19.58 0 0 0 2.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 0 0-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 0 0 2.682 2.282 16.975 16.975 0 0 0 1.145.742ZM12 13.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clipRule="evenodd" /></svg>
+                    </div>
+                </div>
+                <div className="p-3">
+                    <div className="font-bold text-sm text-slate-800 truncate">{m.content || '位置'}</div>
+                    {address && <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{address}</div>}
+                    <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-1 text-[10px] text-emerald-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 1.04.572l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd" /></svg>
+                        位置分享
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
+        // 红包卡片：Kakao Pay 风格（亮黄底 + 深棕文字）
+        const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';
+        return commonLayout(
+            <div className="w-64 rounded-2xl p-4 shadow-lg relative overflow-hidden active:scale-[0.98] transition-transform" style={{ background: 'linear-gradient(135deg, #ffeb00 0%, #ffd900 100%)', color: '#3c1e1e' }}>
+                <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full" style={{ backgroundColor: 'rgba(60,30,30,0.08)' }} />
+                <div className="absolute -bottom-6 -left-2 w-16 h-16 rounded-full" style={{ backgroundColor: 'rgba(60,30,30,0.06)' }} />
+                <div className="flex items-center gap-2 mb-3 relative">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-[13px]" style={{ backgroundColor: '#3c1e1e', color: '#ffeb00' }}>K</div>
+                    <span className="font-bold text-[13px] opacity-90">Kakao Pay 红包</span>
+                </div>
+                <div className="relative">
+                    <div className="text-[13px] font-medium opacity-80 mb-1.5 truncate">「{note}」</div>
+                    <div className="text-2xl font-black tracking-tight">₩ {m.metadata?.amount}</div>
+                    <div className="text-[10px] opacity-60 mt-1.5">{isUser ? `发给${charName}的红包` : '发给你的红包 · 点开收下'}</div>
+                </div>
+            </div>
+        );
     }
 
     if (m.type === 'transfer') {
