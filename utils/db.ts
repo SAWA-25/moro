@@ -7,12 +7,13 @@ import {
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
-    VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter
+    VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
+    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 62; // Bumped: v62 add messages [charId, type] 复合索引（彼方动态按 vr_card 直取，免 getAll 整段聊天史）
+const DB_VERSION = 63; // Bumped: v63 新增 phone_call_logs（电话App通话记录）/ exchange_diary_books（日记社）/ inner_voices（偷看心声）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -59,6 +60,9 @@ const STORE_VR_PRESETS = 'vr_presets';            // 剧院·用户自定义写�
 const STORE_VR_LETTERS = 'vr_letters';            // 邮局信件（本地存档 + 待寄出/待回复队列）
 const STORE_VR_SETTINGS = 'vr_settings';          // 彼方设置单例：独立 API（id='api'）+ 调用记录（id='apilog'）
 const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 调用记录单例（id='log'，保留近 5 天）
+const STORE_PHONE_CALL_LOGS = 'phone_call_logs';  // 电话 App 通话记录（拨出/接听/未接，轻量条目）
+const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交换日记本（entries 内联在 book 里）
+const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-char，不进聊天上下文）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
@@ -404,6 +408,18 @@ export const openDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains('pixel_home_layouts')) {
           const phlStore = db.createObjectStore('pixel_home_layouts', { keyPath: ['charId', 'roomId'] });
           phlStore.createIndex('charId', 'charId', { unique: false });
+      }
+
+      // ─── v63: 电话 App / 日记社 / 偷看心声 ───────────────
+      if (!db.objectStoreNames.contains(STORE_PHONE_CALL_LOGS)) {
+          const pclStore = db.createObjectStore(STORE_PHONE_CALL_LOGS, { keyPath: 'id' });
+          pclStore.createIndex('charId', 'charId', { unique: false });
+          pclStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      createStore(STORE_EXCHANGE_DIARY, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_INNER_VOICES)) {
+          const ivStore = db.createObjectStore(STORE_INNER_VOICES, { keyPath: 'id' });
+          ivStore.createIndex('charId', 'charId', { unique: false });
       }
     };
   });
@@ -1182,6 +1198,81 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_DIARIES, 'readwrite');
       transaction.objectStore(STORE_DIARIES).delete(id);
+  },
+
+  // --- 电话 App：通话记录 ---
+  savePhoneCallLog: async (log: PhoneCallLog): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_PHONE_CALL_LOGS, 'readwrite').objectStore(STORE_PHONE_CALL_LOGS).put(log);
+  },
+
+  getAllPhoneCallLogs: async (): Promise<PhoneCallLog[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const request = db.transaction(STORE_PHONE_CALL_LOGS, 'readonly').objectStore(STORE_PHONE_CALL_LOGS).getAll();
+          request.onsuccess = () => {
+              const logs: PhoneCallLog[] = request.result || [];
+              resolve(logs.sort((a, b) => b.timestamp - a.timestamp));
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  deletePhoneCallLog: async (id: string): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_PHONE_CALL_LOGS, 'readwrite').objectStore(STORE_PHONE_CALL_LOGS).delete(id);
+  },
+
+  clearPhoneCallLogs: async (): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_PHONE_CALL_LOGS, 'readwrite').objectStore(STORE_PHONE_CALL_LOGS).clear();
+  },
+
+  // --- 日记社：多角色交换日记本 ---
+  saveExchangeDiaryBook: async (book: ExchangeDiaryBook): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_EXCHANGE_DIARY, 'readwrite').objectStore(STORE_EXCHANGE_DIARY).put(book);
+  },
+
+  getAllExchangeDiaryBooks: async (): Promise<ExchangeDiaryBook[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const request = db.transaction(STORE_EXCHANGE_DIARY, 'readonly').objectStore(STORE_EXCHANGE_DIARY).getAll();
+          request.onsuccess = () => {
+              const books: ExchangeDiaryBook[] = request.result || [];
+              resolve(books.sort((a, b) => b.updatedAt - a.updatedAt));
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  deleteExchangeDiaryBook: async (id: string): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_EXCHANGE_DIARY, 'readwrite').objectStore(STORE_EXCHANGE_DIARY).delete(id);
+  },
+
+  // --- 偷看心声 ---
+  saveInnerVoice: async (entry: InnerVoiceEntry): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_INNER_VOICES, 'readwrite').objectStore(STORE_INNER_VOICES).put(entry);
+  },
+
+  getInnerVoicesByCharId: async (charId: string): Promise<InnerVoiceEntry[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const index = db.transaction(STORE_INNER_VOICES, 'readonly').objectStore(STORE_INNER_VOICES).index('charId');
+          const request = index.getAll(IDBKeyRange.only(charId));
+          request.onsuccess = () => {
+              const entries: InnerVoiceEntry[] = request.result || [];
+              resolve(entries.sort((a, b) => b.timestamp - a.timestamp));
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  deleteInnerVoice: async (id: string): Promise<void> => {
+      const db = await openDB();
+      db.transaction(STORE_INNER_VOICES, 'readwrite').objectStore(STORE_INNER_VOICES).delete(id);
   },
 
   getAllTasks: async (): Promise<Task[]> => {
@@ -2095,7 +2186,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings] = await Promise.all([
+      const [characters, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_THEMES),
@@ -2139,6 +2230,9 @@ export const DB = {
           getAllFromStore(STORE_VR_PRESETS),
           getAllFromStore(STORE_VR_LETTERS),
           getAllFromStore(STORE_VR_SETTINGS),
+          getAllFromStore(STORE_PHONE_CALL_LOGS),
+          getAllFromStore(STORE_EXCHANGE_DIARY),
+          getAllFromStore(STORE_INNER_VOICES),
       ]);
 
       const userProfile = userProfiles.length > 0 ? {
@@ -2177,6 +2271,9 @@ export const DB = {
           vrLetters,
           vrSettings,
           vrPostOffice: exportPostOfficeLocal(), // 邮局本机配置（身份/后端地址，存 localStorage）
+          phoneCallLogs,
+          exchangeDiaryBooks,
+          innerVoices,
       };
   },
 
@@ -2214,7 +2311,8 @@ export const DB = {
           STORE_HOTNEWS,
           STORE_VR_NOVELS, STORE_VR_ANNOTATIONS, STORE_CC_PARTS, STORE_VR_MUSIC, STORE_VR_GUESTBOOK, STORE_VR_SCRIPTS, STORE_VR_PLAYS, STORE_VR_PRESETS, STORE_VR_LETTERS, STORE_VR_SETTINGS,
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
-          'memory_batches', 'pixel_home_assets', 'pixel_home_layouts'
+          'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
+          STORE_PHONE_CALL_LOGS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES
       ].filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);
@@ -2303,6 +2401,9 @@ export const DB = {
           data.pixelHomeLayouts !== undefined,
           data.userProfile !== undefined,
           data.bankState !== undefined || data.bankDollhouse !== undefined,
+          data.phoneCallLogs !== undefined,
+          data.exchangeDiaryBooks !== undefined,
+          data.innerVoices !== undefined,
       ];
       const sectionTotal = Math.max(1, plannedSections.filter(Boolean).length);
       let sectionDone = 0;
@@ -2492,6 +2593,18 @@ export const DB = {
           await clearAndAdd(STORE_TASKS, data.tasks, '任务', false);
           data.tasks = undefined as any;
       }, data.tasks?.length || 0);
+      await runSection('通话记录', data.phoneCallLogs !== undefined, async () => {
+          await clearAndAdd(STORE_PHONE_CALL_LOGS, data.phoneCallLogs, '通话记录', false);
+          data.phoneCallLogs = undefined as any;
+      }, data.phoneCallLogs?.length || 0);
+      await runSection('日记社', data.exchangeDiaryBooks !== undefined, async () => {
+          await clearAndAdd(STORE_EXCHANGE_DIARY, data.exchangeDiaryBooks, '日记社', false);
+          data.exchangeDiaryBooks = undefined as any;
+      }, data.exchangeDiaryBooks?.length || 0);
+      await runSection('偷看心声', data.innerVoices !== undefined, async () => {
+          await clearAndAdd(STORE_INNER_VOICES, data.innerVoices, '偷看心声', false);
+          data.innerVoices = undefined as any;
+      }, data.innerVoices?.length || 0);
       await runSection('纪念日', data.anniversaries !== undefined, async () => {
           await clearAndAdd(STORE_ANNIVERSARIES, data.anniversaries, '纪念日', false);
           data.anniversaries = undefined as any;
