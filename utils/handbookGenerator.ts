@@ -152,7 +152,7 @@ function renderOccupiedBlock(occupied: PlacementHint[]): string {
         byPage[k].push(o);
     }
     const lines: string[] = [`【已被占用 — 你必须避开这些区域, 留 ≥ 3% 间距】`];
-    for (const k of Object.keys(byPage).sort()) {
+    for (const k of Object.keys(byPage).sort((a, b) => Number(a) - Number(b))) {
         const items = byPage[Number(k)];
         lines.push(`page ${k}:`);
         for (const o of items) {

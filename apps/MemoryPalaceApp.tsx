@@ -1980,7 +1980,7 @@ export default function MemoryPalaceApp() {
 
     // ─── 未启用记忆宫殿 ─────────────────────────────────
 
-    if (!char!.memoryPalaceEnabled && view !== 'globalSettings') {
+    if (view !== 'globalSettings' && !char!.memoryPalaceEnabled) {
         return (
             <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto' }}>
                 <div

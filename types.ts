@@ -1555,6 +1555,8 @@ export interface CharacterProfile {
    * 与全局脚本（正则 App「全局」标签，localStorage）叠加生效，全局在前。
    */
   regexScripts?: RegexScriptData[];
+  /** 日程卡片/桌面小组件的主题色相（HSL hue 0~360），未设置时取默认紫 260 */
+  themeColor?: number;
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];
