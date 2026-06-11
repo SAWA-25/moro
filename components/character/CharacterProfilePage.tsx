@@ -233,8 +233,16 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar">
-                {/* 基本信息：微信号/地区/签名首次生成后固定展示 */}
-                <div className="px-6 pt-2 pb-6 flex items-start gap-4">
+                {/* 基本信息：微信号/地区/签名首次生成后固定展示；
+                    会话设置「身份卡画板」作为顶部背景 */}
+                <div
+                    className="px-6 pt-2 pb-6 flex items-start gap-4 relative"
+                    style={char.convoSettings?.idCardImage ? {
+                        backgroundImage: `linear-gradient(rgba(237,237,237,0.55), rgba(237,237,237,0.88)), url(${char.convoSettings.idCardImage})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                    } : undefined}
+                >
                     <img
                         src={char.avatar}
                         alt={char.name}

@@ -199,6 +199,47 @@ export const ContextBuilder = {
             context += `- 设定/备注: ${user.bio || '无'}\n\n`;
         }
 
+        // 3b. 会话设定 (Conversation Settings) — 聊天设置面板里的本会话行为配置
+        // 群聊场景（skipUserProfile）下跳过：这些是单聊专属语义
+        if (!groupOptions?.skipUserProfile) {
+            const cs = char.convoSettings;
+            if (cs) {
+                const lines: string[] = [];
+                if (cs.userNickname?.trim()) {
+                    lines.push(`- 你对${user.name}的备注/称呼是「${cs.userNickname.trim()}」，平时聊天就这么称呼TA。`);
+                }
+                if (cs.region?.trim()) {
+                    lines.push(`- 你目前所在地区：${cs.region.trim()}。作息、时差、天气、日常话题都应贴合此地区。`);
+                }
+                if (cs.narrationMode) {
+                    lines.push(`- 旁白模式：开启。除了对话，你可以单独发出以（）包裹的动作/场景旁白消息，描写你此刻的动作、神态与环境。`);
+                }
+                if (cs.autoOffline) {
+                    lines.push(`- 自动线下：开启。当对话自然发展到见面、同处一地的情境时，自动切换为线下面对面模式——以对话+动作旁白推进现场互动，直到场景结束再回到线上聊天。`);
+                }
+                if (cs.bubbleStyleMode === 'whole') {
+                    lines.push(`- 发消息习惯：完整段落。把要说的话组织成一条完整的消息发出，不拆散。`);
+                } else if (cs.bubbleStyleMode === 'split') {
+                    lines.push(`- 发消息习惯：碎片短句。像真人发消息一样，把回复拆成多条简短消息逐条发出。`);
+                }
+                if (cs.emojiAssociation) {
+                    lines.push(`- 表情联想：开启。你可以在情绪合适的时机联想并发送表情包，让聊天更生动。`);
+                }
+                if (cs.proactiveLookup) {
+                    lines.push(`- 主动查询：开启。你开口前会先留意当前时间、天气、热点等实时信息，把它们自然融进话题。`);
+                }
+                if (cs.allowPhoneBrowse) {
+                    lines.push(`- 看手机：被允许。你可以自然提及用户手机里的公开动态（日程、朋友圈、在听的歌等），就像翻过TA的手机一样。`);
+                }
+                if (cs.momentsAutoPost && cs.momentsAutoPost !== 'off') {
+                    lines.push(`- 朋友圈习惯：你有空时会随手发朋友圈记录生活，聊天中可以提到你刚发/想发的动态。`);
+                }
+                if (lines.length > 0) {
+                    context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
+                }
+            }
+        }
+
         // 4. [NEW] 印象档案 (Private Impression)
         // 这是角色对用户的私密看法，只有角色知道
         const imp = normalizeUserImpression(char.impression);

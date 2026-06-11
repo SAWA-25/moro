@@ -18,6 +18,7 @@ import ChatHeader from '../components/chat/ChatHeaderShell';
 import CharacterEntryTransition from '../components/chat/CharacterEntryTransition';
 import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import ChatInputArea from '../components/chat/ChatInputArea';
+import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
@@ -255,7 +256,7 @@ const Chat: React.FC = () => {
         setMessages,
         realtimeConfig,
         translationConfig: translationEnabled
-            ? { enabled: true, sourceLang: translateSourceLang, targetLang: translateTargetLang }
+            ? { enabled: true, sourceLang: translateSourceLang, targetLang: translateTargetLang, style: char?.convoSettings?.translateStyle }
             : undefined,
         memoryPalaceConfig,
         mcdMiniAppRef,
@@ -1101,7 +1102,16 @@ const Chat: React.FC = () => {
             }
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
-            case 'inner-voice': setShowPanel('none'); openInnerVoiceModal(); break;
+            case 'inner-voice': {
+                setShowPanel('none');
+                // 会话设置「心声手记」开关：关闭后不可偷看心声
+                if (char?.convoSettings?.innerVoiceEnabled === false) {
+                    addToast('心声手记已在聊天设置中关闭', 'info');
+                    break;
+                }
+                openInnerVoiceModal();
+                break;
+            }
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
         }
     };
@@ -2176,6 +2186,52 @@ ${recent || '（你们还没怎么聊过）'}
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(() => handleSendText(), [char, input, replyTarget]);
     const handleCharSelectCallback = useCallback((id: string) => { setActiveCharacterId(id); setShowPanel('none'); }, []);
+
+    // ── 会话设置（聊天设置面板）派生值：备注名 / 头像覆盖 / 时间戳等 ──
+    const convo = char?.convoSettings;
+    const displayCharName = convo?.remarkName?.trim() || char?.name || '';
+    const displayCharAvatar = convo?.charAvatarOverride || char?.avatar || '';
+    const displayUserAvatar = convo?.userAvatarOverride || userProfile.avatar;
+    const headerChar = useMemo(
+        () => (char && (displayCharName !== char.name || displayCharAvatar !== char.avatar))
+            ? { ...char, name: displayCharName, avatar: displayCharAvatar }
+            : char,
+        [char, displayCharName, displayCharAvatar]
+    );
+    // 表情分类条数统计（会话设置「表情分类总览」用）
+    const emojiCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        for (const e of emojis) {
+            const k = e.categoryId || 'default';
+            counts[k] = (counts[k] || 0) + 1;
+        }
+        return counts;
+    }, [emojis]);
+
+    // 导出聊天记录（会话设置 06 数据）
+    const handleExportChat = () => {
+        if (!char) return;
+        try {
+            const source = (allHistoryMessages && allHistoryMessages.length > 0) ? allHistoryMessages : messages;
+            const data = {
+                type: 'moro_chat_export',
+                character: { id: char.id, name: char.name },
+                exportedAt: new Date().toISOString(),
+                count: source.length,
+                messages: source,
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `moro_chat_${char.name}_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            addToast('聊天记录已导出', 'success');
+        } catch {
+            addToast('导出失败', 'error');
+        }
+    };
     // 兜底：正常情况下 OSContext 启动时一定会保底一个角色，char 不该为空。
     // 但若 init 期间某个 store 读取失败（数据其实还在 IndexedDB 里），characters 可能暂时为空，
     // 此时下面 char.chatBackground 会直接抛 "undefined is not an object" 把整个 App 崩到错误页。
@@ -2244,6 +2300,13 @@ ${recent || '（你们还没怎么聊过）'}
              {/* 白框自定义 CSS：全局默认在前、角色专属在后（后者叠加覆盖）。作用于 .moro-chat-* 各零件。 */}
              {osTheme.chatChromeCustomCss && <style>{osTheme.chatChromeCustomCss}</style>}
              {char.chromeCustomCss && <style>{char.chromeCustomCss}</style>}
+             {/* 会话设置「背景图」：顶栏背景 / 底部输入栏背景，走 .moro-chat-* 白框钩子注入 */}
+             {(convo?.headerBgImage || convo?.inputBarImage) && (
+               <style>{[
+                   convo?.headerBgImage ? `.moro-chat-header{background-image:url(${convo.headerBgImage}) !important;background-size:cover !important;background-position:center !important;}` : '',
+                   convo?.inputBarImage ? `.moro-chat-inputbar{background-image:url(${convo.inputBarImage}) !important;background-size:cover !important;background-position:center !important;}` : '',
+               ].filter(Boolean).join('\n')}</style>
+             )}
              {/* 守护样式（注在用户 CSS 之后）：保证返回键永远可见可点 —— 防止坏 CSS 把它隐藏/变透明/拦截点击，
                  让用户在样式写崩时仍能退出聊天（再去「外观→聊天界面→一键还原」清掉坏 CSS）。不锁位置，正常挪位仍可用。 */}
              {(osTheme.chatChromeCustomCss || char.chromeCustomCss) && (
@@ -2253,8 +2316,8 @@ ${recent || '（你们还没怎么聊过）'}
              {showEntry && char && (
                <CharacterEntryTransition
                  key={activeCharacterId}
-                 name={char.name}
-                 avatar={char.avatar}
+                 name={displayCharName}
+                 avatar={displayCharAvatar}
                  onDone={() => setShowEntry(false)}
                />
              )}
@@ -2564,7 +2627,7 @@ ${recent || '（你们还没怎么聊过）'}
                 selectionMode={selectionMode}
                 selectedCount={selectedMsgIds.size + Array.from(selectedThinkingMsgIds).filter(id => !selectedMsgIds.has(id)).length}
                 onCancelSelection={() => { setSelectionMode(false); setSelectedMsgIds(new Set()); setSelectedThinkingMsgIds(new Set()); }}
-                activeCharacter={char}
+                activeCharacter={headerChar}
                 isTyping={isTyping}
                 isSummarizing={isSummarizing}
                 isEmotionEvaluating={emotionStatus === 'evaluating'}
@@ -2592,6 +2655,21 @@ ${recent || '（你们还没怎么聊过）'}
                 chromeStyle={osTheme.chatChromeStyle}
                 hideBuffs={osTheme.chatHideHeaderBuffs}
              />
+
+            {/* 会话设置「顶部贴边」：顶栏下方装饰横条（不占布局，浮在消息区顶部） */}
+            {convo?.headerEdgeImage && (
+                <div className="relative z-20 h-0 pointer-events-none">
+                    <img src={convo.headerEdgeImage} alt="" className="absolute top-0 left-0 w-full h-6 object-cover" />
+                </div>
+            )}
+            {/* 会话设置「顶栏装饰文案」：顶栏下方居中小胶囊 */}
+            {convo?.headerDecorText && !selectionMode && (
+                <div className="relative z-20 h-0 flex justify-center pointer-events-none">
+                    <div className="absolute top-2 px-3 py-1 rounded-full bg-white/85 backdrop-blur border border-slate-200/80 shadow-sm text-[10px] font-bold text-slate-500 max-w-[70%] truncate">
+                        {convo.headerDecorText}
+                    </div>
+                </div>
+            )}
 
             {/* 认知消化结果弹窗 — 全屏玻璃拟态 */}
             {lastDigestResult && (() => {
@@ -2710,7 +2788,16 @@ ${recent || '（你们还没怎么聊过）'}
                 );
             })()}
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
+            {/* 会话设置「角色立绘」：galgame 式半透明立绘，垫在消息气泡之下、背景之上 */}
+            {convo?.spriteImage && (
+                <img
+                    src={convo.spriteImage}
+                    alt=""
+                    className="absolute bottom-0 right-0 max-h-[62%] max-w-[58%] object-contain pointer-events-none select-none opacity-95"
+                    style={{ zIndex: 0 }}
+                />
+            )}
+            <div ref={scrollRef} className="relative z-[1] flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 no-scrollbar" style={{ backgroundImage: activeTheme.type === 'custom' && activeTheme.user.backgroundImage ? 'none' : undefined }}>
                 {windowedFocusMsgId !== null && (
                     <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
                         <button onClick={handleBackToCurrent} className="pointer-events-auto px-4 py-2 bg-primary text-white rounded-full text-xs font-bold shadow-lg active:scale-95 transition-transform flex items-center gap-1.5">
@@ -2807,9 +2894,9 @@ ${recent || '（你们还没怎么聊过）'}
                             isFirstInGroup={breaksWithPrevious}
                             isLastInGroup={breaksWithNext}
                             activeTheme={activeTheme}
-                            charAvatar={char.avatar}
-                            charName={char.name}
-                            userAvatar={userProfile.avatar}
+                            charAvatar={displayCharAvatar}
+                            charName={displayCharName}
+                            userAvatar={displayUserAvatar}
                             onLongPress={handleMessageLongPress}
                             selectionMode={selectionMode}
                             isSelected={selectedMsgIds.has(m.id)}
@@ -2828,7 +2915,7 @@ ${recent || '（你们还没怎么聊过）'}
                             avatarMode={osTheme.chatAvatarMode}
                             bubbleVariant={osTheme.chatBubbleStyle}
                             messageSpacing={osTheme.chatMessageSpacing}
-                            showTimestamp={osTheme.chatShowTimestamp}
+                            showTimestamp={convo?.hideTimestamp ? 'never' : osTheme.chatShowTimestamp}
                             isPending={false}
                             pendingIndicator={osTheme.chatPendingIndicator !== false}
                             onMcdSendCart={handleMcdSendCart}
@@ -2910,6 +2997,13 @@ ${recent || '（你们还没怎么聊过）'}
                     </div>
                 )}
             </div>
+
+            {/* 会话设置「消息区贴边」：输入栏上方装饰横条 */}
+            {convo?.msgEdgeImage && (
+                <div className="relative z-20 h-0 pointer-events-none">
+                    <img src={convo.msgEdgeImage} alt="" className="absolute bottom-0 left-0 w-full h-6 object-cover" />
+                </div>
+            )}
 
             <div className="relative z-40">
                 {mcdActivated && (
@@ -3183,6 +3277,47 @@ ${recent || '（你们还没怎么聊过）'}
                     )}
                 </div>
             </Modal>
+
+            {/* 会话设置（聊天设置）全屏面板：右上角 ··· 进入 */}
+            {modalType === 'chat-settings' && char && (
+                <ConvoSettingsPanel
+                    char={char}
+                    onClose={() => setModalType('none')}
+                    contextLimit={settingsContextLimit}
+                    onContextLimitChange={setSettingsContextLimit}
+                    hideSysLogs={settingsHideSysLogs}
+                    onToggleHideSysLogs={() => {
+                        const next = !settingsHideSysLogs;
+                        setSettingsHideSysLogs(next);
+                        updateCharacter(char.id, { hideSystemLogs: next });
+                    }}
+                    translationEnabled={translationEnabled}
+                    onToggleTranslation={() => {
+                        const next = !translationEnabled;
+                        setTranslationEnabled(next);
+                        localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next));
+                        if (!next) setShowingTargetIds(new Set());
+                    }}
+                    translateSourceLang={translateSourceLang}
+                    translateTargetLang={translateTargetLang}
+                    onSetTranslateSourceLang={(lang: string) => { setTranslateSourceLang(lang); localStorage.setItem(`chat_translate_source_lang_${activeCharacterId}`, lang); setShowingTargetIds(new Set()); }}
+                    onSetTranslateLang={(lang: string) => { setTranslateTargetLang(lang); localStorage.setItem(`chat_translate_lang_${activeCharacterId}`, lang); setShowingTargetIds(new Set()); }}
+                    onOpenHistoryManager={() => setModalType('history-manager')}
+                    onClearHistory={handleClearHistory}
+                    preserveContext={preserveContext}
+                    onTogglePreserveContext={() => setPreserveContext(!preserveContext)}
+                    isVectorizing={isVectorizing}
+                    onForceVectorize={handleForceVectorize}
+                    onExportChat={handleExportChat}
+                    messagesCount={(allHistoryMessages && allHistoryMessages.length > 0) ? allHistoryMessages.length : messages.length}
+                    onOpenChromeCss={() => setModalType('chrome-css')}
+                    categories={categories}
+                    emojiCounts={emojiCounts}
+                    onSaveCategoryVisibility={handleSaveCategoryVisibility}
+                    onBgUpload={handleBgUpload}
+                    onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
+                />
+            )}
 
             {/* 角色主页（微信好友资料页风格）：单击消息头像进入；角色设置入口移到 ··· / 朋友资料 */}
             {showCharProfile && char && (

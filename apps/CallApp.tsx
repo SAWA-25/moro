@@ -1174,8 +1174,16 @@ const CallApp: React.FC = () => {
     <div className="h-full w-full relative bg-slate-950 text-white flex flex-col overflow-hidden">
       <div
         className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-35"
-        style={{ backgroundImage: selectedChar?.avatar ? `url(${selectedChar.avatar})` : undefined }}
+        style={{ backgroundImage: (selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar) ? `url(${selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar})` : undefined }}
       />
+      {/* 会话设置「通话立绘」：默认立绘作为通话形象铺在背景之上 */}
+      {selectedChar?.convoSettings?.callSprites?.['默认'] && (
+        <img
+          src={selectedChar.convoSettings.callSprites['默认']}
+          alt=""
+          className="absolute bottom-0 left-1/2 -translate-x-1/2 max-h-[72%] max-w-[88%] object-contain pointer-events-none select-none opacity-90"
+        />
+      )}
       <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-slate-950/70 to-black/85" />
       <div className="relative z-10 flex flex-col h-full">
       <div className="px-4 pt-10 pb-3 border-b border-white/10 flex items-center justify-between">

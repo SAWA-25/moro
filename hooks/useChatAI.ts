@@ -326,7 +326,7 @@ interface UseChatAIProps {
     showError?: (title: string, details: string) => void;
     setMessages: (msgs: Message[]) => void; // Callback to update UI messages
     realtimeConfig?: RealtimeConfig; // 新增：实时配置
-    translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string };
+    translationConfig?: { enabled: boolean; sourceLang: string; targetLang: string; style?: string };
     memoryPalaceConfig?: { embedding: { baseUrl: string; apiKey: string; model: string; dimensions: number }; lightLLM: { baseUrl: string; apiKey: string; model: string } };
     /** 从 OSContext 传入，用于 palace 自动归档写 char.memories + hideBeforeMessageId */
     updateCharacter?: (id: string, partial: Partial<CharacterProfile>) => void;
