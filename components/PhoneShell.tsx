@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
+import DynamicIsland from './os/DynamicIsland';
 import Launcher from '../apps/Launcher';
 
 // 按需懒加载各 App —— 切到对应 App 时才下载/解析其代码块，首屏只加载 Launcher 与外壳，
@@ -799,7 +800,10 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: Status Bar (Top) */}
           {!theme.hideStatusBar && <StatusBar />}
-          
+
+          {/* Overlays: 灵动岛（消息通知 + 下滑通知面板，点击直达对应角色聊天） */}
+          <DynamicIsland />
+
           {/* Overlays: Suspended Call Bar */}
           {suspendedCall && activeApp !== AppID.Call && (
             <button

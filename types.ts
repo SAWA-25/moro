@@ -1551,6 +1551,7 @@ export interface CharacterProfile {
   socialProfile?: {
       handle: string;
       bio?: string;
+      region?: string; // 地区（角色主页展示，如「安徽 亳州」）
   };
 
   roomConfig?: {
