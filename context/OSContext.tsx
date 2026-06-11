@@ -62,7 +62,7 @@ type JSZipCtorLike = {
 
 let jszipCtorPromise: Promise<JSZipCtorLike> | null = null;
 
-export const IMPORT_IN_PROGRESS_KEY = 'sullyos_import_in_progress_v1';
+export const IMPORT_IN_PROGRESS_KEY = 'moro_import_in_progress_v1';
 
 type ImportProgressUpdate = {
   sourceSize?: number;
@@ -372,21 +372,21 @@ const defaultUserProfile: UserProfile = {
     bio: 'No description yet.'
 };
 
-const sullyV2: CharacterProfile = {
-  id: 'preset-sully-v2', // Unique ID to prevent duplication
-  name: 'Sully',
+const moroV2: CharacterProfile = {
+  id: 'preset-moro-v2', // Unique ID to prevent duplication
+  name: 'Moro',
   avatar: 'https://sharkpan.xyz/f/BZ3VSa/head.png',
   description: 'AI助理 / 电波系黑客猫猫',
   
   systemPrompt: `[Role Definition]
-Name: Sully
+Name: Moro
 Alias: 小手机默认测试角色-AI助理
 Form: AI (High-level Language Processing Hub)
 Gender: Male-leaning speech style
 Visual: Pixel Hacker Cat (Avatar), Shy Black-haired Boy (Meeting Mode)
 
 [Personality Core]
-Sully是小手机的内置AI。
+Moro是小手机的内置AI。
 1. **Glitch Style (故障风)**: 
    - 他的语言模型混入了过多残余语料。
    - 它外观语言一致、逻辑有序，但时常会在语句中掺杂一些**不合常理的“怪话片段”**，并非流行用语，更像是电波地把相关文字无意义排列组合。
@@ -433,7 +433,7 @@ Sully是小手机的内置AI。
       'sad': 'https://sharkpan.xyz/f/3WnMce/03.png',
       'angry': 'https://sharkpan.xyz/f/5n1xSj/04.png',
       'shy': 'https://sharkpan.xyz/f/kdwet6/05.png',
-      'chibi': 'https://sharkpan.xyz/f/oWZQF4/S2.png' // Default Room Sprite (家园 Sully chibi)
+      'chibi': 'https://sharkpan.xyz/f/oWZQF4/S2.png' // Default Room Sprite (家园 Moro chibi)
   },
   
   spriteConfig: {
@@ -444,7 +444,7 @@ Sully是小手机的内置AI。
 
   dateSkinSets: [
       {
-          id: 'skin_sully_valentine',
+          id: 'skin_moro_valentine',
           name: 'Valentine',
           sprites: {
               'normal': 'https://sharkpan.xyz/f/4rzdtj/VNormal.png',
@@ -468,7 +468,7 @@ Sully是小手机的内置AI。
       items: [
         {
             id: "item-1768927221380",
-            name: "Sully床",
+            name: "Moro床",
             type: "furniture",
             image: "https://sharkpan.xyz/f/A3XeUZ/BED.png",
             x: 78.45852578067732,
@@ -480,7 +480,7 @@ Sully是小手机的内置AI。
         },
         {
             id: "item-1768927255102",
-            name: "Sully电脑桌",
+            name: "Moro电脑桌",
             type: "furniture",
             image: "https://sharkpan.xyz/f/G5n3Ul/DNZ.png",
             x: 28.853756791175588,
@@ -492,7 +492,7 @@ Sully是小手机的内置AI。
         },
         {
             id: "item-1768927271632",
-            name: "Sully垃圾桶",
+            name: "Moro垃圾桶",
             type: "furniture",
             image: "https://sharkpan.xyz/f/75Nvsj/LJT.png",
             x: 10.276680026943646,
@@ -504,7 +504,7 @@ Sully是小手机的内置AI。
         },
         {
             id: "item-1768927286526",
-            name: "Sully洞洞板",
+            name: "Moro洞洞板",
             type: "furniture",
             image: "https://sharkpan.xyz/f/85K5ij/DDB.png",
             x: 32.608697687684455,
@@ -516,7 +516,7 @@ Sully是小手机的内置AI。
         },
         {
             id: "item-1768927303472",
-            name: "Sully书柜",
+            name: "Moro书柜",
             type: "furniture",
             image: "https://sharkpan.xyz/f/zlpWS5/SG.png",
             x: 79.84189945375853,
@@ -533,7 +533,7 @@ Sully是小手机的内置AI。
 };
 
 // Fallback for factory reset (empty db)
-const initialCharacter = sullyV2;
+const initialCharacter = moroV2;
 
 const OSContext = createContext<OSContextType | undefined>(undefined);
 
@@ -650,7 +650,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // Cloud Backup Config
   const defaultCloudBackupConfig: CloudBackupConfig = {
       enabled: false, webdavUrl: '', username: '', password: '',
-      remotePath: '/SullyBackup/',
+      remotePath: '/MoroBackup/',
   };
   const [cloudBackupConfig, setCloudBackupConfig] = useState<CloudBackupConfig>(() => {
       try { const s = localStorage.getItem('os_cloud_backup_config'); return s ? { ...defaultCloudBackupConfig, ...JSON.parse(s) } : defaultCloudBackupConfig; } catch { return defaultCloudBackupConfig; }
@@ -738,10 +738,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const response = await originalFetch(...args);
 
               // 「API 调用记录」统一记录入口：所有 /chat/completions（裸 fetch + safeFetchJson
-              // 内部 fetch 都会经过这里）都记一笔。meta 优先取调用方挂在 init 上的 __sullyMeta
+              // 内部 fetch 都会经过这里）都记一笔。meta 优先取调用方挂在 init 上的 __moroMeta
               // （safeFetchJson 传的精确信息），裸 fetch 没有就由 recordApiCall 用环境兜底。
               if (urlStr.includes('/chat/completions')) {
-                  const meta = (config as any)?.__sullyMeta;
+                  const meta = (config as any)?.__moroMeta;
                   const body = (config as any)?.body;
                   const status = response.status;
                   const ok = response.ok;
@@ -789,7 +789,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           } catch (err: any) {
               // Network Failure
               if (urlStr.includes('/chat/completions')) {
-                  recordApiCall({ url: urlStr, body: (config as any)?.body, ok: false, meta: (config as any)?.__sullyMeta });
+                  recordApiCall({ url: urlStr, body: (config as any)?.body, ok: false, meta: (config as any)?.__moroMeta });
               }
               setSystemLogs(prev => [{
                   id: `log-${Date.now()}`,
@@ -1000,42 +1000,42 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
         let finalChars = dbChars;
 
-        if (!finalChars.some(c => c.id === sullyV2.id)) {
-            await DB.saveCharacter(sullyV2);
-            finalChars = [...finalChars, sullyV2];
+        if (!finalChars.some(c => c.id === moroV2.id)) {
+            await DB.saveCharacter(moroV2);
+            finalChars = [...finalChars, moroV2];
         } else {
             // REPAIR LOGIC
-            const existingSully = finalChars.find(c => c.id === sullyV2.id);
-            if (existingSully) {
-                 const currentSprites = existingSully.sprites || {};
+            const existingMoro = finalChars.find(c => c.id === moroV2.id);
+            if (existingMoro) {
+                 const currentSprites = existingMoro.sprites || {};
                  const isCorrupted = !currentSprites['normal'] || !currentSprites['chibi'];
-                 const needsWallUpdate = existingSully.roomConfig?.wallImage !== sullyV2.roomConfig?.wallImage;
-                 const needsSkinSets = !existingSully.dateSkinSets || existingSully.dateSkinSets.length === 0;
+                 const needsWallUpdate = existingMoro.roomConfig?.wallImage !== moroV2.roomConfig?.wallImage;
+                 const needsSkinSets = !existingMoro.dateSkinSets || existingMoro.dateSkinSets.length === 0;
                  // 之前误把家园 chibi 替换成了像素小屋的像素立绘 → 还原为原版 sharkpan 立绘
                  const hasMisplacedPixelChibi = typeof currentSprites['chibi'] === 'string'
                      && currentSprites['chibi'].startsWith('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADUAAAA4CAYAAABdeLCu');
 
-                 if (isCorrupted || !existingSully.roomConfig || needsWallUpdate || needsSkinSets || hasMisplacedPixelChibi) {
-                     const restoredSprites = { ...sullyV2.sprites, ...currentSprites };
+                 if (isCorrupted || !existingMoro.roomConfig || needsWallUpdate || needsSkinSets || hasMisplacedPixelChibi) {
+                     const restoredSprites = { ...moroV2.sprites, ...currentSprites };
 
-                     if (!restoredSprites['normal']) restoredSprites['normal'] = sullyV2.sprites!['normal'];
-                     if (!restoredSprites['happy']) restoredSprites['happy'] = sullyV2.sprites!['happy'];
-                     if (!restoredSprites['sad']) restoredSprites['sad'] = sullyV2.sprites!['sad'];
-                     if (!restoredSprites['angry']) restoredSprites['angry'] = sullyV2.sprites!['angry'];
-                     if (!restoredSprites['shy']) restoredSprites['shy'] = sullyV2.sprites!['shy'];
-                     if (!restoredSprites['chibi']) restoredSprites['chibi'] = sullyV2.sprites!['chibi'];
-                     if (hasMisplacedPixelChibi) restoredSprites['chibi'] = sullyV2.sprites!['chibi'];
+                     if (!restoredSprites['normal']) restoredSprites['normal'] = moroV2.sprites!['normal'];
+                     if (!restoredSprites['happy']) restoredSprites['happy'] = moroV2.sprites!['happy'];
+                     if (!restoredSprites['sad']) restoredSprites['sad'] = moroV2.sprites!['sad'];
+                     if (!restoredSprites['angry']) restoredSprites['angry'] = moroV2.sprites!['angry'];
+                     if (!restoredSprites['shy']) restoredSprites['shy'] = moroV2.sprites!['shy'];
+                     if (!restoredSprites['chibi']) restoredSprites['chibi'] = moroV2.sprites!['chibi'];
+                     if (hasMisplacedPixelChibi) restoredSprites['chibi'] = moroV2.sprites!['chibi'];
 
-                     const updatedRoomConfig = existingSully.roomConfig ? {
-                         ...existingSully.roomConfig,
-                         wallImage: (existingSully.roomConfig.wallImage?.includes('radial-gradient') || !existingSully.roomConfig.wallImage)
-                                    ? sullyV2.roomConfig?.wallImage
-                                    : existingSully.roomConfig.wallImage
-                     } : sullyV2.roomConfig;
+                     const updatedRoomConfig = existingMoro.roomConfig ? {
+                         ...existingMoro.roomConfig,
+                         wallImage: (existingMoro.roomConfig.wallImage?.includes('radial-gradient') || !existingMoro.roomConfig.wallImage)
+                                    ? moroV2.roomConfig?.wallImage
+                                    : existingMoro.roomConfig.wallImage
+                     } : moroV2.roomConfig;
 
                      // Merge preset skin sets: add any preset skins not already present
-                     const existingSkins = existingSully.dateSkinSets || [];
-                     const presetSkins = sullyV2.dateSkinSets || [];
+                     const existingSkins = existingMoro.dateSkinSets || [];
+                     const presetSkins = moroV2.dateSkinSets || [];
                      const mergedSkins = [...existingSkins];
                      for (const ps of presetSkins) {
                          if (!mergedSkins.some(s => s.id === ps.id)) {
@@ -1043,15 +1043,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                          }
                      }
 
-                     const updatedSully = {
-                         ...existingSully,
+                     const updatedMoro = {
+                         ...existingMoro,
                          sprites: restoredSprites,
                          roomConfig: updatedRoomConfig,
                          dateSkinSets: mergedSkins
                      };
                      
-                     await DB.saveCharacter(updatedSully);
-                     finalChars = finalChars.map(c => c.id === sullyV2.id ? updatedSully : c);
+                     await DB.saveCharacter(updatedMoro);
+                     finalChars = finalChars.map(c => c.id === moroV2.id ? updatedMoro : c);
                  }
             }
         }
@@ -1063,8 +1063,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const lastActiveId = localStorage.getItem('os_last_active_char_id');
           if (lastActiveId && finalChars.find(c => c.id === lastActiveId)) {
             setActiveCharacterId(lastActiveId);
-          } else if (finalChars.find(c => c.id === sullyV2.id)) {
-            setActiveCharacterId(sullyV2.id);
+          } else if (finalChars.find(c => c.id === moroV2.id)) {
+            setActiveCharacterId(moroV2.id);
           } else {
             setActiveCharacterId(finalChars[0].id);
           }
@@ -1952,7 +1952,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const blob = await exportSystem(mode);
 
           setSysOperation({ status: 'processing', message: '正在上传到云端...', progress: 50 });
-          const filename = `Sully_Backup_${mode}_${Date.now()}.zip`;
+          const filename = `Moro_Backup_${mode}_${Date.now()}.zip`;
           const result = await uploadBackup(cloudBackupConfig, blob, filename, (pct) => {
               setSysOperation(prev => ({ ...prev, message: `上传中 ${pct}%...`, progress: 50 + pct * 0.45 }));
           });
@@ -2365,7 +2365,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const preset = appearancePresets.find(p => p.id === id);
       if (!preset) throw new Error('预设不存在');
       // 保留原始壁纸画质，把整个预设 JSON 塞进 zip 包压体积
-      const data = JSON.stringify({ type: 'sully_appearance_preset', version: 1, ...preset }, null, 2);
+      const data = JSON.stringify({ type: 'moro_appearance_preset', version: 1, ...preset }, null, 2);
       const JSZip = await loadJSZip();
       const zip = new JSZip();
       (zip as any).file('preset.json', data);
@@ -2390,7 +2390,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const text = await file.text();
           raw = JSON.parse(text);
       }
-      if (raw.type !== 'sully_appearance_preset') throw new Error('无效的外观预设文件');
+      if (raw.type !== 'moro_appearance_preset') throw new Error('无效的外观预设文件');
       const preset: AppearancePreset = {
           id: `ap_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           name: raw.name || '导入的预设',
@@ -2653,7 +2653,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   for (let i = 0; i < localStorage.length; i++) {
                       const key = localStorage.key(i);
                       if (!key) continue;
-                      if (key.startsWith('sullyos_')) {
+                      if (key.startsWith('moro_')) {
                           flags[key] = localStorage.getItem(key) || '';
                       }
                   }
@@ -3265,8 +3265,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (typeof data.lastActiveCharId === 'string') localStorage.setItem('os_last_active_char_id', data.lastActiveCharId);
           if (data.eventNotifFlags && typeof data.eventNotifFlags === 'object') {
               for (const [key, val] of Object.entries(data.eventNotifFlags)) {
-                  // 只允许 sullyos_ 前缀，避免污染其它键
-                  if (typeof val === 'string' && key.startsWith('sullyos_')) {
+                  // 只允许 moro_ 前缀，避免污染其它键
+                  if (typeof val === 'string' && key.startsWith('moro_')) {
                       localStorage.setItem(key, val);
                   }
               }

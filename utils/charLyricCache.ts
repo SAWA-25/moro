@@ -15,8 +15,8 @@ import { MusicCfg, musicApi, parseLyric } from '../context/MusicContext';
 const MEM_CACHE = new Map<number, string[] | null>();  // null = 已知没有歌词
 const INFLIGHT = new Map<number, Promise<string[] | null>>();
 
-const LS_KEY = (id: number) => `sully_char_lyric_v1_${id}`;
-const LS_META_KEY = 'sully_char_lyric_meta_v1';
+const LS_KEY = (id: number) => `moro_char_lyric_v1_${id}`;
+const LS_META_KEY = 'moro_char_lyric_meta_v1';
 const LS_CAP = 200;  // 本地存的歌最多 200 首，超了按 LRU 淘汰
 
 type LyricEntry = { text: string[] | null; at: number };

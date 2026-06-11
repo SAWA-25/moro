@@ -7,7 +7,7 @@
    │  POST /netease/{search,song/url,lyric,...}
    │  Header: X-Netease-Cookie: MUSIC_U=xxx
    ▼
-sully-n Worker (Cloudflare Workers, 国内可访问, 免费)
+moro-n Worker (Cloudflare Workers, 国内可访问, 免费)
    │  转成 api-enhanced 标准 GET 请求, 加 realIP
    ▼
 api-enhanced (部署在 Vercel, 免费 Hobby 计划)

@@ -9,7 +9,7 @@
 // 同时挂两套日志：
 //   - devDebug 的 api 类目（开发者勾「API」复制 / 下载导出）
 //   - 全局 fetch 拦截器 + apiCallLog（用户在「设置 → API 调用记录」里看）
-// 后者的 meta 通过下面 safeFetchJson 的第 5 个参数挂到 __sullyMeta 上传出去。
+// 后者的 meta 通过下面 safeFetchJson 的第 5 个参数挂到 __moroMeta 上传出去。
 import { appendDevDebugApiLog, makeDebugLogger } from './devDebug';
 import { type ApiCallMeta } from './apiCallLog';
 
@@ -147,7 +147,7 @@ export async function safeFetchJson(
 
     // 把 meta 挂到 RequestInit 上（浏览器忽略未知字段），交给全局 fetch 拦截器统一记录
     // 到「API 调用记录」。这样裸 fetch 和 safeFetchJson 走同一个记录入口，不会重复计。
-    const metaOptions: RequestInit = meta ? { ...options, __sullyMeta: meta } as RequestInit : options;
+    const metaOptions: RequestInit = meta ? { ...options, __moroMeta: meta } as RequestInit : options;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         // 每次 attempt 建一个独立的 AbortController（仅用于 timeout）

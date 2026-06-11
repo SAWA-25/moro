@@ -34,8 +34,8 @@ export const WHITEDAY_ASSETS = {
 // ============================================================
 // localStorage keys
 // ============================================================
-const WHITEDAY_DISMISSED_KEY = 'sullyos_whiteday_2026_dismissed';
-const WHITEDAY_COMPLETED_KEY = 'sullyos_whiteday_2026_completed';
+const WHITEDAY_DISMISSED_KEY = 'moro_whiteday_2026_dismissed';
+const WHITEDAY_COMPLETED_KEY = 'moro_whiteday_2026_completed';
 export const WHITEDAY_RECORD_KEY = 'whiteday_2026';
 const QUIZ_PASS_SCORE = 5;
 const QUIZ_TOTAL = 7;
@@ -163,11 +163,11 @@ const extractJSON = (text: string): any => {
 };
 
 // ============================================================
-// 判断是否为 Sully 角色
+// 判断是否为 Moro 角色
 // ============================================================
-const isSullyChar = (char?: CharacterProfile): boolean => {
+const isMoroChar = (char?: CharacterProfile): boolean => {
     if (!char) return false;
-    return char.name.toLowerCase().includes('sully');
+    return char.name.toLowerCase().includes('moro');
 };
 
 // ============================================================
@@ -177,10 +177,10 @@ interface WhiteDayPopupProps {
     onView: () => void;
     onDismiss: () => void;
     onCheckApi: () => void;
-    sullyName?: string;
+    moroName?: string;
 }
 
-const WhiteDayPopup: React.FC<WhiteDayPopupProps> = ({ onView, onDismiss, onCheckApi, sullyName }) => {
+const WhiteDayPopup: React.FC<WhiteDayPopupProps> = ({ onView, onDismiss, onCheckApi, moroName }) => {
     return (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-5 animate-fade-in">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-md" />
@@ -192,7 +192,7 @@ const WhiteDayPopup: React.FC<WhiteDayPopupProps> = ({ onView, onDismiss, onChec
                 {/* Header */}
                 <div className="pt-8 pb-4 px-6 text-center relative">
                     <div className="text-4xl mb-3 animate-bounce">🍫</div>
-                    <h2 className="text-lg font-extrabold text-slate-800">{sullyName || 'Sully'}好像有事找你？</h2>
+                    <h2 className="text-lg font-extrabold text-slate-800">{moroName || 'Moro'}好像有事找你？</h2>
                     <p className="text-[11px] text-amber-400 mt-1.5 font-medium">2026 White Day Special</p>
                     <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">想听其他角色的心声？可以在桌面「特别时光」中找到</p>
                 </div>
@@ -2152,9 +2152,9 @@ export const WhiteDayController: React.FC<WhiteDayControllerProps> = ({ onClose 
     const { characters } = useOS();
     const [stage, setStage] = useState<'popup' | 'api' | 'session'>('popup');
 
-    // 找到 Sully 角色（弹窗直接进 Sully）
-    const sullyChar = characters.find(c => isSullyChar(c));
-    const sullyId = sullyChar?.id || characters[0]?.id || '';
+    // 找到 Moro 角色（弹窗直接进 Moro）
+    const moroChar = characters.find(c => isMoroChar(c));
+    const moroId = moroChar?.id || characters[0]?.id || '';
 
     const handleDismiss = () => {
         try { localStorage.setItem(WHITEDAY_DISMISSED_KEY, Date.now().toString()); } catch { /* */ }
@@ -2167,7 +2167,7 @@ export const WhiteDayController: React.FC<WhiteDayControllerProps> = ({ onClose 
                 onView={() => setStage('session')}
                 onDismiss={handleDismiss}
                 onCheckApi={() => setStage('api')}
-                sullyName={sullyChar?.name}
+                moroName={moroChar?.name}
             />
         );
     }
@@ -2181,6 +2181,6 @@ export const WhiteDayController: React.FC<WhiteDayControllerProps> = ({ onClose 
         );
     }
 
-    // 从弹窗进入时，直接给 Sully 的 charId，跳过角色选择
-    return <WhiteDaySession charId={sullyId} onClose={onClose} />;
+    // 从弹窗进入时，直接给 Moro 的 charId，跳过角色选择
+    return <WhiteDaySession charId={moroId} onClose={onClose} />;
 };

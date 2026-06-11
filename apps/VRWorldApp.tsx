@@ -23,7 +23,7 @@ const genLocalId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random
 // 安全区单一来源：index.html :root 定义 --safe-top/--safe-bottom/--chrome-top，
 // 由 utils/iosStandalone.ts 喂入 JS 探测值（iOS 全屏 PWA 下原生 env 偶发返回 0 时兜底）。
 // 全屏浮层背景铺满屏幕，只用这些变量给顶/底「控件」让位。
-const VR_TOP = 'var(--chrome-top)';                            // 安全区 + SullyOS 状态栏：全屏面板顶栏统一用它
+const VR_TOP = 'var(--chrome-top)';                            // 安全区 + Moro 状态栏：全屏面板顶栏统一用它
 const VR_SAFE_BOTTOM = 'var(--safe-bottom)';
 const VR_ROOM_PANEL_TOP = 'calc(var(--chrome-top) + 3.75rem)'; // 房间内浮层从顶栏下方开始
 // 底部额外留一点手势余量；iOS 全屏隐藏 home 条时也不让交互区贴着物理底边。
@@ -321,7 +321,7 @@ const VRWorldApp: React.FC = () => {
                 style={{ backgroundImage: 'radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 68% 18%, rgba(200,215,255,.6), transparent), radial-gradient(1px 1px at 82% 58%, rgba(230,220,255,.5), transparent), radial-gradient(1px 1px at 38% 72%, rgba(210,225,255,.5), transparent), radial-gradient(1.5px 1.5px at 52% 42%, rgba(255,255,255,.55), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
 
             {/* 顶栏 —— 外壳不再统一加 safe-area padding，这里用 --chrome-top 让开
-                安全区 + SullyOS 状态栏（时间/电量），退出键落在其下方，不再怼到时钟上面。 */}
+                安全区 + Moro 状态栏（时间/电量），退出键落在其下方，不再怼到时钟上面。 */}
             <div className="relative flex items-center gap-2.5 px-5 pb-2.5 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
                 <button onClick={closeApp} className="p-1.5 -ml-1.5 rounded-full text-white/65 active:bg-white/10"><ArrowLeft size={21} weight="regular" /></button>
                 <div className="flex items-center gap-2">
@@ -700,7 +700,7 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
                     <button onClick={copy} className="shrink-0 self-stretch px-3 rounded-lg text-[11px] font-semibold text-black" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{copied ? '已复制' : '复制'}</button>
                 </div>
                 <label className="text-[10px] text-amber-200/60">导入身份码（换回旧身份）</label>
-                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 sullypo.… 身份码" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
+                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 moropo.… 身份码" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
                 <div className="flex gap-2 mt-3.5">
                     <button onClick={onClose} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>关闭</button>
                     <button onClick={() => onImport(input)} disabled={!input.trim()} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>导入</button>
@@ -2250,9 +2250,9 @@ const ChibiEditor: React.FC<{
     const [offsetY, setOffsetY] = useState<number>(existing?.offsetY ?? 0);
     const [flip, setFlip] = useState<boolean>(!!existing?.flip);
 
-    const isSully = (char.name || '').toLowerCase().includes('sully');
+    const isMoro = (char.name || '').toLowerCase().includes('moro');
     // 回填：捏人器 init 读 presets（扁平 map），用上次导出的 state.selected
-    const presets = existing?.state?.selected || (isSully ? { skin: 'skin_1', fronthair: 'fronthair_99', eyes: 'eyes_99' } : undefined);
+    const presets = existing?.state?.selected || (isMoro ? { skin: 'skin_1', fronthair: 'fronthair_99', eyes: 'eyes_99' } : undefined);
 
     const onConfirm = (r: ChibiResult) => {
         setImg(r.transparentDataUrl);
@@ -2269,7 +2269,7 @@ const ChibiEditor: React.FC<{
                     <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
                 </div>
                 <div className="flex-1 min-h-0">
-                    <CreatorIframe mode="char" charName={char.name} isSully={isSully} presets={presets}
+                    <CreatorIframe mode="char" charName={char.name} isMoro={isMoro} presets={presets}
                         draftKey={`vr_${char.id}`} title={`捏一个小人 · ${char.name}`} subtitle="彼方 · CHIBI"
                         onConfirm={onConfirm} />
                 </div>

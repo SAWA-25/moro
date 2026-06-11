@@ -152,14 +152,14 @@ describe('buildPushDecision D 系列 (pushPayloads 数组)', () => {
 // ─── E 系列: title fallback ──────────────────────────────────────────────
 
 describe('buildPushDecision E 系列 (title fallback)', () => {
-  it('E1 contactName="Sully" → 每条 push title="来自 Sully"', () => {
+  it('E1 contactName="Moro" → 每条 push title="来自 Moro"', () => {
     const r = buildPushDecision(baseInput({
       llmOutputText: '你好\n再见',
-      contactName: 'Sully',
+      contactName: 'Moro',
     }));
     const ps = pushes(r);
     for (const p of ps) {
-      expect(p.notification?.title).toBe('来自 Sully');
+      expect(p.notification?.title).toBe('来自 Moro');
     }
   });
 

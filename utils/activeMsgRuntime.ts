@@ -464,12 +464,12 @@ const flushInboxToChatImpl = async () => {
       continue;
     }
 
-    // 白名单制: AI 文本类型基本封闭 (amsg-shared MESSAGE_TYPE 4 个 + SullyOS 3 个 legacy 别名);
+    // 白名单制: AI 文本类型基本封闭 (amsg-shared MESSAGE_TYPE 4 个 + Moro 3 个 legacy 别名);
     // 非 AI 类型 (forum / event / system / 未来扩展) 不可枚举, 不进 post-processing 防把它们当 AI 输出乱解析.
     // Phase 1 老白名单只列了 text/assistant/normal, 漏了整个 amsg-shared 集合, 导致所有 push 都
     // 走 raw fallback (post-processing / directive 重放 / emoji / chunking 全部跳过). Round 2 补全.
     const ASSISTANT_TEXT_TYPES = new Set([
-      // SullyOS legacy
+      // Moro legacy
       'text', 'assistant', 'normal',
       // amsg-shared MESSAGE_TYPE union (instant/fixed/prompted/auto) — 全是 LLM 输出
       'instant', 'fixed', 'prompted', 'auto',

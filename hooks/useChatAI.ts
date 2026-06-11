@@ -797,7 +797,7 @@ export const useChatAI = ({
                     // 这里按 contract 只传 https URL, data URL 本地头像直接不传
                     // (SW 显示通知时回退到默认 app icon, 不影响推送成功率).
                     avatarUrl: /^https?:\/\//i.test(char.avatar || '') ? char.avatar : undefined,
-                    metadata: { source: 'sullyos-chat', charId: char.id },
+                    metadata: { source: 'moro-chat', charId: char.id },
                     // 副 API 情绪评估: worker 跑完主回复后用这套跑 eval, 推 emotion_update 回来 (见 worker 包装层).
                     // 放顶层字段, 不进 metadata —— 框架不会回显它, 副 API apiKey 不会泄进 push.
                     ...(instantEmotionEval ? { emotionEval: instantEmotionEval } : {}),

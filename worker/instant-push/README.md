@@ -21,7 +21,7 @@
 
 ## 阶段 1：生成 VAPID 密钥对
 
-打开 **SullyOS → 设置 → Instant Push → 配置**，点"生成新密钥对"按钮。
+打开 **Moro → 设置 → Instant Push → 配置**，点"生成新密钥对"按钮。
 
 - 页面上会显示公钥（自动填入表单）和**一次性显示的私钥**
 - **立即复制私钥**，关闭弹窗后私钥消失，不可恢复
@@ -103,7 +103,7 @@ CF 后台连不上 GitHub、或者你 fork 了私有副本不想接 OAuth 时用
    ```
 2. 在 `wrangler.toml` 里取消注释 `[[d1_databases]]`，填入 `database_id`。
 3. 重新部署。
-4. 回到 SullyOS → Instant Push 配置，点“检测连接”。检测到 D1 后，前台才会允许打开 D1 envelope。
+4. 回到 Moro → Instant Push 配置，点“检测连接”。检测到 D1 后，前台才会允许打开 D1 envelope。
 
 表结构会由 Worker 首次请求自动初始化，过期 blob row 也会由 Worker 定期顺手清理。
 
@@ -113,7 +113,7 @@ CF 后台连不上 GitHub、或者你 fork 了私有副本不想接 OAuth 时用
 
 ## 阶段 4：测试
 
-回到 **SullyOS → 设置 → Instant Push → 配置**：
+回到 **Moro → 设置 → Instant Push → 配置**：
 
 1. 填入 Worker URL（阶段 2 末尾记录的地址）
 2. 确认公钥已自动填入
@@ -126,7 +126,7 @@ CF 后台连不上 GitHub、或者你 fork 了私有副本不想接 OAuth 时用
 ## 常见问题
 
 **Q：手机上收不到推送？**
-iOS 要求把 SullyOS 以 PWA 方式安装到主屏幕才能收 Web Push；Safari 浏览器内的标签页不支持。
+iOS 要求把 Moro 以 PWA 方式安装到主屏幕才能收 Web Push；Safari 浏览器内的标签页不支持。
 安卓国行手机若无 Google 服务（GMS），Web Push 通道不通，换 Chrome 桌面版测试确认链路，App 内通知走 Capacitor 本地通知不受影响。
 
 **Q：想暂停推送怎么办？**
@@ -134,7 +134,7 @@ iOS 要求把 SullyOS 以 PWA 方式安装到主屏幕才能收 Web Push；Safar
 
 **Q：怎么彻底删除？**
 CF 后台 → Workers & Pages → 找到该 Worker → Settings → Delete。
-前端在 SullyOS → 设置 → Instant Push 关掉开关即可停止发起请求。
+前端在 Moro → 设置 → Instant Push 关掉开关即可停止发起请求。
 
 **Q：LLM 调用费用谁出？**
 你自己在前端配置的 Chat API（apiKey）—— Worker 用你传进来的 key 和 apiUrl 调 LLM，Worker 本身不持有任何 key。

@@ -122,11 +122,11 @@ const Settings: React.FC = () => {
   const [cbUrl, setCbUrl] = useState(cloudBackupConfig.webdavUrl);
   const [cbUsername, setCbUsername] = useState(cloudBackupConfig.username);
   const [cbPassword, setCbPassword] = useState(cloudBackupConfig.password);
-  const [cbPath, setCbPath] = useState(cloudBackupConfig.remotePath || '/SullyBackup/');
+  const [cbPath, setCbPath] = useState(cloudBackupConfig.remotePath || '/MoroBackup/');
 
   // GitHub local state
   const [ghToken, setGhToken] = useState(cloudBackupConfig.githubToken || '');
-  const [ghRepo, setGhRepo] = useState(cloudBackupConfig.githubRepo || 'sully-backup');
+  const [ghRepo, setGhRepo] = useState(cloudBackupConfig.githubRepo || 'moro-backup');
   // Default proxy ON — most users in mainland China can't reach github.com
   // directly. Only flip to false if the user has explicitly opted out before.
   const [ghUseProxy, setGhUseProxy] = useState(cloudBackupConfig.githubUseProxy !== false);
@@ -449,7 +449,7 @@ const Settings: React.FC = () => {
               reader.readAsDataURL(blob);
               reader.onloadend = async () => {
                   const base64data = String(reader.result);
-                  const fileName = `Sully_Backup_${mode}_${Date.now()}.zip`;
+                  const fileName = `Moro_Backup_${mode}_${Date.now()}.zip`;
                   
                   try {
                       await Filesystem.writeFile({
@@ -462,7 +462,7 @@ const Settings: React.FC = () => {
                           path: fileName,
                       });
                       await Share.share({
-                          title: `Sully Backup`,
+                          title: `Moro Backup`,
                           files: [uriResult.uri],
                       });
                   } catch (e) {
@@ -479,7 +479,7 @@ const Settings: React.FC = () => {
               // Auto click
               const a = document.createElement('a');
               a.href = url;
-              a.download = `Sully_Backup_${mode}_${new Date().toISOString().slice(0,10)}.zip`;
+              a.download = `Moro_Backup_${mode}_${new Date().toISOString().slice(0,10)}.zip`;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -564,7 +564,7 @@ const Settings: React.FC = () => {
           const result = await testConnection({
               ...cloudBackupConfig,
               githubToken: ghToken.trim(),
-              githubRepo: ghRepo.trim() || 'sully-backup',
+              githubRepo: ghRepo.trim() || 'moro-backup',
               githubUseProxy: ghUseProxy,
           });
           setGhTestResult(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
@@ -574,7 +574,7 @@ const Settings: React.FC = () => {
                   provider: 'github',
                   githubToken: ghToken.trim(),
                   githubOwner: result.login,
-                  githubRepo: ghRepo.trim() || 'sully-backup',
+                  githubRepo: ghRepo.trim() || 'moro-backup',
                   githubUseProxy: ghUseProxy,
               });
           }
@@ -916,11 +916,11 @@ const Settings: React.FC = () => {
                         delete them on github.com directly if they want. */}
                     {cloudBackupConfig.provider === 'github' && cloudBackupConfig.githubOwner && (
                         <a
-                            href={`https://github.com/${cloudBackupConfig.githubOwner}/${cloudBackupConfig.githubRepo || 'sully-backup'}/releases`}
+                            href={`https://github.com/${cloudBackupConfig.githubOwner}/${cloudBackupConfig.githubRepo || 'moro-backup'}/releases`}
                             target="_blank" rel="noopener noreferrer"
                             className="block text-center text-[10px] text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline transition-colors"
                         >
-                            🔗 在 GitHub 上查看备份 (github.com/{cloudBackupConfig.githubOwner}/{cloudBackupConfig.githubRepo || 'sully-backup'}/releases) ↗
+                            🔗 在 GitHub 上查看备份 (github.com/{cloudBackupConfig.githubOwner}/{cloudBackupConfig.githubRepo || 'moro-backup'}/releases) ↗
                         </a>
                     )}
 
@@ -1693,7 +1693,7 @@ const Settings: React.FC = () => {
               </div>
               <div>
                   <label className="text-[11px] text-slate-500 font-medium mb-1 block">备份目录</label>
-                  <input type="text" value={cbPath} onChange={(e) => setCbPath(e.target.value)} placeholder="/SullyBackup/" className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:border-sky-400 focus:ring-1 focus:ring-sky-200 outline-none" />
+                  <input type="text" value={cbPath} onChange={(e) => setCbPath(e.target.value)} placeholder="/MoroBackup/" className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:border-sky-400 focus:ring-1 focus:ring-sky-200 outline-none" />
               </div>
               <button onClick={handleTestCloudConnection} disabled={cloudTesting || !cbUrl || !cbUsername || !cbPassword} className="w-full py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 disabled:opacity-40">
                   {cloudTesting ? '测试中...' : '测试连接'}
@@ -1712,7 +1712,7 @@ const Settings: React.FC = () => {
       </Modal>
 
       {/* GitHub Backup Modal — minimum-input flow: paste a token, we figure
-          out owner via /user and auto-create a private 'sully-backup' repo. */}
+          out owner via /user and auto-create a private 'moro-backup' repo. */}
       <Modal isOpen={showGithubModal} title="GitHub 备份" onClose={() => setShowGithubModal(false)}>
           <div className="space-y-4 p-1">
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
@@ -1720,7 +1720,7 @@ const Settings: React.FC = () => {
                       <b>三步搞定，不用梯子：</b><br/>
                       ① 点下面按钮跳到 GitHub 创建 Token<br/>
                       ② 复制 token，回来粘到下面框里<br/>
-                      ③ 点 <b>测试并连接</b> — 我们会自动帮你建好私有仓库 <code className="bg-white px-1 rounded">{ghRepo || 'sully-backup'}</code>
+                      ③ 点 <b>测试并连接</b> — 我们会自动帮你建好私有仓库 <code className="bg-white px-1 rounded">{ghRepo || 'moro-backup'}</code>
                   </p>
               </div>
 
@@ -1729,13 +1729,13 @@ const Settings: React.FC = () => {
                       <b>⚠️ 在 GitHub 那一页只改一处:</b><br/>
                       把 <b>Expiration</b>(有效期)下拉框 <b>从 90天 改成 No expiration</b>（永不过期）。
                       不改的话 90 天后 token 过期，备份会突然 401。<br/>
-                      其它都别动 —— Note 已经填好「Sully 备份」，<b>repo</b> 权限已经勾上了，
+                      其它都别动 —— Note 已经填好「Moro 备份」，<b>repo</b> 权限已经勾上了，
                       直接拉到最底点绿色 <b>Generate token</b> 即可。
                   </p>
               </div>
 
               <a
-                  href="https://github.com/settings/tokens/new?scopes=repo&description=Sully%20%E5%A4%87%E4%BB%BD"
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=Moro%20%E5%A4%87%E4%BB%BD"
                   target="_blank" rel="noopener noreferrer"
                   className="block w-full py-3 bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-xl text-xs font-bold text-center shadow-sm active:scale-95 transition-all"
               >
@@ -1774,11 +1774,11 @@ const Settings: React.FC = () => {
                           🎉 备份会上传到这里:
                       </p>
                       <a
-                          href={`https://github.com/${cloudBackupConfig.githubOwner}/${cloudBackupConfig.githubRepo || 'sully-backup'}/releases`}
+                          href={`https://github.com/${cloudBackupConfig.githubOwner}/${cloudBackupConfig.githubRepo || 'moro-backup'}/releases`}
                           target="_blank" rel="noopener noreferrer"
                           className="block text-[10px] text-emerald-700 font-mono break-all underline hover:text-emerald-900"
                       >
-                          github.com/{cloudBackupConfig.githubOwner}/{cloudBackupConfig.githubRepo || 'sully-backup'}/releases ↗
+                          github.com/{cloudBackupConfig.githubOwner}/{cloudBackupConfig.githubRepo || 'moro-backup'}/releases ↗
                       </a>
                       <p className="text-[10px] text-emerald-700 leading-relaxed">
                           每次备份会创建一个新的 release（带时间戳）。想看 / 删除旧备份就去这个网址。
@@ -1800,7 +1800,7 @@ const Settings: React.FC = () => {
                               type="text"
                               value={ghRepo}
                               onChange={(e) => setGhRepo(e.target.value)}
-                              placeholder="sully-backup"
+                              placeholder="moro-backup"
                               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-mono focus:border-slate-500 outline-none"
                           />
                           <p className="text-[10px] text-slate-400 mt-1">不存在会自动创建为私有仓库。</p>
@@ -1964,7 +1964,7 @@ const Settings: React.FC = () => {
               </div>
               <p className="text-sm font-bold text-slate-700">备份文件已生成！</p>
               <p className="text-xs text-slate-500">如果浏览器没有自动下载，请点击下方链接。</p>
-              {downloadUrl && <a href={downloadUrl} download="Sully_Backup.zip" className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
+              {downloadUrl && <a href={downloadUrl} download="Moro_Backup.zip" className="text-primary text-sm underline block py-2">点击手动下载 .zip</a>}
           </div>
       </Modal>
 

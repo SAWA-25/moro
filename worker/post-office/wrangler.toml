@@ -1,4 +1,4 @@
-name = "sullyos-post-office"
+name = "moro-post-office"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
@@ -8,7 +8,7 @@ compatibility_date = "2026-01-01"
 # （如 https://noir2.cc.cd/po），其他用户无需任何配置即可互相通信。
 #
 # 部署：
-#   1) wrangler d1 create sullyos-post-office       # 拿到 database_id
+#   1) wrangler d1 create moro-post-office       # 拿到 database_id
 #   2) 把 database_id 填到下面 [[d1_databases]]
 #   3) wrangler deploy
 #   （表结构 Worker 会自动建，加性、不破坏老数据；不必手动跑 schema.sql）
@@ -24,7 +24,7 @@ compatibility_date = "2026-01-01"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "sullyos-post-office"
+database_name = "moro-post-office"
 database_id = "REPLACE_WITH_YOUR_D1_ID"
 
 # 可选环境变量（非密钥，可放这里）：

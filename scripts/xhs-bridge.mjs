@@ -7,7 +7,7 @@
  * - 改为通过 "XHS Bridge" 浏览器扩展 + bridge_server.py（WebSocket :9333）
  * - cli.py 每次调用会自动拉起 bridge_server.py、自动打开 Chrome
  *
- * 前端 (SullyOS) 仍然通过 REST API 调用本服务，本服务 spawn Python CLI 并返回 JSON。
+ * 前端 (Moro) 仍然通过 REST API 调用本服务，本服务 spawn Python CLI 并返回 JSON。
  * REST API 的 endpoint / 入参 / 出参与旧版完全兼容，前端无需改动。
  *
  * 依赖:

@@ -44,7 +44,7 @@
 - worker 发送大 payload 时走 `sendPushWithMaybeBlob`。
 - 小 payload 仍然直接 Web Push。
 - 默认不启用 D1，超限 payload 会走 `amsg-instant` generic `_multipart` 分片。
-- `amsg-sw` 负责收齐分片、还原原始 payload，再交给 SullyOS 的 inbox / tool / emotion 流程。
+- `amsg-sw` 负责收齐分片、还原原始 payload，再交给 Moro 的 inbox / tool / emotion 流程。
 - 如果前台 D1 开关打开且 Worker 绑定了可用 D1，则大 payload 会先写入 BlobStore，再只推一个很小的 blob envelope。
 - D1 表结构由 Worker 自动初始化，过期 blob row 会在请求经过 Worker 时定期清理。
 - 前台通过 Worker `/capabilities` 自动检测 D1 能力；没检测到 D1 时，不允许打开 D1 envelope 开关。
@@ -82,7 +82,7 @@ Cloudflare Dashboard → 左侧 `Storage & Databases` → `D1` → `Create datab
 
 3. 重新部署 worker，让它拿到这个绑定。大包传输变量通常留空即可。
 
-4. 回到 SullyOS → Instant Push 配置，点“检测连接”。检测到 D1 后，再打开 D1 envelope 开关。
+4. 回到 Moro → Instant Push 配置，点“检测连接”。检测到 D1 后，再打开 D1 envelope 开关。
 
 表不用手动建，Worker 首次用到 D1 时会自动 `CREATE TABLE IF NOT EXISTS`。过期数据也不用强制配 cron，Worker 会在有请求经过时每隔一段时间顺手清掉已过期的数据。
 

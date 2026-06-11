@@ -137,8 +137,8 @@ docker run -d --restart=always -p 3000:3000 --name netease-api \
 
 浏览器 F12 → Network，找一个 `lyric` 或 `search` 请求，看 Response Headers：
 
-- **第一次请求**：`X-Sully-Cache: MISS` + `X-Sully-Upstream: xxx.vercel.app`
-- **第二次相同请求**：`X-Sully-Cache: HIT`（没有 `X-Sully-Upstream`，因为没打上游）
+- **第一次请求**：`X-Moro-Cache: MISS` + `X-Moro-Upstream: xxx.vercel.app`
+- **第二次相同请求**：`X-Moro-Cache: HIT`（没有 `X-Moro-Upstream`，因为没打上游）
 
 如果第二次还是 MISS，可能是：
 - 请求带了 cookie（比如 `song/url` 会按 VIP 分桶）

@@ -43,24 +43,24 @@ const CSS_EXAMPLES = [
     {
         name: '毛玻璃 (Glass)',
         code: `/* Glassmorphism for bubbles */
-.sully-bubble-user, .sully-bubble-ai {
+.moro-bubble-user, .moro-bubble-ai {
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,0.4);
   box-shadow: 0 4px 6px rgba(0,0,0,0.05);
 }
-.sully-bubble-user { background: rgba(99, 102, 241, 0.7) !important; }
-.sully-bubble-ai { background: rgba(255, 255, 255, 0.7) !important; }`
+.moro-bubble-user { background: rgba(99, 102, 241, 0.7) !important; }
+.moro-bubble-ai { background: rgba(255, 255, 255, 0.7) !important; }`
     },
     {
         name: '霓虹 (Neon)',
         code: `/* Glowing Neon Borders */
-.sully-bubble-user {
+.moro-bubble-user {
   border: 2px solid #a855f7;
   box-shadow: 0 0 10px #a855f7;
   background: #2e1065 !important;
   color: #fff !important;
 }
-.sully-bubble-ai {
+.moro-bubble-ai {
   border: 2px solid #3b82f6;
   box-shadow: 0 0 10px #3b82f6;
   background: #172554 !important;
@@ -70,7 +70,7 @@ const CSS_EXAMPLES = [
     {
         name: '像素 (Pixel)',
         code: `/* Pixel Art Style — Refined */
-.sully-bubble-user, .sully-bubble-ai {
+.moro-bubble-user, .moro-bubble-ai {
   border-radius: 0px !important;
   border: 3px solid #2d2d2d;
   box-shadow: 4px 4px 0px #2d2d2d, inset -2px -2px 0px rgba(0,0,0,0.12), inset 2px 2px 0px rgba(255,255,255,0.25);
@@ -78,12 +78,12 @@ const CSS_EXAMPLES = [
   image-rendering: pixelated;
   letter-spacing: 0.02em;
 }
-.sully-bubble-user {
+.moro-bubble-user {
   background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
   border-color: #4338ca;
   box-shadow: 4px 4px 0px #4338ca, inset -2px -2px 0px rgba(0,0,0,0.15), inset 2px 2px 0px rgba(255,255,255,0.2);
 }
-.sully-bubble-ai {
+.moro-bubble-ai {
   background: linear-gradient(135deg, #f8f8f8 0%, #e8e8e8 100%) !important;
   border-color: #bbb;
   box-shadow: 4px 4px 0px #bbb, inset -2px -2px 0px rgba(0,0,0,0.06), inset 2px 2px 0px rgba(255,255,255,0.8);
@@ -189,7 +189,7 @@ const injectPaddingCss = (css: string, verticalPadding: number) => {
     const horizontalPadding = Math.round(verticalPadding * 1.6); // Aspect ratio for bubble
     const rule = `
 ${PADDING_MARKER_START}
-.sully-bubble-user, .sully-bubble-ai {
+.moro-bubble-user, .moro-bubble-ai {
   padding: ${verticalPadding}px ${horizontalPadding}px !important;
 }
 ${PADDING_MARKER_END}`;
@@ -213,8 +213,8 @@ const SHADOW_MARKER_END = '/* SHADOW_AUTO_END */';
 const injectShadowCss = (css: string, userShadow: string, aiShadow: string) => {
     const rule = `
 ${SHADOW_MARKER_START}
-.sully-bubble-user { box-shadow: ${userShadow} !important; }
-.sully-bubble-ai { box-shadow: ${aiShadow} !important; }
+.moro-bubble-user { box-shadow: ${userShadow} !important; }
+.moro-bubble-ai { box-shadow: ${aiShadow} !important; }
 ${SHADOW_MARKER_END}`;
 
     const regex = new RegExp(`${SHADOW_MARKER_START.replace(/\*/g, '\\*')}[\\s\\S]*?${SHADOW_MARKER_END.replace(/\*/g, '\\*')}`);
@@ -269,7 +269,7 @@ type CssValidationResult = {
     importantCount: number;
 };
 
-const TARGET_SELECTOR_REGEX = /^\.sully-bubble-(user|ai)\b/;
+const TARGET_SELECTOR_REGEX = /^\.moro-bubble-(user|ai)\b/;
 
 const isValidHttpImageUrl = (value: string) => {
     try {
@@ -327,9 +327,9 @@ const validateCustomCss = (css: string): CssValidationResult => {
     });
     braceStack.forEach(index => pushError('存在未闭合的 `{`，请补全规则块。', findLineNumberByIndex(source, index)));
 
-    // Scope check: only allow .sully-bubble-user / .sully-bubble-ai
+    // Scope check: only allow .moro-bubble-user / .moro-bubble-ai
     // Ignore comments first to avoid false positives like:
-    // /* comment */ .sully-bubble-user { ... }
+    // /* comment */ .moro-bubble-user { ... }
     const sourceWithoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
     const selectorRegex = /([^{}]+)\{/g;
     let selectorMatch = selectorRegex.exec(sourceWithoutComments);
@@ -340,7 +340,7 @@ const validateCustomCss = (css: string): CssValidationResult => {
             selectorList.forEach(selector => {
                 if (!TARGET_SELECTOR_REGEX.test(selector)) {
                     pushError(
-                        `选择器 \`${selector}\` 超出限定范围，仅允许以 .sully-bubble-user / .sully-bubble-ai 开头。`,
+                        `选择器 \`${selector}\` 超出限定范围，仅允许以 .moro-bubble-user / .moro-bubble-ai 开头。`,
                         findLineNumberByIndex(sourceWithoutComments, selectorMatch.index)
                     );
                 }
@@ -390,25 +390,25 @@ const CSS_SCOPE_SNIPPETS: CssSnippet[] = [
         id: 'scope-shadow',
         name: '阴影',
         description: '给两侧气泡添加柔和投影',
-        code: `.sully-bubble-user, .sully-bubble-ai {\n  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);\n}`
+        code: `.moro-bubble-user, .moro-bubble-ai {\n  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);\n}`
     },
     {
         id: 'scope-stroke',
         name: '描边',
         description: '统一边框轮廓',
-        code: `.sully-bubble-user, .sully-bubble-ai {\n  border: 1px solid rgba(148, 163, 184, 0.45);\n}`
+        code: `.moro-bubble-user, .moro-bubble-ai {\n  border: 1px solid rgba(148, 163, 184, 0.45);\n}`
     },
     {
         id: 'scope-gradient',
         name: '渐变',
         description: '区分用户与角色气泡层次',
-        code: `.sully-bubble-user {\n  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;\n}\n.sully-bubble-ai {\n  background: linear-gradient(135deg, #ffffff, #e2e8f0) !important;\n}`
+        code: `.moro-bubble-user {\n  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;\n}\n.moro-bubble-ai {\n  background: linear-gradient(135deg, #ffffff, #e2e8f0) !important;\n}`
     },
     {
         id: 'scope-glass',
         name: '玻璃',
         description: '毛玻璃 + 高光边框',
-        code: `.sully-bubble-user, .sully-bubble-ai {\n  backdrop-filter: blur(10px);\n  border: 1px solid rgba(255, 255, 255, 0.45);\n}\n.sully-bubble-user {\n  background: rgba(99, 102, 241, 0.62) !important;\n}\n.sully-bubble-ai {\n  background: rgba(255, 255, 255, 0.62) !important;\n}`
+        code: `.moro-bubble-user, .moro-bubble-ai {\n  backdrop-filter: blur(10px);\n  border: 1px solid rgba(255, 255, 255, 0.45);\n}\n.moro-bubble-user {\n  background: rgba(99, 102, 241, 0.62) !important;\n}\n.moro-bubble-ai {\n  background: rgba(255, 255, 255, 0.62) !important;\n}`
     }
 ];
 
@@ -927,7 +927,7 @@ const ThemeMaker: React.FC = () => {
                     )}
 
                     <div
-                        className={`relative px-5 py-3 shadow-sm border border-black/5 text-sm overflow-visible ${isUser ? 'sully-bubble-user' : 'sully-bubble-ai'} ${isActive ? 'ring-2 ring-primary/70' : ''}`}
+                        className={`relative px-5 py-3 shadow-sm border border-black/5 text-sm overflow-visible ${isUser ? 'moro-bubble-user' : 'moro-bubble-ai'} ${isActive ? 'ring-2 ring-primary/70' : ''}`}
                         style={containerStyle}
                     >
                         {showPreviewBgImage && style.backgroundImage && (
@@ -1113,7 +1113,7 @@ const ThemeMaker: React.FC = () => {
                         <div className="space-y-6 animate-fade-in h-full flex flex-col">
                             <div className="text-[10px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed space-y-2">
                                 <span className="font-bold block mb-1 text-slate-500">CSS 增强模式</span>
-                                可使用CSS类名 <code className="bg-slate-200 px-1 rounded">.sully-bubble-user</code> 和 <code className="bg-slate-200 px-1 rounded">.sully-bubble-ai</code> 来统一定制气泡样式。
+                                可使用CSS类名 <code className="bg-slate-200 px-1 rounded">.moro-bubble-user</code> 和 <code className="bg-slate-200 px-1 rounded">.moro-bubble-ai</code> 来统一定制气泡样式。
                                 <br/>支持使用 <code className="text-red-400">!important</code> 覆盖可视化编辑器的设置。
                                 <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-2 text-[10px] text-indigo-700">
                                     <div className="font-semibold">优先级说明：可视化参数 vs CSS 覆盖</div>
@@ -1159,7 +1159,7 @@ const ThemeMaker: React.FC = () => {
                             )}
 
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">限定作用域插入器（仅 .sully-bubble-user/.sully-bubble-ai）</label>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">限定作用域插入器（仅 .moro-bubble-user/.moro-bubble-ai）</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {CSS_SCOPE_SNIPPETS.map(snippet => (
                                         <button

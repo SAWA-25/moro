@@ -58,7 +58,7 @@ owner_id 是本地随机 UUID，清浏览器数据就没了。给用户一个「
 ```ts
 import { exportIdentity, importIdentity } from '@/utils/vrWorld/postOffice';
 
-const code = exportIdentity();         // 形如 "sullypo.<uuid>.<校验位>"，给用户复制保存
+const code = exportIdentity();         // 形如 "moropo.<uuid>.<校验位>"，给用户复制保存
 const ok = importIdentity(userInput);  // 校验通过→替换本地 owner_id，返回 true/false
 ```
 

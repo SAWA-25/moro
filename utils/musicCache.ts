@@ -17,7 +17,7 @@
 
 type Entry = { data: any; expires: number };
 
-const LS_KEY = 'sully_music_api_cache_v1'; // 不参与 backup/import-export
+const LS_KEY = 'moro_music_api_cache_v1'; // 不参与 backup/import-export
 const MAX_ENTRIES = 200;
 
 /**

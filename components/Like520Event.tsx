@@ -26,8 +26,8 @@ import {
 // ============================================================
 
 export const LIKE520_RECORD_KEY = 'like520_2026';
-const LIKE520_DISMISSED_KEY = 'sullyos_like520_2026_dismissed';
-const LIKE520_COMPLETED_KEY = 'sullyos_like520_2026_completed';
+const LIKE520_DISMISSED_KEY = 'moro_like520_2026_dismissed';
+const LIKE520_COMPLETED_KEY = 'moro_like520_2026_completed';
 
 const isLike520Day = (): boolean => {
     const now = new Date();
@@ -50,15 +50,15 @@ export const isLike520EventAvailable = (): boolean => {
 
 /**
  * 520 弹窗默认进入的角色：
- *   1) 优先选 Sully（如果还在）
+ *   1) 优先选 Moro（如果还在）
  *   2) 否则选**和 user 聊得最频繁的角色**（消息数最多）
  *   3) 都没有时退回第一个角色（或空）
  */
 export async function pickDefaultLike520Char(characters: CharacterProfile[]): Promise<string> {
     if (!characters || characters.length === 0) return '';
-    const sully = characters.find(c => (c.name || '').toLowerCase().includes('sully'));
-    if (sully) return sully.id;
-    // 没有 Sully —— 数每个角色的消息条数，挑最多的那个
+    const moro = characters.find(c => (c.name || '').toLowerCase().includes('moro'));
+    if (moro) return moro.id;
+    // 没有 Moro —— 数每个角色的消息条数，挑最多的那个
     try {
         const counts = await Promise.all(characters.map(async c => {
             try {
@@ -103,14 +103,14 @@ const TUCAO_OPTIONS: { key: Like520TucaoKey; label: string }[] = [
 ];
 
 // ============================================================
-// Sully 识别（专属预设）
+// Moro 识别（专属预设）
 // ============================================================
 
-const isSullyChar = (char: CharacterProfile): boolean => {
-    return (char.name || '').toLowerCase().includes('sully');
+const isMoroChar = (char: CharacterProfile): boolean => {
+    return (char.name || '').toLowerCase().includes('moro');
 };
 
-const sullyPresets = (): Record<string, string> => ({
+const moroPresets = (): Record<string, string> => ({
     skin: 'skin_1',
     fronthair: 'fronthair_99',
     eyes: 'eyes_99',
@@ -124,7 +124,7 @@ export interface CreatorIframeProps {
     mode: 'char' | 'user';
     charName?: string;
     presets?: Record<string, any>;
-    isSully?: boolean;
+    isMoro?: boolean;
     /** 唯一草稿键（如彼方按 char.id），让草稿按角色隔离、与 520 互不串 */
     draftKey?: string;
     /** 覆盖标题（彼方用来去掉「变得小小的 520」文案） */
@@ -136,7 +136,7 @@ export interface CreatorIframeProps {
 
 const CHAR_CREATOR_URL = (((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/');
 
-export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, presets, isSully, draftKey, title, subtitle, onConfirm }) => {
+export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, presets, isMoro, draftKey, title, subtitle, onConfirm }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     // 自定义部件（开发模式上传）—— 异步从 DB 读出
     const extraItemsRef = useRef<any[]>([]);
@@ -145,8 +145,8 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
 
     // 最新参数 / 回调放 ref：让订阅与初始化的 effect 只跑一次，
     // 避免父组件重渲导致反复重发 init（会触发 applyLike520Init 重置当前选择 → "弹回上一个"）
-    const paramsRef = useRef({ mode, charName, presets, isSully, draftKey, title, subtitle });
-    paramsRef.current = { mode, charName, presets, isSully, draftKey, title, subtitle };
+    const paramsRef = useRef({ mode, charName, presets, isMoro, draftKey, title, subtitle });
+    paramsRef.current = { mode, charName, presets, isMoro, draftKey, title, subtitle };
     const onConfirmRef = useRef(onConfirm);
     onConfirmRef.current = onConfirm;
 
@@ -164,7 +164,7 @@ export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, pr
             type: 'like520_init',
             payload: {
                 ...p,
-                isSully: !!p.isSully,
+                isMoro: !!p.isMoro,
                 extraItems: extraItemsRef.current,
                 safeBottomPx,
             },
@@ -2807,7 +2807,7 @@ const LIKE520_BGM_GROUPS: Record<BGMGroupKey, string[]> = {
     ],
 };
 
-const BGM_MUTED_KEY = 'sullyos_like520_bgm_muted';
+const BGM_MUTED_KEY = 'moro_like520_bgm_muted';
 const BGM_TARGET_VOLUME = 0.35;
 const BGM_FADE_MS = 1200;
 
@@ -2990,7 +2990,7 @@ const BGMContext = React.createContext<{ muted: boolean; toggleMute: () => void 
 
 const HAS_BGM = Object.values(LIKE520_BGM_GROUPS).some(arr => arr && arr.length > 0);
 
-const BGM_HINT_DISMISSED_KEY = 'sullyos_like520_bgm_hint_dismissed';
+const BGM_HINT_DISMISSED_KEY = 'moro_like520_bgm_hint_dismissed';
 
 const BGMToggle: React.FC = () => {
     const ctx = React.useContext(BGMContext);
@@ -3416,8 +3416,8 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
                     <CreatorIframe
                         mode="char"
                         charName={char.name}
-                        presets={isSullyChar(char) ? sullyPresets() : undefined}
-                        isSully={isSullyChar(char)}
+                        presets={isMoroChar(char) ? moroPresets() : undefined}
+                        isMoro={isMoroChar(char)}
                         onConfirm={handleCharChibiConfirm}
                     />
                 </div>
@@ -3733,7 +3733,7 @@ export const Like520Controller: React.FC<Like520ControllerProps> = ({ onClose, i
         try { localStorage.setItem(LIKE520_DISMISSED_KEY, '1'); } catch { /* ignore */ }
     };
 
-    // popup 一打开就预选一个角色：优先 Sully，没有 Sully 选聊得最频繁的那个
+    // popup 一打开就预选一个角色：优先 Moro，没有 Moro 选聊得最频繁的那个
     useEffect(() => {
         if (stage !== 'popup' || initialCharId) return;
         let cancelled = false;
@@ -3744,7 +3744,7 @@ export const Like520Controller: React.FC<Like520ControllerProps> = ({ onClose, i
     }, [stage, characters, initialCharId]);
 
     const defaultChar = useMemo(() => characters.find(c => c.id === defaultCharId), [characters, defaultCharId]);
-    const isSullyDefault = defaultChar ? (defaultChar.name || '').toLowerCase().includes('sully') : false;
+    const isMoroDefault = defaultChar ? (defaultChar.name || '').toLowerCase().includes('moro') : false;
 
     const dismiss = () => {
         markDismissed();
@@ -3766,10 +3766,10 @@ export const Like520Controller: React.FC<Like520ControllerProps> = ({ onClose, i
     if (stage === 'popup') {
         const charName = defaultChar?.name || (characters.length === 0 ? '' : '...');
         const popupHeading = defaultChar
-            ? (isSullyDefault ? 'Sully 好像有事找你？' : `${charName} 好像有事找你？`)
+            ? (isMoroDefault ? 'Moro 好像有事找你？' : `${charName} 好像有事找你？`)
             : '特别活动';
         const popupBody = defaultChar
-            ? (isSullyDefault
+            ? (isMoroDefault
                 ? 'ta 突然变得小小的——\n要不要去看看？'
                 : `${charName} 今天有点不一样——\nta 突然变得小小的。`)
             : '今天是 5 月 20 号——\n但还没有可以陪你的角色。';
@@ -3788,7 +3788,7 @@ export const Like520Controller: React.FC<Like520ControllerProps> = ({ onClose, i
                         <p className="text-[11px] text-pink-400 mt-1.5 font-medium">2026 May 20 Special</p>
                         <p className="text-[12px] text-slate-500 mt-3 leading-relaxed whitespace-pre-line">{popupBody}</p>
                         <p className="text-[10px] text-slate-400 mt-3 leading-relaxed">
-                            {defaultChar && !isSullyDefault
+                            {defaultChar && !isMoroDefault
                                 ? '（想换个 ta？桌面「特别时光」里所有 ta 都在）'
                                 : '（这条提醒只会出现一次，活动随时可以在桌面「特别时光」里找到）'}
                         </p>

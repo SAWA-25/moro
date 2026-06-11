@@ -800,7 +800,7 @@ ${isInitialGeneration ? `
       const exportData: CharacterExportData = {
           ...cardProps,
           version: 1,
-          type: 'sully_character_card'
+          type: 'moro_character_card'
       };
 
       if (formData.bubbleStyle) {
@@ -931,12 +931,12 @@ ${isInitialGeneration ? `
               }
 
               const data = JSON.parse(await file.text());
-              if (data?.type === 'sully_character_card') {
-                  await importSullyCard(data as CharacterExportData);
+              if (data?.type === 'moro_character_card') {
+                  await importMoroCard(data as CharacterExportData);
                   return;
               }
               const parsed = parseSillyTavernCard(data);
-              if (!parsed) throw new Error('无法识别的角色卡格式（支持 Sully 卡 JSON、SillyTavern 卡 PNG / JSON）');
+              if (!parsed) throw new Error('无法识别的角色卡格式（支持 Moro 卡 JSON、SillyTavern 卡 PNG / JSON）');
               await importSillyTavernCard(parsed, '');
           } catch (err: any) {
               console.error(err);
@@ -947,7 +947,7 @@ ${isInitialGeneration ? `
       })();
   };
 
-  const importSullyCard = async (data: CharacterExportData) => {
+  const importMoroCard = async (data: CharacterExportData) => {
       if (data.embeddedTheme) {
           const exists = customThemes.some(t => t.id === data.embeddedTheme!.id);
           if (!exists) {
@@ -1002,7 +1002,7 @@ ${isInitialGeneration ? `
                <div className="px-6 pt-16 pb-4 shrink-0 flex items-center justify-between">
                    <div><h1 className="text-2xl font-light text-slate-800 tracking-tight">神经链接</h1><p className="text-xs text-slate-400 mt-1">已建立 {characters.length} 个角色连接</p></div>
                    <div className="flex gap-2">
-                        <button onClick={() => cardImportRef.current?.click()} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors text-slate-600" title="导入角色卡（Sully JSON / SillyTavern PNG·JSON）">
+                        <button onClick={() => cardImportRef.current?.click()} className="p-2 rounded-full bg-white/40 hover:bg-white/80 transition-colors text-slate-600" title="导入角色卡（Moro JSON / SillyTavern PNG·JSON）">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                             </svg>

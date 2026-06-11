@@ -67,9 +67,9 @@ export interface NeteaseProfile {
 }
 
 /* ───────────── 默认 / 常量 ───────────── */
-const LS_CFG_KEY = 'sully_music_cfg_v1';
-const LS_STATE_KEY = 'sully_music_state_v1';
-const LS_LOCAL_ALBUM_KEY = 'sully_music_local_album_v1';
+const LS_CFG_KEY = 'moro_music_cfg_v1';
+const LS_STATE_KEY = 'moro_music_state_v1';
+const LS_LOCAL_ALBUM_KEY = 'moro_music_local_album_v1';
 
 const loadLocalAlbum = (): Song[] => {
   try {
@@ -94,7 +94,7 @@ export const MUSIC_DEFAULT_CFG: MusicCfg = {
 // 旧 worker 域名 → 新自定义域名的迁移表。老用户 localStorage 里存的还是
 // sully-n.qegj567.workers.dev，国内访问超时；自定义域名走 CF 边缘到同一个
 // worker，行为一致。第一次读到自动改写并落盘，下次刷新就稳定了。
-const STALE_WORKER_HOSTS = [/sully-n\.qegj567\.workers\.dev/i];
+const STALE_WORKER_HOSTS = [/moro-n\.qegj567\.workers\.dev/i];
 const migrateWorkerUrl = (url: string | undefined): string => {
   if (!url) return DEFAULT_WORKER;
   for (const re of STALE_WORKER_HOSTS) {

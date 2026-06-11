@@ -142,10 +142,10 @@ export function extractCardJsonFromPng(buffer: ArrayBuffer): any {
 
 const V1_HINT_FIELDS = ['description', 'personality', 'scenario', 'first_mes', 'mes_example'];
 
-/** 识别 SillyTavern 角色卡（V1/V2/V3）。不是则返回 null（如 Sully 卡）。 */
+/** 识别 SillyTavern 角色卡（V1/V2/V3）。不是则返回 null（如 Moro 卡）。 */
 export function parseSillyTavernCard(json: any): ParsedSTCard | null {
     if (!json || typeof json !== 'object') return null;
-    if (json.type === 'sully_character_card') return null;
+    if (json.type === 'moro_character_card') return null;
     if (json.spec === 'chara_card_v3' && json.data && typeof json.data === 'object') {
         return { spec: 'v3', data: json.data };
     }

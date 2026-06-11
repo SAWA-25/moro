@@ -14,7 +14,7 @@
  *   - Web: direct fetch by default. api.github.com sets CORS for any origin
  *     (per GitHub docs); uploads.github.com does too. If the user's network
  *     can't reach github.com (GFW), they flip 'githubUseProxy' on and we
- *     route through the same sully-n CF Worker that handles WebDAV — Worker
+ *     route through the same moro-n CF Worker that handles WebDAV — Worker
  *     free tier caps each request body at ~100 MB, but it's enough to
  *     unblock most users.
  */
@@ -25,9 +25,9 @@ import { CloudBackupConfig, CloudBackupFile } from '../types';
 const WORKER_URL = 'https://sullymeow.ccwu.cc';
 const API_HOST = 'https://api.github.com';
 const UPLOAD_HOST = 'https://uploads.github.com';
-const DEFAULT_REPO = 'sully-backup';
-const TAG_PREFIX = 'sully-backup-';
-const RELEASE_NAME_PREFIX = 'Sully Backup ';
+const DEFAULT_REPO = 'moro-backup';
+const TAG_PREFIX = 'moro-backup-';
+const RELEASE_NAME_PREFIX = 'Moro Backup ';
 
 // 80 MB / 片 — Cloudflare Worker 免费版单请求体上限 ~100MB，留 20MB
 // 余量给 multipart / 元数据。备份超过这个体积时会自动切成多个 asset
@@ -252,7 +252,7 @@ export const ensureRepo = async (config: CloudBackupConfig): Promise<{ ok: boole
             headers: authHeaders(token, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 name: repo,
-                description: 'Sully 自动备份仓库',
+                description: 'Moro 自动备份仓库',
                 private: true,
                 auto_init: true,
             }),

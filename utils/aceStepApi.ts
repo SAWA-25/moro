@@ -213,7 +213,7 @@ export async function generatePromptViaLLM(
 
 【范例 — hint 里的具体要求被原样保留】
 
-例 1: hint = "慵懒爵士女声, 钢琴和萨克斯, 60bpm, 雨夜的感觉"; 角色 = 嘴硬黑客猫娘 Sully
+例 1: hint = "慵懒爵士女声, 钢琴和萨克斯, 60bpm, 雨夜的感觉"; 角色 = 嘴硬黑客猫娘 Moro
 → female vocal, sleepy lazy croon, jazz, piano, saxophone, vinyl crackle, late-night smoky bar, soft glitch reverb, smirky breath, rainy ambience, 60 bpm, e minor
 
 例 2: hint = "想要伤感的"; 角色 = 古风修仙剑客
@@ -245,7 +245,7 @@ export async function generatePromptViaLLM(
 
 【范例 — hint 里的具体要求原样保留】
 
-例 1: hint = "慵懒爵士女声, 钢琴和萨克斯, 60bpm, 雨夜的感觉"; 角色 = 嘴硬黑客猫娘 Sully
+例 1: hint = "慵懒爵士女声, 钢琴和萨克斯, 60bpm, 雨夜的感觉"; 角色 = 嘴硬黑客猫娘 Moro
 → 女声, 慵懒哼唱, 爵士, 钢琴, 萨克斯, 黑胶沙沙噪点, 深夜烟熏酒吧, 故障感混响尾音, 嘲弄式呼气, 雨夜氛围, 60bpm, e 小调
 
 例 2: hint = "想要伤感的"; 角色 = 古风修仙剑客

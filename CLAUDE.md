@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-给 Claude Code 的项目导航。SullyOS 是装在浏览器里的虚拟手机系统（React + TS + Vite，local-first，IndexedDB 存储）。详细介绍见 [`README.md`](./README.md)。
+给 Claude Code 的项目导航。Moro 是装在浏览器里的虚拟手机系统（React + TS + Vite，local-first，IndexedDB 存储）。详细介绍见 [`README.md`](./README.md)。
 
 这份文件只做一件事：**告诉你遇到某类问题该去翻哪份文档**，别在代码里瞎逛。
 

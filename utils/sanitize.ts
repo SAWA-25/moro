@@ -37,7 +37,7 @@ const stripTimestamps = (t: string): string =>
 const stripChineseDate = (t: string): string => t.replace(/\[\d{4}[-/年]\d{1,2}[-/月]\d{1,2}.*?\]/g, '');
 
 /**
- * 整个字符串首行的角色名 prefix `Sully:` / `User:` (无 m flag — 跟
+ * 整个字符串首行的角色名 prefix `Moro:` / `User:` (无 m flag — 跟
  * applyAssistantPostProcessing.ts:normalizeAiContent 行为对齐).
  */
 const stripRoleNamePrefix = (t: string): string => t.replace(/^[\w一-龥]+:\s*/, '');

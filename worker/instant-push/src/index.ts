@@ -1,9 +1,9 @@
 /**
- * SullyOS Instant Push — Cloudflare Worker entry.
+ * Moro Instant Push — Cloudflare Worker entry.
  *
  * Phase 2 Round 2 (这次):
  *  - 升 @rei-standard/amsg-instant 到 0.8.1
- *  - 配置 onLLMOutput hook: SullyOS 业务标签分类器 (见 ./classifier.ts)
+ *  - 配置 onLLMOutput hook: Moro 业务标签分类器 (见 ./classifier.ts)
  *  - 数据标签 → tool-request push (客户端跑工具, POST /continue 续跑)
  *  - 副作用标签 → finish + metadata.directives (客户端重放)
  *  - 大 payload 默认走 amsg-instant generic multipart; 显式启用时才走 D1 BlobStore envelope.
