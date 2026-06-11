@@ -87,9 +87,9 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
 export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
-  { id: AppID.Chat, name: 'Message', icon: 'Chat', color: 'green' },
   { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
-  { id: AppID.GroupChat, name: '消息', icon: 'GroupChat', color: 'violet' },
+  // 聊天枢纽：单聊 + 群聊 + 联系人 + 朋友圈 一站式入口（原独立「群聊」「Message」App 已合并于此）
+  { id: AppID.GroupChat, name: '聊天', icon: 'Chat', color: 'green' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   { id: AppID.CheckPhone, name: '查手机', icon: 'CheckPhone', color: 'slate' },
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
@@ -99,7 +99,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
-  { id: AppID.Social, name: 'Spark', icon: 'Social', color: 'red' },
+  { id: AppID.Social, name: '朋友圈', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
   { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },
@@ -123,4 +123,4 @@ export const INSTALLED_APPS: AppConfig[] = [
   // { id: AppID.QQBridge, name: 'QQ 桥', icon: 'QQBridge', color: 'sky' }, // Hidden temporarily
 ];
 
-export const DOCK_APPS = [AppID.Chat, AppID.GroupChat, AppID.Social, AppID.Settings];
+export const DOCK_APPS = [AppID.GroupChat, AppID.Social, AppID.Settings];

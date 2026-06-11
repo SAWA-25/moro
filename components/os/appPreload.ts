@@ -8,7 +8,7 @@ const importers: Partial<Record<AppID, () => Promise<unknown>>> = {
   [AppID.Settings]: () => import('../../apps/Settings'),
   [AppID.Character]: () => import('../../apps/Character'),
   [AppID.Chat]: () => import('../../apps/Chat'),
-  [AppID.GroupChat]: () => import('../../apps/GroupChat'),
+  [AppID.GroupChat]: () => import('../../apps/ChatHub'),
   [AppID.ThemeMaker]: () => import('../../apps/ThemeMaker'),
   [AppID.Appearance]: () => import('../../apps/Appearance'),
   [AppID.Gallery]: () => import('../../apps/Gallery'),
