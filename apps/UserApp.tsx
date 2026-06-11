@@ -2,9 +2,10 @@
 import React, { useState, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { processImage } from '../utils/file';
+import { AppID } from '../types';
 
 const UserApp: React.FC = () => {
-    const { closeApp, userProfile, updateUserProfile, addToast } = useOS();
+    const { closeApp, openApp, userProfile, updateUserProfile, addToast } = useOS();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -69,6 +70,17 @@ const UserApp: React.FC = () => {
                             className="w-full h-48 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 leading-relaxed resize-none focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all"
                             placeholder="描述你自己..."
                         />
+                    </div>
+
+                    <div className="bg-violet-50/80 border border-violet-100 rounded-2xl p-4 flex items-center gap-3">
+                        <div className="flex-1">
+                            <p className="text-xs font-bold text-violet-600">想在不同角色面前用不同身份？</p>
+                            <p className="text-[10px] text-violet-400 mt-0.5 leading-relaxed">「人设」App 可以保存多套名字 / 头像 / 设定，绑定角色后进聊天自动切换；启用人设时会覆盖这里的档案内容。</p>
+                        </div>
+                        <button
+                            onClick={() => openApp(AppID.Personas)}
+                            className="px-3 py-1.5 bg-violet-500 text-white text-[10px] font-bold rounded-full shadow-sm active:scale-95 transition-transform shrink-0"
+                        >打开人设</button>
                     </div>
                 </div>
             </div>

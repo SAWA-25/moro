@@ -7,6 +7,7 @@
  *
  * 支持（大小写不敏感）：
  *  - {{char}} / {{user}}：角色名 / 用户名
+ *  - {{persona}}：当前人设描述（ST persona 宏；未提供时替换为空串）
  *  - <char> / <bot> / <user>：ST 旧版角色卡的遗留标记
  *  - {{date}} {{time}} {{weekday}} {{newline}}
  * 未知宏原样保留（不吞掉用户内容）。
@@ -15,6 +16,8 @@
 export interface MacroContext {
     charName: string;
     userName: string;
+    /** 当前激活人设的描述（{{persona}} 宏）。未传时该宏替换为空串（同 ST 无人设描述时的行为） */
+    personaDescription?: string;
 }
 
 export function substituteMacros(text: string, ctx: MacroContext): string {
@@ -25,6 +28,7 @@ export function substituteMacros(text: string, ctx: MacroContext): string {
     return text
         .replace(/{{char}}/gi, ctx.charName)
         .replace(/{{user}}/gi, ctx.userName)
+        .replace(/{{persona}}/gi, ctx.personaDescription || '')
         .replace(/<char>/gi, ctx.charName)
         .replace(/<bot>/gi, ctx.charName)
         .replace(/<user>/gi, ctx.userName)

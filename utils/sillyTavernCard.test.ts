@@ -155,14 +155,31 @@ describe('convertSTCardToCharacter', () => {
         expect(result.systemPrompt).toContain('小满是一位旅行画家，常给阿月写信');
         expect(result.systemPrompt).toContain('【性格特征】\n温柔、好奇');
         expect(result.systemPrompt).toContain('【对话示例】');
-        expect(result.systemPrompt).toContain('你好呀，阿月！');
-        expect(result.systemPrompt).toContain('【备选开场白 1】\n好久不见，阿月。');
         expect(result.systemPrompt).toContain('回复保持简短');
         expect(result.systemPrompt).not.toContain('{{char}}');
         expect(result.systemPrompt).not.toContain('{{user}}');
         expect(result.description).toContain('by tester');
         expect(result.description).toContain('v1.2');
         expect(result.avatarFallback.startsWith('data:image/svg+xml')).toBe(true);
+    });
+
+    it('开场白独立导出，不混入 systemPrompt，且保留原始宏', () => {
+        // 修复：开场白曾被拼进 systemPrompt（【开场白（角色初始口吻参考）】节），
+        // 导致角色描述与开场白混在一起。现在 first_mes / alternate_greetings
+        // 是独立字段，进入聊天时选择并替换宏。
+        expect(result.systemPrompt).not.toContain('你好呀');
+        expect(result.systemPrompt).not.toContain('开场白');
+        expect(result.firstMes).toBe('你好呀，{{user}}！');
+        expect(result.alternateGreetings).toEqual(['好久不见，{{user}}。']);
+    });
+
+    it('无开场白的卡：firstMes 为 undefined，备选为空数组', () => {
+        const bare = convertSTCardToCharacter(
+            parseSillyTavernCard({ spec: 'chara_card_v2', data: { name: '素卡', description: 'x' } })!,
+            {},
+        );
+        expect(bare.firstMes).toBeUndefined();
+        expect(bare.alternateGreetings).toEqual([]);
     });
 
     it('世界书条目全部入库：3 个条目 + 1 条卡片信息', () => {

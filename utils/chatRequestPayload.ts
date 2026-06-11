@@ -23,6 +23,8 @@ import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../contex
 import { isPromptBuildSkipped } from './devDebug';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { PresetRuntime, applyPresetToMessages } from './presets';
+import { PersonaRuntime, normalizePersonaPosition } from './personas';
+import { PERSONA_POSITION } from '../types';
 import { substituteMacros } from './macros';
 
 export interface UserListeningContext {
@@ -196,14 +198,33 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         musicCfg = derived.musicCfg ?? musicCfg;
     }
 
-    // ── 2.5 预设 + 世界书关键词扫描上下文 ─────────────────
+    // ── 2.5 预设 + 人设 + 世界书关键词扫描上下文 ─────────────────
     // 预设要在 buildSystemPrompt 之前取：启用时核心上下文按 marker 拆分构建
     // （世界书 / 用户档案块单独产出，由预设的 worldInfo* / personaDescription
     // marker 决定位置与开关）。
     const activePreset = await PresetRuntime.getActivePreset();
+
+    // 人设（SillyTavern Persona 移植）：激活时名字/头像/描述覆盖档案，
+    // 描述按 position 语义落点（嵌入提示词 / @Depth / 不注入），
+    // 绑定的世界书分组经 setExtraCategories 走世界书运行时统一注入。
+    const activePersona = await PersonaRuntime.getActivePersona();
+    const personaPosition = activePersona ? normalizePersonaPosition(activePersona.position) : PERSONA_POSITION.IN_PROMPT;
+    const personaDesc = activePersona ? (activePersona.description || '').trim() : (userProfile?.bio || '').trim();
+    // 描述进核心上下文 / personaDescription marker 的条件：无人设（沿用档案 bio）或位置=嵌入提示词
+    const personaDescInPrompt = personaPosition === PERSONA_POSITION.IN_PROMPT;
+    const effectiveUser = activePersona
+        ? {
+            ...userProfile,
+            name: (activePersona.name || '').trim() || userProfile?.name || '用户',
+            avatar: activePersona.avatar || userProfile?.avatar || '',
+            bio: personaDescInPrompt ? personaDesc : '',
+        }
+        : userProfile;
+
     const macroCtx = {
         charName: char.name || '角色',
-        userName: (userProfile?.name && userProfile.name.trim()) || '用户',
+        userName: (effectiveUser?.name && effectiveUser.name.trim()) || '用户',
+        personaDescription: personaDesc,
     };
 
     // 关键词扫描上下文（ST 世界书绿灯条目移植）：喂入最近消息文本，
@@ -213,6 +234,8 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         .map(m => (typeof (m as any).content === 'string' ? (m as any).content as string : ''))
         .filter(Boolean);
     WorldbookRuntime.setScanContext(scanTexts);
+    // 人设世界书（=ST persona lorebook）：激活人设绑定的分组在本次构建中视同已挂载
+    WorldbookRuntime.setExtraCategories(activePersona?.lorebookCategory ? [activePersona.lorebookCategory] : null);
 
     // ── 3. buildSystemPrompt 核心（+ 世界书分段，同一扫描上下文内完成） ──
     let systemPrompt = '';
@@ -222,7 +245,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         // 预设启用时 before/after 块作为 marker 内容用，未启用时它们已内联在核心上下文里。
         depthSections = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
         systemPrompt = await ChatPrompts.buildSystemPrompt(
-            char, userProfile, groups, emojis, categories, recentMsgsHint,
+            char, effectiveUser, groups, emojis, categories, recentMsgsHint,
             realtimeConfig, innerState || undefined,
             userListeningContext ?? null,
             !!isListeningTogether,
@@ -232,6 +255,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         );
     } finally {
         WorldbookRuntime.setScanContext(null);
+        WorldbookRuntime.setExtraCategories(null);
     }
 
     // ── 4. 双语指令注入 ───────────────────────────────────
@@ -271,7 +295,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // ── 6. 思考链提示词 ───────────────────────────────────
     const thinkingActive = !!thinkingChain?.enabled;
     if (thinkingActive) {
-        const userName = (userProfile?.name && userProfile.name.trim()) || '用户';
+        const userName = macroCtx.userName;
         systemPrompt += `\n\n${buildThinkingChainPrompt(char.name, userName)}`;
         const extra = (thinkingChain?.customPrompt || '').trim();
         if (extra) {
@@ -280,7 +304,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 7. 历史消息构造 ───────────────────────────────────
-    const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, userProfile, emojis);
+    const { apiMessages } = ChatPrompts.buildMessageHistory(historyMsgs, contextLimit, char, effectiveUser, emojis);
 
     // ── 8. 剥离历史里旧的双语标签 ─────────────────────────
     const cleanedApiMessages = cleanApiMessages(apiMessages);
@@ -288,7 +312,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // ── 9. 麦当劳小程序上下文（在 cleanedApiMessages 之后追加到 systemPrompt） ──
     const mcdActive = !!mcdMiniSnap?.open;
     if (mcdActive) {
-        const block = buildMcdMiniAppContextBlock(mcdMiniSnap, userProfile?.name || '用户');
+        const block = buildMcdMiniAppContextBlock(mcdMiniSnap, macroCtx.userName);
         if (block) {
             systemPrompt += block;
         }
@@ -313,13 +337,34 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }));
     WorldbookRuntime.spliceDepthMessages(fullMessages, depthEntries);
 
+    // 人设描述 @Depth 注入（position=4，同 ST persona_description_positions.AT_DEPTH）：
+    // 以人设指定的 role 插到聊天历史对应深度。必须在预设骨架（第 11 步）之前 ——
+    // applyPresetToMessages 会把 [system, ...history] 整段重排，深度消息要先进历史段。
+    if (activePersona && personaPosition === PERSONA_POSITION.AT_DEPTH && personaDesc) {
+        const rolePos = activePersona.role === 1 ? 'depth_user' as const
+            : activePersona.role === 2 ? 'depth_assistant' as const
+            : 'depth_system' as const;
+        WorldbookRuntime.spliceDepthMessages(fullMessages, [{
+            id: `persona-${activePersona.id}`,
+            title: activePersona.name,
+            category: '人设',
+            scope: 'local',
+            position: rolePos,
+            depth: activePersona.depth ?? 2,
+            order: 100,
+            content: substituteMacros(personaDesc, macroCtx),
+        }]);
+    }
+
     // ── 11. 预设（SillyTavern 式）骨架 ───────────────────
     // 启用预设时把 [system, ...history] 重排成 prompt_order 定义的消息流：
     // 相对提示词按序展开、世界书 before/after 与用户档案块落到各自 marker 的
     // 位置（受 marker 开关控制）、核心上下文落在第一个启用的核心 marker、
     // 绝对提示词 @Depth 注入历史段。未启用时数组原样不动。注意要在双语
     // reminder 之前做，保证 reminder 始终钉在最末尾。
-    const personaBlock = `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${userProfile?.bio || '无'}`;
+    // personaDescription marker 内容：嵌入提示词时带描述；@Depth / 不注入时只保留名字
+    // （描述分别已插进历史 / 按 ST 语义彻底不发）。
+    const personaBlock = `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${(personaDescInPrompt && personaDesc) ? personaDesc : '无'}`;
     if (activePreset) {
         fullMessages = applyPresetToMessages(fullMessages, activePreset, {
             macros: macroCtx,

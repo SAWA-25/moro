@@ -14,6 +14,7 @@
 | **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读 |
 | **世界书开关/作用域/位置** | [`docs/worldbook-scopes.md`](./docs/worldbook-scopes.md) | 条目/整书开关、局部 vs 全局、ST 式插入位置（@Depth）、群聊去重。改世界书注入前必读 |
 | **预设 App（酒馆预设）** | [`docs/preset-app.md`](./docs/preset-app.md) | SillyTavern Chat Completion 预设导入、提示词管理器、@Depth 注入语义、marker→Moro 落点映射。改预设/消息组装前必读 |
+| **人设 App（用户人设）** | [`docs/persona-app.md`](./docs/persona-app.md) | SillyTavern Persona 管理移植：多套用户身份、角色绑定自动切换、描述注入位置、人设世界书、角色卡开场白选择。改人设/用户档案注入前必读 |
 | **Instant Push SSE↔Push 契约** | [`docs/instant-push-dual-channel.md`](./docs/instant-push-dual-channel.md) | **改 instant push 路径或排查「报错但收到消息」类 bug 前必读**。SSE ≠ 送达判定通道、catch 不能直接判 send-failed |
 | **Instant Push 通道** | [`docs/instant-push-branch-notes.md`](./docs/instant-push-branch-notes.md)、[`worker/instant-push/README.md`](./worker/instant-push/README.md) | LLM-driven Web Push、worker 端 agentic loop / reasoning / 副作用 directive |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |

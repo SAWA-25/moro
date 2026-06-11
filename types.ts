@@ -40,6 +40,60 @@ export enum AppID {
   Phone = 'phone', // 电话 — 拨号键盘 / 通话记录（拨出·接听·未接）/ 通话录音回放与逐字稿
   ExchangeDiary = 'exchange_diary', // 日记社 — 多角色交换日记本（角色视角日记 + 每日对话总结）
   Presets = 'presets', // 预设 — SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数，可导入酒馆预设 JSON）
+  Personas = 'personas', // 人设 — SillyTavern 式用户人设管理（多套用户身份，可绑定角色 / 默认 / 世界书，描述按位置注入 prompt）
+}
+
+// =====================================================================
+// --- 人设（SillyTavern Persona Management 移植） ---
+// 与 ST 的 power_user.personas / persona_descriptions 对齐：
+// 一套人设 = 名字 + 头像 + 描述 + 注入位置 (+ 世界书绑定 + 角色绑定)。
+// 激活人设时把 name/avatar/description 写入 UserProfile（全链路立即生效），
+// 位置 / 深度 / 世界书等高级语义由 utils/personas.ts 的 PersonaRuntime 在
+// 主聊天链路（buildChatRequestPayload）里解析。
+// =====================================================================
+
+/**
+ * 人设描述注入位置（保留 ST persona_description_positions 的原始数值）。
+ * Moro 没有作者注释（Author's Note），ST 的 2（顶部）/ 3（底部）导入时降级为 0。
+ */
+export const PERSONA_POSITION = {
+    /** 嵌入提示词（默认）：进核心上下文的「互动对象」块 / 预设的 personaDescription marker */
+    IN_PROMPT: 0,
+    /** @Depth 注入：以指定 role 插到聊天历史的对应深度（同世界书 @D 语义） */
+    AT_DEPTH: 4,
+    /** 不注入：描述不进 prompt（名字仍通过 {{user}} 与「互动对象」块生效） */
+    NONE: 9,
+} as const;
+
+/** @Depth 注入时的消息 role（同 ST persona_description_role）：0=system 1=user 2=assistant */
+export type PersonaDepthRole = 0 | 1 | 2;
+
+export interface PersonaConnection {
+    type: 'character' | 'group';
+    id: string;
+}
+
+export interface Persona {
+    id: string;
+    /** 人设名（聊天里作为用户名，{{user}} 宏的解析值） */
+    name: string;
+    /** 仅展示用小标题（ST 的 title），不进 prompt */
+    title?: string;
+    avatar: string;
+    /** 人设描述（进 prompt；支持 {{char}} / {{user}} 宏） */
+    description: string;
+    /** 注入位置（PERSONA_POSITION 数值；兼容导入的 ST 备份里出现的 1/2/3 → 视为 0） */
+    position: number;
+    /** @Depth 注入深度（仅 position=4 生效），默认 2（同 ST） */
+    depth?: number;
+    /** @Depth 注入 role（仅 position=4 生效），默认 0=system */
+    role?: PersonaDepthRole;
+    /** 绑定的世界书分组名（=ST 人设世界书）：激活时该组条目按各自位置/开关注入主聊天 */
+    lorebookCategory?: string;
+    /** 绑定的角色/群（=ST connections）：进入对应聊天时自动切换到本人设 */
+    connections?: PersonaConnection[];
+    createdAt: number;
+    updatedAt: number;
 }
 
 // =====================================================================
@@ -1449,6 +1503,13 @@ export interface CharacterProfile {
   description: string;
   systemPrompt: string;
   worldview?: string;
+  /**
+   * 开场白（SillyTavern 角色卡 first_mes）。保留原始宏（{{user}} / {{char}}），
+   * 进入空聊天选择开场白时才替换 —— 换人设后再开聊天，宏会解析成新名字。
+   */
+  firstMes?: string;
+  /** 备选开场白（角色卡 alternate_greetings），与 firstMes 一起构成进入聊天时左右切换的候选 */
+  alternateGreetings?: string[];
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];
@@ -2310,6 +2371,7 @@ export interface FullBackupData {
     exchangeDiaryBooks?: ExchangeDiaryBook[]; // 日记社多角色交换日记本
     innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
     llmPresets?: TavernPreset[];              // 预设 App：SillyTavern 式 Chat Completion 预设
+    personas?: Persona[];                     // 人设 App：SillyTavern 式用户人设
 
     // Bank Data
     bankState?: BankFullState;

@@ -38,6 +38,7 @@ import {
   Planet,
   Wrench,
   Faders,
+  MaskHappy,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -80,6 +81,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   VRWorld: ({ className }) => <Planet className={className} weight="bold" />,
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
   Presets: ({ className }) => <Faders className={className} weight="bold" />,
+  Personas: ({ className }) => <MaskHappy className={className} weight="bold" />,
 };
 
 export const INSTALLED_APPS: AppConfig[] = [
@@ -94,6 +96,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.User, name: '档案', icon: 'User', color: 'blue' },
+  { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },
   { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
   { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
