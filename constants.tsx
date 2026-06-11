@@ -85,7 +85,8 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
 };
 
 export const INSTALLED_APPS: AppConfig[] = [
-  { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
+  // 神经链接（角色档案）已并入「人设」App：人设库 → 选「角色档案」或「主控面具」
+  // { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
   // 聊天枢纽：单聊 + 群聊 + 联系人 + 朋友圈 一站式入口（原独立「群聊」「Message」App 已合并于此）
@@ -93,13 +94,15 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   // 查手机已并入聊天 App：聊天界面底部 + 号面板 →「查手机」（不再是独立桌面 App）
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
-  { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
+  // 见面已并入聊天 App：聊天界面底部 + 号面板 →「见面」（用户主动发起线下模式）
+  // { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },
   { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
   { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
-  { id: AppID.Social, name: '朋友圈', icon: 'Social', color: 'red' },
+  // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
+  { id: AppID.Social, name: '小红书', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
   { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },

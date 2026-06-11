@@ -55,8 +55,10 @@ const CharacterCard: React.FC<{
     </div>
 );
 
-const Character: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+/** onExit：人设库（PersonaHubApp）嵌入时返回选择页；不传则关闭 App 回桌面（旧行为） */
+const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
+  const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  const closeApp = onExit || closeAppOS;
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);

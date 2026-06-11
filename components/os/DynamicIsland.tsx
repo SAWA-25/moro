@@ -49,15 +49,28 @@ const DynamicIsland: React.FC = () => {
 
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
 
-    const showNotice = React.useCallback((n: LiveNotice) => {
-        noticeRef.current = n;
-        setNotice(n);
+    // 横幅队列：多条消息逐条弹出（每条短驻留），而不是后到的覆盖先到的
+    const noticeQueueRef = useRef<LiveNotice[]>([]);
+
+    const displayNext = React.useCallback(() => {
+        const next = noticeQueueRef.current.shift() || null;
+        noticeRef.current = next;
+        setNotice(next);
         if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        if (!next) return;
+        // 队列里还有等着的就缩短驻留时间，让后续消息尽快逐条弹出
+        const dwell = noticeQueueRef.current.length > 0 ? 2600 : 5000;
         noticeTimer.current = window.setTimeout(() => {
-            noticeRef.current = null;
-            setNotice(null);
-        }, 5000);
+            noticeTimer.current = null;
+            displayNext();
+        }, dwell);
     }, []);
+
+    const showNotice = React.useCallback((n: LiveNotice) => {
+        noticeQueueRef.current.push(n);
+        // 没有横幅在展示时立即弹出；有则等当前驻留结束后由 displayNext 接力
+        if (!noticeRef.current) displayNext();
+    }, [displayNext]);
 
     useEffect(() => () => {
         if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
@@ -74,13 +87,16 @@ const DynamicIsland: React.FC = () => {
             if (cur.app === AppID.Chat && cur.charId === d.charId) return;
             // 会话设置「专属铃声」
             playRingtone(characters.find(c => c.id === d.charId)?.convoSettings?.ringtone);
-            showNotice({
-                charId: d.charId,
-                charName: d.charName || characters.find(c => c.id === d.charId)?.name || '',
-                body: cleanPreview(String(d.body)),
-                avatarUrl: d.avatarUrl,
-                at: Date.now(),
-            });
+            // detail.bodies = 本轮逐条消息正文数组（主动消息多气泡时逐条弹横幅）；
+            // 没带 bodies 的旧事件退化为单条 body
+            const bodies: string[] = (Array.isArray(d.bodies) && d.bodies.length ? d.bodies : [String(d.body)])
+                .map((b: any) => cleanPreview(String(b || '')))
+                .filter((b: string) => !!b.trim())
+                .slice(0, 8);
+            const charName = d.charName || characters.find(c => c.id === d.charId)?.name || '';
+            for (const body of bodies) {
+                showNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now() });
+            }
         };
         window.addEventListener('proactive-message-sent', onIncoming);
         window.addEventListener('active-msg-received', onIncoming);

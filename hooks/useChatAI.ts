@@ -28,6 +28,7 @@ import {
     type InstantPushPayload,
 } from '../utils/instantPushClient';
 import { applyAssistantPostProcessing, type XhsCaches } from '../utils/applyAssistantPostProcessing';
+import { streamChatCompletion } from '../utils/streamChat';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { applyEmotionEvalRaw } from '../utils/emotionApply';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
@@ -355,6 +356,8 @@ export const useChatAI = ({
     const music = useMusic();
 
     const [isTyping, setIsTyping] = useState(false);
+    // 流式输出预览：本地 fetch 路径 SSE 增量正文（聊天页渲染成打字机气泡），空串 = 没在流式
+    const [streamingText, setStreamingText] = useState('');
     const [recallStatus, setRecallStatus] = useState<string>('');
     const [searchStatus, setSearchStatus] = useState<string>('');
     const [diaryStatus, setDiaryStatus] = useState<string>('');
@@ -843,12 +846,35 @@ export const useChatAI = ({
                 return;
             }
 
-            let data = await safeFetchJson(`${baseUrl}/chat/completions`, {
-                method: 'POST', headers,
-                body: JSON.stringify(baseReqBody)
-            }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '聊天回复' });
+            // ── 流式输出：本地 fetch 路径默认走 SSE 增量渲染（聊天页打字机预览气泡），
+            //    结束后照常走完整后处理管线（拆条落库）。工具调用（麦当劳小程序）与
+            //    流式不兼容，仍走整包；流式失败时回退 safeFetchJson 保持旧行为。
+            let data: any = null;
+            let streamedOk = false;
+            if (!payload.flags.mcdActive) {
+                try {
+                    data = await streamChatCompletion(`${baseUrl}/chat/completions`, { headers, body: baseReqBody }, (acc) => {
+                        // 预览剥掉思考块（含未闭合的起始段），只展示会"说出口"的部分
+                        const visible = acc
+                            .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
+                            .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
+                            .trimStart();
+                        setStreamingText(visible);
+                    });
+                    streamedOk = true;
+                } catch (streamErr) {
+                    console.warn('[Stream] 流式请求失败，回退非流式:', streamErr);
+                    setStreamingText('');
+                }
+            }
+            if (!data) {
+                data = await safeFetchJson(`${baseUrl}/chat/completions`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify(baseReqBody)
+                }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '聊天回复' });
+            }
             apiResponded = true;
-            console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms`);
+            console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms${streamedOk ? ' (streamed)' : ''}`);
             updateTokenUsage(data, historyMsgCount, 'initial');
 
             // 3.4 麦当劳小程序 propose_cart_items UI 钩子工具循环
@@ -978,6 +1004,8 @@ export const useChatAI = ({
                 commentAuthorNameCache: commentAuthorNameCacheRef.current,
                 commentParentIdCache: commentParentIdCacheRef.current,
             };
+            // 流式预览交棒给真实消息：skipTypingDelay 让拆条落库瞬间完成（用户已实时看完）
+            setStreamingText('');
             await applyAssistantPostProcessing(rawAiContent, {
                 char,
                 userProfile,
@@ -1009,6 +1037,7 @@ export const useChatAI = ({
                 // Phase 0: 本地 fetch 路径保持原逻辑, 不跳 2nd-pass LLM, 也没有结构化 directives。
                 skipSecondPassLLM: false,
                 directives: [],
+                skipTypingDelay: streamedOk,
             });
 
             // 灵动岛 / 未读数联动：本地 fetch 路径此前不发任何事件——用户在生成期间离开
@@ -1018,12 +1047,20 @@ export const useChatAI = ({
             // 正常聊天时不会多弹。不用 'active-msg-received'：那是 instant push 的送达判定
             // 通道，本地路径冒发会误 resolve 等待中的 push promise。
             try {
-                const recentSaved = await DB.getRecentMessagesByCharId(char.id, 5);
-                const lastAssistant = [...recentSaved].reverse().find(m => m.role === 'assistant');
-                if (lastAssistant && typeof window !== 'undefined') {
-                    const preview = String(lastAssistant.content || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+                const recentSaved = await DB.getRecentMessagesByCharId(char.id, 12);
+                // 取本轮回复的尾部连续 assistant 消息，灵动岛按 bodies 逐条弹横幅
+                const trailingAssistant: typeof recentSaved = [];
+                for (let i = recentSaved.length - 1; i >= 0; i--) {
+                    if (recentSaved[i].role !== 'assistant') break;
+                    trailingAssistant.unshift(recentSaved[i]);
+                }
+                if (trailingAssistant.length && typeof window !== 'undefined') {
+                    const bodies = trailingAssistant
+                        .map(m => String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80))
+                        .filter(Boolean);
+                    const preview = bodies[bodies.length - 1] || '发来了新消息';
                     window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                        detail: { charId: char.id, charName: char.name, body: preview || '发来了新消息', avatarUrl: char.avatar },
+                        detail: { charId: char.id, charName: char.name, body: preview, bodies, avatarUrl: char.avatar },
                     }));
                 }
             } catch { /* 通知联动失败不影响消息本体 */ }
@@ -1049,6 +1086,7 @@ export const useChatAI = ({
         } finally {
             KeepAlive.stop();
             setIsTyping(false);
+            setStreamingText('');
             setRecallStatus('');
             setSearchStatus('');
             setDiaryStatus('');
@@ -1176,6 +1214,7 @@ export const useChatAI = ({
 
     return {
         isTyping,
+        streamingText,
         recallStatus,
         searchStatus,
         diaryStatus,

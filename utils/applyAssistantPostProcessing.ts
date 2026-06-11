@@ -305,6 +305,11 @@ export interface PostProcessCtx {
      * 出来塞到这里. 本地 fetch 路径不传 (Step 4 仍从 initialData.choices[0].message.reasoning_content 读).
      */
     reasoningContent?: string;
+    /**
+     * 流式输出路径：用户已经实时看完整段回复（打字机预览），落库时跳过逐条
+     * "打字延迟"（chunk.length*50ms），消息瞬间逐条入库，避免二次等待。
+     */
+    skipTypingDelay?: boolean;
 }
 
 // ─── 主入口 ─────────────────────────────────────────────────────────────────
@@ -333,6 +338,7 @@ export async function applyAssistantPostProcessing(
         skipSecondPassLLM,
         directives,
         reasoningContent: pushReasoningContent,
+        skipTypingDelay,
     } = ctx;
     const { baseUrl, headers, effectiveApi } = api;
     const {
@@ -620,8 +626,10 @@ export async function applyAssistantPostProcessing(
 
                     for (let i = 0; i < allChunks.length; i++) {
                         let chunk = allChunks[i];
-                        const delay = Math.min(Math.max(chunk.length * 50, 500), 2000);
-                        await new Promise(r => setTimeout(r, delay));
+                        if (!skipTypingDelay) {
+                            const delay = Math.min(Math.max(chunk.length * 50, 500), 2000);
+                            await new Promise(r => setTimeout(r, delay));
+                        }
 
                         let chunkReplyTarget: { id: number, content: string, name: string } | undefined;
                         const chunkQuoteMatch = chunk.match(QUOTE_RE_DOUBLE) || chunk.match(QUOTE_RE_SINGLE) || chunk.match(REPLY_RE_CN);
