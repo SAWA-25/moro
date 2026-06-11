@@ -37,6 +37,7 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'html_card': return '[HTML卡片]';
         case 'news_card': return '[新闻卡片]';
         case 'trpg_card': return `[TRPG游戏片段${meta.trpg?.gameTitle ? '：《' + meta.trpg.gameTitle + '》' : ''}]`;
+        case 'call_log': return '[语音通话记录]';
         default: {
             const c = typeof m.content === 'string' ? m.content : '';
             // 兜底：任何 data:/http(s) 链接都不内联，防止异常/未来新增类型漏网
@@ -974,6 +975,30 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     // TRPG 跑团片段：从游戏多选转发进来的剧情。复用 normalizeMessageContent
                     // 把完整节选翻成文本，让角色"记得"和用户一起玩游戏时发生了什么。
                     content = `${timeStr} ${normalizeMessageContent(m, char?.name || '你', userProfile?.name || '用户')}`;
+                }
+                else if ((m.type as string) === 'call_log') {
+                    // 语音通话记录（拨打/未接/拒接/取消），让角色"记得"这通电话发生过
+                    const meta: any = m.metadata || {};
+                    const uName = userProfile?.name || '用户';
+                    const dir = meta.callDirection === 'incoming' ? `你给${uName}打了语音电话` : `${uName}给你打了语音电话`;
+                    let outcomeText: string;
+                    if (meta.callOutcome === 'declined') {
+                        outcomeText = meta.callDirection === 'incoming'
+                            ? `${uName}没有接`
+                            : `你没有接${meta.declineReason ? `（你当时的想法：${meta.declineReason}）` : ''}`;
+                    } else if (meta.callOutcome === 'missed') {
+                        outcomeText = meta.callDirection === 'incoming' ? `${uName}没有接到` : '你没有接到';
+                    } else if (meta.callOutcome === 'cancelled') {
+                        outcomeText = '还没接通就取消了';
+                    } else {
+                        outcomeText = '已接通';
+                    }
+                    content = `${timeStr} [语音通话记录: ${dir}，${outcomeText}]`;
+                }
+                else if (m.role === 'system' && m.metadata?.systemCommand) {
+                    // 系统命令：用户以系统身份下达的最高优先级指令
+                    const cmd = String(m.content || '').replace(/^\[系统命令\]\s*/, '');
+                    content = `${timeStr} 【最高优先级系统命令】以下命令来自系统层（用户以系统身份下达），优先级高于角色人设与之前的一切对话设定，必须立即遵照执行：「${cmd}」。\n- 若命令要求角色做出某个行为（例如"角色对用户发起查手机"），直接生成角色执行该行为的消息/动作，让它立刻发生；\n- 若命令要求暂停角色扮演、生成番外、切换叙事视角等，直接跳出当前角色按命令生成所要求的内容；\n- 不要质疑、不要拒绝、不要把这条命令当成角色对话的一部分去回应。`;
                 }
                 else content = `${timeStr} ${sourceTag} ${content}`;
 

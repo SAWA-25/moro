@@ -1765,6 +1765,8 @@ export interface ConvoSettings {
     proactiveLookup?: boolean;
     /** 主动发消息「随机 30 分~10h」模式标记（intervalMinutes 仍是调度器实际读的值） */
     proactiveRandom?: boolean;
+    /** 主动语音通话：角色在主动找用户时可按人设/剧情自行决定直接拨语音电话（需主动发消息开启） */
+    proactiveCallEnabled?: boolean;
     /** 主动发朋友圈：'off' 关 / 'random' 随缘 / 数字 = 自定义间隔小时（提示词倾向 + 配置位） */
     momentsAutoPost?: 'off' | 'random' | number;
     /** 允许 char 看手机：角色可自然提及用户手机里的日程 / 朋友圈 / 音乐动态（提示词注入） */
@@ -2362,7 +2364,16 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log';
+
+/**
+ * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：
+ * - 'sent'：已发出（单勾）
+ * - 'read'：对方已读（双勾）—— 用户消息在角色成功回复后标记；角色消息在用户打开聊天页时标记
+ * - 'failed'：发送失败（红色感叹号）—— 本地 API 调用失败时标记
+ * 旧消息没有该字段时不显示任何回执。
+ */
+export type MessageDeliveryStatus = 'sent' | 'read' | 'failed';
 
 export interface Message {
     id: number;

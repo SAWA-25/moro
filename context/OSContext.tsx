@@ -209,6 +209,8 @@ interface OSContextType {
   updateApiConfig: (updates: Partial<APIConfig>) => void;
   isLocked: boolean;
   unlock: () => void;
+  /** 一键锁屏：回到锁屏界面。不影响消息推送——主动消息调度 / SW / 通知都在锁屏下照常运行 */
+  lock: () => void;
   isDataLoaded: boolean;
   
   characters: CharacterProfile[];
@@ -1542,11 +1544,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
               // 2. Save hidden system hint
               const userName = currentUserProfile?.name || '对方';
+              // 主动语音通话：开关打开时允许角色用 [[CALL_USER]] 指令直接拨电话（按人设自行决定）
+              const proactiveCallAllowed = !!char.convoSettings?.proactiveCallEnabled;
               await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
-                  content: `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}]`,
+                  content: `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`,
                   metadata: { proactiveHint: true, hidden: true }
               });
 
@@ -1640,6 +1644,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               aiContent = aiContent.replace(/\s*\[(?:聊天|通话|约会)\]\s*/g, '\n').trim();
 
               aiContent = normalizeProactiveAiContent(aiContent);
+
+              // [[CALL_USER]] 指令：主动语音通话开启时，角色可决定直接给用户拨电话
+              let charWantsCall = false;
+              if (proactiveCallAllowed && /\[\[CALL_USER\]\]/.test(aiContent)) {
+                  charWantsCall = true;
+                  aiContent = aiContent.replace(/\[\[CALL_USER\]\]/g, '').trim();
+              }
 
               // [[BLOCK_USER]] 指令：主动消息路径也可能触发（如被拉黑后赌气拉回去）
               const blockExtract = extractBlockUserDirective(aiContent);
@@ -1852,6 +1863,27 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
                       detail: { charId, charName: char.name, body: preview }
                   }));
+              }
+
+              // 7. 角色主动拨语音电话：页面可见时弹来电界面（IncomingCallOverlay 接管），
+              //    页面不可见则按"未接来电"落库并走普通未读通知
+              if (charWantsCall) {
+                  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+                      window.dispatchEvent(new CustomEvent('char-call-incoming', {
+                          detail: { charId, charName: char.name }
+                      }));
+                  } else {
+                      await DB.saveMessage({
+                          charId,
+                          role: 'assistant',
+                          type: 'call_log',
+                          content: '未接来电',
+                          metadata: { callDirection: 'incoming', callOutcome: 'missed' },
+                      } as any);
+                      window.dispatchEvent(new CustomEvent('proactive-message-sent', {
+                          detail: { charId, charName: char.name, body: '[语音通话] 未接来电' }
+                      }));
+                  }
               }
           } catch (err) {
               console.error(`[Proactive/Global] Error for ${char.name}:`, err);
@@ -3485,6 +3517,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const openApp = (appId: AppID) => setActiveApp(appId);
   const closeApp = () => setActiveApp(AppID.Launcher);
   const unlock = () => setIsLocked(false);
+  // 一键锁屏：仅切换 UI 到锁屏，不动任何调度——主动消息 / Web Push / 通知照常送达锁屏通知卡
+  const lock = () => { setActiveApp(AppID.Launcher); setIsLocked(true); };
 
   const suspendCall = (info: { charId: string; charName: string; charAvatar?: string; startedAt: number; bubbles?: any[]; sessionId?: string; elapsedSeconds?: number; voiceLang?: string }) => {
     setSuspendedCall(info);
@@ -3529,6 +3563,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     updateApiConfig,
     isLocked,
     unlock,
+    lock,
     isDataLoaded,
     characters,
     activeCharacterId,

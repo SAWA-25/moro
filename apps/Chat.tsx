@@ -152,6 +152,14 @@ const Chat: React.FC = () => {
     const [showProactiveModal, setShowProactiveModal] = useState(false);
     const [showThinkingChainModal, setShowThinkingChainModal] = useState(false);
 
+    // ── 语音通话（聊天内发起，角色按人设决定接不接）──
+    const [voiceCallPhase, setVoiceCallPhase] = useState<'none' | 'dialing' | 'rejected'>('none');
+    const voiceCallCancelRef = useRef(false);
+
+    // ── 系统命令 modal：用户以系统身份下达最高优先级指令 ──
+    const [showSystemCmdModal, setShowSystemCmdModal] = useState(false);
+    const [systemCmdInput, setSystemCmdInput] = useState('');
+
     // 🛟 人格抢救 Modal：角色被"情感型 0.3"默认值卡住时，进聊天强制弹窗重跑一次检测
     type PersonalityRescueState =
         | { open: false }
@@ -1006,7 +1014,8 @@ const Chat: React.FC = () => {
             try { await commitGreeting(); } catch (e) { console.warn('[Greeting] 开场白落库失败:', e); }
         }
 
-        const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata };
+        // Telegram 式回执：用户消息落库即「已发出」（单勾），角色回复成功后升级为「已读」（双勾）
+        const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata: { ...(metadata || {}), msgStatus: 'sent' } };
 
         if (replyTarget) {
             msgPayload.replyTo = {
@@ -1193,6 +1202,140 @@ const Chat: React.FC = () => {
         setTimeout(() => { triggerAI(messages); }, 800);
     };
 
+    // ── 已读回执：聊天页打开着时，把当前可见的角色消息标记为已读（Telegram 式双勾）──
+    useEffect(() => {
+        if (!char) return;
+        const unread = messages.filter(m => m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read');
+        if (unread.length === 0) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                await DB.setMessagesStatus(unread.map(m => m.id), 'read');
+                if (cancelled) return;
+                setMessages(prev => prev.map(m => (m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read')
+                    ? { ...m, metadata: { ...(m.metadata || {}), msgStatus: 'read' } }
+                    : m));
+            } catch { /* 回执写入失败不影响消息本体 */ }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, char?.id]);
+
+    // ── 语音通话：用户主动拨打 → 角色按人设 + 当前剧情决定接不接 → 接通则跳转电话 App ──
+    const startVoiceCall = async () => {
+        if (!char) return;
+        if (char.blacklisted || char.charBlock?.active) {
+            addToast(char.charBlock?.active ? '你已被对方拉黑，无法拨打' : '你已将对方拉黑，无法拨打', 'error');
+            return;
+        }
+        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        setShowPanel('none');
+        voiceCallCancelRef.current = false;
+        setVoiceCallPhase('dialing');
+        try {
+            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const allMsgs = await DB.getMessagesByCharId(char.id);
+            const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
+            const prompt = `${context}
+
+### [最近的对话]
+${recent || '（你们还没怎么聊过）'}
+
+### [Task: 来电决策]
+${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你们当前的关系与剧情走向、以及你此刻可能正在做的事，决定接还是不接——完全按你自己的性格来，不用迎合。
+只输出一行 JSON，不要任何其他内容：{"answer": true 或 false, "reason": "你做这个决定时的内心想法（一句话）"}`;
+            // 决策请求与最短响铃时间并行：让"正在呼叫"至少停留一会儿，更像真的在拨号
+            const minRing = new Promise(r => setTimeout(r, 2500));
+            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({
+                    model: apiConfig.model,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.9,
+                }),
+            });
+            if (!response.ok) throw new Error(`API ${response.status}`);
+            const data = await safeResponseJson(response);
+            await minRing;
+            if (voiceCallCancelRef.current) return;
+            const raw = (extractContent(data) || '').trim();
+            let answer = true;
+            let reason = '';
+            try {
+                const jsonMatch = raw.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    answer = parsed.answer !== false;
+                    reason = String(parsed.reason || '').slice(0, 120);
+                }
+            } catch { /* 解析失败按接听处理 */ }
+            if (answer) {
+                setVoiceCallPhase('none');
+                // 电话 App 拨号握手键：CallApp 挂载时读取并直接选中该角色接通
+                try { sessionStorage.setItem('moro_phone_dial_char_id', char.id); } catch { /* ignore */ }
+                openApp(AppID.Call);
+            } else {
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'user',
+                    type: 'call_log',
+                    content: '对方未接听',
+                    metadata: { callDirection: 'outgoing', callOutcome: 'declined', declineReason: reason, msgStatus: 'sent' },
+                } as any);
+                // 让角色按人设决定要不要为没接电话发消息解释（也可以只回一句很短的，或语气敷衍——都按人设）
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'system',
+                    type: 'text',
+                    content: `[语音通话] ${userProfile.name} 刚刚给「${char.name}」拨了语音电话，但「${char.name}」没有接（TA 当时的内心想法：${reason || '现在不太方便接'}）。请以「${char.name}」的身份决定接下来的反应：可以发消息解释为什么没接、可以含糊带过、可以发一句很短的话、也可以表现得若无其事——完全按 TA 的人设和此刻的心情来。`,
+                    metadata: { proactiveHint: true, hidden: true },
+                } as any);
+                setVoiceCallPhase('rejected');
+                await reloadMessages(visibleCountRef.current);
+                setTimeout(() => setVoiceCallPhase('none'), 2000);
+                setTimeout(() => { triggerAI(messages); }, 600);
+            }
+        } catch (e: any) {
+            if (!voiceCallCancelRef.current) {
+                setVoiceCallPhase('none');
+                addToast(`呼叫失败：${e?.message || '未知错误'}`, 'error');
+            }
+        }
+    };
+
+    const cancelVoiceCall = async () => {
+        voiceCallCancelRef.current = true;
+        setVoiceCallPhase('none');
+        if (!char) return;
+        await DB.saveMessage({
+            charId: char.id,
+            role: 'user',
+            type: 'call_log',
+            content: '已取消',
+            metadata: { callDirection: 'outgoing', callOutcome: 'cancelled', msgStatus: 'sent' },
+        } as any);
+        await reloadMessages(visibleCountRef.current);
+    };
+
+    // ── 系统命令：用户以系统身份下达最高优先级指令，发出后立即触发角色执行 ──
+    const handleSendSystemCommand = async () => {
+        const cmd = systemCmdInput.trim();
+        if (!char || !cmd) return;
+        if (isTyping) { addToast('角色正在回复中，稍等片刻再下达命令', 'info'); return; }
+        setShowSystemCmdModal(false);
+        setSystemCmdInput('');
+        await DB.saveMessage({
+            charId: char.id,
+            role: 'system',
+            type: 'text',
+            content: `[系统命令] ${cmd}`,
+            metadata: { systemCommand: true },
+        } as any);
+        await reloadMessages(visibleCountRef.current);
+        triggerAI(messages);
+    };
+
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'transfer': setModalType('transfer'); break;
@@ -1256,6 +1399,8 @@ const Chat: React.FC = () => {
                 break;
             }
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
+            case 'voice-call': void startVoiceCall(); break;
+            case 'system-command': setShowPanel('none'); setShowSystemCmdModal(true); break;
         }
     };
 
@@ -2281,7 +2426,7 @@ ${recent || '（你们还没怎么聊过）'}
         const base = messages
             .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
             .filter(m => !m.metadata?.proactiveHint)
-            .filter(m => { if (char?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card') return false; return true; });
+            .filter(m => { if (char?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card' && !m.metadata?.systemCommand) return false; return true; });
         if (windowedFocusMsgId !== null) {
             const idx = base.findIndex(m => m.id === windowedFocusMsgId);
             if (idx >= 0) {
@@ -2609,6 +2754,55 @@ ${recent || '（你们还没怎么聊过）'}
                      </div>
                  </div>
              )}
+
+             {/* 语音通话拨号中覆盖层：呼叫 → 角色决策 → 接通跳电话 App / 未接听 */}
+             {voiceCallPhase !== 'none' && char && (
+                <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md animate-fade-in">
+                    <div className="relative mb-6">
+                        {voiceCallPhase === 'dialing' && (
+                            <>
+                                <span className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" />
+                                <span className="absolute -inset-3 rounded-full border border-emerald-300/20 animate-pulse" />
+                            </>
+                        )}
+                        <img src={char.avatar} className="relative w-24 h-24 rounded-full object-cover ring-4 ring-white/15 shadow-2xl" alt={char.name} />
+                    </div>
+                    <div className="text-white text-xl font-bold mb-1.5">{char.name}</div>
+                    <div className="text-white/60 text-sm mb-12">
+                        {voiceCallPhase === 'dialing' ? '正在呼叫…' : '对方未接听'}
+                    </div>
+                    {voiceCallPhase === 'dialing' && (
+                        <button
+                            onClick={() => { void cancelVoiceCall(); }}
+                            className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+                            aria-label="取消呼叫"
+                        >
+                            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style={{ transform: 'rotate(135deg)' }}><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                        </button>
+                    )}
+                </div>
+             )}
+
+             {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
+             <Modal
+                isOpen={showSystemCmdModal} title="系统命令" onClose={() => setShowSystemCmdModal(false)}
+                footer={<><button onClick={() => setShowSystemCmdModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()} className={`flex-1 py-3 font-bold rounded-2xl text-white ${systemCmdInput.trim() ? 'bg-slate-900' : 'bg-slate-300'}`}>执行命令</button></>}
+             >
+                <div className="space-y-3">
+                    <div className="rounded-2xl bg-slate-900 px-4 py-3">
+                        <div className="text-[9px] font-bold tracking-widest text-slate-400 mb-1.5">⌘ SYSTEM MODE</div>
+                        <textarea
+                            value={systemCmdInput}
+                            onChange={e => setSystemCmdInput(e.target.value)}
+                            placeholder={`以系统身份输入命令，例如：\n· ${char?.name || '角色'}对${userProfile?.name || '用户'}发起查手机\n· 暂停角色扮演，生成一段两人初遇的番外\n· 切换到${char?.name || '角色'}的第一人称视角描写此刻`}
+                            rows={4}
+                            className="w-full bg-transparent text-emerald-300 placeholder-slate-500 text-sm font-mono resize-none outline-none leading-relaxed"
+                            autoFocus
+                        />
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed px-1">你的身份将是<b>系统</b>：命令优先级高于角色人设与之前的一切剧情，发送后角色/叙事会立即按命令执行。</p>
+                </div>
+             </Modal>
 
              {/* 位置分享 Modal */}
              <Modal

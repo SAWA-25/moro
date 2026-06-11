@@ -327,6 +327,11 @@ const buildCallPrompt = (userName: string, charName?: string, coreContext?: stri
 偶尔可以加一个简短的括号描述你的状态——（轻笑）（叹气）（压低声音）（沉默了一下）。
 最多一条消息一个。不要写成小说旁白：”（我靠在椅背上，嘴角微微上扬，目光看向远方……）”——这不是你会在电话里说的。
 
+### 你可以挂断电话
+
+像真人一样，这通电话不必由对方决定何时结束。如果你想挂断——话说完了、有事要忙、被气到了、害羞到说不下去、或者按你的性格就该先挂——先说完你最后想说的那句话，然后在回复的**最末尾**单独输出 [[HANGUP]]。
+不要滥用：多数时候你会好好聊下去；只在按你的人设和当下情绪真的该挂的时候才挂。
+
 ### 底线
 
 只输出你在电话里会**说出口**的话。不要输出 [通话]、[聊天]、[约会] 这类系统标记，不要输出时间戳。`;
@@ -761,6 +766,13 @@ const CallApp: React.FC = () => {
       setErrorMessage(err?.message || '文本回复失败');
       setCallState('error');
       return addToast(`文本回复失败：${err?.message || '未知错误'}`, 'error');
+    }
+    // [[HANGUP]] 指令：角色按人设主动挂断——说完最后一句后稍候自动结束通话
+    const charWantsHangup = /\[\[HANGUP\]\]/.test(assistantText);
+    if (charWantsHangup) {
+      assistantText = assistantText.replace(/\[\[HANGUP\]\]/g, '').trim() || '……我先挂了。';
+      addToast(`${selectedChar?.name || '对方'} 挂断了电话`, 'info');
+      window.setTimeout(() => { void finishCall(); }, 3500);
     }
     const assistantBubbleId = `${Date.now()}-a`;
     const assistantBubble: CallBubble = { id: assistantBubbleId, role: 'assistant', text: assistantText, time: now, timestamp: nowTs };

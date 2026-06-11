@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
@@ -818,6 +818,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <span className="text-xs font-bold">查手机</span>
                             </button>
 
+                            {/* 语音通话：用户主动拨语音电话，角色按人设决定接不接 */}
+                            <button onClick={() => onPanelAction('voice-call')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-green-300 border-green-400/20' : 'bg-green-50 text-green-500 border-green-100'}`}>
+                                    <PhoneCall className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">语音通话</span>
+                            </button>
+
                           </div>
 
                           {/* Page 1: 外部服务 */}
@@ -885,6 +893,17 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                   <PencilSimple className="w-6 h-6" weight="bold" />
                               </div>
                               <span className="text-xs font-bold">白框</span>
+                            </button>
+
+                            {/* 系统命令：用户以系统身份下达最高优先级指令（暂停扮演 / 生成番外 / 指定角色行为等） */}
+                            <button
+                              onClick={() => onPanelAction('system-command')}
+                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
+                            >
+                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-emerald-300 border-emerald-400/20' : 'bg-slate-900 text-emerald-400 border-slate-700'}`}>
+                                  <Terminal className="w-6 h-6" weight="bold" />
+                              </div>
+                              <span className="text-xs font-bold">系统命令</span>
                             </button>
                           </div>
 
