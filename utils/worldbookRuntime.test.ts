@@ -150,3 +150,75 @@ describe('spliceDepthMessages @Depth 注入', () => {
         expect(msgs[1]).toEqual({ role: 'user', content: 'A\n\nB' });
     });
 });
+
+describe('关键词激活（ST 绿灯条目移植）', () => {
+    beforeEach(() => {
+        WorldbookRuntime.sync([], {});
+        WorldbookRuntime.setScanContext(null);
+    });
+
+    const kw = (over: Partial<Worldbook> & { id: string }): Worldbook => ({
+        title: over.id,
+        content: `${over.id}内容`,
+        category: '测试书',
+        createdAt: 0,
+        updatedAt: 0,
+        scope: 'global',
+        activation: 'keyword',
+        ...over,
+    });
+
+    it('无扫描上下文时关键词条目不注入，常驻条目不受影响', () => {
+        WorldbookRuntime.sync([
+            kw({ id: 'k1', keys: ['魔法'] }),
+            kw({ id: 'c1', activation: 'always' }),
+        ], {});
+        const { global } = WorldbookRuntime.resolveForChar(charWith([]));
+        expect(global.map(e => e.id)).toEqual(['c1']);
+    });
+
+    it('扫描命中主关键词才注入（默认大小写不敏感）', () => {
+        WorldbookRuntime.sync([
+            kw({ id: 'k1', keys: ['Magic'] }),
+            kw({ id: 'k2', keys: ['龙族'] }),
+        ], {});
+        WorldbookRuntime.setScanContext(['今天聊聊 mAgIc 的事']);
+        const { global } = WorldbookRuntime.resolveForChar(charWith([]));
+        expect(global.map(e => e.id)).toEqual(['k1']);
+    });
+
+    it('大小写敏感时不同 case 不命中', () => {
+        WorldbookRuntime.sync([kw({ id: 'k1', keys: ['Magic'], caseSensitive: true })], {});
+        WorldbookRuntime.setScanContext(['说说 magic']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(0);
+        WorldbookRuntime.setScanContext(['说说 Magic']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(1);
+    });
+
+    it('selective：主关键词 + 任一二级词需同时命中', () => {
+        WorldbookRuntime.sync([
+            kw({ id: 'k1', keys: ['魔法'], secondaryKeys: ['学院'], selective: true }),
+        ], {});
+        WorldbookRuntime.setScanContext(['魔法真有趣']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(0);
+        WorldbookRuntime.setScanContext(['魔法学院开学了']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(1);
+    });
+
+    it('扫描深度只看最近 N 条消息', () => {
+        WorldbookRuntime.sync([kw({ id: 'k1', keys: ['魔法'], scanDepth: 2 })], {});
+        WorldbookRuntime.setScanContext(['提到了魔法', '别的话', '更多别的话']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(0);
+        WorldbookRuntime.setScanContext(['别的话', '提到了魔法', '更多别的话']);
+        expect(WorldbookRuntime.resolveForChar(charWith([])).global).toHaveLength(1);
+    });
+
+    it('局部挂载的关键词条目同样按扫描结果过滤', () => {
+        WorldbookRuntime.sync([kw({ id: 'k1', keys: ['咒语'], scope: 'local' })], {});
+        const char = charWith([{ id: 'k1', title: 'k1', content: 'k1内容' }]);
+        WorldbookRuntime.setScanContext(['平平无奇的一天']);
+        expect(WorldbookRuntime.resolveForChar(char).local).toHaveLength(0);
+        WorldbookRuntime.setScanContext(['念一段咒语']);
+        expect(WorldbookRuntime.resolveForChar(char).local).toHaveLength(1);
+    });
+});

@@ -228,3 +228,79 @@ describe('getPresetGenParams', () => {
         expect(params2.repetition_penalty).toBe(1.15);
     });
 });
+
+describe('applyPresetToMessages · markerContents 联动（世界书 / 用户档案）', () => {
+    it('worldInfo / personaDescription 有真实内容时在各自 order 位置注入', () => {
+        const p = importTavernPreset({
+            prompts: [
+                { identifier: 'main', name: 'Main', role: 'system', content: 'M' },
+                { identifier: 'worldInfoBefore', name: 'WIB', system_prompt: true, marker: true },
+                { identifier: 'charDescription', name: 'CD', system_prompt: true, marker: true },
+                { identifier: 'worldInfoAfter', name: 'WIA', system_prompt: true, marker: true },
+                { identifier: 'personaDescription', name: 'PD', system_prompt: true, marker: true },
+                { identifier: 'chatHistory', name: 'CH', system_prompt: true, marker: true },
+            ],
+            prompt_order: [{ character_id: 100000, order: [
+                { identifier: 'main', enabled: true },
+                { identifier: 'worldInfoBefore', enabled: true },
+                { identifier: 'charDescription', enabled: true },
+                { identifier: 'worldInfoAfter', enabled: true },
+                { identifier: 'personaDescription', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ] }],
+        }, 'n');
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            markerContents: { worldInfoBefore: 'WB前', worldInfoAfter: 'WB后', personaDescription: '用户档案' },
+        });
+        expect(out.map(m => m.content)).toEqual(['M', 'WB前', 'CORE', 'WB后', '用户档案', 'u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('marker 被关掉时内容被丢弃（ST 开关语义）', () => {
+        const p = importTavernPreset({
+            prompts: [
+                { identifier: 'worldInfoBefore', name: 'WIB', system_prompt: true, marker: true },
+                { identifier: 'charDescription', name: 'CD', system_prompt: true, marker: true },
+                { identifier: 'chatHistory', name: 'CH', system_prompt: true, marker: true },
+            ],
+            prompt_order: [{ character_id: 100000, order: [
+                { identifier: 'worldInfoBefore', enabled: false },
+                { identifier: 'charDescription', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ] }],
+        }, 'n');
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            markerContents: { worldInfoBefore: 'WB前' },
+        });
+        expect(out.map(m => m.content)).toEqual(['CORE', 'u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('marker 不在 order 里时内容回折进核心块（不丢设定）', () => {
+        const p = importTavernPreset({
+            prompts: [
+                { identifier: 'charDescription', name: 'CD', system_prompt: true, marker: true },
+                { identifier: 'chatHistory', name: 'CH', system_prompt: true, marker: true },
+            ],
+            prompt_order: [{ character_id: 100000, order: [
+                { identifier: 'charDescription', enabled: true },
+                { identifier: 'chatHistory', enabled: true },
+            ] }],
+        }, 'n');
+        const out = applyPresetToMessages(baseMessages, p, {
+            macros: MACROS,
+            markerContents: { worldInfoBefore: 'WB前', personaDescription: '用户档案' },
+        });
+        expect(out[0].content).toBe('WB前\n\nCORE\n\n用户档案');
+        expect(out.map(m => m.content).slice(1)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    });
+
+    it('不传 markerContents 时维持旧行为（核心 marker 占位合并）', () => {
+        const p = importTavernPreset(ST_PRESET_JSON, 'n');
+        p.prompt_order[0].order = p.prompt_order[0].order.filter(e => e.identifier !== 'uuid-deep-1');
+        const out = applyPresetToMessages(baseMessages, p, { macros: MACROS });
+        expect(out.map(m => m.content)).toEqual([
+            'Write 小明 reply to 阿罗.', 'CORE', 'u1', 'a1', 'u2', 'a2', 'PHI text',
+        ]);
+    });
+});

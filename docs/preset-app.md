@@ -39,14 +39,40 @@
 
 ## marker 映射（ST 占位符在 Moro 的落点）
 
+主聊天链路（buildChatRequestPayload）现在按 marker **真实拆分**注入：
+
 | ST marker | Moro 落点 |
 |-----------|----------|
 | `chatHistory` | 聊天历史消息（@Depth 世界书已先注入其中） |
-| `charDescription` `charPersonality` `scenario` `personaDescription` `worldInfoBefore` `worldInfoAfter` `dialogueExamples` | 共同映射到 Moro 的角色核心上下文（`ContextBuilder.buildCoreContext` 的整块 system），注入在 prompt_order 中**第一个启用**的核心 marker 处，其余仅作排序占位 |
+| `worldInfoBefore` / `worldInfoAfter` | 世界书 before/after 块（含关键词激活过滤后的条目），在各自 order 位置注入，受 marker 开关控制 |
+| `personaDescription` | 用户档案块（名字 + 设定/备注，即「档案」App 的内容） |
+| `charDescription` `charPersonality` `scenario` `dialogueExamples` | 共同映射到 Moro 的角色核心上下文（人设/内在认知/世界观/印象/记忆），注入在其中**第一个启用**的 marker 处，其余仅作排序占位 |
 
-兜底规则（偏安全而不偏 ST 字面语义）：核心 marker 全被关掉时核心上下文仍注入到
-最前（否则人设/记忆静默丢失极难排查）；order 里没有 `chatHistory` 时历史追加到
-末尾；被显式关掉则尊重设置不发历史。
+实现：预设激活时 `ChatPrompts.buildSystemPrompt(presetMarkerSplit=true)` →
+`buildCoreContext({ omitWorldbooks, skipUserProfile })` 把世界书与用户档案从核心块
+里拆出，`applyPresetToMessages` 的 `markerContents` 选项把它们放回 marker 位置。
+
+兜底规则（偏安全而不偏 ST 字面语义）：
+- 核心 marker 全被关掉时核心上下文仍注入到最前（否则人设/记忆静默丢失极难排查）
+- marker **不在 order 里**（残缺/旧版预设）时，其内容回折进核心块不丢失
+  （worldInfoBefore 折前、其余折后）；marker 在 order 里但**被关掉**则按 ST
+  语义丢弃（开关真的管用）
+- order 里没有 `chatHistory` 时历史追加到末尾；被显式关掉则尊重设置不发历史
+
+## 宏（{{user}} / {{char}} 通用化）
+
+`utils/macros.ts` 的 `substituteMacros` 是全链路统一入口：最终 system prompt
+（人设/世界观/世界书/用户档案都在里面）、@Depth 世界书消息、预设提示词、marker
+内容都过同一遍替换。支持 `{{char}} {{user}} {{date}} {{time}} {{weekday}}
+{{newline}}` 与 ST 旧版 `<char> <bot> <user>` 标记，大小写不敏感，未知宏原样保留。
+
+## API 联动
+
+- 预设可绑定「设置 → API 配置」里保存的 API 预设（`moroApiPresetId`，Moro 本地
+  字段不随酒馆 JSON 导出）：激活预设 / 修改绑定时自动 `updateApiConfig` 套用
+  对应 baseUrl/key/model —— 类似 ST 切连接档案。
+- 设置 App 的温度滑条上方会提示「采样参数当前由预设 X 接管」并附跳转按钮
+  （预设开 + 采样下发开 + 有激活预设时显示）。
 
 ## 开关存储
 

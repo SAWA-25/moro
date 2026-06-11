@@ -112,6 +112,12 @@ export const ContextBuilder = {
              * 其他单 prompt 调用方保持默认（内联降级到扩展设定集块）。
              */
             omitDepthWorldbooks?: boolean;
+            /**
+             * 预设（SillyTavern 式）启用时置 true：before/after 世界书块不内联，
+             * 由 buildChatRequestPayload 作为 worldInfoBefore / worldInfoAfter
+             * marker 内容单独注入到预设定义的位置。@Depth 条目不受影响。
+             */
+            omitWorldbooks?: boolean;
         },
     ): string => {
         let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
@@ -126,7 +132,8 @@ export const ContextBuilder = {
         });
 
         // 0. 角色定义之前的世界书（position='before_char'）
-        if (wbSections.beforeChar) {
+        // 预设接管（omitWorldbooks）时跳过：由 worldInfoBefore marker 注入
+        if (wbSections.beforeChar && !groupOptions?.omitWorldbooks) {
             context += wbSections.beforeChar;
         }
 
@@ -156,7 +163,8 @@ export const ContextBuilder = {
 
         // 挂载的世界书（局部，先写）+ 全局世界书（后写）— position='after_char' 的条目
         // 开关 / 作用域 / 顺序的解析都在 WorldbookRuntime.buildPromptSections 里完成
-        if (wbSections.afterChar) {
+        // 预设接管（omitWorldbooks）时跳过：由 worldInfoAfter marker 注入
+        if (wbSections.afterChar && !groupOptions?.omitWorldbooks) {
             context += wbSections.afterChar;
         }
 

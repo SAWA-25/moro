@@ -236,7 +236,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 // 主组件
 
 const PresetApp: React.FC = () => {
-    const { closeApp, addToast } = useOS();
+    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig } = useOS();
     const [presets, setPresets] = useState<TavernPreset[]>([]);
     const [activeId, setActiveId] = useState<string | null>(PresetRuntime.getActiveId());
     const [enabled, setEnabled] = useState(PresetRuntime.isEnabled());
@@ -284,9 +284,18 @@ const PresetApp: React.FC = () => {
         persistPreset(draft);
     };
 
-    const selectPreset = (id: string) => {
+    const selectPreset = (id: string, list?: TavernPreset[]) => {
         setActiveId(id);
         PresetRuntime.setActiveId(id);
+        // API 联动：预设绑定了 API 预设时，激活即套用对应连接配置（类似 ST 切连接档案）
+        const preset = (list ?? presets).find(p => p.id === id);
+        if (preset?.moroApiPresetId) {
+            const bound = apiPresets.find(ap => ap.id === preset.moroApiPresetId);
+            if (bound) {
+                updateApiConfig(bound.config);
+                addToast(`已切换 API 预设「${bound.name}」`, 'info');
+            }
+        }
     };
 
     // ── 预设条操作 ──────────────────────────────────────
@@ -591,6 +600,43 @@ const PresetApp: React.FC = () => {
 
                 {active && (
                     <>
+                        {/* API 联动 */}
+                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">API 联动</span>
+                            <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-xs text-slate-500">
+                                当前接口：<span className="font-mono font-bold text-slate-700">{apiConfig.model || '未设置'}</span>
+                                {apiConfig.baseUrl && (
+                                    <span className="font-mono text-slate-400"> @ {(() => { try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; } })()}</span>
+                                )}
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1 block">绑定 API 预设（激活本预设时自动切换连接）</label>
+                                <select
+                                    value={active.moroApiPresetId ?? ''}
+                                    onChange={e => {
+                                        const val = e.target.value || undefined;
+                                        mutateActive(d => { d.moroApiPresetId = val; });
+                                        if (val) {
+                                            const bound = apiPresets.find(ap => ap.id === val);
+                                            if (bound) {
+                                                updateApiConfig(bound.config);
+                                                addToast(`已套用 API 预设「${bound.name}」`, 'success');
+                                            }
+                                        }
+                                    }}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-primary"
+                                >
+                                    <option value="">不绑定（沿用设置里的全局 API）</option>
+                                    {apiPresets.map(ap => (
+                                        <option key={ap.id} value={ap.id}>{ap.name}（{ap.config.model}）</option>
+                                    ))}
+                                </select>
+                                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                                    API 预设在「设置 → API 配置」里保存。温度等采样参数由下方「生成参数」接管（可关）。
+                                </p>
+                            </div>
+                        </div>
+
                         {/* 生成参数 */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                             <button

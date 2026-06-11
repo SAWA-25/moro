@@ -1096,6 +1096,9 @@ ${isInitialGeneration ? `
                            <div>
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">核心指令 (System Prompt)</label>
                                <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all" placeholder="设定..." />
+                               <p className="text-[10px] text-slate-400 mt-1.5 pl-2 leading-relaxed">
+                                   支持酒馆宏：{'{{user}}'} / {'{{char}}'}（及 {'<user>'} / {'<char>'}）发送时自动替换为用户名 / 角色名。启用预设 App 时，这里的人设对应预设里的 Char Description 占位。
+                               </p>
                            </div>
 
                            <div>

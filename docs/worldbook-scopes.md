@@ -46,3 +46,30 @@ OSContext (worldbooks state + 整书开关 state)
 ```
 
 改注入逻辑前先看 `utils/worldbookRuntime.ts`（含完整规则注释）与 `utils/worldbookRuntime.test.ts`。
+
+## 关键词激活（ST 蓝灯/绿灯，已移植）
+
+`wb.activation`：
+
+| 值 | 对应 ST | 语义 |
+|----|---------|------|
+| `'always'`（缺省） | 🔵 常驻 (constant) | 开关开着就注入 |
+| `'keyword'` | 🟢 关键词触发 | 扫描最近聊天消息，命中关键词才注入 |
+
+相关字段：`keys`（主关键词，任一命中即激活）、`secondaryKeys` + `selective`
+（开 selective 后需主词 + 任一二级词同时命中）、`caseSensitive`（默认不敏感）、
+`scanDepth`（扫最近 N 条消息，默认 4）。
+
+实现要点：
+
+- 扫描上下文由 **`buildChatRequestPayload`** 在构建 prompt 前通过
+  `WorldbookRuntime.setScanContext(最近消息文本[])` 喂入，构建结束即清空
+  （try/finally）。判定在 `WorldbookRuntime.isEntryTriggered`。
+- **没有扫描上下文的调用方**（约会等单 prompt 场景）不注入关键词条目 ——
+  同 ST：没有可扫描的文本就没有命中。常驻条目不受影响。
+- **ST 角色卡导入**：新导入自动映射（constant→常驻；有 keys 且非 constant→关键词）。
+  旧导入条目仍按常驻运行，在世界书 App 编辑器里打开一次（字段自动从 `stData`
+  回填）保存即可接上关键词激活。
+- 预设 App 启用时，命中的 before/after 条目作为 `worldInfoBefore` /
+  `worldInfoAfter` marker 内容注入到预设 prompt_order 定义的位置（见
+  `docs/preset-app.md`）。

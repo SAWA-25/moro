@@ -103,6 +103,12 @@ export interface TavernPreset {
     openai_max_context?: number;
     /** 回复 max_tokens（ST openai_max_tokens） */
     openai_max_tokens?: number;
+    /**
+     * 绑定的 Moro API 预设 id（设置 App 里保存的 os_api_presets 条目）。
+     * 激活本预设时自动套用对应 API 配置（baseUrl/key/model），类似 ST 的
+     * 连接配置切换。Moro 本地字段，不随酒馆 JSON 导出。
+     */
+    moroApiPresetId?: string;
     // —— 提示词管理器 ——
     prompts: PresetPrompt[];
     prompt_order: PresetPromptOrderCharacter[];
@@ -703,6 +709,24 @@ export interface Worldbook {
     depth?: number;
     /** 同一位置内的插入顺序，小的在前（同 ST 的最终生效顺序），默认 100 */
     order?: number;
+    /**
+     * 激活方式（ST 关键词扫描移植）：
+     * - 'always'（默认，即 ST 的常驻/蓝灯 🔵）：只要开关开着就注入
+     * - 'keyword'（ST 的绿灯 🟢）：扫描最近的聊天消息，命中关键词才注入。
+     *   仅主聊天链路（buildChatRequestPayload 设置扫描上下文）执行扫描；
+     *   没有聊天上下文的调用方（约会等单 prompt 场景）不注入关键词条目。
+     */
+    activation?: 'always' | 'keyword';
+    /** 触发关键词（任一命中即激活），activation='keyword' 时生效 */
+    keys?: string[];
+    /** 二级过滤词（selective=true 时需同时命中任一） */
+    secondaryKeys?: string[];
+    /** 需同时命中二级过滤词（同 ST selective） */
+    selective?: boolean;
+    /** 关键词匹配大小写敏感，默认不敏感（同 ST case_sensitive） */
+    caseSensitive?: boolean;
+    /** 关键词扫描深度：扫最近 N 条消息，默认 4（同 ST scan_depth 语义） */
+    scanDepth?: number;
     /** 'sillytavern' = 从 SillyTavern 角色卡导入的条目 */
     source?: 'sillytavern';
     /** SillyTavern 原始设定信息（仅 source === 'sillytavern' 时存在） */

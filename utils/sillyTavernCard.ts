@@ -361,6 +361,14 @@ export function convertSTCardToCharacter(
                 position: entry.moroPosition,
                 depth: entry.moroPosition.startsWith('depth_') ? entry.moroDepth : undefined,
                 order: entry.insertionOrder,
+                // 关键词激活（ST 绿灯条目）现已在 Moro 运行时执行：constant=蓝灯 → 常驻；
+                // 有关键词且非 constant → keyword（仅在最近消息命中时注入）。
+                activation: (!entry.constant && entry.keys.length > 0) ? 'keyword' : 'always',
+                keys: entry.keys.length > 0 ? entry.keys : undefined,
+                secondaryKeys: entry.secondaryKeys.length > 0 ? entry.secondaryKeys : undefined,
+                selective: entry.selective || undefined,
+                caseSensitive: entry.caseSensitive,
+                scanDepth: book.scanDepth,
                 source: 'sillytavern',
                 stData: {
                     ...bookMeta,
@@ -382,7 +390,8 @@ export function convertSTCardToCharacter(
                 },
             };
             worldbooks.push(wb);
-            // Moro 没有关键词扫描：有内容的条目全部挂载（常驻与关键词条目同等对待）。
+            // 有内容的条目全部挂载；关键词条目（activation='keyword'）挂载后由
+            // WorldbookRuntime 在发消息时按最近消息扫描决定是否注入（同 ST 绿灯）。
             // ST 里禁用的条目也挂载，但 enabled=false —— 注入时被条目开关拦下，
             // 用户在世界书 App 里打开开关即可生效，无需重新挂载。
             if (content) {
