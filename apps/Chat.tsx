@@ -2171,8 +2171,6 @@ ${recent || '（你们还没怎么聊过）'}
         );
     }
 
-    // 动森彩蛋模式（受「聊天联动」开关控制：关掉则聊天保持原样式）
-    const acnh = osTheme.skin === 'animalcrossing' && osTheme.acnhChatSync !== false;
     const chatChromeStyle = osTheme.chatChromeStyle || 'soft';
     const chatBackgroundStyle = osTheme.chatBackgroundStyle || 'plain';
     const chatRootClass =
@@ -2182,7 +2180,7 @@ ${recent || '（你们还没怎么聊过）'}
               ? 'flex flex-col h-full bg-white overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
               : chatChromeStyle === 'floating'
                 ? 'flex flex-col h-full bg-[#eef2ff] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
-                : 'flex flex-col h-full bg-[#f1f5f9] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
+                : 'flex flex-col h-full bg-[#f7f7f9] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
     const chatRootStyle: React.CSSProperties = char.chatBackground
         ? {
             backgroundImage: `url(${char.chatBackground})`,
@@ -2211,16 +2209,9 @@ ${recent || '（你们还没怎么聊过）'}
               : {
                   backgroundImage: 'none',
                 };
-    // 动森彩蛋：浅奶油米黄中心（上下绿条由 header/输入栏负责），配色参考 Pocket Camp。
-    const acnhRootClass = 'flex flex-col h-full overflow-hidden relative font-sans transition-[background-color] duration-500';
-    const acnhRootStyle: React.CSSProperties = {
-        backgroundColor: '#F6F0D8',
-        backgroundImage: 'none',
-    };
-    const finalRootClass = acnh ? acnhRootClass : chatRootClass;
-    // 动森下强制覆盖角色自定义聊天背景，保证整机一致的彩蛋观感
     // 进入/切换的过场由 CharacterEntryTransition 覆盖层负责，根容器不再自己做淡入。
-    const finalRootStyle = acnh ? acnhRootStyle : chatRootStyle;
+    const finalRootClass = chatRootClass;
+    const finalRootStyle = chatRootStyle;
     const chatAvatarSizeClass = osTheme.chatAvatarSize === 'small' ? 'w-7 h-7' : osTheme.chatAvatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
     const chatAvatarRadiusClass = osTheme.chatAvatarShape === 'square' ? 'rounded-sm' : osTheme.chatAvatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const chatPendingAvatarClass = `${chatAvatarSizeClass} ${chatAvatarRadiusClass} object-cover`;
@@ -2250,28 +2241,6 @@ ${recent || '（你们还没怎么聊过）'}
 
              {activeTheme.customCss && <style>{activeTheme.customCss}</style>}
 
-             {/* 动森彩蛋：作用域 CSS 覆盖气泡——奶油 AI 气泡 + 蜜桃用户气泡，暖棕文字，绕开 MessageItem 复杂逻辑 */}
-             {acnh && <style>{`
-                .moro-bubble-ai {
-                    background: #FBF4DE !important;
-                    color: #6b5a3e !important;
-                    border: 1.5px solid #efe6c8 !important;
-                    border-radius: 24px !important;
-                    box-shadow: 0 4px 10px -5px rgba(120,95,45,0.28) !important;
-                }
-                .moro-bubble-user {
-                    background: #F5C896 !important;
-                    color: #6b4a2f !important;
-                    border: 1.5px solid #eeb87f !important;
-                    border-radius: 24px !important;
-                    box-shadow: 0 4px 10px -5px rgba(150,100,55,0.32) !important;
-                }
-                /* 仅动森：聊天正文放大一点 */
-                .moro-bubble-ai .text-\\[15px\\], .moro-bubble-user .text-\\[15px\\] {
-                    font-size: 16.5px !important;
-                    line-height: 1.7 !important;
-                }
-             `}</style>}
 
              {/* 记忆整理中 — 顶部浮动胶囊（不阻塞交互，轻量无 backdrop-filter） */}
              {memoryPalaceStatus && (
@@ -2601,7 +2570,6 @@ ${recent || '（你们还没怎么聊过）'}
                 statusStyle={osTheme.chatStatusStyle}
                 chromeStyle={osTheme.chatChromeStyle}
                 hideBuffs={osTheme.chatHideHeaderBuffs}
-                acnh={acnh}
              />
 
             {/* 认知消化结果弹窗 — 全屏玻璃拟态 */}
@@ -2971,7 +2939,6 @@ ${recent || '（你们还没怎么聊过）'}
                     inputStyle={osTheme.chatInputStyle}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
                     chromeStyle={osTheme.chatChromeStyle}
-                    acnh={acnh}
                 />
             </div>
 

@@ -339,15 +339,16 @@ interface OSContextType {
   clearSuspendedCall: () => void;
 }
 
-export const DEFAULT_WALLPAPER = 'linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%)';
+// 默认壁纸：纸感留白 + 底部淡薰衣草色，承托白色毛玻璃卡片（编辑部治愈风）。
+export const DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fdfdfd 0%, #f4f4f8 52%, #e7e9f4 100%)';
 
 const defaultTheme: OSTheme = {
-  hue: 245, // Default Indigo-ish
-  saturation: 25,
-  lightness: 65,
+  hue: 248, // 墨色微紫（与 index.html :root 默认一致）
+  saturation: 16,
+  lightness: 36,
   wallpaper: DEFAULT_WALLPAPER,
   darkMode: false,
-  contentColor: '#ffffff', // Default white text
+  contentColor: '#3f3d49', // 默认墨色文字（浅色纸面背景）
 };
 
 const defaultApiConfig: APIConfig = {
@@ -851,6 +852,30 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
              try {
                  const parsed = JSON.parse(savedThemeStr);
                  loadedTheme = { ...loadedTheme, ...parsed };
+                 // 动森皮肤已下线：把旧的 animalcrossing 主题整体迁回新默认（壁纸/配色/装饰叶子一并清理）。
+                 if ((loadedTheme as any).skin === 'animalcrossing') {
+                     loadedTheme.skin = 'default';
+                     loadedTheme.hue = defaultTheme.hue;
+                     loadedTheme.saturation = defaultTheme.saturation;
+                     loadedTheme.lightness = defaultTheme.lightness;
+                     loadedTheme.contentColor = defaultTheme.contentColor;
+                     loadedTheme.wallpaper = DEFAULT_WALLPAPER;
+                     loadedTheme.desktopDecorations = (loadedTheme.desktopDecorations || [])
+                         .filter(d => !d.id.startsWith('acnh-leaf-'));
+                     delete (loadedTheme as any).acnhChatSync;
+                 }
+                 // 旧版默认壁纸/旧默认白字 → 跟随新默认美化（用户自定义值不受影响）
+                 if (loadedTheme.wallpaper === 'linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%)') {
+                     loadedTheme.wallpaper = DEFAULT_WALLPAPER;
+                     if ((loadedTheme.contentColor || '#ffffff') === '#ffffff') {
+                         loadedTheme.contentColor = defaultTheme.contentColor;
+                     }
+                     if (loadedTheme.hue === 245 && loadedTheme.saturation === 25 && loadedTheme.lightness === 65) {
+                         loadedTheme.hue = defaultTheme.hue;
+                         loadedTheme.saturation = defaultTheme.saturation;
+                         loadedTheme.lightness = defaultTheme.lightness;
+                     }
+                 }
                  // Strip the legacy Unsplash hard-coded wallpaper, keep user-imported http(s) URLs
                  if (
                      loadedTheme.wallpaper.includes('unsplash') ||
@@ -1117,16 +1142,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   useEffect(() => {
       const root = document.documentElement;
       // Default fallback values match index.html
-      const h = theme.hue ?? 245;
-      const s = theme.saturation ?? 25;
-      const l = theme.lightness ?? 65;
+      const h = theme.hue ?? 248;
+      const s = theme.saturation ?? 16;
+      const l = theme.lightness ?? 36;
       
       root.style.setProperty('--primary-hue', String(h));
       root.style.setProperty('--primary-sat', `${s}%`);
       root.style.setProperty('--primary-lightness', `${l}%`);
-
-      // 桌面皮肤：写到 <html data-skin>，供全局 CSS（index.html）与组件读取。
-      root.dataset.skin = theme.skin || 'default';
   }, [theme]);
 
   // --- Update: Handle Scheduled Messages with Unread Flags & Web Notifications ---

@@ -135,15 +135,13 @@ interface ScheduleHomeWidgetProps {
     character: CharacterProfile | null;
     contentColor?: string;
     onOpen: () => void;
-    acnh?: boolean;
 }
 
 export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     schedule,
     character,
-    contentColor = '#ffffff',
+    contentColor = '#3f3d49',
     onOpen,
-    acnh = false,
 }) => {
     const currentIdx = schedule ? getCurrentSlotIndex(schedule.slots) : -1;
     const currentSlot = currentIdx >= 0 ? schedule!.slots[currentIdx] : null;
@@ -159,88 +157,17 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
 
     const timelineSlots = schedule?.slots ?? [];
 
-    // 动森：全新奶油布局（不复用暗底版式）
-    if (acnh) {
-        return (
-            <button onClick={onOpen}
-                className="w-full text-left rounded-3xl overflow-hidden active:scale-[0.98] transition-transform relative"
-                style={{ background: 'rgb(247,243,223)', border: '2px solid #e8e2d6', boxShadow: '0 6px 18px rgba(61,52,40,0.12)' }}>
-                <div className="flex flex-col p-4 gap-3">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-extrabold" style={{ color: '#725d42' }}>🍃 今日日程</span>
-                        <div className="h-[2px] flex-1 rounded-full" style={{ background: '#e8e2d6' }} />
-                        <span className="text-[11px] font-bold" style={{ color: '#9f927d' }}>{timeLabel}</span>
-                    </div>
-                    <div className="flex items-center gap-3.5">
-                        <div className="w-[64px] h-[64px] shrink-0 rounded-[22%] overflow-hidden bg-[#e8e2d6] flex items-center justify-center"
-                            style={{ border: '3px solid #fff', boxShadow: '0 4px 10px -3px rgba(61,52,40,0.25)' }}>
-                            {character?.avatar
-                                ? <img src={character.avatar} alt="" loading="lazy" className="w-full h-full object-cover" style={{ objectPosition: 'center 28%' }} />
-                                : <span className="text-lg font-bold" style={{ color: '#9f927d' }}>{character?.name?.[0] || '🍃'}</span>}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-1">
-                                <span className="text-[9px] font-extrabold tracking-wide px-2 py-0.5 rounded-full"
-                                    style={{ background: currentSlot ? '#dff0c8' : '#efe7d4', color: currentSlot ? '#5a9e1e' : '#9f927d' }}>
-                                    {currentSlot ? '现在' : '休息'}
-                                </span>
-                                <span className="text-[10px] font-bold" style={{ color: '#9f927d' }}>{currentSlot ? currentSlot.startTime : timeLabel}</span>
-                                <span className="text-[9px] ml-auto shrink-0 truncate max-w-[40%] font-bold" style={{ color: '#b3a88e' }}>{character?.name || '—'}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                                {currentSlot?.emoji && <span className="text-base shrink-0">{currentSlot.emoji}</span>}
-                                <span className="text-[15px] font-bold truncate leading-tight" style={{ color: '#725d42' }}>
-                                    {currentSlot?.activity || (schedule ? '休息中 · 暂无安排' : '尚未生成日程')}
-                                </span>
-                            </div>
-                            {nextSlot && (
-                                <div className="text-[10.5px] mt-0.5 truncate" style={{ color: '#a89878' }}>
-                                    → {nextSlot.startTime} {nextSlot.emoji ? `${nextSlot.emoji} ` : ''}{nextSlot.activity}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                    {timelineSlots.length > 0 && (
-                        <div className="flex items-end gap-1.5 pt-0.5">
-                            {timelineSlots.slice(0, 10).map((slot, i) => {
-                                const isCur = i === currentIdx;
-                                const isPast = currentIdx >= 0 && i < currentIdx;
-                                return (
-                                    <div key={i} className="flex-1 min-w-0 flex flex-col items-center gap-1">
-                                        <div className="w-full rounded-full transition-all" style={{ height: '4px', background: isCur ? '#6fba2c' : isPast ? '#cdbfa0' : '#e8e2d6' }} />
-                                        <span className="text-[8px] font-bold" style={{ color: isCur ? '#5a9e1e' : '#b3a88e' }}>{slot.startTime.slice(0, 5)}</span>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            </button>
-        );
-    }
 
     return (
         <button
             onClick={onOpen}
-            className="w-full group text-left rounded-3xl overflow-hidden transition-transform duration-200 active:scale-[0.98] relative"
-            style={acnh ? {
-                background: 'rgb(247,243,223)',
-                border: '2px solid #e8e2d6',
-                boxShadow: '0 6px 18px rgba(61,52,40,0.12)',
-                color: contentColor,
-            } : {
-                background: 'rgba(255,255,255,0.08)',
-                backdropFilter: 'blur(24px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
-                color: contentColor,
-            }}
+            className="w-full group text-left rounded-3xl overflow-hidden glass-card press-soft relative"
+            style={{ color: contentColor }}
         >
-            {/* Blurred avatar glow（动森奶油底下省略，避免糊脏） */}
-            {!acnh && character?.avatar && (
+            {/* Blurred avatar glow：极淡铺底，治愈氛围 */}
+            {character?.avatar && (
                 <div
-                    className="absolute inset-0 opacity-25 pointer-events-none"
+                    className="absolute inset-0 opacity-[0.12] pointer-events-none"
                     style={{
                         backgroundImage: `url(${character.avatar})`,
                         backgroundSize: 'cover',
@@ -263,7 +190,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
 
             <div className="relative flex flex-col p-4 gap-3">
                 {/* Header row: label + character name + time */}
-                <div className="flex items-center gap-2 text-[9px] tracking-[0.22em] uppercase opacity-60">
+                <div className="flex items-center gap-2 text-[9px] label-mono opacity-60">
                     <span className="font-bold">Daily Schedule</span>
                     <div className="h-px flex-1" style={{ background: contentColor, opacity: 0.25 }}></div>
                     <span className="font-mono tracking-wider opacity-80">{timeLabel}</span>
@@ -272,10 +199,10 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                 {/* Main row: avatar | activity */}
                 <div className="flex items-center gap-4">
                     <div
-                        className="w-[72px] h-[72px] shrink-0 rounded-2xl overflow-hidden bg-slate-800/60 relative"
+                        className="w-[72px] h-[72px] shrink-0 rounded-2xl overflow-hidden bg-white/60 relative"
                         style={{
-                            border: '1.5px solid rgba(255,255,255,0.24)',
-                            boxShadow: '0 6px 18px rgba(0,0,0,0.3)',
+                            border: '2px solid rgba(255,255,255,0.9)',
+                            boxShadow: '0 10px 22px -10px rgba(63,61,86,0.35)',
                         }}
                     >
                         {character?.avatar ? (
@@ -298,9 +225,9 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                             <span
                                 className="text-[9px] font-bold tracking-[0.22em] uppercase px-1.5 py-0.5 rounded-full"
                                 style={{
-                                    background: currentSlot ? accentSoft : 'rgba(255,255,255,0.14)',
+                                    background: currentSlot ? accentSoft : 'rgba(63,61,86,0.06)',
                                     color: currentSlot ? accentHsl : undefined,
-                                    border: '1px solid rgba(255,255,255,0.16)',
+                                    border: '1px solid rgba(63,61,86,0.08)',
                                 }}
                             >
                                 {currentSlot ? 'Now' : 'Idle'}
@@ -337,7 +264,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                     {/* Open indicator */}
                     <div
                         className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity self-start"
-                        style={{ background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.2)' }}
+                        style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid #ececf2' }}
                     >
                         <svg viewBox="0 0 24 24" fill="none" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5V5a2 2 0 0 1 2-2h2.5M21 7.5V5a2 2 0 0 0-2-2h-2.5M3 16.5V19a2 2 0 0 0 2 2h2.5M21 16.5V19a2 2 0 0 1-2 2h-2.5" />
@@ -359,7 +286,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                                     <div
                                         className="w-full h-[3px] rounded-full transition-all"
                                         style={{
-                                            background: isCurrent ? accentHsl : isPast ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.14)',
+                                            background: isCurrent ? accentHsl : isPast ? 'rgba(63,61,86,0.28)' : 'rgba(63,61,86,0.10)',
                                             boxShadow: isCurrent ? `0 0 8px ${accentHsl}` : 'none',
                                         }}
                                     ></div>

@@ -25,8 +25,7 @@ const StatusBar: React.FC = () => {
   const format = (n: number) => n.toString().padStart(2, '0');
 
   // Use content color from theme
-  const textColor = theme.contentColor || '#ffffff';
-  const acnh = theme.skin === 'animalcrossing'; // 动森彩蛋：电量条用叶绿色
+  const textColor = theme.contentColor || '#3f3d49';
 
   useEffect(() => {
     const initBattery = async () => {
@@ -63,7 +62,7 @@ const StatusBar: React.FC = () => {
   return (
     <>
       <div 
-          className="w-full flex justify-between items-start px-6 text-[11px] font-bold z-50 absolute top-0 left-0 bg-transparent transition-colors duration-500 select-none pointer-events-none"
+          className="w-full flex justify-between items-start px-6 text-[11px] font-bold label-mono z-50 absolute top-0 left-0 bg-transparent transition-colors duration-500 select-none pointer-events-none"
           style={{ 
               color: textColor,
               paddingTop: 'max(4px, var(--safe-top))',
@@ -85,7 +84,7 @@ const StatusBar: React.FC = () => {
             <span>{batteryLevel}%</span>
             <div className="w-5 h-2.5 border border-current rounded-[3px] p-[1px] relative opacity-80 flex items-center">
               <div
-                  className={`h-full rounded-[1px] ${isCharging ? 'bg-green-400' : acnh ? 'bg-[#7cba4c]' : 'bg-current'}`}
+                  className={`h-full rounded-[1px] ${isCharging ? 'bg-green-400' : 'bg-current'}`}
                   style={{ width: `${batteryLevel}%` }}
               ></div>
               {isCharging && (
