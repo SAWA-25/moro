@@ -63,6 +63,12 @@ export interface STImportResult {
      */
     firstMes?: string;
     alternateGreetings: string[];
+    /**
+     * 对话示例（mes_example）。不再拼进 systemPrompt —— 独立字段挂到角色上，
+     * 由消息组装按 ST 语义注入（预设的 dialogueExamples 占位 / 核心上下文示例块）。
+     * 宏与其他设定字段一致：导入时烘焙一次。
+     */
+    mesExample?: string;
     /** JSON 卡没有图片时的兜底头像（svg data URL） */
     avatarFallback: string;
     /** 需要写入全局世界书库的全部条目（含 ST 里禁用的条目和创作者备注） */
@@ -283,9 +289,10 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
 /**
  * 把规范化后的 ST 卡转换为 Moro 角色字段 + 世界书记录。
  * 字段映射：
- * - description + personality + mes_example + system_prompt 等 → systemPrompt（分节拼接）
+ * - description + personality + system_prompt 等 → systemPrompt（分节拼接）
  * - first_mes / alternate_greetings → firstMes / alternateGreetings（独立字段，
  *   进入空聊天时由用户选择一条作为第一条消息，不污染 systemPrompt）
+ * - mes_example → mesExample（独立字段，按 ST 语义注入 dialogueExamples 占位 / 示例块）
  * - scenario → worldview
  * - creator / character_version / tags → description（列表页一行摘要）
  * - creator_notes 及卡片元信息 → 一条 enabled=false 的世界书（保留信息但不进 prompt）
@@ -312,8 +319,9 @@ export function convertSTCardToCharacter(
     if (desc) sections.push(`【角色设定】\n${desc}`);
     const personality = m(d.personality);
     if (personality) sections.push(`【性格特征】\n${personality}`);
+    // 对话示例不进 systemPrompt：它是说话风格的「示例」而非角色设定，混进核心指令会
+    // 和角色描述黏在一起、模型容易把示例当成真实发生过的对话。独立字段由消息组装注入。
     const mesExample = m(d.mes_example);
-    if (mesExample) sections.push(`【对话示例】\n${mesExample}`);
     // 开场白不进 systemPrompt：它是对话的第一条消息而非角色设定，拼进核心指令会
     // 让模型把开场白当常驻指令复读。保留原始宏，进入聊天选择时再替换。
     const firstMes = typeof d.first_mes === 'string' ? d.first_mes.trim() : '';
@@ -459,6 +467,7 @@ export function convertSTCardToCharacter(
         worldview,
         firstMes: firstMes || undefined,
         alternateGreetings,
+        mesExample: mesExample || undefined,
         avatarFallback: makeFallbackAvatar(name),
         worldbooks,
         mountedWorldbooks,

@@ -140,6 +140,7 @@ export const ChatPrompts = {
                     omitDepthWorldbooks: omitDepthWorldbooks || undefined,
                     omitWorldbooks: presetMarkerSplit || undefined,
                     skipUserProfile: presetMarkerSplit || undefined,
+                    omitMesExample: presetMarkerSplit || undefined,
                 }
                 : undefined);
         timings.buildCoreContext = Math.round(performance.now() - coreT0);

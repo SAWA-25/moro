@@ -21,6 +21,7 @@ import { buildMcdMiniAppContextBlock } from './mcdToolBridge';
 import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
+import { renderMesExampleBlock } from './context';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { PresetRuntime, applyPresetToMessages } from './presets';
 import { PersonaRuntime, normalizePersonaPosition } from './personas';
@@ -365,6 +366,9 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // personaDescription marker 内容：嵌入提示词时带描述；@Depth / 不注入时只保留名字
     // （描述分别已插进历史 / 按 ST 语义彻底不发）。
     const personaBlock = `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${(personaDescInPrompt && personaDesc) ? personaDesc : '无'}`;
+    // 对话示例块（mes_example）：预设启用时核心上下文已拆出（omitMesExample），
+    // 在 dialogueExamples marker 的位置注入，受 marker 开关控制（ST 语义）。
+    const mesExampleBlock = renderMesExampleBlock(char.mesExample);
     if (activePreset) {
         fullMessages = applyPresetToMessages(fullMessages, activePreset, {
             macros: macroCtx,
@@ -372,6 +376,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
                 worldInfoBefore: substituteMacros(depthSections.beforeChar, macroCtx),
                 worldInfoAfter: substituteMacros(depthSections.afterChar, macroCtx),
                 personaDescription: substituteMacros(personaBlock, macroCtx),
+                dialogueExamples: substituteMacros(mesExampleBlock, macroCtx),
             },
         });
     }
@@ -392,6 +397,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             substituteMacros(depthSections.beforeChar, macroCtx),
             systemPrompt,
             substituteMacros(depthSections.afterChar, macroCtx),
+            substituteMacros(mesExampleBlock, macroCtx),
             substituteMacros(personaBlock, macroCtx),
         ].filter(s => s && s.trim()).join('\n\n');
     }
