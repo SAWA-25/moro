@@ -34,7 +34,7 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
         className="flex flex-col items-center group relative press-soft"
         style={{ WebkitTapHighlightColor: 'transparent' }}
       >
-        <div className={`${sizeClasses} relative flex items-center justify-center rounded-full
+        <div className={`moro-dock-icon ${sizeClasses} relative flex items-center justify-center rounded-full
           bg-white/55 border border-[#e4e3ec]
           shadow-[0_6px_16px_-8px_rgba(63,61,86,0.25)]
           transition-colors duration-300 group-hover:bg-white group-hover:border-[#d6d4e2]
@@ -59,7 +59,7 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
       style={{ WebkitTapHighlightColor: 'transparent' }}
     >
       {/* 纸感瓦片：白色微透卡片 + 细边 + 柔影（blur 不放在图标上 — 8+ 个图标会卡启动器） */}
-      <div className={`${sizeClasses} relative flex items-center justify-center
+      <div className={`moro-app-tile ${sizeClasses} relative flex items-center justify-center
         bg-white/72 rounded-[1.25rem]
         border border-[#ececf2]
         shadow-[0_10px_24px_-12px_rgba(63,61,86,0.28)]
@@ -81,7 +81,7 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
 
       {!hideLabel && (
         <span
-            className={`${size === 'sm' ? 'text-[8px]' : 'text-[9px]'} label-mono font-bold opacity-60 transition-opacity group-hover:opacity-90 max-w-full truncate block`}
+            className={`moro-app-label ${size === 'sm' ? 'text-[8px]' : 'text-[9px]'} label-mono font-bold opacity-60 transition-opacity group-hover:opacity-90 max-w-full truncate block`}
             style={{ color: contentColor }}
         >
           {app.name}

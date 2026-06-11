@@ -541,8 +541,10 @@ const PREVIEW_SCENES: PreviewScene[] = [
     }
 ];
 
-const ThemeMaker: React.FC = () => {
+// embedded：嵌在「主题」App 内当一个标签页用 —— 返回/保存退出走 onRequestClose 回到主题页，而不是关 App。
+const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> = ({ embedded = false, onRequestClose }) => {
     const { closeApp, addCustomTheme, addToast } = useOS();
+    const exitView = () => (onRequestClose ? onRequestClose() : closeApp());
     const [initialThemeId] = useState(() => `theme-${Date.now()}`);
     const [editingTheme, setEditingTheme] = useState<ChatTheme>({ ...DEFAULT_THEME, id: initialThemeId });
     const [activeTab, setActiveTab] = useState<'user' | 'ai' | 'css'>('user');
@@ -622,7 +624,7 @@ const ThemeMaker: React.FC = () => {
         setToolSection(target);
     };
 
-    const requestClose = () => withDiscardGuard(() => closeApp());
+    const requestClose = () => withDiscardGuard(() => exitView());
 
     // Initialize padding state from CSS on load
     useEffect(() => {
@@ -698,7 +700,7 @@ const ThemeMaker: React.FC = () => {
         setIsDirty(false);
         setIsAppliedToPreview(true);
         addToast('已保存并应用到当前聊天预览', 'success');
-        if (exitAfterSave) closeApp();
+        if (exitAfterSave) exitView();
     };
 
     const saveTheme = ({ exitAfterSave }: { exitAfterSave: boolean }) => {

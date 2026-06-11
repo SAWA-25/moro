@@ -7,6 +7,8 @@ import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
 import { Sparkle } from '@phosphor-icons/react';
 import { ChatAppearanceEditor as ModularChatAppearanceEditor } from '../components/appearance/ChatAppearanceEditor';
+import ThemeMaker from './ThemeMaker';
+import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
@@ -559,6 +561,156 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
     );
 };
 
+// ===== 小部位实时预览（桌面零件 / 聊天白框）=====
+// 预览 mock 挂了与真实组件相同的 .moro-* 钩子类：主题色 / 壁纸 / 全局 CSS / 白框 CSS 改动即时反映。
+const previewWallpaperStyle = (wp: string): React.CSSProperties => {
+    const isUrl = wp.startsWith('http') || wp.startsWith('data:') || wp.startsWith('blob:');
+    return isUrl
+        ? { backgroundImage: `url(${wp})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : { background: wp || '#eef0f6' };
+};
+
+const DesktopMiniPreview: React.FC<{ theme: OSTheme }> = ({ theme }) => {
+    const ink = theme.contentColor || '#3f3d49';
+    return (
+        <div className="rounded-[22px] overflow-hidden border border-slate-200 shadow-inner select-none pointer-events-none"
+            style={{ ...previewWallpaperStyle(theme.wallpaper), color: ink }}>
+            {/* 状态栏 */}
+            <div className="moro-status-bar flex justify-between px-4 pt-2.5 text-[8px] font-bold label-mono opacity-80">
+                <span>12:17</span><span>5G ▮▮▮</span>
+            </div>
+            <div className="px-4 pt-2 pb-3 space-y-2">
+                {/* 时钟卡 */}
+                <div className="moro-clock-card glass-card rounded-2xl px-3.5 py-2.5 relative overflow-hidden">
+                    <div className="flex justify-between text-[7px] label-mono font-bold opacity-60"><span>APRIL 07</span><span>TUESDAY</span></div>
+                    <div className="moro-clock-time font-display-italic font-semibold text-[26px] leading-tight">12:17</div>
+                    <div className="moro-clock-greeting text-[8px] opacity-70">天天开心，万事顺意。</div>
+                    <span className="moro-palette-btn label-mono inline-block text-[6.5px] font-bold mt-1.5 px-2.5 py-1 rounded-full text-white" style={{ background: '#2c2a35' }}>Palette</span>
+                </div>
+                {/* 角色卡 */}
+                <div className="moro-character-card glass-card rounded-2xl px-3.5 py-2 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[6.5px] label-mono font-bold opacity-50 truncate">Moro Card</div>
+                        <div className="font-display-italic text-[13px] font-semibold leading-tight">聊天</div>
+                    </div>
+                    <div className="w-7 h-7 rounded-lg bg-white/70 border border-white shadow-sm shrink-0" />
+                </div>
+                {/* 应用瓦片 */}
+                <div className="grid grid-cols-4 gap-1.5">
+                    {['聊天', '剧情', '关系', '音乐'].map(n => (
+                        <div key={n} className="flex flex-col items-center gap-0.5">
+                            <div className="moro-app-tile w-8 h-8 rounded-[10px] bg-white/72 border border-[#ececf2] shadow-sm flex items-center justify-center">
+                                <div className="w-3 h-3 rounded-full border-[1.5px]" style={{ borderColor: ink, opacity: 0.6 }} />
+                            </div>
+                            <span className="moro-app-label text-[6px] label-mono font-bold opacity-60">{n}</span>
+                        </div>
+                    ))}
+                </div>
+                {/* Dock */}
+                <div className="moro-dock glass-pill rounded-full px-3 py-1.5 flex justify-around items-center mx-3">
+                    {[0, 1, 2, 3].map(i => (
+                        <div key={i} className="moro-dock-icon w-6 h-6 rounded-full bg-white/55 border border-[#e4e3ec] shadow-sm" />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ChromeMiniPreview: React.FC<{ chromeCss?: string }> = ({ chromeCss }) => (
+    <div className="moro-chat-root rounded-[22px] overflow-hidden border border-slate-200 bg-[#f7f7f9] select-none pointer-events-none">
+        {chromeCss && <style>{chromeCss}</style>}
+        <div className="moro-chat-header flex items-center gap-2 px-3 py-2.5 bg-white/80 border-b border-slate-200/60">
+            <span className="moro-chat-back text-slate-500 text-xs px-1">‹</span>
+            <div className="moro-chat-avatar w-7 h-7 rounded-full bg-gradient-to-br from-indigo-200 to-pink-200" />
+            <div className="min-w-0">
+                <div className="moro-chat-name text-[10px] font-bold text-slate-800">聊天对象</div>
+                <div className="moro-chat-status text-[8px] text-slate-400 uppercase">Online</div>
+            </div>
+            <div className="moro-chat-token ml-auto text-[7px] font-mono text-slate-400 bg-slate-100 border border-slate-200 rounded px-1 py-0.5">42 tok</div>
+        </div>
+        <div className="p-3 space-y-2">
+            <div className="flex justify-start"><div className="moro-bubble-ai max-w-[75%] px-3 py-1.5 rounded-lg bg-[#f4f4f6] border border-black/5 text-[9px] text-slate-700">白框 CSS 改动会即时反映在这里。</div></div>
+            <div className="flex justify-end"><div className="moro-bubble-user max-w-[75%] px-3 py-1.5 rounded-lg bg-[#ededf1] border border-black/5 text-[9px] text-slate-700">比如挪顶栏、换输入栏底色。</div></div>
+        </div>
+        <div className="moro-chat-inputbar flex items-center gap-1.5 px-3 py-2 bg-white/90 border-t border-slate-200/50">
+            <div className="w-5 h-5 rounded-full bg-slate-100 shrink-0" />
+            <div className="flex-1 h-5 rounded-full bg-slate-100 px-2 text-[8px] text-slate-400 flex items-center">输入消息...</div>
+            <div className="w-5 h-5 rounded-full bg-primary shrink-0" />
+        </div>
+    </div>
+);
+
+// 「自定义 CSS」工作台：全局 CSS（整机）+ 聊天白框全局 CSS，都带小部位实时预览。
+const CustomCssStudio: React.FC<{
+    theme: OSTheme;
+    updateTheme: (u: Partial<OSTheme>) => void;
+    onResetAllChrome: () => void;
+    addToast: (msg: string, type?: Toast['type']) => void;
+}> = ({ theme, updateTheme, onResetAllChrome, addToast }) => {
+    const GLOBAL_HOOKS = [
+        '.moro-clock-card', '.moro-clock-time', '.moro-clock-greeting', '.moro-palette-btn',
+        '.moro-character-card', '.moro-app-tile', '.moro-app-label', '.moro-dock', '.moro-dock-icon',
+        '.moro-status-bar', '.moro-widget-card', '.moro-lock-screen', '.glass-card', '.glass-pill',
+    ];
+    const GLOBAL_EXAMPLE = `/* 例：把桌面时钟卡换成奶油黄、Dock 改半透明黑 */
+.moro-clock-card { background: #fff8e1 !important; }
+.moro-dock { background: rgba(20,20,28,0.55) !important; border-color: transparent !important; }
+.moro-dock-icon { background: rgba(255,255,255,0.12) !important; }`;
+    return (
+        <div className="space-y-5">
+            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">全局 CSS · 整机美化</h2>
+                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                    注入整机（桌面 / 锁屏 / 所有 App），输入即时生效。桌面各零件都有 .moro-* 钩子类可精准定位；
+                    写崩了删掉内容即可恢复（Dock 与桌面 Palette 按钮受保护，永远可点，从那里能回到这里）。
+                </p>
+                <div className="mb-3">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1.5">实时预览（桌面零件）</div>
+                    <DesktopMiniPreview theme={theme} />
+                </div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                    {GLOBAL_HOOKS.map(h => (
+                        <code key={h} className="text-[9px] bg-slate-100 text-slate-500 border border-slate-200 rounded px-1.5 py-0.5">{h}</code>
+                    ))}
+                </div>
+                <textarea
+                    value={theme.globalCustomCss || ''}
+                    onChange={(e) => updateTheme({ globalCustomCss: e.target.value })}
+                    spellCheck={false}
+                    placeholder={GLOBAL_EXAMPLE}
+                    className="w-full h-44 bg-slate-900 text-emerald-200 font-mono text-[11px] leading-relaxed rounded-2xl p-3.5 resize-none outline-none border border-slate-700 focus:border-primary/60"
+                />
+                <div className="flex gap-2 mt-2">
+                    <button
+                        onClick={() => { updateTheme({ globalCustomCss: GLOBAL_EXAMPLE }); addToast('已填入示例 CSS', 'success'); }}
+                        className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-500 text-[11px] font-bold active:scale-[0.98] transition-transform">填入示例</button>
+                    <button
+                        onClick={() => { updateTheme({ globalCustomCss: '' }); addToast('已清空全局 CSS', 'success'); }}
+                        className="flex-1 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-500 text-[11px] font-bold active:scale-[0.98] transition-transform">清空还原</button>
+                </div>
+            </section>
+
+            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">聊天白框 · 全局 CSS</h2>
+                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
+                    作用于所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。单个角色的专属白框仍在该角色聊天「＋ → 白框」里设置，叠加在这层之上。
+                </p>
+                <div className="mb-3">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1.5">实时预览（聊天白框）</div>
+                    <ChromeMiniPreview chromeCss={theme.chatChromeCustomCss} />
+                </div>
+                <ChromeCssEditor value={theme.chatChromeCustomCss || ''} onChange={(css) => updateTheme({ chatChromeCustomCss: css })} />
+                <button
+                    onClick={() => { if (window.confirm('确定还原全部聊天白框美化？将清空「全局」以及「每个角色」的自定义 CSS。')) onResetAllChrome(); }}
+                    className="mt-3 w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-600 transition-all hover:bg-rose-100 active:scale-[0.99]">
+                    一键还原全部聊天白框美化（救援）
+                </button>
+            </section>
+        </div>
+    );
+};
+
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter } = useOS();
   // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
@@ -571,7 +723,7 @@ const Appearance: React.FC = () => {
     });
     addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
   };
-  const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat'>('theme');
+  const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat' | 'bubble' | 'css'>('theme');
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
   const widgetInputRef = useRef<HTMLInputElement>(null);
@@ -761,6 +913,20 @@ const Appearance: React.FC = () => {
       }
   };
 
+  // 气泡工坊：全屏嵌入（编辑器需要整屏空间），返回键 / 保存退出回到主题页
+  if (activeTab === 'bubble') {
+      return <ThemeMaker embedded onRequestClose={() => setActiveTab('theme')} />;
+  }
+
+  const TABS: { id: 'theme' | 'icons' | 'presets' | 'chat' | 'bubble' | 'css'; label: string }[] = [
+      { id: 'theme', label: '系统主题' },
+      { id: 'chat', label: '聊天界面' },
+      { id: 'bubble', label: '气泡工坊' },
+      { id: 'css', label: '自定义 CSS' },
+      { id: 'icons', label: '应用图标' },
+      { id: 'presets', label: '外观预设' },
+  ];
+
   return (
     <div className="h-full w-full bg-slate-50 flex flex-col font-light">
       <div className="h-20 bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 shrink-0 z-10 sticky top-0">
@@ -770,20 +936,29 @@ const Appearance: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                 </svg>
             </button>
-            <h1 className="text-xl font-medium text-slate-700 tracking-wide">外观定制</h1>
+            <h1 className="text-xl font-medium text-slate-700 tracking-wide">主题</h1>
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20">
-          <button onClick={() => setActiveTab('theme')} className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === 'theme' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}>系统主题</button>
-          <button onClick={() => setActiveTab('icons')} className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === 'icons' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}>应用图标</button>
-          <button onClick={() => setActiveTab('presets')} className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === 'presets' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}>外观预设</button>
-          <button onClick={() => setActiveTab('chat')} className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === 'chat' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}>聊天界面</button>
+      <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20 overflow-x-auto no-scrollbar">
+          {TABS.map(tab => (
+              <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.id ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}
+              >{tab.label}</button>
+          ))}
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
         {activeTab === 'theme' ? (
             <>
+                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">实时预览</h2>
+                    <p className="text-[10px] text-slate-400 mb-3">壁纸 / 主题色 / 文字色 / 全局 CSS 的改动会立即反映在这块小桌面上。</p>
+                    <DesktopMiniPreview theme={theme} />
+                </section>
+
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
                     <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Preset Themes</h2>
                     <div className="flex gap-3 mb-6 overflow-x-auto no-scrollbar pb-1">
@@ -1336,6 +1511,8 @@ const Appearance: React.FC = () => {
             />
         ) : activeTab === 'chat' ? (
             <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} />
+        ) : activeTab === 'css' ? (
+            <CustomCssStudio theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} addToast={addToast} />
         ) : null}
       </div>
     </div>

@@ -34,7 +34,7 @@ const DesktopClock = React.memo(() => {
 
     // 编辑部纸感时钟卡：等宽日期标签 + 衬线斜体大时钟 + 治愈问候 + PALETTE 墨色胶囊
     return (
-        <div className="glass-card rounded-[1.75rem] px-6 pt-5 pb-5 mb-4 mt-2 relative overflow-hidden animate-rise-in select-none"
+        <div className="moro-clock-card glass-card rounded-[1.75rem] px-6 pt-5 pb-5 mb-4 mt-2 relative overflow-hidden animate-rise-in select-none"
             style={{ color: contentColor }}>
             {/* 卡片内氛围光斑：缓慢呼吸的薰衣草光 */}
             <div className="absolute -top-10 -right-10 w-44 h-44 rounded-full pointer-events-none animate-breathe"
@@ -46,15 +46,15 @@ const DesktopClock = React.memo(() => {
             </div>
             <div className="text-[10px] label-mono opacity-40 mb-2">Desktop / RP</div>
 
-            <div className="font-display-italic font-semibold text-[4.5rem] leading-[0.95] tracking-tight">
+            <div className="moro-clock-time font-display-italic font-semibold text-[4.5rem] leading-[0.95] tracking-tight">
                 {hh}<span className="opacity-40 animate-pulse mx-0.5">:</span>{mm}
             </div>
 
-            <div className="text-[13px] mt-3 opacity-70 font-medium tracking-wide">{greeting}</div>
+            <div className="moro-clock-greeting text-[13px] mt-3 opacity-70 font-medium tracking-wide">{greeting}</div>
 
             <button
                 onClick={() => openApp(AppID.Appearance)}
-                className="label-mono text-[10px] font-bold mt-4 px-5 py-2.5 rounded-full text-white press-soft"
+                className="moro-palette-btn label-mono text-[10px] font-bold mt-4 px-5 py-2.5 rounded-full text-white press-soft"
                 style={{ background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
             >
                 Palette
@@ -81,7 +81,7 @@ const CharacterWidget = React.memo(({
     return (
         <div className="mb-3 group animate-rise-in" style={{ animationDelay: '60ms' }}>
              <div
-                className="glass-card relative w-full overflow-hidden rounded-[1.75rem] cursor-pointer press-soft"
+                className="moro-character-card glass-card relative w-full overflow-hidden rounded-[1.75rem] cursor-pointer press-soft"
                 onClick={onClick}
                 style={{ color: contentColor }}
              >
@@ -227,7 +227,7 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
 
     return (
         <div className="w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar">
-              <div className="glass-card rounded-3xl p-6 animate-rise-in">
+              <div className="moro-widget-card glass-card rounded-3xl p-6 animate-rise-in">
                   <div className="flex justify-between items-center mb-4" style={{ color: contentColor }}>
                       <h3 className="text-xl font-display-italic font-semibold tracking-wide">{monthName} <span className="label-mono text-[11px] font-bold opacity-50 align-middle ml-1">{currentYear}</span></h3>
                       <div onClick={() => openApp('schedule')} className="p-2 rounded-full cursor-pointer transition-colors bg-white/60 border border-[#ececf2] hover:bg-white press-soft">
@@ -261,7 +261,7 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                   </div>
               </div>
 
-              <div className="glass-card rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] animate-rise-in" style={{ animationDelay: '80ms' }}>
+              <div className="moro-widget-card glass-card rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] animate-rise-in" style={{ animationDelay: '80ms' }}>
                   <div className="flex items-center justify-between mb-4">
                       <h3 className="text-[10px] font-bold opacity-60 label-mono flex items-center gap-2" style={{ color: contentColor }}>
                           <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: accentDot }}></span> Upcoming Events
@@ -682,7 +682,7 @@ const Launcher: React.FC = () => {
            style={{ paddingBottom: launcherBottomInset }}
       >
            <div
-             className="glass-pill rounded-full px-5 py-3 flex gap-4 sm:gap-7 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu"
+             className="moro-dock glass-pill rounded-full px-5 py-3 flex gap-4 sm:gap-7 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu"
            >
                {dockAppsConfig.map(app => (
                    <div key={app.id} className="relative">

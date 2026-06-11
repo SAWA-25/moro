@@ -11,7 +11,6 @@ export enum AppID {
   ThemeMaker = 'thememaker',
   Appearance = 'appearance',
   Date = 'date',
-  User = 'user',
   Journal = 'journal',
   Schedule = 'schedule',
   Room = 'room',
@@ -236,6 +235,10 @@ export interface OSTheme {
   chatChromeCustomCss?: string;
   /** 隐藏顶栏的情绪 buff 栏。 */
   chatHideHeaderBuffs?: boolean;
+  /** 全局自定义 CSS：注入整机（桌面 / 锁屏 / 所有 App），配合 .moro-* 钩子类（moro-clock-card /
+   *  moro-character-card / moro-app-tile / moro-dock / moro-status-bar / moro-lock-screen 等）做全局美化。
+   *  在「主题 → 自定义 CSS」编辑，实时生效。 */
+  globalCustomCss?: string;
 }
 
 export interface AppearancePreset {

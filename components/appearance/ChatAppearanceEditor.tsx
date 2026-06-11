@@ -523,7 +523,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <div className="mb-3">
                     <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">白框自定义 (CSS)</h2>
                     <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-                        聊天白框美化现在按「单个角色」管理：进该角色聊天 →「＋」菜单 →「白框」里设置、预览、存预设。
+                        全局白框 CSS 在「主题 → 自定义 CSS」标签页编辑（带实时预览）；单个角色的专属白框在该角色聊天 →「＋」菜单 →「白框」里设置，叠加在全局之上。
                         如果某个角色的 CSS 写坏了导致聊天界面异常、连设置都打不开，点下面一键还原全部即可恢复。
                     </p>
                 </div>
