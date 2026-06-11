@@ -56,7 +56,7 @@ const CharacterCard: React.FC<{
 );
 
 const Character: React.FC = () => {
-  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  const { closeApp, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -523,10 +523,12 @@ const Character: React.FC = () => {
         
         try {
             const msgs = await DB.getMessagesByCharId(targetId, true);
+            // hideBeforeMessageId 之前的消息已被归档/隐藏，不应再进批量总结
+            // （此前 validMsgs 算完没用上，遍历的还是未过滤的 msgs —— 修复）
             const validMsgs = msgs.filter(m => !formData.hideBeforeMessageId || m.id >= formData.hideBeforeMessageId);
             const msgsByDate: Record<string, any[]> = {};
-            
-            msgs.forEach(m => {
+
+            validMsgs.forEach(m => {
                 const d = new Date(m.timestamp);
                 const year = d.getFullYear();
                 const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -900,12 +902,12 @@ ${isInitialGeneration ? `
           emotionConfig: { enabled: true },
       };
 
-      await DB.saveCharacter(newChar);
+      // 走 importCharacter 直接进 state，不再 window.location.reload() 整页重启
+      await importCharacter(newChar);
       const wbSuffix = result.worldbooks.length > 0
           ? `，导入世界书 ${result.worldbooks.length} 条（挂载 ${result.mountedWorldbooks.length} 条）`
           : '';
       addToast(`SillyTavern 角色 ${newChar.name} 导入成功${wbSuffix}`, 'success');
-      setTimeout(() => window.location.reload(), 600);
   };
 
   const handleImportCard = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -986,9 +988,9 @@ ${isInitialGeneration ? `
           embeddedTheme: undefined
       } as CharacterProfile;
 
-      await DB.saveCharacter(newChar);
-      addCharacter(); // Force refresh (naive)
-      setTimeout(() => window.location.reload(), 500);
+      // 旧实现：DB.saveCharacter + addCharacter()「naive 刷新」+ reload —— 整页重启之外，
+      // addCharacter() 还会额外创建一个空白 New Character 留在列表里。改走 importCharacter。
+      await importCharacter(newChar);
 
       const wbToastSuffix = importedWbCount > 0 ? `，并同步 ${importedWbCount} 本世界书` : '';
       addToast(`角色 ${newChar.name} 导入成功${wbToastSuffix}`, 'success');

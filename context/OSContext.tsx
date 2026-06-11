@@ -213,6 +213,8 @@ interface OSContextType {
   characters: CharacterProfile[];
   activeCharacterId: string;
   addCharacter: () => void;
+  /** 导入完整角色（角色卡导入用）：落库 + 进 state + 设为当前角色，不刷新页面 */
+  importCharacter: (char: CharacterProfile) => Promise<void>;
   updateCharacter: (id: string, updates: Partial<CharacterProfile>) => void;
   deleteCharacter: (id: string) => void;
   setActiveCharacterId: (id: string) => void;
@@ -2059,6 +2061,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setActiveCharacterId(newChar.id);
     await DB.saveCharacter(newChar);
   };
+  // 角色卡导入专用：以前的实现是 DB.saveCharacter + addCharacter()「naive 刷新」+
+  // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
+  // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
+  const importCharacter = async (char: CharacterProfile) => {
+    const normalized = normalizeCharacterImpression(char);
+    setCharacters(prev => [...prev.filter(c => c.id !== normalized.id), normalized]);
+    setActiveCharacterId(normalized.id);
+    await DB.saveCharacter(normalized);
+  };
   const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => { setCharacters(prev => { const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...updates }) : c); const target = updated.find(c => c.id === id); if (target) DB.saveCharacter(target); return updated; }); };
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };
   
@@ -3401,6 +3412,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     characters,
     activeCharacterId,
     addCharacter,
+    importCharacter,
     updateCharacter,
     deleteCharacter,
     setActiveCharacterId,
