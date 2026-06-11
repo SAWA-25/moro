@@ -10,7 +10,7 @@
     
     <!-- PWA Settings -->
     <link rel="manifest" href="./manifest.webmanifest" />
-    <meta name="theme-color" content="#0f1115" />
+    <meta name="theme-color" content="#eef0f6" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -24,20 +24,24 @@
     <link rel="stylesheet" href="https://unpkg.com/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Caveat:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Ma+Shan+Zheng&family=Long+Cang&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=DM+Serif+Display:ital@0;1&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600;1,700&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Caveat:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Ma+Shan+Zheng&family=Long+Cang&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
               sans: ['var(--app-font)', 'sans-serif'],
+              display: ['var(--font-display)', 'serif'],
+              label: ['var(--font-label)', 'monospace'],
             },
             colors: {
-              primary: 'hsl(var(--primary-hue), var(--primary-sat), var(--primary-lightness))', 
+              primary: 'hsl(var(--primary-hue), var(--primary-sat), var(--primary-lightness))',
               'primary-focus': 'hsl(var(--primary-hue), var(--primary-sat), calc(var(--primary-lightness) - 10%))',
               'primary-light': 'hsl(var(--primary-hue), var(--primary-sat), 92%)',
               surface: 'rgba(255, 255, 255, 0.75)',
               'surface-glass': 'rgba(255, 255, 255, 0.35)',
+              ink: '#3f3d49',
+              'ink-soft': '#8b8996',
             },
             animation: {
               'fade-in': 'fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -51,6 +55,11 @@
               'glow-pulse': 'glowPulse 3s ease-in-out infinite',
               'shimmer': 'shimmer 2.5s ease-in-out infinite',
               'dot-pulse': 'dotPulse 1.2s ease-in-out infinite',
+              'breathe': 'breathe 5s ease-in-out infinite',
+              'drift-slow': 'driftSlow 18s ease-in-out infinite alternate',
+              'drift-slower': 'driftSlow 26s ease-in-out infinite alternate-reverse',
+              'sway': 'sway 6s ease-in-out infinite alternate',
+              'rise-in': 'riseIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both',
             },
             keyframes: {
               fadeIn: {
@@ -99,6 +108,22 @@
                 '0%, 80%, 100%': { opacity: '0.3', transform: 'scale(0.8)' },
                 '40%': { opacity: '1', transform: 'scale(1.1)' },
               },
+              breathe: {
+                '0%, 100%': { transform: 'scale(1)', opacity: '0.55' },
+                '50%': { transform: 'scale(1.06)', opacity: '0.85' },
+              },
+              driftSlow: {
+                '0%': { transform: 'translate(0, 0) scale(1)' },
+                '100%': { transform: 'translate(28px, -22px) scale(1.12)' },
+              },
+              sway: {
+                '0%': { transform: 'rotate(-2.2deg)' },
+                '100%': { transform: 'rotate(2.2deg)' },
+              },
+              riseIn: {
+                '0%': { opacity: '0', transform: 'translateY(14px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
             }
           }
         }
@@ -106,9 +131,9 @@
     </script>
     <style>
       :root {
-        --primary-hue: 245; 
-        --primary-sat: 25%;
-        --primary-lightness: 65%;
+        --primary-hue: 248;
+        --primary-sat: 16%;
+        --primary-lightness: 36%;
         /* 安全区单一来源：原生 env 与 JS 探测值 --standalone-safe-area-*（见 utils/iosStandalone.ts）取大，
            iOS 全屏 PWA 下原生 env 偶发返回 0 时由探测值兜底。新增 App 一律引用这三个变量。 */
         --safe-top: max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px));
@@ -117,12 +142,16 @@
         --chrome-top: calc(var(--safe-top) + 1.5rem);
         --app-height: 100lvh;
         --keyboard-inset: 0px;
-        --app-font: 'Quicksand', sans-serif;
-      }
-      /* 动森风格皮肤：拉丁/数字用 Nunito（圆润），中文用 ZCOOL KuaiLe（可爱），保留 Noto Sans SC 兜底。
-         选择 html[data-skin] 而非 :root，优先级更高，能盖过运行时注入的 --app-font。 */
-      html[data-skin="animalcrossing"] {
-        --app-font: 'Nunito', 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+        --app-font: 'Quicksand', 'Noto Sans SC', sans-serif;
+        /* 编辑部纸感设计 token：衬线斜体大字（时钟/标题）+ 等宽字母间距小标签 */
+        --font-display: 'Playfair Display', 'DM Serif Display', 'Shippori Mincho', serif;
+        --font-label: 'Space Mono', 'Courier Prime', monospace;
+        --ink: #3f3d49;
+        --ink-soft: #8b8996;
+        --paper: #fdfdfd;
+        --glass-bg: rgba(255, 255, 255, 0.62);
+        --glass-border: rgba(255, 255, 255, 0.78);
+        --glass-shadow: 0 18px 44px -18px rgba(63, 61, 86, 0.18);
       }
       html, body, #root {
         width: 100%;
@@ -130,7 +159,7 @@
         height: var(--app-height, 100lvh);
       }
       body {
-        background-color: #0f1115;
+        background-color: #eef0f6;
         margin: 0;
         overflow: hidden;
         /* Critical: Prevent browser back/forward swipe navigation AND vertical rubber-banding */
@@ -196,6 +225,49 @@
       /* Utility for Safe Area —— 统一引用单一来源变量 */
       .pb-safe {
         padding-bottom: var(--safe-bottom);
+      }
+      /* ===== 默认全局美化：纸感毛玻璃设计系统 =====
+         .glass-card / .glass-pill 是全局通用的毛玻璃表面；各 App 直接套用以保持一致观感。 */
+      .glass-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px) saturate(1.5);
+        -webkit-backdrop-filter: blur(20px) saturate(1.5);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--glass-shadow);
+      }
+      .glass-pill {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(16px) saturate(1.4);
+        -webkit-backdrop-filter: blur(16px) saturate(1.4);
+        border: 1px solid rgba(255, 255, 255, 0.85);
+        box-shadow: 0 10px 28px -14px rgba(63, 61, 86, 0.22);
+      }
+      /* 等宽字母间距小标签（MEMORY BOARD / PALETTE 式） */
+      .label-mono {
+        font-family: var(--font-label);
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+      /* 衬线斜体展示字（时钟大数字 / 卡片标题） */
+      .font-display-italic {
+        font-family: var(--font-display);
+        font-style: italic;
+      }
+      /* 治愈系微交互：卡片按压回弹 + 悬浮轻抬 */
+      .press-soft {
+        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
+      }
+      .press-soft:active {
+        transform: scale(0.97);
+      }
+      @media (hover: hover) {
+        .press-soft:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 22px 48px -18px rgba(63, 61, 86, 0.26);
+        }
+        .press-soft:hover:active {
+          transform: scale(0.97);
+        }
       }
     </style>
   <script type="importmap">
