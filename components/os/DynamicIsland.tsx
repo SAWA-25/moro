@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { AppID, CharacterProfile } from '../../types';
+import { playRingtone } from '../../utils/ringtone';
 
 /**
  * 灵动岛（Dynamic Island）：悬浮在状态栏中央的黑色胶囊。
@@ -71,6 +72,8 @@ const DynamicIsland: React.FC = () => {
             // 正在该角色聊天页时消息已经可见，不再弹横幅
             const cur = activeChatRef.current;
             if (cur.app === AppID.Chat && cur.charId === d.charId) return;
+            // 会话设置「专属铃声」
+            playRingtone(characters.find(c => c.id === d.charId)?.convoSettings?.ringtone);
             showNotice({
                 charId: d.charId,
                 charName: d.charName || characters.find(c => c.id === d.charId)?.name || '',

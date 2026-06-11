@@ -478,7 +478,13 @@ const ChatHub: React.FC = () => {
             for (const c of characters) {
                 const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
                 if (lastMsgs.length === 0) continue; // 没聊过的角色去「联系人」页找
-                items.push({ kind: 'char', id: c.id, name: c.name, avatar: c.avatar, last: lastMsgs[lastMsgs.length - 1] });
+                // 会话设置「备注名 / 会话头像」覆盖列表展示
+                items.push({
+                    kind: 'char', id: c.id,
+                    name: c.convoSettings?.remarkName?.trim() || c.name,
+                    avatar: c.convoSettings?.charAvatarOverride || c.avatar,
+                    last: lastMsgs[lastMsgs.length - 1],
+                });
             }
             items.sort((a, b) => (b.last?.timestamp || 0) - (a.last?.timestamp || 0));
             if (!cancelled) setConvos(items);
@@ -1613,9 +1619,9 @@ ${attachedImagesNote}
                     <div className="flex-1 p-3 space-y-2 overflow-y-auto">
                         {characters.map(c => (
                             <div key={c.id} onClick={() => openPrivateChat(c.id)} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30">
-                                <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
+                                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-slate-700 truncate text-sm">{c.name}</div>
+                                    <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
                                     {(c as any).bio && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{(c as any).bio}</div>}
                                 </div>
                                 <button

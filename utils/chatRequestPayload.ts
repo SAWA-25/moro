@@ -69,7 +69,7 @@ export interface BuildChatPayloadInput {
     musicSnapshot?: MusicPlaybackSnapshot | null;
 
     // 模式开关
-    translationConfig?: TranslationConfig | { enabled: boolean; sourceLang: string; targetLang: string };
+    translationConfig?: TranslationConfig | { enabled: boolean; sourceLang: string; targetLang: string; style?: string };
     htmlMode?: { enabled: boolean; customPrompt?: string };
     thinkingChain?: { enabled: boolean; customPrompt?: string };
     mcdMiniSnap?: McdMiniAppSnapshot;
@@ -285,6 +285,11 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 <原文>今日は何する？</原文>
 <译文>今天做什么？</译文>
 </翻译>`;
+        // 会话设置「译文风格」：追加进双语指令
+        const tStyle = (translationConfig as { style?: string }).style?.trim();
+        if (tStyle) {
+            systemPrompt += `\n- 译文风格要求：${tStyle}`;
+        }
     }
 
     // ── 5. HTML 卡片模式 ─────────────────────────────────

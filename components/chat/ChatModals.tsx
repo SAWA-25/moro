@@ -291,8 +291,10 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 </div>
             </Modal>
 
-            <Modal 
-                isOpen={modalType === 'chat-settings'} title="聊天设置" onClose={() => setModalType('none')}
+            {/* 旧版聊天设置弹窗已由全屏 ConvoSettingsPanel（apps/Chat.tsx 渲染）取代；
+                条件改为 legacy 占位保留代码以备回退，不再随 'chat-settings' 打开。 */}
+            <Modal
+                isOpen={modalType === 'chat-settings-legacy'} title="聊天设置" onClose={() => setModalType('none')}
                 footer={<button onClick={onSaveSettings} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存设置</button>}
             >
                 <div className="space-y-6">

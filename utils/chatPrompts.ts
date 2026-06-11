@@ -187,7 +187,14 @@ export const ChatPrompts = {
         // （之前是把所有群消息混合后切前 200 条，活跃群会吃光配额，安静群完全不出现）
         const groupContextPromise: Promise<string> = (async () => {
             try {
-                const memberGroups = groups.filter(g => g.members.includes(char.id));
+                // 会话设置「关联群聊记忆」：all 全部（默认，与旧行为一致）/ none 不关联 / selected 仅指定群
+                const gmMode = char.convoSettings?.groupMemoryMode || 'all';
+                if (gmMode === 'none') return '';
+                const linked = char.convoSettings?.linkedGroupIds || [];
+                const memberGroups = groups.filter(g =>
+                    g.members.includes(char.id)
+                    && (gmMode === 'all' || linked.includes(g.id))
+                );
                 if (memberGroups.length === 0) return '';
                 const perGroup = await Promise.all(
                     memberGroups.map(g => DB.getGroupMessages(g.id).then(msgs => ({

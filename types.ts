@@ -1558,6 +1558,9 @@ export interface CharacterProfile {
   starredFriend?: boolean;
   blacklisted?: boolean;
 
+  /** 会话设置（聊天界面 ··· → 聊天设置）：本会话专属的展示 / 行为 / 提示词配置 */
+  convoSettings?: ConvoSettings;
+
   roomConfig?: {
       bgImage?: string;
       wallImage?: string;
@@ -1718,6 +1721,75 @@ export interface CharacterProfile {
    * 独立于 proactiveConfig（主动发消息），互不挤占触发。
    */
   vrState?: VRWorldCharState;
+}
+
+/**
+ * 会话设置（聊天设置面板）—— 本会话（与该角色的单聊）专属配置。
+ * 展示类字段只影响聊天界面；行为类字段会以「会话设定」块注入系统提示词。
+ */
+export interface ConvoSettings {
+    /** 备注名：聊天界面顶栏 / 消息列表 / 聊天列表显示的名字（不改变角色本名） */
+    remarkName?: string;
+    /** TA 对我的备注：角色对用户的称呼（注入提示词，角色平时就这么叫用户） */
+    userNickname?: string;
+    /** 关联群聊记忆：'all' 携带全部所在群的近期活动（默认，与旧行为一致）/ 'none' 不关联 / 'selected' 仅关联指定群 */
+    groupMemoryMode?: 'all' | 'none' | 'selected';
+    /** groupMemoryMode='selected' 时关联的群 id 列表 */
+    linkedGroupIds?: string[];
+    /** 顶栏装饰文案：显示在聊天顶栏下方的小胶囊文字 */
+    headerDecorText?: string;
+    /** 旁白模式：允许角色单独输出（动作/场景）旁白气泡 */
+    narrationMode?: boolean;
+    /** 心声手记开关（默认开）：关闭后聊天里的「偷看心声」入口不可用 */
+    innerVoiceEnabled?: boolean;
+    /** 专属铃声：新消息通知音（undefined/'none' = 静音，预设见 utils/ringtone.ts） */
+    ringtone?: 'none' | 'chime' | 'bubble' | 'bell' | 'retro' | 'koto';
+    /** 隐藏时间戳：本会话覆盖全局 chatShowTimestamp */
+    hideTimestamp?: boolean;
+    /** 所在地区：注入提示词，影响角色作息 / 时差 / 话题贴合 */
+    region?: string;
+    /** 主动查询：发消息前先留意当前时间 / 天气 / 热点等实时信息再开口（提示词注入） */
+    proactiveLookup?: boolean;
+    /** 主动发消息「随机 30 分~10h」模式标记（intervalMinutes 仍是调度器实际读的值） */
+    proactiveRandom?: boolean;
+    /** 主动发朋友圈：'off' 关 / 'random' 随缘 / 数字 = 自定义间隔小时（提示词倾向 + 配置位） */
+    momentsAutoPost?: 'off' | 'random' | number;
+    /** 允许 char 看手机：角色可自然提及用户手机里的日程 / 朋友圈 / 音乐动态（提示词注入） */
+    allowPhoneBrowse?: boolean;
+    /** 自动线下：对话发展到见面情境时自动切换线下面对面模式（提示词注入） */
+    autoOffline?: boolean;
+    /** 发消息方式：'split' 碎片短句（默认习惯）/ 'whole' 完整段落 */
+    bubbleStyleMode?: 'split' | 'whole';
+    /** 表情联想：允许角色在合适时机联想并发送表情包（提示词注入） */
+    emojiAssociation?: boolean;
+    /** 每轮对话生图：生图管线配置位（开启后每轮回复尝试配图，需生图 API） */
+    perTurnImageGen?: boolean;
+    /** 译文风格：对照翻译时追加的风格要求（如「口语化」「文学腔」） */
+    translateStyle?: string;
+
+    // ── 立绘 ──
+    /** 角色·本会话头像（覆盖 char.avatar，仅本会话展示） */
+    charAvatarOverride?: string;
+    /** 主控·本会话头像（覆盖用户头像，仅本会话展示） */
+    userAvatarOverride?: string;
+    /** 角色立绘：聊天界面右下角半透明立绘（galgame 式） */
+    spriteImage?: string;
+    /** 生图参考图：作为 img2img / edits 的参考底图配置位 */
+    spriteRefImage?: string;
+    /** 视频通话·通话立绘：情绪态 → 图（'默认' 用作通话背景/形象） */
+    callSprites?: Record<string, string>;
+
+    // ── 背景图（消息区背景沿用 char.chatBackground） ──
+    /** 顶部·头像背后：聊天顶栏背景图 */
+    headerBgImage?: string;
+    /** 顶部贴边：顶栏下方装饰横条 */
+    headerEdgeImage?: string;
+    /** 消息区贴边：输入栏上方装饰横条 */
+    msgEdgeImage?: string;
+    /** 身份卡画板：角色主页（资料卡）顶部背景 */
+    idCardImage?: string;
+    /** 底部输入栏背景图 */
+    inputBarImage?: string;
 }
 
 export interface GroupProfile {
