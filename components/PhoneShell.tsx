@@ -137,6 +137,7 @@ import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
 import AppErrorBoundary from './os/AppErrorBoundary';
 import LockScreen from './os/LockScreen';
+import IncomingCallOverlay from './os/IncomingCallOverlay';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
@@ -639,7 +640,8 @@ const PhoneShell: React.FC = () => {
   if (isLocked) {
     // 锁屏抽成独立组件：角色最新消息通知卡（iOS 风格弹出）+ 密码解锁（默认 0103，
     // 设置 App「锁屏与密码」可修改/关闭）。点通知卡解锁后直达对应聊天。
-    return <LockScreen />;
+    // 来电覆盖层在锁屏下也要能响铃（角色主动语音通话），接听时自动解锁进电话 App。
+    return <><LockScreen /><IncomingCallOverlay /></>;
   }
 
   const renderApp = () => {
@@ -744,6 +746,9 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: 灵动岛（消息通知 + 下滑通知面板，点击直达对应角色聊天） */}
           <DynamicIsland />
+
+          {/* Overlays: 角色主动来电（[[CALL_USER]] 指令触发，接听跳电话 App） */}
+          <IncomingCallOverlay />
 
           {/* Overlays: Suspended Call Bar */}
           {suspendedCall && activeApp !== AppID.Call && (

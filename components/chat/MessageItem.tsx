@@ -6,6 +6,32 @@ import { Message, ChatTheme } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import McdCard from './McdCard';
 
+/** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
+const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
+    if (status === 'failed') {
+        return (
+            <span
+                className="inline-flex items-center justify-center w-[13px] h-[13px] rounded-full bg-[#fa5151] text-white text-[9px] font-bold leading-none shrink-0 select-none"
+                title="发送失败"
+                aria-label="发送失败"
+            >!</span>
+        );
+    }
+    const isRead = status === 'read';
+    return (
+        <span
+            className={`inline-flex items-center shrink-0 select-none ${isRead ? 'text-sky-500' : 'text-slate-400/90'}`}
+            title={isRead ? '已读' : '已送达'}
+            aria-label={isRead ? '已读' : '已送达'}
+        >
+            <svg width="15" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 5.5 L4 8.5 L9.5 1.5" />
+                {isRead && <path d="M7 5.5 L10 8.5 L15.5 1.5" />}
+            </svg>
+        </span>
+    );
+};
+
 /** 用户录音语音条：metadata.voiceAudio 存 data URI，自带播放器（与 AI 的 TTS 语音条独立）。 */
 const UserVoiceBubble: React.FC<{
     audioSrc?: string;
@@ -815,6 +841,8 @@ const MessageItem = React.memo(({
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
+    // 消息回执（Telegram 式勾勾）：旧消息没有 msgStatus 时不显示
+    const msgStatus = (m.metadata?.msgStatus as string) || '';
     const spacingClass = messageSpacing === 'compact' ? (isLastInGroup ? 'mb-3' : 'mb-0.5') : messageSpacing === 'spacious' ? (isLastInGroup ? 'mb-8' : 'mb-2.5') : (isLastInGroup ? 'mb-6' : 'mb-1.5');
     const marginBottom = spacingClass;
     const avatarSizeClass = avatarSize === 'small' ? 'w-7 h-7' : avatarSize === 'large' ? 'w-12 h-12' : 'w-9 h-9';
@@ -1101,6 +1129,28 @@ const MessageItem = React.memo(({
             }
         }
 
+        // 系统命令（用户以系统身份下达的最高优先级指令）：终端风格独立胶囊
+        if (m.metadata?.systemCommand) {
+            const cmdText = m.content.replace(/^\[系统命令\]\s*/, '').trim();
+            return (
+                <div className={`flex items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+                    {selectionMode && (
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                                {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex justify-center my-4 px-8 w-full" {...interactionProps}>
+                        <div className="max-w-full rounded-2xl bg-slate-900/90 text-emerald-300 px-4 py-2.5 shadow-md border border-slate-700/60 select-none">
+                            <div className="text-[9px] font-bold tracking-widest text-slate-400 mb-0.5">⌘ SYSTEM COMMAND</div>
+                            <div className="text-[12px] font-mono leading-relaxed break-all">{cmdText}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // Clean up text: remove [System:] or [系统:] prefix for display
         const displayText = m.content.replace(/^\[(System|系统|System Log|系统记录)\s*[:：]?\s*/i, '').replace(/\]$/, '').trim();
 
@@ -1249,8 +1299,13 @@ const MessageItem = React.memo(({
                     <div className={selectionMode ? 'pointer-events-none' : ''}>
                         {content}
                     </div>
-                    {isLastInGroup && showTimestamp !== 'never' && (
-                        <div className={`text-[9px] text-slate-400/80 px-1 mt-1 font-medium ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</div>
+                    {((isLastInGroup && showTimestamp !== 'never') || msgStatus) && (
+                        <div className="flex items-center gap-1 px-1 mt-1">
+                            {isLastInGroup && showTimestamp !== 'never' && (
+                                <span className={`text-[9px] text-slate-400/80 font-medium ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</span>
+                            )}
+                            {msgStatus && <MsgStatusTicks status={msgStatus} />}
+                        </div>
                     )}
                 </div>
 
@@ -1271,6 +1326,24 @@ const MessageItem = React.memo(({
                 )}
             </div>
     );
+
+    // --- 语音通话记录气泡（微信式：电话图标 + 状态文案） ---
+    if ((m.type as string) === 'call_log') {
+        const outcome = m.metadata?.callOutcome as string | undefined;
+        const isMissedLike = outcome === 'declined' || outcome === 'missed';
+        const label = m.content || '语音通话';
+        return commonLayout(
+            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border select-none ${isMissedLike ? 'bg-white border-red-100' : 'bg-white border-slate-100'}`}>
+                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full ${isMissedLike ? 'bg-red-50 text-red-400' : 'bg-emerald-50 text-emerald-500'}`}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                </span>
+                <div className="min-w-0">
+                    <div className={`text-sm font-medium ${isMissedLike ? 'text-red-500' : 'text-slate-700'}`}>{label}</div>
+                    <div className="text-[10px] text-slate-400">语音通话</div>
+                </div>
+            </div>
+        );
+    }
 
     // [New] Social Card Rendering
     // --- Chat Forward Card ---

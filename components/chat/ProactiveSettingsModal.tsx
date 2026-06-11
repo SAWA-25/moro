@@ -139,8 +139,8 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             </div>
                             {randomMode ? (
                                 <p className="text-[11px] text-slate-400 leading-relaxed bg-violet-50/60 rounded-xl px-3 py-2 border border-violet-100">
-                                    按现实时间随机触发：当你超过一段时间（1 小时 ～ 1 天不等）没有回复消息时，
-                                    {char.name} 会按照自己的性格决定要不要主动找你、说什么——完全交给角色。
+                                    系统会在后台随机安排时机（不向你透露具体时间）：当你有一阵子没回复消息时，
+                                    {char.name} 会按照自己的性格决定要不要主动找你、说什么——完全交给角色人设。
                                 </p>
                             ) : (
                                 <>

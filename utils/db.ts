@@ -684,6 +684,50 @@ export const DB = {
     });
   },
 
+  /** 批量写消息回执状态（metadata.msgStatus），ids 为空时直接返回。 */
+  setMessagesStatus: async (ids: number[], status: string): Promise<void> => {
+    if (!ids.length) return;
+    const db = await openDB();
+    const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+    const store = transaction.objectStore(STORE_MESSAGES);
+    for (const id of ids) {
+        const req = store.get(id);
+        req.onsuccess = () => {
+            const data = req.result as Message | undefined;
+            if (!data) return;
+            (data as any).metadata = { ...((data as any).metadata || {}), msgStatus: status };
+            store.put(data);
+        };
+    }
+    return new Promise((resolve) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+    });
+  },
+
+  /** 把某角色私聊里指定 role 的消息全部标成某回执状态（跳过群聊与已是该状态的消息）。 */
+  markCharMessagesStatus: async (charId: string, role: 'user' | 'assistant', status: string): Promise<void> => {
+    const db = await openDB();
+    const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+    const store = transaction.objectStore(STORE_MESSAGES);
+    const index = store.index('charId');
+    const request = index.openCursor(IDBKeyRange.only(charId));
+    request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const m = cursor.value as Message;
+        if (!m.groupId && m.role === role && (m as any).metadata?.msgStatus !== status) {
+            (m as any).metadata = { ...((m as any).metadata || {}), msgStatus: status };
+            cursor.update(m);
+        }
+        cursor.continue();
+    };
+    return new Promise((resolve) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+    });
+  },
+
   deleteMessage: async (id: number): Promise<void> => {
     const db = await openDB();
     const transaction = db.transaction(STORE_MESSAGES, 'readwrite');

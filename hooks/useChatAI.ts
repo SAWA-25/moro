@@ -577,6 +577,17 @@ export const useChatAI = ({
         const effectiveApi = overrideApiConfig || apiConfig;
         if (!effectiveApi.baseUrl) { alert("请先在设置中配置 API URL"); return; }
 
+        // Telegram 式回执：API 成功响应前出错 → 把待回执的用户消息标成「发送失败」；
+        // 拿到回复后 → 全部升级「已读」。apiResponded 用于在 catch 里区分这两种情况
+        // （catch 也兜后处理管线的错——那时回复其实已经送达，不能标失败）。
+        let apiResponded = false;
+        const markUserMessagesRead = async () => {
+            try {
+                await DB.markCharMessagesStatus(char.id, 'user', 'read');
+                setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+            } catch { /* 回执失败不影响消息本体 */ }
+        };
+
         setIsTyping(true);
         setRecallStatus('');
 
@@ -826,6 +837,9 @@ export const useChatAI = ({
                         addToast(`Instant Push: ${errMsg}`, 'error');
                     }
                 }
+                // instant 失败不标「发送失败」：SSE 报错 ≠ 未送达（push 可能晚到，见
+                // docs/instant-push-dual-channel.md），只在确认成功时升级已读。
+                if (instantResult.ok) await markUserMessagesRead();
                 return;
             }
 
@@ -833,6 +847,7 @@ export const useChatAI = ({
                 method: 'POST', headers,
                 body: JSON.stringify(baseReqBody)
             }, 2, 0, { appName: '消息', charId: char.id, charName: char.name, purpose: '聊天回复' });
+            apiResponded = true;
             console.log(`⏱ [API call] ${Math.round(performance.now() - apiT0)}ms`);
             updateTokenUsage(data, historyMsgCount, 'initial');
 
@@ -1013,9 +1028,22 @@ export const useChatAI = ({
                 }
             } catch { /* 通知联动失败不影响消息本体 */ }
 
+            // 角色已成功回复 → 此前的用户消息全部升级为「已读」（双勾）
+            await markUserMessagesRead();
+
         } catch (e: any) {
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
             // 13 步)。这里抛错多半不是网络问题, 而是解析/正则/落库异常。别再叫"连接中断"误导排查。
+            // API 响应前就失败（网络/鉴权/限流）→ 待回执的用户消息标「发送失败」红色感叹号
+            if (!apiResponded) {
+                try {
+                    const recent = await DB.getRecentMessagesByCharId(char.id, 50);
+                    const failedIds = recent
+                        .filter(m => m.role === 'user' && !m.groupId && m.metadata?.msgStatus === 'sent')
+                        .map(m => m.id);
+                    await DB.setMessagesStatus(failedIds, 'failed');
+                } catch { /* 回执失败不影响错误提示本体 */ }
+            }
             await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[回复处理失败: ${e.message}]` });
             setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
         } finally {

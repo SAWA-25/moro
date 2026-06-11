@@ -12,7 +12,7 @@ import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 
 // 1. Clock Component (Consumes virtualTime)
 const DesktopClock = React.memo(() => {
-    const { virtualTime, theme, openApp } = useOS();
+    const { virtualTime, theme, openApp, lock } = useOS();
     const contentColor = theme.contentColor || '#3f3d49';
 
     const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -52,13 +52,25 @@ const DesktopClock = React.memo(() => {
 
             <div className="moro-clock-greeting text-[13px] mt-3 opacity-70 font-medium tracking-wide">{greeting}</div>
 
-            <button
-                onClick={() => openApp(AppID.Appearance)}
-                className="moro-palette-btn label-mono text-[10px] font-bold mt-4 px-5 py-2.5 rounded-full text-white press-soft self-start"
-                style={{ background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
-            >
-                Palette
-            </button>
+            <div className="flex items-center gap-2 mt-4 self-start">
+                <button
+                    onClick={() => openApp(AppID.Appearance)}
+                    className="moro-palette-btn label-mono text-[10px] font-bold px-5 py-2.5 rounded-full text-white press-soft"
+                    style={{ background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
+                >
+                    Palette
+                </button>
+                {/* 一键锁屏：只切换到锁屏界面，主动消息 / 推送 / 锁屏通知卡照常运行 */}
+                <button
+                    onClick={lock}
+                    className="label-mono text-[10px] font-bold px-4 py-2.5 rounded-full press-soft inline-flex items-center gap-1.5"
+                    style={{ background: 'rgba(255,255,255,0.55)', color: '#2c2a35', boxShadow: '0 10px 24px -12px rgba(44,42,53,0.35)' }}
+                    aria-label="一键锁屏"
+                >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"/></svg>
+                    Lock
+                </button>
+            </div>
         </div>
     );
 });
