@@ -894,6 +894,8 @@ ${isInitialGeneration ? `
           description: result.description,
           systemPrompt: result.systemPrompt,
           worldview: result.worldview,
+          firstMes: result.firstMes,
+          alternateGreetings: result.alternateGreetings.length > 0 ? result.alternateGreetings : undefined,
           memories: [],
           refinedMemories: {},
           activeMemoryMonths: [],
@@ -1105,12 +1107,67 @@ ${isInitialGeneration ? `
 
                            <div>
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">世界观 / 设定补充 (Worldview & Lore)</label>
-                               <textarea 
-                                    value={formData.worldview || ''} 
-                                    onChange={(e) => handleChange('worldview', e.target.value)} 
-                                    className="w-full h-24 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all" 
-                                    placeholder="在这个世界里，魔法是存在的..." 
+                               <textarea
+                                    value={formData.worldview || ''}
+                                    onChange={(e) => handleChange('worldview', e.target.value)}
+                                    className="w-full h-24 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                                    placeholder="在这个世界里，魔法是存在的..."
                                 />
+                           </div>
+
+                           {/* 开场白（first_mes）+ 备选开场白（alternate_greetings）—— SillyTavern 语义：
+                               进入空聊天时左右切换选择其中一条作为角色的第一条消息，不进 systemPrompt */}
+                           <div>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">开场白 (First Message)</label>
+                               <textarea
+                                    value={formData.firstMes || ''}
+                                    onChange={(e) => handleChange('firstMes', e.target.value)}
+                                    className="w-full h-24 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                                    placeholder="角色在新聊天里说的第一句话（支持 {{user}} / {{char}} 宏）..."
+                                />
+                               <p className="text-[10px] text-slate-400 mt-1.5 pl-2 leading-relaxed">
+                                   进入空聊天时可以在开场白和下方备选之间左右切换，选一条开始对话（同酒馆的开场白 swipe）。留空则不显示选择器。
+                               </p>
+                           </div>
+
+                           <div>
+                               <div className="flex items-center justify-between mb-1.5">
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">备选开场白 (Alternate Greetings)</label>
+                                   <button
+                                       onClick={() => handleChange('alternateGreetings', [...(formData.alternateGreetings || []), ''])}
+                                       className="text-[10px] bg-primary/10 text-primary px-2.5 py-1 rounded-full font-bold hover:bg-primary/20 active:scale-95 transition-all"
+                                   >＋ 添加</button>
+                               </div>
+                               {(formData.alternateGreetings || []).length === 0 && (
+                                   <p className="text-[10px] text-slate-300 pl-2">暂无备选开场白。点「＋ 添加」可以给同一角色准备多个不同的开局。</p>
+                               )}
+                               <div className="space-y-2">
+                                   {(formData.alternateGreetings || []).map((greeting, idx) => (
+                                       <div key={idx} className="relative">
+                                           <div className="flex items-center justify-between px-2 mb-1">
+                                               <span className="text-[10px] font-bold text-slate-300">备选 #{idx + 1}</span>
+                                               <button
+                                                   onClick={() => {
+                                                       const next = (formData.alternateGreetings || []).filter((_, i) => i !== idx);
+                                                       handleChange('alternateGreetings', next.length > 0 ? next : undefined);
+                                                   }}
+                                                   className="text-[10px] text-rose-400 hover:text-rose-600 font-bold px-1.5"
+                                                   title="删除这条备选开场白"
+                                               >删除</button>
+                                           </div>
+                                           <textarea
+                                               value={greeting}
+                                               onChange={(e) => {
+                                                   const next = [...(formData.alternateGreetings || [])];
+                                                   next[idx] = e.target.value;
+                                                   handleChange('alternateGreetings', next);
+                                               }}
+                                               className="w-full h-20 bg-white rounded-3xl p-4 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                                               placeholder={`备选开场白 ${idx + 1}...`}
+                                           />
+                                       </div>
+                                   ))}
+                               </div>
                            </div>
 
                            <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 space-y-3">

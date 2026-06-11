@@ -58,6 +58,14 @@ let groupToggles: Record<string, boolean> = {};
  */
 let scanMessages: string[] | null = null;
 
+/**
+ * 额外注入的世界书分组（人设世界书移植，对应 ST 的 persona lorebook）。
+ * 主聊天链路在构建 prompt 前用 setExtraCategories 喂入当前激活人设绑定的分组名，
+ * 这些分组下的局部条目即使未挂载到角色也会注入（仍尊重条目/整书开关与关键词激活）；
+ * 构建结束后清空。与 setScanContext 同生命周期。
+ */
+let extraCategories: Set<string> | null = null;
+
 export const loadGroupTogglesFromStorage = (): Record<string, boolean> => {
     try {
         const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(GROUP_TOGGLES_KEY) : null;
@@ -108,6 +116,11 @@ export const WorldbookRuntime = {
     /** 主聊天链路设置 / 清空关键词扫描上下文（最近消息文本，旧→新） */
     setScanContext(messages: string[] | null) {
         scanMessages = messages;
+    },
+
+    /** 主聊天链路设置 / 清空额外注入分组（当前激活人设绑定的世界书，=ST persona lorebook） */
+    setExtraCategories(categories: string[] | null) {
+        extraCategories = categories && categories.length > 0 ? new Set(categories) : null;
     },
 
     /**
@@ -175,6 +188,20 @@ export const WorldbookRuntime = {
                 } as Worldbook));
             }
             seen.add(mounted.id);
+        }
+
+        // 人设世界书（额外分组）：分组下未挂载的局部条目也注入，开关/关键词语义不变
+        if (extraCategories) {
+            for (const wb of liveBooks) {
+                if (wb.scope === 'global') continue;          // 全局侧本来就会收录
+                if (!extraCategories.has(wb.category || '通用设定 (General)')) continue;
+                if (seen.has(wb.id) || skipIds?.has(wb.id)) continue;
+                if (!WorldbookRuntime.isEntryActive(wb)) continue;
+                if (!WorldbookRuntime.isEntryTriggered(wb)) continue;
+                if (!wb.content?.trim()) continue;
+                local.push(normalizeEntry(wb));
+                seen.add(wb.id);
+            }
         }
         local.sort((a, b) => a.order - b.order);
 

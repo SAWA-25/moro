@@ -26,6 +26,8 @@ import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { isInstantConfigReady, loadInstantConfig } from '../utils/instantPushClient';
 import { ContextBuilder } from '../utils/context';
+import { substituteMacros } from '../utils/macros';
+import { PersonaRuntime } from '../utils/personas';
 import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
 import { InnerVoiceEntry } from '../types';
 
@@ -39,7 +41,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, customThemes, removeCustomTheme, addToast, showError, userProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, customThemes, removeCustomTheme, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -164,6 +166,46 @@ const Chat: React.FC = () => {
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
     charRef.current = char; // Keep ref in sync for async callbacks
+
+    // ── 开场白选择（SillyTavern first_mes / alternate_greetings 移植）──
+    // 空聊天 + 角色带开场白时，在消息区显示一条可左右切换的预览气泡；
+    // 点「以这条开场白开始」或直接发第一条消息时，把当前选中的开场白
+    // 作为 assistant 消息落库（宏在此刻按当前用户名替换）。
+    const [greetingIdx, setGreetingIdx] = useState(0);
+    // 首次加载完成前不显示选择器，避免角色切换瞬间（totalMsgCount 还是 0）闪一下
+    const [historyLoaded, setHistoryLoaded] = useState(false);
+    const greetingOptions = useMemo(() => {
+        const opts = [char?.firstMes, ...(char?.alternateGreetings || [])];
+        return opts.map(g => (g || '').trim()).filter(Boolean);
+    }, [char?.firstMes, char?.alternateGreetings]);
+    const greetingPickerActive = !!char && historyLoaded && totalMsgCount === 0 && messages.length === 0 && greetingOptions.length > 0;
+    // handleSendText 经 useCallback 持有旧闭包，用 ref 取实时值
+    const greetingPickerRef = useRef({ active: false, idx: 0 });
+    greetingPickerRef.current = { active: greetingPickerActive, idx: greetingIdx };
+
+    const greetingMacroCtx = { charName: char?.name || '角色', userName: (userProfile?.name || '').trim() || '用户' };
+
+    const commitGreeting = async (): Promise<void> => {
+        const { active, idx } = greetingPickerRef.current;
+        const currentChar = charRef.current;
+        if (!active || !currentChar) return;
+        const opts = [currentChar.firstMes, ...(currentChar.alternateGreetings || [])]
+            .map(g => (g || '').trim()).filter(Boolean);
+        if (opts.length === 0) return;
+        const chosen = opts[Math.min(idx, opts.length - 1)];
+        const content = substituteMacros(chosen, {
+            charName: currentChar.name || '角色',
+            userName: (userProfile?.name || '').trim() || '用户',
+        });
+        await DB.saveMessage({
+            charId: currentChar.id,
+            role: 'assistant',
+            type: 'text',
+            content,
+            metadata: { greeting: true, greetingIndex: Math.min(idx, opts.length - 1) },
+        });
+        greetingPickerRef.current = { active: false, idx: 0 };
+    };
     const currentThemeId = char?.bubbleStyle || 'default';
     const activeTheme = useMemo(() => {
         const fallback = PRESET_THEMES.default;
@@ -534,6 +576,7 @@ const Chat: React.FC = () => {
                 .filter(m => !(currentChar?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card'));
             setTotalMsgCount(totalCount);
             setMessages(chatScopeMsgs.slice(-requestedVisibleCount));
+            setHistoryLoaded(true);
         };
         try {
             const { messages: recent, totalCount } = await DB.getRecentMessagesWithCount(activeCharacterId, fetchLimit);
@@ -563,6 +606,8 @@ const Chat: React.FC = () => {
             // Clear messages immediately to prevent showing stale chat from previous character
             setMessages([]);
             setTotalMsgCount(0);
+            setHistoryLoaded(false);
+            setGreetingIdx(0);
             // Reset voice map — stale blob: URLs from the previous char are revoked
             // by the cleanup effect and must not be reused against new messages.
             setVoiceDataMap({});
@@ -619,6 +664,23 @@ const Chat: React.FC = () => {
     // 让过场层先盖住，避免一帧闪到新角色的空聊天界面。
     useLayoutEffect(() => {
         if (activeCharacterId) setShowEntry(true);
+    }, [activeCharacterId]);
+
+    // 人设自动切换（SillyTavern 角色绑定 / 默认人设语义）：进入某个角色的聊天时，
+    // 若该角色绑定了人设（或无绑定但设了默认人设）且与当前激活的不同，自动切换 ——
+    // 名字/头像/描述写入档案，气泡与 prompt 全链路即时生效。
+    useEffect(() => {
+        if (!activeCharacterId) return;
+        let cancelled = false;
+        PersonaRuntime.resolveForConnection({ type: 'character', id: activeCharacterId }).then(persona => {
+            if (cancelled || !persona) return;
+            PersonaRuntime.setActiveId(persona.id);
+            const updates: Partial<typeof userProfile> = { name: persona.name, bio: persona.description };
+            if (persona.avatar) updates.avatar = persona.avatar;
+            updateUserProfile(updates);
+            addToast(`已切换人设：${persona.name}`, 'info');
+        }).catch(() => { /* 人设解析失败不拦聊天 */ });
+        return () => { cancelled = true; };
     }, [activeCharacterId]);
 
     useEffect(() => {
@@ -873,8 +935,14 @@ const Chat: React.FC = () => {
             addToast('图片已保存至相册', 'info');
         }
 
+        // 开场白选择器还开着时直接发消息 = 以当前选中的开场白开场（同 ST：
+        // 开场白本来就是聊天的第一条消息，用户回复即确认了当前 swipe 到的那条）
+        if (greetingPickerRef.current.active) {
+            try { await commitGreeting(); } catch (e) { console.warn('[Greeting] 开场白落库失败:', e); }
+        }
+
         const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata };
-        
+
         if (replyTarget) {
             msgPayload.replyTo = {
                 id: replyTarget.id,
@@ -2670,6 +2738,57 @@ ${recent || '（你们还没怎么聊过）'}
                             setVisibleCount(nextVisibleCount);
                             await reloadMessages(nextVisibleCount);
                         }} className="px-4 py-2 bg-white/50 backdrop-blur-sm rounded-full text-xs text-slate-500 shadow-sm border border-white hover:bg-white transition-colors">加载历史消息 ({collapsedCount})</button>
+                    </div>
+                )}
+
+                {/* 开场白选择器（空聊天 + 角色带开场白时）：预览气泡 + 左右切换（同 ST 开场白 swipe） */}
+                {greetingPickerActive && !selectionMode && (
+                    <div className="px-3 mb-4 animate-fade-in">
+                        <div className="flex items-end gap-3">
+                            <img src={char.avatar} className="w-9 h-9 rounded-full object-cover shadow-sm shrink-0" />
+                            <div className="max-w-[78%] min-w-0">
+                                <div className="bg-white/90 border border-white rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                                    {substituteMacros(greetingOptions[Math.min(greetingIdx, greetingOptions.length - 1)], greetingMacroCtx)}
+                                </div>
+                                <div className="flex items-center gap-2 mt-2 pl-1 flex-wrap">
+                                    {greetingOptions.length > 1 && (
+                                        <div className="flex items-center gap-1.5 bg-white/60 rounded-full px-2 py-1 border border-white shadow-sm">
+                                            <button
+                                                onClick={() => setGreetingIdx(i => (i - 1 + greetingOptions.length) % greetingOptions.length)}
+                                                className="p-1 rounded-full hover:bg-black/5 active:scale-90 transition-transform"
+                                                title="上一条开场白"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                                            </button>
+                                            <span className="text-[10px] font-bold text-slate-500 tabular-nums select-none">
+                                                {Math.min(greetingIdx, greetingOptions.length - 1) + 1} / {greetingOptions.length}
+                                            </span>
+                                            <button
+                                                onClick={() => setGreetingIdx(i => (i + 1) % greetingOptions.length)}
+                                                className="p-1 rounded-full hover:bg-black/5 active:scale-90 transition-transform"
+                                                title="下一条开场白"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                            </button>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await commitGreeting();
+                                                await reloadMessages(visibleCountRef.current);
+                                            } catch (e: any) {
+                                                addToast(e?.message || '开场白保存失败', 'error');
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-full shadow-sm shadow-primary/30 active:scale-95 transition-transform"
+                                    >以这条开场白开始</button>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1.5 pl-1">
+                                    {greetingOptions.length > 1 ? '左右切换选择开场白；' : ''}直接发消息也会以当前这条开场。
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 )}
 

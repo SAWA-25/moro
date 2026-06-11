@@ -59,7 +59,7 @@ export const MARKER_HINTS: Record<string, { name: string; hint: string }> = {
     charDescription: { name: 'Char Description', hint: 'Moro 角色核心上下文（人设+世界书+记忆+印象）的注入点' },
     charPersonality: { name: 'Char Personality', hint: '已并入角色核心上下文，此处仅作排序占位' },
     scenario: { name: 'Scenario', hint: '已并入角色核心上下文，此处仅作排序占位' },
-    personaDescription: { name: 'Persona Description', hint: '用户档案已并入角色核心上下文，此处仅作排序占位' },
+    personaDescription: { name: 'Persona Description', hint: '用户人设块（人设 App 激活人设的名字+描述；未建人设时为档案 App 的内容）在此注入' },
     worldInfoBefore: { name: 'World Info (before)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
     worldInfoAfter: { name: 'World Info (after)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
     dialogueExamples: { name: 'Chat Examples', hint: '已并入角色核心上下文，此处仅作排序占位' },

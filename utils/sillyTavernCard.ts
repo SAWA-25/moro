@@ -55,6 +55,14 @@ export interface STImportResult {
     description: string;
     systemPrompt: string;
     worldview?: string;
+    /**
+     * 开场白（first_mes）与备选开场白（alternate_greetings）。
+     * 不再拼进 systemPrompt —— 作为独立字段挂到角色上，进入空聊天时
+     * 由用户选择其中一条作为第一条消息（同 ST 的开场白 swipe）。
+     * 保留原始宏（{{user}} 等），插入聊天时才按当时的用户名替换。
+     */
+    firstMes?: string;
+    alternateGreetings: string[];
     /** JSON 卡没有图片时的兜底头像（svg data URL） */
     avatarFallback: string;
     /** 需要写入全局世界书库的全部条目（含 ST 里禁用的条目和创作者备注） */
@@ -275,7 +283,9 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
 /**
  * 把规范化后的 ST 卡转换为 Moro 角色字段 + 世界书记录。
  * 字段映射：
- * - description + personality + mes_example + 开场白 + system_prompt 等 → systemPrompt（分节拼接）
+ * - description + personality + mes_example + system_prompt 等 → systemPrompt（分节拼接）
+ * - first_mes / alternate_greetings → firstMes / alternateGreetings（独立字段，
+ *   进入空聊天时由用户选择一条作为第一条消息，不污染 systemPrompt）
  * - scenario → worldview
  * - creator / character_version / tags → description（列表页一行摘要）
  * - creator_notes 及卡片元信息 → 一条 enabled=false 的世界书（保留信息但不进 prompt）
@@ -304,10 +314,10 @@ export function convertSTCardToCharacter(
     if (personality) sections.push(`【性格特征】\n${personality}`);
     const mesExample = m(d.mes_example);
     if (mesExample) sections.push(`【对话示例】\n${mesExample}`);
-    const firstMes = m(d.first_mes);
-    if (firstMes) sections.push(`【开场白（角色初始口吻参考）】\n${firstMes}`);
-    const altGreetings = toStrArray(d.alternate_greetings).map(g => m(g)).filter(Boolean);
-    altGreetings.forEach((g, i) => sections.push(`【备选开场白 ${i + 1}】\n${g}`));
+    // 开场白不进 systemPrompt：它是对话的第一条消息而非角色设定，拼进核心指令会
+    // 让模型把开场白当常驻指令复读。保留原始宏，进入聊天选择时再替换。
+    const firstMes = typeof d.first_mes === 'string' ? d.first_mes.trim() : '';
+    const alternateGreetings = toStrArray(d.alternate_greetings).map(g => g.trim()).filter(Boolean);
     const postHistory = m(d.post_history_instructions);
     if (postHistory) sections.push(`【附加指令（原 post-history instructions）】\n${postHistory}`);
 
@@ -447,6 +457,8 @@ export function convertSTCardToCharacter(
         description,
         systemPrompt: sections.join('\n\n'),
         worldview,
+        firstMes: firstMes || undefined,
+        alternateGreetings,
         avatarFallback: makeFallbackAvatar(name),
         worldbooks,
         mountedWorldbooks,
