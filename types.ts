@@ -2109,6 +2109,8 @@ export interface SocialComment {
     isCharacter?: boolean;
     authorType?: 'user' | 'character' | 'stranger';
     authorCharId?: string;
+    /** 朋友圈：回复某条评论（name 用于渲染 "A 回复 B: xxx"） */
+    replyTo?: { commentId: string; name: string };
 }
 
 export interface SocialPost {
@@ -2127,6 +2129,16 @@ export interface SocialPost {
     bgStyle?: string;
     authorType?: 'user' | 'character' | 'stranger';
     authorCharId?: string;
+    /** 朋友圈：点赞列表（id 为角色 id 或 'user'） */
+    likedBy?: { id: string; name: string }[];
+    /** 朋友圈：转发的原帖摘要（嵌入原帖内容） */
+    repostOf?: { postId: string; authorName: string; content: string; images?: string[] } | null;
+    /** 朋友圈：所在位置 */
+    location?: string;
+    /** 朋友圈：谁可以看（private = 角色不可见、不互动） */
+    visibility?: 'public' | 'private';
+    /** 朋友圈：提醒谁看（角色 id 列表，被提醒的角色保证互动） */
+    mentionedCharIds?: string[];
 }
 
 export interface SubAccount {
