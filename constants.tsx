@@ -37,6 +37,7 @@ import {
   Newspaper,
   Planet,
   Wrench,
+  Faders,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -78,6 +79,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   HotNews: ({ className }) => <Newspaper className={className} weight="fill" />,
   VRWorld: ({ className }) => <Planet className={className} weight="bold" />,
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
+  Presets: ({ className }) => <Faders className={className} weight="bold" />,
 };
 
 export const INSTALLED_APPS: AppConfig[] = [
@@ -104,6 +106,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
   { id: AppID.Schedule, name: '时光契约', icon: 'Schedule', color: 'cyan' },
   { id: AppID.Worldbook, name: '世界书', icon: 'Worldbook', color: 'indigo' },
+  { id: AppID.Presets, name: '预设', icon: 'Presets', color: 'sky' },
   { id: AppID.HotNews, name: '热点', icon: 'HotNews', color: 'red' },
   { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },
   { id: AppID.Gallery, name: '相册', icon: 'Gallery', color: 'orange' },

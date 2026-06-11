@@ -20,6 +20,7 @@ import type { DigestResult } from '../utils/memoryPalace';
 // 不再 import callMcdTool / normalizeMcdToolName / isMcdConfigured / 旧 prompt。
 import { MCD_PROPOSE_TOOL, autoFixProposalCodesByName } from '../utils/mcdToolBridge';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
+import { PresetRuntime } from '../utils/presets';
 import {
     isInstantConfigReady,
     sendInstantPushAndAwaitReply,
@@ -734,15 +735,23 @@ export const useChatAI = ({
             // 缺省时回退到主 apiConfig，再回退默认值（temp=0.85, stream=false）。
             // safeResponseJson 已能透明拼接 SSE 响应，所以打开 stream 后无需改下游。
             const apiT0 = performance.now();
-            const userTemp = (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
+            // 预设 App 的采样参数（temperature / top_p / penalties / max_tokens 等）：
+            // 预设启用且「应用采样参数」开着时覆盖全局 API 设置，与 ST 预设行为一致。
+            const presetGenParams = await PresetRuntime.getActiveGenParams();
+            const userTemp = presetGenParams?.temperature
+                ?? (effectiveApi as any).temperature ?? apiConfig.temperature ?? 0.85;
             const userStream = (effectiveApi as any).stream ?? apiConfig.stream ?? false;
             const baseReqBody: any = {
                 model: effectiveApi.model,
                 messages: fullMessages,
                 temperature: userTemp,
-                max_tokens: 8000,
+                max_tokens: presetGenParams?.max_tokens ?? 8000,
                 stream: userStream,
             };
+            if (presetGenParams) {
+                const { temperature: _t, max_tokens: _m, ...rest } = presetGenParams;
+                Object.assign(baseReqBody, rest);
+            }
             // 思考过程展示开启时显式向后端请求 extended thinking。
             // 不同代理认不同入口，全都试一遍，代理不识别的会自动忽略：
             //  - 模型名 -thinking 后缀：packycode / anyrouter 等第三方 Claude 中转的主流约定
@@ -782,7 +791,7 @@ export const useChatAI = ({
                     apiUrl: effectiveApi.baseUrl,
                     apiKey: effectiveApi.apiKey,
                     primaryModel: effectiveApi.model,
-                    maxTokens: 8000,
+                    maxTokens: presetGenParams?.max_tokens ?? 8000,
                     temperature: userTemp,
                     // amsg-instant 0.6+ 端 validateAvatarUrl 拒 data: / >2KB,
                     // 这里按 contract 只传 https URL, data URL 本地头像直接不传

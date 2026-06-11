@@ -39,6 +39,75 @@ export enum AppID {
   CharCreatorDev = 'char_creator_dev', // 捏脸系统开发模式 — 仅开发模式可见，向捏人器指定类目追加自定义部件
   Phone = 'phone', // 电话 — 拨号键盘 / 通话记录（拨出·接听·未接）/ 通话录音回放与逐字稿
   ExchangeDiary = 'exchange_diary', // 日记社 — 多角色交换日记本（角色视角日记 + 每日对话总结）
+  Presets = 'presets', // 预设 — SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数，可导入酒馆预设 JSON）
+}
+
+// =====================================================================
+// --- LLM 预设（SillyTavern Chat Completion 预设移植） ---
+// 字段名与 SillyTavern 预设 JSON 完全对齐（snake_case），导入导出零转换。
+// 详见 utils/presets.ts 的导入 / 组装逻辑。
+// =====================================================================
+
+export type PresetPromptRole = 'system' | 'user' | 'assistant';
+
+/** 预设里的一条提示词（与 ST PromptManager 的 Prompt 对齐）。 */
+export interface PresetPrompt {
+    /** 唯一标识。内置项是固定名（main / jailbreak / chatHistory…），用户自建项是 UUID */
+    identifier: string;
+    name: string;
+    /** ST 语义：true = 系统内置提示词；false/缺省 = 用户自建 */
+    system_prompt?: boolean;
+    role?: PresetPromptRole;
+    content?: string;
+    /** marker = 由系统填充的占位符（chatHistory / charDescription 等），content 不可编辑 */
+    marker?: boolean;
+    /** 注入位置：0 = 相对（按列表顺序排进消息流）；1 = 绝对（@Depth 注入聊天历史） */
+    injection_position?: number;
+    /** 绝对注入时距聊天历史末尾的深度（0 = 紧跟最后一条消息之前），默认 4 */
+    injection_depth?: number;
+    /** 同深度内的优先级，大的更靠近末尾，默认 100 */
+    injection_order?: number;
+    /** ST：禁止角色卡覆盖（main / jailbreak 用）。Moro 无角色卡覆盖机制，仅保留字段 */
+    forbid_overrides?: boolean;
+    /** 个别 ST 导出会把开关直接写在 prompt 上；正式开关在 prompt_order 里 */
+    enabled?: boolean;
+}
+
+export interface PresetPromptOrderEntry {
+    identifier: string;
+    enabled: boolean;
+}
+
+/** ST 约定：character_id 100000 = 单聊默认，100001 = 群聊默认。 */
+export interface PresetPromptOrderCharacter {
+    character_id: number;
+    order: PresetPromptOrderEntry[];
+}
+
+/** 一份完整预设。采样字段名与 ST 一致；其余 ST 字段进 raw 兜底，导出时合并回去。 */
+export interface TavernPreset {
+    id: string;
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    // —— 采样参数（与 ST 字段同名） ——
+    temperature?: number;
+    frequency_penalty?: number;
+    presence_penalty?: number;
+    top_p?: number;
+    top_k?: number;
+    top_a?: number;
+    min_p?: number;
+    repetition_penalty?: number;
+    /** 上下文窗口 token 数（ST openai_max_context）。Moro 按条数截历史，此值仅存档展示 */
+    openai_max_context?: number;
+    /** 回复 max_tokens（ST openai_max_tokens） */
+    openai_max_tokens?: number;
+    // —— 提示词管理器 ——
+    prompts: PresetPrompt[];
+    prompt_order: PresetPromptOrderCharacter[];
+    /** 导入时的原始 JSON 全量兜底（utility prompts / 模型选择等未映射字段），导出时原样合并 */
+    raw?: Record<string, any>;
 }
 
 export interface SystemLog {
@@ -2216,6 +2285,7 @@ export interface FullBackupData {
     phoneCallLogs?: PhoneCallLog[];           // 电话 App 通话记录
     exchangeDiaryBooks?: ExchangeDiaryBook[]; // 日记社多角色交换日记本
     innerVoices?: InnerVoiceEntry[];          // 偷看心声历史
+    llmPresets?: TavernPreset[];              // 预设 App：SillyTavern 式 Chat Completion 预设
 
     // Bank Data
     bankState?: BankFullState;
