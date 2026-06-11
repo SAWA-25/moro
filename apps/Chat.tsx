@@ -2568,8 +2568,8 @@ ${recent || '（你们还没怎么聊过）'}
                 memoryPalaceStatusText={memoryPalaceStatus}
                 lastTokenUsage={lastTokenUsage}
                 tokenBreakdown={tokenBreakdown}
-                onClose={closeApp}
-                onTriggerAI={handleManualTrigger}
+                onClose={() => openApp(AppID.GroupChat)}
+                onOpenChatSettings={() => setModalType('chat-settings')}
                 onShowCharsPanel={() => setShowPanel('chars')}
                 onOpenSettings={() => {
                     try { localStorage.setItem('moro_character_open_target', char.id); } catch {}

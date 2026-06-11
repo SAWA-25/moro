@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CaretLeft, DotsThreeVertical, Lightning } from '@phosphor-icons/react';
+import { CaretLeft, DotsThreeVertical, GearSix } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
 
 interface TokenBreakdown {
@@ -25,7 +25,8 @@ interface ChatHeaderShellProps {
     lastTokenUsage: number | null;
     tokenBreakdown?: TokenBreakdown | null;
     onClose: () => void;
-    onTriggerAI: () => void;
+    /** 右上角"聊天设置"入口（齿轮按钮，原 + 面板里的「设置」迁移至此）。传了才渲染。 */
+    onOpenChatSettings?: () => void;
     onShowCharsPanel: () => void;
     /** 右上角"角色设置"入口（⋮ 按钮）。传了才渲染。 */
     onOpenSettings?: () => void;
@@ -69,7 +70,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     lastTokenUsage,
     tokenBreakdown,
     onClose,
-    onTriggerAI,
+    onOpenChatSettings,
     onShowCharsPanel,
     onOpenSettings,
     onDeleteBuff,
@@ -396,9 +397,11 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         {renderCenteredInfo()}
                     </div>
 
-                    <button onClick={onTriggerAI} className={`moro-chat-trigger absolute ${onOpenSettings ? 'right-9' : 'right-0'} bottom-2 p-2 ${actionButtonClass}`} title="触发 AI">
-                        <Lightning className="w-5 h-5" weight="bold" />
-                    </button>
+                    {onOpenChatSettings && (
+                        <button onClick={onOpenChatSettings} className={`moro-chat-settings absolute ${onOpenSettings ? 'right-9' : 'right-0'} bottom-2 p-2 ${actionButtonClass}`} title="聊天设置">
+                            <GearSix className="w-5 h-5" weight="bold" />
+                        </button>
+                    )}
                     {onOpenSettings && (
                         <button onClick={onOpenSettings} className={`moro-chat-settings absolute right-0 bottom-2 p-2 ${iconButtonClass}`} title="角色设置">
                             <DotsThreeVertical className="w-5 h-5" weight="bold" />
@@ -415,9 +418,11 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         {renderStandardInfo()}
                     </div>
 
-                    <button onClick={onTriggerAI} className={`moro-chat-trigger p-2 ml-auto ${actionButtonClass}`} title="触发 AI">
-                        <Lightning className="w-5 h-5" weight="bold" />
-                    </button>
+                    {onOpenChatSettings && (
+                        <button onClick={onOpenChatSettings} className={`moro-chat-settings p-2 ml-auto ${actionButtonClass}`} title="聊天设置">
+                            <GearSix className="w-5 h-5" weight="bold" />
+                        </button>
+                    )}
                     {onOpenSettings && (
                         <button onClick={onOpenSettings} className={`moro-chat-settings p-2 -mr-2 ${iconButtonClass}`} title="角色设置">
                             <DotsThreeVertical className="w-5 h-5" weight="bold" />

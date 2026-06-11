@@ -56,7 +56,7 @@ const warmLazy = (Comp: PreloadableLazy): void => {
 const Settings = lazyApp(() => import('../apps/Settings'));
 const Character = lazyApp(() => import('../apps/Character'));
 const Chat = lazyApp(() => import('../apps/Chat'));
-const GroupChat = lazyApp(() => import('../apps/GroupChat'));
+const ChatHub = lazyApp(() => import('../apps/ChatHub'));
 const ThemeMaker = lazyApp(() => import('../apps/ThemeMaker'));
 const Appearance = lazyApp(() => import('../apps/Appearance'));
 const Gallery = lazyApp(() => import('../apps/Gallery'));
@@ -95,7 +95,7 @@ const PersonaApp = lazyApp(() => import('../apps/PersonaApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
-  Chat, Character, GroupChat, SocialApp, RoomApp, Settings, Appearance,
+  Chat, Character, ChatHub, SocialApp, RoomApp, Settings, Appearance,
   CheckPhone, JournalApp, ScheduleApp, MusicApp, CallApp, PhoneApp, ExchangeDiaryApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
@@ -107,7 +107,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
 // AppID 由下方 import 引入，ES 模块提升后全模块可用。
 const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Settings]: Settings, [AppID.Character]: Character, [AppID.Chat]: Chat,
-  [AppID.GroupChat]: GroupChat, [AppID.ThemeMaker]: ThemeMaker, [AppID.Appearance]: Appearance,
+  [AppID.GroupChat]: ChatHub, [AppID.ThemeMaker]: ThemeMaker, [AppID.Appearance]: Appearance,
   [AppID.Gallery]: Gallery, [AppID.Date]: DateApp,
   [AppID.Journal]: JournalApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
@@ -705,7 +705,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Settings: return <Settings />;
       case AppID.Character: return <Character />;
       case AppID.Chat: return <Chat />;
-      case AppID.GroupChat: return <GroupChat />; 
+      case AppID.GroupChat: return <ChatHub />;
       case AppID.ThemeMaker: return <ThemeMaker />;
       case AppID.Appearance: return <Appearance />;
       case AppID.Gallery: return <Gallery />;

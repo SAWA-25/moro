@@ -11,6 +11,7 @@ import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/
 import { processImage } from '../utils/file';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix } from '@phosphor-icons/react';
+import MomentsFeed from '../components/moments/MomentsFeed';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -238,10 +239,12 @@ const GroupMessageItem = React.memo(({
 
 // --- Main Component ---
 
-const GroupChat: React.FC = () => {
+// 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
+// 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
+const ChatHub: React.FC = () => {
     const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
-    const [hubTab, setHubTab] = useState<'chats' | 'contacts'>('chats');
+    const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments'>('chats');
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
     // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
     const [convos, setConvos] = useState<Array<{
@@ -1468,11 +1471,13 @@ ${attachedImagesNote}
                         <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '消息' : '联系人'}</span>
+                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '朋友圈'}</span>
                     <div className="flex-1"></div>
-                    <button onClick={() => { setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); }} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="创建群聊">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                    </button>
+                    {hubTab !== 'moments' && (
+                        <button onClick={() => { setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); }} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="创建群聊">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                        </button>
+                    )}
                     </div>
                 </div>
 
@@ -1573,19 +1578,26 @@ ${attachedImagesNote}
                     </div>
                 )}
 
-                {/* ── 底部导航：消息 / 联系人 / 朋友圈 ── */}
+                {/* ── 朋友圈 tab：内嵌完整朋友圈（与独立 朋友圈 App 共用 MomentsFeed） ── */}
+                {hubTab === 'moments' && (
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <MomentsFeed embedded />
+                    </div>
+                )}
+
+                {/* ── 底部导航：聊天 / 联系人 / 朋友圈 ── */}
                 <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-slate-200/60 pb-safe">
                     <div className="grid grid-cols-3">
                         <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-violet-500' : 'text-slate-400'}`}>
                             <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">消息</span>
+                            <span className="text-[10px] font-bold">聊天</span>
                         </button>
                         <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-violet-500' : 'text-slate-400'}`}>
                             <AddressBook size={22} weight={hubTab === 'contacts' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">联系人</span>
                         </button>
-                        <button onClick={() => openApp(AppID.Social)} className="flex flex-col items-center gap-0.5 py-2.5 text-slate-400 hover:text-violet-500 transition-colors">
-                            <Planet size={22} weight="regular" />
+                        <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-violet-500' : 'text-slate-400'}`}>
+                            <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">朋友圈</span>
                         </button>
                     </div>
@@ -1690,13 +1702,18 @@ ${attachedImagesNote}
                             </button>
                         )}
 
-                        {/* Manual Trigger Button (Only trigger, not send) */}
+                        {/* 群设置入口（原 + 面板里的「群设置」迁移到右上角；⚡手动触发已删除——空输入回车/发送即触发） */}
                         <button
-                            onClick={() => triggerDirector(messages)}
-                            disabled={isTyping || !!activeGroup?.dissolved}
-                            className={`p-2 rounded-full transition-all active:scale-90 ${isTyping || activeGroup?.dissolved ? 'bg-slate-100 text-slate-300' : 'bg-violet-100 text-violet-600 shadow-sm'}`}
+                            onClick={() => {
+                                setTempGroupName(activeGroup?.name || '');
+                                setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80);
+                                setTempMyNickname(activeGroup?.memberNicknames?.['user'] || '');
+                                setModalType('settings');
+                            }}
+                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-violet-600 transition-all active:scale-90"
+                            title="群设置"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .914-.143Z" clipRule="evenodd" /></svg>
+                            <GearSix size={20} weight="bold" />
                         </button>
                     </div>
                 )}
@@ -1805,17 +1822,19 @@ ${attachedImagesNote}
                             </button>
                         </div>
 
-                        {/* Send Button */}
-                        {input.trim() ? (
-                            <button 
-                                onClick={() => handleSendMessage(input)} 
-                                className="h-9 px-4 shrink-0 bg-violet-500 text-white rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all"
-                            >
-                                发送
-                            </button>
-                        ) : (
-                            <div className="w-2"></div>
-                        )}
+                        {/* Send Button — 空输入时点击 = 触发 AI 导演让成员们接话（与空输入回车一致） */}
+                        <button
+                            onClick={() => {
+                                if (!input.trim()) {
+                                    if (!isTyping) triggerDirector(messages);
+                                    return;
+                                }
+                                handleSendMessage(input);
+                            }}
+                            className={`h-9 px-4 shrink-0 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all ${input.trim() ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-500'}`}
+                        >
+                            发送
+                        </button>
                     </div>
                 )}
 
@@ -1838,21 +1857,6 @@ ${attachedImagesNote}
                                 <span className="text-xs text-slate-500">红包</span>
                             </button>
 
-                            <button
-                                onClick={() => {
-                                    setTempGroupName(activeGroup?.name || '');
-                                    setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80);
-                                    setTempMyNickname(activeGroup?.memberNicknames?.['user'] || '');
-                                    setModalType('settings');
-                                    setShowActions(false);
-                                }}
-                                className="flex flex-col items-center gap-2 group"
-                            >
-                                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-200 group-active:scale-95 transition-transform">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-violet-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-                                </div>
-                                <span className="text-xs text-slate-500">群设置</span>
-                            </button>
                         </div>
                     </div>
                 )}
@@ -2178,4 +2182,4 @@ ${attachedImagesNote}
     );
 };
 
-export default GroupChat;
+export default ChatHub;
