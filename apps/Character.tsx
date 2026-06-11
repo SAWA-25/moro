@@ -155,10 +155,19 @@ const Character: React.FC = () => {
       if (savedId) setSelectedPromptId(savedId);
   }, []);
 
-  // 深链接：聊天里点头像/右上角"角色设置"会写入该 key，再打开本 App 时直接进对应角色的编辑页
+  // 深链接：聊天里点头像/右上角"角色设置"会写入该 key，再打开本 App 时直接进对应角色的编辑页。
+  // moro_character_return_app 记录来源 App：返回键回到上一级页面（聊天/聊天列表）而不是桌面。
+  const returnAppRef = useRef<AppID | null>(null);
   useEffect(() => {
       try {
           const target = localStorage.getItem('moro_character_open_target');
+          const returnApp = localStorage.getItem('moro_character_return_app');
+          if (returnApp) {
+              localStorage.removeItem('moro_character_return_app');
+              if (Object.values(AppID).includes(returnApp as AppID)) {
+                  returnAppRef.current = returnApp as AppID;
+              }
+          }
           if (target) {
               localStorage.removeItem('moro_character_open_target');
               if (characters.some(c => c.id === target)) {
@@ -228,6 +237,13 @@ const Character: React.FC = () => {
   }, [formData]);
 
   const handleBack = () => {
+      // 从聊天 App 深链进来的：返回键直接回到来源页面（聊天/聊天列表），不落回本 App 列表或桌面
+      if (returnAppRef.current) {
+          const target = returnAppRef.current;
+          returnAppRef.current = null;
+          openApp(target);
+          return;
+      }
       if (view === 'detail') {
           setView('list');
           setEditingId(null);

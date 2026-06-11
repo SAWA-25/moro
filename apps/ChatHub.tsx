@@ -286,7 +286,9 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'mute-member' | 'add-member'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'mute-member' | 'add-member'>('none');
+    // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
+    const [showPlusMenu, setShowPlusMenu] = useState(false);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [editContent, setEditContent] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -314,6 +316,9 @@ const ChatHub: React.FC = () => {
     const [tempGroupName, setTempGroupName] = useState('');
     const [tempPrivateContextCap, setTempPrivateContextCap] = useState<number>(80);
     const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
+    // 创建群聊时指定群主（'user' 或任一已选成员）与管理员
+    const [tempOwnerId, setTempOwnerId] = useState<string>('user');
+    const [tempAdminIds, setTempAdminIds] = useState<Set<string>>(new Set());
     const [transferAmount, setTransferAmount] = useState('');
     
     // Refs
@@ -440,9 +445,12 @@ const ChatHub: React.FC = () => {
         return updated;
     };
 
-    /** 打开某个角色的设置界面（深链接到神经链接 App 的编辑页） */
+    /** 打开某个角色的设置界面（深链接到神经链接 App 的编辑页）；返回键回到聊天列表而非桌面 */
     const openCharacterSettings = (charId: string) => {
-        try { localStorage.setItem('moro_character_open_target', charId); } catch { /* ignore */ }
+        try {
+            localStorage.setItem('moro_character_open_target', charId);
+            localStorage.setItem('moro_character_return_app', AppID.GroupChat);
+        } catch { /* ignore */ }
         openApp(AppID.Character);
     };
 
@@ -595,10 +603,17 @@ const ChatHub: React.FC = () => {
             addToast('请输入群名并至少选择2名成员', 'error');
             return;
         }
-        createGroup(tempGroupName, Array.from(selectedMembers));
+        // 群主天然有管理员权限，不重复写进 adminIds
+        const admins = Array.from(tempAdminIds).filter(id => id !== tempOwnerId && selectedMembers.has(id));
+        createGroup(tempGroupName, Array.from(selectedMembers), {
+            ownerId: tempOwnerId === 'user' || selectedMembers.has(tempOwnerId) ? tempOwnerId : 'user',
+            adminIds: admins,
+        });
         setModalType('none');
         setTempGroupName('');
         setSelectedMembers(new Set());
+        setTempOwnerId('user');
+        setTempAdminIds(new Set());
         addToast('群聊已创建', 'success');
     };
 
@@ -719,9 +734,24 @@ const ChatHub: React.FC = () => {
 
     const toggleMemberSelection = (id: string) => {
         const next = new Set(selectedMembers);
+        if (next.has(id)) {
+            next.delete(id);
+            // 被移出成员的群主 / 管理员身份同步取消
+            if (tempOwnerId === id) setTempOwnerId('user');
+            if (tempAdminIds.has(id)) {
+                const admins = new Set(tempAdminIds);
+                admins.delete(id);
+                setTempAdminIds(admins);
+            }
+        } else next.add(id);
+        setSelectedMembers(next);
+    };
+
+    const toggleAdminSelection = (id: string) => {
+        const next = new Set(tempAdminIds);
         if (next.has(id)) next.delete(id);
         else next.add(id);
-        setSelectedMembers(next);
+        setTempAdminIds(next);
     };
 
     // 解散 ≠ 删除：标记 dissolved，群保留在聊天列表显示"此群聊已被解散"，历史可回看（只读）
@@ -1474,9 +1504,34 @@ ${attachedImagesNote}
                     <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '朋友圈'}</span>
                     <div className="flex-1"></div>
                     {hubTab !== 'moments' && (
-                        <button onClick={() => { setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); }} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="创建群聊">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        </button>
+                        <div className="relative">
+                            <button onClick={() => setShowPlusMenu(v => !v)} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="添加">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                            </button>
+                            {showPlusMenu && (
+                                <>
+                                    {/* 点空白处收起菜单 */}
+                                    <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
+                                    <div className="absolute right-0 top-full mt-2 z-50 w-40 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
+                                        <button
+                                            onClick={() => { setShowPlusMenu(false); setModalType('add-friend'); }}
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-violet-50 active:bg-violet-100 transition-colors"
+                                        >
+                                            <AddressBook size={18} className="text-violet-500 shrink-0" />
+                                            添加好友
+                                        </button>
+                                        <div className="h-px bg-slate-100 mx-3" />
+                                        <button
+                                            onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); }}
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-violet-50 active:bg-violet-100 transition-colors"
+                                        >
+                                            <UsersThree size={18} className="text-violet-500 shrink-0" />
+                                            创建群聊
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     )}
                     </div>
                 </div>
@@ -1617,6 +1672,81 @@ ${attachedImagesNote}
                                 ))}
                             </div>
                         </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群主</label>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => setTempOwnerId('user')}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempOwnerId === 'user' ? 'border-amber-400 bg-amber-50 text-amber-600 ring-1 ring-amber-400' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                                >
+                                    👑 我自己
+                                </button>
+                                {Array.from(selectedMembers).map(id => {
+                                    const c = characters.find(ch => ch.id === id);
+                                    if (!c) return null;
+                                    return (
+                                        <button
+                                            key={id}
+                                            onClick={() => {
+                                                setTempOwnerId(id);
+                                                // 群主天然有管理员权限，从管理员列表中移除
+                                                if (tempAdminIds.has(id)) {
+                                                    const admins = new Set(tempAdminIds);
+                                                    admins.delete(id);
+                                                    setTempAdminIds(admins);
+                                                }
+                                            }}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempOwnerId === id ? 'border-amber-400 bg-amber-50 text-amber-600 ring-1 ring-amber-400' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                                        >
+                                            {tempOwnerId === id ? '👑 ' : ''}{c.name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {selectedMembers.size === 0 && <p className="text-[10px] text-slate-300 mt-1.5">先选择成员，即可把任意角色设为群主</p>}
+                        </div>
+                        {selectedMembers.size > 0 && (
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">管理员（可多选）</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {Array.from(selectedMembers).filter(id => id !== tempOwnerId).map(id => {
+                                        const c = characters.find(ch => ch.id === id);
+                                        if (!c) return null;
+                                        return (
+                                            <button
+                                                key={id}
+                                                onClick={() => toggleAdminSelection(id)}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempAdminIds.has(id) ? 'border-violet-500 bg-violet-50 text-violet-600 ring-1 ring-violet-500' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                                            >
+                                                {tempAdminIds.has(id) ? '🛡 ' : ''}{c.name}
+                                            </button>
+                                        );
+                                    })}
+                                    {Array.from(selectedMembers).filter(id => id !== tempOwnerId).length === 0 && (
+                                        <p className="text-[10px] text-slate-300">没有可设为管理员的成员（群主天然拥有管理员权限）</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </Modal>
+
+                {/* 添加好友：弹窗选择角色，直接进入与该角色的会话（不跳角色设置） */}
+                <Modal isOpen={modalType === 'add-friend'} title="选择要添加的角色" onClose={() => setModalType('none')}>
+                    <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                        {characters.map(c => (
+                            <button
+                                key={c.id}
+                                onClick={() => { setModalType('none'); openPrivateChat(c.id); }}
+                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-violet-300 hover:bg-violet-50/50 active:scale-[0.98] transition-all"
+                            >
+                                <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                                <span className="text-sm text-slate-700 font-medium truncate">{c.name}</span>
+                            </button>
+                        ))}
+                        {characters.length === 0 && (
+                            <div className="text-center text-slate-400 text-xs py-8">还没有角色，先去「角色」App 创建一个吧</div>
+                        )}
                     </div>
                 </Modal>
             </div>

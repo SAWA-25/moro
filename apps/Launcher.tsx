@@ -34,7 +34,7 @@ const DesktopClock = React.memo(() => {
 
     // 编辑部纸感时钟卡：等宽日期标签 + 衬线斜体大时钟 + 治愈问候 + PALETTE 墨色胶囊
     return (
-        <div className="moro-clock-card glass-card rounded-[1.75rem] px-6 pt-5 pb-5 mb-4 mt-2 relative overflow-hidden animate-rise-in select-none"
+        <div className="moro-clock-card glass-card h-full w-full rounded-[1.75rem] px-6 py-5 relative overflow-hidden animate-rise-in select-none flex flex-col justify-center"
             style={{ color: contentColor }}>
             {/* 卡片内氛围光斑：缓慢呼吸的薰衣草光 */}
             <div className="absolute -top-10 -right-10 w-44 h-44 rounded-full pointer-events-none animate-breathe"
@@ -54,7 +54,7 @@ const DesktopClock = React.memo(() => {
 
             <button
                 onClick={() => openApp(AppID.Appearance)}
-                className="moro-palette-btn label-mono text-[10px] font-bold mt-4 px-5 py-2.5 rounded-full text-white press-soft"
+                className="moro-palette-btn label-mono text-[10px] font-bold mt-4 px-5 py-2.5 rounded-full text-white press-soft self-start"
                 style={{ background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
             >
                 Palette
@@ -64,28 +64,28 @@ const DesktopClock = React.memo(() => {
 });
 
 // 2. Character Widget (Consumes Character Data & Messages)
-const CharacterWidget = React.memo(({ 
-    char, 
-    unreadCount, 
-    lastMessage, 
-    onClick, 
-    contentColor 
-}: { 
-    char: CharacterProfile | null, 
-    unreadCount: number, 
-    lastMessage: string, 
+const CharacterWidget = React.memo(({
+    char,
+    unreadCount,
+    lastMessage,
+    onClick,
+    contentColor
+}: {
+    char: CharacterProfile | null,
+    unreadCount: number,
+    lastMessage: string,
     onClick: () => void,
     contentColor: string
 }) => {
     // 编辑部纸感角色卡（NORA CARD 式）：等宽小标签 + 衬线大标题 + 最近消息
     return (
-        <div className="mb-3 group animate-rise-in" style={{ animationDelay: '60ms' }}>
+        <div className="h-full w-full group animate-rise-in" style={{ animationDelay: '60ms' }}>
              <div
-                className="moro-character-card glass-card relative w-full overflow-hidden rounded-[1.75rem] cursor-pointer press-soft"
+                className="moro-character-card glass-card relative w-full h-full overflow-hidden rounded-[1.75rem] cursor-pointer press-soft"
                 onClick={onClick}
                 style={{ color: contentColor }}
              >
-                 <div className="relative flex items-center px-5 py-4 gap-4">
+                 <div className="relative h-full flex items-center px-5 py-3 gap-4">
                      <div className="flex-1 min-w-0 flex flex-col gap-1">
                          <div className="flex items-center gap-2 text-[9px] label-mono font-bold opacity-50">
                              <span className="truncate">{char?.name ? `${char.name} Card` : 'No Signal'}</span>
@@ -101,7 +101,7 @@ const CharacterWidget = React.memo(({
                      </div>
 
                      {/* 头像：圆角方块 + 细白边，悬浮轻微摇摆（治愈感） */}
-                     <div className="w-[58px] h-[58px] shrink-0 rounded-2xl overflow-hidden relative bg-white/60 transition-transform duration-500 group-hover:rotate-2"
+                     <div className="w-[54px] h-[54px] shrink-0 rounded-2xl overflow-hidden relative bg-white/60 transition-transform duration-500 group-hover:rotate-2"
                          style={{ border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 10px 22px -10px rgba(63,61,86,0.35)' }}>
                          {char ? (
                              <img src={char.avatar} className="w-full h-full object-cover" alt="char" loading="lazy" />
@@ -113,77 +113,7 @@ const CharacterWidget = React.memo(({
     );
 });
 
-// --- 桌面图标拖拽排序：编辑态/拖拽相关 props，由 Launcher 统一调度 ---
-interface IconDragProps {
-    editMode?: boolean;
-    draggingId?: AppID | null;
-    onIconPointerDown?: (id: AppID, e: React.PointerEvent) => void;
-    // 用 ref 回调判断（而非 editMode 闭包）：AppIcon 的 memo 比较器会忽略 onClick 变化，
-    // 编辑态切换后其内部 onClick 闭包是旧的，必须在 wrapper 层 capture 拦截。
-    shouldSuppressIconClick?: () => boolean;
-}
-
-// 3. Grid Page Component
-const AppGridPage = React.memo(({
-    apps,
-    openApp,
-    editMode,
-    draggingId,
-    onIconPointerDown,
-    shouldSuppressIconClick,
-}: {
-    apps: typeof INSTALLED_APPS,
-    openApp: (id: AppID) => void,
-} & IconDragProps) => {
-    return (
-        <div className="grid place-items-center animate-fade-in relative grid-cols-4 gap-y-6 gap-x-2">
-             {apps.map(app => (
-                 <div
-                    key={app.id}
-                    data-launcher-app={app.id}
-                    className={`relative ${editMode ? 'animate-icon-jiggle' : ''} ${draggingId === app.id ? 'opacity-30' : ''}`}
-                    style={editMode ? { touchAction: 'none' } : undefined}
-                    onPointerDown={onIconPointerDown ? (e) => onIconPointerDown(app.id, e) : undefined}
-                    onContextMenu={editMode ? (e) => e.preventDefault() : undefined}
-                    onClickCapture={(e) => {
-                        if (shouldSuppressIconClick?.()) { e.preventDefault(); e.stopPropagation(); }
-                    }}
-                 >
-                     <AppIcon
-                        app={app}
-                        onClick={() => openApp(app.id)}
-                        size="md"
-                     />
-                 </div>
-             ))}
-        </div>
-    );
-});
-
-// 3b. Small 2x2 app grid for pinwheel cells
-const AppQuadGrid = React.memo(({ apps, openApp, editMode, draggingId, onIconPointerDown, shouldSuppressIconClick }: { apps: typeof INSTALLED_APPS, openApp: (id: AppID) => void } & IconDragProps) => {
-    return (
-        <div className="w-full h-full grid grid-cols-2 grid-rows-2 place-items-center gap-x-2 gap-y-3">
-            {apps.map(app => (
-                <div
-                    key={app.id}
-                    data-launcher-app={app.id}
-                    className={`relative transition-transform duration-200 active:scale-95 ${editMode ? 'animate-icon-jiggle' : ''} ${draggingId === app.id ? 'opacity-30' : ''}`}
-                    style={editMode ? { touchAction: 'none' } : undefined}
-                    onPointerDown={onIconPointerDown ? (e) => onIconPointerDown(app.id, e) : undefined}
-                    onContextMenu={editMode ? (e) => e.preventDefault() : undefined}
-                    onClickCapture={(e) => {
-                        if (shouldSuppressIconClick?.()) { e.preventDefault(); e.stopPropagation(); }
-                    }}
-                >
-                    <AppIcon app={app} onClick={() => openApp(app.id)} />
-                </div>
-            ))}
-        </div>
-    );
-});
-
-// 3c. Square image slot for pinwheel (bottom-right)
+// 3. Square image slot (free-position widget)
 const DesktopSquareImage = React.memo(({ image, contentColor, onClick }: {
     image?: string,
     contentColor: string,
@@ -229,13 +159,13 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
     const monthName = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][currentMonth];
-    
+
     const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-    
+
     const totalDays = getDaysInMonth(currentYear, currentMonth);
     const startOffset = getFirstDayOfMonth(currentYear, currentMonth);
-    
+
     const calendarDays = Array.from({ length: totalDays }, (_, i) => i + 1);
     const paddingDays = Array.from({ length: startOffset }, () => null);
 
@@ -265,18 +195,18 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                       </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center mb-2">
                       {CALENDAR_WEEKDAYS.map(day => <div key={day.key} className="text-[10px] font-bold opacity-40" style={{ color: contentColor }}>{day.label}</div>)}
                   </div>
-                  
+
                   <div className="grid grid-cols-7 gap-y-2 gap-x-1 text-center">
                       {paddingDays.map((_, i) => <div key={`pad-${i}`} />)}
                       {calendarDays.map(day => {
                           const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                           const isToday = day === now.getDate();
                           const hasEvent = anniversaries.some((a: any) => a.date === dateStr);
-                          
+
                           return (
                               <div key={day} className="flex flex-col items-center justify-center h-8 relative">
                                   <div
@@ -343,13 +273,87 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
 let _lastPageIndex = 0;
 
-// --- 桌面图标自定义排序持久化（local-first，跟自定义图标一样走 localStorage） ---
+// --- 旧版桌面图标顺序（仅作首次迁移的默认 app 排序来源） ---
 const APP_ORDER_KEY = 'moro_launcher_app_order';
 const loadStoredAppOrder = (): string[] => {
     try {
         const raw = JSON.parse(localStorage.getItem(APP_ORDER_KEY) || '[]');
         return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
     } catch { return []; }
+};
+
+// --- 桌面统一布局：组件(widget) 和应用(app) 都是可拖拽的「桌面项」 ---
+// 每页是 4 列 × 12 行的细粒度网格（app 图标占 1×2，时钟占 4×6 ……），
+// 桌面项按持久化顺序 first-fit 装箱分页；拖拽改变顺序 → 重新装箱 → 位置完全自定义。
+interface DeskItem {
+    key: string;            // 'app:<appId>' | 'widget:<widgetId>'
+    kind: 'app' | 'widget';
+    id: string;
+    w: number;              // 占用列数（1-4）
+    h: number;              // 占用行数（12 行制）
+}
+interface PlacedItem { item: DeskItem; col: number; row: number; }
+
+const PAGE_COLS = 4;
+const PAGE_ROWS = 12;
+
+const DESK_ORDER_KEY = 'moro_desktop_items_v1';
+const loadStoredDeskOrder = (): string[] => {
+    try {
+        const raw = JSON.parse(localStorage.getItem(DESK_ORDER_KEY) || '[]');
+        return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    } catch { return []; }
+};
+
+/** 首次使用（没存过布局）的默认顺序：复刻旧版「时钟+聊天卡+8 图标 / 日程+音乐+方图」分页 */
+const buildDefaultKeys = (appKeys: string[], widgetKeys: Set<string>): string[] => {
+    const mid = ['widget:schedule', 'widget:music', 'widget:image', 'widget:imgtl', 'widget:imgtr', 'widget:imgwide']
+        .filter(k => widgetKeys.has(k));
+    return ['widget:clock', 'widget:character', ...appKeys.slice(0, 8), ...mid, ...appKeys.slice(8)];
+};
+
+/** first-fit 装箱：按顺序放进当前页网格，放不下开新页（不回填旧页，保证顺序直觉） */
+const packDeskPages = (items: DeskItem[]): PlacedItem[][] => {
+    const pages: PlacedItem[][] = [];
+    const grids: boolean[][][] = [];
+    const addPage = () => {
+        pages.push([]);
+        grids.push(Array.from({ length: PAGE_ROWS }, () => Array(PAGE_COLS).fill(false)));
+    };
+    addPage();
+    const tryPlace = (it: DeskItem): boolean => {
+        const grid = grids[grids.length - 1];
+        for (let r = 0; r <= PAGE_ROWS - it.h; r++) {
+            for (let c = 0; c <= PAGE_COLS - it.w; c++) {
+                let ok = true;
+                for (let i = r; i < r + it.h && ok; i++)
+                    for (let j = c; j < c + it.w && ok; j++)
+                        if (grid[i][j]) ok = false;
+                if (!ok) continue;
+                for (let i = r; i < r + it.h; i++)
+                    for (let j = c; j < c + it.w; j++)
+                        grid[i][j] = true;
+                pages[pages.length - 1].push({ item: it, col: c, row: r });
+                return true;
+            }
+        }
+        return false;
+    };
+    for (const it of items) {
+        if (!tryPlace(it)) { addPage(); tryPlace(it); }
+    }
+    return pages;
+};
+
+const WIDGET_LABELS: Record<string, string> = {
+    clock: '时钟',
+    character: '聊天卡片',
+    schedule: '日程',
+    music: '音乐',
+    image: '方图',
+    imgtl: '小组件图',
+    imgtr: '小组件图',
+    imgwide: '宽幅图',
 };
 
 // --- Main Launcher ---
@@ -374,28 +378,30 @@ const Launcher: React.FC = () => {
   const scrollLeftRef = useRef(0);
   const dragMoved = useRef(0);
 
-  // Pagination Logic
   // 跟随 DevDebug 可用性：prod 用户在设置页连点 5 下解锁后，CharCreatorDev 立刻出现；
   // 点「关闭」/ 刷新（prod 自动失效）也立刻消失。useMemo deps 没列 devDebugVisible
   // 会让它锁在 mount 时的初值。
   const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
   useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
 
-  // --- 图标拖拽排序状态 ---
-  const [appOrder, setAppOrder] = useState<string[]>(loadStoredAppOrder);
+  // --- 桌面项拖拽排序状态（app + widget 统一） ---
+  const [deskOrder, setDeskOrder] = useState<string[]>(loadStoredDeskOrder);
   const [editMode, setEditMode] = useState(false);
-  const [draggingId, setDraggingId] = useState<AppID | null>(null);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const editModeRef = useRef(false);
-  const draggingIdRef = useRef<AppID | null>(null);
+  const draggingKeyRef = useRef<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const pressStartPos = useRef({ x: 0, y: 0 });
   const lastPointerPos = useRef({ x: 0, y: 0 });
   const dragEndAtRef = useRef(0);
   const lastFlipAt = useRef(0);
   const lastReorder = useRef({ id: '', t: 0 });
-  const gridAppsRef = useRef<typeof INSTALLED_APPS>([]);
+  const deskItemsRef = useRef<DeskItem[]>([]);
   const ghostElRef = useRef<HTMLDivElement | null>(null);
   const blockTouchRef = useRef<((ev: TouchEvent) => void) | null>(null);
+
+  // 旧版仅 app 排序的持久化只作首次迁移用：统一布局存的是 DESK_ORDER_KEY
+  const legacyAppOrder = useMemo(loadStoredAppOrder, []);
 
   const gridApps = useMemo(() => {
     const base = INSTALLED_APPS.filter(app =>
@@ -403,10 +409,10 @@ const Launcher: React.FC = () => {
       // 「捏脸·开发」仅在开发模式（右下角开发徽标可见或手动解锁时）显示
       && (app.id !== AppID.CharCreatorDev || devDebugVisible)
     );
-    if (appOrder.length === 0) return base;
-    // 已保存顺序在前，新增/未记录的 App 按默认顺序补在后面
+    if (legacyAppOrder.length === 0) return base;
+    // 旧排序在前，新增/未记录的 App 按默认顺序补在后面
     const ordered: typeof INSTALLED_APPS = [];
-    for (const id of appOrder) {
+    for (const id of legacyAppOrder) {
         const app = base.find(a => a.id === id);
         if (app && !ordered.includes(app)) ordered.push(app);
     }
@@ -414,18 +420,52 @@ const Launcher: React.FC = () => {
         if (!ordered.includes(app)) ordered.push(app);
     }
     return ordered;
-  }, [devDebugVisible, appOrder]);
+  }, [devDebugVisible, legacyAppOrder]);
 
-  useEffect(() => { gridAppsRef.current = gridApps; }, [gridApps]);
+  // 桌面项全集（含尺寸）：固定五个组件 + 外观里设置过的小组件图 + 全部非 dock App
+  const deskItems = useMemo(() => {
+    const lw = theme.launcherWidgets || {};
+    const widgetItems: DeskItem[] = [
+        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 6 },
+        { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
+        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
+        { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
+        { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 4 },
+        ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
+        ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
+        ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
+    ];
+    const appItems: DeskItem[] = gridApps.map(a => ({ key: `app:${a.id}`, kind: 'app', id: a.id, w: 1, h: 2 }));
+    const byKey = new Map<string, DeskItem>();
+    for (const it of [...widgetItems, ...appItems]) byKey.set(it.key, it);
+
+    const ordered: DeskItem[] = [];
+    for (const k of deskOrder) {
+        const it = byKey.get(k);
+        if (it) { ordered.push(it); byKey.delete(k); }
+    }
+    // 未入存档的项（新装 App / 新出现的组件）按默认顺序补位
+    const defaults = buildDefaultKeys(appItems.map(i => i.key), new Set(widgetItems.map(i => i.key)));
+    for (const k of defaults) {
+        const it = byKey.get(k);
+        if (it) { ordered.push(it); byKey.delete(k); }
+    }
+    for (const it of byKey.values()) ordered.push(it);
+    return ordered;
+  }, [gridApps, theme.launcherWidgets, deskOrder]);
+
+  useEffect(() => { deskItemsRef.current = deskItems; }, [deskItems]);
   useEffect(() => { editModeRef.current = editMode; }, [editMode]);
   useEffect(() => {
-      if (appOrder.length === 0) return;
-      try { localStorage.setItem(APP_ORDER_KEY, JSON.stringify(appOrder)); } catch {}
-  }, [appOrder]);
+      if (deskOrder.length === 0) return;
+      try { localStorage.setItem(DESK_ORDER_KEY, JSON.stringify(deskOrder)); } catch {}
+  }, [deskOrder]);
 
-  const beginIconDrag = React.useCallback((id: AppID, x: number, y: number) => {
-      draggingIdRef.current = id;
-      setDraggingId(id);
+  const packedPages = useMemo(() => packDeskPages(deskItems), [deskItems]);
+
+  const beginItemDrag = React.useCallback((key: string, x: number, y: number) => {
+      draggingKeyRef.current = key;
+      setDraggingKey(key);
       lastPointerPos.current = { x, y };
       // 触屏：阻止本次手势触发页面横向滚动（React 的 touchmove 是 passive 的，必须挂原生监听）
       if (!blockTouchRef.current) {
@@ -435,32 +475,32 @@ const Launcher: React.FC = () => {
       }
   }, []);
 
-  const handleIconPointerDown = React.useCallback((id: AppID, e: React.PointerEvent) => {
+  const handleItemPointerDown = React.useCallback((key: string, e: React.PointerEvent) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       pressStartPos.current = { x: e.clientX, y: e.clientY };
       lastPointerPos.current = { x: e.clientX, y: e.clientY };
       if (editModeRef.current) {
           e.stopPropagation();
-          beginIconDrag(id, e.clientX, e.clientY);
+          beginItemDrag(key, e.clientX, e.clientY);
       } else {
-          // 长按 450ms 进入编辑模式并直接拎起该图标；中途移动超过阈值视为滑动翻页，取消长按
+          // 长按 450ms 进入编辑模式并直接拎起该项；中途移动超过阈值视为滑动翻页，取消长按
           if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
           longPressTimer.current = window.setTimeout(() => {
               longPressTimer.current = null;
               setEditMode(true);
               editModeRef.current = true;
               try { (navigator as any).vibrate?.(10); } catch {}
-              beginIconDrag(id, lastPointerPos.current.x, lastPointerPos.current.y);
+              beginItemDrag(key, lastPointerPos.current.x, lastPointerPos.current.y);
           }, 450);
       }
-  }, [beginIconDrag]);
+  }, [beginItemDrag]);
 
   const shouldSuppressIconClick = React.useCallback(
       () => editModeRef.current || Date.now() - dragEndAtRef.current < 250,
       []
   );
 
-  // 拖拽中的全局指针跟踪：移动幽灵图标、命中其它图标时重排、贴边翻页（跨页移动）
+  // 拖拽中的全局指针跟踪：移动幽灵、命中其它桌面项时重排、贴边翻页（跨页移动）
   useEffect(() => {
       const onMove = (e: PointerEvent) => {
           lastPointerPos.current = { x: e.clientX, y: e.clientY };
@@ -468,23 +508,23 @@ const Launcher: React.FC = () => {
               const moved = Math.hypot(e.clientX - pressStartPos.current.x, e.clientY - pressStartPos.current.y);
               if (moved > 10) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
           }
-          const dragId = draggingIdRef.current;
-          if (!dragId) return;
+          const dragKey = draggingKeyRef.current;
+          if (!dragKey) return;
           if (ghostElRef.current) {
               ghostElRef.current.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%) scale(1.12)`;
           }
-          const hit = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.('[data-launcher-app]') as HTMLElement | null;
-          const targetId = hit?.dataset?.launcherApp;
+          const hit = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.('[data-desk-item]') as HTMLElement | null;
+          const targetKey = hit?.dataset?.deskItem;
           const now = Date.now();
-          if (targetId && targetId !== dragId && (lastReorder.current.id !== targetId || now - lastReorder.current.t > 250)) {
-              lastReorder.current = { id: targetId, t: now };
-              const cur = gridAppsRef.current.map(a => a.id);
-              const from = cur.indexOf(dragId);
-              const to = cur.indexOf(targetId as AppID);
+          if (targetKey && targetKey !== dragKey && (lastReorder.current.id !== targetKey || now - lastReorder.current.t > 250)) {
+              lastReorder.current = { id: targetKey, t: now };
+              const cur = deskItemsRef.current.map(i => i.key);
+              const from = cur.indexOf(dragKey);
+              const to = cur.indexOf(targetKey);
               if (from >= 0 && to >= 0 && from !== to) {
                   const next = [...cur];
                   next.splice(to, 0, next.splice(from, 1)[0]);
-                  setAppOrder(next);
+                  setDeskOrder(next);
               }
           }
           const el = scrollContainerRef.current;
@@ -501,9 +541,9 @@ const Launcher: React.FC = () => {
       };
       const onUp = () => {
           if (longPressTimer.current !== null) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-          if (draggingIdRef.current) {
-              draggingIdRef.current = null;
-              setDraggingId(null);
+          if (draggingKeyRef.current) {
+              draggingKeyRef.current = null;
+              setDraggingKey(null);
               dragEndAtRef.current = Date.now();
           }
           if (blockTouchRef.current) { window.removeEventListener('touchmove', blockTouchRef.current); blockTouchRef.current = null; }
@@ -519,31 +559,13 @@ const Launcher: React.FC = () => {
       };
   }, []);
 
-  const dockAppsConfig = useMemo(() => 
+  const dockAppsConfig = useMemo(() =>
     DOCK_APPS.map(id => INSTALLED_APPS.find(app => app.id === id)).filter(Boolean) as typeof INSTALLED_APPS,
     []
   );
 
-  // Split apps into pages of 8 (4 cols x 2 rows fit comfortably below widget)
-  // Pages: 0 = clock+chat+music+grid (original), 1 = pinwheel, 2 = widget images + grid,
-  //        3+ = plain grid. Pad to at least 3 slots so the pinwheel/widget pages always exist.
-  const APPS_PER_PAGE = 8;
-  const appPages = useMemo(() => {
-      const pages: typeof INSTALLED_APPS[] = [];
-      for (let i = 0; i < gridApps.length; i += APPS_PER_PAGE) {
-          pages.push(gridApps.slice(i, i + APPS_PER_PAGE));
-      }
-      while (pages.length < 3) pages.push([]);
-      return pages;
-  }, [gridApps]);
-
-  // Page 2 (pinwheel) uses appPages[1]: split into two 2x2 quads
-  const page2Apps = appPages[1] || [];
-  const page2QuadA = useMemo(() => page2Apps.slice(0, 4), [page2Apps]);
-  const page2QuadB = useMemo(() => page2Apps.slice(4, 8), [page2Apps]);
-
-  // Total pages = App Pages + 1 Widget Page
-  const totalPages = appPages.length + 1;
+  // Total pages = Desk Pages + 1 Widget Page
+  const totalPages = packedPages.length + 1;
 
   useEffect(() => {
       const loadData = async () => {
@@ -563,7 +585,7 @@ const Launcher: React.FC = () => {
                   DB.getMessagesByCharId(targetChar.id),
                   DB.getAllAnniversaries()
               ]);
-              
+
               if (msgs.length > 0) {
                   const visibleMsgs = msgs.filter(m => m.role !== 'system');
                   if (visibleMsgs.length > 0) {
@@ -581,13 +603,13 @@ const Launcher: React.FC = () => {
               console.error(e);
           }
       };
-      
+
       if (isDataLoaded) {
           loadData();
       }
   }, [activeCharacterId, lastMsgTimestamp, isDataLoaded, characters]); // Trigger on characters change
 
-  // Schedule widget data loading (shown below SpecialMoments icon)
+  // Schedule widget data loading
   const scheduleChar = useMemo(() => {
       if (!characters || characters.length === 0) return null;
       if (scheduleCharId) return characters.find(c => c.id === scheduleCharId) || characters[0];
@@ -625,14 +647,14 @@ const Launcher: React.FC = () => {
   // --- Mouse Drag Handlers ---
   const handleMouseDown = (e: React.MouseEvent) => {
       if (!scrollContainerRef.current) return;
-      // 编辑模式按住图标 = 拖图标排序，不抢页面横向滚动
-      if (draggingIdRef.current) return;
-      if (editModeRef.current && (e.target as HTMLElement | null)?.closest?.('[data-launcher-app]')) return;
+      // 编辑模式按住桌面项 = 拖项排序，不抢页面横向滚动
+      if (draggingKeyRef.current) return;
+      if (editModeRef.current && (e.target as HTMLElement | null)?.closest?.('[data-desk-item]')) return;
       isDragging.current = true;
       dragMoved.current = 0;
       startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
       scrollLeftRef.current = scrollContainerRef.current.scrollLeft;
-      
+
       // Disable snap and smooth scroll for direct control
       scrollContainerRef.current.style.scrollBehavior = 'auto';
       scrollContainerRef.current.style.scrollSnapType = 'none';
@@ -640,20 +662,20 @@ const Launcher: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-      if (draggingIdRef.current) return;
+      if (draggingKeyRef.current) return;
       if (!isDragging.current || !scrollContainerRef.current) return;
       e.preventDefault();
       const x = e.pageX - scrollContainerRef.current.offsetLeft;
       const walk = (x - startX.current);
       scrollContainerRef.current.scrollLeft = scrollLeftRef.current - walk;
-      
-      dragMoved.current = Math.abs(x - (startX.current + scrollContainerRef.current.offsetLeft)); 
+
+      dragMoved.current = Math.abs(x - (startX.current + scrollContainerRef.current.offsetLeft));
   };
 
   const handleMouseUp = () => {
       if (!isDragging.current || !scrollContainerRef.current) return;
       isDragging.current = false;
-      
+
       // Restore styles
       scrollContainerRef.current.style.scrollBehavior = 'smooth';
       scrollContainerRef.current.style.scrollSnapType = 'x mandatory';
@@ -679,12 +701,79 @@ const Launcher: React.FC = () => {
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;
 
-  const draggingApp = draggingId ? gridApps.find(a => a.id === draggingId) : null;
+  const draggingItem = draggingKey ? deskItems.find(i => i.key === draggingKey) : null;
+  const draggingApp = draggingItem?.kind === 'app' ? gridApps.find(a => a.id === draggingItem.id) : null;
+
+  // 渲染单个桌面项内容（位置由外层 grid 决定）
+  const renderDeskItem = (item: DeskItem) => {
+      if (item.kind === 'app') {
+          const app = gridApps.find(a => a.id === item.id);
+          if (!app) return null;
+          return (
+              <div className="w-full h-full flex items-center justify-center">
+                  <AppIcon app={app} onClick={() => openApp(app.id)} size="md" />
+              </div>
+          );
+      }
+      switch (item.id) {
+          case 'clock':
+              return <DesktopClock />;
+          case 'character':
+              return (
+                  <CharacterWidget
+                      char={widgetChar}
+                      unreadCount={widgetUnread}
+                      lastMessage={lastMessage}
+                      onClick={() => openApp(AppID.Chat)}
+                      contentColor={contentColor}
+                  />
+              );
+          case 'schedule':
+              return scheduleChar ? (
+                  <div className="w-full h-full flex flex-col justify-center overflow-hidden">
+                      <ScheduleHomeWidget
+                          schedule={scheduleData}
+                          character={scheduleChar}
+                          contentColor={contentColor}
+                          onOpen={() => setScheduleViewerOpen(true)}
+                      />
+                  </div>
+              ) : (
+                  <div className="w-full h-full glass-card rounded-[1.75rem] flex items-center justify-center text-[10px] opacity-40" style={{ color: contentColor }}>
+                      暂无角色日程
+                  </div>
+              );
+          case 'music':
+              return <NowPlayingSquareWidget contentColor={contentColor} />;
+          case 'image':
+              return (
+                  <DesktopSquareImage
+                      image={theme.launcherWidgets?.['dsq']}
+                      contentColor={contentColor}
+                      onClick={() => openApp(AppID.Appearance)}
+                  />
+              );
+          case 'imgtl':
+          case 'imgtr':
+          case 'imgwide': {
+              const slot = item.id === 'imgtl' ? 'tl' : item.id === 'imgtr' ? 'tr' : 'wide';
+              const src = theme.launcherWidgets?.[slot];
+              if (!src) return null;
+              return (
+                  <div className="w-full h-full rounded-2xl overflow-hidden shadow-md border border-white/20">
+                      <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" />
+                  </div>
+              );
+          }
+          default:
+              return null;
+      }
+  };
 
   return (
     <div className="h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none">
 
-      {/* 编辑模式：图标抖动动画 + 「完成」按钮 */}
+      {/* 编辑模式：项目抖动动画 + 「完成」按钮 */}
       {editMode && (
         <>
           <style>{`@keyframes iconJiggle{0%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}100%{transform:rotate(-1.6deg)}}.animate-icon-jiggle{animation:iconJiggle .35s ease-in-out infinite}`}</style>
@@ -696,8 +785,8 @@ const Launcher: React.FC = () => {
         </>
       )}
 
-      {/* 拖拽中的幽灵图标：跟随指针，位置由全局 pointermove 直接写 DOM（不触发重渲染） */}
-      {draggingApp && (
+      {/* 拖拽中的幽灵：跟随指针，位置由全局 pointermove 直接写 DOM（不触发重渲染） */}
+      {draggingItem && (
         <div
           ref={(el) => {
               ghostElRef.current = el;
@@ -705,7 +794,13 @@ const Launcher: React.FC = () => {
           }}
           className="fixed left-0 top-0 z-[90] pointer-events-none opacity-90"
         >
-          <AppIcon app={draggingApp} onClick={() => {}} hideLabel size="md" />
+          {draggingApp ? (
+              <AppIcon app={draggingApp} onClick={() => {}} hideLabel size="md" />
+          ) : (
+              <div className="px-4 py-2.5 rounded-2xl glass-card text-xs font-bold shadow-xl border border-white/40" style={{ color: contentColor }}>
+                  {WIDGET_LABELS[draggingItem.id] || '组件'}
+              </div>
+          )}
         </div>
       )}
 
@@ -717,7 +812,6 @@ const Launcher: React.FC = () => {
       </div>
 
       {/* Scrollable Content Layer */}
-      {/* UPDATE: Added snap-always to children to ensure one-page-at-a-time scrolling on mobile swipe */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
@@ -738,130 +832,60 @@ const Launcher: React.FC = () => {
             WebkitOverflowScrolling: 'touch',
         }}
       >
-          {/* Render App Pages */}
-          {appPages.map((pageApps, idx) => (
+          {/* Render Desk Pages（统一网格：组件 + 图标按装箱位置摆放，全部可拖拽） */}
+          {packedPages.map((placed, idx) => (
               <div
                 key={idx}
-                className="w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-12 pb-8 h-full"
+                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-12 pb-8 h-full relative"
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
-                  {idx === 0 ? (
-                      // Page 1 (original): Clock + Chat + 4x2 App Grid
-                      <>
-                        <DesktopClock />
-                        <CharacterWidget
-                            char={widgetChar}
-                            unreadCount={widgetUnread}
-                            lastMessage={lastMessage}
-                            onClick={() => openApp(AppID.Chat)}
-                            contentColor={contentColor}
-                        />
-                        <div className="flex-1">
-                            <AppGridPage
-                                apps={pageApps}
-                                openApp={openApp}
-                                editMode={editMode}
-                                draggingId={draggingId}
-                                onIconPointerDown={handleIconPointerDown}
-                                shouldSuppressIconClick={shouldSuppressIconClick}
-                            />
-                        </div>
-                      </>
-                  ) : idx === 1 ? (
-                      // Page 2: Schedule 4x2 widget on top + Pinwheel (Music / 2x2 icons / 2x2 icons / Image) below
-                      <div className="flex-1 min-h-0 w-full flex flex-col gap-5 justify-center">
-                          {scheduleChar && (
-                              <ScheduleHomeWidget
-                                  schedule={scheduleData}
-                                  character={scheduleChar}
-                                  contentColor={contentColor}
-                                  onOpen={() => setScheduleViewerOpen(true)}
+                  {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
+                  {idx === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (
+                      <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                          {theme.desktopDecorations.map(deco => (
+                              <img
+                                  key={deco.id}
+                                  src={deco.content}
+                                  alt=""
+                                  loading="lazy"
+                                  className="absolute w-16 h-16 object-contain select-none"
+                                  style={{
+                                      left: `${deco.x}%`,
+                                      top: `${deco.y}%`,
+                                      transform: `translate(-50%, -50%) scale(${deco.scale}) rotate(${deco.rotation}deg)${deco.flip ? ' scaleX(-1)' : ''}`,
+                                      opacity: deco.opacity,
+                                      zIndex: deco.zIndex,
+                                      filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
+                                  }}
                               />
-                          )}
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-5 w-full">
-                              <div className="aspect-square min-w-0">
-                                  <NowPlayingSquareWidget contentColor={contentColor} />
-                              </div>
-                              <div className="aspect-square min-w-0">
-                                  <AppQuadGrid apps={page2QuadA} openApp={openApp} editMode={editMode} draggingId={draggingId} onIconPointerDown={handleIconPointerDown} shouldSuppressIconClick={shouldSuppressIconClick} />
-                              </div>
-                              <div className="aspect-square min-w-0">
-                                  <AppQuadGrid apps={page2QuadB} openApp={openApp} editMode={editMode} draggingId={draggingId} onIconPointerDown={handleIconPointerDown} shouldSuppressIconClick={shouldSuppressIconClick} />
-                              </div>
-                              <div className="aspect-square min-w-0">
-                                  <DesktopSquareImage
-                                      image={theme.launcherWidgets?.['dsq']}
-                                      contentColor={contentColor}
-                                      onClick={() => openApp(AppID.Appearance)}
-                                  />
-                              </div>
-                          </div>
-                      </div>
-                  ) : (
-                      // Page 3+: Widget Images (idx===2 only) + Free Decorations + Apps
-                      <div className="pt-10 flex-1 flex flex-col relative">
-                          {idx === 2 && (() => {
-                            const raw = theme.launcherWidgets || {};
-                            const w = { ...raw };
-                            const hasAny = w['tl'] || w['tr'] || w['wide'];
-                            const hasTopRow = w['tl'] || w['tr'];
-                            return (
-                              <>
-                                {hasAny && (
-                                  <div className="mb-3 space-y-2 relative z-10">
-                                    {hasTopRow && (
-                                      <div className="flex gap-2">
-                                        {['tl', 'tr'].map(key => w[key] ? (
-                                          <div key={key} className="flex-1 aspect-square rounded-2xl overflow-hidden shadow-md border border-white/20">
-                                            <img src={w[key]} className="w-full h-full object-cover" alt="" loading="lazy" />
-                                          </div>
-                                        ) : <div key={key} className="flex-1"></div>)}
-                                      </div>
-                                    )}
-                                    {w['wide'] && (
-                                      <div className="w-full h-32 rounded-2xl overflow-hidden shadow-md border border-white/20">
-                                        <img src={w['wide']} className="w-full h-full object-cover" alt="" loading="lazy" />
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {/* Free-positioned Desktop Decorations (z-20 to float above widgets z-10) */}
-                                {theme.desktopDecorations && theme.desktopDecorations.length > 0 && (
-                                  <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
-                                    {theme.desktopDecorations.map(deco => (
-                                      <img
-                                        key={deco.id}
-                                        src={deco.content}
-                                        alt=""
-                                        loading="lazy"
-                                        className="absolute w-16 h-16 object-contain select-none"
-                                        style={{
-                                          left: `${deco.x}%`,
-                                          top: `${deco.y}%`,
-                                          transform: `translate(-50%, -50%) scale(${deco.scale}) rotate(${deco.rotation}deg)${deco.flip ? ' scaleX(-1)' : ''}`,
-                                          opacity: deco.opacity,
-                                          zIndex: deco.zIndex,
-                                          filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
-
-                          <AppGridPage
-                                apps={pageApps}
-                                openApp={openApp}
-                                editMode={editMode}
-                                draggingId={draggingId}
-                                onIconPointerDown={handleIconPointerDown}
-                                shouldSuppressIconClick={shouldSuppressIconClick}
-                          />
-                          <div className="flex-1"></div>
+                          ))}
                       </div>
                   )}
+
+                  <div
+                      className="w-full h-full grid grid-cols-4 gap-x-2 gap-y-2"
+                      style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
+                  >
+                      {placed.map(({ item, col, row }) => (
+                          <div
+                              key={item.key}
+                              data-desk-item={item.key}
+                              className={`relative min-w-0 min-h-0 ${editMode ? 'animate-icon-jiggle' : ''} ${draggingKey === item.key ? 'opacity-30' : ''}`}
+                              style={{
+                                  gridColumn: `${col + 1} / span ${item.w}`,
+                                  gridRow: `${row + 1} / span ${item.h}`,
+                                  ...(editMode ? { touchAction: 'none' as const } : {}),
+                              }}
+                              onPointerDown={(e) => handleItemPointerDown(item.key, e)}
+                              onContextMenu={editMode ? (e) => e.preventDefault() : undefined}
+                              onClickCapture={(e) => {
+                                  if (shouldSuppressIconClick()) { e.preventDefault(); e.stopPropagation(); }
+                              }}
+                          >
+                              {renderDeskItem(item)}
+                          </div>
+                      ))}
+                  </div>
               </div>
           ))}
 
@@ -881,9 +905,9 @@ const Launcher: React.FC = () => {
           style={{ bottom: `calc(${launcherBottomInset} + 5.5rem)` }}
       >
           {Array.from({ length: totalPages }).map((_, i) => (
-              <div 
+              <div
                 key={i}
-                className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-4 opacity-100' : 'w-1.5 opacity-40'}`} 
+                className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-4 opacity-100' : 'w-1.5 opacity-40'}`}
                 style={{ backgroundColor: contentColor }}
               ></div>
           ))}

@@ -17,11 +17,25 @@ const cleanPreview = (content: string, type?: string): string => {
     return '[消息]';
 };
 
+// 实时消息横幅：新消息到达时灵动岛展开展示「头像 + 角色名 + 消息内容」
+interface LiveNotice {
+    charId: string;
+    charName: string;
+    body: string;
+    avatarUrl?: string;
+    at: number;
+}
+
 const DynamicIsland: React.FC = () => {
-    const { unreadMessages, characters, openApp, setActiveCharacterId, clearUnread } = useOS();
+    const { unreadMessages, characters, openApp, setActiveCharacterId, clearUnread, activeApp, activeCharacterId } = useOS();
+    // 正在跟该角色聊天时不弹横幅（用 ref 让事件监听器拿到最新值，不重挂监听）
+    const activeChatRef = useRef<{ app: AppID; charId: string | null }>({ app: activeApp, charId: activeCharacterId });
+    activeChatRef.current = { app: activeApp, charId: activeCharacterId };
     const [expanded, setExpanded] = useState(false);
     const [previews, setPreviews] = useState<Record<string, string>>({});
-    const [pulseCharId, setPulseCharId] = useState<string | null>(null);
+    const [notice, setNotice] = useState<LiveNotice | null>(null);
+    const noticeRef = useRef<LiveNotice | null>(null);
+    const noticeTimer = useRef<number | null>(null);
     const prevUnreadRef = useRef<Record<string, number>>({});
     const touchStartY = useRef<number | null>(null);
 
@@ -34,7 +48,46 @@ const DynamicIsland: React.FC = () => {
 
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
 
-    // 监听未读数上涨 → 找到刚来消息的角色，让胶囊「探出头」几秒
+    const showNotice = React.useCallback((n: LiveNotice) => {
+        noticeRef.current = n;
+        setNotice(n);
+        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        noticeTimer.current = window.setTimeout(() => {
+            noticeRef.current = null;
+            setNotice(null);
+        }, 5000);
+    }, []);
+
+    useEffect(() => () => {
+        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    }, []);
+
+    // 实时联动：主动消息 / instant push 落库事件自带消息正文，第一时间弹横幅
+    useEffect(() => {
+        const onIncoming = (e: Event) => {
+            const d = (e as CustomEvent).detail || {};
+            // emotionUpdate 等空 body 事件不弹横幅
+            if (!d.charId || !String(d.body || '').trim()) return;
+            // 正在该角色聊天页时消息已经可见，不再弹横幅
+            const cur = activeChatRef.current;
+            if (cur.app === AppID.Chat && cur.charId === d.charId) return;
+            showNotice({
+                charId: d.charId,
+                charName: d.charName || characters.find(c => c.id === d.charId)?.name || '',
+                body: cleanPreview(String(d.body)),
+                avatarUrl: d.avatarUrl,
+                at: Date.now(),
+            });
+        };
+        window.addEventListener('proactive-message-sent', onIncoming);
+        window.addEventListener('active-msg-received', onIncoming);
+        return () => {
+            window.removeEventListener('proactive-message-sent', onIncoming);
+            window.removeEventListener('active-msg-received', onIncoming);
+        };
+    }, [characters, showNotice]);
+
+    // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 取最后一条做预览
     useEffect(() => {
         const prev = prevUnreadRef.current;
         let newest: string | null = null;
@@ -43,10 +96,23 @@ const DynamicIsland: React.FC = () => {
         }
         prevUnreadRef.current = { ...unreadMessages };
         if (!newest) return;
-        setPulseCharId(newest);
-        const t = window.setTimeout(() => setPulseCharId(null), 3200);
-        return () => window.clearTimeout(t);
-    }, [unreadMessages]);
+        const cur = noticeRef.current;
+        if (cur && cur.charId === newest && Date.now() - cur.at < 4000) return; // 事件横幅已带详情
+        const char = characters.find(c => c.id === newest);
+        if (!char) return;
+        let cancelled = false;
+        (async () => {
+            let body = '发来了新消息';
+            try {
+                const msgs = await DB.getMessagesByCharId(char.id);
+                const visible = msgs.filter(m => m.role !== 'system');
+                const last = visible[visible.length - 1];
+                if (last) body = cleanPreview(last.content, last.type as any);
+            } catch { /* 预览失败不阻塞横幅 */ }
+            if (!cancelled) showNotice({ charId: char.id, charName: char.name, body, at: Date.now() });
+        })();
+        return () => { cancelled = true; };
+    }, [unreadMessages, characters, showNotice]);
 
     // 展开面板时为每个未读角色取最后一条消息作预览
     useEffect(() => {
@@ -74,8 +140,9 @@ const DynamicIsland: React.FC = () => {
         openApp(AppID.Chat);
     };
 
-    const pulseChar = pulseCharId ? characters.find(c => c.id === pulseCharId) : null;
-    const pulseCount = pulseCharId ? (unreadMessages[pulseCharId] || 0) : 0;
+    const noticeChar = notice ? characters.find(c => c.id === notice.charId) : null;
+    const noticeAvatar = noticeChar?.avatar || notice?.avatarUrl;
+    const noticeCount = notice ? (unreadMessages[notice.charId] || 0) : 0;
 
     return (
         <>
@@ -96,7 +163,18 @@ const DynamicIsland: React.FC = () => {
             {/* 胶囊本体 */}
             <div className="absolute left-1/2 -translate-x-1/2 z-[59]" style={{ top: 'max(6px, var(--safe-top))' }}>
                 <button
-                    onClick={() => setExpanded(v => !v)}
+                    onClick={() => {
+                        // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）
+                        if (notice) {
+                            const target = notice.charId;
+                            if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+                            noticeRef.current = null;
+                            setNotice(null);
+                            jumpToChat(target);
+                            return;
+                        }
+                        setExpanded(v => !v);
+                    }}
                     onTouchStart={(e) => { touchStartY.current = e.touches[0]?.clientY ?? null; }}
                     onTouchMove={(e) => {
                         if (touchStartY.current === null) return;
@@ -107,21 +185,31 @@ const DynamicIsland: React.FC = () => {
                     className="moro-dynamic-island flex items-center justify-center gap-2 rounded-full text-white shadow-lg select-none"
                     style={{
                         background: '#0b0b12',
-                        height: '26px',
-                        minWidth: pulseChar ? undefined : '92px',
-                        padding: '0 12px',
-                        animation: pulseChar ? 'islandPop 320ms ease-out' : undefined,
-                        transition: 'min-width 300ms ease',
+                        height: notice ? '38px' : '26px',
+                        minWidth: notice ? undefined : '92px',
+                        maxWidth: '78vw',
+                        padding: notice ? '0 14px 0 8px' : '0 12px',
+                        animation: notice ? 'islandPop 320ms ease-out' : undefined,
+                        transition: 'min-width 300ms ease, height 240ms ease',
                         WebkitTapHighlightColor: 'transparent',
                         boxShadow: '0 8px 20px -8px rgba(0,0,0,0.55)',
                     }}
                     aria-label="通知中心"
                 >
-                    {pulseChar ? (
+                    {notice ? (
                         <>
-                            <img src={pulseChar.avatar} className="w-[18px] h-[18px] rounded-full object-cover border border-white/30" alt="" />
-                            <span className="text-[10px] font-bold whitespace-nowrap max-w-[140px] truncate">
-                                {pulseChar.name} · {pulseCount > 99 ? '99+' : pulseCount} 条新消息
+                            {noticeAvatar ? (
+                                <img src={noticeAvatar} className="w-[26px] h-[26px] rounded-full object-cover border border-white/30 shrink-0" alt="" />
+                            ) : (
+                                <span className="w-[26px] h-[26px] rounded-full bg-white/15 shrink-0" />
+                            )}
+                            <span className="flex flex-col items-start min-w-0 text-left leading-tight">
+                                <span className="text-[10px] font-bold whitespace-nowrap max-w-[200px] truncate">
+                                    {notice.charName}{noticeCount > 1 ? ` · ${noticeCount > 99 ? '99+' : noticeCount} 条新消息` : ''}
+                                </span>
+                                <span className="text-[10px] opacity-70 whitespace-nowrap max-w-[200px] truncate">
+                                    {notice.body}
+                                </span>
                             </span>
                         </>
                     ) : totalUnread > 0 ? (

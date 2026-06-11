@@ -2574,12 +2574,9 @@ ${recent || '（你们还没怎么聊过）'}
                 lastTokenUsage={lastTokenUsage}
                 tokenBreakdown={tokenBreakdown}
                 onClose={() => openApp(AppID.GroupChat)}
-                onOpenChatSettings={() => setModalType('chat-settings')}
                 onShowCharsPanel={() => setShowPanel('chars')}
-                onOpenSettings={() => {
-                    try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
-                    openApp(AppID.Character);
-                }}
+                // 聊天设置移入右上角 ··· 内；原 ··· 跳转角色设置的入口已移除（角色设置走头像 → 朋友资料）
+                onOpenSettings={() => setModalType('chat-settings')}
                 onDeleteBuff={(buffId) => {
                     const currentBuffs = char.activeBuffs || [];
                     const newBuffs = currentBuffs.filter(b => b.id !== buffId);
@@ -3196,10 +3193,15 @@ ${recent || '（你们还没怎么聊过）'}
                     onVoiceCall={() => { setShowCharProfile(false); openApp(AppID.Call); }}
                     onOpenSettings={() => {
                         setShowCharProfile(false);
-                        try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
+                        try {
+                            localStorage.setItem('moro_character_open_target', char.id);
+                            // 返回键回到聊天页而非桌面
+                            localStorage.setItem('moro_character_return_app', AppID.Chat);
+                        } catch {}
                         openApp(AppID.Character);
                     }}
                     onOpenMoments={() => { setShowCharProfile(false); openApp(AppID.Social); }}
+                    onDeleted={() => { setShowCharProfile(false); openApp(AppID.GroupChat); }}
                 />
             )}
         </div>
