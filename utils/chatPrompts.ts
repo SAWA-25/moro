@@ -118,6 +118,10 @@ export const ChatPrompts = {
         // 由它在 fullMessages 组装后按深度插成独立消息。其他调用方（如主动消息的
         // 文本化 prompt）保持默认 false → 内联降级，条目不丢。
         omitDepthWorldbooks?: boolean,
+        // 预设（SillyTavern 式）启用时置 true：世界书 before/after 块与用户档案块
+        // 不并入核心上下文，由 buildChatRequestPayload 作为 worldInfoBefore /
+        // worldInfoAfter / personaDescription marker 内容注入到预设定义的位置。
+        presetMarkerSplit?: boolean,
     ) => {
         // ── 分段计时（定位瓶颈用）──
         const perfT0 = performance.now();
@@ -131,7 +135,13 @@ export const ChatPrompts = {
         // 记忆宫殿检索结果现在从 char.memoryPalaceInjection 读取，由 buildCoreContext 统一注入
         const coreT0 = performance.now();
         let baseSystemPrompt = ContextBuilder.buildCoreContext(char, userProfile, true, undefined,
-            omitDepthWorldbooks ? { omitDepthWorldbooks: true } : undefined);
+            (omitDepthWorldbooks || presetMarkerSplit)
+                ? {
+                    omitDepthWorldbooks: omitDepthWorldbooks || undefined,
+                    omitWorldbooks: presetMarkerSplit || undefined,
+                    skipUserProfile: presetMarkerSplit || undefined,
+                }
+                : undefined);
         timings.buildCoreContext = Math.round(performance.now() - coreT0);
 
         // 情绪底色（buffInjection）已移入 ContextBuilder.buildCoreContext()，所有 App 统一注入

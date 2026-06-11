@@ -49,6 +49,15 @@ const DEFAULT_ORDER = 100;
 let liveBooks: Worldbook[] = [];
 let groupToggles: Record<string, boolean> = {};
 
+/**
+ * 关键词扫描上下文（ST 世界书关键词激活移植）。
+ * 主聊天链路在构建 prompt 前用 setScanContext 喂入最近的消息文本，
+ * activation='keyword' 的条目据此判定是否注入；构建结束后清空。
+ * 为 null 时（约会等无聊天上下文的调用方）关键词条目一律不注入 —— 同 ST：
+ * 没有可扫描的文本就不会有命中。常驻条目（默认）不受影响。
+ */
+let scanMessages: string[] | null = null;
+
 export const loadGroupTogglesFromStorage = (): Record<string, boolean> => {
     try {
         const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(GROUP_TOGGLES_KEY) : null;
@@ -96,6 +105,36 @@ export const WorldbookRuntime = {
         return wb.enabled !== false && WorldbookRuntime.isBookEnabled(wb.category || '通用设定 (General)');
     },
 
+    /** 主聊天链路设置 / 清空关键词扫描上下文（最近消息文本，旧→新） */
+    setScanContext(messages: string[] | null) {
+        scanMessages = messages;
+    },
+
+    /**
+     * 关键词激活判定（ST 绿灯条目语义）：
+     * - activation 缺省 / 'always' → 恒真（常驻）
+     * - 'keyword' → 扫最近 scanDepth 条消息，任一主关键词命中即激活；
+     *   selective=true 且有二级词时需同时命中任一二级词。
+     *   无扫描上下文 / 无关键词 → 不激活。
+     */
+    isEntryTriggered(wb: Worldbook): boolean {
+        if (wb.activation !== 'keyword') return true;
+        const keys = (wb.keys || []).map(k => k.trim()).filter(Boolean);
+        if (keys.length === 0) return false;
+        if (!scanMessages || scanMessages.length === 0) return false;
+
+        const depth = typeof wb.scanDepth === 'number' && wb.scanDepth > 0 ? wb.scanDepth : DEFAULT_DEPTH;
+        const cs = wb.caseSensitive === true;
+        const hay = scanMessages.slice(-depth).join('\n');
+        const hayCmp = cs ? hay : hay.toLowerCase();
+        const hit = (k: string) => hayCmp.includes(cs ? k : k.toLowerCase());
+
+        if (!keys.some(hit)) return false;
+        const secondary = (wb.secondaryKeys || []).map(k => k.trim()).filter(Boolean);
+        if (wb.selective && secondary.length > 0 && !secondary.some(hit)) return false;
+        return true;
+    },
+
     /**
      * 解析某个角色当前生效的世界书条目。
      *
@@ -121,6 +160,7 @@ export const WorldbookRuntime = {
             if (live) {
                 if (live.scope === 'global') continue;          // 全局侧统一收录
                 if (!WorldbookRuntime.isEntryActive(live)) continue;
+                if (!WorldbookRuntime.isEntryTriggered(live)) continue;  // 关键词条目按扫描结果决定
                 if (!live.content?.trim()) continue;
                 local.push(normalizeEntry(live));
             } else {
@@ -144,6 +184,7 @@ export const WorldbookRuntime = {
                 if (wb.scope !== 'global') continue;
                 if (seen.has(wb.id) || skipIds?.has(wb.id)) continue;
                 if (!WorldbookRuntime.isEntryActive(wb)) continue;
+                if (!WorldbookRuntime.isEntryTriggered(wb)) continue;
                 if (!wb.content?.trim()) continue;
                 global.push(normalizeEntry(wb));
                 seen.add(wb.id);
@@ -228,6 +269,7 @@ export const WorldbookRuntime = {
             .filter(wb => wb.scope === 'global'
                 && !skipIds?.has(wb.id)
                 && WorldbookRuntime.isEntryActive(wb)
+                && WorldbookRuntime.isEntryTriggered(wb)
                 && !!wb.content?.trim())
             .map(normalizeEntry)
             .sort((a, b) => a.order - b.order);

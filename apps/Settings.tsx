@@ -17,6 +17,9 @@ import { PushVapidSettingsModal } from '../components/settings/PushVapidSettings
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
 import ApiCallLogModal from '../components/settings/ApiCallLogModal';
+import { PresetRuntime } from '../utils/presets';
+import { DB } from '../utils/db';
+import { AppID } from '../types';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -62,6 +65,7 @@ const Settings: React.FC = () => {
       realtimeConfig, updateRealtimeConfig, // 实时感知配置
       cloudBackupConfig, updateCloudBackupConfig,
       cloudBackupToWebDAV, cloudRestoreFromWebDAV, listCloudBackups,
+      openApp,
   } = useOS();
   
   const [localKey, setLocalKey] = useState(apiConfig.apiKey);
@@ -81,6 +85,21 @@ const Settings: React.FC = () => {
   const [otherStatusMsg, setOtherStatusMsg] = useState('');
   // 高级设置（流式/温度）默认折叠 — 大多数用户不需要碰
   const [showApiAdvanced, setShowApiAdvanced] = useState(false);
+  // 预设 App 接管采样参数时，温度滑条旁提示用户去预设里改（联动提示）
+  const [presetTakeoverName, setPresetTakeoverName] = useState<string | null>(null);
+  useEffect(() => {
+      let cancelled = false;
+      (async () => {
+          if (!PresetRuntime.isEnabled() || !PresetRuntime.isSamplingApplied()) return;
+          const id = PresetRuntime.getActiveId();
+          if (!id) return;
+          try {
+              const p = await DB.getPreset(id);
+              if (!cancelled && p) setPresetTakeoverName(p.name);
+          } catch { /* 预设读取失败时不挡设置页 */ }
+      })();
+      return () => { cancelled = true; };
+  }, []);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   
@@ -1030,6 +1049,12 @@ const Settings: React.FC = () => {
                     </button>
                     {showApiAdvanced && (
                         <div className="mt-2 pl-2 border-l-2 border-slate-100 space-y-3 py-2">
+                            {presetTakeoverName && (
+                                <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 text-[10px] text-sky-700 leading-relaxed">
+                                    采样参数当前由预设「{presetTakeoverName}」接管（温度等以预设里的「生成参数」为准）。
+                                    <button onClick={() => openApp(AppID.Presets)} className="font-bold underline ml-1">打开预设 App</button>
+                                </div>
+                            )}
                             <p className="text-[10px] text-slate-300 leading-relaxed">
                                 这两项绝大多数用户保持默认即可。除非接口报错"only stream supported"或对回复风格有强需求，否则不建议改。
                             </p>

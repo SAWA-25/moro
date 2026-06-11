@@ -44,7 +44,17 @@ const WorldbookApp: React.FC = () => {
     const [tempPosition, setTempPosition] = useState<WorldbookPosition>('after_char');
     const [tempDepth, setTempDepth] = useState(4);
     const [tempOrder, setTempOrder] = useState(100);
+    // 关键词激活（ST 绿灯条目移植）
+    const [tempActivation, setTempActivation] = useState<'always' | 'keyword'>('always');
+    const [tempKeys, setTempKeys] = useState('');
+    const [tempSecondaryKeys, setTempSecondaryKeys] = useState('');
+    const [tempSelective, setTempSelective] = useState(false);
+    const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
+    const [tempScanDepth, setTempScanDepth] = useState(4);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    const parseKeys = (raw: string): string[] =>
+        raw.split(/[,，]/).map(s => s.trim()).filter(Boolean);
 
     // Grouping Logic
     const groupedBooks = useMemo(() => {
@@ -75,6 +85,12 @@ const WorldbookApp: React.FC = () => {
         setTempPosition('after_char');
         setTempDepth(4);
         setTempOrder(100);
+        setTempActivation('always');
+        setTempKeys('');
+        setTempSecondaryKeys('');
+        setTempSelective(false);
+        setTempCaseSensitive(false);
+        setTempScanDepth(4);
         setIsEditing(true);
     };
 
@@ -88,6 +104,14 @@ const WorldbookApp: React.FC = () => {
         setTempPosition(book.position || 'after_char');
         setTempDepth(typeof book.depth === 'number' ? book.depth : 4);
         setTempOrder(typeof book.order === 'number' ? book.order : 100);
+        // 关键词字段缺省时回填 ST 原卡设定（旧导入条目第一次编辑即可接上关键词激活）
+        const stEntry = book.stData?.entry;
+        setTempActivation(book.activation ?? (stEntry && !stEntry.constant && (stEntry.keys?.length || 0) > 0 ? 'keyword' : 'always'));
+        setTempKeys((book.keys ?? stEntry?.keys ?? []).join(', '));
+        setTempSecondaryKeys((book.secondaryKeys ?? stEntry?.secondaryKeys ?? []).join(', '));
+        setTempSelective(book.selective ?? !!stEntry?.selective);
+        setTempCaseSensitive(book.caseSensitive ?? !!stEntry?.caseSensitive);
+        setTempScanDepth(typeof book.scanDepth === 'number' ? book.scanDepth : (book.stData?.scanDepth ?? 4));
         setIsEditing(true);
     };
 
@@ -98,12 +122,23 @@ const WorldbookApp: React.FC = () => {
         }
 
         const category = tempCategory.trim() || '未分类设定 (General)';
+        const keys = parseKeys(tempKeys);
+        if (tempActivation === 'keyword' && keys.length === 0) {
+            addToast('关键词触发模式至少需要一个关键词', 'error');
+            return;
+        }
         const settings = {
             enabled: tempEnabled,
             scope: tempScope,
             position: tempPosition,
             depth: tempPosition.startsWith('depth_') ? Math.max(0, tempDepth) : undefined,
             order: tempOrder,
+            activation: tempActivation,
+            keys: keys.length > 0 ? keys : undefined,
+            secondaryKeys: parseKeys(tempSecondaryKeys).length > 0 ? parseKeys(tempSecondaryKeys) : undefined,
+            selective: tempSelective || undefined,
+            caseSensitive: tempCaseSensitive || undefined,
+            scanDepth: tempActivation === 'keyword' ? Math.max(1, tempScanDepth) : undefined,
         };
 
         if (editingBook) {
@@ -264,6 +299,71 @@ const WorldbookApp: React.FC = () => {
                                 />
                                 <p className="text-[10px] text-slate-400 mt-1">同一位置内数值小的排前面（与 SillyTavern 最终生效顺序一致）。@深度位置 = 以所选角色身份插到聊天历史倒数第 N 条处（深度 0 = 最末尾）。</p>
                             </div>
+
+                            {/* 激活方式（ST 蓝灯/绿灯移植） */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">激活方式 (Activation)</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setTempActivation('always')}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempActivation === 'always' ? 'bg-sky-500 text-white border-sky-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    >
+                                        🔵 常驻 (Constant)
+                                    </button>
+                                    <button
+                                        onClick={() => setTempActivation('keyword')}
+                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempActivation === 'keyword' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    >
+                                        🟢 关键词触发
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                                    常驻：开关开着就注入（ST 蓝灯）。关键词触发：扫描最近的聊天消息，命中关键词才注入（ST 绿灯）——适合大体量设定按需出场，省 token。
+                                </p>
+                            </div>
+
+                            {tempActivation === 'keyword' && (
+                                <div className="space-y-3 bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">触发关键词（逗号分隔，任一命中即激活）</label>
+                                        <input
+                                            value={tempKeys}
+                                            onChange={e => setTempKeys(e.target.value)}
+                                            placeholder="例如: 魔法, 咒语, 法术"
+                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">二级过滤词（可选，逗号分隔）</label>
+                                        <input
+                                            value={tempSecondaryKeys}
+                                            onChange={e => setTempSecondaryKeys(e.target.value)}
+                                            placeholder="例如: 学院, 导师"
+                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 block">需同时命中二级词 (Selective)</label>
+                                            <p className="text-[10px] text-slate-400 mt-0.5">开启后：主关键词 + 任一二级词都命中才注入</p>
+                                        </div>
+                                        <MiniToggle on={tempSelective} onChange={setTempSelective} />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-bold text-slate-500">大小写敏感</label>
+                                        <MiniToggle on={tempCaseSensitive} onChange={setTempCaseSensitive} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">扫描深度（最近 N 条消息）</label>
+                                        <input
+                                            type="number" min={1}
+                                            value={tempScanDepth}
+                                            onChange={e => setTempScanDepth(parseInt(e.target.value) || 1)}
+                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -365,7 +465,8 @@ const WorldbookApp: React.FC = () => {
                                                 </button>
                                             </div>
                                             <div className="text-[10px] text-slate-400 font-mono pl-3.5 truncate">
-                                                {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}
+                                                {book.activation === 'keyword' ? '🟢' : '🔵'} {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}
+                                                {book.activation === 'keyword' && (book.keys?.length || 0) > 0 && ` · 🔑 ${book.keys!.slice(0, 3).join('/')}${book.keys!.length > 3 ? '…' : ''}`}
                                             </div>
                                         </div>
 
@@ -399,7 +500,8 @@ const WorldbookApp: React.FC = () => {
                                     {previewBookId === book.id && (
                                         <div className="px-4 pb-4 pt-0 animate-fade-in">
                                             <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-3"></div>
-                                            {/* SillyTavern 导入条目：展示原卡的局部/全局设置（Moro 不执行关键词激活，仅存档展示） */}
+                                            {/* SillyTavern 导入条目：展示原卡设置。关键词激活现已由 WorldbookRuntime 执行
+                                                （新导入自动启用；旧导入条目在编辑器里保存一次即可接上） */}
                                             {book.source === 'sillytavern' && (
                                                 <div className="mb-3 flex flex-wrap gap-1.5 text-[9px] font-mono">
                                                     <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 border border-indigo-100 font-bold">SillyTavern</span>

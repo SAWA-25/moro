@@ -25,6 +25,7 @@ import type {
     TavernPreset,
 } from '../types';
 import { DB } from './db';
+import { substituteMacros, type MacroContext } from './macros';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -247,23 +248,12 @@ export function exportTavernPreset(preset: TavernPreset): Record<string, any> {
 }
 
 // ---------------------------------------------------------------------------
-// 宏替换（ST 模板变量的常用子集；未知宏原样保留）
+// 宏替换 —— 委托给通用引擎（utils/macros.ts），人设 / 世界书 / 预设共用同一套语义
 
-export interface PresetMacroCtx {
-    charName: string;
-    userName: string;
-}
+export type PresetMacroCtx = MacroContext;
 
 export function substitutePresetMacros(content: string, ctx: PresetMacroCtx): string {
-    const now = new Date();
-    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    return content
-        .replace(/{{char}}/gi, ctx.charName)
-        .replace(/{{user}}/gi, ctx.userName)
-        .replace(/{{date}}/gi, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`)
-        .replace(/{{time}}/gi, `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
-        .replace(/{{weekday}}/gi, weekdays[now.getDay()])
-        .replace(/{{newline}}/gi, '\n');
+    return substituteMacros(content, ctx);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,13 +325,22 @@ export interface ApplyPresetOptions {
     macros: PresetMacroCtx;
     /** prompt_order 用哪份（单聊 100000 / 群聊 100001），默认单聊 */
     orderCharacterId?: number;
+    /**
+     * marker 的真实内容（与世界书 / 神经链接人设 / 用户档案联动时由调用方提供）：
+     * 例如 { worldInfoBefore: '...', worldInfoAfter: '...', personaDescription: '...' }。
+     * 提供了内容的 marker 会在自己的 order 位置作为独立 system 消息注入（可被开关
+     * 关掉，ST 语义）；marker 压根不在 order 里时内容回折进核心上下文块，保证不丢。
+     * 不提供时（旧调用方 / 测试）这些 marker 维持「并入核心上下文」的占位行为。
+     */
+    markerContents?: Partial<Record<string, string>>;
 }
 
 /**
  * 把预设套到 [system(核心上下文), ...history] 形态的消息数组上，返回新数组。
  *
  * - 相对提示词按 prompt_order 顺序展开成独立消息（带各自 role）
- * - 第一个启用的核心 marker 处注入 Moro 核心上下文（原 messages[0]）
+ * - markerContents 提供了内容的 marker（worldInfo* / personaDescription）在各自
+ *   位置注入；其余核心 marker 中第一个启用的位置注入 Moro 核心上下文（原 messages[0]）
  * - chatHistory marker 处插入历史消息；order 里没有该 marker 时兜底追加到末尾
  *   （被显式关掉则尊重 ST 语义不发历史）
  * - 绝对提示词注入聊天历史段（见 injectAbsolutePrompts）
@@ -355,10 +354,24 @@ export function applyPresetToMessages(
 ): Array<{ role: string; content: any }> {
     if (messages.length === 0 || messages[0].role !== 'system') return messages;
 
-    const coreSystem = messages[0];
     const history = messages.slice(1);
     const order = getOrderForCharId(preset, options.orderCharacterId ?? ORDER_CHAR_ID_SINGLE);
     if (order.length === 0) return messages;
+
+    // marker 不在 order 里（残缺/旧版预设）时，其真实内容回折进核心块，保证设定不丢：
+    // worldInfoBefore 折到核心块前面，其余折到后面 —— 接近非预设路径的原始排布。
+    const markerContents = options.markerContents ?? {};
+    const orderIds = new Set(order.map(e => e.identifier));
+    let corePrefix = '';
+    let coreSuffix = '';
+    for (const [id, content] of Object.entries(markerContents)) {
+        if (!content || !content.trim() || orderIds.has(id)) continue;
+        if (id === 'worldInfoBefore') corePrefix += `${content.trim()}\n\n`;
+        else coreSuffix += `\n\n${content.trim()}`;
+    }
+    const coreSystem = (corePrefix || coreSuffix)
+        ? { role: 'system', content: `${corePrefix}${messages[0].content}${coreSuffix}` }
+        : messages[0];
 
     const byId = new Map(preset.prompts.map(p => [p.identifier, p]));
     const result: Array<{ role: string; content: any }> = [];
@@ -378,6 +391,14 @@ export function applyPresetToMessages(
                 if (entry.enabled) {
                     historyStart = result.length;
                     result.push(...history);
+                }
+                continue;
+            }
+            // 有真实内容的 marker（世界书块 / 用户档案块）：在自己的位置注入，受开关控制
+            const explicit = markerContents[prompt.identifier];
+            if (explicit !== undefined) {
+                if (entry.enabled && explicit.trim()) {
+                    result.push({ role: 'system', content: explicit.trim() });
                 }
                 continue;
             }

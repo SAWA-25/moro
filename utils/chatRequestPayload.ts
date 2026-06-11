@@ -23,6 +23,7 @@ import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../contex
 import { isPromptBuildSkipped } from './devDebug';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { PresetRuntime, applyPresetToMessages } from './presets';
+import { substituteMacros } from './macros';
 
 export interface UserListeningContext {
     songName: string;
@@ -195,15 +196,43 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         musicCfg = derived.musicCfg ?? musicCfg;
     }
 
-    // ── 3. buildSystemPrompt 核心 ─────────────────────────
-    let systemPrompt = await ChatPrompts.buildSystemPrompt(
-        char, userProfile, groups, emojis, categories, recentMsgsHint,
-        realtimeConfig, innerState || undefined,
-        userListeningContext ?? null,
-        !!isListeningTogether,
-        musicCfg,
-        /* omitDepthWorldbooks */ true,  // @Depth 世界书在第 10 步插成独立消息
-    );
+    // ── 2.5 预设 + 世界书关键词扫描上下文 ─────────────────
+    // 预设要在 buildSystemPrompt 之前取：启用时核心上下文按 marker 拆分构建
+    // （世界书 / 用户档案块单独产出，由预设的 worldInfo* / personaDescription
+    // marker 决定位置与开关）。
+    const activePreset = await PresetRuntime.getActivePreset();
+    const macroCtx = {
+        charName: char.name || '角色',
+        userName: (userProfile?.name && userProfile.name.trim()) || '用户',
+    };
+
+    // 关键词扫描上下文（ST 世界书绿灯条目移植）：喂入最近消息文本，
+    // activation='keyword' 的条目在本次构建中按命中结果决定是否注入。
+    const scanTexts = historyMsgs
+        .slice(-20)
+        .map(m => (typeof (m as any).content === 'string' ? (m as any).content as string : ''))
+        .filter(Boolean);
+    WorldbookRuntime.setScanContext(scanTexts);
+
+    // ── 3. buildSystemPrompt 核心（+ 世界书分段，同一扫描上下文内完成） ──
+    let systemPrompt = '';
+    let depthSections!: ReturnType<typeof WorldbookRuntime.buildPromptSections>;
+    try {
+        // before/after/@Depth 分段在这里统一解析一次：@Depth 条目第 10 步插消息；
+        // 预设启用时 before/after 块作为 marker 内容用，未启用时它们已内联在核心上下文里。
+        depthSections = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
+        systemPrompt = await ChatPrompts.buildSystemPrompt(
+            char, userProfile, groups, emojis, categories, recentMsgsHint,
+            realtimeConfig, innerState || undefined,
+            userListeningContext ?? null,
+            !!isListeningTogether,
+            musicCfg,
+            /* omitDepthWorldbooks */ true,  // @Depth 世界书在第 10 步插成独立消息
+            /* presetMarkerSplit */ !!activePreset,
+        );
+    } finally {
+        WorldbookRuntime.setScanContext(null);
+    }
 
     // ── 4. 双语指令注入 ───────────────────────────────────
     const bilingualActive = !!(translationConfig?.enabled && translationConfig.sourceLang && translationConfig.targetLang);
@@ -266,6 +295,10 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 10. 组装 fullMessages + 末尾双语 reminder ─────────
+    // 宏通用化（同 ST substituteParams）：人设 / 世界观 / 世界书 / 用户档案里写的
+    // {{user}} {{char}} <user> <char> 在最终 system prompt 上统一替换一次。
+    systemPrompt = substituteMacros(systemPrompt, macroCtx);
+
     let fullMessages: Array<{ role: string; content: any }> = [
         { role: 'system', content: systemPrompt },
         ...cleanedApiMessages,
@@ -273,20 +306,27 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 
     // @Depth 世界书条目：以指定 role 插到聊天历史的对应深度（同 ST 的 @D 语义）。
     // buildSystemPrompt 已用 omitDepthWorldbooks 跳过内联，这里是唯一注入点。
-    const { depthEntries } = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
+    // 分段在第 3 步的扫描上下文内解析（关键词条目已按命中过滤），内容做宏替换。
+    const depthEntries = depthSections.depthEntries.map(e => ({
+        ...e,
+        content: substituteMacros(e.content, macroCtx),
+    }));
     WorldbookRuntime.spliceDepthMessages(fullMessages, depthEntries);
 
     // ── 11. 预设（SillyTavern 式）骨架 ───────────────────
     // 启用预设时把 [system, ...history] 重排成 prompt_order 定义的消息流：
-    // 相对提示词按序展开、核心上下文落在第一个启用的核心 marker、绝对提示词
-    // @Depth 注入历史段。未启用时数组原样不动。注意要在双语 reminder 之前做，
-    // 保证 reminder 始终钉在最末尾。
-    const activePreset = await PresetRuntime.getActivePreset();
+    // 相对提示词按序展开、世界书 before/after 与用户档案块落到各自 marker 的
+    // 位置（受 marker 开关控制）、核心上下文落在第一个启用的核心 marker、
+    // 绝对提示词 @Depth 注入历史段。未启用时数组原样不动。注意要在双语
+    // reminder 之前做，保证 reminder 始终钉在最末尾。
+    const personaBlock = `### 互动对象 (User)\n- 名字: ${macroCtx.userName}\n- 设定/备注: ${userProfile?.bio || '无'}`;
     if (activePreset) {
         fullMessages = applyPresetToMessages(fullMessages, activePreset, {
-            macros: {
-                charName: char.name || '角色',
-                userName: (userProfile?.name && userProfile.name.trim()) || '用户',
+            macros: macroCtx,
+            markerContents: {
+                worldInfoBefore: substituteMacros(depthSections.beforeChar, macroCtx),
+                worldInfoAfter: substituteMacros(depthSections.afterChar, macroCtx),
+                personaDescription: substituteMacros(personaBlock, macroCtx),
             },
         });
     }
@@ -296,6 +336,19 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
             role: 'system',
             content: `[Reminder: 每句话必须用 <翻译><原文>...</原文><译文>...</译文></翻译> 标签包裹。一句一个标签。绝对不能省略。]`,
         });
+    }
+
+    // 预设接管时核心 systemPrompt 不含世界书 / 用户档案（它们以 marker 消息注入）。
+    // 返回值的 systemPrompt 字段还有两个消费者 —— 情绪评估和 Dev 调试查看器 ——
+    // 它们吃的是单块文本，这里把拆出去的块拼回去，保证两边看到的"材料"不缺。
+    // fullMessages 不受影响（上面已按 marker 结构组装完）。
+    if (activePreset) {
+        systemPrompt = [
+            substituteMacros(depthSections.beforeChar, macroCtx),
+            systemPrompt,
+            substituteMacros(depthSections.afterChar, macroCtx),
+            substituteMacros(personaBlock, macroCtx),
+        ].filter(s => s && s.trim()).join('\n\n');
     }
 
     return {
