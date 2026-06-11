@@ -269,6 +269,38 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Item>
 
+                    <Item label="角色资料条目" desc="角色主页展示的微信号 / 地区 / 个性签名，由你自行设定（不再 AI 生成），留空则不显示。">
+                        <div className="space-y-2">
+                            <div>
+                                <div className="text-[10px] font-bold text-slate-400 mb-1">微信号</div>
+                                <input
+                                    value={char.socialProfile?.handle || ''}
+                                    onChange={e => updateCharacter(char.id, { socialProfile: { ...char.socialProfile, handle: e.target.value } })}
+                                    placeholder={`默认 moro_${char.id.slice(0, 10)}`}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold text-slate-400 mb-1">地区</div>
+                                <input
+                                    value={char.socialProfile?.region || ''}
+                                    onChange={e => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, region: e.target.value || undefined } })}
+                                    placeholder="如：安徽 亳州 / 日本 京都…"
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+                            <div>
+                                <div className="text-[10px] font-bold text-slate-400 mb-1">个性签名</div>
+                                <input
+                                    value={char.socialProfile?.bio || ''}
+                                    onChange={e => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, bio: e.target.value || undefined } })}
+                                    placeholder="角色主页展示的一句话签名…"
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+                        </div>
+                    </Item>
+
                     <Item label="关联群聊记忆" desc="私聊时携带 TA 所在群聊的近期活动作背景。不关联 = 群里发生的事这段单聊完全不知道。">
                         <div className="flex flex-wrap gap-1.5">
                             <Chip active={gmMode === 'all'} onClick={() => updateConvo({ groupMemoryMode: 'all' })}>全部群聊</Chip>

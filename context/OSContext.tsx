@@ -1859,9 +1859,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const previewSource = savedPreviewChunks.join(' ').trim();
                   const preview = previewSource.replace(/\s+/g, ' ').trim().slice(0, 120) || `${char.name} sent a proactive message`;
 
-                  // 6. Notify OS for unread badge + toast
+                  // 6. Notify OS for unread badge + toast。bodies = 本轮逐条气泡正文，
+                  //    供灵动岛逐条弹横幅（OSContext 自己的未读/Toast 逻辑仍按一次事件处理）
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                      detail: { charId, charName: char.name, body: preview }
+                      detail: { charId, charName: char.name, body: preview, bodies: savedPreviewChunks.slice(0, 8) }
                   }));
               }
 

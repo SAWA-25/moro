@@ -245,7 +245,16 @@ const GroupMessageItem = React.memo(({
 const ChatHub: React.FC = () => {
     const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
-    const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments'>('chats');
+    const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments'>(() => {
+        // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
+        try {
+            if (localStorage.getItem('moro_chathub_open_tab') === 'moments') {
+                localStorage.removeItem('moro_chathub_open_tab');
+                return 'moments';
+            }
+        } catch { /* ignore */ }
+        return 'chats';
+    });
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
     // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
     const [convos, setConvos] = useState<Array<{

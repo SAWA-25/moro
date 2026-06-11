@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CharacterProfile } from '../../types';
 import { DB } from '../../utils/db';
 import { useOS } from '../../context/OSContext';
-import { generateSocialProfile } from '../../utils/socialProfileGen';
 
 /**
  * 角色主页（微信好友资料页风格）：
@@ -156,48 +155,10 @@ const FriendSettingsPage: React.FC<{
 const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
     char, onBack, onSendMessage, onVoiceCall, onOpenSettings, onOpenMoments, onDeleted,
 }) => {
-    const { apiConfig, updateCharacter } = useOS();
     const [momentImages, setMomentImages] = useState<string[]>([]);
-    const [generating, setGenerating] = useState(false);
     const [showFriendSettings, setShowFriendSettings] = useState(false);
-    const generatingRef = useRef(false);
-    const autoGenCharRef = useRef<string | null>(null);
 
-    // 微信号/地区/签名只生成一次：仅补空缺字段并持久化，之后固定不可刷新
-    const runGenerate = async () => {
-        if (generatingRef.current) return;
-        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) return;
-        generatingRef.current = true;
-        setGenerating(true);
-        try {
-            const gen = await generateSocialProfile(apiConfig, char);
-            const prev = char.socialProfile;
-            // await 落库完成再收尾：updateCharacter 现在会等 IndexedDB 事务结束，
-            // 保证"生成一次后固定"——下次进入资料页读到的就是这份，不会再触发重新生成
-            await updateCharacter(char.id, {
-                socialProfile: {
-                    handle: prev?.handle || gen.handle,
-                    region: prev?.region || gen.region,
-                    bio: prev?.bio || gen.bio,
-                },
-            });
-        } catch { /* 生成失败下次进入再补 */ } finally {
-            generatingRef.current = false;
-            setGenerating(false);
-        }
-    };
-
-    // 首次进入该角色主页：微信号/地区/签名有空缺就 AI 补全（每个角色只自动触发一次；
-    // API 配置未就绪时不消耗机会，等配置加载后再触发）
-    useEffect(() => {
-        const sp = char.socialProfile;
-        const missing = !sp?.handle || !sp?.region || !sp?.bio;
-        if (!missing || !apiConfig?.apiKey || !apiConfig?.baseUrl) return;
-        if (autoGenCharRef.current === char.id) return;
-        autoGenCharRef.current = char.id;
-        runGenerate();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [char.id, apiConfig?.apiKey, apiConfig?.baseUrl]);
+    // 微信号/地区/签名不再 AI 生成：由用户在聊天设置 →「会话信息」里自行填写（char.socialProfile）
 
     useEffect(() => {
         let cancelled = false;
@@ -215,10 +176,9 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
         return () => { cancelled = true; };
     }, [char.id]);
 
-    const pendingText = generating ? '生成中…' : '';
-    const wechatId = char.socialProfile?.handle || pendingText || `moro_${char.id.slice(0, 10)}`;
-    const region = char.socialProfile?.region || pendingText;
-    const bio = char.socialProfile?.bio || pendingText;
+    const wechatId = char.socialProfile?.handle || `moro_${char.id.slice(0, 10)}`;
+    const region = char.socialProfile?.region || '';
+    const bio = char.socialProfile?.bio || '';
 
     return (
         <div

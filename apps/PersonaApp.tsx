@@ -31,8 +31,10 @@ const DEPTH_ROLE_LABELS: { value: 0 | 1 | 2; label: string }[] = [
     { value: 2, label: 'AI (Assistant)' },
 ];
 
-const PersonaApp: React.FC = () => {
-    const { closeApp, addToast, userProfile, updateUserProfile, characters, worldbooks } = useOS();
+/** onExit：人设库（PersonaHubApp）嵌入时返回选择页；不传则关闭 App 回桌面（旧行为） */
+const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
+    const { closeApp: closeAppOS, addToast, userProfile, updateUserProfile, characters, worldbooks } = useOS();
+    const closeApp = onExit || closeAppOS;
 
     const [personas, setPersonas] = useState<Persona[]>([]);
     const [loaded, setLoaded] = useState(false);

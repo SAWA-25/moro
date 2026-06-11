@@ -300,7 +300,7 @@ const Chat: React.FC = () => {
     const mcdMiniAppRef = useRef<import('../utils/mcdToolBridge').McdMiniAppSnapshot | undefined>(undefined);
 
     // --- Initialize Hook ---
-    const { isTyping, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
+    const { isTyping, streamingText, recallStatus, searchStatus, diaryStatus, emotionStatus, memoryPalaceStatus, memoryPalaceResult, setMemoryPalaceResult, lastDigestResult, setLastDigestResult, lastTokenUsage, tokenBreakdown, setLastTokenUsage, triggerAI, startProactiveChat, stopProactiveChat, isProactiveActive } = useChatAI({
         char,
         userProfile,
         apiConfig,
@@ -947,7 +947,7 @@ const Chat: React.FC = () => {
                 scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
             }
         }
-    }, [messages, isTyping, recallStatus, searchStatus, diaryStatus, selectionMode, windowedFocusMsgId]);
+    }, [messages, isTyping, streamingText, recallStatus, searchStatus, diaryStatus, selectionMode, windowedFocusMsgId]);
 
     const formatTime = (ts: number) => {
         return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -1401,6 +1401,16 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
             case 'voice-call': void startVoiceCall(); break;
             case 'system-command': setShowPanel('none'); setShowSystemCmdModal(true); break;
+            case 'offline-date': {
+                // 用户主动发起线下模式（原「见面」App 并入此处）：直接打开线下场景窗口，
+                // OfflineModeModal 没有进行中的会话时会自动生成见面开场；与角色 [[OFFLINE_START]]
+                // 自动触发（聊天设置「自动线下」）共用同一套线下模式与上下文落库。
+                if (!char) break;
+                if (char.blacklisted || char.charBlock?.active) { addToast('拉黑期间无法见面', 'error'); break; }
+                setShowPanel('none');
+                setShowOfflineMode(true);
+                break;
+            }
         }
     };
 
@@ -3304,7 +3314,20 @@ ${recent || '（你们还没怎么聊过）'}
                     </div>
                 )}
 
-                {(isTyping || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && (
+                {/* 流式输出预览：SSE 增量正文的打字机气泡，回复完成后由真实消息接管 */}
+                {streamingText && !selectionMode && (
+                    <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
+                        <img src={char.avatar} className={chatPendingAvatarClass} />
+                        <div className="bg-white px-4 py-3 rounded-2xl shadow-sm max-w-[72%]">
+                            <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                                {streamingText}
+                                <span className="inline-block w-0.5 h-4 bg-slate-400 ml-0.5 align-text-bottom animate-pulse" />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {(isTyping || recallStatus || searchStatus || diaryStatus || isProactiveComposing) && !selectionMode && !streamingText && (
                     <div className="flex items-end gap-3 px-3 mb-6 animate-fade-in">
                         <img src={char.avatar} className={chatPendingAvatarClass} />
                         <div className="bg-white px-4 py-3 rounded-2xl shadow-sm">
@@ -3707,7 +3730,12 @@ ${recent || '（你们还没怎么聊过）'}
                         } catch {}
                         openApp(AppID.Character);
                     }}
-                    onOpenMoments={() => { setShowCharProfile(false); openApp(AppID.Social); }}
+                    onOpenMoments={() => {
+                        // 朋友圈已并入聊天枢纽标签页（独立朋友圈 App 已改造为小红书）
+                        setShowCharProfile(false);
+                        try { localStorage.setItem('moro_chathub_open_tab', 'moments'); } catch { /* ignore */ }
+                        openApp(AppID.GroupChat);
+                    }}
                     onDeleted={() => { setShowCharProfile(false); openApp(AppID.GroupChat); }}
                 />
             )}
