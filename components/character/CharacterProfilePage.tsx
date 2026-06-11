@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CharacterProfile } from '../../types';
 import { DB } from '../../utils/db';
+import { useOS } from '../../context/OSContext';
+import { generateSocialProfile } from '../../utils/socialProfileGen';
 
 /**
  * 角色主页（微信好友资料页风格）：
  * 头像/名字/微信号/地区 → 朋友资料 → 朋友圈照片条 → 发消息 / 音视频通话。
  * 聊天界面单击角色头像进入；原「进入角色设置」入口移到右上角 ··· 和「朋友资料」行。
+ * 微信号/地区/签名由 AI 按人设自动生成：首次进入缺啥补啥并持久化，也可手动「换一换」。
  */
 
 interface CharacterProfilePageProps {
@@ -20,7 +23,50 @@ interface CharacterProfilePageProps {
 const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
     char, onBack, onSendMessage, onVoiceCall, onOpenSettings, onOpenMoments,
 }) => {
+    const { apiConfig, updateCharacter, addToast } = useOS();
     const [momentImages, setMomentImages] = useState<string[]>([]);
+    const [generating, setGenerating] = useState(false);
+    const generatingRef = useRef(false);
+    const autoGenCharRef = useRef<string | null>(null);
+
+    // force=false：只补空缺字段（首次进入自动触发）；force=true：三项全部重新生成（手动「换一换」）
+    const runGenerate = async (force: boolean) => {
+        if (generatingRef.current) return;
+        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) {
+            if (force) addToast('请先在设置中配置 API 后再生成资料', 'error');
+            return;
+        }
+        generatingRef.current = true;
+        setGenerating(true);
+        try {
+            const gen = await generateSocialProfile(apiConfig, char);
+            const prev = char.socialProfile;
+            updateCharacter(char.id, {
+                socialProfile: {
+                    handle: force ? gen.handle : (prev?.handle || gen.handle),
+                    region: force ? gen.region : (prev?.region || gen.region),
+                    bio: force ? gen.bio : (prev?.bio || gen.bio),
+                },
+            });
+        } catch (e: any) {
+            if (force) addToast(e?.message || '资料生成失败', 'error');
+        } finally {
+            generatingRef.current = false;
+            setGenerating(false);
+        }
+    };
+
+    // 首次进入该角色主页：微信号/地区/签名有空缺就 AI 补全（每个角色只自动触发一次；
+    // API 配置未就绪时不消耗机会，等配置加载后再触发）
+    useEffect(() => {
+        const sp = char.socialProfile;
+        const missing = !sp?.handle || !sp?.region || !sp?.bio;
+        if (!missing || !apiConfig?.apiKey || !apiConfig?.baseUrl) return;
+        if (autoGenCharRef.current === char.id) return;
+        autoGenCharRef.current = char.id;
+        runGenerate(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [char.id, apiConfig?.apiKey, apiConfig?.baseUrl]);
 
     useEffect(() => {
         let cancelled = false;
@@ -38,8 +84,10 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
         return () => { cancelled = true; };
     }, [char.id]);
 
-    const wechatId = char.socialProfile?.handle || `moro_${char.id.slice(0, 10)}`;
-    const region = char.socialProfile?.region;
+    const pendingText = generating ? '生成中…' : '';
+    const wechatId = char.socialProfile?.handle || pendingText || `moro_${char.id.slice(0, 10)}`;
+    const region = char.socialProfile?.region || pendingText;
+    const bio = char.socialProfile?.bio || pendingText;
 
     return (
         <div
@@ -72,9 +120,19 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
                         <div className="text-[22px] font-bold leading-tight truncate">{char.name}</div>
                         <div className="text-[14px] text-[#7f7f7f] mt-1.5 truncate">微信号：{wechatId}</div>
                         {region && <div className="text-[14px] text-[#7f7f7f] mt-0.5 truncate">地区：{region}</div>}
-                        {char.socialProfile?.bio && (
-                            <div className="text-[13px] text-[#9b9b9b] mt-0.5 line-clamp-2">{char.socialProfile.bio}</div>
-                        )}
+                        {bio && <div className="text-[13px] text-[#9b9b9b] mt-0.5 line-clamp-2">{bio}</div>}
+                        {/* AI 重新生成微信号/地区/签名 */}
+                        <button
+                            onClick={() => runGenerate(true)}
+                            disabled={generating}
+                            className="mt-2 inline-flex items-center gap-1 text-[12px] text-[#9b9b9b] active:opacity-50 disabled:opacity-40"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+                                className={`w-3.5 h-3.5 ${generating ? 'animate-spin' : ''}`}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                            </svg>
+                            {generating ? '正在生成资料…' : '换一换'}
+                        </button>
                     </div>
                 </div>
 
