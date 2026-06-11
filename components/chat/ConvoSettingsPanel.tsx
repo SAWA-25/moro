@@ -487,12 +487,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                     <Item
                         label="允许 char 看手机" right={<Toggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
-                        desc="允许角色自然提及你手机里的公开动态（日程、朋友圈、在听的歌等），像翻过你的手机一样。"
+                        desc="开启后角色会不定期主动拿走你的手机翻看（界面变成你的桌面，TA 一边翻一边冒想法，还可能替你回消息/拉黑别人）。中途想拿回手机需征得 TA 同意、答对 TA 出的三个问题或强行抢回。关闭则角色不会发起。"
                     />
 
                     <Item
                         label="自动线下" right={<Toggle on={!!cs.autoOffline} onToggle={() => updateConvo({ autoOffline: !cs.autoOffline })} />}
-                        desc="对话发展到见面 / 同处一地的情境时，自动切换为线下面对面模式（对话 + 动作旁白推进现场），场景结束后回到线上。"
+                        desc="对话发展到见面情境时角色会进入线下模式：弹出线下场景窗口记录现场情景，你可在窗口内发言/行动。退出后情景进入上下文，角色会主动发消息收尾。关闭则角色不会进入线下模式。"
                     />
 
                     <Item label="发消息方式" desc="碎片短句 = 像真人一样拆成多条短消息；完整段落 = 一条说完。">

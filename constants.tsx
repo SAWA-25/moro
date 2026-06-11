@@ -91,7 +91,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 聊天枢纽：单聊 + 群聊 + 联系人 + 朋友圈 一站式入口（原独立「群聊」「Message」App 已合并于此）
   { id: AppID.GroupChat, name: '聊天', icon: 'Chat', color: 'green' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
-  { id: AppID.CheckPhone, name: '查手机', icon: 'CheckPhone', color: 'slate' },
+  // 查手机已并入聊天 App：聊天界面底部 + 号面板 →「查手机」（不再是独立桌面 App）
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },

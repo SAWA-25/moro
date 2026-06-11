@@ -34,6 +34,7 @@ import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
+import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
     resolveXhsConfig,
@@ -422,6 +423,20 @@ export async function applyAssistantPostProcessing(
             aiContent = blockExtract.content;
             if (!isCharBlockDisabled() && !char.charBlock?.active && typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_BLOCK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // ─── Step 1.6: [[OFFLINE_START]] 线下模式指令 ───
+    // 自动线下开启时角色在见面情境输出该指令。先剥后播：Chat.tsx 监听事件弹线下窗口；
+    // 用户不在该角色聊天页时落 pending 标记，下次进聊天兜底弹。
+    {
+        const offlineExtract = extractOfflineStartDirective(aiContent);
+        if (offlineExtract.offline) {
+            aiContent = offlineExtract.content;
+            if (char.convoSettings?.autoOffline && typeof window !== 'undefined') {
+                setOfflinePending(char.id);
+                window.dispatchEvent(new CustomEvent(OFFLINE_START_EVENT, { detail: { charId: char.id } }));
             }
         }
     }

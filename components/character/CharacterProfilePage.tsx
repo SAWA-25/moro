@@ -172,7 +172,9 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
         try {
             const gen = await generateSocialProfile(apiConfig, char);
             const prev = char.socialProfile;
-            updateCharacter(char.id, {
+            // await 落库完成再收尾：updateCharacter 现在会等 IndexedDB 事务结束，
+            // 保证"生成一次后固定"——下次进入资料页读到的就是这份，不会再触发重新生成
+            await updateCharacter(char.id, {
                 socialProfile: {
                     handle: prev?.handle || gen.handle,
                     region: prev?.region || gen.region,

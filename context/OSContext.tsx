@@ -216,7 +216,7 @@ interface OSContextType {
   addCharacter: () => void;
   /** 导入完整角色（角色卡导入用）：落库 + 进 state + 设为当前角色，不刷新页面 */
   importCharacter: (char: CharacterProfile) => Promise<void>;
-  updateCharacter: (id: string, updates: Partial<CharacterProfile>) => void;
+  updateCharacter: (id: string, updates: Partial<CharacterProfile>) => Promise<void>;
   deleteCharacter: (id: string) => void;
   setActiveCharacterId: (id: string) => void;
   
@@ -2164,7 +2164,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     setActiveCharacterId(normalized.id);
     await DB.saveCharacter(normalized);
   };
-  const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => { setCharacters(prev => { const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...updates }) : c); const target = updated.find(c => c.id === id); if (target) DB.saveCharacter(target); return updated; }); };
+  // DB 写入必须可 await：之前在 setCharacters updater 里 fire-and-forget 调 DB.saveCharacter，
+  // 用户在 IDB 事务完成前关页/切页时更新会丢（角色资料"微信号/地区/签名"反复重新生成的根因）。
+  // 仍在 updater 里合并（保证拿到最新 prev），把合并结果递出来 await 落库。
+  const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => {
+    const target = await new Promise<CharacterProfile | null>(resolve => {
+      setCharacters(prev => {
+        const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...updates }) : c);
+        resolve(updated.find(c => c.id === id) || null);
+        return updated;
+      });
+    });
+    if (target) {
+      try { await DB.saveCharacter(target); } catch (e) { console.warn('[updateCharacter] DB.saveCharacter failed:', e); }
+    }
+  };
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };
   
   // Group Methods
