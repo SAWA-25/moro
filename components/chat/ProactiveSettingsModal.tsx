@@ -28,6 +28,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     const saved = char.proactiveConfig;
     const [enabled, setEnabled] = useState(saved?.enabled ?? false);
     const [interval, setInterval_] = useState(saved?.intervalMinutes ?? 60);
+    const [randomMode, setRandomMode] = useState(saved?.randomMode ?? false);
     const [useSecondaryApi, setUseSecondaryApi] = useState(saved?.useSecondaryApi ?? false);
     const [secUrl, setSecUrl] = useState(saved?.secondaryApi?.baseUrl ?? '');
     const [secKey, setSecKey] = useState(saved?.secondaryApi?.apiKey ?? '');
@@ -40,6 +41,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
             const s = char.proactiveConfig;
             setEnabled(s?.enabled ?? false);
             setInterval_(s?.intervalMinutes ?? 60);
+            setRandomMode(s?.randomMode ?? false);
             setUseSecondaryApi(s?.useSecondaryApi ?? false);
             setSecUrl(s?.secondaryApi?.baseUrl ?? '');
             setSecKey(s?.secondaryApi?.apiKey ?? '');
@@ -52,6 +54,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
         onSave({
             enabled,
             intervalMinutes: interval,
+            randomMode,
             useSecondaryApi: useSecondaryApi && !!secUrl,
             secondaryApi: useSecondaryApi && secUrl ? {
                 baseUrl: secUrl,
@@ -113,21 +116,51 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                 {enabled && (
                     <>
                         <div>
-                            <label className="text-sm font-bold text-slate-700 block mb-2">发送间隔</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {INTERVAL_OPTIONS.map(opt => (
-                                    <button
-                                        key={opt.value}
-                                        onClick={() => setInterval_(opt.value)}
-                                        className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${interval === opt.value
-                                            ? 'bg-violet-500 text-white shadow-md'
-                                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                        }`}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
+                            <label className="text-sm font-bold text-slate-700 block mb-2">触发方式</label>
+                            <div className="grid grid-cols-2 gap-2 mb-3">
+                                <button
+                                    onClick={() => setRandomMode(false)}
+                                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${!randomMode
+                                        ? 'bg-violet-500 text-white shadow-md'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    固定间隔
+                                </button>
+                                <button
+                                    onClick={() => setRandomMode(true)}
+                                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${randomMode
+                                        ? 'bg-violet-500 text-white shadow-md'
+                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                    }`}
+                                >
+                                    随机时间
+                                </button>
                             </div>
+                            {randomMode ? (
+                                <p className="text-[11px] text-slate-400 leading-relaxed bg-violet-50/60 rounded-xl px-3 py-2 border border-violet-100">
+                                    按现实时间随机触发：当你超过一段时间（1 小时 ～ 1 天不等）没有回复消息时，
+                                    {char.name} 会按照自己的性格决定要不要主动找你、说什么——完全交给角色。
+                                </p>
+                            ) : (
+                                <>
+                                    <label className="text-sm font-bold text-slate-700 block mb-2">发送间隔</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {INTERVAL_OPTIONS.map(opt => (
+                                            <button
+                                                key={opt.value}
+                                                onClick={() => setInterval_(opt.value)}
+                                                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${interval === opt.value
+                                                    ? 'bg-violet-500 text-white shadow-md'
+                                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {/* Secondary API Toggle */}

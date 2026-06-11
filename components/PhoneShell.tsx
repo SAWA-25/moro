@@ -136,6 +136,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { isIOSStandaloneWebApp } from '../utils/iosStandalone';
 import AppErrorBoundary from './os/AppErrorBoundary';
+import LockScreen from './os/LockScreen';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
@@ -452,7 +453,7 @@ const AppLoadingFallback: React.FC = () => {
 };
 
 const PhoneShell: React.FC = () => {
-  const { theme, isLocked, unlock, activeApp, closeApp, openApp, virtualTime, isDataLoaded, toasts, unreadMessages, characters, handleBack, suspendedCall, resumeCall, activeCharacterId, errorDialog, dismissError } = useOS();
+  const { theme, isLocked, activeApp, closeApp, openApp, isDataLoaded, toasts, handleBack, suspendedCall, resumeCall, activeCharacterId, errorDialog, dismissError } = useOS();
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
@@ -634,71 +635,11 @@ const PhoneShell: React.FC = () => {
   };
 
   const bgImageValue = getBgStyle(theme.wallpaper);
-  const contentColor = theme.contentColor || '#3f3d49';
 
   if (isLocked) {
-    const unreadCount = Object.values(unreadMessages).reduce((a,b) => a+b, 0);
-    const unreadCharId = Object.keys(unreadMessages)[0];
-    const unreadChar = unreadCharId ? characters.find(c => c.id === unreadCharId) : null;
-
-        return (
-      <div 
-        onClick={() => {
-            // Only ask once when permission is still undecided; don't keep poking blocked/denied browsers.
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission();
-            }
-            unlock();
-        }}
-        className="moro-lock-screen relative w-full h-full bg-cover bg-center cursor-pointer overflow-hidden group font-light select-none overscroll-none"
-        style={{ backgroundImage: bgImageValue, color: contentColor, animation: 'lockReveal 600ms ease-out both' }}
-      >
-        {/* 锁屏柔和淡入：与开机「世界入场」退场衔接；body 背景本就是壁纸，故是无缝融入而非硬切。 */}
-        <style>{`@keyframes lockReveal{from{opacity:0}to{opacity:1}}`}</style>
-        {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
-        <div className="absolute inset-0 bg-black/5 backdrop-blur-sm transition-all group-hover:backdrop-blur-none group-hover:bg-transparent duration-700" />
-
-        {/* 治愈系氛围光斑：缓慢漂移的暖紫/蜜桃光晕 */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            <div className="absolute -top-16 -left-16 w-72 h-72 rounded-full animate-drift-slow"
-                 style={{ background: 'radial-gradient(circle, rgba(196,181,253,0.28), transparent 70%)' }} />
-            <div className="absolute -bottom-20 -right-12 w-80 h-80 rounded-full animate-drift-slower"
-                 style={{ background: 'radial-gradient(circle, rgba(253,213,184,0.25), transparent 70%)' }} />
-        </div>
-
-        <div className="absolute top-24 w-full text-center">
-           <div className="text-[10px] label-mono font-bold opacity-50 mb-2">Moro · Lock</div>
-           <div className="text-8xl tracking-tight opacity-95 font-display-italic font-semibold">
-             {virtualTime.hours.toString().padStart(2,'0')}<span className="animate-pulse">:</span>{virtualTime.minutes.toString().padStart(2,'0')}
-           </div>
-           <div className="label-mono opacity-70 mt-3 text-[10px] font-bold">Moro Simulation</div>
-        </div>
-
-        {unreadCount > 0 && (
-            <div className="absolute top-[40%] left-4 right-4 animate-slide-up">
-                <div className="bg-white/20 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-white/10 flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-green-500 flex items-center justify-center text-white shrink-0 shadow-sm">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path fillRule="evenodd" d="M4.804 21.644A6.707 6.707 0 0 0 6 21.75a6.721 6.721 0 0 0 3.583-1.029c.774.182 1.584.279 2.417.279 5.322 0 9.75-3.97 9.75-9 0-5.03-4.428-9-9.75-9s-9.75 3.97-9.75 9c0 2.409 1.025 4.587 2.674 6.192.232.226.277.428.254.543a3.73 3.73 0 0 1-.814 1.686.75.75 0 0 0 .44 1.223ZM8.25 10.875a1.125 1.125 0 1 0 0 2.25 1.125 1.125 0 0 0 0-2.25ZM10.875 12a1.125 1.125 0 1 1 2.25 0 1.125 1.125 0 0 1-2.25 0Zm4.875-1.125a1.125 1.125 0 1 0 0 2.25 1.125 1.125 0 0 0 0-2.25Z" clipRule="evenodd" /></svg>
-                    </div>
-                    <div className="flex-1 min-w-0 text-white text-left">
-                        <div className="font-bold text-sm flex justify-between">
-                            <span>{unreadChar ? unreadChar.name : 'Message'}</span>
-                            <span className="text-[10px] opacity-70">刚刚</span>
-                        </div>
-                        <div className="text-xs opacity-90 truncate">
-                            {unreadCount > 1 ? `收到 ${unreadCount} 条新消息` : '发来了一条新消息'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        <div className="absolute bottom-12 w-full flex flex-col items-center gap-3 animate-pulse opacity-80 drop-shadow-md">
-          <div className="w-1 h-8 rounded-full bg-gradient-to-b from-transparent to-current"></div>
-          <span className="text-[10px] tracking-widest uppercase font-semibold">Tap to Unlock</span>
-        </div>
-      </div>
-    );
+    // 锁屏抽成独立组件：角色最新消息通知卡（iOS 风格弹出）+ 密码解锁（默认 0103，
+    // 设置 App「锁屏与密码」可修改/关闭）。点通知卡解锁后直达对应聊天。
+    return <LockScreen />;
   }
 
   const renderApp = () => {

@@ -5,6 +5,7 @@ import { processImage } from '../../utils/file';
 import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
+import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
 
 /**
  * 会话设置（聊天设置）全屏面板。
@@ -151,6 +152,9 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     };
 
     const bgInputRef = useRef<HTMLInputElement>(null);
+
+    // ── 拉黑保护（整体开关，localStorage 持久化，对所有会话生效） ──
+    const [charBlockProtect, setCharBlockProtect] = useState(() => isCharBlockDisabled());
 
     // ── MiniMax 音色 ──
     const [voices, setVoices] = useState<MiniMaxVoiceItem[] | null>(null);
@@ -676,6 +680,15 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     <Item
                         label="隐藏系统日志" right={<Toggle on={hideSysLogs} onToggle={onToggleHideSysLogs} />}
                         desc="不再显示 Date / App 产生的上下文提示文本（转账、戳一戳、图片发送提示除外）。"
+                    />
+                    <Item
+                        label="拉黑保护（整体开关）"
+                        right={<Toggle tone="bg-rose-500" on={charBlockProtect} onToggle={() => {
+                            const next = !charBlockProtect;
+                            setCharBlockProtect(next);
+                            setCharBlockDisabled(next);
+                        }} />}
+                        desc="开启后，所有角色都不会再触发「拉黑你」的行为（对全部会话生效）。已有的拉黑状态不受影响，会照常自动解除。"
                     />
                     <Item
                         label="管理上下文 / 隐藏历史" desc="从某条消息开始显示，隐藏之前的记录（不被 AI 读取）。"

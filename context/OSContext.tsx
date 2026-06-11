@@ -4,6 +4,7 @@ import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, To
 import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
+import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
 import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
@@ -1292,6 +1293,53 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       };
   }, [characters, sendProactiveNativeNotification]);
 
+  // ─── 拉黑系统：角色拉黑用户（[[BLOCK_USER]] 指令）+ 随机时间自动拉回 ───
+  useEffect(() => {
+      if (!isDataLoaded) return;
+
+      const onCharBlock = async (e: Event) => {
+          const charId = (e as CustomEvent).detail?.charId as string | undefined;
+          if (!charId) return;
+          const char = charactersRef.current.find(c => c.id === charId);
+          if (!char || char.charBlock?.active) return;
+          const now = Date.now();
+          updateCharacter(charId, { charBlock: { active: true, blockedAt: now, unblockAt: now + randomUnblockDelayMs() } });
+          try {
+              await DB.saveMessage({ charId, role: 'system', type: 'text', content: `你已被「${char.name}」加入黑名单，暂时无法发送消息` });
+          } catch { /* ignore */ }
+          setLastMsgTimestamp(Date.now());
+          addToast(`${char.name} 把你拉黑了…`, 'error');
+      };
+
+      // 到点自动解除（角色在随机时间把用户拉回）：启动立即对账一次 + 每 30s 一次
+      const checkUnblock = async () => {
+          const now = Date.now();
+          for (const c of charactersRef.current) {
+              if (c.charBlock?.active && now >= c.charBlock.unblockAt) {
+                  updateCharacter(c.id, { charBlock: { ...c.charBlock, active: false } });
+                  try {
+                      await DB.saveMessage({ charId: c.id, role: 'system', type: 'text', content: `「${c.name}」已将你移出黑名单，可以继续聊天了` });
+                  } catch { /* ignore */ }
+                  setLastMsgTimestamp(Date.now());
+                  const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === c.id;
+                  if (!isChattingWithThisChar) {
+                      setUnreadMessages(prev => ({ ...prev, [c.id]: (prev[c.id] || 0) + 1 }));
+                  }
+                  addToast(`${c.name} 把你移出了黑名单`, 'info');
+              }
+          }
+      };
+
+      window.addEventListener(CHAR_BLOCK_EVENT, onCharBlock);
+      const unblockTimer = setInterval(() => { void checkUnblock(); }, 30_000);
+      void checkUnblock();
+      return () => {
+          window.removeEventListener(CHAR_BLOCK_EVENT, onCharBlock);
+          clearInterval(unblockTimer);
+      };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
   // ─── Global Proactive Message Handler ───
   // Registered at OS level so it works even when Chat is not open.
   useEffect(() => {
@@ -1447,6 +1495,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return;
           }
 
+          // 角色拉黑用户期间不主动发消息（是 TA 自己拒绝联系）
+          if (char.charBlock?.active) {
+              drainQueuedProactive();
+              console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: char blocked user`);
+              return;
+          }
+
           // Determine which API to use
           const pCfg = char.proactiveConfig;
           const useSecondary = pCfg?.useSecondaryApi && pCfg.secondaryApi?.baseUrl;
@@ -1478,13 +1533,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   else timeSinceUser = `${Math.floor(gapMin / 1440)}天${Math.floor((gapMin % 1440) / 60)}小时`;
               }
 
+              // 随机时间模式：以「用户超过一段时间没回复」为前提——最近 1 小时内回过
+              // 消息就这轮不打扰，等下一个随机间隔再说（finally 会正常释放运行锁）
+              if (pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
+                  console.log(`🔕 [Proactive/Global] Random mode: ${char.name} skipped (user replied recently)`);
+                  return;
+              }
+
               // 2. Save hidden system hint
               const userName = currentUserProfile?.name || '对方';
               await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
-                  content: `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}]`,
+                  content: `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}]`,
                   metadata: { proactiveHint: true, hidden: true }
               });
 
@@ -1578,6 +1640,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               aiContent = aiContent.replace(/\s*\[(?:聊天|通话|约会)\]\s*/g, '\n').trim();
 
               aiContent = normalizeProactiveAiContent(aiContent);
+
+              // [[BLOCK_USER]] 指令：主动消息路径也可能触发（如被拉黑后赌气拉回去）
+              const blockExtract = extractBlockUserDirective(aiContent);
+              if (blockExtract.blocked) {
+                  aiContent = blockExtract.content;
+                  if (!isCharBlockDisabled() && !char.charBlock?.active) {
+                      window.dispatchEvent(new CustomEvent(CHAR_BLOCK_EVENT, { detail: { charId } }));
+                  }
+              }
 
               const savedPreviewChunks: string[] = [];
               const baseTimestamp = Date.now();

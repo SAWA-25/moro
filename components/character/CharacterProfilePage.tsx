@@ -101,7 +101,12 @@ const FriendSettingsPage: React.FC<{
                 <div className="bg-white mt-2">
                     <Row
                         label="加入黑名单"
-                        toggle={<ToggleSwitch on={!!char.blacklisted} onToggle={() => updateCharacter(char.id, { blacklisted: !char.blacklisted })} />}
+                        toggle={<ToggleSwitch on={!!char.blacklisted} onToggle={() => {
+                            const next = !char.blacklisted;
+                            // blacklistedAt 标记拉黑时刻：此后角色发来的消息气泡旁带红色感叹号
+                            updateCharacter(char.id, { blacklisted: next, blacklistedAt: next ? Date.now() : undefined });
+                            addToast(next ? `已将 ${char.name} 加入黑名单` : `已将 ${char.name} 移出黑名单`, 'info');
+                        }} />}
                     />
                     <div className="h-px bg-[#ededed] ml-5" />
                     <Row label="投诉" onClick={() => addToast('已收到投诉（彩蛋：TA 表示很无辜）', 'info')} />

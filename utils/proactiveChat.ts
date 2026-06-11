@@ -27,6 +27,30 @@ import {
 export interface ProactiveSchedule {
   charId: string;
   intervalMs: number; // must be multiple of 30 * 60 * 1000
+  /** 随机时间模式：每次触发后重抽下一个间隔（1 小时 ~ 1 天档位） */
+  random?: boolean;
+}
+
+// 随机模式的间隔档位（分钟）：对应「用户超过 1 小时 / 2 小时 / … / 1 天没回复」
+const RANDOM_INTERVAL_CHOICES_MIN = [60, 120, 240, 480, 720, 1440];
+
+function rollRandomIntervalMs(): number {
+  const pick = RANDOM_INTERVAL_CHOICES_MIN[Math.floor(Math.random() * RANDOM_INTERVAL_CHOICES_MIN.length)];
+  return pick * 60 * 1000;
+}
+
+/** 随机模式触发后重抽下一个间隔并同步到 SW / Worker */
+function rerollRandomInterval(charId: string) {
+  const schedules = loadSchedules();
+  const schedule = schedules[charId];
+  if (!schedule?.random) return;
+  schedule.intervalMs = rollRandomIntervalMs();
+  saveSchedules(schedules);
+  syncSchedulesToSW();
+  if (isPushConfigReady(loadPushConfig())) {
+    void registerScheduleOnWorker(charId, schedule.intervalMs);
+  }
+  console.log(`[ProactiveChat] Random reroll: ${charId}, next in ${schedule.intervalMs / 60000}min`);
 }
 
 type ProactiveScheduleMap = Record<string, ProactiveSchedule>;
@@ -164,6 +188,7 @@ function handleSWMessage(e: MessageEvent) {
   }
 
   setLastFireTime(charId, now);
+  rerollRandomInterval(charId);
   schedulePreciseTimer();
   void triggerCallback(charId);
 }
@@ -182,6 +207,7 @@ function checkOverdueSchedules() {
     if (lastFire > 0 && elapsed >= schedule.intervalMs) {
       console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed`);
       setLastFireTime(schedule.charId, now);
+      rerollRandomInterval(schedule.charId);
       syncSchedulesToSW();
       void triggerCallback(schedule.charId);
     }
@@ -298,12 +324,13 @@ export const ProactiveChat = {
 
   /**
    * Start or update one character's proactive schedule.
+   * opts.random: 随机时间模式——间隔从 1 小时 ~ 1 天档位随机抽取，每次触发后重抽。
    */
-  start(charId: string, intervalMinutes: number) {
+  start(charId: string, intervalMinutes: number, opts?: { random?: boolean }) {
     const clamped = Math.max(30, Math.round(intervalMinutes / 30) * 30);
-    const intervalMs = clamped * 60 * 1000;
+    const intervalMs = opts?.random ? rollRandomIntervalMs() : clamped * 60 * 1000;
     const schedules = loadSchedules();
-    schedules[charId] = { charId, intervalMs };
+    schedules[charId] = { charId, intervalMs, ...(opts?.random ? { random: true } : {}) };
     saveSchedules(schedules);
     setLastFireTime(charId, Date.now());
     syncSchedulesToSW();
@@ -315,7 +342,7 @@ export const ProactiveChat = {
       startHeartbeat();
     }
 
-    console.log(`[ProactiveChat] Started: ${charId}, every ${clamped}min`);
+    console.log(`[ProactiveChat] Started: ${charId}, ${opts?.random ? `random (first in ${intervalMs / 60000}min)` : `every ${clamped}min`}`);
   },
 
   /**

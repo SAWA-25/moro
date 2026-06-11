@@ -33,6 +33,7 @@ import { enqueuePendingDiary, removePendingDiary } from './pendingDiary';
 import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
+import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
 import {
     AgenticToolCtx,
     resolveXhsConfig,
@@ -411,6 +412,19 @@ export async function applyAssistantPostProcessing(
     // ─── Step 1: 初次粗洗 ───
     let aiContent = replayedTagPrefix ? `${replayedTagPrefix}${rawAiContent}` : rawAiContent;
     aiContent = normalizeAiContent(aiContent);
+
+    // ─── Step 1.5: [[BLOCK_USER]] 拉黑指令 ───
+    // 先于一切渲染剥离, 命中时交给 OSContext (CHAR_BLOCK_EVENT 监听方) 统一落角色状态 +
+    // 系统消息。「拉黑保护」开着或已处于拉黑态时只剥不执行。
+    {
+        const blockExtract = extractBlockUserDirective(aiContent);
+        if (blockExtract.blocked) {
+            aiContent = blockExtract.content;
+            if (!isCharBlockDisabled() && !char.charBlock?.active && typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_BLOCK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
 
     // ── 渲染基础设施 (提前声明, 供"执行功能前先展示本轮正文 A" + 末尾展示二轮结果 B 复用) ──
     // 引用/回复标签的匹配 + 清理正则 (提前声明避免 lead-in 渲染时落入 TDZ)。
