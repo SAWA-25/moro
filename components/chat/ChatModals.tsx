@@ -286,8 +286,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 footer={<button onClick={onImportEmoji} className="w-full py-4 bg-primary text-white font-bold rounded-2xl">添加至当前分类</button>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">表情将导入到你当前选中的分类。</p>
-                    <textarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder="Name--URL (每行一个)" className="w-full h-40 bg-slate-100 rounded-2xl p-4 resize-none" />
+                    <p className="text-xs text-slate-400">表情将导入到你当前选中的分类。可在末尾追加描述（用于表情搜索，AI 选表情时也能看到）。</p>
+                    <textarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL (每行一个)\n名字--URL--描述 (描述可选)"} className="w-full h-40 bg-slate-100 rounded-2xl p-4 resize-none" />
                 </div>
             </Modal>
 

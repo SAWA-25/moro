@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
+import { AppID, Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal from '../components/os/Modal';
 import { ContextBuilder } from '../utils/context';
@@ -10,7 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
 import { processImage } from '../utils/file';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix } from '@phosphor-icons/react';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -23,31 +23,82 @@ const PRESET_THEME_GROUP: ChatTheme = {
 };
 
 // --- Sub-Component: Group Message Bubble ---
-const GroupMessageItem = React.memo(({ 
-    msg, 
-    isUser, 
-    char, 
-    userAvatar, 
-    onImageClick, 
-    selectionMode, 
-    isSelected, 
+const GroupMessageItem = React.memo(({
+    msg,
+    isUser,
+    char,
+    userAvatar,
+    onImageClick,
+    selectionMode,
+    isSelected,
     onToggleSelect,
-    onLongPress 
-}: { 
-    msg: Message, 
-    isUser: boolean, 
-    char?: CharacterProfile, 
-    userAvatar: string, 
+    onLongPress,
+    displayName,
+    memberTitle,
+    onAvatarClick,
+    onAvatarPoke
+}: {
+    msg: Message,
+    isUser: boolean,
+    char?: CharacterProfile,
+    userAvatar: string,
     onImageClick: (url: string) => void,
     selectionMode: boolean,
     isSelected: boolean,
     onToggleSelect: (id: number) => void,
-    onLongPress: (id: number) => void
+    onLongPress: (id: number) => void,
+    /** 群名片（成员在本群的昵称），不传则用角色名 */
+    displayName?: string,
+    /** 群主/管理员设置的头衔徽章 */
+    memberTitle?: string,
+    /** 单击成员头像：打开成员资料/角色设置 */
+    onAvatarClick?: () => void,
+    /** 双击成员头像：戳一戳 */
+    onAvatarPoke?: () => void
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
-    const name = isUser ? '我' : char?.name || '未知成员';
+    const name = isUser ? '我' : displayName || char?.name || '未知成员';
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
+    // 头像单击/双击区分：260ms 内第二次点击 = 戳一戳
+    const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleAvatarClick = (e: React.MouseEvent) => {
+        if (selectionMode || isUser || (!onAvatarClick && !onAvatarPoke)) return;
+        e.stopPropagation();
+        if (avatarClickTimer.current) {
+            clearTimeout(avatarClickTimer.current);
+            avatarClickTimer.current = null;
+            onAvatarPoke?.();
+            return;
+        }
+        avatarClickTimer.current = setTimeout(() => {
+            avatarClickTimer.current = null;
+            onAvatarClick?.();
+        }, 260);
+    };
+
+    // 系统通知（改群名/禁言/头衔/移除成员等）：居中灰色胶囊
+    if (msg.role === 'system' || msg.type === 'system') {
+        return (
+            <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
+                <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-violet-400' : ''}`}>
+                    {msg.content}
+                </span>
+            </div>
+        );
+    }
+
+    // 戳一戳互动：居中小字 + 手指
+    if (msg.type === 'interaction') {
+        return (
+            <div className="flex justify-center my-2 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
+                <span className={`flex items-center gap-1 px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-500 text-[10px] ${selectionMode && isSelected ? 'ring-2 ring-violet-400' : ''}`}>
+                    <img src={twemojiUrl('1f449')} alt="poke" className="w-3.5 h-3.5" />
+                    {isUser ? `我${msg.content.replace(/^\[|\]$/g, '')}` : msg.content.replace(/^\[|\]$/g, '')}
+                </span>
+            </div>
+        );
+    }
     
     // Time formatting
     const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -154,12 +205,24 @@ const GroupMessageItem = React.memo(({
 
             {!isUser && (
                 <div className="flex flex-col items-center gap-1 shrink-0">
-                    <img src={avatar} className="w-9 h-9 rounded-full object-cover shadow-sm border border-white" loading="lazy" />
+                    <img
+                        src={avatar}
+                        className={`w-9 h-9 rounded-full object-cover shadow-sm border border-white ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
+                        loading="lazy"
+                        onClick={handleAvatarClick}
+                    />
                 </div>
             )}
-            
+
             <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] ${selectionMode ? 'pointer-events-none' : ''}`}>
-                {!isUser && <span className="text-[10px] text-slate-400 ml-1 mb-1">{name}</span>}
+                {!isUser && (
+                    <span className="text-[10px] text-slate-400 ml-1 mb-1 flex items-center gap-1">
+                        {memberTitle && (
+                            <span className="px-1 py-px rounded bg-amber-100 text-amber-600 border border-amber-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
+                        )}
+                        {name}
+                    </span>
+                )}
                 {renderContent()}
                 <span className="text-[9px] text-slate-300 mt-1 px-1">{timeStr}</span>
             </div>
@@ -176,9 +239,30 @@ const GroupMessageItem = React.memo(({
 // --- Main Component ---
 
 const GroupChat: React.FC = () => {
-    const { closeApp, groups, createGroup, deleteGroup, characters, updateCharacter, apiConfig, addToast, userProfile, virtualTime } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
+    const [hubTab, setHubTab] = useState<'chats' | 'contacts'>('chats');
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
+    // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
+    const [convos, setConvos] = useState<Array<{
+        kind: 'char' | 'group';
+        id: string;
+        name: string;
+        avatar?: string;
+        last?: Message;
+        dissolved?: boolean;
+        memberCount?: number;
+    }>>([]);
+    // 成员资料页（点头像进入）
+    const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
+    // 头衔编辑 / 禁言时长选择
+    const [tempTitle, setTempTitle] = useState('');
+    // 移除成员二次确认（第一次点变红，再点才执行）
+    const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+    // 我的群名片编辑（设置弹窗里）
+    const [tempMyNickname, setTempMyNickname] = useState('');
+    // 群聊表情抽屉搜索
+    const [emojiSearch, setEmojiSearch] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [totalMsgCount, setTotalMsgCount] = useState(0);
     const [visibleCount, setVisibleCount] = useState(30);
@@ -199,7 +283,7 @@ const GroupChat: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'mute-member' | 'add-member'>('none');
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [editContent, setEditContent] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -312,6 +396,102 @@ const GroupChat: React.FC = () => {
         return `${diffDays}天前私聊过`;
     };
 
+    // --- Helpers: 群名片 / 头衔 / 权限 / 禁言 / 系统通知 ---
+
+    /** 成员在群里的显示名：群名片优先，否则角色名 */
+    const displayNameOf = (g: GroupProfile | null, charId: string): string => {
+        if (charId === 'user') return g?.memberNicknames?.['user'] || userProfile.name || '我';
+        return g?.memberNicknames?.[charId] || characters.find(c => c.id === charId)?.name || '未知成员';
+    };
+
+    /** 用户是否群主（历史群没有 ownerId 字段时按用户是群主处理） */
+    const isUserOwner = (g: GroupProfile | null): boolean => !g?.ownerId || g.ownerId === 'user';
+    /** 用户是否有管理权限（群主或管理员） */
+    const userCanManage = (g: GroupProfile | null): boolean => isUserOwner(g) || (g?.adminIds || []).includes('user');
+
+    /** 成员是否处于禁言中 */
+    const isMuted = (g: GroupProfile | null, charId: string): boolean => {
+        const until = g?.mutedUntil?.[charId];
+        return !!until && until > Date.now();
+    };
+
+    /** 往群里落一条系统通知（移除成员/改群名/改群名片/设头衔/禁言等），并刷新消息列表 */
+    const postGroupNotice = async (groupId: string, text: string) => {
+        await DB.saveMessage({
+            charId: 'system',
+            groupId,
+            role: 'system',
+            type: 'system',
+            content: text,
+        } as any);
+        if (activeGroup?.id === groupId) {
+            setMessages(await DB.getGroupMessages(groupId));
+        }
+    };
+
+    /** 更新群并同步本地 activeGroup（updateGroup 只更新全局 groups state） */
+    const applyGroupUpdate = async (updates: Partial<GroupProfile>): Promise<GroupProfile | null> => {
+        if (!activeGroup) return null;
+        const updated = await updateGroup(activeGroup.id, updates);
+        if (updated) setActiveGroup(updated);
+        return updated;
+    };
+
+    /** 打开某个角色的设置界面（深链接到神经链接 App 的编辑页） */
+    const openCharacterSettings = (charId: string) => {
+        try { localStorage.setItem('moro_character_open_target', charId); } catch { /* ignore */ }
+        openApp(AppID.Character);
+    };
+
+    /** 进入与某角色的私聊 */
+    const openPrivateChat = (charId: string) => {
+        setActiveCharacterId(charId);
+        openApp(AppID.Chat);
+    };
+
+    // --- 聊天列表（单聊 + 群聊混排）---
+    useEffect(() => {
+        if (view !== 'list') return;
+        let cancelled = false;
+        (async () => {
+            const items: typeof convos = [];
+            for (const g of groups) {
+                const { messages: last } = await DB.getRecentGroupMessagesWithCount(g.id, 1);
+                items.push({
+                    kind: 'group', id: g.id, name: g.name, avatar: g.avatar,
+                    last: last[last.length - 1],
+                    dissolved: !!g.dissolved,
+                    memberCount: g.members.length,
+                });
+            }
+            for (const c of characters) {
+                const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
+                if (lastMsgs.length === 0) continue; // 没聊过的角色去「联系人」页找
+                items.push({ kind: 'char', id: c.id, name: c.name, avatar: c.avatar, last: lastMsgs[lastMsgs.length - 1] });
+            }
+            items.sort((a, b) => (b.last?.timestamp || 0) - (a.last?.timestamp || 0));
+            if (!cancelled) setConvos(items);
+        })();
+        return () => { cancelled = true; };
+    }, [view, groups, characters]);
+
+    /** 聊天列表里一条消息的预览文本 */
+    const previewOf = (m?: Message): string => {
+        if (!m) return '暂无消息';
+        switch (m.type) {
+            case 'image': return '[图片]';
+            case 'emoji': return '[表情包]';
+            case 'transfer': return '[红包]';
+            case 'voice': return '[语音]';
+            case 'interaction': return m.content || '[戳一戳]';
+            case 'system': return m.content;
+            default: {
+                const t = typeof m.content === 'string' ? m.content : '';
+                return /^(data:|https?:\/\/)/i.test(t.trim()) ? '[媒体]' : t.slice(0, 40);
+            }
+        }
+    };
+
     // --- Logic: Selection & Deletion ---
 
     const handleMessageLongPress = (id: number) => {
@@ -421,15 +601,103 @@ const GroupChat: React.FC = () => {
 
     const handleUpdateGroupInfo = async () => {
         if (!activeGroup) return;
-        const updatedGroup = {
+        const newName = (tempGroupName || activeGroup.name).trim();
+        const oldName = activeGroup.name;
+        const oldMyNickname = activeGroup.memberNicknames?.['user'] || '';
+        const newMyNickname = tempMyNickname.trim();
+
+        const updatedGroup: GroupProfile = {
             ...activeGroup,
-            name: tempGroupName || activeGroup.name,
+            name: newName,
             privateContextCap: tempPrivateContextCap,
+            memberNicknames: { ...(activeGroup.memberNicknames || {}), user: newMyNickname },
         };
-        await DB.saveGroup(updatedGroup);
+        if (!newMyNickname) delete updatedGroup.memberNicknames!['user'];
+        await updateGroup(activeGroup.id, updatedGroup);
         setActiveGroup(updatedGroup);
         setModalType('none');
+
+        // 群内系统通知：角色下一轮能从历史里"看到"这些变化
+        if (newName !== oldName) {
+            await postGroupNotice(activeGroup.id, `你将群名称修改为「${newName}」`);
+        }
+        if (newMyNickname !== oldMyNickname) {
+            await postGroupNotice(activeGroup.id, newMyNickname ? `你将自己的群名片改为「${newMyNickname}」` : '你清除了自己的群名片');
+        }
         addToast('群信息已更新', 'success');
+    };
+
+    // --- 成员管理：移除 / 头衔 / 禁言 / 戳一戳 ---
+
+    const handleRemoveMember = async (charId: string) => {
+        if (!activeGroup) return;
+        const name = displayNameOf(activeGroup, charId);
+        const updated = await applyGroupUpdate({ members: activeGroup.members.filter(id => id !== charId) });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, `你将「${name}」移出了群聊`);
+            setProfileMemberId(null);
+            setModalType('none');
+            addToast(`已移除 ${name}`, 'success');
+        }
+    };
+
+    const handleSetTitle = async () => {
+        if (!activeGroup || !profileMemberId) return;
+        const name = displayNameOf(activeGroup, profileMemberId);
+        const title = tempTitle.trim();
+        const titles = { ...(activeGroup.memberTitles || {}) };
+        if (title) titles[profileMemberId] = title;
+        else delete titles[profileMemberId];
+        const updated = await applyGroupUpdate({ memberTitles: titles });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, title ? `你给「${name}」设置了头衔「${title}」` : `你撤销了「${name}」的头衔`);
+            setModalType('member-profile');
+            addToast(title ? '头衔已设置' : '头衔已撤销', 'success');
+        }
+    };
+
+    const MUTE_OPTIONS: Array<{ label: string; ms: number }> = [
+        { label: '10 分钟', ms: 10 * 60 * 1000 },
+        { label: '1 小时', ms: 60 * 60 * 1000 },
+        { label: '12 小时', ms: 12 * 60 * 60 * 1000 },
+        { label: '24 小时', ms: 24 * 60 * 60 * 1000 },
+    ];
+
+    const handleMuteMember = async (durationMs: number | null) => {
+        if (!activeGroup || !profileMemberId) return;
+        const name = displayNameOf(activeGroup, profileMemberId);
+        const muted = { ...(activeGroup.mutedUntil || {}) };
+        if (durationMs === null) {
+            delete muted[profileMemberId];
+        } else {
+            muted[profileMemberId] = Date.now() + durationMs;
+        }
+        const updated = await applyGroupUpdate({ mutedUntil: muted });
+        if (updated) {
+            const durLabel = MUTE_OPTIONS.find(o => o.ms === durationMs)?.label;
+            await postGroupNotice(activeGroup.id, durationMs === null ? `你解除了「${name}」的禁言` : `你已将「${name}」禁言 ${durLabel}`);
+            setModalType('member-profile');
+            addToast(durationMs === null ? '已解除禁言' : '已禁言', 'success');
+        }
+    };
+
+    const handleAddMember = async (charId: string) => {
+        if (!activeGroup || activeGroup.members.includes(charId)) return;
+        const name = characters.find(c => c.id === charId)?.name || '新成员';
+        const updated = await applyGroupUpdate({ members: [...activeGroup.members, charId] });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, `你邀请「${name}」加入了群聊`);
+            setModalType('settings');
+            addToast(`${name} 已加入群聊`, 'success');
+        }
+    };
+
+    const handlePokeMember = async (charId: string) => {
+        if (!activeGroup) return;
+        const name = displayNameOf(activeGroup, charId);
+        setProfileMemberId(null);
+        setModalType('none');
+        await handleSendMessage(`[戳了戳 ${name}]`, 'interaction', { targetCharId: charId });
     };
 
     const handleGroupAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -453,20 +721,33 @@ const GroupChat: React.FC = () => {
         setSelectedMembers(next);
     };
 
+    // 解散 ≠ 删除：标记 dissolved，群保留在聊天列表显示"此群聊已被解散"，历史可回看（只读）
+    const handleDissolveGroup = async (id: string) => {
+        const updated = await updateGroup(id, { dissolved: true, dissolvedAt: Date.now() });
+        if (updated) {
+            await postGroupNotice(id, '你解散了该群聊');
+            if (activeGroup?.id === id) setActiveGroup(updated);
+            setModalType('none');
+            setView('list');
+            addToast('群聊已解散', 'success');
+        }
+    };
+
+    // 彻底删除（聊天列表里对已解散的群提供）：清理群记忆后真删
     const handleDeleteGroup = async (id: string) => {
         // 先清理群记忆宫殿数据（成员各自存的副本一并删），再删群
-        // 异常吞掉——清理失败不阻塞解散流程
+        // 异常吞掉——清理失败不阻塞删除流程
         try {
             const result = await deleteGroupMemoriesByGroupId(id);
             if (result.deleted > 0) {
-                console.log(`🗑️ [GroupChat] 解散群同时清理群记忆 ${result.deleted} 条`);
+                console.log(`🗑️ [GroupChat] 删群同时清理群记忆 ${result.deleted} 条`);
             }
         } catch (err) {
-            console.warn('🗑️ [GroupChat] 清理群记忆失败（不影响解散）:', err);
+            console.warn('🗑️ [GroupChat] 清理群记忆失败（不影响删除）:', err);
         }
         await deleteGroup(id);
         if (activeGroup?.id === id) setView('list');
-        addToast('群聊已解散', 'success');
+        addToast('群聊已删除', 'success');
     };
 
     const handleClearHistory = async () => {
@@ -670,6 +951,7 @@ ${logText.substring(0, 10000)}
 
     const triggerDirector = async (currentMsgs: Message[]) => {
         if (!activeGroup || !apiConfig.apiKey) return;
+        if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
         setIsTyping(true);
 
         try {
@@ -686,10 +968,30 @@ ${logText.substring(0, 10000)}
             //    每个角色的人设/印象/记忆仍保持完整，不做任何压缩。
             const sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile);
 
+            // 群成员花名册：群名片（昵称）/ 头衔 / 禁言状态。改群名、改名片、禁言等事件
+            // 会以 [系统通知] 出现在聊天记录里，角色据此自然反应。
+            const ownerId = activeGroup.ownerId || 'user';
+            const rosterLines = groupMembers.map(m => {
+                const nick = activeGroup.memberNicknames?.[m.id];
+                const title = activeGroup.memberTitles?.[m.id];
+                const mutedTs = activeGroup.mutedUntil?.[m.id];
+                const mutedStr = mutedTs && mutedTs > Date.now()
+                    ? ` |【禁言中，至 ${new Date(mutedTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}，本轮不能发言】`
+                    : '';
+                const ownerStr = ownerId === m.id ? ' | 群主' : (activeGroup.adminIds || []).includes(m.id) ? ' | 管理员' : '';
+                return `- ${m.name} (ID: ${m.id})${nick ? ` | 群名片:「${nick}」` : ''}${title ? ` | 头衔:「${title}」` : ''}${ownerStr}${mutedStr}`;
+            }).join('\n');
+            const userNick = activeGroup.memberNicknames?.['user'];
+            const userRosterLine = `- ${userProfile.name}（用户）${userNick ? ` | 群名片:「${userNick}」` : ''}${ownerId === 'user' ? ' | 群主' : ''}`;
+
             let context = `【系统：群聊模拟器配置】
 当前群名: "${activeGroup.name}"
 当前系统时间: ${currentTimeStr}
 时间流逝感知: ${timeGapInfo}
+
+群成员花名册（群名片 = 成员在本群显示的昵称，可自己修改；头衔由群主/管理员授予）:
+${userRosterLine}
+${rosterLines}
 
 ${sharedScene.text}`;
 
@@ -748,6 +1050,10 @@ ${recentPrivate || '(暂无私聊)'}
             const attachedSet = new Set(validImageWindowIdx.slice(-MAX_ATTACHED_IMAGES));
             const attachedImages: { tag: number; url: string }[] = [];
             const recentGroupMsgs = recentMsgsWindow.map((m, i) => {
+                // 系统通知（改群名/禁言/头衔/移除成员/群名片变更）原样进历史，让角色"看到"事件
+                if (m.role === 'system' || m.type === 'system') {
+                    return `[系统通知] ${m.content}`;
+                }
                 let name = '用户';
                 if (m.role === 'assistant') {
                     name = characters.find(c => c.id === m.charId)?.name || '未知';
@@ -866,6 +1172,11 @@ ${attachedImagesNote}
 - **表情包**: 必须使用格式 \`[[SEND_EMOJI: 表情名称]]\`。**可用表情 (按分类)**: ${emojiContextStr}
 - **气泡分段**: 在一条内容里用换行符分隔不同的气泡——一行一个气泡。短句多发几条 > 长句一坨。
 
+#### 六点五、群事件感知与群名片
+- 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶等——按各自性格来，也允许无视。
+- **被【禁言中】标记的成员本轮严禁发言**——不要为该成员生成任何消息（包括表情包）。其他成员可以提到ta、调侃ta只能干瞪眼。
+- **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`（可与一句发言放在同一条 content 里）。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
+
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
 - 但参考"对话质量"——不要因为私聊状态就给出套路化反应。
@@ -933,10 +1244,51 @@ ${attachedImagesNote}
             }
 
             // Execute Actions with Splitting Logic
+            // liveGroup：本轮执行期间的最新群状态（角色改群名片会就地更新，避免读到陈旧 state）
+            let liveGroup: GroupProfile = activeGroup;
+            let groupChanged = false;
             for (const action of actions) {
                 const targetId = activeGroup.members.find(id => id === action.charId);
                 if (!targetId) continue;
                 const charName = characters.find(c => c.id === targetId)?.name || '成员';
+
+                // 禁言强制执行：模型不听话也拦下来，被禁言成员本轮的输出全部丢弃
+                const mutedTs = liveGroup.mutedUntil?.[targetId];
+                if (mutedTs && mutedTs > Date.now()) continue;
+
+                // -1. 群名片变更指令 [[SET_NICKNAME: xxx]]：更新群资料 + 落系统通知
+                const nickMatches: RegExpExecArray[] = [];
+                const nickRegex = /\[\[SET_NICKNAME\s*[:：]\s*([\s\S]*?)\]\]/g;
+                let nickMatch;
+                while ((nickMatch = nickRegex.exec(action.content)) !== null) {
+                    nickMatches.push(nickMatch);
+                }
+                if (nickMatches.length > 0) {
+                    // 只取最后一个（一轮多次改名没意义）
+                    const newNick = nickMatches[nickMatches.length - 1][1].trim().slice(0, 24);
+                    for (const m of nickMatches) {
+                        action.content = action.content.replace(m[0], '');
+                    }
+                    action.content = action.content.trim();
+                    if (newNick) {
+                        const oldDisplay = liveGroup.memberNicknames?.[targetId] || charName;
+                        liveGroup = {
+                            ...liveGroup,
+                            memberNicknames: { ...(liveGroup.memberNicknames || {}), [targetId]: newNick },
+                        };
+                        groupChanged = true;
+                        await DB.saveGroup(liveGroup);
+                        setActiveGroup(liveGroup);
+                        await DB.saveMessage({
+                            charId: 'system',
+                            groupId: liveGroup.id,
+                            role: 'system',
+                            type: 'system',
+                            content: `「${oldDisplay}」将自己的群名片改为「${newNick}」`,
+                        } as any);
+                        setMessages(await DB.getGroupMessages(liveGroup.id));
+                    }
+                }
 
                 // 0. Check for Private Message Command (Regex updated for robustness)
                 const privateMatches = [];
@@ -1042,6 +1394,12 @@ ${attachedImagesNote}
                 }
             }
 
+            // 群名片有变更时把最新群资料刷进全局 groups state（DB 在循环里已写入）
+            if (groupChanged) {
+                await updateGroup(liveGroup.id, liveGroup);
+                setActiveGroup(liveGroup);
+            }
+
         } catch (e: any) {
             console.error(e);
         } finally {
@@ -1089,6 +1447,17 @@ ${attachedImagesNote}
 
     // --- Renderers ---
 
+    // 聊天列表时间：今天显示 HH:MM，昨天显示"昨天"，更早显示 M月D日
+    const formatConvoTime = (ts?: number) => {
+        if (!ts) return '';
+        const d = new Date(ts);
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        if (ts >= startOfToday) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (ts >= startOfToday - 24 * 60 * 60 * 1000) return '昨天';
+        return `${d.getMonth() + 1}月${d.getDate()}日`;
+    };
+
     if (view === 'list') {
         return (
             <div className="h-full w-full bg-slate-50 flex flex-col font-light">
@@ -1099,46 +1468,127 @@ ${attachedImagesNote}
                         <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">群聊列表</span>
+                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '消息' : '联系人'}</span>
                     <div className="flex-1"></div>
-                    <button onClick={() => { setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); }} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors">
+                    <button onClick={() => { setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); }} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="创建群聊">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     </button>
                     </div>
                 </div>
 
-                <div className="p-4 space-y-3 overflow-y-auto">
-                    {groups.map(g => (
-                        <div key={g.id} onClick={() => { setActiveGroup(g); setView('chat'); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 active:scale-[0.98] transition-all cursor-pointer group hover:bg-violet-50/30">
-                            {/* Group Avatar Logic */}
-                            <div className="w-14 h-14 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm">
-                                {g.avatar ? (
-                                    <img src={g.avatar} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="grid grid-cols-2 gap-0.5 p-0.5 w-full h-full bg-slate-200">
-                                        {g.members.slice(0, 4).map(mid => {
-                                            const c = characters.find(char => char.id === mid);
-                                            return <img key={mid} src={c?.avatar} className="w-full h-full object-cover rounded-sm bg-white" />;
-                                        })}
+                {/* ── 消息 tab：单聊 + 群聊混排 ── */}
+                {hubTab === 'chats' && (
+                    <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                        {convos.map(cv => {
+                            if (cv.kind === 'group') {
+                                const g = groups.find(x => x.id === cv.id);
+                                return (
+                                    <div
+                                        key={`g-${cv.id}`}
+                                        onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
+                                        className={`bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30 ${cv.dissolved ? 'opacity-70' : ''}`}
+                                    >
+                                        <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
+                                            {cv.avatar ? (
+                                                <img src={cv.avatar} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-0.5 p-0.5 w-full h-full bg-slate-200">
+                                                    {(g?.members || []).slice(0, 4).map(mid => {
+                                                        const c = characters.find(ch => ch.id === mid);
+                                                        return <img key={mid} src={c?.avatar} className="w-full h-full object-cover rounded-sm bg-white" />;
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`font-bold truncate text-sm ${cv.dissolved ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{cv.name}</span>
+                                                <UsersThree size={12} className="text-slate-300 shrink-0" />
+                                                <span className="text-[9px] text-slate-300 shrink-0">{cv.memberCount}</span>
+                                            </div>
+                                            {cv.dissolved ? (
+                                                <div className="text-[11px] text-red-400/80 mt-0.5 font-medium">此群聊已被解散</div>
+                                            ) : (
+                                                <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1 shrink-0">
+                                            <span className="text-[9px] text-slate-300">{formatConvoTime(cv.last?.timestamp)}</span>
+                                            {cv.dissolved && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(cv.id); }}
+                                                    className="text-[9px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 hover:bg-red-100"
+                                                >删除</button>
+                                            )}
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-slate-700 truncate text-base">{g.name}</div>
-                                <div className="text-xs text-slate-400 mt-1 flex items-center gap-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM14.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z" /></svg>
-                                    {g.members.length} 成员
+                                );
+                            }
+                            return (
+                                <div
+                                    key={`c-${cv.id}`}
+                                    onClick={() => openPrivateChat(cv.id)}
+                                    className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30"
+                                >
+                                    <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-slate-700 truncate text-sm">{cv.name}</div>
+                                        <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
+                                    </div>
+                                    <span className="text-[9px] text-slate-300 shrink-0">{formatConvoTime(cv.last?.timestamp)}</span>
                                 </div>
+                            );
+                        })}
+                        {convos.length === 0 && (
+                            <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2">
+                                <ChatsTeardrop size={36} className="opacity-50" />
+                                还没有任何会话。去「联系人」找个角色开聊，或点右上角创建群聊。
                             </div>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-300"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-                        </div>
-                    ))}
-                    {groups.length === 0 && (
-                        <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2">
-                            <UsersThree size={36} className="opacity-50" />
-                            暂无群聊，点击右上角创建
-                        </div>
-                    )}
+                        )}
+                    </div>
+                )}
+
+                {/* ── 联系人 tab：全部角色 ── */}
+                {hubTab === 'contacts' && (
+                    <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                        {characters.map(c => (
+                            <div key={c.id} onClick={() => openPrivateChat(c.id)} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30">
+                                <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-slate-700 truncate text-sm">{c.name}</div>
+                                    {(c as any).bio && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{(c as any).bio}</div>}
+                                </div>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); openCharacterSettings(c.id); }}
+                                    className="p-2 rounded-full text-slate-400 hover:text-violet-500 hover:bg-violet-50 transition-colors shrink-0"
+                                    title="角色设置"
+                                >
+                                    <GearSix size={18} weight="bold" />
+                                </button>
+                            </div>
+                        ))}
+                        {characters.length === 0 && (
+                            <div className="text-center text-slate-400 text-xs py-10">还没有角色</div>
+                        )}
+                    </div>
+                )}
+
+                {/* ── 底部导航：消息 / 联系人 / 朋友圈 ── */}
+                <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-slate-200/60 pb-safe">
+                    <div className="grid grid-cols-3">
+                        <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-violet-500' : 'text-slate-400'}`}>
+                            <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
+                            <span className="text-[10px] font-bold">消息</span>
+                        </button>
+                        <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-violet-500' : 'text-slate-400'}`}>
+                            <AddressBook size={22} weight={hubTab === 'contacts' ? 'fill' : 'regular'} />
+                            <span className="text-[10px] font-bold">联系人</span>
+                        </button>
+                        <button onClick={() => openApp(AppID.Social)} className="flex flex-col items-center gap-0.5 py-2.5 text-slate-400 hover:text-violet-500 transition-colors">
+                            <Planet size={22} weight="regular" />
+                            <span className="text-[10px] font-bold">朋友圈</span>
+                        </button>
+                    </div>
                 </div>
 
                 <Modal isOpen={modalType === 'create'} title="创建群聊" onClose={() => setModalType('none')} footer={<button onClick={handleCreateGroup} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg shadow-violet-200">创建</button>}>
@@ -1210,9 +1660,10 @@ ${attachedImagesNote}
                         <button onClick={() => setView('list')} className="p-2 -ml-2 rounded-full hover:bg-slate-100 active:bg-slate-200 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
-                        <div className="flex-1 min-w-0" onClick={() => { setTempGroupName(activeGroup?.name || ''); setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80); setModalType('settings'); }}>
+                        <div className="flex-1 min-w-0" onClick={() => { setTempGroupName(activeGroup?.name || ''); setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80); setTempMyNickname(activeGroup?.memberNicknames?.['user'] || ''); setModalType('settings'); }}>
                             <h1 className="text-base font-bold text-slate-800 truncate flex items-center gap-1">
                                 {activeGroup?.name}
+                                {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已解散</span>}
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-slate-400"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
                             </h1>
                             <div className="flex items-center gap-2">
@@ -1240,10 +1691,10 @@ ${attachedImagesNote}
                         )}
 
                         {/* Manual Trigger Button (Only trigger, not send) */}
-                        <button 
-                            onClick={() => triggerDirector(messages)} 
-                            disabled={isTyping} 
-                            className={`p-2 rounded-full transition-all active:scale-90 ${isTyping ? 'bg-slate-100 text-slate-300' : 'bg-violet-100 text-violet-600 shadow-sm'}`}
+                        <button
+                            onClick={() => triggerDirector(messages)}
+                            disabled={isTyping || !!activeGroup?.dissolved}
+                            className={`p-2 rounded-full transition-all active:scale-90 ${isTyping || activeGroup?.dissolved ? 'bg-slate-100 text-slate-300' : 'bg-violet-100 text-violet-600 shadow-sm'}`}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .914-.143Z" clipRule="evenodd" /></svg>
                         </button>
@@ -1282,6 +1733,10 @@ ${attachedImagesNote}
                             isSelected={selectedMsgIds.has(m.id)}
                             onToggleSelect={toggleMessageSelection}
                             onLongPress={handleMessageLongPress}
+                            displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
+                            memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
+                            onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
+                            onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
                         />
                     );
                 })}
@@ -1298,7 +1753,9 @@ ${attachedImagesNote}
 
             {/* Redesigned Input Area (WeChat/iOS Style) */}
             <div className="bg-[#f0f2f5] border-t border-slate-200 pb-safe shrink-0 z-40 relative">
-                {selectionMode ? (
+                {activeGroup?.dissolved ? (
+                    <div className="p-4 text-center text-xs text-slate-400 font-medium">此群聊已被解散，仅可查看历史消息</div>
+                ) : selectionMode ? (
                     <div className="p-3 flex justify-center bg-white">
                         <button 
                             onClick={deleteSelectedMessages} 
@@ -1324,7 +1781,17 @@ ${attachedImagesNote}
                                 rows={1} 
                                 value={input} 
                                 onChange={e => setInput(e.target.value)} 
-                                onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(input); }}} 
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        // 空输入回车 = 触发 AI 导演：发完消息后留空再按回车即可让成员们接话
+                                        if (!input.trim()) {
+                                            if (!isTyping) triggerDirector(messages);
+                                            return;
+                                        }
+                                        handleSendMessage(input);
+                                    }
+                                }}
                                 className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-slate-800 placeholder:text-slate-400 py-1"
                                 placeholder="Message..." 
                                 style={{ height: 'auto', minHeight: '24px' }} 
@@ -1375,6 +1842,7 @@ ${attachedImagesNote}
                                 onClick={() => {
                                     setTempGroupName(activeGroup?.name || '');
                                     setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80);
+                                    setTempMyNickname(activeGroup?.memberNicknames?.['user'] || '');
                                     setModalType('settings');
                                     setShowActions(false);
                                 }}
@@ -1391,13 +1859,28 @@ ${attachedImagesNote}
 
                 {/* --- Emoji Drawer --- */}
                 {showEmojiPicker && (
-                    <div className="h-64 bg-[#f0f2f5] border-t border-slate-200 p-4 animate-slide-up overflow-y-auto no-scrollbar">
-                        <div className="grid grid-cols-5 gap-3">
-                            {emojis.map((e, i) => (
-                                <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="aspect-square bg-white rounded-xl p-2 border border-slate-200 shadow-sm active:scale-95 flex items-center justify-center">
-                                    <img src={e.url} className="w-full h-full object-contain pointer-events-none" />
-                                </button>
-                            ))}
+                    <div className="h-64 bg-[#f0f2f5] border-t border-slate-200 animate-slide-up flex flex-col">
+                        {/* 搜索：按名字/描述模糊匹配导入的表情包 */}
+                        <div className="px-4 pt-3 pb-1 shrink-0">
+                            <input
+                                value={emojiSearch}
+                                onChange={e => setEmojiSearch(e.target.value)}
+                                placeholder="按名字或描述搜索表情…"
+                                className="w-full px-3 py-1.5 text-xs rounded-full outline-none border bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-violet-300"
+                            />
+                        </div>
+                        <div className="flex-1 p-4 pt-2 overflow-y-auto no-scrollbar">
+                            <div className="grid grid-cols-5 gap-3">
+                                {emojis.filter(e => {
+                                    const term = emojiSearch.trim().toLowerCase();
+                                    if (!term) return true;
+                                    return e.name.toLowerCase().includes(term) || ((e as any).description || '').toLowerCase().includes(term);
+                                }).map((e, i) => (
+                                    <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="aspect-square bg-white rounded-xl p-2 border border-slate-200 shadow-sm active:scale-95 flex flex-col items-center justify-center" title={e.name}>
+                                        <img src={e.url} className="w-full h-full object-contain pointer-events-none" />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1419,6 +1902,43 @@ ${attachedImagesNote}
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群名称</label>
                         <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-violet-300 transition-all" />
+                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">修改后会在群里发系统通知，成员们都能"看到"群名变化。</p>
+                    </div>
+
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">我的群名片</label>
+                        <input value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-violet-300 transition-all" />
+                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">你在本群显示的昵称，留空则用默认名字。成员也会根据心情或剧情改自己的群名片。</p>
+                    </div>
+
+                    {/* 群成员管理：点成员进资料页（管理员可禁言/设头衔/移除） */}
+                    <div className="pt-2 border-t border-slate-100">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群成员 ({activeGroup?.members.length})</label>
+                        <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
+                            {(activeGroup?.members || []).map(mid => {
+                                const c = characters.find(ch => ch.id === mid);
+                                if (!c) return null;
+                                const muted = isMuted(activeGroup, mid);
+                                return (
+                                    <div
+                                        key={mid}
+                                        onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setModalType('member-profile'); }}
+                                        className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-violet-300 cursor-pointer transition-all relative"
+                                    >
+                                        <img src={c.avatar} className={`w-10 h-10 rounded-full object-cover ${muted ? 'grayscale opacity-60' : ''}`} />
+                                        {muted && <SpeakerSlash size={12} weight="fill" className="absolute top-1.5 right-1.5 text-red-400" />}
+                                        <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{displayNameOf(activeGroup, mid)}</span>
+                                    </div>
+                                );
+                            })}
+                            {userCanManage(activeGroup) && !activeGroup?.dissolved && (
+                                <div onClick={() => setModalType('add-member')} className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 cursor-pointer transition-all text-slate-300 hover:text-violet-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                                    <span className="text-[9px] font-medium">添加</span>
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-[9px] text-slate-400 mt-2 leading-tight">点击成员查看资料；聊天里点成员头像也能进入，双击头像可以戳一戳。</p>
                     </div>
 
                     {/* Context Limit */}
@@ -1480,7 +2000,7 @@ ${attachedImagesNote}
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
                                 清空聊天
                             </button>
-                            <button onClick={() => { if(activeGroup) handleDeleteGroup(activeGroup.id); }} className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-2xl text-xs font-bold transition-colors shadow-lg shadow-red-200">解散群聊</button>
+                            <button onClick={() => { if(activeGroup) handleDissolveGroup(activeGroup.id); }} className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-2xl text-xs font-bold transition-colors shadow-lg shadow-red-200">解散群聊</button>
                         </div>
                     </div>
                 </div>
@@ -1525,6 +2045,132 @@ ${attachedImagesNote}
                 <div className="space-y-4">
                     <div className="text-center py-4 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
                     <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="金额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                </div>
+            </Modal>
+
+            {/* 成员资料 Modal —— 点头像进入；管理员/群主多出禁言、头衔、移除 */}
+            {(() => {
+                const member = profileMemberId ? characters.find(c => c.id === profileMemberId) : null;
+                if (!member) return (
+                    <Modal isOpen={modalType === 'member-profile'} title="成员资料" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
+                        <div className="text-center text-xs text-slate-400 py-6">成员不存在</div>
+                    </Modal>
+                );
+                const nickname = activeGroup?.memberNicknames?.[member.id];
+                const title = activeGroup?.memberTitles?.[member.id];
+                const muted = isMuted(activeGroup, member.id);
+                const mutedUntilTs = activeGroup?.mutedUntil?.[member.id];
+                const canManage = userCanManage(activeGroup) && !activeGroup?.dissolved;
+                return (
+                    <Modal isOpen={modalType === 'member-profile'} title="成员资料" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
+                        <div className="space-y-4">
+                            <div className="flex flex-col items-center gap-2 py-2">
+                                <img src={member.avatar} className={`w-20 h-20 rounded-3xl object-cover shadow-md border-2 border-white ${muted ? 'grayscale' : ''}`} />
+                                <div className="flex items-center gap-1.5">
+                                    {title && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 border border-amber-200 text-[9px] font-bold flex items-center gap-0.5"><Crown size={9} weight="fill" />{title}</span>}
+                                    <span className="font-bold text-slate-800 text-base">{nickname || member.name}</span>
+                                </div>
+                                {nickname && <span className="text-[10px] text-slate-400">角色名：{member.name}</span>}
+                                {muted && mutedUntilTs && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 flex items-center gap-1">
+                                        <SpeakerSlash size={10} weight="fill" />
+                                        禁言中，至 {new Date(mutedUntilTs).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2">
+                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openPrivateChat(member.id); }} className="py-3 bg-violet-50 text-violet-600 font-bold rounded-2xl border border-violet-100 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
+                                    发消息
+                                </button>
+                                <button onClick={() => handlePokeMember(member.id)} disabled={!!activeGroup?.dissolved} className="py-3 bg-sky-50 text-sky-600 font-bold rounded-2xl border border-sky-100 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1 disabled:opacity-40">
+                                    <HandPointing size={20} weight="bold" />
+                                    戳一戳
+                                </button>
+                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openCharacterSettings(member.id); }} className="py-3 bg-slate-50 text-slate-600 font-bold rounded-2xl border border-slate-200 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
+                                    <GearSix size={20} weight="bold" />
+                                    角色设置
+                                </button>
+                            </div>
+
+                            {canManage && (
+                                <div className="pt-3 border-t border-slate-100 space-y-2">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">管理操作（{isUserOwner(activeGroup) ? '群主' : '管理员'}）</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => { setTempTitle(title || ''); setModalType('set-title'); }} className="py-2.5 bg-amber-50 text-amber-600 font-bold rounded-xl border border-amber-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
+                                            <Crown size={14} weight="bold" /> 设置头衔
+                                        </button>
+                                        <button onClick={() => setModalType('mute-member')} className="py-2.5 bg-orange-50 text-orange-600 font-bold rounded-xl border border-orange-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
+                                            <SpeakerSlash size={14} weight="bold" /> {muted ? '禁言管理' : '禁言此成员'}
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            if (confirmRemoveId === member.id) { handleRemoveMember(member.id); setConfirmRemoveId(null); }
+                                            else setConfirmRemoveId(member.id);
+                                        }}
+                                        className={`w-full py-2.5 font-bold rounded-xl border active:scale-95 transition-all text-xs ${confirmRemoveId === member.id ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-200' : 'bg-red-50 text-red-500 border-red-100'}`}
+                                    >
+                                        {confirmRemoveId === member.id ? '再点一次确认移除' : '移出群聊'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </Modal>
+                );
+            })()}
+
+            {/* 设置头衔 Modal */}
+            <Modal
+                isOpen={modalType === 'set-title'} title="设置头衔" onClose={() => setModalType('member-profile')}
+                footer={<div className="flex gap-2 w-full">
+                    <button onClick={() => { setTempTitle(''); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
+                    <button onClick={handleSetTitle} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-2xl shadow-lg shadow-amber-200">保存</button>
+                </div>}
+            >
+                <div className="space-y-3">
+                    <p className="text-xs text-slate-400">头衔会显示在该成员名字旁边，群里所有人（包括角色自己）都能看到。清空保存即撤销头衔。</p>
+                    <input value={tempTitle} onChange={e => setTempTitle(e.target.value)} maxLength={12} placeholder="例如：气氛担当 / 沙发王" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-amber-300 transition-all" autoFocus />
+                </div>
+            </Modal>
+
+            {/* 添加成员 Modal */}
+            <Modal isOpen={modalType === 'add-member'} title="添加成员" onClose={() => setModalType('settings')}>
+                <div className="space-y-3">
+                    {(() => {
+                        const candidates = characters.filter(c => !activeGroup?.members.includes(c.id));
+                        if (candidates.length === 0) return <p className="text-xs text-slate-400 text-center py-6">所有角色都已在群里</p>;
+                        return (
+                            <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
+                                {candidates.map(c => (
+                                    <div key={c.id} onClick={() => handleAddMember(c.id)} className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-violet-300 cursor-pointer transition-all">
+                                        <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
+                                        <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{c.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
+                </div>
+            </Modal>
+
+            {/* 禁言 Modal */}
+            <Modal isOpen={modalType === 'mute-member'} title="禁言成员" onClose={() => setModalType('member-profile')}>
+                <div className="space-y-3">
+                    <p className="text-xs text-slate-400">禁言期间该成员不会在群里发言（AI 导演也会跳过ta），群里会发系统通知。</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {MUTE_OPTIONS.map(opt => (
+                            <button key={opt.ms} onClick={() => handleMuteMember(opt.ms)} className="py-3 bg-orange-50 text-orange-600 font-bold rounded-xl border border-orange-100 active:scale-95 transition-transform text-xs">
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    {profileMemberId && isMuted(activeGroup, profileMemberId) && (
+                        <button onClick={() => handleMuteMember(null)} className="w-full py-3 bg-emerald-50 text-emerald-600 font-bold rounded-xl border border-emerald-100 active:scale-95 transition-transform text-xs">
+                            解除禁言
+                        </button>
+                    )}
                 </div>
             </Modal>
 

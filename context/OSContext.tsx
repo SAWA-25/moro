@@ -244,6 +244,7 @@ interface OSContextType {
   groups: GroupProfile[];
   createGroup: (name: string, members: string[]) => void;
   deleteGroup: (id: string) => void;
+  updateGroup: (id: string, updates: Partial<GroupProfile>) => Promise<GroupProfile | null>;
 
   // User Profile
   userProfile: UserProfile;
@@ -2101,8 +2102,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           id: `group-${Date.now()}`,
           name,
           members,
-          avatar: generateAvatar(name), 
-          createdAt: Date.now()
+          avatar: generateAvatar(name),
+          createdAt: Date.now(),
+          ownerId: 'user'
       };
       await DB.saveGroup(newGroup);
       setGroups(prev => [...prev, newGroup]);
@@ -2111,6 +2113,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const deleteGroup = async (id: string) => {
       await DB.deleteGroup(id);
       setGroups(prev => prev.filter(g => g.id !== id));
+  };
+
+  const updateGroup = async (id: string, updates: Partial<GroupProfile>): Promise<GroupProfile | null> => {
+      const target = groups.find(g => g.id === id);
+      if (!target) return null;
+      const updated = { ...target, ...updates };
+      await DB.saveGroup(updated);
+      setGroups(prev => prev.map(g => g.id === id ? updated : g));
+      return updated;
   };
 
   // Worldbook Methods
@@ -3457,6 +3468,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     groups,
     createGroup,
     deleteGroup,
+    updateGroup,
     userProfile,
     updateUserProfile,
     availableModels,

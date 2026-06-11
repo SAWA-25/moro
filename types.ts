@@ -1726,6 +1726,19 @@ export interface GroupProfile {
      * 不设默认 80。设大点能让活跃群更完整，设小点节省 token、避免某个活跃群把其他群挤掉。
      */
     privateContextCap?: number;
+    /** 群主。'user' = 用户本人；历史群没有该字段时按用户是群主处理。 */
+    ownerId?: string;
+    /** 管理员 charId 列表（群主天然拥有管理员权限，不需要重复列在这里）。 */
+    adminIds?: string[];
+    /** 群名片：charId（或 'user'）→ 在本群显示的昵称。角色可通过 [[SET_NICKNAME]] 自己改。 */
+    memberNicknames?: Record<string, string>;
+    /** 头衔：charId（或 'user'）→ 群主/管理员设置的专属头衔，显示在名字旁的小徽章。 */
+    memberTitles?: Record<string, string>;
+    /** 禁言：charId → 解禁时间戳（ms）。当前时间小于该值时该成员被禁言。 */
+    mutedUntil?: Record<string, number>;
+    /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
+    dissolved?: boolean;
+    dissolvedAt?: number;
 }
 
 export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memories' | 'refinedMemories' | 'activeMemoryMonths' | 'impression'> {
@@ -2324,7 +2337,9 @@ export interface EmojiCategory {
 export interface Emoji {
     name: string;
     url: string;
-    categoryId?: string; 
+    categoryId?: string;
+    /** 描述：表情面板按描述搜索用，同时注入提示词帮 AI 选表情。 */
+    description?: string;
 }
 
 export interface FullBackupData {

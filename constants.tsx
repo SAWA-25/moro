@@ -89,7 +89,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Chat, name: 'Message', icon: 'Chat', color: 'green' },
   { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
-  { id: AppID.GroupChat, name: '群聊', icon: 'GroupChat', color: 'violet' },
+  { id: AppID.GroupChat, name: '消息', icon: 'GroupChat', color: 'violet' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   { id: AppID.CheckPhone, name: '查手机', icon: 'CheckPhone', color: 'slate' },
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden

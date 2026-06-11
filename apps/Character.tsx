@@ -155,6 +155,20 @@ const Character: React.FC = () => {
       if (savedId) setSelectedPromptId(savedId);
   }, []);
 
+  // 深链接：聊天里点头像/右上角"角色设置"会写入该 key，再打开本 App 时直接进对应角色的编辑页
+  useEffect(() => {
+      try {
+          const target = localStorage.getItem('moro_character_open_target');
+          if (target) {
+              localStorage.removeItem('moro_character_open_target');
+              if (characters.some(c => c.id === target)) {
+                  setEditingId(target);
+                  setView('detail');
+              }
+          }
+      } catch { /* ignore */ }
+  }, []);
+
   // Sync Ref with State
   useEffect(() => {
       editingIdRef.current = editingId;

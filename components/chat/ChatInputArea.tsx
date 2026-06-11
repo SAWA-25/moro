@@ -16,6 +16,8 @@ interface ChatInputAreaProps {
     onForwardSelected?: () => void;
     selectedCount: number;
     emojis: Emoji[];
+    /** 全量可见表情（不按当前分类过滤），表情面板搜索时跨分类匹配名字/描述。不传则只搜当前分类。 */
+    allEmojis?: Emoji[];
     characters: CharacterProfile[];
     activeCharacterId: string;
     onCharSelect: (id: string) => void;
@@ -53,7 +55,7 @@ interface ChatInputAreaProps {
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     input, setInput, isTyping, selectionMode,
     showPanel, setShowPanel, onSend, onDeleteSelected, onForwardSelected, selectedCount,
-    emojis, characters, activeCharacterId, onCharSelect,
+    emojis, allEmojis, characters, activeCharacterId, onCharSelect,
     customThemes, onUpdateTheme, onRemoveTheme, activeThemeId,
     onPanelAction, onImageSelect, onSendVoice, isSummarizing,
     categories = [], activeCategory = 'default',
@@ -72,12 +74,21 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const [actionsPage, setActionsPage] = useState<0 | 1>(0);
     const [emojiSelectionMode, setEmojiSelectionMode] = useState(false);
     const [selectedEmojis, setSelectedEmojis] = useState<any[]>([]);
+    const [emojiSearch, setEmojiSearch] = useState('');
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     const isLongPressTriggered = useRef(false); // Track if long press action fired
     const actionsSwipeStart = useRef<{ x: number; y: number } | null>(null);
     const actionsSwipeMoved = useRef(false);
     const useIOSStandaloneInputFix = isIOSStandaloneWebApp();
+
+    // 表情面板搜索：有关键词时跨分类匹配名字/描述（联动所有导入的表情包），否则按当前分类显示
+    const emojiSearchTerm = emojiSearch.trim().toLowerCase();
+    const displayedEmojis = emojiSearchTerm
+        ? (allEmojis ?? emojis).filter(e =>
+            e.name.toLowerCase().includes(emojiSearchTerm) ||
+            (e.description || '').toLowerCase().includes(emojiSearchTerm))
+        : emojis;
 
     // --- 语音消息录音（MediaRecorder + Web Speech API 实时转写）---
     const [isRecording, setIsRecording] = useState(false);
@@ -193,6 +204,11 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            // 空输入回车 = 触发 AI 回复：发完消息后输入框留空再按一次回车即可让角色接话/恢复生成
+            if (!input.trim()) {
+                if (!isTyping) onPanelAction('trigger-ai');
+                return;
+            }
             onSend();
         }
     };
@@ -624,6 +640,19 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 )}
                             </div>
 
+                            {/* 表情搜索框：按名字/描述模糊搜索，命中时跨分类显示 */}
+                            <div className="px-4 pt-2">
+                                <input
+                                    value={emojiSearch}
+                                    onChange={e => setEmojiSearch(e.target.value)}
+                                    placeholder="按名字或描述搜索表情…"
+                                    className={`w-full px-3 py-1.5 text-xs rounded-full outline-none border transition-colors ${
+                                        isDiscordStyle ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' :
+                                        isPixelStyle ? 'bg-[#fff7ed] border-[#8f674a]/40 text-[#6a4c35] placeholder:text-[#9b8677]' :
+                                        'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-primary/40'
+                                    }`}
+                                />
+                            </div>
                             <div className="flex-1 overflow-y-auto no-scrollbar p-4">
                                 <div className="grid grid-cols-4 gap-3">
                                     {emojiSelectionMode ? (
@@ -641,7 +670,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     ) : (
                                         <button onClick={() => onPanelAction('emoji-import')} className={emojiImportTileClass}>+</button>
                                     )}
-                                    {emojis.map((e, i) => {
+                                    {displayedEmojis.map((e, i) => {
                                         const isSelected = selectedEmojiUrls.has(e.url);
                                         return (
                                         <button 
