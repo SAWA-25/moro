@@ -7,7 +7,7 @@
 
 ```bash
 cd worker/post-office
-wrangler d1 create sullyos-post-office          # 拿到 database_id
+wrangler d1 create moro-post-office          # 拿到 database_id
 # 把 database_id 填到 wrangler.toml 的 [[d1_databases]]
 wrangler secret put ADMIN_TOKEN                 # 管理员令牌（删信用）
 wrangler secret put PO_IP_SALT                  # 限流哈希盐（随便一串长随机值）

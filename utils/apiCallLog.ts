@@ -9,7 +9,7 @@
  * 「时间 / 哪个 API / 哪个模型 / token」从请求体 + 响应里自动解析；「哪个 App / 哪个
  * 角色 / 具体用途」靠两条来源：
  *   1. 显式 meta —— safeFetchJson 调用点通过第 5 个参数传，挂到 RequestInit 的
- *      `__sullyMeta` 上由拦截器读取（精确，含 purpose）。
+ *      `__moroMeta` 上由拦截器读取（精确，含 purpose）。
  *   2. 环境兜底 ambientMeta —— OSContext 在切 App / 角色时写入「当前在哪个 App、
  *      当前角色」，裸 fetch 没有显式 meta 时用它兜底标 App / 角色。
  *

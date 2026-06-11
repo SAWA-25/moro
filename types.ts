@@ -178,9 +178,9 @@ export interface OSTheme {
   chatSendButtonStyle?: 'circle' | 'pill' | 'minimal';
   /** Instant Push 用户气泡左侧的"准备中"圆点动画。默认开启。 */
   chatPendingIndicator?: boolean;
-  /** 聊天「白框」自定义 CSS：作用于 .sully-chat-header / .sully-chat-inputbar / .sully-chat-root，
-   *  以及顶栏各零件 .sully-chat-back / .sully-chat-avatar / .sully-chat-name / .sully-chat-status /
-   *  .sully-chat-buffs / .sully-chat-token / .sully-chat-trigger。可换色 / 贴图 / 改外形 / 挪位。 */
+  /** 聊天「白框」自定义 CSS：作用于 .moro-chat-header / .moro-chat-inputbar / .moro-chat-root，
+   *  以及顶栏各零件 .moro-chat-back / .moro-chat-avatar / .moro-chat-name / .moro-chat-status /
+   *  .moro-chat-buffs / .moro-chat-token / .moro-chat-trigger。可换色 / 贴图 / 改外形 / 挪位。 */
   chatChromeCustomCss?: string;
   /** 隐藏顶栏的情绪 buff 栏。 */
   chatHideHeaderBuffs?: boolean;
@@ -1662,7 +1662,7 @@ export interface GroupProfile {
 
 export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memories' | 'refinedMemories' | 'activeMemoryMonths' | 'impression'> {
     version: number;
-    type: 'sully_character_card';
+    type: 'moro_character_card';
     embeddedTheme?: ChatTheme;
 }
 
@@ -2407,7 +2407,7 @@ export interface FullBackupData {
     browserConfig?: { braveKey?: string; useRealSearch?: boolean };
     bm25Mode?: string;
     lastActiveCharId?: string;
-    eventNotifFlags?: Record<string, string>;  // sullyos_* 事件通知标记
+    eventNotifFlags?: Record<string, string>;  // moro_* 事件通知标记
     hotNewsSnapshots?: HotNewsSnapshot[];
 }
 
@@ -2424,10 +2424,10 @@ export interface CloudBackupConfig {
     webdavUrl: string;          // e.g. https://dav.jianguoyun.com/dav/
     username: string;
     password: string;           // App-specific password
-    remotePath: string;         // e.g. /SullyBackup/
+    remotePath: string;         // e.g. /MoroBackup/
 
     // GitHub Releases — uses a Personal Access Token. Owner is resolved from
-    // GET /user during connect; repo defaults to 'sully-backup' (private).
+    // GET /user during connect; repo defaults to 'moro-backup' (private).
     githubToken?: string;
     githubOwner?: string;
     githubRepo?: string;

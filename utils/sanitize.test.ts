@@ -78,7 +78,7 @@ describe('sanitizeForNotification', () => {
   });
 
   it('A10 SEND_EMOJI 正向 + 反向 emoji tag', () => {
-    expect(sanitizeForNotification('[Sully 发送了表情包: 笑] 然后 [[SEND_EMOJI: 哭]]'))
+    expect(sanitizeForNotification('[Moro 发送了表情包: 笑] 然后 [[SEND_EMOJI: 哭]]'))
       .toBe('[表情：笑] 然后 [表情：哭]');
   });
 

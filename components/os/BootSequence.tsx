@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-// SullyOS 冷启动「世界入场」电影化序列 —— 取代传统黑屏 spinner。
+// Moro 冷启动「世界入场」电影化序列 —— 取代传统黑屏 spinner。
 // 目标：让人觉得「进入了一个小世界」，而不是「在等一个 App 加载完」。
 //   · 深空大气场景 + 相机缓慢前推 + 漂浮尘埃/闪烁星点 + 核心柔光（呼吸）
 //   · logo 从景深中浮现（远→近对焦），随后 tagline 与一道光线（UI 萌芽）
@@ -11,7 +11,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 //   · 可轻触跳过；尊重 prefers-reduced-motion
 //   · 用内联 @keyframes 而非 Tailwind 自定义 animate-*（CDN 版 Tailwind 不可靠生成自定义动画类）
 
-const BOOT_SEEN_KEY = 'sullyos_boot_seen_session';
+const BOOT_SEEN_KEY = 'moro_boot_seen_session';
 
 interface Props {
   /** 数据是否已就绪（IndexedDB 加载完）。未就绪时场景持续呼吸等待，不退场。 */
@@ -100,7 +100,7 @@ const BootSequence: React.FC<Props> = ({ dataReady, wallpaper, onDone }) => {
   return (
     <div
       onClick={skip}
-      aria-label="SullyOS"
+      aria-label="Moro"
       className="fixed inset-0 z-[9999] overflow-hidden select-none cursor-pointer"
       style={{
         background: '#05060f',
@@ -204,7 +204,7 @@ const BootSequence: React.FC<Props> = ({ dataReady, wallpaper, onDone }) => {
             textShadow: '0 0 36px rgba(170,150,255,0.55), 0 2px 14px rgba(0,0,0,0.4)',
             animation: cinematic ? 'bootLogoIn 1400ms cubic-bezier(0.22,1,0.36,1) 250ms both' : 'bootLogoIn 600ms ease-out both',
           }}>
-            Sully<span style={{ fontWeight: 500 }}>OS</span>
+            Moro
           </div>
           <div className="mt-3 h-px w-28" style={{
             background: 'linear-gradient(90deg, transparent, rgba(200,190,255,0.85), transparent)',

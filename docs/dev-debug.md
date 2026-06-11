@@ -113,8 +113,8 @@ writeDevDebugFlags(flags)
 每个 key 实际存进 localStorage 时会拼上当前分支后缀，避免不同分支的调试状态互相污染：
 
 ```
-sullyos.devDebug.flags.v1.<branch>      ← 开关状态（含 captureLogs 数组）
-sullyos.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每条带 category 字段）
+moro.devDebug.flags.v1.<branch>      ← 开关状态（含 captureLogs 数组）
+moro.devDebug.log.v1.<branch>        ← 分类捕获日志（各类混存，每条带 category 字段）
 ```
 
 > 浮球位置 / 展开与否**不落 localStorage**（纯内存，刷新即回默认）；可用性（解锁 / 强制关闭）也是会话级内存标志。只有上面这两个 key 真正持久化。

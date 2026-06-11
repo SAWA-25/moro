@@ -9,7 +9,7 @@
 import { APIConfig } from '../types';
 import { safeResponseJson } from './safeApi';
 
-export const IMAGE_GEN_MODEL_KEY = 'sullyos_image_gen_model';
+export const IMAGE_GEN_MODEL_KEY = 'moro_image_gen_model';
 export const DEFAULT_IMAGE_GEN_MODEL = 'gemini-2.0-flash-exp-image-generation';
 
 const normalizeBaseUrl = (baseUrl: string): string => {

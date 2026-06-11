@@ -574,7 +574,7 @@ async function uploadPlaceholderImage(cookie) {
 // 见 notes/music-scaling.md 部署教程。
 const NETEASE_UPSTREAMS = [
   "https://api-enhanced-ochre-kappa.vercel.app",
-  // "https://sully-music.deno.dev",          // ← 部署 Deno Deploy 后把 URL 粘贴到这里
+  // "https://moro-music.deno.dev",          // ← 部署 Deno Deploy 后把 URL 粘贴到这里
   // "https://api-enhanced-mirror.vercel.app", // ← 部署第二个 Vercel 后把 URL 粘贴到这里
 ];
 
@@ -730,7 +730,7 @@ function buildCacheKey(action, body, cookieBucket) {
   const sorted = [...p.entries()].sort(([a], [b]) => a.localeCompare(b));
   const qs = sorted.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   return new Request(
-    `https://sully-netease-cache.internal/${action}/${cookieBucket}?${qs}`,
+    `https://moro-netease-cache.internal/${action}/${cookieBucket}?${qs}`,
     { method: 'GET' }
   );
 }
@@ -1403,7 +1403,7 @@ export default {
       let body = {};
       if (request.method === 'POST') { try { body = await request.json(); } catch (e) { /* allow empty */ } }
       const cookie = request.headers.get('x-xhs-cookie') || body.cookie || (env && env.XHS_COOKIE) || '';
-      if (!cookie) return jsonResponse({ error: '未配置 cookie。请在 SullyOS 设置里粘贴小红书 cookie。' }, { status: 401, origin });
+      if (!cookie) return jsonResponse({ error: '未配置 cookie。请在 Moro 设置里粘贴小红书 cookie。' }, { status: 401, origin });
       if (!cookie.includes('a1=')) return jsonResponse({ error: 'cookie 缺少 a1 字段，请复制完整的小红书 cookie。' }, { status: 400, origin });
       try {
         const result = await XHSLite.handle(command, body, cookie);
@@ -1526,7 +1526,7 @@ export default {
       const ghApiVer = request.headers.get('X-GitHub-Api-Version');
       if (ghApiVer) ghHeaders['X-GitHub-Api-Version'] = ghApiVer;
       // GitHub 拒绝没有 UA 的请求
-      ghHeaders['User-Agent'] = 'sully-backup-proxy';
+      ghHeaders['User-Agent'] = 'moro-backup-proxy';
       try {
         let ghBody = null;
         if (ghMethod !== 'GET' && ghMethod !== 'DELETE') {
@@ -2498,7 +2498,7 @@ export default {
         try {
           const upstream = await fetch(targetUrl, {
             headers: {
-              'User-Agent': 'Mozilla/5.0 sully-replicate-proxy',
+              'User-Agent': 'Mozilla/5.0 moro-replicate-proxy',
               'Accept': '*/*',
             },
           });
@@ -2530,7 +2530,7 @@ export default {
           'Authorization': auth,
           'Content-Type': request.headers.get('Content-Type') || 'application/json',
           'Accept': 'application/json',
-          'User-Agent': 'sully-replicate-proxy',
+          'User-Agent': 'moro-replicate-proxy',
         };
         const init = { method: request.method, headers: forwardHeaders };
         if (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH') {
@@ -2630,7 +2630,7 @@ export default {
             status: cached.status,
             headers: {
               'Content-Type': 'application/json; charset=utf-8',
-              'X-Sully-Cache': 'HIT',
+              'X-Moro-Cache': 'HIT',
               ...corsHeaders(origin),
             }
           });
@@ -2651,8 +2651,8 @@ export default {
         status,
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
-          'X-Sully-Cache': 'MISS',
-          'X-Sully-Upstream': upstream,
+          'X-Moro-Cache': 'MISS',
+          'X-Moro-Upstream': upstream,
           ...corsHeaders(origin),
         }
       });

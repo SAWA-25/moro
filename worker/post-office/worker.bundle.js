@@ -117,7 +117,7 @@ var src_default = {
     try {
       await ensureSchema(env.DB);
       if (req.method === "GET" && ends("/health")) {
-        return json({ ok: true, service: "sullyos-post-office", maxReplies, dislikeLimit, admin: !!env.ADMIN_TOKEN });
+        return json({ ok: true, service: "moro-post-office", maxReplies, dislikeLimit, admin: !!env.ADMIN_TOKEN });
       }
       if (ends("/admin/list") && req.method === "GET") {
         if (!isAdmin(req, url, env)) return json({ ok: false, error: "unauthorized" }, 401);

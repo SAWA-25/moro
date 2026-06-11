@@ -2159,16 +2159,16 @@ ${recent || '（你们还没怎么聊过）'}
 
     return (
         <div
-            className={`sully-chat-root ${finalRootClass}`}
+            className={`moro-chat-root ${finalRootClass}`}
             style={finalRootStyle}
         >
-             {/* 白框自定义 CSS：全局默认在前、角色专属在后（后者叠加覆盖）。作用于 .sully-chat-* 各零件。 */}
+             {/* 白框自定义 CSS：全局默认在前、角色专属在后（后者叠加覆盖）。作用于 .moro-chat-* 各零件。 */}
              {osTheme.chatChromeCustomCss && <style>{osTheme.chatChromeCustomCss}</style>}
              {char.chromeCustomCss && <style>{char.chromeCustomCss}</style>}
              {/* 守护样式（注在用户 CSS 之后）：保证返回键永远可见可点 —— 防止坏 CSS 把它隐藏/变透明/拦截点击，
                  让用户在样式写崩时仍能退出聊天（再去「外观→聊天界面→一键还原」清掉坏 CSS）。不锁位置，正常挪位仍可用。 */}
              {(osTheme.chatChromeCustomCss || char.chromeCustomCss) && (
-               <style>{`.sully-chat-back{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}`}</style>
+               <style>{`.moro-chat-back{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}`}</style>
              )}
              {/* 角色「登场」过场：切换/进入时以 ta 的头像氛围铺底登场，再推进穿过进入聊天。key 切换即重放。 */}
              {showEntry && char && (
@@ -2184,14 +2184,14 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* 动森彩蛋：作用域 CSS 覆盖气泡——奶油 AI 气泡 + 蜜桃用户气泡，暖棕文字，绕开 MessageItem 复杂逻辑 */}
              {acnh && <style>{`
-                .sully-bubble-ai {
+                .moro-bubble-ai {
                     background: #FBF4DE !important;
                     color: #6b5a3e !important;
                     border: 1.5px solid #efe6c8 !important;
                     border-radius: 24px !important;
                     box-shadow: 0 4px 10px -5px rgba(120,95,45,0.28) !important;
                 }
-                .sully-bubble-user {
+                .moro-bubble-user {
                     background: #F5C896 !important;
                     color: #6b4a2f !important;
                     border: 1.5px solid #eeb87f !important;
@@ -2199,7 +2199,7 @@ ${recent || '（你们还没怎么聊过）'}
                     box-shadow: 0 4px 10px -5px rgba(150,100,55,0.32) !important;
                 }
                 /* 仅动森：聊天正文放大一点 */
-                .sully-bubble-ai .text-\\[15px\\], .sully-bubble-user .text-\\[15px\\] {
+                .moro-bubble-ai .text-\\[15px\\], .moro-bubble-user .text-\\[15px\\] {
                     font-size: 16.5px !important;
                     line-height: 1.7 !important;
                 }
@@ -2926,13 +2926,13 @@ ${recent || '（你们还没怎么聊过）'}
                         <ChromeCssEditor value={char.chromeCustomCss || ''} onChange={(css) => updateCharacter(char.id, { chromeCustomCss: css } as any)} />
                     </div>
                     {/* 脱离 CSS 控制的救援键：只在「白框」自定义弹窗开着时出现（平时不显示，不丑）。portal 到 body
-                        在聊天 DOM 之外 + id 守护(#sully-safe-reset 特异性高于 *)，连 *{display:none!important} 也盖不掉，
+                        在聊天 DOM 之外 + id 守护(#moro-safe-reset 特异性高于 *)，连 *{display:none!important} 也盖不掉，
                         保证你刚粘进坏 CSS 当场崩掉时，这个还原键一定点得到。 */}
                     {createPortal(
                         <>
-                            <style>{`#sully-safe-reset{position:fixed!important;top:calc(var(--safe-top) + 6px)!important;left:50%!important;transform:translateX(-50%)!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;display:flex!important;z-index:2147483647!important;}`}</style>
+                            <style>{`#moro-safe-reset{position:fixed!important;top:calc(var(--safe-top) + 6px)!important;left:50%!important;transform:translateX(-50%)!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;display:flex!important;z-index:2147483647!important;}`}</style>
                             <button
-                                id="sully-safe-reset"
+                                id="moro-safe-reset"
                                 onClick={() => { updateCharacter(char.id, { chromeCustomCss: '' } as any); addToast('已还原该角色白框', 'success'); }}
                                 style={{
                                     position: 'fixed', top: 'calc(var(--safe-top) + 6px)', left: '50%', transform: 'translateX(-50%)',

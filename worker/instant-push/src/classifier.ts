@@ -1,5 +1,5 @@
 /**
- * SullyOS-specific business-tag classifier for the amsg-instant 0.8 agentic loop.
+ * Moro-specific business-tag classifier for the amsg-instant 0.8 agentic loop.
  *
  * Scans `ctx.llmOutputText` and decides:
  *   - DATA tags (RECALL / SEARCH / READ_DIARY / FS_READ_DIARY / READ_NOTE / XHS_*) →
@@ -13,7 +13,7 @@
  * 同时返回 sanitizedBody / sanitizedPrefix — push notification.body 终态文本.
  * 跟 message 原文不重叠时由 onLLMOutput 条件塞进 payload.notification.body.
  *
- * 故意没有任何 sullyOS 业务执行逻辑 — 这层只做"看见什么标签 → 出什么 decision".
+ * 故意没有任何 Moro 业务执行逻辑 — 这层只做"看见什么标签 → 出什么 decision".
  * tool 实际跑在 utils/agenticTools.ts (客户端), directive 实际重放在 utils/directiveReplayer.ts.
  *
  * 把分类逻辑放独立文件方便单测 (不需要起整个 cf adapter).
@@ -283,7 +283,7 @@ function parseDiaryShort(m: RegExpMatchArray, type: DiaryDirectiveType): Directi
  * 把 LLM 输出分类成一个 decision payload.
  *
  * @param text  ctx.llmOutputText (可能为空串 —— 纯 tool_calls 响应也合法; 不过那种情况我们
- *              不会进 SullyOS 分类器, 因为 SullyOS 走的是文本协议 [[...]], 不是 OpenAI tool
+ *              不会进 Moro 分类器, 因为 Moro 走的是文本协议 [[...]], 不是 OpenAI tool
  *              格式. 但保留兼容性: 空字符串 → finish + 空 cleanedText)
  */
 export function classifyLLMOutput(text: string): ClassificationResult {

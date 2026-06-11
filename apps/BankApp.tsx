@@ -37,7 +37,7 @@ const INITIAL_STATE: BankFullState = {
                 hireDate: Date.now(),
                 x: 50,
                 y: 50,
-                personality: 'Sully的专属宠物，负责看店',
+                personality: 'Moro的专属宠物，负责看店',
                 isPet: true,
             }
         ],
@@ -172,14 +172,14 @@ const BankApp: React.FC = () => {
         if (characters.length > 0) {
             const systemStaff = currentState.shop.staff.find(s => s.id === 'staff-001');
             if (systemStaff && systemStaff.isPet && (!systemStaff.ownerCharId || systemStaff.ownerCharId === '')) {
-                // Find Sully by name match, fallback to first character
-                const sully = characters.find(c => c.name.toLowerCase().includes('sully')) || characters[0];
+                // Find Moro by name match, fallback to first character
+                const moro = characters.find(c => c.name.toLowerCase().includes('moro')) || characters[0];
                 currentState = {
                     ...currentState,
                     shop: {
                         ...currentState.shop,
                         staff: currentState.shop.staff.map(s =>
-                            s.id === 'staff-001' ? { ...s, ownerCharId: sully.id } : s
+                            s.id === 'staff-001' ? { ...s, ownerCharId: moro.id } : s
                         )
                     }
                 };

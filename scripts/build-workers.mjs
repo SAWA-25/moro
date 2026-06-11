@@ -29,7 +29,7 @@ const root = resolve(__dirname, '..');
 //   - flat single-file workers (worker/<name>.ts → public/<name>.js only — no worker.bundle.js sibling)
 const WORKERS = [
   { name: 'instant-push', outName: 'instant-worker.bundle.js' },
-  // sw-keep-alive 是 SullyOS 的 service worker, 唯一消费者是浏览器从 /public 静态读, 不需要
+  // sw-keep-alive 是 Moro 的 service worker, 唯一消费者是浏览器从 /public 静态读, 不需要
   // CF wrangler 单独部署 (没 worker.bundle.js sibling). 之前 bundle 是手工跑 esbuild, Round 2
   // 起接进 build:workers 一起做, 避免 worker/sw-keep-alive.ts 跟 public/sw-keep-alive.js 漂移.
   {

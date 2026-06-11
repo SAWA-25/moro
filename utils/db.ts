@@ -78,16 +78,16 @@ export interface ScheduledMessage {
 }
 
 // Built-in Presets
-const SULLY_CATEGORY_ID = 'cat_sully_exclusive';
-const SULLY_PRESET_EMOJIS = [
-    { name: 'Sully晚安', url: 'https://sharkpan.xyz/f/pWg6HQ/night.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully无语', url: 'https://sharkpan.xyz/f/75wvuj/w.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully偷看', url: 'https://sharkpan.xyz/f/MK77Ia/see.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully打气', url: 'https://sharkpan.xyz/f/3WwMHe/fight.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully生气', url: 'https://sharkpan.xyz/f/5nwxCj/an.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully疑惑', url: 'https://sharkpan.xyz/f/ylWpfN/sDN.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully道歉', url: 'https://sharkpan.xyz/f/QdnaU6/sorry.png', categoryId: SULLY_CATEGORY_ID },
-    { name: 'Sully等你消息', url: 'https://sharkpan.xyz/f/5nrJsj/wait.png', categoryId: SULLY_CATEGORY_ID },
+const MORO_CATEGORY_ID = 'cat_moro_exclusive';
+const MORO_PRESET_EMOJIS = [
+    { name: 'Moro晚安', url: 'https://sharkpan.xyz/f/pWg6HQ/night.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro无语', url: 'https://sharkpan.xyz/f/75wvuj/w.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro偷看', url: 'https://sharkpan.xyz/f/MK77Ia/see.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro打气', url: 'https://sharkpan.xyz/f/3WwMHe/fight.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro生气', url: 'https://sharkpan.xyz/f/5nwxCj/an.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro疑惑', url: 'https://sharkpan.xyz/f/ylWpfN/sDN.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro道歉', url: 'https://sharkpan.xyz/f/QdnaU6/sorry.png', categoryId: MORO_CATEGORY_ID },
+    { name: 'Moro等你消息', url: 'https://sharkpan.xyz/f/5nrJsj/wait.png', categoryId: MORO_CATEGORY_ID },
 ];
 
 // 单例连接缓存。openDB 原本每次调用都新开一条 IDB 连接, 既不复用也不 close ——
@@ -880,11 +880,11 @@ export const DB = {
       if (cats.length === 0) {
           await DB.saveEmojiCategory({ id: 'default', name: '默认', isSystem: true });
           // 去掉 isSystem 标记，允许用户在 UI 里直接删除此分类
-          await DB.saveEmojiCategory({ id: SULLY_CATEGORY_ID, name: 'Sully 专属', isSystem: false });
+          await DB.saveEmojiCategory({ id: MORO_CATEGORY_ID, name: 'Moro 专属', isSystem: false });
           const db = await openDB();
           const tx = db.transaction(STORE_EMOJIS, 'readwrite');
           const store = tx.objectStore(STORE_EMOJIS);
-          SULLY_PRESET_EMOJIS.forEach(emoji => store.put(emoji));
+          MORO_PRESET_EMOJIS.forEach(emoji => store.put(emoji));
           await new Promise(resolve => { tx.oncomplete = resolve; });
       }
   },

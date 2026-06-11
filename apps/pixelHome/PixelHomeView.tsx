@@ -26,7 +26,7 @@ import { DB } from '../../utils/db';
 // 内置角色的默认像素形象（用户未自定义时使用）
 const PIXEL_CHAR_BASE = ((import.meta as any).env?.BASE_URL ?? '/') + 'pixel-char/';
 const DEFAULT_CHAR_SPRITES: Record<string, string> = {
-  'preset-sully-v2': `${PIXEL_CHAR_BASE}sully.png`,
+  'preset-moro-v2': `${PIXEL_CHAR_BASE}moro.png`,
 };
 
 interface Props {
@@ -87,7 +87,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             setPixelCharConfig(cfg);
             ensurePixelChar(cfg).then(uri => { if (!cancelled) setPixelCharSprite(uri); }).catch(() => {});
           } else {
-            // 未保存过 → 尝试加载内置默认像素形象（如 Sully）
+            // 未保存过 → 尝试加载内置默认像素形象（如 Moro）
             const defaultSprite = DEFAULT_CHAR_SPRITES[charId];
             if (defaultSprite) setPixelCharSprite(defaultSprite);
           }

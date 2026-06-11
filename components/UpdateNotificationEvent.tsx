@@ -11,16 +11,16 @@ import { useOS } from '../context/OSContext';
 import { AppID } from '../types';
 
 // 历史 key —— 保留, 让老用户的"已看过"状态延续到本月新弹窗判断里
-export const UPDATE_NOTIFICATION_KEY = 'sullyos_update_2026_04_seen';
-export const UPDATE_NOTIFICATION_KEY_2026_05 = 'sullyos_update_2026_05_seen';
-export const UPDATE_NOTIFICATION_KEY_2026_05_10 = 'sullyos_update_2026_05_10_seen';
-export const UPDATE_NOTIFICATION_KEY_2026_05_17 = 'sullyos_update_2026_05_17_seen';
+export const UPDATE_NOTIFICATION_KEY = 'moro_update_2026_04_seen';
+export const UPDATE_NOTIFICATION_KEY_2026_05 = 'moro_update_2026_05_seen';
+export const UPDATE_NOTIFICATION_KEY_2026_05_10 = 'moro_update_2026_05_10_seen';
+export const UPDATE_NOTIFICATION_KEY_2026_05_17 = 'moro_update_2026_05_17_seen';
 // 历史 key —— 5.25 情绪 buff 也接入 Instant Push
-export const UPDATE_NOTIFICATION_KEY_2026_05_25 = 'sullyos_update_2026_05_25_seen';
+export const UPDATE_NOTIFICATION_KEY_2026_05_25 = 'moro_update_2026_05_25_seen';
 // 本次更新 key —— 6.5 「彼方」上线
-export const UPDATE_NOTIFICATION_KEY_2026_06_05 = 'sullyos_update_2026_06_05_seen';
+export const UPDATE_NOTIFICATION_KEY_2026_06_05 = 'moro_update_2026_06_05_seen';
 
-export const FAQ_TARGET_SECTION_KEY = 'sullyos_faq_target_section';
+export const FAQ_TARGET_SECTION_KEY = 'moro_faq_target_section';
 export const CHANGELOG_2026_04 = 'changelog-2026-04';
 export const CHANGELOG_2026_05 = 'changelog-2026-05';
 export const CHANGELOG_2026_05_10 = 'changelog-2026-05-10';

@@ -172,7 +172,7 @@ async function runOnePendingToolCall(item: InstantPushPendingToolCall): Promise<
   const nextIteration = (item.iteration ?? 0) + 1;
 
   // amsg-instant 0.6.0+ 强校验 avatarUrl: 仅接受 http(s), data: URI 直接 INVALID_PAYLOAD_FORMAT.
-  // SullyOS 角色头像基本是 base64 存的, 直传会被包侧拒. 没有公网 URL 就干脆不传 — 通知端
+  // Moro 角色头像基本是 base64 存的, 直传会被包侧拒. 没有公网 URL 就干脆不传 — 通知端
   // 用 worker 自己的默认图标. 同 useChatAI.ts:693 的处理.
   const safeAvatarUrl = /^https?:\/\//i.test(char.avatar || '') ? char.avatar : undefined;
 

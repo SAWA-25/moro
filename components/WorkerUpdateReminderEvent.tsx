@@ -8,7 +8,7 @@
  * 启用了 Instant Push 的用户会被提醒一次：去重新部署 / 同步一下 worker。
  *
  * 只提醒启用了 Instant Push 的用户；没开的人完全不受打扰。
- * 同一个版本号只弹一次 (sullyos_worker_build_seen 记 dismiss 过的版本)。
+ * 同一个版本号只弹一次 (moro_worker_build_seen 记 dismiss 过的版本)。
  */
 
 import React, { useState } from 'react';
@@ -20,7 +20,7 @@ import {
 import { INSTANT_WORKER_VERSION } from '../utils/instantWorkerVersion';
 
 // 记录用户「已确认过的 worker 版本号」。
-const WORKER_UPDATE_SEEN_KEY = 'sullyos_worker_build_seen';
+const WORKER_UPDATE_SEEN_KEY = 'moro_worker_build_seen';
 
 /**
  * 把当前 worker 版本标记为已确认。用户点过提醒、或刚配好 worker (视为已是最新)

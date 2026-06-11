@@ -188,7 +188,7 @@ function concatBytes(...chunks) {
   return out;
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.0/node_modules/@rei-standard/amsg-instant/dist/adapters/cloudflare.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.1/node_modules/@rei-standard/amsg-instant/dist/adapters/cloudflare.mjs
 function isValidUrl(s) {
   if (typeof s !== "string") return false;
   try {
@@ -1115,13 +1115,19 @@ function readReasoningContent(llmResponse) {
   }
   const content = message?.content;
   if (typeof content === "string") {
-    const match = content.match(/<(think|thinking|thought)>([\s\S]*?)<\/\1>/i);
+    const match = content.match(REASONING_TAG_RE);
     if (match) {
       const trimmed = match[2].trim();
       if (trimmed.length > 0) return trimmed;
     }
   }
   return null;
+}
+var REASONING_TAG_RE = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/i;
+var REASONING_TAG_RE_G = /<(think|thinking|thought)>[\s\S]*?<\/\1>/gi;
+function stripReasoningTags(content) {
+  if (typeof content !== "string" || !content.includes("<")) return content;
+  return content.replace(REASONING_TAG_RE_G, "").trim();
 }
 async function processInstantMessage(payload, ctx) {
   if (!ctx.onLLMOutput && !ctx.isResume) {
@@ -1159,6 +1165,7 @@ async function runLegacyInstant(payload, ctx) {
   const metadata = payload.metadata || {};
   const reasoning = readReasoningContent(llmResponse);
   if (reasoning) {
+    messageContent = stripReasoningTags(messageContent);
     const reasoningPush = buildReasoningPush({
       messageType: MESSAGE_TYPE.INSTANT,
       source: PUSH_SOURCE.INSTANT,
@@ -1622,6 +1629,11 @@ var SSE_KEEPALIVE_BYTES = SSE_ENCODER.encode(": keepalive\n\n");
 var SSE_DONE_BYTES = SSE_ENCODER.encode("event: done\ndata: {}\n\n");
 var DEFAULT_SSE_KEEPALIVE_MS = 1e3;
 var MIN_SSE_KEEPALIVE_MS = 250;
+function acceptsJsonOnly(acceptHeader) {
+  if (typeof acceptHeader !== "string" || acceptHeader.length === 0) return false;
+  const ranges = acceptHeader.split(",").map((r) => r.split(";")[0].trim().toLowerCase()).filter(Boolean);
+  return ranges.length > 0 && ranges.every((r) => r === "application/json");
+}
 function createInstantHandler(options) {
   if (!options) throw new Error("[amsg-instant] options is required");
   if (!options.vapid) throw new Error("[amsg-instant] options.vapid is required");
@@ -1730,7 +1742,7 @@ function createInstantHandler(options) {
       });
     }
     try {
-      const isPurePush = request.headers.get("accept") === "application/json";
+      const isPurePush = acceptsJsonOnly(request.headers.get("accept"));
       const sessionId = typeof payload.sessionId === "string" && payload.sessionId ? payload.sessionId : `sess_${randomUUID()}`;
       const processorCtx = {
         vapid: options.vapid,
@@ -1887,12 +1899,9 @@ data: ${JSON.stringify(stableBody)}
                   controller.enqueue(SSE_DONE_BYTES);
                 } catch {
                 }
-                safeClose();
               }
             } catch (err) {
-              if (err instanceof HookError) {
-                safeClose();
-              } else {
+              if (!(err instanceof HookError)) {
                 const diag = buildErrorPush({
                   messageType: MESSAGE_TYPE.INSTANT,
                   source: PUSH_SOURCE.INSTANT,
@@ -1905,11 +1914,11 @@ data: ${JSON.stringify(stableBody)}
                 await safeEnqueue("error", diag, (pushErr) => {
                   onEvent({ type: "sse_error_fallback_failed", sessionId, cause: pushErr });
                 });
-                safeClose();
               }
             } finally {
               cleanup();
               await Promise.allSettled(Array.from(backupWork));
+              safeClose();
               resolveStartDone();
             }
           },
@@ -2200,7 +2209,7 @@ function createCloudflareWorker(optionsBuilder) {
   };
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.0/node_modules/@rei-standard/amsg-instant/dist/blob/d1.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.1/node_modules/@rei-standard/amsg-instant/dist/blob/d1.mjs
 function createD1BlobStore(db, opts = {}) {
   if (!db || typeof db.prepare !== "function") {
     throw new TypeError("createD1BlobStore: db must be a D1 Database binding");
@@ -2233,7 +2242,7 @@ function sanitizeTable(value) {
   return value;
 }
 
-// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.0/node_modules/@rei-standard/amsg-instant/dist/index.mjs
+// node_modules/.pnpm/@rei-standard+amsg-instant@0.9.1/node_modules/@rei-standard/amsg-instant/dist/index.mjs
 var TEXT_ENCODER2 = new TextEncoder();
 var TEXT_DECODER2 = new TextDecoder("utf-8", { fatal: false });
 function utf82(str) {
@@ -2717,7 +2726,7 @@ function classifyLLMOutput(text) {
 }
 
 // utils/instantWorkerVersion.ts
-var INSTANT_WORKER_VERSION = "2026-06-01";
+var INSTANT_WORKER_VERSION = "2026-06-10";
 
 // worker/instant-push/src/index.ts
 var MULTIPART_TRANSPORT = { enabled: true };

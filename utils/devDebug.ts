@@ -65,12 +65,12 @@ export interface DevDebugFloatingPosition {
     y: number;
 }
 
-export const DEV_DEBUG_STORAGE_KEY = 'sullyos.devDebug.flags.v1';
-export const DEV_DEBUG_EVENT = 'sullyos-dev-debug-change';
-export const DEV_DEBUG_LOG_STORAGE_KEY = 'sullyos.devDebug.log.v1';
-export const DEV_DEBUG_LOG_EVENT = 'sullyos-dev-debug-log-change';
+export const DEV_DEBUG_STORAGE_KEY = 'moro.devDebug.flags.v1';
+export const DEV_DEBUG_EVENT = 'moro-dev-debug-change';
+export const DEV_DEBUG_LOG_STORAGE_KEY = 'moro.devDebug.log.v1';
+export const DEV_DEBUG_LOG_EVENT = 'moro-dev-debug-log-change';
 // 内部事件名，只通过 subscribeDevDebugAvailability 暴露——不 export 出去，免得固化成公共契约。
-const DEV_DEBUG_AVAILABILITY_EVENT = 'sullyos-dev-debug-availability';
+const DEV_DEBUG_AVAILABILITY_EVENT = 'moro-dev-debug-availability';
 
 export const DEFAULT_DEV_DEBUG_FLAGS: DevDebugFlags = {
     skipPromptBuild: false,

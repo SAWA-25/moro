@@ -1,7 +1,7 @@
 /**
  * WebDAV proxy route handler for Cloudflare Worker
  *
- * Add this to your existing sully-n Worker.
+ * Add this to your existing moro-n Worker.
  * Route: /webdav?url=<encoded target URL>
  *
  * Example integration in your Worker's fetch handler:

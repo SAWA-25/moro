@@ -1,7 +1,7 @@
 /**
  * GitHub proxy route handler for Cloudflare Worker
  *
- * Add this to your existing sully-n Worker.
+ * Add this to your existing moro-n Worker.
  * Route: /github?url=<encoded target URL>
  *
  * Example integration in your Worker's fetch handler:
@@ -84,7 +84,7 @@ export async function handleGithub(req: Request): Promise<Response> {
     const apiVer = req.headers.get('X-GitHub-Api-Version');
     if (apiVer) fwd['X-GitHub-Api-Version'] = apiVer;
     // GitHub rejects requests without a UA.
-    fwd['User-Agent'] = 'sully-backup-proxy';
+    fwd['User-Agent'] = 'moro-backup-proxy';
 
     try {
         let body: ArrayBuffer | null = null;

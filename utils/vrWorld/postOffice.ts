@@ -173,7 +173,7 @@ export const getAdminToken = (): string => { try { return localStorage.getItem(A
 export const setAdminToken = (t: string) => { try { t.trim() ? localStorage.setItem(ADMIN_TOKEN_KEY, t.trim()) : localStorage.removeItem(ADMIN_TOKEN_KEY); } catch { /* ignore */ } };
 
 // ── 身份导出 / 导入：换设备或清数据后找回「我的信」与责任 ──────────────
-const ID_PREFIX = 'sullypo';
+const ID_PREFIX = 'moropo';
 const idChecksum = (s: string): string => {
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;

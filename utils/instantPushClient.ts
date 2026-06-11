@@ -311,7 +311,7 @@ export interface InstantPushPayload {
     prompt: string;
     api: { baseUrl: string; apiKey: string; model: string };
   };
-  // SullyOS Worker wrapper 读取这个字段决定本次大 payload 用 multipart 还是 D1 envelope。
+  // Moro Worker wrapper 读取这个字段决定本次大 payload 用 multipart 还是 D1 envelope。
   // amsg-instant 本体会忽略未知字段, 所以旧包也能安全接收。
   oversizeTransport?: InstantOversizeTransport;
 }
@@ -628,7 +628,7 @@ export async function sendInstantPush(
   if (cfg.clientToken) headers['X-Client-Token'] = cfg.clientToken;
   // amsg-instant 0.8+ 删了 splitPattern 字段, lib 不再做 split, hook
   // 自己返 pushPayloads 数组. caller 这边不用再兜底注入。
-  // oversizeTransport 是 SullyOS Worker wrapper 字段, 用前台开关决定本次大包走 multipart / D1。
+  // oversizeTransport 是 Moro Worker wrapper 字段, 用前台开关决定本次大包走 multipart / D1。
   const wirePayload: InstantPushPayload = {
     ...payload,
     oversizeTransport: getInstantOversizeTransport(cfg),
@@ -927,7 +927,7 @@ export async function sendInstantPushAndAwaitReply(
       },
     };
   }
-  // SullyOS outbound session: amsg-instant 0.8+ /continue 续跑用的标识, 写失败不挂主路径
+  // Moro outbound session: amsg-instant 0.8+ /continue 续跑用的标识, 写失败不挂主路径
   try {
     await ActiveMsgStore.saveOutboundSession({
       sessionId,

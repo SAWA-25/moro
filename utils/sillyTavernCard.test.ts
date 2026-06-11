@@ -138,8 +138,8 @@ describe('卡片识别', () => {
         expect(parseSillyTavernCard({ name: '老卡', description: 'x', first_mes: 'hi' })?.spec).toBe('v1');
     });
 
-    it('Sully 卡与无关 JSON 返回 null', () => {
-        expect(parseSillyTavernCard({ type: 'sully_character_card', name: 'a', description: 'b' })).toBeNull();
+    it('Moro 卡与无关 JSON 返回 null', () => {
+        expect(parseSillyTavernCard({ type: 'moro_character_card', name: 'a', description: 'b' })).toBeNull();
         expect(parseSillyTavernCard({ foo: 1 })).toBeNull();
         expect(parseSillyTavernCard(null)).toBeNull();
     });

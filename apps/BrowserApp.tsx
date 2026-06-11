@@ -392,7 +392,7 @@ Generate realistic results linking to hypothetical URLs.`;
         <div className="flex flex-col items-center justify-center h-full pb-20 p-4 animate-fade-in">
             <div className="text-5xl font-bold text-slate-300 mb-8 flex flex-col items-center gap-2">
                 <GlobeSimple size={48} className="text-slate-300" />
-                <span className="text-2xl tracking-widest uppercase">Sully Browser</span>
+                <span className="text-2xl tracking-widest uppercase">Moro Browser</span>
             </div>
             
             <div className="w-full max-w-sm">
@@ -418,7 +418,7 @@ Generate realistic results linking to hypothetical URLs.`;
                     { name: 'Google', icon: twemojiUrl('1f50d'), url: 'google.com' },
                     { name: 'Bilibili', icon: twemojiUrl('1f4fa'), url: 'bilibili.com' },
                     { name: 'RedBook', icon: twemojiUrl('1f4d5'), url: 'xiaohongshu.com' },
-                    { name: 'Sully', icon: twemojiUrl('1f431'), url: 'sully.personal.blog' },
+                    { name: 'Moro', icon: twemojiUrl('1f431'), url: 'moro.personal.blog' },
                 ].map((site) => (
                     <button
                         key={site.name}

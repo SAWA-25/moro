@@ -7,7 +7,7 @@
  *   - Native (Capacitor Android/iOS): hits the WebDAV server directly via
  *     CapacitorHttp, which uses the OS HTTP stack and bypasses CORS. No
  *     Cloudflare Worker request quota burned, no extra hop.
- *   - Web: routes POST + X-WebDAV-Method through the sully-n CF Worker so the
+ *   - Web: routes POST + X-WebDAV-Method through the moro-n CF Worker so the
  *     browser CORS preflight passes (TeraCloud / infini-cloud / NAS don't
  *     return CORS headers).
  */

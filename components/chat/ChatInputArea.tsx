@@ -510,7 +510,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                 </div>
             </div>
         )}
-        <div className={`sully-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
+        <div className={`moro-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
             
             {selectionMode ? (
                 <div className={`p-3 flex gap-2 ${isPixelStyle ? 'bg-[#f3e7d6]' : isDiscordStyle ? 'bg-slate-900/60 backdrop-blur-md' : 'bg-white/50 backdrop-blur-md'}`}>
@@ -574,7 +574,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             {/* Panels — always mounted, height transitions for smooth open/close */}
             {!selectionMode && (
                 <div
-                    className={`sully-chat-panel ${panelClass} overflow-hidden relative z-0 flex flex-col will-change-[max-height] transition-[max-height] duration-200 ease-out`}
+                    className={`moro-chat-panel ${panelClass} overflow-hidden relative z-0 flex flex-col will-change-[max-height] transition-[max-height] duration-200 ease-out`}
                     style={{ maxHeight: showPanel !== 'none' ? '18rem' : '0px' }}
                 >
                     

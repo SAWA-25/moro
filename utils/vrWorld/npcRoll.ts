@@ -29,7 +29,7 @@ export function rollNpcChibi(timeoutMs = 18000): Promise<RolledNpc | null> {
         const onMsg = (e: MessageEvent) => {
             if (e.source !== iframe.contentWindow || !e.data || typeof e.data !== 'object') return;
             if (e.data.type === 'like520_ready') {
-                iframe.contentWindow?.postMessage({ type: 'like520_init', payload: { mode: 'char', charName: 'NPC', isSully: false } }, '*');
+                iframe.contentWindow?.postMessage({ type: 'like520_init', payload: { mode: 'char', charName: 'NPC', isMoro: false } }, '*');
                 setTimeout(() => iframe.contentWindow?.postMessage({ type: 'like520_roll' }, '*'), 150);
             } else if (e.data.type === 'like520_result' && e.data.payload) {
                 const img = e.data.payload.transparentDataUrl || e.data.payload.dataUrl;
