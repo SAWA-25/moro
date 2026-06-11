@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message } from '../../types';
+import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary } from '../../types';
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
 import { INSTALLED_APPS, Icons } from '../../constants';
@@ -57,8 +57,18 @@ interface CharPhoneCheckOverlayProps {
 }
 
 const STEP_MS = 6500;            // 每一步停留时长（想法框阅读时间）
+const TAP_MS = 950;              // 「点开 App」动画时长：先回桌面按图标，再进入页面
 // 桌面 mock 上展示的 app（按 INSTALLED_APPS 的 icon 名过滤）
 const SHOWN_ICONS = ['Chat', 'Social', 'Schedule', 'Gallery', 'Music', 'Settings'];
+// 浏览步骤 → 桌面图标（点开动画里高亮哪个图标）
+const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
+    'chat-list': 'Chat',
+    'chat-thread': 'Chat',
+    'moments': 'Social',
+    'schedule': 'Schedule',
+    'gallery': 'Gallery',
+    'music': 'Music',
+};
 
 const safeParseScript = (raw: string): CheckScript | null => {
     const clean = (raw || '').replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -99,6 +109,12 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     const [contacts, setContacts] = useState<ContactSnap[]>([]);
     const [threadMsgs, setThreadMsgs] = useState<Message[]>([]);
     const [actionLog, setActionLog] = useState<string[]>([]);
+    // 手机里的真实数据快照（朋友圈 / 相册 / 纪念日）——角色翻到对应页面时展示
+    const [moments, setMoments] = useState<SocialPost[]>([]);
+    const [galleryImgs, setGalleryImgs] = useState<GalleryImage[]>([]);
+    const [annivs, setAnnivs] = useState<Anniversary[]>([]);
+    // 「点开 App」动画：非 null 时画面回到桌面、高亮目标图标（仿真人逐个点开）
+    const [opening, setOpening] = useState<StepApp | null>(null);
     // 退出闸门
     const [exitOpen, setExitOpen] = useState(false);
     const [exitTab, setExitTab] = useState<'menu' | 'consent' | 'questions'>('menu');
@@ -165,6 +181,36 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 }
                 if (cancelled) return;
 
+                // 朋友圈 / 相册 / 纪念日真实快照：页面展示 + 喂给脚本生成（想法贴真实内容）
+                let momentsSnap: SocialPost[] = [];
+                let gallerySnap: GalleryImage[] = [];
+                let annivSnap: Anniversary[] = [];
+                try {
+                    momentsSnap = (await DB.getSocialPosts())
+                        .filter(p => p.visibility !== 'private')
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .slice(0, 6);
+                } catch { /* 取不到不阻塞 */ }
+                try {
+                    gallerySnap = (await DB.getGalleryImages())
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .slice(0, 9);
+                } catch { /* ignore */ }
+                try {
+                    annivSnap = (await DB.getAllAnniversaries()).slice(0, 8);
+                } catch { /* ignore */ }
+                if (cancelled) return;
+                setMoments(momentsSnap);
+                setGalleryImgs(gallerySnap);
+                setAnnivs(annivSnap);
+
+                const momentsBrief = momentsSnap
+                    .map(p => `- ${p.authorName}：「${String(p.content || p.title || '').slice(0, 60)}」${p.images?.length ? `（配图${p.images.length}张）` : ''}`)
+                    .join('\n');
+                const annivBrief = annivSnap
+                    .map(a => `- ${a.date} ${a.title}`)
+                    .join('\n');
+
                 const prompt = `### 任务
 你在扮演角色「${char.name}」。此刻 TA 拿到了 ${userProfile.name}（TA 的聊天对象/亲密的人）的手机，正在翻看。请按 TA 的人设生成一份"查手机浏览脚本"。
 
@@ -177,10 +223,20 @@ ${snaps.map(s => `- ${s.char.name}${s.char.id === char.id ? '（这是你自己�
 ### 可翻看的对话记录节选
 ${excerpts.join('\n\n') || '（手机里几乎没有聊天记录）'}
 
+### 朋友圈最近的动态
+${momentsBrief || '（朋友圈没什么动态）'}
+
+### 日程里记着的纪念日
+${annivBrief || '（日程是空的）'}
+
+### 相册
+${gallerySnap.length > 0 ? `最近存了 ${gallerySnap.length} 张照片/聊天图` : '（相册几乎是空的）'}
+
 ### 要求
 生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
 - "home" 桌面 / "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）/ "moments" 朋友圈 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
+翻到 moments / schedule / gallery 时，想法要针对上面给出的真实朋友圈动态、纪念日、相册情况来写，不要凭空编造内容。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
 - {"type":"block"} 把这个联系人拉黑
@@ -260,6 +316,20 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [stepIdx, phase, currentStep]);
+
+    // 「点开 App」动画：每步开始时先回到桌面、高亮目标图标 TAP_MS 后再进入页面，
+    // 仿照真人查手机（参考桌面远程画面）逐个点开 App 的节奏
+    useEffect(() => {
+        if (phase !== 'browsing' || !currentStep || currentStep.app === 'home') { setOpening(null); return; }
+        // 连续两步都在聊天 App 内（chat-list → chat-thread）不回桌面，直接页内切换
+        const prevStep = stepIdx > 0 ? script?.steps[stepIdx - 1] : null;
+        const sameAppFamily = prevStep && STEP_ICON[prevStep.app as Exclude<StepApp, 'home'>] === STEP_ICON[currentStep.app as Exclude<StepApp, 'home'>];
+        if (sameAppFamily) { setOpening(null); return; }
+        setOpening(currentStep.app);
+        const t = setTimeout(() => setOpening(null), TAP_MS);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [phase, stepIdx]);
 
     // 自动推进
     useEffect(() => {
@@ -373,7 +443,8 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
     // ── 各页面渲染 ──
     const renderScreen = () => {
-        const app = phase === 'finished' ? 'home' : (currentStep?.app || 'home');
+        // 点开动画期间强制回到桌面（高亮目标图标）
+        const app = phase === 'finished' ? 'home' : (opening ? 'home' : (currentStep?.app || 'home'));
         if (app === 'chat-list') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
@@ -412,40 +483,105 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        if (app === 'moments' || app === 'schedule' || app === 'gallery' || app === 'music') {
-            const meta = {
-                moments: { title: '朋友圈', emoji: '🌅', hint: 'TA 正在翻看你的朋友圈动态…' },
-                schedule: { title: '日程', emoji: '🗓️', hint: 'TA 正在看你的日程安排…' },
-                gallery: { title: '相册', emoji: '🖼️', hint: 'TA 正在翻你的相册…' },
-                music: { title: '音乐', emoji: '🎧', hint: 'TA 在看你最近在听什么…' },
-            }[app];
+        if (app === 'moments') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">{meta.title}</div>
-                    <div className="flex-1 bg-white/80 flex flex-col items-center justify-center gap-3 text-slate-400">
-                        <div className="text-5xl">{meta.emoji}</div>
-                        <div className="text-xs">{meta.hint}</div>
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">朋友圈</div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 px-4 py-3 space-y-4">
+                        {moments.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（朋友圈空空如也）</div>}
+                        {moments.map(p => (
+                            <div key={p.id} className="border-b border-slate-50 pb-3">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    {p.authorAvatar
+                                        ? <img src={p.authorAvatar} className="w-8 h-8 rounded-lg object-cover shrink-0" alt="" />
+                                        : <div className="w-8 h-8 rounded-lg bg-slate-200 shrink-0" />}
+                                    <span className="text-[13px] font-bold text-slate-700">{p.authorName}</span>
+                                </div>
+                                <div className="text-[12px] text-slate-600 leading-relaxed line-clamp-3 whitespace-pre-wrap">{p.content || p.title}</div>
+                                {(p.images?.length || 0) > 0 && (
+                                    <div className="flex gap-1.5 mt-2">
+                                        {p.images.slice(0, 3).map((img, i) => (
+                                            <img key={i} src={img} className="w-16 h-16 rounded-lg object-cover" alt="" loading="lazy" />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
                     </div>
                 </div>
             );
         }
-        // home / finished：桌面
+        if (app === 'schedule') {
+            return (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">日程</div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 px-4 py-3 space-y-2">
+                        {annivs.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（日程上什么都没记）</div>}
+                        {annivs.map(a => (
+                            <div key={a.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5">
+                                <div className="text-[11px] font-mono text-cyan-600 shrink-0">{a.date}</div>
+                                <div className="text-[13px] text-slate-700 truncate">{a.title}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        if (app === 'gallery') {
+            return (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">相册</div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 p-2">
+                        {galleryImgs.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（相册里没有照片）</div>}
+                        <div className="grid grid-cols-3 gap-1.5">
+                            {galleryImgs.map(g => (
+                                <img key={g.id} src={g.url} className="w-full aspect-square rounded-lg object-cover" alt="" loading="lazy" />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        if (app === 'music') {
+            return (
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">音乐</div>
+                    <div className="flex-1 bg-white/80 flex flex-col items-center justify-center gap-3 text-slate-400">
+                        <div className="text-5xl">🎧</div>
+                        <div className="text-xs">TA 在看你最近在听什么…</div>
+                    </div>
+                </div>
+            );
+        }
+        // home / finished / opening：桌面（opening 时高亮即将点开的图标）
+        const openingIcon = opening && opening !== 'home' ? STEP_ICON[opening as Exclude<StepApp, 'home'>] : null;
         return (
             <div className="flex-1 overflow-hidden flex flex-col px-6 pt-8">
                 <div className="text-white/90 text-sm font-bold mb-6 text-center drop-shadow">{userProfile.name} 的手机</div>
                 <div className="grid grid-cols-4 gap-5">
                     {INSTALLED_APPS.filter(a => SHOWN_ICONS.includes(a.icon)).map(a => {
                         const Icon = Icons[a.icon];
+                        const isTapped = openingIcon === a.icon;
                         return (
                             <div key={a.id} className="flex flex-col items-center gap-1.5">
-                                <div className="rounded-2xl bg-white/85 backdrop-blur shadow-md text-slate-600 flex items-center justify-center" style={{ width: 52, height: 52 }}>
+                                <div
+                                    className={`rounded-2xl backdrop-blur flex items-center justify-center transition-all duration-300 ${isTapped
+                                        ? 'bg-white scale-90 shadow-xl ring-4 ring-white/60 text-violet-500'
+                                        : 'bg-white/85 shadow-md text-slate-600'}`}
+                                    style={{ width: 52, height: 52 }}
+                                >
                                     {Icon ? <Icon className="w-6 h-6" /> : null}
                                 </div>
-                                <span className="text-[10px] text-white/90 drop-shadow">{a.name}</span>
+                                <span className={`text-[10px] drop-shadow ${isTapped ? 'text-white font-bold' : 'text-white/90'}`}>{a.name}</span>
                             </div>
                         );
                     })}
                 </div>
+                {openingIcon && (
+                    <div className="mt-8 text-center text-white/85 text-xs animate-fade-in drop-shadow">
+                        {char.name} 点开了「{INSTALLED_APPS.find(a => a.icon === openingIcon)?.name}」…
+                    </div>
+                )}
                 {phase === 'finished' && (
                     <div className="mt-10 text-center text-white/90 text-sm font-medium animate-fade-in drop-shadow">
                         {char.name} 翻完了，把手机放回了原处…

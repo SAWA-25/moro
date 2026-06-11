@@ -93,6 +93,7 @@ const CharCreatorDevApp = lazyApp(() => import('../apps/CharCreatorDevApp'));
 const SpecialMomentsApp = lazyApp(() => import('./ValentineEvent').then(m => ({ default: m.SpecialMomentsApp })));
 const PresetApp = lazyApp(() => import('../apps/PresetApp'));
 const PersonaHubApp = lazyApp(() => import('../apps/PersonaHubApp'));
+const RegexApp = lazyApp(() => import('../apps/RegexApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
@@ -120,7 +121,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Guidebook]: GuidebookApp, [AppID.LifeSim]: LifeSimApp, [AppID.MemoryPalace]: MemoryPalaceApp,
   [AppID.Handbook]: HandbookApp, [AppID.QQBridge]: QQBridge, [AppID.HotNews]: HotNewsApp,
   [AppID.VRWorld]: VRWorldApp, [AppID.CharCreatorDev]: CharCreatorDevApp, [AppID.SpecialMoments]: SpecialMomentsApp,
-  [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp,
+  [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -665,6 +666,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Worldbook: return <WorldbookApp />;
       case AppID.Presets: return <PresetApp />;
       case AppID.Personas: return <PersonaHubApp />;
+      case AppID.Regex: return <RegexApp />;
       case AppID.Novel: return <NovelApp />; 
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;

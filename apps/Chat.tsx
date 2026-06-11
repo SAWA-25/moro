@@ -17,6 +17,8 @@ import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
+import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
+import { regex_placement } from '../utils/regex/engine';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
@@ -201,6 +203,14 @@ const Chat: React.FC = () => {
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
     charRef.current = char; // Keep ref in sync for async callbacks
+
+    // ── 正则脚本：全局脚本变更时刷新显示层（displayMessages 依赖 regexVersion 重算）──
+    const [regexVersion, setRegexVersion] = useState(0);
+    useEffect(() => {
+        const bump = () => setRegexVersion(v => v + 1);
+        window.addEventListener(REGEX_SCRIPTS_UPDATED_EVENT, bump);
+        return () => window.removeEventListener(REGEX_SCRIPTS_UPDATED_EVENT, bump);
+    }, []);
 
     // ── 拉黑状态（双向） ──
     const userBlockedChar = !!char?.blacklisted;      // 用户拉黑了角色
@@ -969,8 +979,14 @@ const Chat: React.FC = () => {
             return;
         }
 
-        const text = customContent || input.trim();
+        let text = customContent || input.trim();
         const type = customType || 'text';
+
+        // 正则脚本（用户输入，改写消息原文）：全局 + 角色局部脚本中勾选「用户输入」
+        // 且非仅显示/仅提示词的脚本在落库前生效（同 ST USER_INPUT placement）
+        if (type === 'text' && text) {
+            text = applyRegexToText(text, regex_placement.USER_INPUT, { char, userName: userProfile?.name });
+        }
 
         // 发消息隐含"回到当前聊天"——退出 windowed 旧消息浏览模式
         if (windowedFocusMsgId !== null) {
@@ -2432,6 +2448,14 @@ ${recent || '（你们还没怎么聊过）'}
     // 真正想从聊天记录里抹掉，应该走"删除"。
     // windowed 模式：定位到旧消息时只渲染目标周围 51 条，避免 DOM 卡爆。
     const displayMessages = useMemo(() => {
+        // 正则脚本显示层（markdownOnly）：只改气泡渲染内容，不改写消息原文。
+        // 在传给 MessageItem 之前替换 content，memo 比较 msg.content 即可正确失效。
+        const withDisplayRegex = (list: Message[]): Message[] => list.map(m => {
+            if (m.type !== 'text' || m.role === 'system' || typeof m.content !== 'string' || !m.content) return m;
+            const placement = m.role === 'user' ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
+            const out = applyRegexToText(m.content, placement, { char, userName: userProfile?.name, isMarkdown: true });
+            return out === m.content ? m : { ...m, content: out };
+        });
         const base = messages
             .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
             .filter(m => !m.metadata?.proactiveHint)
@@ -2441,11 +2465,12 @@ ${recent || '（你们还没怎么聊过）'}
             if (idx >= 0) {
                 const start = Math.max(0, idx - WINDOW_RADIUS);
                 const end = Math.min(base.length, idx + WINDOW_RADIUS + 1);
-                return base.slice(start, end);
+                return withDisplayRegex(base.slice(start, end));
             }
         }
-        return base.slice(-visibleCount);
-    }, [messages, char?.id, char?.hideSystemLogs, visibleCount, windowedFocusMsgId]);
+        return withDisplayRegex(base.slice(-visibleCount));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, char?.id, char?.hideSystemLogs, char?.regexScripts, visibleCount, windowedFocusMsgId, regexVersion]);
 
     const collapsedCount = Math.max(0, totalMsgCount - displayMessages.length);
 

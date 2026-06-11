@@ -40,6 +40,37 @@ export enum AppID {
   ExchangeDiary = 'exchange_diary', // 日记社 — 多角色交换日记本（角色视角日记 + 每日对话总结）
   Presets = 'presets', // 预设 — SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数，可导入酒馆预设 JSON）
   Personas = 'personas', // 人设 — SillyTavern 式用户人设管理（多套用户身份，可绑定角色 / 默认 / 世界书，描述按位置注入 prompt）
+  Regex = 'regex', // 正则 — SillyTavern 式正则脚本（全局/角色局部，作用于用户输入/AI 输出/提示词/显示，可导入酒馆正则 JSON）
+}
+
+// =====================================================================
+// 正则脚本（SillyTavern Regex Script 完整移植）
+// =====================================================================
+
+/**
+ * 单条正则脚本。字段与 SillyTavern 的 RegexScriptData 一一对应，
+ * 导入酒馆正则 JSON（单条对象或数组）可无损落库。
+ * - findRegex 支持 "/pattern/flags" 与裸 pattern 两种写法
+ * - placement 取值见 utils/regex/engine.ts 的 regex_placement
+ * - markdownOnly = 仅改聊天显示（不动消息原文）；promptOnly = 仅改发给 LLM 的提示词
+ * - 两者都不勾 = 直接改写消息原文（落库前生效）
+ */
+export interface RegexScriptData {
+  id: string;
+  scriptName: string;
+  findRegex: string;
+  replaceString: string;
+  trimStrings: string[];
+  placement: number[];
+  disabled: boolean;
+  markdownOnly: boolean;
+  promptOnly: boolean;
+  runOnEdit: boolean;
+  /** 0=不替换宏 1=原样替换 {{user}}/{{char}} 2=替换后做正则转义 */
+  substituteRegex: number;
+  /** 最小深度（-1/null = 不限），depth 0 = 最后一条消息 */
+  minDepth?: number | null;
+  maxDepth?: number | null;
 }
 
 // =====================================================================
@@ -1517,6 +1548,13 @@ export interface CharacterProfile {
    * dialogueExamples 占位（受 marker 开关控制）。<START> 分隔多段示例（ST 惯例）。
    */
   mesExample?: string;
+  /**
+   * 角色局部正则脚本（SillyTavern scoped regex）。来源：
+   * - 角色卡 data.extensions.regex_scripts 随卡导入
+   * - 正则 App 里手动添加 / 导入到该角色
+   * 与全局脚本（正则 App「全局」标签，localStorage）叠加生效，全局在前。
+   */
+  regexScripts?: RegexScriptData[];
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];

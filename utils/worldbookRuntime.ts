@@ -16,6 +16,8 @@
  */
 
 import { CharacterProfile, Worldbook, WorldbookPosition } from '../types';
+import { applyRegexToText } from './regex/store';
+import { regex_placement } from './regex/engine';
 
 export const GROUP_TOGGLES_KEY = 'worldbook_group_toggles';
 
@@ -219,7 +221,13 @@ export const WorldbookRuntime = {
             global.sort((a, b) => a.order - b.order);
         }
 
-        return { local, global };
+        // 正则脚本（WORLD_INFO placement）：对即将注入的世界书条目内容跑一遍，
+        // 与 ST 的「世界书」作用对象一致。原始条目不动，只改本次注入文本。
+        const applyWiRegex = (e: ResolvedWbEntry): ResolvedWbEntry => {
+            const out = applyRegexToText(e.content, regex_placement.WORLD_INFO, { char });
+            return out === e.content ? e : { ...e, content: out };
+        };
+        return { local: local.map(applyWiRegex), global: global.map(applyWiRegex) };
     },
 
     /**

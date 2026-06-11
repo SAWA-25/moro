@@ -7,7 +7,8 @@
  * 纯函数、零依赖（手写 PNG chunk 解析），可在 node 测试环境直接跑。
  */
 
-import { CharacterProfile, Worldbook, WorldbookPosition, WorldbookSTData } from '../types';
+import { CharacterProfile, RegexScriptData, Worldbook, WorldbookPosition, WorldbookSTData } from '../types';
+import { normalizeRegexScript } from './regex/engine';
 
 // ---------------------------------------------------------------------------
 // 类型
@@ -79,6 +80,11 @@ export interface STImportResult {
      * 用户后续在世界书 App 打开开关即可生效。
      */
     mountedWorldbooks: NonNullable<CharacterProfile['mountedWorldbooks']>;
+    /**
+     * 卡内自带的正则脚本（data.extensions.regex_scripts）。原样规范化导入，
+     * 作为角色局部脚本挂到 char.regexScripts（正则 App「角色」标签可管理）。
+     */
+    regexScripts: RegexScriptData[];
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +466,12 @@ export function convertSTCardToCharacter(
         });
     }
 
+    // ---- 卡内自带正则脚本（extensions.regex_scripts，ST scoped regex）----
+    const rawRegexScripts = d.extensions?.regex_scripts;
+    const regexScripts: RegexScriptData[] = Array.isArray(rawRegexScripts)
+        ? rawRegexScripts.map(normalizeRegexScript).filter((s): s is RegexScriptData => !!s)
+        : [];
+
     return {
         name,
         description,
@@ -471,5 +483,6 @@ export function convertSTCardToCharacter(
         avatarFallback: makeFallbackAvatar(name),
         worldbooks,
         mountedWorldbooks,
+        regexScripts,
     };
 }
