@@ -5,7 +5,7 @@ import {
     CharacterProfile, ChatTheme, Message, UserProfile,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
-    BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, SongSheet, QuizSession, GuidebookSession,
+    BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona
@@ -13,7 +13,7 @@ import {
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 65; // Bumped: v65 新增 personas（人设App — SillyTavern 式用户人设管理）
+const DB_VERSION = 66; // Bumped: v66 新增 xhs_feed_posts（小红书 App 本地生成信息流）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -40,6 +40,7 @@ const STORE_BANK_TX = 'bank_transactions';
 const STORE_BANK_DATA = 'bank_data';
 const STORE_XHS_STOCK = 'xhs_stock';
 const STORE_XHS_ACTIVITIES = 'xhs_activities';
+const STORE_XHS_FEED = 'xhs_feed_posts';          // 小红书 App 本地生成信息流（角色 + NPC 帖子）
 const STORE_SONGS = 'songs';
 const STORE_QUIZZES = 'quizzes';
 const STORE_GUIDEBOOK = 'guidebook';
@@ -293,6 +294,8 @@ export const openDB = (): Promise<IDBDatabase> => {
           const xhsActStore = db.createObjectStore(STORE_XHS_ACTIVITIES, { keyPath: 'id' });
           xhsActStore.createIndex('characterId', 'characterId', { unique: false });
       }
+
+      createStore(STORE_XHS_FEED, { keyPath: 'id' });
 
       createStore(STORE_SONGS, { keyPath: 'id' });
       createStore(STORE_QUIZZES, { keyPath: 'id' });
@@ -1171,6 +1174,46 @@ export const DB = {
       for (const a of activities) {
           store.delete(a.id);
       }
+  },
+
+  // --- XHS Feed Posts (小红书 App 本地生成信息流) ---
+  getXhsFeedPosts: async (): Promise<XhsFeedPost[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_XHS_FEED, 'readonly');
+          const request = transaction.objectStore(STORE_XHS_FEED).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as XhsFeedPost[];
+              results.sort((a, b) => b.createdAt - a.createdAt);
+              resolve(results);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveXhsFeedPost: async (post: XhsFeedPost): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
+      transaction.objectStore(STORE_XHS_FEED).put(post);
+  },
+
+  saveXhsFeedPosts: async (posts: XhsFeedPost[]): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
+      const store = transaction.objectStore(STORE_XHS_FEED);
+      for (const p of posts) store.put(p);
+  },
+
+  deleteXhsFeedPost: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
+      transaction.objectStore(STORE_XHS_FEED).delete(id);
+  },
+
+  clearXhsFeedPosts: async (): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
+      transaction.objectStore(STORE_XHS_FEED).clear();
   },
 
   saveScheduledMessage: async (msg: ScheduledMessage): Promise<void> => {

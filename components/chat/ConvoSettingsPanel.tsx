@@ -180,7 +180,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         [char.refinedMemories]
     );
 
-    // ── 世界书：按 category 分组（与角色 App「扩展设定」一致，整本挂载/卸载） ──
+    // ── 世界书：按 category 分组（与世界书 App 联动，整本挂载/卸载） ──
+    // 「卷册」= 一个 category 分组；全局卷（scope=global 的条目）自动注入所有会话，
+    // 此处只选局部卷。绑定数据仍存 char.mountedWorldbooks（条目快照，注入时以注册表实况覆盖）。
+    const WB_BIND_LIMIT = 8;
+    const [wbSearch, setWbSearch] = useState('');
+    const [wbListOpen, setWbListOpen] = useState(false);
     const bookCategories = useMemo(() => {
         const map = new Map<string, typeof worldbooks>();
         for (const b of worldbooks) {
@@ -192,6 +197,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     }, [worldbooks]);
     const mountedIds = useMemo(() => new Set((char.mountedWorldbooks || []).map(b => b.id)), [char.mountedWorldbooks]);
     const categoryMounted = (books: typeof worldbooks) => books.length > 0 && books.every(b => mountedIds.has(b.id));
+    // 局部卷册：分组里至少有一条 scope 为 local（缺省即 local）的条目
+    const localCategories = useMemo(
+        () => bookCategories.filter(([, books]) => books.some(b => (b.scope || 'local') === 'local')),
+        [bookCategories]
+    );
+    const mountedLocalCount = localCategories.filter(([, books]) => categoryMounted(books)).length;
     const toggleBookCategory = (category: string, books: typeof worldbooks) => {
         const current = char.mountedWorldbooks || [];
         if (categoryMounted(books)) {
@@ -199,12 +210,21 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
             updateCharacter(char.id, { mountedWorldbooks: current.filter(b => !ids.has(b.id)) });
             addToast(`已卸载《${category}》`, 'info');
         } else {
+            if (mountedLocalCount >= WB_BIND_LIMIT) {
+                addToast(`最多绑定 ${WB_BIND_LIMIT} 本，先取消一些再试`, 'error');
+                return;
+            }
             const additions = books
                 .filter(b => !mountedIds.has(b.id))
                 .map(b => ({ id: b.id, title: b.title, content: b.content, category: b.category }));
             updateCharacter(char.id, { mountedWorldbooks: [...current, ...additions] });
             addToast(`已挂载《${category}》（${additions.length} 条）`, 'success');
         }
+    };
+    const clearMountedWorldbooks = () => {
+        if (!(char.mountedWorldbooks || []).length) return;
+        updateCharacter(char.id, { mountedWorldbooks: [] });
+        addToast('已清空本会话绑定的世界书', 'info');
     };
 
     // ── 表情分类对本角色可用性 ──
@@ -645,10 +665,10 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Item
-                        label="HTML 模块模式" right={<Toggle tone="bg-fuchsia-500" on={!!char.htmlModeEnabled} onToggle={() => updateCharacter(char.id, { htmlModeEnabled: !char.htmlModeEnabled })} />}
-                        desc="AI 在合适场景输出邀请函 / 票据 / 通知等可视化卡片。"
+                        label="HTML 模块模式" right={<Toggle tone="bg-fuchsia-500" on={char.htmlModeEnabled !== false} onToggle={() => updateCharacter(char.id, { htmlModeEnabled: char.htmlModeEnabled === false })} />}
+                        desc="AI 在合适场景输出邀请函 / 票据 / 通知等可视化卡片（默认开启）。"
                     >
-                        {char.htmlModeEnabled && (
+                        {char.htmlModeEnabled !== false && (
                             <textarea
                                 value={char.htmlModeCustomPrompt || ''}
                                 onChange={e => updateCharacter(char.id, { htmlModeCustomPrompt: e.target.value })}
@@ -661,24 +681,71 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                 {/* ════ 02 绑定世界书 ════ */}
                 <Sect num="02" title="绑定世界书">
-                    <Item label="挂载到本角色" desc={`登记的世界书共 ${worldbooks.length} 本；已挂载 ${(char.mountedWorldbooks || []).length} 本。整本（按分组）挂载 / 卸载，条目开关与作用域在世界书 App 里管理。`}>
-                        <div className="space-y-1.5">
-                            {bookCategories.length === 0 && (
-                                <button onClick={() => openApp(AppID.Worldbook)} className="text-[11px] text-primary font-bold">还没有世界书，去「世界书」App 创建 →</button>
-                            )}
-                            {bookCategories.map(([category, books]) => {
-                                const on = categoryMounted(books);
-                                return (
-                                    <div key={category} className="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2.5">
-                                        <div className="min-w-0">
-                                            <div className="text-[12px] font-bold text-slate-600 truncate">{category}</div>
-                                            <div className="text-[10px] text-slate-400">{books.length} 条目</div>
-                                        </div>
-                                        <Toggle on={on} onToggle={() => toggleBookCategory(category, books)} />
-                                    </div>
-                                );
-                            })}
+                    <Item
+                        label="卷册（可多选）"
+                        desc={`全局卷自动注入；此处选局部。合计≤${WB_BIND_LIMIT} 本。条目开关与作用域在世界书 App 里管理。`}
+                        right={
+                            <button
+                                onClick={clearMountedWorldbooks}
+                                className="text-[11px] font-bold text-slate-400 border border-slate-200 rounded-full px-3 py-1 active:scale-95 transition-transform"
+                            >清空</button>
+                        }
+                    >
+                        <div className="text-[11px] text-slate-500 mb-2">
+                            已绑定 {mountedLocalCount} 本 · 可选局部 {localCategories.length} 本 · 合计≤{WB_BIND_LIMIT}
                         </div>
+
+                        {localCategories.length === 0 && (
+                            <button onClick={() => openApp(AppID.Worldbook)} className="text-[11px] text-primary font-bold">还没有局部世界书，去「世界书」App 创建 →</button>
+                        )}
+
+                        {/* 已绑定的卷册（黑色 chip，点击即卸载） */}
+                        {mountedLocalCount > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                {localCategories.filter(([, books]) => categoryMounted(books)).map(([category, books]) => (
+                                    <button
+                                        key={`sel-${category}`}
+                                        onClick={() => toggleBookCategory(category, books)}
+                                        className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-slate-900 text-white active:scale-95 transition-transform max-w-full truncate"
+                                    >{category}</button>
+                                ))}
+                            </div>
+                        )}
+
+                        {localCategories.length > 0 && (
+                            <button onClick={() => setWbListOpen(v => !v)} className="text-[11px] font-bold text-slate-500 border border-slate-200 rounded-full px-3 py-1 mb-2 active:scale-95 transition-transform">
+                                {wbListOpen ? '收起' : '展开选择'}
+                            </button>
+                        )}
+
+                        {wbListOpen && (
+                            <div>
+                                <input
+                                    value={wbSearch}
+                                    onChange={e => setWbSearch(e.target.value)}
+                                    placeholder="搜索卷名…"
+                                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20 mb-2"
+                                />
+                                <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
+                                    {localCategories
+                                        .filter(([category]) => !wbSearch.trim() || category.toLowerCase().includes(wbSearch.trim().toLowerCase()))
+                                        .map(([category, books]) => {
+                                            const on = categoryMounted(books);
+                                            return (
+                                                <button
+                                                    key={category}
+                                                    onClick={() => toggleBookCategory(category, books)}
+                                                    title={`${books.length} 条目`}
+                                                    className={`px-3 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-all max-w-full truncate ${on ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}
+                                                >{category}</button>
+                                            );
+                                        })}
+                                    {localCategories.length > 0 && wbSearch.trim() && localCategories.every(([category]) => !category.toLowerCase().includes(wbSearch.trim().toLowerCase())) && (
+                                        <span className="text-[10px] text-slate-300 py-1">没有匹配「{wbSearch.trim()}」的卷册</span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </Item>
                 </Sect>
 

@@ -1692,7 +1692,8 @@ export interface CharacterProfile {
 
   /**
    * HTML 模块模式（per-character）。
-   * - htmlModeEnabled：开启后，给 LLM 注入"用 [html]...[/html] 包裹的富 HTML 卡片"提示词，
+   * - htmlModeEnabled：默认开启（undefined 视为 true，显式 false 才关闭）。开启时给 LLM
+   *   注入"用 [html]...[/html] 包裹的富 HTML 卡片"提示词，
    *   AI 输出里的 [html] 块会被解析成单独的 html_card 消息（沙盒 iframe 渲染）。
    * - htmlModeCustomPrompt：用户自定义内容，**追加**在内置提示词之后（不会覆盖内置内容）。
    * - 上下文 / 归档 总结读到的 html_card 消息内容是已剥离 HTML 的纯文字摘要，避免 token 浪费。
@@ -2730,6 +2731,38 @@ export interface XhsMcpConfig {
     loggedInUserId?: string;   // 登录用户的 user_id，连接测试成功后自动获取
     loggedInNickname?: string; // 登录用户的昵称
     userXsecToken?: string;    // 连接测试时从首页推荐自动提取的 xsec_token
+}
+
+// --- XHS 本地生成信息流（小红书 App：LLM 生成角色 + NPC 帖子，本地持久化）---
+
+export interface XhsFeedComment {
+    id: string;
+    author: string;            // 显示昵称
+    charId?: string;           // 角色评论时为角色 id；NPC 评论为空
+    isUser?: boolean;          // 用户自己发的评论
+    content: string;
+    likes: number;
+    timestamp: number;
+}
+
+export interface XhsFeedPost {
+    id: string;
+    authorType: 'character' | 'npc' | 'user';
+    charId?: string;           // authorType='character' 时的角色 id
+    author: string;            // 显示昵称
+    authorAvatar?: string;     // 角色头像 / 用户头像；NPC 留空走字母头像
+    title: string;
+    body: string;
+    tags: string[];
+    coverUrl?: string;         // 封面图（来自小红书图库，可空 → 渐变占位）
+    likes: number;
+    liked?: boolean;           // 用户已点赞
+    favs: number;
+    faved?: boolean;           // 用户已收藏
+    comments: XhsFeedComment[];
+    createdAt: number;
+    repostOf?: string;         // 转发：源帖 id
+    repostNote?: string;       // 转发附言
 }
 
 // ============================================================

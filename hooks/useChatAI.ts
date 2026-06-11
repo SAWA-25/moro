@@ -476,7 +476,7 @@ export const useChatAI = ({
                         cfg: deps.music.cfg,
                     },
                     translationConfig: deps.translationConfig,
-                    htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
+                    htmlMode: { enabled: (char as any).htmlModeEnabled !== false, customPrompt: (char as any).htmlModeCustomPrompt },
                     thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                     mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
                 });
@@ -667,7 +667,7 @@ export const useChatAI = ({
                 isListeningTogether: !!(music.current && music.playing && music.listeningTogetherWith.includes(char.id)),
                 musicCfg: music.cfg,
                 translationConfig,
-                htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
+                htmlMode: { enabled: (char as any).htmlModeEnabled !== false, customPrompt: (char as any).htmlModeCustomPrompt },
                 thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
                 mcdMiniSnap: mcdMiniOpen ? mcdMiniSnap : undefined,
             }));
