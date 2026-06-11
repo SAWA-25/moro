@@ -83,7 +83,8 @@ export const ChatPrompts = {
         emojis.forEach(e => {
             const cid = e.categoryId || 'default';
             if (!grouped[cid]) grouped[cid] = [];
-            grouped[cid].push(e.name);
+            // 带描述的表情把描述附在括号里，帮模型按语义挑表情（发送时仍只用名字）
+            grouped[cid].push(e.description ? `${e.name}（${e.description}）` : e.name);
         });
         
         return Object.entries(grouped).map(([cid, names]) => {

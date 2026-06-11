@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CaretLeft, Lightning } from '@phosphor-icons/react';
+import { CaretLeft, DotsThreeVertical, Lightning } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
 
 interface TokenBreakdown {
@@ -27,6 +27,8 @@ interface ChatHeaderShellProps {
     onClose: () => void;
     onTriggerAI: () => void;
     onShowCharsPanel: () => void;
+    /** 右上角"角色设置"入口（⋮ 按钮）。传了才渲染。 */
+    onOpenSettings?: () => void;
     onDeleteBuff?: (buffId: string) => void;
     /** 隐藏顶栏情绪 buff 栏（Appearance 里的「显示情绪栏」开关）。 */
     hideBuffs?: boolean;
@@ -69,6 +71,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     onClose,
     onTriggerAI,
     onShowCharsPanel,
+    onOpenSettings,
     onDeleteBuff,
     hideBuffs = false,
     headerStyle = 'default',
@@ -393,9 +396,14 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         {renderCenteredInfo()}
                     </div>
 
-                    <button onClick={onTriggerAI} className={`moro-chat-trigger absolute right-0 bottom-2 p-2 ${actionButtonClass}`} title="触发 AI">
+                    <button onClick={onTriggerAI} className={`moro-chat-trigger absolute ${onOpenSettings ? 'right-9' : 'right-0'} bottom-2 p-2 ${actionButtonClass}`} title="触发 AI">
                         <Lightning className="w-5 h-5" weight="bold" />
                     </button>
+                    {onOpenSettings && (
+                        <button onClick={onOpenSettings} className={`moro-chat-settings absolute right-0 bottom-2 p-2 ${iconButtonClass}`} title="角色设置">
+                            <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                        </button>
+                    )}
                 </div>
             ) : (
                 <div className="flex items-center gap-3 w-full">
@@ -410,6 +418,11 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                     <button onClick={onTriggerAI} className={`moro-chat-trigger p-2 ml-auto ${actionButtonClass}`} title="触发 AI">
                         <Lightning className="w-5 h-5" weight="bold" />
                     </button>
+                    {onOpenSettings && (
+                        <button onClick={onOpenSettings} className={`moro-chat-settings p-2 -mr-2 ${iconButtonClass}`} title="角色设置">
+                            <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                        </button>
+                    )}
                 </div>
             )}
 

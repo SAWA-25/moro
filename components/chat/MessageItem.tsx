@@ -769,6 +769,10 @@ interface MessageItemProps {
         customColors?: { bg?: string; accent?: string; text?: string };
         onOpenSettings?: () => void;
     };
+    /** 单击角色头像：进入该角色的设置界面。 */
+    onAvatarClick?: () => void;
+    /** 双击角色头像：戳一戳互动，角色会收到对应提示。 */
+    onAvatarPoke?: () => void;
 }
 
 const MessageItem = React.memo(({
@@ -803,6 +807,8 @@ const MessageItem = React.memo(({
     onMcdSendCart,
     onMcdCandidate,
     thinkingChainOptions,
+    onAvatarClick,
+    onAvatarPoke,
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
@@ -814,6 +820,22 @@ const MessageItem = React.memo(({
     const shouldShowAvatar = avatarMode === 'every_message' || isLastInGroup;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 }); // Track touch start position
+    // 角色头像单击/双击区分：260ms 内第二次点击 = 戳一戳，否则单击进角色设置
+    const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleAvatarClick = (e: React.MouseEvent) => {
+        if (selectionMode || (!onAvatarClick && !onAvatarPoke)) return;
+        e.stopPropagation();
+        if (avatarClickTimer.current) {
+            clearTimeout(avatarClickTimer.current);
+            avatarClickTimer.current = null;
+            onAvatarPoke?.();
+            return;
+        }
+        avatarClickTimer.current = setTimeout(() => {
+            avatarClickTimer.current = null;
+            onAvatarClick?.();
+        }, 260);
+    };
 
     const styleConfig = isUser ? activeTheme.user : activeTheme.ai;
     const [showVoiceText, setShowVoiceText] = useState(false);
@@ -1173,7 +1195,10 @@ const MessageItem = React.memo(({
 
                 {/* Avatar - Absolute Positioned */}
                 {!isUser && (
-                    <div className={`absolute bottom-[1.25rem] z-0 ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}>
+                    <div
+                        className={`absolute bottom-[1.25rem] ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'z-10 cursor-pointer' : 'z-0'} ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}
+                        onClick={handleAvatarClick}
+                    >
                         {renderAvatar(charAvatar)}
                     </div>
                 )}

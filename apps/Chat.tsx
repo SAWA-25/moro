@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallba
 import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot } from '../types';
 import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/scheduleGenerator';
@@ -41,7 +41,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, customThemes, removeCustomTheme, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, removeCustomTheme, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -1049,6 +1049,7 @@ const Chat: React.FC = () => {
         switch (type) {
             case 'transfer': setModalType('transfer'); break;
             case 'poke': handleSendText('[戳一戳]', 'interaction'); break;
+            case 'trigger-ai': handleManualTrigger(); break;
             case 'archive': setModalType('archive-settings'); break;
             case 'settings': setModalType('chat-settings'); break;
             case 'chrome-css': setModalType('chrome-css'); break;
@@ -1436,9 +1437,20 @@ ${recent || '（你们还没怎么聊过）'}
             const parts = line.split('--');
             if (parts.length >= 2) {
                 const name = parts[0].trim();
-                const url = parts.slice(1).join('--').trim();
+                // 第三段（如果最后一段不是 URL）当作描述：名字--URL--描述。
+                // URL 自身可能含 "--"，所以从尾部判断：最后一段不以协议/data: 开头才算描述。
+                let urlParts = parts.slice(1);
+                let description = '';
+                if (urlParts.length > 1) {
+                    const last = urlParts[urlParts.length - 1].trim();
+                    if (last && !/^(https?:|data:|\/\/)/i.test(last) && !/\.(png|jpe?g|gif|webp)$/i.test(last)) {
+                        description = last;
+                        urlParts = urlParts.slice(0, -1);
+                    }
+                }
+                const url = urlParts.join('--').trim();
                 if (name && url) {
-                    await DB.saveEmoji(name, url, targetCatId);
+                    await DB.saveEmoji(name, url, targetCatId, description || undefined);
                 }
             }
         }
@@ -2153,6 +2165,9 @@ ${recent || '（你们还没怎么聊过）'}
         return e.categoryId === activeCategory;
     }), [emojis, activeCategory, hiddenCategoryIds]);
 
+    // 全量可见表情（只排除隐藏分类，不按当前分类切）——表情面板搜索时跨分类匹配
+    const allVisibleEmojis = useMemo(() => emojis.filter(e => !(e.categoryId && hiddenCategoryIds.has(e.categoryId))), [emojis, hiddenCategoryIds]);
+
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(() => handleSendText(), [char, input, replyTarget]);
     const handleCharSelectCallback = useCallback((id: string) => { setActiveCharacterId(id); setShowPanel('none'); }, []);
@@ -2556,6 +2571,10 @@ ${recent || '（你们还没怎么聊过）'}
                 onClose={closeApp}
                 onTriggerAI={handleManualTrigger}
                 onShowCharsPanel={() => setShowPanel('chars')}
+                onOpenSettings={() => {
+                    try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
+                    openApp(AppID.Character);
+                }}
                 onDeleteBuff={(buffId) => {
                     const currentBuffs = char.activeBuffs || [];
                     const newBuffs = currentBuffs.filter(b => b.id !== buffId);
@@ -2813,6 +2832,11 @@ ${recent || '（你们还没怎么聊过）'}
                             onMcdSendCart={handleMcdSendCart}
                             onMcdCandidate={handleMcdCandidate}
                             thinkingChainOptions={thinkingChainOptions}
+                            onAvatarClick={() => {
+                                try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
+                                openApp(AppID.Character);
+                            }}
+                            onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
                         />
                         </div>
                     );
@@ -2919,6 +2943,7 @@ ${recent || '（你们还没怎么聊过）'}
                     onForwardSelected={handleForwardSelected}
                     selectedCount={selectedMsgIds.size + Array.from(selectedThinkingMsgIds).filter(id => !selectedMsgIds.has(id)).length}
                     emojis={filteredEmojis}
+                    allEmojis={allVisibleEmojis}
                     characters={characters} activeCharacterId={activeCharacterId}
                     onCharSelect={handleCharSelectCallback}
                     customThemes={customThemes} onUpdateTheme={(id) => updateCharacter(char.id, { bubbleStyle: id })}

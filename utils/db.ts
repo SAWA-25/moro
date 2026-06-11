@@ -821,10 +821,10 @@ export const DB = {
     });
   },
 
-  saveEmoji: async (name: string, url: string, categoryId?: string): Promise<void> => {
+  saveEmoji: async (name: string, url: string, categoryId?: string, description?: string): Promise<void> => {
     const db = await openDB();
     const transaction = db.transaction(STORE_EMOJIS, 'readwrite');
-    transaction.objectStore(STORE_EMOJIS).put({ name, url, categoryId });
+    transaction.objectStore(STORE_EMOJIS).put({ name, url, categoryId, ...(description ? { description } : {}) });
   },
 
   deleteEmoji: async (name: string): Promise<void> => {
