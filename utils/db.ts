@@ -8,12 +8,12 @@ import {
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
-    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry
+    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 63; // Bumped: v63 新增 phone_call_logs（电话App通话记录）/ exchange_diary_books（日记社）/ inner_voices（偷看心声）
+const DB_VERSION = 64; // Bumped: v64 新增 llm_presets（预设App — SillyTavern 式 Chat Completion 预设）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -63,6 +63,7 @@ const STORE_API_CALL_LOG = 'api_call_log';        // 全局 API 调用记录单�
 const STORE_PHONE_CALL_LOGS = 'phone_call_logs';  // 电话 App 通话记录（拨出/接听/未接，轻量条目）
 const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交换日记本（entries 内联在 book 里）
 const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-char，不进聊天上下文）
+const STORE_LLM_PRESETS = 'llm_presets';          // 预设 App：SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
@@ -421,6 +422,9 @@ export const openDB = (): Promise<IDBDatabase> => {
           const ivStore = db.createObjectStore(STORE_INNER_VOICES, { keyPath: 'id' });
           ivStore.createIndex('charId', 'charId', { unique: false });
       }
+
+      // ─── v64: 预设 App（SillyTavern 式 Chat Completion 预设） ───
+      createStore(STORE_LLM_PRESETS, { keyPath: 'id' });
     };
   });
 
@@ -1662,6 +1666,47 @@ export const DB = {
       transaction.objectStore(STORE_WORLDBOOKS).delete(id);
   },
 
+  // ─── 预设 App（SillyTavern 式 Chat Completion 预设） ───
+  getAllPresets: async (): Promise<TavernPreset[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_LLM_PRESETS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_LLM_PRESETS, 'readonly');
+          const request = transaction.objectStore(STORE_LLM_PRESETS).getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  getPreset: async (id: string): Promise<TavernPreset | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_LLM_PRESETS)) return null;
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_LLM_PRESETS, 'readonly');
+          const request = transaction.objectStore(STORE_LLM_PRESETS).get(id);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  savePreset: async (preset: TavernPreset): Promise<void> => {
+      const db = await openDB();
+      // 等事务提交再 resolve —— 发消息前 PresetRuntime 会立刻重读，避免拿到旧值
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_LLM_PRESETS, 'readwrite');
+          transaction.objectStore(STORE_LLM_PRESETS).put(preset);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error || new Error('savePreset aborted'));
+      });
+  },
+
+  deletePreset: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_LLM_PRESETS, 'readwrite');
+      transaction.objectStore(STORE_LLM_PRESETS).delete(id);
+  },
+
   getAllNovels: async (): Promise<NovelBook[]> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_NOVELS)) return [];
@@ -2186,7 +2231,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices] = await Promise.all([
+      const [characters, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_THEMES),
@@ -2233,6 +2278,7 @@ export const DB = {
           getAllFromStore(STORE_PHONE_CALL_LOGS),
           getAllFromStore(STORE_EXCHANGE_DIARY),
           getAllFromStore(STORE_INNER_VOICES),
+          getAllFromStore(STORE_LLM_PRESETS),
       ]);
 
       const userProfile = userProfiles.length > 0 ? {
@@ -2274,6 +2320,7 @@ export const DB = {
           phoneCallLogs,
           exchangeDiaryBooks,
           innerVoices,
+          llmPresets,
       };
   },
 
@@ -2366,6 +2413,7 @@ export const DB = {
           data.courses !== undefined,
           data.games !== undefined,
           data.worldbooks !== undefined,
+          data.llmPresets !== undefined,
           data.novels !== undefined,
           data.songs !== undefined,
           data.quizSessions !== undefined,
@@ -2637,6 +2685,10 @@ export const DB = {
           await clearAndAdd(STORE_WORLDBOOKS, data.worldbooks, '世界书', false);
           data.worldbooks = undefined as any;
       }, data.worldbooks?.length || 0);
+      await runSection('LLM预设', data.llmPresets !== undefined, async () => {
+          await clearAndAdd(STORE_LLM_PRESETS, data.llmPresets, 'LLM预设', false);
+          data.llmPresets = undefined as any;
+      }, data.llmPresets?.length || 0);
       await runSection('小说', data.novels !== undefined, async () => {
           await clearAndAdd(STORE_NOVELS, data.novels, '小说', false);
           data.novels = undefined as any;

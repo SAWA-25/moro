@@ -22,6 +22,7 @@ import type { McdMiniAppSnapshot } from './mcdToolBridge';
 import type { MusicCfg, Song, LyricLine, MusicPlaybackSnapshot } from '../context/MusicContext';
 import { isPromptBuildSkipped } from './devDebug';
 import { WorldbookRuntime } from './worldbookRuntime';
+import { PresetRuntime, applyPresetToMessages } from './presets';
 
 export interface UserListeningContext {
     songName: string;
@@ -265,7 +266,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     }
 
     // ── 10. 组装 fullMessages + 末尾双语 reminder ─────────
-    const fullMessages: Array<{ role: string; content: any }> = [
+    let fullMessages: Array<{ role: string; content: any }> = [
         { role: 'system', content: systemPrompt },
         ...cleanedApiMessages,
     ];
@@ -274,6 +275,21 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // buildSystemPrompt 已用 omitDepthWorldbooks 跳过内联，这里是唯一注入点。
     const { depthEntries } = WorldbookRuntime.buildPromptSections(char, { inlineDepth: false });
     WorldbookRuntime.spliceDepthMessages(fullMessages, depthEntries);
+
+    // ── 11. 预设（SillyTavern 式）骨架 ───────────────────
+    // 启用预设时把 [system, ...history] 重排成 prompt_order 定义的消息流：
+    // 相对提示词按序展开、核心上下文落在第一个启用的核心 marker、绝对提示词
+    // @Depth 注入历史段。未启用时数组原样不动。注意要在双语 reminder 之前做，
+    // 保证 reminder 始终钉在最末尾。
+    const activePreset = await PresetRuntime.getActivePreset();
+    if (activePreset) {
+        fullMessages = applyPresetToMessages(fullMessages, activePreset, {
+            macros: {
+                charName: char.name || '角色',
+                userName: (userProfile?.name && userProfile.name.trim()) || '用户',
+            },
+        });
+    }
 
     if (bilingualActive) {
         fullMessages.push({
