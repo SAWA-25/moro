@@ -71,11 +71,15 @@ ${persona}
     const parsed = safeParseObject(extractContent(data));
     if (!parsed) throw new Error('资料生成结果解析失败');
 
-    // handle 不合规则时退回名字派生的兜底（保证字段总是可用）
+    // handle 不合规则时退回名字派生的兜底（保证字段总是可用）。
+    // region / bio 同理：模型偶尔换字段名或漏字段，先尝试常见别名，仍为空就给
+    // 微信风格兜底——否则资料页只剩微信号，地区和签名整行消失（显示 bug 根因）。
     const fallbackHandle = `wxid_${char.id.replace(/[^A-Za-z0-9]/g, '').slice(0, 12) || 'moro'}`;
+    const regionRaw = parsed.region ?? parsed.area ?? parsed.location ?? parsed['地区'];
+    const bioRaw = parsed.bio ?? parsed.signature ?? parsed.sign ?? parsed['个性签名'] ?? parsed['签名'];
     return {
-        handle: sanitizeHandle(parsed.handle) || fallbackHandle,
-        region: String(parsed.region || '').trim().slice(0, 20),
-        bio: String(parsed.bio || '').trim().slice(0, 60),
+        handle: sanitizeHandle(parsed.handle ?? parsed.wechatId ?? parsed['微信号']) || fallbackHandle,
+        region: String(regionRaw || '').trim().slice(0, 20) || '保密',
+        bio: String(bioRaw || '').trim().slice(0, 60) || '这个人很懒，什么都没留下。',
     };
 };

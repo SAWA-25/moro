@@ -23,6 +23,7 @@ import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
+import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -96,6 +97,13 @@ const Chat: React.FC = () => {
 
     // 角色主页（微信好友资料页风格，单击消息头像进入）
     const [showCharProfile, setShowCharProfile] = useState(false);
+
+    // ── 拉黑系统 ──
+    // 回到聊天界面时弹一次「你已将对方拉黑」提示（按角色记忆，解除后重置）
+    const [showUserBlockNotice, setShowUserBlockNotice] = useState(false);
+    const userBlockNoticeShownRef = useRef<string | null>(null);
+    // 被角色拉黑后重新发送好友验证
+    const [showFriendVerify, setShowFriendVerify] = useState(false);
 
     // 位置分享 modal
     const [showLocationModal, setShowLocationModal] = useState(false);
@@ -171,6 +179,33 @@ const Chat: React.FC = () => {
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
     charRef.current = char; // Keep ref in sync for async callbacks
+
+    // ── 拉黑状态（双向） ──
+    const userBlockedChar = !!char?.blacklisted;      // 用户拉黑了角色
+    const charBlockedUser = !!char?.charBlock?.active; // 角色拉黑了用户
+
+    // 回到聊天界面（角色资料/朋友设置收起后）弹一次「已拉黑」提示
+    useEffect(() => {
+        if (!char) return;
+        if (char.blacklisted && !showCharProfile && userBlockNoticeShownRef.current !== char.id) {
+            userBlockNoticeShownRef.current = char.id;
+            setShowUserBlockNotice(true);
+        }
+        if (!char.blacklisted && userBlockNoticeShownRef.current === char.id) {
+            userBlockNoticeShownRef.current = null;
+        }
+    }, [char?.id, char?.blacklisted, showCharProfile]);
+
+    // 从角色 App（朋友资料 → 设置朋友资料）返回时重新打开角色主页：
+    // 返回键只回上一个页面，而不是直接落回聊天消息列表
+    useEffect(() => {
+        try {
+            const target = localStorage.getItem('moro_chat_reopen_profile');
+            if (!target) return;
+            localStorage.removeItem('moro_chat_reopen_profile');
+            if (target === activeCharacterId) setShowCharProfile(true);
+        } catch { /* ignore */ }
+    }, [activeCharacterId]);
 
     // ── 开场白选择（SillyTavern first_mes / alternate_greetings 移植）──
     // 空聊天 + 角色带开场白时，在消息区显示一条可左右切换的预览气泡；
@@ -901,6 +936,17 @@ const Chat: React.FC = () => {
 
     const handleSendText = async (customContent?: string, customType?: MessageType, metadata?: any) => {
         if (!char || (!input.trim() && !customContent)) return;
+
+        // 拉黑拦截：任意一方拉黑期间私聊都发不出去
+        if (char.charBlock?.active) {
+            addToast('你已被对方拉黑，消息无法送达', 'error');
+            return;
+        }
+        if (char.blacklisted) {
+            addToast(`你已将 ${char.name} 拉黑，无法发送消息`, 'error');
+            return;
+        }
+
         const text = customContent || input.trim();
         const type = customType || 'text';
 
@@ -1008,6 +1054,11 @@ const Chat: React.FC = () => {
     // 三个点（从写入 DB 到 SSE POST 入队之间），由 onInstantPosted 清除 ——
     // 与 autoTriggerOnSend 自动路径的指示器行为一致。本地模式无此指示器，直接 triggerAI。
     const handleManualTrigger = () => {
+        // 拉黑期间不触发 AI 回复（双向都无法继续私聊）
+        if (char && (char.blacklisted || char.charBlock?.active)) {
+            addToast(char.charBlock?.active ? '你已被对方拉黑' : '你已将对方拉黑，无法继续私聊', 'error');
+            return;
+        }
         // 同上：上一轮还在跑时 triggerAI 会静默 reject，提前挡掉避免指示灯卡死。
         if (isTyping) return;
         if (!isInstantConfigReady()) { triggerAI(messages); return; }
@@ -2923,6 +2974,7 @@ ${recent || '（你们还没怎么聊过）'}
                             thinkingChainOptions={thinkingChainOptions}
                             onAvatarClick={() => setShowCharProfile(true)}
                             onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
+                            blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
                         />
                         </div>
                     );
@@ -3026,7 +3078,34 @@ ${recent || '（你们还没怎么聊过）'}
                         <button onClick={() => setReplyTarget(null)} className="p-1 text-slate-400 hover:text-slate-600">×</button>
                     </div>
                 )}
-                
+
+                {/* 拉黑状态横幅：双向拉黑期间盖在输入栏上方 */}
+                {charBlockedUser && char && (
+                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-red-50 border-b border-red-100 text-xs">
+                        <div className="flex items-center gap-1.5 text-red-500 font-bold min-w-0">
+                            <span className="w-4 h-4 rounded-full bg-[#fa5151] text-white text-[10px] flex items-center justify-center shrink-0">!</span>
+                            <span className="truncate">你已被 {char.name} 拉黑，无法发送消息</span>
+                        </div>
+                        <button
+                            onClick={() => setShowFriendVerify(true)}
+                            className="px-2.5 py-1 bg-red-500 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
+                        >
+                            发送好友验证
+                        </button>
+                    </div>
+                )}
+                {!charBlockedUser && userBlockedChar && char && (
+                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs">
+                        <span className="text-slate-500 font-bold truncate">你已将 {char.name} 加入黑名单，无法发送消息</span>
+                        <button
+                            onClick={() => { updateCharacter(char.id, { blacklisted: false, blacklistedAt: undefined }); addToast(`已将 ${char.name} 移出黑名单`, 'success'); }}
+                            className="px-2.5 py-1 bg-slate-600 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
+                        >
+                            解除拉黑
+                        </button>
+                    </div>
+                )}
+
                 <ChatInputArea
                     input={input} setInput={handleInputChange}
                     isTyping={isTyping} selectionMode={selectionMode}
@@ -3071,8 +3150,13 @@ ${recent || '（你们还没怎么聊过）'}
                     onSave={(config) => {
                         updateCharacter(char.id, { proactiveConfig: config });
                         if (config.enabled) {
-                            startProactiveChat(config.intervalMinutes);
-                            addToast(`已启动主动消息，每 ${config.intervalMinutes >= 60 ? (config.intervalMinutes / 60) + ' 小时' : config.intervalMinutes + ' 分钟'}发送一次`, 'success');
+                            startProactiveChat(config.intervalMinutes, config.randomMode);
+                            addToast(
+                                config.randomMode
+                                    ? `已启动随机主动消息，${char.name} 会按自己的节奏找你`
+                                    : `已启动主动消息，每 ${config.intervalMinutes >= 60 ? (config.intervalMinutes / 60) + ' 小时' : config.intervalMinutes + ' 分钟'}发送一次`,
+                                'success'
+                            );
                         } else {
                             stopProactiveChat();
                             addToast('已关闭主动消息', 'info');
@@ -3332,11 +3416,45 @@ ${recent || '（你们还没怎么聊过）'}
                             localStorage.setItem('moro_character_open_target', char.id);
                             // 返回键回到聊天页而非桌面
                             localStorage.setItem('moro_character_return_app', AppID.Chat);
+                            // 返回后重新展开角色主页：返回键只回上一个页面（角色设定 → 角色资料）
+                            localStorage.setItem('moro_chat_reopen_profile', char.id);
                         } catch {}
                         openApp(AppID.Character);
                     }}
                     onOpenMoments={() => { setShowCharProfile(false); openApp(AppID.Social); }}
                     onDeleted={() => { setShowCharProfile(false); openApp(AppID.GroupChat); }}
+                />
+            )}
+
+            {/* 「你已将对方拉黑」弹窗：回到聊天界面时提示一次 */}
+            {showUserBlockNotice && char && (
+                <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in" onClick={() => setShowUserBlockNotice(false)}>
+                    <div className="w-[min(80vw,300px)] bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 pt-6 pb-5 text-center">
+                            <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[#fa5151] text-white text-xl font-bold flex items-center justify-center">!</div>
+                            <div className="text-[16px] font-medium text-slate-800">已拉黑 {char.name}</div>
+                            <div className="text-[13px] text-slate-500 mt-2 leading-relaxed">
+                                你已将 TA 加入黑名单，无法继续私聊。TA 发来的消息仍会显示在聊天中，气泡旁带有红色感叹号。
+                                可在「角色资料 → 朋友设置」解除拉黑。
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowUserBlockNotice(false)}
+                            className="w-full py-3.5 text-[16px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
+                        >
+                            知道了
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 被角色拉黑后的好友验证 */}
+            {char && (
+                <FriendVerifyModal
+                    char={char}
+                    isOpen={showFriendVerify}
+                    onClose={() => setShowFriendVerify(false)}
+                    onAccepted={() => { void reloadMessages(visibleCountRef.current); }}
                 />
             )}
         </div>

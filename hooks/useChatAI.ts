@@ -1117,9 +1117,9 @@ export const useChatAI = ({
     // NOTE: The actual proactive trigger handler is registered globally in OSContext
     // so it works even when Chat is not open. These are just start/stop helpers.
 
-    const startProactiveChat = (intervalMinutes: number) => {
+    const startProactiveChat = (intervalMinutes: number, random?: boolean) => {
         if (!char) return;
-        ProactiveChat.start(char.id, intervalMinutes);
+        ProactiveChat.start(char.id, intervalMinutes, { random });
     };
 
     const stopProactiveChat = () => {

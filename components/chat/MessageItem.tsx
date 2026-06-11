@@ -773,6 +773,8 @@ interface MessageItemProps {
     onAvatarClick?: () => void;
     /** 双击角色头像：戳一戳互动，角色会收到对应提示。 */
     onAvatarPoke?: () => void;
+    /** 拉黑标记：角色被用户拉黑后发来的消息，气泡旁显示红色感叹号 */
+    blockedMark?: boolean;
 }
 
 const MessageItem = React.memo(({
@@ -809,6 +811,7 @@ const MessageItem = React.memo(({
     thinkingChainOptions,
     onAvatarClick,
     onAvatarPoke,
+    blockedMark = false,
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
@@ -1250,6 +1253,15 @@ const MessageItem = React.memo(({
                         <div className={`text-[9px] text-slate-400/80 px-1 mt-1 font-medium ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</div>
                     )}
                 </div>
+
+                {/* 拉黑标记：被拉黑后角色发来的消息，气泡旁红色感叹号（仿微信发送失败） */}
+                {!isUser && blockedMark && (
+                    <span
+                        className="ml-1.5 mb-3 w-[18px] h-[18px] rounded-full bg-[#fa5151] text-white text-[12px] font-bold flex items-center justify-center shrink-0 select-none"
+                        title="对方已被你拉黑"
+                        aria-label="对方已被你拉黑"
+                    >!</span>
+                )}
 
                 {/* User Avatar - Absolute Positioned */}
                 {isUser && (

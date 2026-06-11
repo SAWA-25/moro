@@ -12,6 +12,7 @@ import { processImage } from '../utils/file';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
+import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -289,6 +290,8 @@ const ChatHub: React.FC = () => {
     const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'mute-member' | 'add-member'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
+    // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
+    const [verifyCharId, setVerifyCharId] = useState<string | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [editContent, setEditContent] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -1737,24 +1740,49 @@ ${attachedImagesNote}
                     </div>
                 </Modal>
 
-                {/* 添加好友：弹窗选择角色，直接进入与该角色的会话（不跳角色设置） */}
+                {/* 添加好友：弹窗选择角色，直接进入与该角色的会话（不跳角色设置）。
+                    把你拉黑的角色 → 需先发送好友验证，由 TA 决定是否拉回 */}
                 <Modal isOpen={modalType === 'add-friend'} title="选择要添加的角色" onClose={() => setModalType('none')}>
                     <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
-                        {characters.map(c => (
-                            <button
-                                key={c.id}
-                                onClick={() => { setModalType('none'); openPrivateChat(c.id); }}
-                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-violet-300 hover:bg-violet-50/50 active:scale-[0.98] transition-all"
-                            >
-                                <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
-                                <span className="text-sm text-slate-700 font-medium truncate">{c.name}</span>
-                            </button>
-                        ))}
+                        {characters.map(c => {
+                            const blockedByChar = !!c.charBlock?.active;
+                            return (
+                                <button
+                                    key={c.id}
+                                    onClick={() => {
+                                        setModalType('none');
+                                        if (blockedByChar) setVerifyCharId(c.id);
+                                        else openPrivateChat(c.id);
+                                    }}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-violet-300 hover:bg-violet-50/50 active:scale-[0.98] transition-all"
+                                >
+                                    <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${blockedByChar ? 'grayscale' : ''}`} />
+                                    <span className="text-sm text-slate-700 font-medium truncate flex-1">{c.name}</span>
+                                    {blockedByChar && (
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已把你拉黑 · 需验证</span>
+                                    )}
+                                </button>
+                            );
+                        })}
                         {characters.length === 0 && (
                             <div className="text-center text-slate-400 text-xs py-8">还没有角色，先去「角色」App 创建一个吧</div>
                         )}
                     </div>
                 </Modal>
+
+                {/* 好友验证（被角色拉黑后重新申请） */}
+                {verifyCharId && (() => {
+                    const vc = characters.find(c => c.id === verifyCharId);
+                    if (!vc) return null;
+                    return (
+                        <FriendVerifyModal
+                            char={vc}
+                            isOpen
+                            onClose={() => setVerifyCharId(null)}
+                            onAccepted={() => { setVerifyCharId(null); openPrivateChat(vc.id); }}
+                        />
+                    );
+                })()}
             </div>
         );
     }

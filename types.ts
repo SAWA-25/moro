@@ -1557,6 +1557,16 @@ export interface CharacterProfile {
   /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
   starredFriend?: boolean;
   blacklisted?: boolean;
+  /** 用户拉黑角色的时刻——此后角色发来的消息气泡旁带红色感叹号 */
+  blacklistedAt?: number;
+
+  /** 角色拉黑用户（AI 输出 [[BLOCK_USER]] 触发）：active 期间用户无法发消息，
+   *  到 unblockAt（随机 30 分钟 ~ 24 小时）自动解除，或通过好友验证提前拉回 */
+  charBlock?: {
+      active: boolean;
+      blockedAt: number;
+      unblockAt: number;
+  };
 
   /** 会话设置（聊天界面 ··· → 聊天设置）：本会话专属的展示 / 行为 / 提示词配置 */
   convoSettings?: ConvoSettings;
@@ -1615,6 +1625,9 @@ export interface CharacterProfile {
   proactiveConfig?: {
     enabled: boolean;
     intervalMinutes: number; // 30, 60, 120, 240, etc.
+    /** 随机时间模式：间隔随机（1 小时 ~ 1 天），且用户刚回过消息时不打扰，
+     *  发不发、说什么完全交给角色性格 */
+    randomMode?: boolean;
     useSecondaryApi?: boolean;
     secondaryApi?: {
       baseUrl: string;

@@ -20,6 +20,7 @@ import ApiCallLogModal from '../components/settings/ApiCallLogModal';
 import { PresetRuntime } from '../utils/presets';
 import { DB } from '../utils/db';
 import { AppID } from '../types';
+import { getLockPasscode, setLockPasscode, isLockPasscodeEnabled, setLockPasscodeEnabled, DEFAULT_LOCK_PASSCODE } from '../utils/lockScreenSettings';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -117,6 +118,11 @@ const Settings: React.FC = () => {
   const [cloudBackupFiles, setCloudBackupFiles] = useState<import('../types').CloudBackupFile[]>([]);
   const [cloudTestResult, setCloudTestResult] = useState<string>('');
   const [cloudTesting, setCloudTesting] = useState(false);
+
+  // 锁屏密码（默认 0103；关闭后锁屏点按直接解锁）
+  const [lockPassEnabled, setLockPassEnabled] = useState(() => isLockPasscodeEnabled());
+  const [lockPassCurrent, setLockPassCurrent] = useState('');
+  const [lockPassNew, setLockPassNew] = useState('');
 
   // Cloud backup local config state (WebDAV)
   const [cbUrl, setCbUrl] = useState(cloudBackupConfig.webdavUrl);
@@ -806,7 +812,73 @@ const Settings: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar pb-20">
-        
+
+        {/* 锁屏与密码 */}
+        <section className="bg-white/80 rounded-3xl p-5 shadow-sm border border-white/50">
+            <div className="flex items-center gap-2 mb-4">
+                <div className="p-2 bg-indigo-100 rounded-xl text-indigo-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                </div>
+                <h2 className="text-sm font-semibold text-slate-600 tracking-wider">锁屏与密码</h2>
+            </div>
+
+            <div className="flex items-center justify-between mb-2">
+                <div>
+                    <div className="text-xs font-bold text-slate-600">锁屏密码</div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">开启后解锁需输入 4 位密码（默认 {DEFAULT_LOCK_PASSCODE}）；关闭则点按直接解锁。</p>
+                </div>
+                <button
+                    onClick={() => {
+                        const next = !lockPassEnabled;
+                        setLockPassEnabled(next);
+                        setLockPasscodeEnabled(next);
+                        addToast(next ? '已开启锁屏密码' : '已关闭锁屏密码', 'success');
+                    }}
+                    className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${lockPassEnabled ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                >
+                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${lockPassEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+            </div>
+
+            {lockPassEnabled && (
+                <div className="mt-3 bg-slate-50 rounded-2xl p-3 space-y-2.5">
+                    <div>
+                        <label className="text-[10px] text-slate-500 font-medium block mb-1">当前密码</label>
+                        <input
+                            type="password" inputMode="numeric" maxLength={4}
+                            value={lockPassCurrent}
+                            onChange={e => setLockPassCurrent(e.target.value.replace(/\D/g, ''))}
+                            placeholder="输入当前 4 位密码"
+                            className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-indigo-300 focus:outline-none transition-colors"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] text-slate-500 font-medium block mb-1">新密码</label>
+                        <input
+                            type="password" inputMode="numeric" maxLength={4}
+                            value={lockPassNew}
+                            onChange={e => setLockPassNew(e.target.value.replace(/\D/g, ''))}
+                            placeholder="输入新的 4 位数字密码"
+                            className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-indigo-300 focus:outline-none transition-colors"
+                        />
+                    </div>
+                    <button
+                        onClick={() => {
+                            if (lockPassCurrent !== getLockPasscode()) { addToast('当前密码不正确', 'error'); return; }
+                            if (!/^\d{4}$/.test(lockPassNew)) { addToast('新密码需为 4 位数字', 'error'); return; }
+                            setLockPasscode(lockPassNew);
+                            setLockPassCurrent('');
+                            setLockPassNew('');
+                            addToast('锁屏密码已更新', 'success');
+                        }}
+                        className="w-full py-2.5 bg-indigo-500 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform"
+                    >
+                        修改密码
+                    </button>
+                </div>
+            )}
+        </section>
+
         {/* 数据备份区域 */}
         <section className="bg-white/80 rounded-3xl p-5 shadow-sm border border-white/50">
             <div className="flex items-center gap-2 mb-4">

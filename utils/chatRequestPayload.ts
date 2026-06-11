@@ -27,6 +27,7 @@ import { PresetRuntime, applyPresetToMessages } from './presets';
 import { PersonaRuntime, normalizePersonaPosition } from './personas';
 import { PERSONA_POSITION } from '../types';
 import { substituteMacros } from './macros';
+import { buildBlockPromptSection } from './blockSystem';
 
 export interface UserListeningContext {
     songName: string;
@@ -307,6 +308,13 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         if (extra) {
             systemPrompt += `\n\n## 用户对内心独白的额外要求\n${extra}`;
         }
+    }
+
+    // ── 6.5 拉黑系统状态 / 能力注入（私聊专用） ─────────────
+    // 用户已拉黑角色 → 告知角色被拉黑；未拉黑且「拉黑保护」未开 → 授予 [[BLOCK_USER]] 能力
+    const blockSection = buildBlockPromptSection(char, macroCtx.userName);
+    if (blockSection) {
+        systemPrompt += `\n\n${blockSection}`;
     }
 
     // ── 7. 历史消息构造 ───────────────────────────────────
