@@ -566,6 +566,14 @@ const PhoneApp: React.FC = () => {
                 {tab === 'logs' && !!logs.length && (
                     <button onClick={() => setConfirmClearAll(true)} className="text-xs text-slate-400 hover:text-rose-400 px-2 py-1 transition">清空全部</button>
                 )}
+                {/* 语音通话已整合进电话 App：从这里进入实时语音通话（选角色 / 语音通话记录） */}
+                <button
+                    onClick={() => openApp(AppID.Call)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-bold shadow-sm active:scale-95 transition"
+                >
+                    <Waveform size={14} weight="bold" />
+                    语音通话
+                </button>
             </div>
 
             {/* 内容区 */}

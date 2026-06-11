@@ -61,7 +61,6 @@ const ThemeMaker = lazyApp(() => import('../apps/ThemeMaker'));
 const Appearance = lazyApp(() => import('../apps/Appearance'));
 const Gallery = lazyApp(() => import('../apps/Gallery'));
 const DateApp = lazyApp(() => import('../apps/DateApp'));
-const UserApp = lazyApp(() => import('../apps/UserApp'));
 const JournalApp = lazyApp(() => import('../apps/JournalApp'));
 const ScheduleApp = lazyApp(() => import('../apps/ScheduleApp'));
 const RoomApp = lazyApp(() => import('../apps/RoomApp'));
@@ -97,7 +96,7 @@ const PersonaApp = lazyApp(() => import('../apps/PersonaApp'));
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   Chat, Character, GroupChat, SocialApp, RoomApp, Settings, Appearance,
-  CheckPhone, JournalApp, ScheduleApp, MusicApp, CallApp, PhoneApp, ExchangeDiaryApp, Gallery, DateApp, UserApp,
+  CheckPhone, JournalApp, ScheduleApp, MusicApp, CallApp, PhoneApp, ExchangeDiaryApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
@@ -109,7 +108,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
 const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Settings]: Settings, [AppID.Character]: Character, [AppID.Chat]: Chat,
   [AppID.GroupChat]: GroupChat, [AppID.ThemeMaker]: ThemeMaker, [AppID.Appearance]: Appearance,
-  [AppID.Gallery]: Gallery, [AppID.Date]: DateApp, [AppID.User]: UserApp,
+  [AppID.Gallery]: Gallery, [AppID.Date]: DateApp,
   [AppID.Journal]: JournalApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
   [AppID.FAQ]: FAQApp, [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
@@ -650,11 +649,12 @@ const PhoneShell: React.FC = () => {
             }
             unlock();
         }}
-        className="relative w-full h-full bg-cover bg-center cursor-pointer overflow-hidden group font-light select-none overscroll-none"
+        className="moro-lock-screen relative w-full h-full bg-cover bg-center cursor-pointer overflow-hidden group font-light select-none overscroll-none"
         style={{ backgroundImage: bgImageValue, color: contentColor, animation: 'lockReveal 600ms ease-out both' }}
       >
         {/* 锁屏柔和淡入：与开机「世界入场」退场衔接；body 背景本就是壁纸，故是无缝融入而非硬切。 */}
         <style>{`@keyframes lockReveal{from{opacity:0}to{opacity:1}}`}</style>
+        {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
         <div className="absolute inset-0 bg-black/5 backdrop-blur-sm transition-all group-hover:backdrop-blur-none group-hover:bg-transparent duration-700" />
 
         {/* 治愈系氛围光斑：缓慢漂移的暖紫/蜜桃光晕 */}
@@ -710,7 +710,6 @@ const PhoneShell: React.FC = () => {
       case AppID.Appearance: return <Appearance />;
       case AppID.Gallery: return <Gallery />;
       case AppID.Date: return <DateApp />; 
-      case AppID.User: return <UserApp />;
       case AppID.Journal: return <JournalApp />; 
       case AppID.Schedule: return <ScheduleApp />;
       case AppID.Room: return <RoomApp />; 
@@ -754,6 +753,13 @@ const PhoneShell: React.FC = () => {
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">
+       {/* 全局自定义 CSS（主题 → 自定义 CSS）：注入整机，作用于 .moro-* 钩子类与任意元素 */}
+       {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
+       {/* 守护样式（注在用户 CSS 之后）：保证 Dock 与桌面 Palette 按钮永远可见可点 ——
+           全局 CSS 写崩时用户仍能从 Palette 回到「主题 → 自定义 CSS」清空恢复。 */}
+       {theme.globalCustomCss && (
+         <style>{`.moro-dock,.moro-dock-icon,.moro-palette-btn{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}.moro-dock{display:flex!important;}`}</style>
+       )}
        {/* Optimized Background Layer */}
        <div 
          className="absolute inset-0 bg-cover bg-center transition-all duration-700 ease-[cubic-bezier(0.25,0.1,0.25,1)]"

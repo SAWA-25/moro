@@ -62,7 +62,7 @@ const StatusBar: React.FC = () => {
   return (
     <>
       <div 
-          className="w-full flex justify-between items-start px-6 text-[11px] font-bold label-mono z-50 absolute top-0 left-0 bg-transparent transition-colors duration-500 select-none pointer-events-none"
+          className="moro-status-bar w-full flex justify-between items-start px-6 text-[11px] font-bold label-mono z-50 absolute top-0 left-0 bg-transparent transition-colors duration-500 select-none pointer-events-none"
           style={{ 
               color: textColor,
               paddingTop: 'max(4px, var(--safe-top))',
