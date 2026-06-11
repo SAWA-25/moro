@@ -34,6 +34,7 @@ import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
+import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
@@ -443,6 +444,20 @@ export async function applyAssistantPostProcessing(
             if (char.convoSettings?.autoOffline && typeof window !== 'undefined') {
                 setOfflinePending(char.id);
                 window.dispatchEvent(new CustomEvent(OFFLINE_START_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // ─── Step 1.7: [[CHECK_PHONE]] 角色查用户手机指令 ───
+    // 系统命令（如"对用户发起查手机"）指示角色输出该指令。先剥后播：Chat.tsx 监听事件
+    // 弹 CharPhoneCheckOverlay；用户不在该角色聊天页时落 pending，下次进聊天兜底弹。
+    {
+        const phoneExtract = extractCheckPhoneDirective(aiContent);
+        if (phoneExtract.checkPhone) {
+            aiContent = phoneExtract.content;
+            if (typeof window !== 'undefined') {
+                setPhoneCheckPending(char.id);
+                window.dispatchEvent(new CustomEvent(CHAR_PHONE_CHECK_EVENT, { detail: { charId: char.id } }));
             }
         }
     }
@@ -1767,7 +1782,7 @@ export async function applyAssistantPostProcessing(
     };
 
     // ─── Step 5: HTML 卡片 ───
-    if ((char as any).htmlModeEnabled && /\[html\]/i.test(aiContent)) {
+    if ((char as any).htmlModeEnabled !== false && /\[html\]/i.test(aiContent)) {
         const { blocks, cleanedContent } = extractHtmlBlocks(aiContent);
         for (const blk of blocks) {
             try {

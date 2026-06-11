@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal, Heart } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal, Heart } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
@@ -41,8 +41,6 @@ interface ChatInputAreaProps {
     // 麦当劳 MCP
     mcdConfigured?: boolean;   // 设置里 token 已填且启用
     mcdActivated?: boolean;    // 当前会话已发"麦请求"
-    // HTML 模块模式
-    htmlModeEnabled?: boolean;
     // 思考过程展示（会话级）
     showThinkingChain?: boolean;
     // Input style
@@ -63,7 +61,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     isProactiveActive,
     mcdConfigured = false,
     mcdActivated = false,
-    htmlModeEnabled = false,
     showThinkingChain = false,
     inputStyle = 'default',
     sendButtonStyle = 'circle',
@@ -855,24 +852,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                   {mcdActivated && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-yellow-300 border-slate-900' : 'bg-yellow-500 border-white'}`} />}
                               </div>)}
                               <span className="text-xs font-bold">{mcdActivated ? '结束麦请求' : '麦当劳'}</span>
-                            </button>
-
-                            {/* HTML 模块模式：tap = 切换开关 (注入提示词); 长按打开自定义提示词设置 */}
-                            <button
-                              onClick={() => onPanelAction('html-mode-toggle')}
-                              onContextMenu={(e) => { e.preventDefault(); onPanelAction('html-mode-settings'); }}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform relative ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
-                            >
-                              {(
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border relative ${
-                                  htmlModeEnabled
-                                    ? (isDiscordStyle ? 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-400/40' : 'bg-fuchsia-100 text-fuchsia-600 border-fuchsia-200')
-                                    : (isDiscordStyle ? 'bg-slate-800 text-fuchsia-300 border-fuchsia-400/20' : 'bg-fuchsia-50 text-fuchsia-500 border-fuchsia-100')
-                              }`}>
-                                  <Code className="w-6 h-6" weight="bold" />
-                                  {htmlModeEnabled && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-fuchsia-400 border-slate-900' : 'bg-fuchsia-500 border-white'}`} />}
-                              </div>)}
-                              <span className="text-xs font-bold">{htmlModeEnabled ? 'HTML已开' : 'HTML模式'}</span>
                             </button>
 
                             {/* 「展示思考」按钮：tap → 直接打开思考链设置弹窗（含开关），不再做 inline toggle */}

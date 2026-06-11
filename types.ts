@@ -1692,7 +1692,8 @@ export interface CharacterProfile {
 
   /**
    * HTML 模块模式（per-character）。
-   * - htmlModeEnabled：开启后，给 LLM 注入"用 [html]...[/html] 包裹的富 HTML 卡片"提示词，
+   * - htmlModeEnabled：默认开启（undefined 视为 true，显式 false 才关闭）。开启时给 LLM
+   *   注入"用 [html]...[/html] 包裹的富 HTML 卡片"提示词，
    *   AI 输出里的 [html] 块会被解析成单独的 html_card 消息（沙盒 iframe 渲染）。
    * - htmlModeCustomPrompt：用户自定义内容，**追加**在内置提示词之后（不会覆盖内置内容）。
    * - 上下文 / 归档 总结读到的 html_card 消息内容是已剥离 HTML 的纯文字摘要，避免 token 浪费。

@@ -16,6 +16,7 @@ import CheckPhone from './CheckPhone';
 import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
+import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
@@ -1182,6 +1183,19 @@ const Chat: React.FC = () => {
         return () => window.removeEventListener(OFFLINE_START_EVENT, handler);
     }, []);
 
+    // ── 角色查用户手机：监听 [[CHECK_PHONE]] 广播（系统命令指示角色发起，
+    //    applyAssistantPostProcessing 剥离指令后发出）──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            consumePhoneCheckPending(d.charId); // 事件路径直接弹，吃掉 pending 防止下次重复弹
+            setCharPhoneCheckActive(true);
+        };
+        window.addEventListener(CHAR_PHONE_CHECK_EVENT, handler);
+        return () => window.removeEventListener(CHAR_PHONE_CHECK_EVENT, handler);
+    }, []);
+
     // 进入/切换角色时兜底：有 pending（事件发出时不在本聊天页）或未结束的线下会话则恢复弹窗
     useEffect(() => {
         if (!activeCharacterId) return;
@@ -1191,7 +1205,8 @@ const Chat: React.FC = () => {
             setShowOfflineMode(false);
         }
         setShowCheckPhone(false);
-        setCharPhoneCheckActive(false);
+        // 查手机 pending 兜底：系统命令触发时用户不在本聊天页的情况
+        setCharPhoneCheckActive(consumePhoneCheckPending(activeCharacterId));
     }, [activeCharacterId]);
 
     // 线下模式结束：情景已合成 system 消息落库，刷新后让角色主动发消息收尾
@@ -1363,22 +1378,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'mcd-end':
                 handleSendText(MCD_DEACTIVATE_TRIGGER, 'text', { mcdDeactivate: true });
                 break;
-            case 'html-mode-toggle': {
-                if (!char) break;
-                const next = !((char as any).htmlModeEnabled);
-                updateCharacter(char.id, { htmlModeEnabled: next } as any);
-                addToast(next ? 'HTML 模式已开启' : 'HTML 模式已关闭', next ? 'success' : 'info');
-                break;
-            }
-            case 'html-mode-settings': {
-                // 长按 → 跳进聊天设置 modal 的 HTML 模块板块 (顺便确保开关已打开, 不然滚下去看不见 textarea)
-                if (!char) break;
-                if (!(char as any).htmlModeEnabled) {
-                    updateCharacter(char.id, { htmlModeEnabled: true } as any);
-                }
-                setModalType('chat-settings');
-                break;
-            }
             case 'thinking-settings': {
                 // 「展示思考」按钮 → 打开思考链设置 modal（开关 / 卡片风格 / 配色 / 追加提示词）
                 if (!char) break;
@@ -2930,8 +2929,8 @@ ${recent || '（你们还没怎么聊过）'}
                 onToggleXhs={() => updateCharacter(char.id, { xhsEnabled: !char.xhsEnabled })}
                 timeAwarenessEnabled={char.timeAwarenessEnabled !== false}
                 onToggleTimeAwareness={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })}
-                htmlModeEnabled={!!(char as any).htmlModeEnabled}
-                onToggleHtmlMode={() => updateCharacter(char.id, { htmlModeEnabled: !((char as any).htmlModeEnabled) } as any)}
+                htmlModeEnabled={(char as any).htmlModeEnabled !== false}
+                onToggleHtmlMode={() => updateCharacter(char.id, { htmlModeEnabled: (char as any).htmlModeEnabled === false } as any)}
                 htmlModeCustomPrompt={settingsHtmlModeCustomPrompt}
                 setHtmlModeCustomPrompt={setSettingsHtmlModeCustomPrompt}
                 chatVoiceEnabled={!!char.chatVoiceEnabled}
@@ -3440,7 +3439,6 @@ ${recent || '（你们还没怎么聊过）'}
                     isProactiveActive={isProactiveActive}
                     mcdConfigured={mcdConfiguredFlag}
                     mcdActivated={mcdActivated}
-                    htmlModeEnabled={!!(char as any).htmlModeEnabled}
                     showThinkingChain={!!(char as any).showThinkingChain}
                     inputStyle={osTheme.chatInputStyle}
                     sendButtonStyle={osTheme.chatSendButtonStyle}

@@ -1575,7 +1575,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   musicSnapshot: loadMusicPlaybackSnapshot(),
                   // translationConfig / mcdMiniSnap 是 chat-app 会话级 UI 状态，主动消息触发时
                   // 不存在；保持 undefined 即可，与"用户当时根本没在 chat 界面"的语义一致
-                  htmlMode: { enabled: !!(char as any).htmlModeEnabled, customPrompt: (char as any).htmlModeCustomPrompt },
+                  htmlMode: { enabled: (char as any).htmlModeEnabled !== false, customPrompt: (char as any).htmlModeCustomPrompt },
                   thinkingChain: { enabled: !!(char as any).showThinkingChain, customPrompt: (char as any).thinkingChainCustomPrompt },
               });
               const systemPrompt = payload.systemPrompt;
@@ -1674,7 +1674,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
               // HTML 卡片：在 sanitize 之前抽出 [html]...[/html] 块,与 useChatAI 保持一致。
               // 没这一步主动消息会把整段 [html] 当纯文本落库,前端只能渲染成乱码。
-              if ((char as any).htmlModeEnabled && /\[html\]/i.test(aiContent)) {
+              if ((char as any).htmlModeEnabled !== false && /\[html\]/i.test(aiContent)) {
                   const { blocks, cleanedContent } = extractHtmlBlocks(aiContent);
                   for (const blk of blocks) {
                       try {
