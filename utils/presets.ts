@@ -62,7 +62,7 @@ export const MARKER_HINTS: Record<string, { name: string; hint: string }> = {
     personaDescription: { name: 'Persona Description', hint: '用户人设块（人设 App 激活人设的名字+描述；未建人设时为档案 App 的内容）在此注入' },
     worldInfoBefore: { name: 'World Info (before)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
     worldInfoAfter: { name: 'World Info (after)', hint: '世界书已并入角色核心上下文，此处仅作排序占位' },
-    dialogueExamples: { name: 'Chat Examples', hint: '已并入角色核心上下文，此处仅作排序占位' },
+    dialogueExamples: { name: 'Chat Examples', hint: '角色的对话示例（神经链接编辑页「对话示例」栏 / 角色卡 mes_example）在此注入' },
 };
 
 // localStorage keys

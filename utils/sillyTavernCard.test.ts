@@ -154,7 +154,6 @@ describe('convertSTCardToCharacter', () => {
         expect(result.systemPrompt).toContain('永远保持温柔的语气');
         expect(result.systemPrompt).toContain('小满是一位旅行画家，常给阿月写信');
         expect(result.systemPrompt).toContain('【性格特征】\n温柔、好奇');
-        expect(result.systemPrompt).toContain('【对话示例】');
         expect(result.systemPrompt).toContain('回复保持简短');
         expect(result.systemPrompt).not.toContain('{{char}}');
         expect(result.systemPrompt).not.toContain('{{user}}');
@@ -173,6 +172,14 @@ describe('convertSTCardToCharacter', () => {
         expect(result.alternateGreetings).toEqual(['好久不见，{{user}}。']);
     });
 
+    it('对话示例独立导出，不混入 systemPrompt（宏照常烘焙）', () => {
+        // 修复：mes_example 曾被拼进 systemPrompt（【对话示例】节），导致对话示例
+        // 与角色描述混在一起。现在是独立字段，由消息组装按 ST 语义注入。
+        expect(result.systemPrompt).not.toContain('对话示例');
+        expect(result.systemPrompt).not.toContain('在画云');
+        expect(result.mesExample).toBe('<START>\n阿月: 在画什么？\n小满: 在画云。');
+    });
+
     it('无开场白的卡：firstMes 为 undefined，备选为空数组', () => {
         const bare = convertSTCardToCharacter(
             parseSillyTavernCard({ spec: 'chara_card_v2', data: { name: '素卡', description: 'x' } })!,
@@ -180,6 +187,7 @@ describe('convertSTCardToCharacter', () => {
         );
         expect(bare.firstMes).toBeUndefined();
         expect(bare.alternateGreetings).toEqual([]);
+        expect(bare.mesExample).toBeUndefined();
     });
 
     it('世界书条目全部入库：3 个条目 + 1 条卡片信息', () => {

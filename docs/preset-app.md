@@ -46,7 +46,8 @@
 | `chatHistory` | 聊天历史消息（@Depth 世界书已先注入其中） |
 | `worldInfoBefore` / `worldInfoAfter` | 世界书 before/after 块（含关键词激活过滤后的条目），在各自 order 位置注入，受 marker 开关控制 |
 | `personaDescription` | 用户人设块（名字 + 设定/备注）。「人设」App 有激活人设时用人设的名字/描述（位置=嵌入提示词时），否则回落「档案」App 的内容，详见 `docs/persona-app.md` |
-| `charDescription` `charPersonality` `scenario` `dialogueExamples` | 共同映射到 Moro 的角色核心上下文（人设/内在认知/世界观/印象/记忆），注入在其中**第一个启用**的 marker 处，其余仅作排序占位 |
+| `dialogueExamples` | 角色的对话示例块（`CharacterProfile.mesExample`，即角色卡 mes_example / 神经链接「对话示例」栏），在自己的 order 位置注入，受 marker 开关控制 |
+| `charDescription` `charPersonality` `scenario` | 共同映射到 Moro 的角色核心上下文（人设/内在认知/世界观/印象/记忆），注入在其中**第一个启用**的 marker 处，其余仅作排序占位 |
 
 实现：预设激活时 `ChatPrompts.buildSystemPrompt(presetMarkerSplit=true)` →
 `buildCoreContext({ omitWorldbooks, skipUserProfile })` 把世界书与用户档案从核心块

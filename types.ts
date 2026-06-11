@@ -1510,6 +1510,12 @@ export interface CharacterProfile {
   firstMes?: string;
   /** 备选开场白（角色卡 alternate_greetings），与 firstMes 一起构成进入聊天时左右切换的候选 */
   alternateGreetings?: string[];
+  /**
+   * 对话示例（SillyTavern 角色卡 mes_example）。独立于 systemPrompt 存储：
+   * 未启用预设时作为「对话示例」块注入核心上下文；启用预设时落在
+   * dialogueExamples 占位（受 marker 开关控制）。<START> 分隔多段示例（ST 惯例）。
+   */
+  mesExample?: string;
   memories: MemoryFragment[];
   refinedMemories?: Record<string, string>;
   activeMemoryMonths?: string[];

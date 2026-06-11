@@ -896,6 +896,7 @@ ${isInitialGeneration ? `
           worldview: result.worldview,
           firstMes: result.firstMes,
           alternateGreetings: result.alternateGreetings.length > 0 ? result.alternateGreetings : undefined,
+          mesExample: result.mesExample,
           memories: [],
           refinedMemories: {},
           activeMemoryMonths: [],
@@ -1113,6 +1114,21 @@ ${isInitialGeneration ? `
                                     className="w-full h-24 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all"
                                     placeholder="在这个世界里，魔法是存在的..."
                                 />
+                           </div>
+
+                           {/* 对话示例（mes_example）—— SillyTavern 语义：说话风格示例，独立于角色描述。
+                               未启用预设时作为「对话示例」块注入；启用预设时落在 dialogueExamples 占位 */}
+                           <div>
+                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">对话示例 (Example Dialogue)</label>
+                               <textarea
+                                    value={formData.mesExample || ''}
+                                    onChange={(e) => handleChange('mesExample', e.target.value || undefined)}
+                                    className="w-full h-32 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all"
+                                    placeholder={'<START>\n{{user}}: 在画什么？\n{{char}}: 在画云。'}
+                                />
+                               <p className="text-[10px] text-slate-400 mt-1.5 pl-2 leading-relaxed">
+                                   角色说话风格的参考示例，不会和角色描述混在一起。用 <code className="bg-slate-100 px-1 rounded">&lt;START&gt;</code> 分隔多段示例（同酒馆惯例）；启用预设 App 时对应 Chat Examples 占位。
+                               </p>
                            </div>
 
                            {/* 开场白（first_mes）+ 备选开场白（alternate_greetings）—— SillyTavern 语义：

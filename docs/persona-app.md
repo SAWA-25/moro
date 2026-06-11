@@ -60,7 +60,9 @@
   （=ST 的 migrateNonPersonaUser）。
 - **神经链接**：角色卡的开场白（first_mes / alternate_greetings）独立存储
   （`CharacterProfile.firstMes` / `alternateGreetings`），进入空聊天时左右切换
-  选择开场白，宏（{{user}}）按当时启用的人设名替换。
+  选择开场白，宏（{{user}}）按当时启用的人设名替换；对话示例（mes_example）
+  同样独立存储（`CharacterProfile.mesExample`），未启用预设时作为「对话示例」块
+  注入核心上下文，启用预设时落在 dialogueExamples 占位。
 
 ## 开关存储
 

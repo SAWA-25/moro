@@ -9,6 +9,17 @@ import { WorldbookRuntime } from './worldbookRuntime';
  * 负责统一构建所有 App 共用的基础角色上下文 (System Prompt)。
  * 包含：身份设定、用户画像、世界观、核心记忆、详细记忆、以及角色内心看法。
  */
+/**
+ * 渲染角色的「对话示例」块（SillyTavern mes_example 语义）。
+ * 提示模型这些只是说话风格示例、不是真实历史 —— ST 用独立的 example 消息序列
+ * 达到同样目的，Moro 单 system 块风格下用显式说明替代。空内容返回空串。
+ */
+export const renderMesExampleBlock = (mesExample?: string): string => {
+    const text = (mesExample || '').trim();
+    if (!text) return '';
+    return `### 对话示例 (Example Dialogue)\n（以下是角色说话风格的参考示例，<START> 表示一段新示例的开始。它们不是真实发生过的对话，不要当成共同记忆引用，只用来把握语气与措辞。）\n${text}\n\n`;
+};
+
 export const ContextBuilder = {
 
     /**
@@ -118,6 +129,12 @@ export const ContextBuilder = {
              * marker 内容单独注入到预设定义的位置。@Depth 条目不受影响。
              */
             omitWorldbooks?: boolean;
+            /**
+             * 预设启用时置 true：对话示例（char.mesExample）不内联，
+             * 由 buildChatRequestPayload 作为 dialogueExamples marker 内容
+             * 注入到预设定义的位置（受 marker 开关控制）。
+             */
+            omitMesExample?: boolean;
         },
     ): string => {
         let context = `${groupOptions?.headerOverride ?? '[System: Roleplay Configuration]'}\n\n`;
@@ -166,6 +183,12 @@ export const ContextBuilder = {
         // 预设接管（omitWorldbooks）时跳过：由 worldInfoAfter marker 注入
         if (wbSections.afterChar && !groupOptions?.omitWorldbooks) {
             context += wbSections.afterChar;
+        }
+
+        // 2b. 对话示例（mes_example 移植）— 独立块，不混进角色描述
+        // 预设接管（omitMesExample）时跳过：由 dialogueExamples marker 注入
+        if (!groupOptions?.omitMesExample) {
+            context += renderMesExampleBlock(char.mesExample);
         }
 
         // 3. 用户画像 (User Profile)
