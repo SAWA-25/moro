@@ -11,6 +11,7 @@ import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/x
 import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import MessageItem from '../components/chat/MessageItem';
+import CharacterProfilePage from '../components/character/CharacterProfilePage';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
@@ -91,6 +92,9 @@ const Chat: React.FC = () => {
     const [transferAmt, setTransferAmt] = useState('');
     const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
     const [transferNote, setTransferNote] = useState('');
+
+    // 角色主页（微信好友资料页风格，单击消息头像进入）
+    const [showCharProfile, setShowCharProfile] = useState(false);
 
     // 位置分享 modal
     const [showLocationModal, setShowLocationModal] = useState(false);
@@ -664,6 +668,7 @@ const Chat: React.FC = () => {
     // 让过场层先盖住，避免一帧闪到新角色的空聊天界面。
     useLayoutEffect(() => {
         if (activeCharacterId) setShowEntry(true);
+        setShowCharProfile(false); // 切角色时收起上一个角色的主页
     }, [activeCharacterId]);
 
     // 人设自动切换（SillyTavern 角色绑定 / 默认人设语义）：进入某个角色的聊天时，
@@ -2832,10 +2837,7 @@ ${recent || '（你们还没怎么聊过）'}
                             onMcdSendCart={handleMcdSendCart}
                             onMcdCandidate={handleMcdCandidate}
                             thinkingChainOptions={thinkingChainOptions}
-                            onAvatarClick={() => {
-                                try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
-                                openApp(AppID.Character);
-                            }}
+                            onAvatarClick={() => setShowCharProfile(true)}
                             onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
                         />
                         </div>
@@ -3184,6 +3186,22 @@ ${recent || '（你们还没怎么聊过）'}
                     )}
                 </div>
             </Modal>
+
+            {/* 角色主页（微信好友资料页风格）：单击消息头像进入；角色设置入口移到 ··· / 朋友资料 */}
+            {showCharProfile && char && (
+                <CharacterProfilePage
+                    char={char}
+                    onBack={() => setShowCharProfile(false)}
+                    onSendMessage={() => setShowCharProfile(false)}
+                    onVoiceCall={() => { setShowCharProfile(false); openApp(AppID.Call); }}
+                    onOpenSettings={() => {
+                        setShowCharProfile(false);
+                        try { localStorage.setItem('moro_character_open_target', char.id); } catch {}
+                        openApp(AppID.Character);
+                    }}
+                    onOpenMoments={() => { setShowCharProfile(false); openApp(AppID.Social); }}
+                />
+            )}
         </div>
     );
 };

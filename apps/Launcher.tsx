@@ -113,20 +113,41 @@ const CharacterWidget = React.memo(({
     );
 });
 
+// --- 桌面图标拖拽排序：编辑态/拖拽相关 props，由 Launcher 统一调度 ---
+interface IconDragProps {
+    editMode?: boolean;
+    draggingId?: AppID | null;
+    onIconPointerDown?: (id: AppID, e: React.PointerEvent) => void;
+    // 用 ref 回调判断（而非 editMode 闭包）：AppIcon 的 memo 比较器会忽略 onClick 变化，
+    // 编辑态切换后其内部 onClick 闭包是旧的，必须在 wrapper 层 capture 拦截。
+    shouldSuppressIconClick?: () => boolean;
+}
+
 // 3. Grid Page Component
 const AppGridPage = React.memo(({
     apps,
     openApp,
+    editMode,
+    draggingId,
+    onIconPointerDown,
+    shouldSuppressIconClick,
 }: {
     apps: typeof INSTALLED_APPS,
     openApp: (id: AppID) => void,
-}) => {
+} & IconDragProps) => {
     return (
         <div className="grid place-items-center animate-fade-in relative grid-cols-4 gap-y-6 gap-x-2">
              {apps.map(app => (
                  <div
                     key={app.id}
-                    className="relative"
+                    data-launcher-app={app.id}
+                    className={`relative ${editMode ? 'animate-icon-jiggle' : ''} ${draggingId === app.id ? 'opacity-30' : ''}`}
+                    style={editMode ? { touchAction: 'none' } : undefined}
+                    onPointerDown={onIconPointerDown ? (e) => onIconPointerDown(app.id, e) : undefined}
+                    onContextMenu={editMode ? (e) => e.preventDefault() : undefined}
+                    onClickCapture={(e) => {
+                        if (shouldSuppressIconClick?.()) { e.preventDefault(); e.stopPropagation(); }
+                    }}
                  >
                      <AppIcon
                         app={app}
@@ -140,11 +161,21 @@ const AppGridPage = React.memo(({
 });
 
 // 3b. Small 2x2 app grid for pinwheel cells
-const AppQuadGrid = React.memo(({ apps, openApp }: { apps: typeof INSTALLED_APPS, openApp: (id: AppID) => void }) => {
+const AppQuadGrid = React.memo(({ apps, openApp, editMode, draggingId, onIconPointerDown, shouldSuppressIconClick }: { apps: typeof INSTALLED_APPS, openApp: (id: AppID) => void } & IconDragProps) => {
     return (
         <div className="w-full h-full grid grid-cols-2 grid-rows-2 place-items-center gap-x-2 gap-y-3">
             {apps.map(app => (
-                <div key={app.id} className="relative transition-transform duration-200 active:scale-95">
+                <div
+                    key={app.id}
+                    data-launcher-app={app.id}
+                    className={`relative transition-transform duration-200 active:scale-95 ${editMode ? 'animate-icon-jiggle' : ''} ${draggingId === app.id ? 'opacity-30' : ''}`}
+                    style={editMode ? { touchAction: 'none' } : undefined}
+                    onPointerDown={onIconPointerDown ? (e) => onIconPointerDown(app.id, e) : undefined}
+                    onContextMenu={editMode ? (e) => e.preventDefault() : undefined}
+                    onClickCapture={(e) => {
+                        if (shouldSuppressIconClick?.()) { e.preventDefault(); e.stopPropagation(); }
+                    }}
+                >
                     <AppIcon app={app} onClick={() => openApp(app.id)} />
                 </div>
             ))}
@@ -312,6 +343,15 @@ const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characte
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
 let _lastPageIndex = 0;
 
+// --- 桌面图标自定义排序持久化（local-first，跟自定义图标一样走 localStorage） ---
+const APP_ORDER_KEY = 'moro_launcher_app_order';
+const loadStoredAppOrder = (): string[] => {
+    try {
+        const raw = JSON.parse(localStorage.getItem(APP_ORDER_KEY) || '[]');
+        return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    } catch { return []; }
+};
+
 // --- Main Launcher ---
 
 const Launcher: React.FC = () => {
@@ -340,13 +380,144 @@ const Launcher: React.FC = () => {
   // 会让它锁在 mount 时的初值。
   const [devDebugVisible, setDevDebugVisible] = useState(() => isDevDebugAvailable());
   useEffect(() => subscribeDevDebugAvailability(setDevDebugVisible), []);
+
+  // --- 图标拖拽排序状态 ---
+  const [appOrder, setAppOrder] = useState<string[]>(loadStoredAppOrder);
+  const [editMode, setEditMode] = useState(false);
+  const [draggingId, setDraggingId] = useState<AppID | null>(null);
+  const editModeRef = useRef(false);
+  const draggingIdRef = useRef<AppID | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const pressStartPos = useRef({ x: 0, y: 0 });
+  const lastPointerPos = useRef({ x: 0, y: 0 });
+  const dragEndAtRef = useRef(0);
+  const lastFlipAt = useRef(0);
+  const lastReorder = useRef({ id: '', t: 0 });
+  const gridAppsRef = useRef<typeof INSTALLED_APPS>([]);
+  const ghostElRef = useRef<HTMLDivElement | null>(null);
+  const blockTouchRef = useRef<((ev: TouchEvent) => void) | null>(null);
+
   const gridApps = useMemo(() => {
-    return INSTALLED_APPS.filter(app =>
+    const base = INSTALLED_APPS.filter(app =>
       !DOCK_APPS.includes(app.id)
       // 「捏脸·开发」仅在开发模式（右下角开发徽标可见或手动解锁时）显示
       && (app.id !== AppID.CharCreatorDev || devDebugVisible)
     );
-  }, [devDebugVisible]);
+    if (appOrder.length === 0) return base;
+    // 已保存顺序在前，新增/未记录的 App 按默认顺序补在后面
+    const ordered: typeof INSTALLED_APPS = [];
+    for (const id of appOrder) {
+        const app = base.find(a => a.id === id);
+        if (app && !ordered.includes(app)) ordered.push(app);
+    }
+    for (const app of base) {
+        if (!ordered.includes(app)) ordered.push(app);
+    }
+    return ordered;
+  }, [devDebugVisible, appOrder]);
+
+  useEffect(() => { gridAppsRef.current = gridApps; }, [gridApps]);
+  useEffect(() => { editModeRef.current = editMode; }, [editMode]);
+  useEffect(() => {
+      if (appOrder.length === 0) return;
+      try { localStorage.setItem(APP_ORDER_KEY, JSON.stringify(appOrder)); } catch {}
+  }, [appOrder]);
+
+  const beginIconDrag = React.useCallback((id: AppID, x: number, y: number) => {
+      draggingIdRef.current = id;
+      setDraggingId(id);
+      lastPointerPos.current = { x, y };
+      // 触屏：阻止本次手势触发页面横向滚动（React 的 touchmove 是 passive 的，必须挂原生监听）
+      if (!blockTouchRef.current) {
+          const blockTouch = (ev: TouchEvent) => { ev.preventDefault(); };
+          window.addEventListener('touchmove', blockTouch, { passive: false });
+          blockTouchRef.current = blockTouch;
+      }
+  }, []);
+
+  const handleIconPointerDown = React.useCallback((id: AppID, e: React.PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pressStartPos.current = { x: e.clientX, y: e.clientY };
+      lastPointerPos.current = { x: e.clientX, y: e.clientY };
+      if (editModeRef.current) {
+          e.stopPropagation();
+          beginIconDrag(id, e.clientX, e.clientY);
+      } else {
+          // 长按 450ms 进入编辑模式并直接拎起该图标；中途移动超过阈值视为滑动翻页，取消长按
+          if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+          longPressTimer.current = window.setTimeout(() => {
+              longPressTimer.current = null;
+              setEditMode(true);
+              editModeRef.current = true;
+              try { (navigator as any).vibrate?.(10); } catch {}
+              beginIconDrag(id, lastPointerPos.current.x, lastPointerPos.current.y);
+          }, 450);
+      }
+  }, [beginIconDrag]);
+
+  const shouldSuppressIconClick = React.useCallback(
+      () => editModeRef.current || Date.now() - dragEndAtRef.current < 250,
+      []
+  );
+
+  // 拖拽中的全局指针跟踪：移动幽灵图标、命中其它图标时重排、贴边翻页（跨页移动）
+  useEffect(() => {
+      const onMove = (e: PointerEvent) => {
+          lastPointerPos.current = { x: e.clientX, y: e.clientY };
+          if (longPressTimer.current !== null) {
+              const moved = Math.hypot(e.clientX - pressStartPos.current.x, e.clientY - pressStartPos.current.y);
+              if (moved > 10) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+          }
+          const dragId = draggingIdRef.current;
+          if (!dragId) return;
+          if (ghostElRef.current) {
+              ghostElRef.current.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%) scale(1.12)`;
+          }
+          const hit = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.('[data-launcher-app]') as HTMLElement | null;
+          const targetId = hit?.dataset?.launcherApp;
+          const now = Date.now();
+          if (targetId && targetId !== dragId && (lastReorder.current.id !== targetId || now - lastReorder.current.t > 250)) {
+              lastReorder.current = { id: targetId, t: now };
+              const cur = gridAppsRef.current.map(a => a.id);
+              const from = cur.indexOf(dragId);
+              const to = cur.indexOf(targetId as AppID);
+              if (from >= 0 && to >= 0 && from !== to) {
+                  const next = [...cur];
+                  next.splice(to, 0, next.splice(from, 1)[0]);
+                  setAppOrder(next);
+              }
+          }
+          const el = scrollContainerRef.current;
+          if (el && now - lastFlipAt.current > 650) {
+              const rect = el.getBoundingClientRect();
+              if (e.clientX - rect.left < 36 && el.scrollLeft > 10) {
+                  lastFlipAt.current = now;
+                  el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
+              } else if (rect.right - e.clientX < 36) {
+                  lastFlipAt.current = now;
+                  el.scrollBy({ left: el.clientWidth, behavior: 'smooth' });
+              }
+          }
+      };
+      const onUp = () => {
+          if (longPressTimer.current !== null) { window.clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+          if (draggingIdRef.current) {
+              draggingIdRef.current = null;
+              setDraggingId(null);
+              dragEndAtRef.current = Date.now();
+          }
+          if (blockTouchRef.current) { window.removeEventListener('touchmove', blockTouchRef.current); blockTouchRef.current = null; }
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      return () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onUp);
+          if (blockTouchRef.current) { window.removeEventListener('touchmove', blockTouchRef.current); blockTouchRef.current = null; }
+      };
+  }, []);
 
   const dockAppsConfig = useMemo(() => 
     DOCK_APPS.map(id => INSTALLED_APPS.find(app => app.id === id)).filter(Boolean) as typeof INSTALLED_APPS,
@@ -454,6 +625,9 @@ const Launcher: React.FC = () => {
   // --- Mouse Drag Handlers ---
   const handleMouseDown = (e: React.MouseEvent) => {
       if (!scrollContainerRef.current) return;
+      // 编辑模式按住图标 = 拖图标排序，不抢页面横向滚动
+      if (draggingIdRef.current) return;
+      if (editModeRef.current && (e.target as HTMLElement | null)?.closest?.('[data-launcher-app]')) return;
       isDragging.current = true;
       dragMoved.current = 0;
       startX.current = e.pageX - scrollContainerRef.current.offsetLeft;
@@ -466,6 +640,7 @@ const Launcher: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+      if (draggingIdRef.current) return;
       if (!isDragging.current || !scrollContainerRef.current) return;
       e.preventDefault();
       const x = e.pageX - scrollContainerRef.current.offsetLeft;
@@ -504,8 +679,35 @@ const Launcher: React.FC = () => {
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;
 
+  const draggingApp = draggingId ? gridApps.find(a => a.id === draggingId) : null;
+
   return (
     <div className="h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none">
+
+      {/* 编辑模式：图标抖动动画 + 「完成」按钮 */}
+      {editMode && (
+        <>
+          <style>{`@keyframes iconJiggle{0%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}100%{transform:rotate(-1.6deg)}}.animate-icon-jiggle{animation:iconJiggle .35s ease-in-out infinite}`}</style>
+          <button
+            onClick={() => setEditMode(false)}
+            className="absolute right-5 z-40 px-5 py-2 rounded-full text-white text-xs font-bold shadow-lg press-soft animate-pop-in"
+            style={{ top: 'calc(max(6px, var(--safe-top)) + 2.4rem)', background: '#2c2a35', boxShadow: '0 10px 24px -10px rgba(44,42,53,0.6)' }}
+          >完成</button>
+        </>
+      )}
+
+      {/* 拖拽中的幽灵图标：跟随指针，位置由全局 pointermove 直接写 DOM（不触发重渲染） */}
+      {draggingApp && (
+        <div
+          ref={(el) => {
+              ghostElRef.current = el;
+              if (el) el.style.transform = `translate(${lastPointerPos.current.x}px, ${lastPointerPos.current.y}px) translate(-50%, -50%) scale(1.12)`;
+          }}
+          className="fixed left-0 top-0 z-[90] pointer-events-none opacity-90"
+        >
+          <AppIcon app={draggingApp} onClick={() => {}} hideLabel size="md" />
+        </div>
+      )}
 
       {/* 治愈系氛围背景：缓慢漂移的薰衣草/蜜桃光斑（纯渐变，无 blur，低开销） */}
       <div className="absolute inset-0 pointer-events-none">
@@ -555,7 +757,14 @@ const Launcher: React.FC = () => {
                             contentColor={contentColor}
                         />
                         <div className="flex-1">
-                            <AppGridPage apps={pageApps} openApp={openApp} />
+                            <AppGridPage
+                                apps={pageApps}
+                                openApp={openApp}
+                                editMode={editMode}
+                                draggingId={draggingId}
+                                onIconPointerDown={handleIconPointerDown}
+                                shouldSuppressIconClick={shouldSuppressIconClick}
+                            />
                         </div>
                       </>
                   ) : idx === 1 ? (
@@ -574,10 +783,10 @@ const Launcher: React.FC = () => {
                                   <NowPlayingSquareWidget contentColor={contentColor} />
                               </div>
                               <div className="aspect-square min-w-0">
-                                  <AppQuadGrid apps={page2QuadA} openApp={openApp} />
+                                  <AppQuadGrid apps={page2QuadA} openApp={openApp} editMode={editMode} draggingId={draggingId} onIconPointerDown={handleIconPointerDown} shouldSuppressIconClick={shouldSuppressIconClick} />
                               </div>
                               <div className="aspect-square min-w-0">
-                                  <AppQuadGrid apps={page2QuadB} openApp={openApp} />
+                                  <AppQuadGrid apps={page2QuadB} openApp={openApp} editMode={editMode} draggingId={draggingId} onIconPointerDown={handleIconPointerDown} shouldSuppressIconClick={shouldSuppressIconClick} />
                               </div>
                               <div className="aspect-square min-w-0">
                                   <DesktopSquareImage
@@ -645,6 +854,10 @@ const Launcher: React.FC = () => {
                           <AppGridPage
                                 apps={pageApps}
                                 openApp={openApp}
+                                editMode={editMode}
+                                draggingId={draggingId}
+                                onIconPointerDown={handleIconPointerDown}
+                                shouldSuppressIconClick={shouldSuppressIconClick}
                           />
                           <div className="flex-1"></div>
                       </div>
