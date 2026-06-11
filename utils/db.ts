@@ -80,16 +80,163 @@ export interface ScheduledMessage {
 }
 
 // Built-in Presets
-const MORO_CATEGORY_ID = 'cat_moro_exclusive';
-const MORO_PRESET_EMOJIS = [
-    { name: 'Moro晚安', url: 'https://sharkpan.xyz/f/pWg6HQ/night.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro无语', url: 'https://sharkpan.xyz/f/75wvuj/w.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro偷看', url: 'https://sharkpan.xyz/f/MK77Ia/see.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro打气', url: 'https://sharkpan.xyz/f/3WwMHe/fight.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro生气', url: 'https://sharkpan.xyz/f/5nwxCj/an.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro疑惑', url: 'https://sharkpan.xyz/f/ylWpfN/sDN.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro道歉', url: 'https://sharkpan.xyz/f/QdnaU6/sorry.png', categoryId: MORO_CATEGORY_ID },
-    { name: 'Moro等你消息', url: 'https://sharkpan.xyz/f/5nrJsj/wait.png', categoryId: MORO_CATEGORY_ID },
+/** 旧版内置专属表情包分类（已下线），迁移时连同其下表情一起删除 */
+const LEGACY_MORO_CATEGORY_ID = 'cat_moro_exclusive';
+/** 默认表情包一次性迁移标记（老用户启动时补种 + 清理旧专属包） */
+const DEFAULT_EMOJI_PACK_FLAG = 'moro_default_emoji_pack_v1';
+
+// 默认内置表情包：落在「默认」分类（无可见性限制，角色可在聊天里通过
+// [[SEND_EMOJI: 名称]] 直接使用）。重名表情按 名称2 区分（IDB keyPath 是 name）。
+const DEFAULT_PRESET_EMOJIS = [
+    { name: '猫不想努力了', url: 'https://files.catbox.moe/b8x0n0.jpg', categoryId: 'default' },
+    { name: '偷笑', url: 'https://files.catbox.moe/2k1zvx.jpg', categoryId: 'default' },
+    { name: '色', url: 'https://files.catbox.moe/v54k1s.jpg', categoryId: 'default' },
+    { name: '哈？', url: 'https://files.catbox.moe/2kl4lf.jpg', categoryId: 'default' },
+    { name: '大脑宕机', url: 'https://files.catbox.moe/vmh4yw.jpg', categoryId: 'default' },
+    { name: '咦～', url: 'https://files.catbox.moe/ozmelb.jpg', categoryId: 'default' },
+    { name: '喝茶', url: 'https://files.catbox.moe/z7ufzt.jpg', categoryId: 'default' },
+    { name: '嘿', url: 'https://files.catbox.moe/fydt6u.gif', categoryId: 'default' },
+    { name: '记录丢人过程', url: 'https://files.catbox.moe/atepoq.jpg', categoryId: 'default' },
+    { name: '点赞', url: 'https://files.catbox.moe/hk9old.jpg', categoryId: 'default' },
+    { name: '请吃', url: 'https://files.catbox.moe/q6ad48.jpg', categoryId: 'default' },
+    { name: '看涩涩', url: 'https://files.catbox.moe/dn2k68.jpg', categoryId: 'default' },
+    { name: '菜就多练', url: 'https://files.catbox.moe/pqvofg.jpg', categoryId: 'default' },
+    { name: '做爱', url: 'https://files.catbox.moe/x1ju9a.gif', categoryId: 'default' },
+    { name: '乖巧', url: 'https://files.catbox.moe/0lngqn.gif', categoryId: 'default' },
+    { name: '疑惑', url: 'https://files.catbox.moe/4092or.jpg', categoryId: 'default' },
+    { name: '叹气', url: 'https://files.catbox.moe/c171no.jpg', categoryId: 'default' },
+    { name: '吓哭', url: 'https://files.catbox.moe/umbsug.jpg', categoryId: 'default' },
+    { name: '无语', url: 'https://files.catbox.moe/6cgsf6.jpg', categoryId: 'default' },
+    { name: '我在报警', url: 'https://files.catbox.moe/koh78w.jpg', categoryId: 'default' },
+    { name: '愣', url: 'https://files.catbox.moe/pondzl.jpg', categoryId: 'default' },
+    { name: '贴贴', url: 'https://files.catbox.moe/0w84qh.jpg', categoryId: 'default' },
+    { name: '哈？2', url: 'https://files.catbox.moe/rskwgh.jpg', categoryId: 'default' },
+    { name: '信仰我', url: 'https://files.catbox.moe/4em425.jpg', categoryId: 'default' },
+    { name: '傻眼', url: 'https://files.catbox.moe/82as9i.jpg', categoryId: 'default' },
+    { name: '不甘心', url: 'https://files.catbox.moe/l3lhuh.jpg', categoryId: 'default' },
+    { name: '看你', url: 'https://files.catbox.moe/jukub7.jpg', categoryId: 'default' },
+    { name: '开心', url: 'https://files.catbox.moe/e88fga.gif', categoryId: 'default' },
+    { name: '请吩咐我', url: 'https://files.catbox.moe/6yahgr.jpg', categoryId: 'default' },
+    { name: '鄙视', url: 'https://files.catbox.moe/por44z.jpg', categoryId: 'default' },
+    { name: '欢快', url: 'https://files.catbox.moe/0hpamu.gif', categoryId: 'default' },
+    { name: '盯', url: 'https://files.catbox.moe/7m82a8.jpg', categoryId: 'default' },
+    { name: '惊吓', url: 'https://files.catbox.moe/j76g3y.jpg', categoryId: 'default' },
+    { name: '委屈', url: 'https://files.catbox.moe/ron9wb.jpg', categoryId: 'default' },
+    { name: '抱紧自己', url: 'https://files.catbox.moe/rre5yu.jpg', categoryId: 'default' },
+    { name: '对手指', url: 'https://files.catbox.moe/et7xde.jpg', categoryId: 'default' },
+    { name: '痛苦', url: 'https://files.catbox.moe/8h0n7a.jpg', categoryId: 'default' },
+    { name: '心虚', url: 'https://files.catbox.moe/1sd5xl.jpg', categoryId: 'default' },
+    { name: '软弱', url: 'https://files.catbox.moe/3ltk3y.jpg', categoryId: 'default' },
+    { name: '华丽登场', url: 'https://files.catbox.moe/pluu54.jpg', categoryId: 'default' },
+    { name: '瞳孔地震', url: 'https://files.catbox.moe/4zcpoi.jpg', categoryId: 'default' },
+    { name: '拒绝色色', url: 'https://files.catbox.moe/uqj1gl.jpg', categoryId: 'default' },
+    { name: '卖萌', url: 'https://files.catbox.moe/zrqk3p.jpg', categoryId: 'default' },
+    { name: '可爱', url: 'https://files.catbox.moe/d1figz.jpg', categoryId: 'default' },
+    { name: '期待', url: 'https://files.catbox.moe/9gwl79.jpg', categoryId: 'default' },
+    { name: '思考', url: 'https://files.catbox.moe/e0yklu.jpg', categoryId: 'default' },
+    { name: '要钱', url: 'https://files.catbox.moe/cwbpfc.jpg', categoryId: 'default' },
+    { name: '害羞', url: 'https://files.catbox.moe/vbjfay.gif', categoryId: 'default' },
+    { name: '蹭蹭', url: 'https://files.catbox.moe/nlgvkj.jpg', categoryId: 'default' },
+    { name: '被抓住', url: 'https://files.catbox.moe/deffix.jpg', categoryId: 'default' },
+    { name: '鼓励', url: 'https://files.catbox.moe/ccmicb.gif', categoryId: 'default' },
+    { name: '欣慰', url: 'https://files.catbox.moe/jh0d6v.jpg', categoryId: 'default' },
+    { name: '紧张', url: 'https://files.catbox.moe/zvudhp.jpg', categoryId: 'default' },
+    { name: '尖叫', url: 'https://files.catbox.moe/n533wr.jpg', categoryId: 'default' },
+    { name: '叼花', url: 'https://files.catbox.moe/t0wmq5.jpg', categoryId: 'default' },
+    { name: '笑对人生', url: 'https://files.catbox.moe/qkt6ve.jpg', categoryId: 'default' },
+    { name: '嗷呜', url: 'https://files.catbox.moe/n5nhbl.gif', categoryId: 'default' },
+    { name: '担心', url: 'https://files.catbox.moe/cqfi1d.gif', categoryId: 'default' },
+    { name: '唉？', url: 'https://files.catbox.moe/p9k2c6.jpg', categoryId: 'default' },
+    { name: '偷偷摸摸', url: 'https://files.catbox.moe/v4gw97.jpg', categoryId: 'default' },
+    { name: '哭', url: 'https://files.catbox.moe/cvw6j6.jpg', categoryId: 'default' },
+    { name: '抽象', url: 'https://files.catbox.moe/g2vyen.jpg', categoryId: 'default' },
+    { name: '抓', url: 'https://files.catbox.moe/kczgr2.gif', categoryId: 'default' },
+    { name: '看手机', url: 'https://files.catbox.moe/35k6jh.gif', categoryId: 'default' },
+    { name: '溜走', url: 'https://files.catbox.moe/futf9q.jpg', categoryId: 'default' },
+    { name: '我来了', url: 'https://files.catbox.moe/es7yt6.jpg', categoryId: 'default' },
+    { name: '皮', url: 'https://files.catbox.moe/24t708.gif', categoryId: 'default' },
+    { name: '喜欢', url: 'https://files.catbox.moe/mwx0wo.gif', categoryId: 'default' },
+    { name: '想吃', url: 'https://files.catbox.moe/4pl3tq.jpg', categoryId: 'default' },
+    { name: '严肃拒绝', url: 'https://files.catbox.moe/k96ol3.jpg', categoryId: 'default' },
+    { name: '色2', url: 'https://files.catbox.moe/0k570y.jpg', categoryId: 'default' },
+    { name: '亲晕', url: 'https://files.catbox.moe/wygvv6.gif', categoryId: 'default' },
+    { name: '坏笑', url: 'https://files.catbox.moe/g1quke.jpg', categoryId: 'default' },
+    { name: '恐惧', url: 'https://files.catbox.moe/dg6euv.jpg', categoryId: 'default' },
+    { name: '紧张2', url: 'https://files.catbox.moe/0umkfb.jpg', categoryId: 'default' },
+    { name: '惊讶害羞', url: 'https://files.catbox.moe/73mdfn.jpg', categoryId: 'default' },
+    { name: '吃醋', url: 'https://files.catbox.moe/xutc6k.jpg', categoryId: 'default' },
+    { name: '无语流汗', url: 'https://files.catbox.moe/p28hvp.jpg', categoryId: 'default' },
+    { name: '期待2', url: 'https://files.catbox.moe/4309ou.jpg', categoryId: 'default' },
+    { name: '撇嘴', url: 'https://files.catbox.moe/qxacqq.jpg', categoryId: 'default' },
+    { name: '被喜欢害羞', url: 'https://files.catbox.moe/ow6lbe.jpg', categoryId: 'default' },
+    { name: '感动哭哭', url: 'https://files.catbox.moe/80e9ub.jpg', categoryId: 'default' },
+    { name: '享受', url: 'https://files.catbox.moe/26q6ud.jpg', categoryId: 'default' },
+    { name: '帅气自信', url: 'https://files.catbox.moe/4mm8h5.jpg', categoryId: 'default' },
+    { name: '腹黑笑', url: 'https://files.catbox.moe/hltq2j.jpg', categoryId: 'default' },
+    { name: '满意笑', url: 'https://files.catbox.moe/ly5gfo.jpg', categoryId: 'default' },
+    { name: '黑脸生气', url: 'https://files.catbox.moe/nkl1e4.jpg', categoryId: 'default' },
+    { name: '默认同意', url: 'https://files.catbox.moe/en911n.jpg', categoryId: 'default' },
+    { name: '在意', url: 'https://files.catbox.moe/6ocnhe.jpg', categoryId: 'default' },
+    { name: '闭上眼仿佛可以看见天堂', url: 'https://files.catbox.moe/bij2mr.jpg', categoryId: 'default' },
+    { name: '希望人没事', url: 'https://files.catbox.moe/78q5ua.gif', categoryId: 'default' },
+    { name: '嘻嘻', url: 'https://files.catbox.moe/as9ufh.jpg', categoryId: 'default' },
+    { name: '呆住', url: 'https://files.catbox.moe/rg8g2k.jpg', categoryId: 'default' },
+    { name: '卖萌请求', url: 'https://files.catbox.moe/1gyx3f.jpg', categoryId: 'default' },
+    { name: '开心跳舞', url: 'https://files.catbox.moe/8qgmvq.gif', categoryId: 'default' },
+    { name: '吐魂', url: 'https://files.catbox.moe/ngg02l.png', categoryId: 'default' },
+    { name: '吃惊', url: 'https://files.catbox.moe/mg0dom.jpg', categoryId: 'default' },
+    { name: '小意思', url: 'https://files.catbox.moe/3s375k.jpg', categoryId: 'default' },
+    { name: '猫猫恼火', url: 'https://files.catbox.moe/chvpfv.jpg', categoryId: 'default' },
+    { name: '猫猫舔舔', url: 'https://files.catbox.moe/2omz2n.jpg', categoryId: 'default' },
+    { name: '贴屏幕', url: 'https://files.catbox.moe/9rs6pl.jpg', categoryId: 'default' },
+    { name: '趴玻璃看你', url: 'https://files.catbox.moe/i2qvgu.jpg', categoryId: 'default' },
+    { name: '偷听', url: 'https://files.catbox.moe/khqq6i.jpg', categoryId: 'default' },
+    { name: '酒杯猫猫', url: 'https://files.catbox.moe/4ysrj1.jpg', categoryId: 'default' },
+    { name: '乖巧猫猫', url: 'https://files.catbox.moe/x1whj0.jpg', categoryId: 'default' },
+    { name: '猫猫心虚', url: 'https://files.catbox.moe/uj8dxy.jpg', categoryId: 'default' },
+    { name: '猫猫看你', url: 'https://files.catbox.moe/kiwzl8.jpg', categoryId: 'default' },
+    { name: '猫猫目移', url: 'https://files.catbox.moe/o04nsn.jpg', categoryId: 'default' },
+    { name: '猫猫闭眼睡', url: 'https://files.catbox.moe/kgbvis.jpg', categoryId: 'default' },
+    { name: '猫猫委屈瞪你', url: 'https://files.catbox.moe/yo3f2e.jpg', categoryId: 'default' },
+    { name: '猫猫满脸疑问', url: 'https://files.catbox.moe/vn698y.jpg', categoryId: 'default' },
+    { name: '猫猫星星眼', url: 'https://files.catbox.moe/eojsa0.jpg', categoryId: 'default' },
+    { name: '猫猫去世', url: 'https://files.catbox.moe/gmleas.jpg', categoryId: 'default' },
+    { name: '猫猫wink', url: 'https://files.catbox.moe/qkt2lt.jpg', categoryId: 'default' },
+    { name: '猫猫瞪你', url: 'https://files.catbox.moe/tkr91c.jpg', categoryId: 'default' },
+    { name: '猫猫无语', url: 'https://files.catbox.moe/u0sbmg.jpg', categoryId: 'default' },
+    { name: '猫猫生气', url: 'https://files.catbox.moe/nvpp5j.jpg', categoryId: 'default' },
+    { name: '看你的猫猫', url: 'https://files.catbox.moe/47nf28.jpg', categoryId: 'default' },
+    { name: '智慧的猫猫', url: 'https://files.catbox.moe/y1qr2z.jpg', categoryId: 'default' },
+    { name: '猫猫眼汪汪', url: 'https://files.catbox.moe/pg3cna.jpg', categoryId: 'default' },
+    { name: '猫猫委屈', url: 'https://files.catbox.moe/ll0c0e.jpg', categoryId: 'default' },
+    { name: '躺地调皮', url: 'https://files.catbox.moe/6tow4p.jpg', categoryId: 'default' },
+    { name: '猫猫一个人躲被子', url: 'https://files.catbox.moe/9nu5g2.jpg', categoryId: 'default' },
+    { name: '客服猫', url: 'https://files.catbox.moe/h75ll0.jpg', categoryId: 'default' },
+    { name: '捣乱猫猫', url: 'https://files.catbox.moe/tmj3ee.jpg', categoryId: 'default' },
+    { name: '天真威胁', url: 'https://files.catbox.moe/87xtyc.jpg', categoryId: 'default' },
+    { name: '吃瓜', url: 'https://files.catbox.moe/6nkub5.jpg', categoryId: 'default' },
+    { name: '困惑猫', url: 'https://files.catbox.moe/1jt2p3.jpg', categoryId: 'default' },
+    { name: '面包猫', url: 'https://files.catbox.moe/q4jy0x.jpg', categoryId: 'default' },
+    { name: '叼着', url: 'https://files.catbox.moe/mj6fr0.jpg', categoryId: 'default' },
+    { name: '自恋', url: 'https://files.catbox.moe/940de7.jpg', categoryId: 'default' },
+    { name: '不愧是我', url: 'https://files.catbox.moe/rt0uqk.jpg', categoryId: 'default' },
+    { name: '被冷落', url: 'https://files.catbox.moe/xwv767.jpg', categoryId: 'default' },
+    { name: '被冷落生气', url: 'https://files.catbox.moe/sybgeg.jpg', categoryId: 'default' },
+    { name: '盯着', url: 'https://files.catbox.moe/3niw4u.jpg', categoryId: 'default' },
+    { name: '无奈', url: 'https://files.catbox.moe/76iezn.jpg', categoryId: 'default' },
+    { name: '瞧着', url: 'https://files.catbox.moe/wadhn2.jpg', categoryId: 'default' },
+    { name: '探出', url: 'https://files.catbox.moe/yosv6f.jpg', categoryId: 'default' },
+    { name: '十斤半价', url: 'https://files.catbox.moe/fn3l1l.jpg', categoryId: 'default' },
+    { name: '从上看你', url: 'https://files.catbox.moe/infdwv.jpg', categoryId: 'default' },
+    { name: '躺', url: 'https://files.catbox.moe/v57put.jpg', categoryId: 'default' },
+    { name: '泪眼婆娑', url: 'https://files.catbox.moe/eouoaq.jpg', categoryId: 'default' },
+    { name: '不度蝼蚁', url: 'https://files.catbox.moe/mrbj82.jpg', categoryId: 'default' },
+    { name: '叫我吗？哼', url: 'https://files.catbox.moe/k8a2r7.jpg', categoryId: 'default' },
+    { name: '叫我做什么', url: 'https://files.catbox.moe/xe1cc4.jpg', categoryId: 'default' },
+    { name: '嘴硬哭哭', url: 'https://files.catbox.moe/so4lw7.jpg', categoryId: 'default' },
+    { name: '我吗？', url: 'https://files.catbox.moe/hsm2wb.jpg', categoryId: 'default' },
+    { name: '告辞', url: 'https://files.catbox.moe/pc66m3.jpg', categoryId: 'default' },
+    { name: '卖萌猫猫群', url: 'https://files.catbox.moe/rqdqtl.gif', categoryId: 'default' },
 ];
 
 // 单例连接缓存。openDB 原本每次调用都新开一条 IDB 连接, 既不复用也不 close ——
@@ -928,13 +1075,33 @@ export const DB = {
       // 只有全量清空的首次安装，cats.length 才为 0。这样无需 localStorage 即可避免内置分类无限复活。
       if (cats.length === 0) {
           await DB.saveEmojiCategory({ id: 'default', name: '默认', isSystem: true });
-          // 去掉 isSystem 标记，允许用户在 UI 里直接删除此分类
-          await DB.saveEmojiCategory({ id: MORO_CATEGORY_ID, name: 'Moro 专属', isSystem: false });
           const db = await openDB();
           const tx = db.transaction(STORE_EMOJIS, 'readwrite');
           const store = tx.objectStore(STORE_EMOJIS);
-          MORO_PRESET_EMOJIS.forEach(emoji => store.put(emoji));
+          DEFAULT_PRESET_EMOJIS.forEach(emoji => store.put(emoji));
           await new Promise(resolve => { tx.oncomplete = resolve; });
+          try { localStorage.setItem(DEFAULT_EMOJI_PACK_FLAG, '1'); } catch { /* ignore */ }
+          return;
+      }
+      // 老用户一次性迁移：下线旧「Moro 专属」包（连同其下表情），补种新默认表情包。
+      // 用 localStorage 标记保证只跑一次——之后用户删掉默认表情不会复活。
+      let migrated = false;
+      try { migrated = localStorage.getItem(DEFAULT_EMOJI_PACK_FLAG) === '1'; } catch { /* ignore */ }
+      if (migrated) return;
+      try {
+          if (cats.some(c => c.id === LEGACY_MORO_CATEGORY_ID)) {
+              await DB.deleteEmojiCategory(LEGACY_MORO_CATEGORY_ID);
+          }
+          // 只补不覆盖：用户已有同名表情时保留用户的
+          const existingNames = new Set((await DB.getEmojis()).map(e => e.name));
+          const db = await openDB();
+          const tx = db.transaction(STORE_EMOJIS, 'readwrite');
+          const store = tx.objectStore(STORE_EMOJIS);
+          DEFAULT_PRESET_EMOJIS.forEach(emoji => { if (!existingNames.has(emoji.name)) store.put(emoji); });
+          await new Promise(resolve => { tx.oncomplete = resolve; });
+          try { localStorage.setItem(DEFAULT_EMOJI_PACK_FLAG, '1'); } catch { /* ignore */ }
+      } catch (e) {
+          console.warn('[EmojiMigration] 默认表情包迁移失败，下次启动重试:', e);
       }
   },
 

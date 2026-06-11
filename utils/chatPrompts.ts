@@ -9,6 +9,8 @@ import { getCharLyricSnippet } from './charLyricCache';
 import { MusicCfg, loadMusicCfgStandalone } from '../context/MusicContext';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
 import { isScheduleFeatureOn } from './scheduleGenerator';
+import { applyRegexToText } from './regex/store';
+import { regex_placement } from './regex/engine';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -779,6 +781,15 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
         return {
             apiMessages: historySlice.map((m, index) => {
                 let content: any = m.content;
+                // 正则脚本（仅提示词，promptOnly）：只改发给 LLM 的历史文本，不动落库消息。
+                // depth 同 ST 语义：0 = 最后一条，向前递增，供脚本 minDepth/maxDepth 过滤。
+                if (typeof content === 'string' && content && m.type === 'text' && m.role !== 'system') {
+                    content = applyRegexToText(
+                        content,
+                        m.role === 'user' ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT,
+                        { char, userName: userProfile?.name, isPrompt: true, depth: historySlice.length - 1 - index },
+                    );
+                }
                 const timeStr = `[${ChatPrompts.formatDate(m.timestamp)}]`;
                 const sourceTag = (() => {
                     const source = m.metadata?.source;

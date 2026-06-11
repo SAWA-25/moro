@@ -933,6 +933,7 @@ ${isInitialGeneration ? `
           refinedMemories: {},
           activeMemoryMonths: [],
           mountedWorldbooks: result.mountedWorldbooks,
+          regexScripts: result.regexScripts.length > 0 ? result.regexScripts : undefined,
           contextLimit: 500,
           emotionConfig: { enabled: true },
       };
@@ -942,7 +943,10 @@ ${isInitialGeneration ? `
       const wbSuffix = result.worldbooks.length > 0
           ? `，导入世界书 ${result.worldbooks.length} 条（挂载 ${result.mountedWorldbooks.length} 条）`
           : '';
-      addToast(`SillyTavern 角色 ${newChar.name} 导入成功${wbSuffix}`, 'success');
+      const regexSuffix = result.regexScripts.length > 0
+          ? `，同步卡内正则 ${result.regexScripts.length} 条`
+          : '';
+      addToast(`SillyTavern 角色 ${newChar.name} 导入成功${wbSuffix}${regexSuffix}`, 'success');
   };
 
   const handleImportCard = (e: React.ChangeEvent<HTMLInputElement>) => {

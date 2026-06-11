@@ -34,6 +34,8 @@ import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
+import { applyRegexToText } from './regex/store';
+import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
@@ -420,6 +422,14 @@ export async function applyAssistantPostProcessing(
     // ─── Step 1: 初次粗洗 ───
     let aiContent = replayedTagPrefix ? `${replayedTagPrefix}${rawAiContent}` : rawAiContent;
     aiContent = normalizeAiContent(aiContent);
+
+    // ─── Step 1.4: 正则脚本（AI 输出，改写消息原文）───
+    // 正则 App 的全局脚本 + char.regexScripts 局部脚本（ST 语义：markdownOnly /
+    // promptOnly 都不勾的脚本在这里直接改写 AI 原文，落库前生效）。
+    aiContent = applyRegexToText(aiContent, regex_placement.AI_OUTPUT, {
+        char,
+        userName: userProfile?.name,
+    });
 
     // ─── Step 1.5: [[BLOCK_USER]] 拉黑指令 ───
     // 先于一切渲染剥离, 命中时交给 OSContext (CHAR_BLOCK_EVENT 监听方) 统一落角色状态 +

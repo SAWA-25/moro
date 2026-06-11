@@ -20,12 +20,57 @@ interface FriendVerifyModalProps {
 }
 
 const safeParseObject = (input: string): any => {
-    const clean = (input || '').replace(/```json/g, '').replace(/```/g, '').trim();
+    // 推理模型会在 JSON 前输出 <think> 块（里面常有花括号，会干扰 {...} 截取），先剥掉
+    const clean = (input || '')
+        .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
+        .replace(/^[\s\S]*?<\/(?:think|thinking|thought)>/i, '')
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
     try { return JSON.parse(clean); } catch { /* fallthrough */ }
     const start = clean.indexOf('{');
     const end = clean.lastIndexOf('}');
     if (start >= 0 && end > start) {
         try { return JSON.parse(clean.substring(start, end + 1)); } catch { /* fallthrough */ }
+    }
+    return null;
+};
+
+/**
+ * 把 LLM 的验证结果尽力解析成 {accept, reply}。
+ * 兼容：accept 为字符串/数字、同义字段（pass/allow/同意）、
+ * JSON 解析彻底失败时的字段级正则兜底。都不行才返回 null。
+ */
+const coerceVerifyResult = (raw: string): { accept: boolean; reply: string } | null => {
+    const parsed = safeParseObject(raw);
+    const toBool = (v: any): boolean | null => {
+        if (typeof v === 'boolean') return v;
+        if (typeof v === 'number') return v !== 0;
+        if (typeof v === 'string') {
+            const s = v.trim().toLowerCase();
+            if (['true', 'yes', '1', '是', '通过', '同意', '接受'].includes(s)) return true;
+            if (['false', 'no', '0', '否', '拒绝', '不通过', '不同意'].includes(s)) return false;
+        }
+        return null;
+    };
+    if (parsed && typeof parsed === 'object') {
+        const accept = toBool(parsed.accept) ?? toBool(parsed.pass) ?? toBool(parsed.allow) ?? toBool(parsed['同意']);
+        if (accept !== null) {
+            const reply = typeof parsed.reply === 'string' ? parsed.reply
+                : typeof parsed['回复'] === 'string' ? parsed['回复'] : '';
+            return { accept, reply };
+        }
+    }
+    // 字段级正则兜底：JSON 整体坏了（截断/多余文本），但关键字段还在
+    const acceptMatch = raw.match(/["']?accept["']?\s*[:：]\s*["']?(true|false|是|否)["']?/i);
+    if (acceptMatch) {
+        const accept = /true|是/i.test(acceptMatch[1]);
+        const replyMatch = raw.match(/["']?reply["']?\s*[:：]\s*"((?:[^"\\]|\\.)*)"/);
+        let reply = '';
+        if (replyMatch) {
+            try { reply = JSON.parse(`"${replyMatch[1]}"`); } catch { reply = replyMatch[1]; }
+        }
+        return { accept, reply };
     }
     return null;
 };
@@ -70,20 +115,30 @@ ${historyText || '（没有可用的聊天记录）'}
 只输出一个 JSON 对象，不要任何其它文字：
 {"accept": true 或 false, "reply": "你想对对方说的一句话（拒绝时也可以说，或留空字符串表示沉默）"}`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.85,
-                    max_tokens: 300,
-                }),
-            });
-            if (!response.ok) throw new Error(`API Error (${response.status})`);
-            const data = await safeResponseJson(response);
-            const parsed = safeParseObject(extractContent(data));
-            if (!parsed || typeof parsed.accept !== 'boolean') throw new Error('验证结果解析失败');
+            // max_tokens 给足：推理模型的思考过程也计入 completion tokens，
+            // 300 会被截断导致 JSON 不完整（「验证结果解析失败」的主因之一）
+            const callOnce = async (extraInstruction?: string): Promise<{ accept: boolean; reply: string } | null> => {
+                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    body: JSON.stringify({
+                        model: apiConfig.model,
+                        messages: [{ role: 'user', content: extraInstruction ? `${prompt}\n\n${extraInstruction}` : prompt }],
+                        temperature: 0.85,
+                        max_tokens: 2000,
+                    }),
+                });
+                if (!response.ok) throw new Error(`API Error (${response.status})`);
+                const data = await safeResponseJson(response);
+                return coerceVerifyResult(extractContent(data) || '');
+            };
+
+            let parsed = await callOnce();
+            if (!parsed) {
+                // 一次重试：明确要求裸 JSON（部分模型第一次会输出闲聊/代码块/思考）
+                parsed = await callOnce('注意：你上一次的输出格式不对。这次必须只输出一行裸 JSON（不要代码块、不要任何解释），形如 {"accept": true, "reply": "..."}');
+            }
+            if (!parsed) throw new Error('验证结果解析失败，请再试一次');
 
             const replyText = String(parsed.reply || '').trim();
             setReply(replyText);
