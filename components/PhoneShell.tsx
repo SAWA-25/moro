@@ -733,6 +733,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Game: return <GameApp />; 
       case AppID.Worldbook: return <WorldbookApp />;
       case AppID.Presets: return <PresetApp />;
+      case AppID.Personas: return <PersonaApp />;
       case AppID.Novel: return <NovelApp />; 
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;
