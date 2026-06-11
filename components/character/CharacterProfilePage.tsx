@@ -7,8 +7,8 @@ import { generateSocialProfile } from '../../utils/socialProfileGen';
 /**
  * 角色主页（微信好友资料页风格）：
  * 头像/名字/微信号/地区 → 朋友资料 → 朋友圈照片条 → 发消息 / 音视频通话。
- * 聊天界面单击角色头像进入；原「进入角色设置」入口移到右上角 ··· 和「朋友资料」行。
- * 微信号/地区/签名由 AI 按人设自动生成：首次进入缺啥补啥并持久化，也可手动「换一换」。
+ * 聊天界面单击角色头像进入；右上角 ··· 进入「朋友设置」（星标 / 黑名单 / 删除好友等）。
+ * 微信号/地区/签名由 AI 按人设生成：首次进入缺啥补啥并持久化，之后固定不再变化。
  */
 
 interface CharacterProfilePageProps {
@@ -18,24 +18,150 @@ interface CharacterProfilePageProps {
     onVoiceCall: () => void;
     onOpenSettings: () => void;
     onOpenMoments: () => void;
+    /** 在朋友设置里删除好友后回调（由宿主收起本页并返回聊天列表） */
+    onDeleted?: () => void;
 }
 
+/** 仿微信开关 */
+const ToggleSwitch: React.FC<{ on: boolean; onToggle: () => void }> = ({ on, onToggle }) => (
+    <button
+        onClick={onToggle}
+        role="switch"
+        aria-checked={on}
+        className={`relative w-[51px] h-[31px] rounded-full transition-colors duration-200 shrink-0 ${on ? 'bg-[#07c160]' : 'bg-[#e5e5e5]'}`}
+    >
+        <span
+            className="absolute top-[2px] w-[27px] h-[27px] rounded-full bg-white shadow transition-transform duration-200"
+            style={{ left: '2px', transform: on ? 'translateX(20px)' : 'translateX(0)' }}
+        />
+    </button>
+);
+
+/** 朋友设置（右上角 ··· 进入）：仿微信好友设置页，含星标 / 黑名单 / 删除好友 */
+const FriendSettingsPage: React.FC<{
+    char: CharacterProfile;
+    onBack: () => void;
+    onOpenSettings: () => void;
+    onDeleted?: () => void;
+}> = ({ char, onBack, onOpenSettings, onDeleted }) => {
+    const { updateCharacter, deleteCharacter, addToast } = useOS();
+    const [confirmDelete, setConfirmDelete] = useState(false);
+
+    // 行容器用 div：开关行内部有自己的 <button>，嵌套 button 是非法 HTML
+    const Row: React.FC<{ label: string; onClick?: () => void; toggle?: React.ReactNode; divider?: boolean }> = ({ label, onClick, toggle, divider }) => (
+        <>
+            <div
+                onClick={onClick}
+                role={onClick ? 'button' : undefined}
+                className={`w-full bg-white px-5 py-4 flex items-center justify-between text-left ${onClick ? 'cursor-pointer active:bg-[#f5f5f5]' : ''}`}
+            >
+                <span className="text-[16px]">{label}</span>
+                {toggle || (
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#c7c7c7] shrink-0">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                    </svg>
+                )}
+            </div>
+            {divider && <div className="h-px bg-[#ededed] ml-5" />}
+        </>
+    );
+
+    return (
+        <div
+            className="absolute inset-0 z-[310] flex flex-col bg-[#ededed] text-[#191919] animate-fade-in"
+            style={{ paddingTop: 'max(8px, var(--safe-top))' }}
+        >
+            <div className="relative flex items-center justify-center px-2 py-2 shrink-0">
+                <button onClick={onBack} className="absolute left-2 p-2 active:opacity-50" aria-label="返回">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-6 h-6">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                    </svg>
+                </button>
+                <span className="text-[17px] font-medium">朋友设置</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto no-scrollbar pt-2">
+                <div className="bg-white">
+                    <Row label="设置朋友资料" onClick={onOpenSettings} divider />
+                    <Row label="朋友权限" onClick={() => addToast('朋友权限暂未开放', 'info')} />
+                </div>
+
+                <div className="bg-white mt-2">
+                    <Row label={`把${char.name}推荐给朋友`} onClick={() => addToast('推荐功能暂未开放', 'info')} divider />
+                    <Row label="添加到桌面" onClick={() => addToast('添加到桌面暂未开放', 'info')} />
+                </div>
+
+                <div className="bg-white mt-2">
+                    <Row
+                        label="设为星标朋友"
+                        toggle={<ToggleSwitch on={!!char.starredFriend} onToggle={() => updateCharacter(char.id, { starredFriend: !char.starredFriend })} />}
+                    />
+                </div>
+
+                <div className="bg-white mt-2">
+                    <Row
+                        label="加入黑名单"
+                        toggle={<ToggleSwitch on={!!char.blacklisted} onToggle={() => updateCharacter(char.id, { blacklisted: !char.blacklisted })} />}
+                    />
+                    <div className="h-px bg-[#ededed] ml-5" />
+                    <Row label="投诉" onClick={() => addToast('已收到投诉（彩蛋：TA 表示很无辜）', 'info')} />
+                </div>
+
+                <div className="bg-white mt-2">
+                    <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="w-full py-4 text-center text-[16px] text-[#fa5151] font-medium active:bg-[#f5f5f5]"
+                    >
+                        删除
+                    </button>
+                </div>
+            </div>
+
+            {/* 删除好友二次确认 */}
+            {confirmDelete && (
+                <div className="absolute inset-0 z-[320] flex items-center justify-center bg-black/40 animate-fade-in" onClick={() => setConfirmDelete(false)}>
+                    <div className="w-[min(80vw,300px)] bg-white rounded-xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 pt-6 pb-5 text-center">
+                            <div className="text-[16px] font-medium">删除好友</div>
+                            <div className="text-[14px] text-[#7f7f7f] mt-2 leading-relaxed">
+                                将删除角色「{char.name}」及其全部聊天记录与记忆，此操作不可恢复。
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 border-t border-[#ededed]">
+                            <button onClick={() => setConfirmDelete(false)} className="py-3.5 text-[16px] text-[#576b95] active:bg-[#f5f5f5]">取消</button>
+                            <button
+                                onClick={async () => {
+                                    setConfirmDelete(false);
+                                    await deleteCharacter(char.id);
+                                    addToast(`已删除好友「${char.name}」`, 'success');
+                                    onDeleted?.();
+                                }}
+                                className="py-3.5 text-[16px] text-[#fa5151] font-medium border-l border-[#ededed] active:bg-[#f5f5f5]"
+                            >
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
-    char, onBack, onSendMessage, onVoiceCall, onOpenSettings, onOpenMoments,
+    char, onBack, onSendMessage, onVoiceCall, onOpenSettings, onOpenMoments, onDeleted,
 }) => {
-    const { apiConfig, updateCharacter, addToast } = useOS();
+    const { apiConfig, updateCharacter } = useOS();
     const [momentImages, setMomentImages] = useState<string[]>([]);
     const [generating, setGenerating] = useState(false);
+    const [showFriendSettings, setShowFriendSettings] = useState(false);
     const generatingRef = useRef(false);
     const autoGenCharRef = useRef<string | null>(null);
 
-    // force=false：只补空缺字段（首次进入自动触发）；force=true：三项全部重新生成（手动「换一换」）
-    const runGenerate = async (force: boolean) => {
+    // 微信号/地区/签名只生成一次：仅补空缺字段并持久化，之后固定不可刷新
+    const runGenerate = async () => {
         if (generatingRef.current) return;
-        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) {
-            if (force) addToast('请先在设置中配置 API 后再生成资料', 'error');
-            return;
-        }
+        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) return;
         generatingRef.current = true;
         setGenerating(true);
         try {
@@ -43,14 +169,12 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
             const prev = char.socialProfile;
             updateCharacter(char.id, {
                 socialProfile: {
-                    handle: force ? gen.handle : (prev?.handle || gen.handle),
-                    region: force ? gen.region : (prev?.region || gen.region),
-                    bio: force ? gen.bio : (prev?.bio || gen.bio),
+                    handle: prev?.handle || gen.handle,
+                    region: prev?.region || gen.region,
+                    bio: prev?.bio || gen.bio,
                 },
             });
-        } catch (e: any) {
-            if (force) addToast(e?.message || '资料生成失败', 'error');
-        } finally {
+        } catch { /* 生成失败下次进入再补 */ } finally {
             generatingRef.current = false;
             setGenerating(false);
         }
@@ -64,7 +188,7 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
         if (!missing || !apiConfig?.apiKey || !apiConfig?.baseUrl) return;
         if (autoGenCharRef.current === char.id) return;
         autoGenCharRef.current = char.id;
-        runGenerate(false);
+        runGenerate();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [char.id, apiConfig?.apiKey, apiConfig?.baseUrl]);
 
@@ -94,14 +218,14 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
             className="absolute inset-0 z-[300] flex flex-col bg-[#ededed] text-[#191919] animate-fade-in"
             style={{ paddingTop: 'max(8px, var(--safe-top))' }}
         >
-            {/* 顶栏：返回 / 更多（进角色设置） */}
+            {/* 顶栏：返回 / 更多（朋友设置：星标、黑名单、删除好友等） */}
             <div className="flex items-center justify-between px-2 py-2 shrink-0">
                 <button onClick={onBack} className="p-2 active:opacity-50" aria-label="返回">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-6 h-6">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                     </svg>
                 </button>
-                <button onClick={onOpenSettings} className="p-2 active:opacity-50" aria-label="更多（角色设置）">
+                <button onClick={() => setShowFriendSettings(true)} className="p-2 active:opacity-50" aria-label="朋友设置">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
                         <path d="M6 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm7.5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm7.5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
                     </svg>
@@ -109,7 +233,7 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar">
-                {/* 基本信息 */}
+                {/* 基本信息：微信号/地区/签名首次生成后固定展示 */}
                 <div className="px-6 pt-2 pb-6 flex items-start gap-4">
                     <img
                         src={char.avatar}
@@ -117,22 +241,13 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
                         className="w-16 h-16 rounded-lg object-cover shrink-0 shadow-sm"
                     />
                     <div className="flex-1 min-w-0 pt-0.5">
-                        <div className="text-[22px] font-bold leading-tight truncate">{char.name}</div>
+                        <div className="text-[22px] font-bold leading-tight truncate flex items-center gap-1.5">
+                            <span className="truncate">{char.name}</span>
+                            {char.starredFriend && <span className="text-[#f7ba2a] text-[16px] shrink-0">★</span>}
+                        </div>
                         <div className="text-[14px] text-[#7f7f7f] mt-1.5 truncate">微信号：{wechatId}</div>
                         {region && <div className="text-[14px] text-[#7f7f7f] mt-0.5 truncate">地区：{region}</div>}
                         {bio && <div className="text-[13px] text-[#9b9b9b] mt-0.5 line-clamp-2">{bio}</div>}
-                        {/* AI 重新生成微信号/地区/签名 */}
-                        <button
-                            onClick={() => runGenerate(true)}
-                            disabled={generating}
-                            className="mt-2 inline-flex items-center gap-1 text-[12px] text-[#9b9b9b] active:opacity-50 disabled:opacity-40"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
-                                className={`w-3.5 h-3.5 ${generating ? 'animate-spin' : ''}`}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
-                            </svg>
-                            {generating ? '正在生成资料…' : '换一换'}
-                        </button>
                     </div>
                 </div>
 
@@ -191,6 +306,16 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
                     </button>
                 </div>
             </div>
+
+            {/* 朋友设置子页（仿微信） */}
+            {showFriendSettings && (
+                <FriendSettingsPage
+                    char={char}
+                    onBack={() => setShowFriendSettings(false)}
+                    onOpenSettings={() => { setShowFriendSettings(false); onOpenSettings(); }}
+                    onDeleted={onDeleted}
+                />
+            )}
         </div>
     );
 };

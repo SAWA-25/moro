@@ -1554,6 +1554,10 @@ export interface CharacterProfile {
       region?: string; // 地区（角色主页展示，如「安徽 亳州」）
   };
 
+  /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
+  starredFriend?: boolean;
+  blacklisted?: boolean;
+
   roomConfig?: {
       bgImage?: string;
       wallImage?: string;

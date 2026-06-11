@@ -403,7 +403,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         </button>
                     )}
                     {onOpenSettings && (
-                        <button onClick={onOpenSettings} className={`moro-chat-settings absolute right-0 bottom-2 p-2 ${iconButtonClass}`} title="角色设置">
+                        <button onClick={onOpenSettings} className={`moro-chat-settings absolute right-0 bottom-2 p-2 ${iconButtonClass}`} title="聊天设置">
                             <DotsThreeVertical className="w-5 h-5" weight="bold" />
                         </button>
                     )}
@@ -424,7 +424,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         </button>
                     )}
                     {onOpenSettings && (
-                        <button onClick={onOpenSettings} className={`moro-chat-settings p-2 -mr-2 ${iconButtonClass}`} title="角色设置">
+                        <button onClick={onOpenSettings} className={`moro-chat-settings p-2 -mr-2 ${iconButtonClass}`} title="聊天设置">
                             <DotsThreeVertical className="w-5 h-5" weight="bold" />
                         </button>
                     )}
