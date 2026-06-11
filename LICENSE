@@ -1,47 +1,47 @@
 # PolyForm Noncommercial License 1.0.0
 
-<https://polyformproject.org/licenses/noncommercial/1.0.0>
+<https://polyformproject.org/licenses/noncommercial/1.0.0>https://polyformproject.org/licenses
+oncommercial/1.0.0   oncommercial / 1。0。0
 
-## Acceptance
+## Acceptance   # #验收
 
-In order to get any license under these terms, you must agree
-to them as both strict obligations and conditions to all
-your licenses.
+In order to get any license under these terms, you must agree要根据这些条款获得任何许可证，您必须同意
+to them as both strict obligations and conditions to all对他们而言，这既是严格的义务，也是对所有人的条件
+your licenses.   你的许可证。
 
-## Copyright License
+## Copyright License   ## 版权许可
 
-The licensor grants you a copyright license for the software
-to do everything you might do with the software that would
-otherwise infringe the licensor's copyright in it for any
-permitted purpose. However, you may only distribute the
-software according to [Distribution License](#distribution-license)
-and make changes or new works based on the software according
-to [Changes and New Works License](#changes-and-new-works-license).
+The licensor grants you a copyright license for the software许可方授予您该软件的版权许可
+to do everything you might do with the software that would做任何你可能用该软件做的事情
+otherwise infringe the licensor's copyright in it for any否则侵犯许可方对其享有的版权
+permitted purpose. However, you may only distribute the允许的目的。但是，您只能分发
+software according to [Distribution License](#distribution-license)根据[分发许可证](#distribution-license)的软件
+and make changes or new works based on the software according并基于该软件进行修改或创作新的作品
+to [Changes and New Works License](#changes-and-new-works-license).参见[修改与新作品许可](#changes-and-new-works-license)。
 
-## Distribution License
+## Distribution License   ## 分发许可证
 
-The licensor grants you an additional copyright license to
-distribute copies of the software. Your license to distribute
-covers distributing the software with changes and new works
-permitted by [Changes and New Works License](#changes-and-new-works-license).
+The licensor grants you an additional copyright license to许可方授予您一项额外的版权许可
+distribute copies of the software. Your license to distribute分发软件副本。您分发的许可
+covers distributing the software with changes and new works涵盖分发修改后的软件及新作品
+permitted by [Changes and New Works License](#changes-and-new-works-license).允许通过[修改与新作品许可](#changes-and-new-works-license)。
 
-## Notices
+## Notices   # #通知
 
-You must ensure that anyone who gets a copy of any part of
-the software from you also gets a copy of these terms or the
-URL for them above, as well as copies of any plain-text lines
-beginning with `Required Notice:` that the licensor provided
-with the software. For example:
+You must ensure that anyone who gets a copy of any part of你必须确保任何获得本文件任何部分副本的人
+the software from you also gets a copy of these terms or the您提供的软件也会获得这些条款的副本或
+URL for them above, as well as copies of any plain-text lines上方的URL，以及任何纯文本行的副本
+beginning with `Required Notice:` that the licensor provided从许可方提供的“必要通知：”开始
+with the software. For example:随软件附带。例如：
 
-> Required Notice: Copyright (c) 2024-2026 NMJ (SullyOS / 手抓糯米机)
-
+> Required Notice: Copyright (c) 2024-2026 Moro
 ## Changes and New Works License
 
-The licensor grants you an additional copyright license to
+The licensor grants you an additional copyright license to许可方授予您一项额外的版权许可
 make changes and new works based on the software for any
-permitted purpose.
+permitted purpose.   允许的目的。
 
-## Patent License
+## Patent License   ##专利许可
 
 The licensor grants you a patent license for the software that
 covers patent claims the licensor can license, or becomes able
@@ -130,4 +130,4 @@ of your licenses.
 
 ---
 
-Required Notice: Copyright (c) 2024-2026 NMJ (SullyOS / 手抓糯米机)
+Required Notice: Copyright (c) 2024-2026 NMJ Moro
