@@ -2733,6 +2733,38 @@ export interface XhsMcpConfig {
     userXsecToken?: string;    // 连接测试时从首页推荐自动提取的 xsec_token
 }
 
+// --- XHS 本地生成信息流（小红书 App：LLM 生成角色 + NPC 帖子，本地持久化）---
+
+export interface XhsFeedComment {
+    id: string;
+    author: string;            // 显示昵称
+    charId?: string;           // 角色评论时为角色 id；NPC 评论为空
+    isUser?: boolean;          // 用户自己发的评论
+    content: string;
+    likes: number;
+    timestamp: number;
+}
+
+export interface XhsFeedPost {
+    id: string;
+    authorType: 'character' | 'npc' | 'user';
+    charId?: string;           // authorType='character' 时的角色 id
+    author: string;            // 显示昵称
+    authorAvatar?: string;     // 角色头像 / 用户头像；NPC 留空走字母头像
+    title: string;
+    body: string;
+    tags: string[];
+    coverUrl?: string;         // 封面图（来自小红书图库，可空 → 渐变占位）
+    likes: number;
+    liked?: boolean;           // 用户已点赞
+    favs: number;
+    faved?: boolean;           // 用户已收藏
+    comments: XhsFeedComment[];
+    createdAt: number;
+    repostOf?: string;         // 转发：源帖 id
+    repostNote?: string;       // 转发附言
+}
+
 // ============================================================
 // 模拟人生 (LifeSim) Types — 真人秀沙盒版
 // ============================================================
