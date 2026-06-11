@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Code, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
@@ -808,6 +808,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                     <Detective className="w-6 h-6" weight="bold" />
                                 </div>
                                 <span className="text-xs font-bold">偷看心声</span>
+                            </button>
+
+                            {/* 查手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
+                            <button onClick={() => onPanelAction('check-phone')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-teal-300 border-teal-400/20' : 'bg-teal-50 text-teal-500 border-teal-100'}`}>
+                                    <DeviceMobileCamera className="w-6 h-6" weight="bold" />
+                                </div>
+                                <span className="text-xs font-bold">查手机</span>
                             </button>
 
                           </div>

@@ -996,6 +996,23 @@ export const useChatAI = ({
                 directives: [],
             });
 
+            // 灵动岛 / 未读数联动：本地 fetch 路径此前不发任何事件——用户在生成期间离开
+            // 聊天页（切回桌面 / 别的 App）时，新消息只静默落库，灵动岛横幅和未读红点
+            // 全都收不到。这里复用 'proactive-message-sent' 通道（OSContext 增未读 + toast +
+            // 原生通知，DynamicIsland 弹横幅），监听方自带"正在该角色聊天页则忽略"守卫，
+            // 正常聊天时不会多弹。不用 'active-msg-received'：那是 instant push 的送达判定
+            // 通道，本地路径冒发会误 resolve 等待中的 push promise。
+            try {
+                const recentSaved = await DB.getRecentMessagesByCharId(char.id, 5);
+                const lastAssistant = [...recentSaved].reverse().find(m => m.role === 'assistant');
+                if (lastAssistant && typeof window !== 'undefined') {
+                    const preview = String(lastAssistant.content || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+                    window.dispatchEvent(new CustomEvent('proactive-message-sent', {
+                        detail: { charId: char.id, charName: char.name, body: preview || '发来了新消息', avatarUrl: char.avatar },
+                    }));
+                }
+            } catch { /* 通知联动失败不影响消息本体 */ }
+
         } catch (e: any) {
             // 注意: 这个 catch 兜的是「拿到 API 响应之后」的整条后处理管线 (applyAssistantPostProcessing,
             // 13 步)。这里抛错多半不是网络问题, 而是解析/正则/落库异常。别再叫"连接中断"误导排查。

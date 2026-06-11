@@ -44,12 +44,21 @@ const LayoutInspector: React.FC = () => {
     );
 };
 
-const CheckPhone: React.FC = () => {
+interface CheckPhoneProps {
+    /** 从聊天 + 号面板进入时直接连上当前角色的手机，跳过选择页 */
+    initialCharId?: string;
+    /** 作为聊天内嵌浮层时的退出回调（替代 closeApp / 返回选择页） */
+    onExit?: () => void;
+}
+
+const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
     const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, addToast, userProfile } = useOS();
-    const [view, setView] = useState<'select' | 'phone'>('select');
+    const [view, setView] = useState<'select' | 'phone'>(initialCharId ? 'phone' : 'select');
     // activeAppId: 'home' | 'chat_detail' | 'app_id'
-    const [activeAppId, setActiveAppId] = useState<string>('home'); 
-    const [targetChar, setTargetChar] = useState<CharacterProfile | null>(null);
+    const [activeAppId, setActiveAppId] = useState<string>('home');
+    const [targetChar, setTargetChar] = useState<CharacterProfile | null>(
+        () => (initialCharId && characters.find(c => c.id === initialCharId)) || null
+    );
     const [isLoading, setIsLoading] = useState(false);
     
     // Chat Detail State
@@ -107,7 +116,16 @@ const CheckPhone: React.FC = () => {
         setActiveAppId('home');
     };
 
+    // 聊天内嵌模式：进来就直连当前角色的手机
+    useEffect(() => {
+        if (!initialCharId) return;
+        const c = characters.find(ch => ch.id === initialCharId);
+        if (c) handleSelectChar(c);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialCharId]);
+
     const handleExitPhone = () => {
+        if (onExit) { onExit(); return; }
         setView('select');
         setTargetChar(null);
         setActiveAppId('home');
@@ -716,7 +734,7 @@ Format:
         return (
             <div className="absolute inset-0 flex flex-col bg-slate-900 font-light overflow-hidden">
                 <div className="h-20 pt-4 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/80 sticky top-0 z-10 shrink-0">
-                    <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white">
+                    <button onClick={onExit || closeApp} className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
                     <span className="font-bold text-white tracking-widest uppercase text-sm">Target Device</span>

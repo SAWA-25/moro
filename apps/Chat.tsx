@@ -12,6 +12,10 @@ import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import MessageItem from '../components/chat/MessageItem';
 import CharacterProfilePage from '../components/character/CharacterProfilePage';
+import CheckPhone from './CheckPhone';
+import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
+import OfflineModeModal from '../components/chat/OfflineModeModal';
+import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
@@ -104,6 +108,15 @@ const Chat: React.FC = () => {
     const userBlockNoticeShownRef = useRef<string | null>(null);
     // 被角色拉黑后重新发送好友验证
     const [showFriendVerify, setShowFriendVerify] = useState(false);
+
+    // ── 查手机（双向）──
+    // 用户查角色手机：+ 号面板入口，内嵌 CheckPhone（原桌面独立 App）
+    const [showCheckPhone, setShowCheckPhone] = useState(false);
+    // 角色查用户手机：「允许 char 看手机」开启时角色主动发起的全屏覆盖层
+    const [charPhoneCheckActive, setCharPhoneCheckActive] = useState(false);
+
+    // ── 线下模式 ──「自动线下」开启 + 角色输出 [[OFFLINE_START]] 时弹出
+    const [showOfflineMode, setShowOfflineMode] = useState(false);
 
     // 位置分享 modal
     const [showLocationModal, setShowLocationModal] = useState(false);
@@ -1102,6 +1115,84 @@ const Chat: React.FC = () => {
         }
     };
 
+    // ── 拉黑模式「看看 TA 在做什么」：用户仍无法私聊，但落一条引导 system 消息后
+    //    触发角色生成此刻的动态（发现被拉黑的反应 / 把对话框当备忘录 / 试图挽回等，按人设）──
+    const handlePeekBlockedChar = async () => {
+        if (!char || isTyping) return;
+        setShowUserBlockNotice(false);
+        await DB.saveMessage({
+            charId: char.id,
+            role: 'system',
+            type: 'text',
+            content: `[拉黑观察] ${userProfile.name} 在拉黑「${char.name}」期间悄悄点开了对话框，想看看 TA 在做什么。请以「${char.name}」的身份生成 TA 此刻发出的消息：可能 TA 本想正常发消息却发现自己被拉黑、可能把这个发不出去的对话框当成备忘录/树洞自言自语、可能在尝试挽回、也可能赌气或装作无所谓——完全按 TA 的人设来。TA 并不知道 ${userProfile.name} 看得到这些。`,
+            metadata: { blockPeek: true },
+        } as any);
+        await reloadMessages(visibleCountRef.current);
+        triggerAI(messages);
+    };
+
+    // ── 角色主动查用户手机：「允许 char 看手机」开启时，AI 回复落定后小概率发起（带冷却）──
+    const CHAR_PHONE_CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+    const phoneCheckPrevTypingRef = useRef(false);
+    useEffect(() => {
+        const wasTyping = phoneCheckPrevTypingRef.current;
+        phoneCheckPrevTypingRef.current = isTyping;
+        if (!wasTyping || isTyping) return; // 仅在 AI 刚回复完的下降沿判定
+        if (!char?.convoSettings?.allowPhoneBrowse) return; // 设置关闭则角色绝不发起
+        if (charPhoneCheckActive || showOfflineMode || showCheckPhone || showCharProfile) return;
+        if (char.blacklisted || char.charBlock?.active) return;
+        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) return;
+        const cooldownKey = `moro_char_phone_check_last_${char.id}`;
+        let last = 0;
+        try { last = Number(localStorage.getItem(cooldownKey) || 0); } catch { /* ignore */ }
+        if (Date.now() - last < CHAR_PHONE_CHECK_COOLDOWN_MS) return;
+        if (Math.random() > 0.15) return;
+        try { localStorage.setItem(cooldownKey, String(Date.now())); } catch { /* ignore */ }
+        const timer = setTimeout(() => setCharPhoneCheckActive(true), 1500);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isTyping]);
+
+    // 查手机结束：记录已由覆盖层落库进上下文，这里刷新消息并让角色主动发消息收尾
+    const handleCharPhoneCheckEnd = (exitMode: 'consent' | 'questions' | 'forced' | 'finished') => {
+        setCharPhoneCheckActive(false);
+        void reloadMessages(visibleCountRef.current);
+        addToast(exitMode === 'forced' ? `你抢回了手机，${char?.name} 好像有话要说…` : `${char?.name} 把手机还给了你`, 'info');
+        setTimeout(() => { triggerAI(messages); }, 800);
+    };
+
+    // ── 线下模式：监听 [[OFFLINE_START]] 广播（applyAssistantPostProcessing 剥离指令后发出）──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            consumeOfflinePending(d.charId); // 事件路径直接弹，吃掉 pending 防止下次重复弹
+            setShowOfflineMode(true);
+        };
+        window.addEventListener(OFFLINE_START_EVENT, handler);
+        return () => window.removeEventListener(OFFLINE_START_EVENT, handler);
+    }, []);
+
+    // 进入/切换角色时兜底：有 pending（事件发出时不在本聊天页）或未结束的线下会话则恢复弹窗
+    useEffect(() => {
+        if (!activeCharacterId) return;
+        if (consumeOfflinePending(activeCharacterId) || hasOfflineSession(activeCharacterId)) {
+            setShowOfflineMode(true);
+        } else {
+            setShowOfflineMode(false);
+        }
+        setShowCheckPhone(false);
+        setCharPhoneCheckActive(false);
+    }, [activeCharacterId]);
+
+    // 线下模式结束：情景已合成 system 消息落库，刷新后让角色主动发消息收尾
+    const handleOfflineEnd = () => {
+        setShowOfflineMode(false);
+        void reloadMessages(visibleCountRef.current);
+        addToast('线下模式已结束，回到线上聊天', 'info');
+        setTimeout(() => { triggerAI(messages); }, 800);
+    };
+
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'transfer': setModalType('transfer'); break;
@@ -1151,6 +1242,7 @@ const Chat: React.FC = () => {
                 setShowThinkingChainModal(true);
                 break;
             }
+            case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
             case 'inner-voice': {
@@ -3439,6 +3531,13 @@ ${recent || '（你们还没怎么聊过）'}
                             </div>
                         </div>
                         <button
+                            onClick={() => { void handlePeekBlockedChar(); }}
+                            disabled={isTyping}
+                            className="w-full py-3.5 text-[16px] text-[#fa5151] font-medium border-t border-slate-100 active:bg-slate-50 disabled:opacity-50"
+                        >
+                            看看 TA 在做什么
+                        </button>
+                        <button
                             onClick={() => setShowUserBlockNotice(false)}
                             className="w-full py-3.5 text-[16px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
                         >
@@ -3446,6 +3545,37 @@ ${recent || '（你们还没怎么聊过）'}
                         </button>
                     </div>
                 </div>
+            )}
+
+            {/* 查手机（用户 → 角色）：+ 号面板入口，内嵌原 CheckPhone */}
+            {showCheckPhone && char && (
+                <div className="absolute inset-0 z-[410]">
+                    <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} />
+                </div>
+            )}
+
+            {/* 查手机（角色 → 用户）：界面变成用户桌面，角色自己翻看 + 想法框 */}
+            {charPhoneCheckActive && char && (
+                <CharPhoneCheckOverlay
+                    char={char}
+                    userProfile={userProfile}
+                    characters={characters}
+                    apiConfig={apiConfig}
+                    updateCharacter={updateCharacter}
+                    addToast={addToast}
+                    onEnd={handleCharPhoneCheckEnd}
+                />
+            )}
+
+            {/* 线下模式弹窗 */}
+            {showOfflineMode && char && (
+                <OfflineModeModal
+                    char={char}
+                    userProfile={userProfile}
+                    apiConfig={apiConfig}
+                    addToast={addToast}
+                    onEnd={handleOfflineEnd}
+                />
             )}
 
             {/* 被角色拉黑后的好友验证 */}
