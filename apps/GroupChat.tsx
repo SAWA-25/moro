@@ -1005,8 +1005,8 @@ ${attachedImagesNote}
                 if (textContent) {
                     // Primary: split on line breaks
                     let chunks = textContent.split(/(?:\r\n|\r|\n|\u2028|\u2029)+/)
-                        .map(c => c.trim())
-                        .filter(c => c.length > 0);
+                        .map((c: string) => c.trim())
+                        .filter((c: string) => c.length > 0);
 
                     // Fallback: split on spaces between CJK characters (中文里空格=AI想换行)
                     if (chunks.length <= 1 && textContent.trim().length > 50) {
@@ -1019,8 +1019,8 @@ ${attachedImagesNote}
                         chunks = textContent
                             .replace(/([\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef\u2000-\u206f\u2e80-\u2eff\u3001-\u3003\u2018-\u201f\u300a-\u300f\uff01-\uff0f\uff1a-\uff20])\s+(?=[\u4e00-\u9fff\u3400-\u4dbf])/g, `$1${SPLIT}`)
                             .split(SPLIT)
-                            .map(c => c.trim())
-                            .filter(c => c.length > 0);
+                            .map((c: string) => c.trim())
+                            .filter((c: string) => c.length > 0);
                     }
 
                     if (chunks.length === 0) chunks.push(textContent); // Fallback

@@ -137,7 +137,8 @@ const CheckPhone: React.FC = () => {
         if (!targetChar) return;
         const newApps = (targetChar.phoneState?.customApps || []).filter(a => a.id !== appId);
         updateCharacter(targetChar.id, {
-            phoneState: { ...targetChar.phoneState, customApps: newApps }
+            // phoneState 可能尚不存在：展开 undefined 会把必填的 records 字段写丢
+            phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, customApps: newApps }
         });
         addToast('App 已卸载', 'success');
     };
@@ -155,7 +156,7 @@ const CheckPhone: React.FC = () => {
 
         const currentApps = targetChar.phoneState?.customApps || [];
         updateCharacter(targetChar.id, {
-            phoneState: { ...targetChar.phoneState, customApps: [...currentApps, newApp] }
+            phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, customApps: [...currentApps, newApp] }
         });
 
         setShowCreateModal(false);
