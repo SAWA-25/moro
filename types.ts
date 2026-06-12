@@ -630,45 +630,6 @@ export interface RoomGeneratedState {
     actorAction?: string; // e.g. 'idle', 'sleep'
 }
 
-export interface UserImpression {
-    version: number;
-    lastUpdated?: number;
-    value_map: {
-        likes: string[];
-        dislikes: string[];
-        core_values: string;
-    };
-    behavior_profile: {
-        tone_style: string;
-        emotion_summary: string;
-        response_patterns: string;
-    };
-    emotion_schema: {
-        triggers: {
-            positive: string[];
-            negative: string[];
-        };
-        comfort_zone: string;
-        stress_signals: string[];
-    };
-    personality_core: {
-        observed_traits: string[];
-        interaction_style: string;
-        summary: string;
-    };
-    mbti_analysis?: {
-        type: string; 
-        reasoning: string;
-        dimensions: {
-            e_i: number; 
-            s_n: number; 
-            t_f: number; 
-            j_p: number; 
-        }
-    };
-    observed_changes?: string[];
-}
-
 export interface BubbleStyle {
     textColor: string;
     backgroundColor: string;
@@ -1564,9 +1525,10 @@ export interface CharacterProfile {
   writerPersona?: string;
   writerPersonaGeneratedAt?: number;
 
-  mountedWorldbooks?: { id: string; title: string; content: string; category?: string }[];
-
-  impression?: UserImpression;
+  /** 挂载的世界书条目快照。注入时以世界书 App 的 live 记录为准（按 id、退而按
+   *  分组+标题匹配），live 记录不存在时按快照生效 —— enabled 随 live 同步，
+   *  保证条目开关对快照兜底路径同样生效 */
+  mountedWorldbooks?: { id: string; title: string; content: string; category?: string; enabled?: boolean }[];
 
   bubbleStyle?: string;
   chatBackground?: string;
@@ -1680,6 +1642,11 @@ export interface CharacterProfile {
   activeMsg2Config?: ActiveMsg2CharacterConfig;
   activeBuffs?: CharacterBuff[];
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
+
+  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新） */
+  affection?: number;
+  /** 当前心情（与好感值同一评估链路更新），显示在心声面板 */
+  currentMood?: { emoji?: string; label: string; updatedAt: number };
   emotionConfig?: {
     enabled: boolean;
     api?: {
@@ -1874,7 +1841,7 @@ export interface GroupProfile {
     dissolvedAt?: number;
 }
 
-export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memories' | 'refinedMemories' | 'activeMemoryMonths' | 'impression'> {
+export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memories' | 'refinedMemories' | 'activeMemoryMonths'> {
     version: number;
     type: 'moro_character_card';
     embeddedTheme?: ChatTheme;

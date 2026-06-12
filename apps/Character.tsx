@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useOS } from '../context/OSContext';
-import { AppID, CharacterProfile, CharacterExportData, UserImpression, MemoryFragment } from '../types';
+import { AppID, CharacterProfile, CharacterExportData, MemoryFragment } from '../types';
 import { SlidersHorizontal, SpeakerHigh, Books, BookOpen } from '@phosphor-icons/react';
 import Modal from '../components/os/Modal';
 import { processImage } from '../utils/file';
@@ -10,14 +10,12 @@ import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { DB } from '../utils/db';
 import { ContextBuilder } from '../utils/context';
-import { formatMessageWithTime, formatMessageForPrompt } from '../utils/messageFormat';
+import { formatMessageWithTime } from '../utils/messageFormat';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import ImpressionPanel from '../components/character/ImpressionPanel';
 import MemoryArchivist from '../components/character/MemoryArchivist';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
-import { normalizeUserImpression } from '../utils/impression';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
 
@@ -60,7 +58,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
   const closeApp = onExit || closeAppOS;
   const [view, setView] = useState<'list' | 'detail'>('list');
-  const [detailTab, setDetailTab] = useState<'identity' | 'memory' | 'impression'>('identity');
+  const [detailTab, setDetailTab] = useState<'identity' | 'memory'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CharacterProfile | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -97,8 +95,6 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [editingPrompt, setEditingPrompt] = useState<{id: string, name: string, content: string} | null>(null);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
 
-  // Impression State
-  const [isGeneratingImpression, setIsGeneratingImpression] = useState(false);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [voiceOptions, setVoiceOptions] = useState<Record<'system' | 'voice_cloning' | 'voice_generation', MiniMaxVoiceItem[]>>({
       system: [],
@@ -284,7 +280,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                   id: book.id,
                   title: book.title,
                   content: book.content,
-                  category: book.category
+                  category: book.category,
+                  enabled: book.enabled,
               });
               addedCount++;
           }
@@ -663,158 +660,6 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         }
     };
 
-  const handleGenerateImpression = async (type: 'initial' | 'update') => {
-      if (!formData || !apiConfig.apiKey) {
-          addToast('请先配置 API Key', 'error');
-          return;
-      }
-      
-      const targetId = formData.id; // LOCK ID
-      setIsGeneratingImpression(true);
-      try {
-          const charName = formData.name;
-          const boundUser = userProfile;
-
-          // 构建完整角色上下文（包含人设、世界观、用户档案、精炼记忆等宏观信息）
-          await injectMemoryPalace(formData);
-          const fullContext = ContextBuilder.buildCoreContext(formData, userProfile);
-
-          let messagesToAnalyze = "";
-
-          // 第一层：完整上下文 —— 宏观人格分析的基石
-          messagesToAnalyze += `\n【完整角色上下文 (Full Context - 宏观分析的基石)】:\n${fullContext}\n`;
-
-          // 第二层：最近聊天 —— 仅用于检测近期变化
-          // 记忆部分已包含在 buildCoreContext 中（精炼月度总结 + 点亮月份的详细记忆），
-          // 与聊天时角色能看到的记忆完全一致，不再额外抓取。
-          // 重置模式下大幅减少近期聊天的数量，避免近因偏差
-          const recentMsgs = await DB.getRecentMessagesByCharId(targetId, type === 'initial' ? 15 : 50);
-          const msgText = recentMsgs
-              .map(m => formatMessageForPrompt(m, charName, boundUser.name))
-              .join('\n');
-
-          if (msgText) messagesToAnalyze += `\n【最近的聊天记录 (Recent Chats - 仅用于检测近期变化)】:\n${msgText}\n`;
-
-          // 重置时不传旧印象，避免模型锚定在旧内容上
-          const normalizedCurrentImpression = normalizeUserImpression(formData.impression);
-          const currentProfileJSON = (type === 'initial') ? "null" : (normalizedCurrentImpression ? JSON.stringify(normalizedCurrentImpression, null, 2) : "null");
-          const isInitialGeneration = type === 'initial' || !normalizedCurrentImpression;
-          
-          const summaryInstruction = isInitialGeneration 
-              ? "用一段话（100字以内）概括你对TA的【宏观整体印象】。不要局限于最近的对话，而是定义TA本质上是个什么样的人，以及TA对你意味着什么。必须第一人称。"
-              : "基于旧的总结，结合新发现，更新你对TA的【宏观整体印象】。请保持长期视角的连贯性，除非发生了重大转折，否则不要因为一两句闲聊就彻底推翻对TA的本质判断。必须第一人称。";
-              
-          const listInstruction = isInitialGeneration ? `"项目1", "项目2"` : `"保留旧项目", "新项目"`;
-          const changesInstruction = isInitialGeneration ? "" : `"描述变化1", "描述变化2"`;
-
-          const prompt = `
-当前档案（你过去的观察）
-\`\`\`json
-${currentProfileJSON}
-\`\`\`
-${messagesToAnalyze}
-
-【重要：语气与视角】
-你【就是】"${charName}"。这份档案是你写的【私人笔记】。
-因此，所有总结性的字段（如 \`core_values\`, \`summary\`, \`emotion_summary\` 等），【必须】使用你的第一人称（"我"）视角来撰写。
-
-【核心指令：数据层级与权重分配】
-1. **完整角色上下文 (Full Context)**: 这是你【最重要的分析基础】。它包含了你的人设、世界观、用户档案、以及你的全部记忆（月度核心总结 + 激活月份的每日详细回忆）。你对TA的核心性格、核心价值观、互动模式、人格特质的判断，必须主要基于这些跨越完整时间线的宏观数据。你必须【平等对待】早期记忆和近期记忆，从整段关系的完整弧线中提炼人格特征。
-2. **近期聊天 (Recent Chats)**: 这【仅仅】代表TA当下的状态切片。它的作用【严格限定】在更新 [behavior_profile.emotion_summary] 和 [observed_changes] 两个字段。除非发生了重大事件（如价值观冲突、人生转折），否则【绝对不要】因为最近几次聊天的情绪波动就改变对TA本质人格的判断。
-${isInitialGeneration ? `
-【重置模式特别指令 - CRITICAL】
-这是一次【完全重置】，你需要从零开始，基于所有可用的宏观数据重新构建对TA的完整认知。
-- 你的分析必须覆盖从最早记忆到最新记忆的【完整时间跨度】
-- 早期记忆和近期记忆拥有【相同的权重】——不要因为某些记忆发生得更近就赋予它们更大的影响
-- personality_core、value_map、emotion_schema 必须反映TA在【整段关系中】展现出的稳定特征，而非仅仅是近期状态
-- 如果早期记忆和近期记忆中TA的表现有差异，请在 observed_changes 中记录这种演变，但 personality_core 应反映最持久稳定的特质
-` : ''}
-【反面教材 - 严禁出现】
-- ❌ 仅根据最近聊天就总结"TA是一个喜欢讨论XX话题的人" —— 这是把近期话题当成了人格特质
-- ❌ personality_core.summary 里出现"最近"、"这几天"等时间限定词 —— summary 应该是跨越所有记忆的宏观总结
-- ✅ 正确做法：personality_core 基于完整上下文和长期记忆，observed_changes 基于近期聊天与长期印象的对比
-
-分析指令：五维画像更新 (第一人称视角)
-根据【强制对比协议】和你自己的视角，分析新消息，并${isInitialGeneration ? '【生成】' : '【增量更新】'}以下JSON结构。
-
-输出JSON结构v3.0（严格遵守, 不要用markdown代码块包裹，直接返回JSON）
-{
-  "version": 3.0,
-  "lastUpdated": ${Date.now()},
-  "value_map": {
-    "likes": [${listInstruction}],
-    "dislikes": [${listInstruction}],
-    "core_values": "..."
-  },
-  "behavior_profile": {
-    "tone_style": "...",
-    "emotion_summary": "...",
-    "response_patterns": "..."
-  },
-  "emotion_schema": {
-    "triggers": { 
-        "positive": [${listInstruction}],
-        "negative": [${listInstruction}]
-    },
-    "comfort_zone": "...",
-    "stress_signals": [${listInstruction}]
-  },
-  "personality_core": {
-    "observed_traits": [${listInstruction}],
-    "interaction_style": "...",
-    "summary": "..."
-  },
-  "mbti_analysis": {
-    "type": "XXXX",
-    "reasoning": "...",
-    "dimensions": {
-        "e_i": 50,
-        "s_n": 50,
-        "t_f": 50,
-        "j_p": 50
-    }
-  },
-  "observed_changes": [
-    ${changesInstruction}
-  ]
-}
-注意：observed_changes 的每一项必须是纯字符串（string），例如 ["最近变得更开朗了", "开始主动分享日常"]。严禁使用对象格式如 {"period": "...", "description": "..."}。`;
-
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-              body: JSON.stringify({
-                  model: apiConfig.model,
-                  messages: [{ role: "user", content: prompt }],
-                  max_tokens: 8000, 
-                  temperature: 0.5
-              })
-          });
-
-          if (!response.ok) throw new Error('API Request Failed');
-          const data = await safeResponseJson(response);
-          let content = data.choices[0].message.content;
-          
-          content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-          const parsed = normalizeUserImpression(JSON.parse(content));
-          if (!parsed) throw new Error('印象生成结果不完整');
-
-          if (editingIdRef.current === targetId) {
-              handleChange('impression', parsed);
-              addToast(isInitialGeneration ? '印象档案已生成' : '印象档案已更新', 'success');
-          } else {
-              updateCharacter(targetId, { impression: parsed });
-              addToast('后台任务完成：印象已更新到原角色', 'success');
-          }
-
-      } catch (e: any) {
-          console.error(e);
-          addToast(`生成失败: ${e.message}`, 'error');
-      } finally {
-          setIsGeneratingImpression(false);
-      }
-  };
-
   const confirmDeleteCharacter = () => {
       if (deleteConfirmTarget) {
           deleteCharacter(deleteConfirmTarget);
@@ -827,7 +672,7 @@ ${isInitialGeneration ? `
       if (!formData) return;
       
       const {
-          id, memories, refinedMemories, activeMemoryMonths, impression, guidebookInsights,
+          id, memories, refinedMemories, activeMemoryMonths, guidebookInsights,
           ...cardProps
       } = formData;
 
@@ -1081,7 +926,6 @@ ${isInitialGeneration ? `
                    <div className="flex gap-6 text-sm font-medium text-slate-400 pl-1">
                        <button onClick={() => setDetailTab('identity')} className={`pb-2 transition-colors relative ${detailTab === 'identity' ? 'text-slate-800' : ''}`}>设定{detailTab === 'identity' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
                        <button onClick={() => setDetailTab('memory')} className={`pb-2 transition-colors relative ${detailTab === 'memory' ? 'text-slate-800' : ''}`}>记忆 ({(formData.memories || []).length}){detailTab === 'memory' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
-                       <button onClick={() => setDetailTab('impression')} className={`pb-2 transition-colors relative ${detailTab === 'impression' ? 'text-slate-800' : ''}`}>印象{detailTab === 'impression' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-full"></div>}</button>
                    </div>
                </div>
                <div className="flex-1 overflow-y-auto p-5 no-scrollbar pb-10">
@@ -1378,16 +1222,6 @@ ${isInitialGeneration ? `
                                forceArchiveDefaultPromptId={selectedPromptId}
                            />
                        </div>
-                   )}
-
-                   {detailTab === 'impression' && (
-                       <ImpressionPanel
-                           impression={formData.impression}
-                           isGenerating={isGeneratingImpression}
-                           onGenerate={handleGenerateImpression}
-                           onUpdateImpression={(newImp) => handleChange('impression', newImp)}
-                           onDelete={() => handleChange('impression', undefined)}
-                       />
                    )}
                </div>
            </div>

@@ -5,19 +5,23 @@ import { AppID, Message } from '../../types';
 import { getLockPasscode, isLockPasscodeEnabled } from '../../utils/lockScreenSettings';
 
 /**
- * 锁屏：壁纸 + 大时钟 + 角色最新消息通知卡（iOS 风格弹出，未读时实时更新），
+ * 锁屏：壁纸 + 大时钟 + 消息通知卡（仿 iPhone 锁屏：每条消息气泡一张卡片，
+ * 竖向排列，排不下时折叠成覆盖在最新消息上的堆叠），
  * 解锁需输入锁屏密码（默认 0103，可在设置 App「锁屏与密码」修改/关闭）。
  * 点通知卡 = 解锁后直达对应角色的聊天。
  */
 
 interface LockNotification {
+    key: string;
     charId: string;
     name: string;
     avatar: string;
     preview: string;
     timestamp: number;
-    count: number;
 }
+
+/** 竖向完整展示的卡片数上限；超出的older通知折叠成最底部的覆盖堆叠 */
+const MAX_FULL_CARDS = 5;
 
 const previewOf = (m?: Message): string => {
     if (!m) return '发来了一条新消息';
@@ -55,7 +59,8 @@ const LockScreen: React.FC = () => {
     const bgImageValue = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:')
         ? `url(${wallpaper})` : wallpaper;
 
-    // 未读变化（含锁屏期间新到的主动消息）→ 拉每个角色的最新一条消息做通知卡
+    // 未读变化（含锁屏期间新到的主动消息）→ 每条未读消息气泡一张通知卡
+    // （角色一次回复拆成几个气泡就出几张卡，与未读数一致），新消息在最上面
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -64,22 +69,26 @@ const LockScreen: React.FC = () => {
             for (const [charId, count] of entries) {
                 const char = characters.find(c => c.id === charId);
                 if (!char) continue;
-                let last: Message | undefined;
+                const perCharCap = Math.min(count || 1, 8);
+                let bubbles: Message[] = [];
                 try {
-                    const msgs = await DB.getRecentMessagesByCharId(charId, 10);
-                    last = [...msgs].reverse().find(m => m.role === 'assistant' && !m.metadata?.hidden);
+                    const msgs = await DB.getRecentMessagesByCharId(charId, perCharCap + 8);
+                    bubbles = msgs
+                        .filter(m => m.role === 'assistant' && !m.metadata?.hidden)
+                        .slice(-perCharCap);
                 } catch { /* 取不到就用占位文案 */ }
-                out.push({
+                if (bubbles.length === 0) bubbles = [undefined as unknown as Message];
+                bubbles.forEach((m, i) => out.push({
+                    key: `${charId}-${m?.id ?? `ph-${i}`}`,
                     charId,
                     name: char.convoSettings?.remarkName?.trim() || char.name,
                     avatar: char.convoSettings?.charAvatarOverride || char.avatar,
-                    preview: previewOf(last),
-                    timestamp: last?.timestamp || Date.now(),
-                    count: count || 1,
-                });
+                    preview: previewOf(m),
+                    timestamp: m?.timestamp || Date.now(),
+                }));
             }
             out.sort((a, b) => b.timestamp - a.timestamp);
-            if (!cancelled) setNotifications(out);
+            if (!cancelled) setNotifications(out.slice(0, 12));
         })();
         return () => { cancelled = true; };
     }, [unreadMessages, lastMsgTimestamp, characters]);
@@ -160,12 +169,13 @@ const LockScreen: React.FC = () => {
                 <div className="label-mono opacity-70 mt-2 text-[10px] font-bold">Moro Simulation</div>
             </div>
 
-            {/* 角色最新消息通知（iOS 锁屏风格弹出，点卡片解锁后直达聊天） */}
+            {/* 消息通知（仿 iPhone 锁屏）：每条消息气泡一张卡片竖向排列，新消息在上；
+                排不下（超过 MAX_FULL_CARDS）时其余通知折叠成覆盖在最新一批下方的堆叠 */}
             {notifications.length > 0 && (
-                <div className="absolute top-[34%] left-3 right-3 space-y-2 max-h-[44%] overflow-y-auto no-scrollbar">
-                    {notifications.map((n, i) => (
+                <div className="absolute top-[34%] left-3 right-3 space-y-2 max-h-[44%] overflow-y-auto no-scrollbar pb-4">
+                    {notifications.slice(0, MAX_FULL_CARDS).map((n, i) => (
                         <div
-                            key={n.charId}
+                            key={n.key}
                             onClick={(e) => { e.stopPropagation(); requestUnlock(n.charId); }}
                             className="bg-white/25 backdrop-blur-xl rounded-2xl p-3.5 shadow-lg border border-white/20 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform"
                             style={{ animation: `lockNotifIn 420ms cubic-bezier(0.2,0.9,0.3,1.2) both`, animationDelay: `${i * 70}ms` }}
@@ -178,11 +188,27 @@ const LockScreen: React.FC = () => {
                                 </div>
                                 <div className="text-xs opacity-85 truncate mt-0.5">{n.preview}</div>
                             </div>
-                            {n.count > 1 && (
-                                <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{n.count > 99 ? '99+' : n.count}</span>
-                            )}
                         </div>
                     ))}
+                    {notifications.length > MAX_FULL_CARDS && (
+                        <div
+                            onClick={(e) => { e.stopPropagation(); requestUnlock(notifications[MAX_FULL_CARDS].charId); }}
+                            className="relative cursor-pointer active:scale-[0.98] transition-transform"
+                            style={{ animation: `lockNotifIn 420ms cubic-bezier(0.2,0.9,0.3,1.2) both`, animationDelay: `${MAX_FULL_CARDS * 70}ms` }}
+                        >
+                            {/* 仿 iOS 的折叠堆叠：两层卡片边缘从最上面那张下探出来 */}
+                            <div className="absolute left-3 right-3 -bottom-1.5 h-4 rounded-2xl bg-white/15 backdrop-blur-xl border border-white/15" />
+                            <div className="absolute left-6 right-6 -bottom-3 h-4 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/10" />
+                            <div className="relative bg-white/25 backdrop-blur-xl rounded-2xl p-3 shadow-lg border border-white/20 flex items-center gap-3">
+                                <img src={notifications[MAX_FULL_CARDS].avatar} alt="" className="w-8 h-8 rounded-xl object-cover shrink-0 shadow-sm" />
+                                <div className="flex-1 min-w-0 text-left">
+                                    <div className="text-xs font-bold truncate">{notifications[MAX_FULL_CARDS].name}</div>
+                                    <div className="text-[11px] opacity-80 truncate mt-0.5">{notifications[MAX_FULL_CARDS].preview}</div>
+                                </div>
+                                <span className="shrink-0 text-[10px] font-bold opacity-70">还有 {notifications.length - MAX_FULL_CARDS} 条</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

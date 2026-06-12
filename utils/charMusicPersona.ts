@@ -2,7 +2,7 @@
  * 角色音乐人格初始化
  *
  * 目标：第一次在音乐 App 里"拜访"某个 char 时（或用户手动点"初始化"），调一次 LLM，
- * 基于 char 的 systemPrompt + worldview + impression 生成一份 CharMusicProfile。
+ * 基于 char 的 systemPrompt + worldview 生成一份 CharMusicProfile。
  *
  * 设计原则：
  * 1. 生成的 signatureArtists 名字都是真实存在的网易云可搜的艺人（LLM 要知道真艺人）。

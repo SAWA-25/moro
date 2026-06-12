@@ -507,7 +507,7 @@ ${transcriptParts.join('\n\n')}
 // - 角色一天不是一句话,要丰满、有节奏
 // - 接入 DailySchedule.slots 作为骨架
 // - **大量注入角色沉淀**: worldview / personalityStyle / selfInsights /
-//   refinedMemories / impression。深度从角色内核来,不是凭空"看猫想到无常"
+//   refinedMemories。深度从角色内核来,不是凭空"看猫想到无常"
 // - **类型配比强制**: physical / reflection / observation / user_thought
 //   "看到野猫打架想起你"作为反例 few-shot 严禁
 // - **3 档深度** light/medium/deep,调整四类型配比和字数
@@ -542,8 +542,7 @@ export async function generateLifestreamPage(
 
     // ─── 1. 直接调项目统一的 ContextBuilder.buildCoreContext ──
     //   它已经处理了:身份/systemPrompt/selfInsights/worldview/mountedWorldbooks
-    //   /user profile/impression(完整含 likes/triggers/comfort/changes)
-    //   /refinedMemories/activeMemoryMonths 详细日志/memoryPalace/buff
+    //   /user profile/refinedMemories/activeMemoryMonths 详细日志/memoryPalace/buff
     //   是聊天系统在用的 source of truth,改它会自动跟进
     const coreContext = ContextBuilder.buildCoreContext(char, userProfile, true);
 
@@ -613,8 +612,7 @@ export async function generateLifestreamPage(
     const occupiedBlock = renderOccupiedBlock(occupied);
     const maxAllowedPage = Math.min(2, (maxPageInUse ?? 0) + 1) || 1;
 
-    // depth=light 时,user impression 在角色 context 里仍存在,但 prompt 末尾会
-    // 强调"几乎不出现 user_thought",通过类型配比抑制即可,不需要再剥 context
+    // depth=light 时通过类型配比强调"几乎不出现 user_thought"即可,不需要再剥 context
     const prompt = `今天是 ${date}（星期${dayOfWeek}）。${userName} 已经在 ${W}x${H}px 的瘦长手账纸上写下了 ta 今天的碎片。请你 (角色「${char.name}」) **在纸上的空白处, 也写一组自己的今日碎片**——不是日记,是 ta 散落的瞬间,各自独立又拼出 ta 的一天。**写什么 + 写在哪都你定**。
 
 【角色完整档案】
@@ -677,7 +675,7 @@ ${occupiedBlock}
    ❌❌❌ "看到楼下野猫打架,想起 ${userName}"
    ❌❌❌ "今天给花浇了水,然后想起 ${userName}"
    原因:这种"小事 + 想起 ta"的句式信息量为零,${userName} 看了会觉得 ${char.name} 没自己的内核 —— 这是这个 app 最丢人的失败模式,严禁出现。
-   ✅(基于 impression):"想起 ${userName} 上次说 ta 在 burnout 边缘 —— 我大概知道这意味着 ta 接下来会强行假装没事。"
+   ✅(基于记忆):"想起 ${userName} 上次说 ta 在 burnout 边缘 —— 我大概知道这意味着 ta 接下来会强行假装没事。"
    ✅(只在有真实聊天材料):"${userName} 早上发的那张图,是 ta 选了那家店没去成,我截屏了。"
 
 【⚠️ 绝对铁律 —— 违反整组判废】

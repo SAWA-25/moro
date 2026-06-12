@@ -50,12 +50,10 @@ const DynamicIsland: React.FC = () => {
 
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
 
-    // 横幅队列：多条消息逐条弹出（每条短驻留），而不是后到的覆盖先到的
+    // 横幅队列：多条消息逐条弹出（每条短驻留）。解锁后的所有界面（桌面 / App 内）
+    // 弹窗位置统一在灵动岛胶囊处，后一条覆盖前一条 —— 竖向堆叠只属于锁屏（LockScreen）。
     const noticeQueueRef = useRef<LiveNotice[]>([]);
     const drainingRef = useRef(false);
-    // 桌面（Launcher）时仿 iOS：通知卡片竖向堆叠，而不是岛内单条轮播
-    const [stack, setStack] = useState<Array<LiveNotice & { key: number }>>([]);
-    const stackKeyRef = useRef(0);
     // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
     const lastShownRef = useRef<Record<string, number>>({});
 
@@ -72,20 +70,9 @@ const DynamicIsland: React.FC = () => {
         lastShownRef.current[next.charId] = Date.now();
         // 每条消息弹出时各响一次提示音（而不是一批消息只响一次）
         playRingtone(next.ringtone);
-        if (activeChatRef.current.app === AppID.Launcher) {
-            // 桌面：竖向堆叠通知卡片（仿 iOS 锁屏通知），岛内不放横幅
-            noticeRef.current = null;
-            setNotice(null);
-            const key = ++stackKeyRef.current;
-            setStack(prev => [{ ...next, key }, ...prev].slice(0, 6));
-            window.setTimeout(() => setStack(prev => prev.filter(s => s.key !== key)), 8000);
-            // 稍微错开下一条的弹出节奏，让提示音和入场动画逐条出现
-            noticeTimer.current = window.setTimeout(() => { noticeTimer.current = null; displayNext(); }, noticeQueueRef.current.length > 0 ? 900 : 0);
-            return;
-        }
         noticeRef.current = next;
         setNotice(next);
-        // 队列里还有等着的就缩短驻留时间，让后续消息尽快逐条弹出
+        // 队列里还有等着的就缩短驻留时间，让后续消息尽快逐条覆盖弹出
         const dwell = noticeQueueRef.current.length > 0 ? 2600 : 5000;
         noticeTimer.current = window.setTimeout(() => {
             noticeTimer.current = null;
@@ -269,46 +256,6 @@ const DynamicIsland: React.FC = () => {
                     )}
                 </button>
             </div>
-
-            {/* 桌面竖向堆叠通知卡片（仿 iOS）：新消息在最上面，逐条入场 + 各自提示音 */}
-            {!expanded && stack.length > 0 && (
-                <div
-                    className="absolute left-3 right-3 z-[57] flex flex-col gap-2 pointer-events-none"
-                    style={{ top: 'calc(max(6px, var(--safe-top)) + 2.4rem)' }}
-                >
-                    {stack.map(s => (
-                        <button
-                            key={s.key}
-                            onClick={() => {
-                                setStack(prev => prev.filter(x => x.key !== s.key));
-                                jumpToChat(s.charId);
-                            }}
-                            className="pointer-events-auto w-full flex items-start gap-3 p-3 rounded-[1.4rem] text-left text-white border border-white/10 active:scale-[0.98] transition-transform"
-                            style={{
-                                background: 'rgba(18,18,28,0.82)',
-                                backdropFilter: 'blur(18px)',
-                                boxShadow: '0 12px 28px -14px rgba(0,0,0,0.55)',
-                                animation: 'islandDrop 260ms ease-out both',
-                            }}
-                        >
-                            {(characters.find(c => c.id === s.charId)?.avatar || s.avatarUrl) ? (
-                                <img src={characters.find(c => c.id === s.charId)?.avatar || s.avatarUrl} className="w-9 h-9 rounded-xl object-cover border border-white/15 shrink-0" alt="" />
-                            ) : (
-                                <span className="w-9 h-9 rounded-xl bg-white/15 shrink-0" />
-                            )}
-                            <span className="flex-1 min-w-0 flex flex-col leading-snug">
-                                <span className="flex items-baseline justify-between gap-2">
-                                    <span className="text-[12px] font-bold truncate">{s.charName}</span>
-                                    <span className="text-[10px] opacity-50 shrink-0">现在</span>
-                                </span>
-                                <span className="text-[12px] opacity-80 mt-0.5" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                    {s.body}
-                                </span>
-                            </span>
-                        </button>
-                    ))}
-                </div>
-            )}
 
             {/* 下滑通知面板 */}
             {expanded && (

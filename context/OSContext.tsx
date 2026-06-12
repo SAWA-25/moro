@@ -12,7 +12,7 @@ import { ChatParser } from '../utils/chatParser';
 import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
 import { INSTALLED_APPS } from '../constants';
-import { normalizeCharacterImpression, normalizeCharacterDefaults } from '../utils/impression';
+import { normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
@@ -1090,7 +1090,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             }
         }
 
-        finalChars = finalChars.map(c => normalizeCharacterDefaults(normalizeCharacterImpression(c)));
+        finalChars = finalChars.map(c => normalizeCharacterDefaults(c));
 
         if (finalChars.length > 0) {
           setCharacters(finalChars);
@@ -1247,20 +1247,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let awayProactiveCount = 0;
 
       const handler = (e: Event) => {
-          const { charId, charName, body } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string };
+          const { charId, charName, body, bodies, count } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string; bodies?: string[]; count?: number };
           // Only mark unread if user is NOT currently viewing this character's chat
           // Always bump timestamp so Chat reloads messages if currently open
           setLastMsgTimestamp(Date.now());
 
+          // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
+          const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
           const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
           if (!isChattingWithThisChar) {
               const isVisible = document.visibilityState === 'visible';
               if (isVisible) {
                   addToast(`${charName} 主动发来了消息`, 'success');
               } else {
-                  awayProactiveCount += 1;
+                  awayProactiveCount += inc;
               }
-              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
+              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
               const preview = (body || `${charName} sent a proactive message`).replace(/\s+/g, ' ').trim() || `${charName} sent a proactive message`;
               void sendProactiveNativeNotification(charId, charName, preview);
 
@@ -1351,18 +1353,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       let awayActiveMsgCount = 0;
 
       const handler = (e: Event) => {
-          const { charId, charName, body } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string };
+          const { charId, charName, body, bodies, count } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string; bodies?: string[]; count?: number };
           setLastMsgTimestamp(Date.now());
 
+          // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
+          const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
           const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
           if (!isChattingWithThisChar) {
               const isVisible = document.visibilityState === 'visible';
               if (isVisible) {
                   addToast(`${charName} 给你发了消息`, 'success');
               } else {
-                  awayActiveMsgCount += 1;
+                  awayActiveMsgCount += inc;
               }
-              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
+              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
               const preview = (body || `${charName} sent an active message`).replace(/\s+/g, ' ').trim() || `${charName} sent an active message`;
               void sendProactiveNativeNotification(charId, charName, preview);
               // SW push handler 已经 fire 过系统通知（不在前台时露出真实内容、在前台时
@@ -1408,7 +1412,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const nextBuffs = detail.buffs as CharacterProfile['activeBuffs'];
               const nextInjection = typeof detail.buffInjection === 'string' ? detail.buffInjection : '';
               setCharacters(prev => prev.map(c => c.id === charId
-                  ? normalizeCharacterImpression({ ...c, activeBuffs: nextBuffs, buffInjection: nextInjection })
+                  ? { ...c, activeBuffs: nextBuffs, buffInjection: nextInjection }
                   : c));
               return;
           }
@@ -1417,7 +1421,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const updated = all.find(c => c.id === charId);
               if (!updated) return;
               setCharacters(prev => prev.map(c => c.id === charId
-                  ? normalizeCharacterImpression({ ...c, activeBuffs: updated.activeBuffs, buffInjection: updated.buffInjection })
+                  ? { ...c, activeBuffs: updated.activeBuffs, buffInjection: updated.buffInjection }
                   : c));
           }).catch(() => {});
       };
@@ -1871,9 +1875,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   const preview = previewSource.replace(/\s+/g, ' ').trim().slice(0, 120) || `${char.name} sent a proactive message`;
 
                   // 6. Notify OS for unread badge + toast。bodies = 本轮逐条气泡正文，
-                  //    供灵动岛逐条弹横幅（OSContext 自己的未读/Toast 逻辑仍按一次事件处理）
+                  //    供灵动岛/锁屏逐条弹横幅；count = 本轮实际落库的气泡条数，
+                  //    未读数按它累加（每个消息气泡算一条，而不是每轮事件算一条）
                   window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                      detail: { charId, charName: char.name, body: preview, bodies: savedPreviewChunks.slice(0, 8) }
+                      detail: { charId, charName: char.name, body: preview, bodies: savedPreviewChunks.slice(0, 8), count: offset }
                   }));
               }
 
@@ -2162,7 +2167,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           enabled: !!prevEmotion?.enabled,
           ...(api && api.baseUrl ? { api: { baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } } : {}),
         };
-        const next = normalizeCharacterImpression({ ...c, emotionConfig: nextEmotion });
+        const next = { ...c, emotionConfig: nextEmotion };
         DB.saveCharacter(next);
         return next;
       });
@@ -2203,10 +2208,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    const normalized = normalizeCharacterImpression(char);
-    setCharacters(prev => [...prev.filter(c => c.id !== normalized.id), normalized]);
-    setActiveCharacterId(normalized.id);
-    await DB.saveCharacter(normalized);
+    setCharacters(prev => [...prev.filter(c => c.id !== char.id), char]);
+    setActiveCharacterId(char.id);
+    await DB.saveCharacter(char);
   };
   // DB 写入必须可 await：之前在 setCharacters updater 里 fire-and-forget 调 DB.saveCharacter，
   // 用户在 IDB 事务完成前关页/切页时更新会丢（角色资料"微信号/地区/签名"反复重新生成的根因）。
@@ -2214,7 +2218,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => {
     const target = await new Promise<CharacterProfile | null>(resolve => {
       setCharacters(prev => {
-        const updated = prev.map(c => c.id === id ? normalizeCharacterImpression({ ...c, ...updates }) : c);
+        const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c);
         resolve(updated.find(c => c.id === id) || null);
         return updated;
       });
@@ -2307,6 +2311,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               title: fullUpdatedWb.title,
                               content: fullUpdatedWb.content,
                               category: fullUpdatedWb.category,
+                              enabled: fullUpdatedWb.enabled,
                             }
                           : m
                   );
@@ -3495,7 +3500,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               setAppearancePresets(loadedPresets);
           }
 
-          if (chars.length > 0) setCharacters(chars.map(c => normalizeCharacterDefaults(normalizeCharacterImpression(c))));
+          if (chars.length > 0) setCharacters(chars.map(c => normalizeCharacterDefaults(c)));
           if (groupsList.length > 0) setGroups(groupsList);
           if (themes.length > 0) setCustomThemes(themes);
           if (user) setUserProfile(user);

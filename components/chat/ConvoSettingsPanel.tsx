@@ -211,7 +211,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
             }
             const additions = books
                 .filter(b => !mountedIds.has(b.id))
-                .map(b => ({ id: b.id, title: b.title, content: b.content, category: b.category }));
+                .map(b => ({ id: b.id, title: b.title, content: b.content, category: b.category, enabled: b.enabled }));
             updateCharacter(char.id, { mountedWorldbooks: [...current, ...additions] });
             addToast(`已挂载《${category}》（${additions.length} 条）`, 'success');
         }

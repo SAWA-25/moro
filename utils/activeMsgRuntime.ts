@@ -533,12 +533,31 @@ const flushInboxToChatImpl = async () => {
     // 保留原有 toast / 未读 / 通知 / sendInstantPush resolver 语义。body 用原文做预览即可。
     // sessionId 必须带出来: instantPushClient 的 observed listener 用它做 receipt identity 匹配,
     // 杜绝同 char 多轮并发 / 延迟到达的旧 push 被新一轮 send 误判为 delivered。
+    // count = 本条 inbox message 实际落库的气泡条数 (post-processing 可能拆多泡),
+    // 未读数按它累加; 统计方式与 useChatAI 本地路径一致: 数尾部连续 assistant 消息。
+    let bubbleCount = 1;
+    const bubbleBodies: string[] = [];
+    try {
+      const recent = await DB.getRecentMessagesByCharId(message.charId, 16);
+      let n = 0;
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const m = recent[i];
+        if (m.role !== 'assistant') break;
+        if ((m.timestamp || 0) < messageTimestamp) break;
+        if ((m.metadata as any)?.hidden) continue;
+        n++;
+        bubbleBodies.unshift(String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, 80));
+      }
+      bubbleCount = Math.max(1, n);
+    } catch { /* 数不出来就按 1 条算, 不影响消息本体 */ }
     window.dispatchEvent(new CustomEvent('active-msg-received', {
       detail: {
         sessionId: (message as any).sessionId || (message.metadata as any)?.sessionId,
         charId: message.charId,
         charName: message.charName,
         body: message.previewBody || message.body,
+        bodies: bubbleBodies.filter(Boolean).slice(0, 8),
+        count: bubbleCount,
         avatarUrl: message.avatarUrl,
         sentAt: messageTimestamp,
       },

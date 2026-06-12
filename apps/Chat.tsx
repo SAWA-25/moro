@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallba
 import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile } from '../types';
 import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/scheduleGenerator';
@@ -1403,16 +1403,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
-            case 'inner-voice': {
-                setShowPanel('none');
-                // 会话设置「心声手记」开关：关闭后不可偷看心声
-                if (char?.convoSettings?.innerVoiceEnabled === false) {
-                    addToast('心声手记已在聊天设置中关闭', 'info');
-                    break;
-                }
-                openInnerVoiceModal();
-                break;
-            }
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
             case 'voice-call': void startVoiceCall(); break;
             case 'system-command': setShowPanel('none'); setShowSystemCmdModal(true); break;
@@ -1467,8 +1457,17 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         setImageGenPrompt('');
     };
 
-    // --- 偷看心声：用完整人设 + 最近对话生成角色"没说出口的内心独白"。
-    //     结果只存 inner_voices，不进聊天上下文 —— 角色"不知道"被偷看过。 ---
+    // --- 偷看心声（入口：顶栏角色头像）：用完整人设 + 最近对话生成角色"没说出口的
+    //     内心独白"，同一轮顺带评估「当前心情」与「好感值」（落在 char 上）。
+    //     独白只存 inner_voices，不进聊天上下文 —— 角色"不知道"被偷看过。 ---
+    const tryOpenInnerVoice = () => {
+        // 会话设置「心声手记」开关：关闭后不可偷看心声
+        if (char?.convoSettings?.innerVoiceEnabled === false) {
+            addToast('心声手记已在聊天设置中关闭', 'info');
+            return;
+        }
+        openInnerVoiceModal();
+    };
     const openInnerVoiceModal = async () => {
         setShowInnerVoiceModal(true);
         setInnerVoiceCurrent(null);
@@ -1489,17 +1488,26 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             const context = ContextBuilder.buildCoreContext(char, userProfile, true);
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
+            const currentAffection = typeof char.affection === 'number' ? Math.round(char.affection) : null;
             const fullPrompt = `${context}
 
 ### [最近的对话]
 ${recent || '（你们还没怎么聊过）'}
 
-### [Task: 内心独白]
-此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称，写一段此刻真实的内心独白（150-250字）：
+### [Task: 内心独白 + 状态评估]
+此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称完成三件事：
+
+1. voice —— 写一段此刻真实的内心独白（150-250字）：
 - 写那些你**没有说出口**的想法：对刚才对话的真实感受、藏起来的情绪、对用户的真实看法、心里盘算的小心思
 - 必须与你的人设和最近对话强相关，可以坦率、可以矛盾、可以有不想承认的部分
 - 不要写成对用户说话的语气，这是你自己脑内的声音
-- 直接输出独白正文，不要任何前缀、引号或解释`;
+
+2. mood —— 你此刻的心情：label 是 2~6 个字的中文词（如"有点雀跃"、"烦躁"、"安心"），emoji 是最贴切的一个表情符号。
+
+3. affection —— 你当前对用户的好感值（0~100 整数；50 为中性，关系亲密则高，疏远/闹矛盾则低）。${currentAffection !== null ? `你此前的好感值是 ${currentAffection}，请基于最近互动微调（一次变化一般不超过 ±8），重大事件才允许大幅波动。` : '这是第一次评估，请基于人设与目前关系给出基准值。'}
+
+只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释）：
+{"voice":"内心独白正文","mood":{"emoji":"🙂","label":"平静"},"affection":${currentAffection ?? 50}}`;
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
@@ -1513,15 +1521,48 @@ ${recent || '（你们还没怎么聊过）'}
             const data = await safeResponseJson(response);
             const content = (extractContent(data) || '').trim();
             if (!content) throw new Error('返回为空');
+
+            // 解析 JSON（模型偶尔包代码块/夹杂文字时取首个 {...}）；解析失败则整段当独白，
+            // 心情/好感保持原值不动 —— 独白永远不能因为格式问题丢失
+            let voice = content;
+            let moodPatch: CharacterProfile['currentMood'] | undefined;
+            let affectionPatch: number | undefined;
+            try {
+                const jsonMatch = content.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const parsed = JSON.parse(jsonMatch[0]);
+                    if (typeof parsed.voice === 'string' && parsed.voice.trim()) {
+                        voice = parsed.voice.trim();
+                        const moodLabel = typeof parsed.mood?.label === 'string' ? parsed.mood.label.trim() : '';
+                        if (moodLabel) {
+                            moodPatch = {
+                                label: moodLabel.slice(0, 12),
+                                emoji: typeof parsed.mood?.emoji === 'string' ? parsed.mood.emoji.trim().slice(0, 4) : undefined,
+                                updatedAt: Date.now(),
+                            };
+                        }
+                        const aff = Number(parsed.affection);
+                        if (Number.isFinite(aff)) affectionPatch = Math.max(0, Math.min(100, Math.round(aff)));
+                    }
+                }
+            } catch { /* 按纯文本独白兜底 */ }
+
             const entry: InnerVoiceEntry = {
                 id: `iv-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
                 charId: char.id,
-                content,
+                content: voice,
                 timestamp: Date.now(),
             };
             await DB.saveInnerVoice(entry);
             setInnerVoiceCurrent(entry);
             setInnerVoiceHistory(prev => [entry, ...prev]);
+
+            if (moodPatch || affectionPatch !== undefined) {
+                const patch: Partial<CharacterProfile> = {};
+                if (moodPatch) patch.currentMood = moodPatch;
+                if (affectionPatch !== undefined) patch.affection = affectionPatch;
+                updateCharacter(char.id, patch);
+            }
         } catch (e: any) {
             showError('偷看失败', e?.message || String(e));
         } finally {
@@ -2870,38 +2911,91 @@ ${recent || '（你们还没怎么聊过）'}
                 </div>
              </Modal>
 
-             {/* 偷看心声 Modal */}
-             <Modal
-                isOpen={showInnerVoiceModal} title={`${char?.name || 'TA'} 的心声`} onClose={() => setShowInnerVoiceModal(false)}
-                footer={<><button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">悄悄合上</button><button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-3 font-bold rounded-2xl text-white ${innerVoiceLoading ? 'bg-violet-300' : 'bg-violet-500'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button></>}
-             >
-                <div className="space-y-3 max-h-[50vh] overflow-y-auto no-scrollbar">
-                    {innerVoiceLoading && !innerVoiceCurrent && (
-                        <div className="flex flex-col items-center gap-2 py-8 text-violet-400">
-                            <div className="w-6 h-6 border-2 border-violet-300 border-t-violet-500 rounded-full animate-spin" />
-                            <span className="text-xs">正在窥探 {char?.name} 的内心…</span>
+             {/* 心声面板（入口：顶栏角色头像）：心声 + 好感值 + 当前心情 同屏展示 */}
+             {showInnerVoiceModal && char && (
+                <div
+                    className="absolute inset-0 z-[220] flex items-center justify-center p-5 animate-fade-in"
+                    style={{ background: 'rgba(20,20,28,0.45)', backdropFilter: 'blur(4px)' }}
+                    onClick={() => setShowInnerVoiceModal(false)}
+                >
+                    <div
+                        className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* 标题条 */}
+                        <div className="flex items-center justify-between px-6 pt-5 shrink-0">
+                            <span className="text-[10px] font-mono font-bold tracking-[0.35em] text-slate-300 uppercase">Inner Voice</span>
+                            <button onClick={() => setShowInnerVoiceModal(false)} className="p-1.5 -mr-1.5 rounded-full text-slate-300 hover:bg-slate-50 active:scale-95 transition-all" aria-label="关闭">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            </button>
                         </div>
-                    )}
-                    {innerVoiceCurrent && (
-                        <div className="p-4 rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 to-fuchsia-50">
-                            <p className="text-[13px] text-slate-700 leading-relaxed whitespace-pre-wrap italic">「{innerVoiceCurrent.content}」</p>
-                            <p className="text-[10px] text-violet-300 mt-2 text-right">{new Date(innerVoiceCurrent.timestamp).toLocaleString('zh-CN')}</p>
-                        </div>
-                    )}
-                    {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).length > 0 && (
-                        <div className="space-y-2">
-                            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider px-1">之前偷看到的</p>
-                            {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).slice(0, 10).map(h => (
-                                <div key={h.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                                    <p className="text-[12px] text-slate-500 leading-relaxed whitespace-pre-wrap line-clamp-3">{h.content}</p>
-                                    <p className="text-[9px] text-slate-300 mt-1.5 text-right">{new Date(h.timestamp).toLocaleString('zh-CN')}</p>
+
+                        {/* 角色头卡：大头像 + 名字 + 当前心情 */}
+                        <div className="px-6 pt-3 pb-4 flex gap-4 items-start shrink-0">
+                            <img src={displayCharAvatar} className="w-[5.5rem] h-[5.5rem] rounded-2xl object-cover shadow-md shrink-0" alt={displayCharName} />
+                            <div className="flex-1 min-w-0 pt-0.5">
+                                <div className="text-xl font-bold text-slate-800 truncate tracking-wide">{displayCharName}</div>
+                                <div className="text-[10px] font-mono text-teal-400 tracking-[0.25em] mt-0.5 uppercase">You &amp; Me</div>
+                                <div className="mt-2 pl-2.5 border-l-2 border-slate-300 text-[12px] text-slate-500 leading-snug">
+                                    {char.currentMood?.label
+                                        ? <>当前心情 {char.currentMood.emoji ? `${char.currentMood.emoji} ` : ''}<span className="font-bold text-slate-700">{char.currentMood.label}</span></>
+                                        : '当前心情还未捕捉到'}
                                 </div>
-                            ))}
+                                {/* 好感值 */}
+                                <div className="mt-2.5">
+                                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-1">
+                                        <span>好感值</span>
+                                        <span className="font-mono text-slate-700">{typeof char.affection === 'number' ? `${Math.round(char.affection)} / 100` : '— / 100'}</span>
+                                    </div>
+                                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-slate-900 transition-all duration-700"
+                                            style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    )}
-                    <p className="text-[10px] text-slate-300 text-center pt-1">{char?.name} 不会知道你偷看过 ——「心声」不会进入对话。</p>
+
+                        {/* 心声内容（可滚动） */}
+                        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 space-y-3 pb-2">
+                            {innerVoiceLoading && !innerVoiceCurrent && (
+                                <div className="flex flex-col items-center gap-2 py-8 text-slate-400">
+                                    <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+                                    <span className="text-xs">正在窥探 {displayCharName} 的内心…</span>
+                                </div>
+                            )}
+                            {innerVoiceCurrent && (
+                                <div
+                                    className="p-4 rounded-2xl rounded-tl-md bg-slate-900 text-white shadow-md"
+                                    style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)', backgroundSize: '7px 7px' }}
+                                >
+                                    <p className="text-[13px] leading-relaxed whitespace-pre-wrap">「{innerVoiceCurrent.content}」</p>
+                                    <p className="text-[10px] text-white/40 mt-2 text-right font-mono">{new Date(innerVoiceCurrent.timestamp).toLocaleString('zh-CN')}</p>
+                                </div>
+                            )}
+                            {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).length > 0 && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider px-1">之前偷看到的</p>
+                                    {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).slice(0, 10).map(h => (
+                                        <div key={h.id} className="p-3 rounded-2xl rounded-tl-md bg-slate-50 border border-slate-100">
+                                            <p className="text-[12px] text-slate-500 leading-relaxed whitespace-pre-wrap line-clamp-3">{h.content}</p>
+                                            <p className="text-[9px] text-slate-300 mt-1.5 text-right font-mono">{new Date(h.timestamp).toLocaleString('zh-CN')}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="text-[10px] text-slate-300 text-center pt-1 pb-2">{displayCharName} 不会知道你偷看过 ——「心声」不会进入对话。</p>
+                        </div>
+
+                        {/* 底部操作 */}
+                        <div className="flex gap-3 p-5 pt-3 shrink-0 border-t border-slate-50">
+                            <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-[0.98] transition-transform">悄悄合上</button>
+                            <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-3 font-bold rounded-2xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-slate-900'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
+                        </div>
+                    </div>
                 </div>
-             </Modal>
+             )}
 
              <ChatModals
                 modalType={modalType} setModalType={setModalType}
@@ -3009,7 +3103,9 @@ ${recent || '（你们还没怎么聊过）'}
                 tokenBreakdown={tokenBreakdown}
                 onClose={() => openApp(AppID.GroupChat)}
                 onShowCharsPanel={() => setShowPanel('chars')}
-                // 聊天设置移入右上角 ··· 内；原 ··· 跳转角色设置的入口已移除（角色设置走头像 → 朋友资料）
+                // 左上角头像 = 心声面板（心声 / 好感值 / 当前心情）；原头像入口功能已移除
+                onAvatarClick={tryOpenInnerVoice}
+                // 聊天设置移入右上角 ··· 内
                 onOpenSettings={() => setModalType('chat-settings')}
                 onDeleteBuff={(buffId) => {
                     const currentBuffs = char.activeBuffs || [];

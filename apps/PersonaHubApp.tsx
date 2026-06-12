@@ -53,7 +53,7 @@ const PersonaHubApp: React.FC = () => {
                     <div className="absolute left-1/2 -translate-x-1/2 -top-2 w-20 h-5 bg-slate-100/90 rounded-sm shadow-sm" />
                     <div className="text-[11px] font-bold tracking-[0.35em] text-slate-400 mb-3">CHAR</div>
                     <div className="font-display-italic text-4xl font-semibold tracking-wide">角色档案</div>
-                    <div className="text-[11px] text-slate-400 mt-3 leading-relaxed">角色的身份、记忆与印象档案 —— 新建 / 编辑 / 导入 SillyTavern 卡</div>
+                    <div className="text-[11px] text-slate-400 mt-3 leading-relaxed">角色的身份与记忆档案 —— 新建 / 编辑 / 导入 SillyTavern 卡</div>
                     <IdentificationCard className="absolute bottom-6 right-6 w-9 h-9 text-slate-300" weight="regular" />
                 </button>
 
