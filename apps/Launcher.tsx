@@ -865,6 +865,11 @@ const Launcher: React.FC = () => {
               backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.16) 1.2px, transparent 0)',
               backgroundSize: '17px 17px',
           }}></div>
+          {/* 拼贴页眉：顶部蕾丝花边带（仿手帐贴纸边条） */}
+          <div className="absolute left-0 right-0 opacity-80" style={{ top: 'calc(var(--safe-top) + 1.85rem)' }}>
+              <div className="lace-edge w-full" />
+              <div className="lace-edge w-full" style={{ transform: 'scaleY(-1)', marginTop: '-2px', opacity: 0.5 }} />
+          </div>
           <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}></div>
           <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%)' }}></div>
       </div>
