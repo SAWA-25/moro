@@ -202,9 +202,17 @@ function checkOverdueSchedules() {
 
   for (const schedule of schedules) {
     const lastFire = getLastFireTime(schedule.charId);
-    const elapsed = now - lastFire;
 
-    if (lastFire > 0 && elapsed >= schedule.intervalMs) {
+    // lastFire 丢失（localStorage 被部分清理 / 旧版本迁移只搬了第一个角色）时，
+    // 以前这条调度会永远跳过、永远不触发。这里把"现在"当作起点补记一次，
+    // 让它从当下开始按设定间隔正常计时。
+    if (lastFire <= 0) {
+      setLastFireTime(schedule.charId, now);
+      continue;
+    }
+
+    const elapsed = now - lastFire;
+    if (elapsed >= schedule.intervalMs) {
       console.log(`[ProactiveChat] Main-thread trigger: ${schedule.charId}, ${Math.round(elapsed / 60000)}min elapsed`);
       setLastFireTime(schedule.charId, now);
       rerollRandomInterval(schedule.charId);
@@ -327,7 +335,9 @@ export const ProactiveChat = {
    * opts.random: 随机时间模式——间隔从 1 小时 ~ 1 天档位随机抽取，每次触发后重抽。
    */
   start(charId: string, intervalMinutes: number, opts?: { random?: boolean }) {
-    const clamped = Math.max(30, Math.round(intervalMinutes / 30) * 30);
+    // 自定义时间直接生效（最少 5 分钟）。以前按 30 分钟取整会让「自定义 10 分钟」
+    // 静默变成 30 分钟，用户等到了设定时间却看不到消息。
+    const clamped = Math.max(5, Math.round(intervalMinutes));
     const intervalMs = opts?.random ? rollRandomIntervalMs() : clamped * 60 * 1000;
     const schedules = loadSchedules();
     schedules[charId] = { charId, intervalMs, ...(opts?.random ? { random: true } : {}) };

@@ -2,7 +2,7 @@ import { APIConfig, CharacterProfile, SocialComment, SocialPost, UserProfile } f
 import { ContextBuilder } from '../../utils/context';
 import { DB } from '../../utils/db';
 import { safeResponseJson } from '../../utils/safeApi';
-import { displayableImages, newId, postDisplayText } from './momentsUtils';
+import { displayableImages, newId, npcAvatar, postDisplayText } from './momentsUtils';
 
 // --- Robust JSON Parser（沿用旧 SocialApp 的容错解析） ---
 const safeParseJSON = (input: string): any[] => {
@@ -94,10 +94,67 @@ const buildCharBlock = async (char: CharacterProfile, userProfile: UserProfile):
 const pickRandom = <T,>(arr: T[], n: number): T[] =>
     [...arr].sort(() => 0.5 - Math.random()).slice(0, n);
 
+/** 把 LLM 返回的混合评论数组（角色 charId / NPC npcName）解析成 SocialComment 列表 */
+const parseMixedComments = (
+    raw: any,
+    characters: CharacterProfile[],
+    userName: string,
+): SocialComment[] => {
+    const out: SocialComment[] = [];
+    // replyToName 按"楼上同名评论"回链，模拟评论区的有来有回
+    const lastIdByName: Record<string, string> = {};
+    (Array.isArray(raw) ? raw : []).forEach((cm: any) => {
+        const text = String(cm?.content || '').trim();
+        if (!text) return;
+        const commenter = charById(characters, cm?.charId);
+        const npcName = String(cm?.npcName || '').trim();
+        let comment: SocialComment | null = null;
+        if (commenter) {
+            comment = {
+                id: newId('cmt'),
+                authorName: commenter.name,
+                authorAvatar: commenter.avatar,
+                content: text,
+                likes: 0,
+                isCharacter: true,
+                authorType: 'character',
+                authorCharId: commenter.id,
+            };
+        } else if (npcName && npcName !== userName) {
+            comment = {
+                id: newId('cmt'),
+                authorName: npcName,
+                authorAvatar: npcAvatar(npcName),
+                content: text,
+                likes: 0,
+                isCharacter: false,
+                authorType: 'stranger',
+            };
+        }
+        if (!comment) return;
+        const replyName = String(cm?.replyToName || '').trim();
+        if (replyName && lastIdByName[replyName]) {
+            comment.replyTo = { commentId: lastIdByName[replyName], name: replyName };
+        }
+        lastIdByName[comment.authorName] = comment.id;
+        out.push(comment);
+    });
+    return out;
+};
+
+/** 按热度补点赞数：爆火/小热门的帖子点赞数远超具名点赞列表 */
+const heatLikes = (heat: string, namedLikes: number): number => {
+    if (heat === 'viral') return Math.max(namedLikes, 300 + Math.floor(Math.random() * 1700));
+    if (heat === 'hot') return Math.max(namedLikes, 50 + Math.floor(Math.random() * 200));
+    return namedLikes;
+};
+
 /**
- * 「刷新」轮：让若干角色发新的朋友圈动态。
- * 角色帖一律纯文本（绝不让 LLM 编造图片 URL），可带位置、可转发已有公开帖、
- * 可顺带附上角色之间的点赞/评论，让朋友圈一刷出来就是热闹的。
+ * 「刷新」轮：生成角色 + NPC（用户的亲友圈）的新朋友圈动态。
+ * - 角色严格按人设决定发不发：高冷/社恐的可以一条不发；
+ * - NPC 帖围绕用户资料虚构亲友（闺蜜/父母/同事…），让朋友圈像真实社交圈；
+ * - 每条动态都带至少 10 条评论（角色+NPC 混合，有来有回），并按内容判断热度（爆火帖更热闹）。
+ * 帖子一律纯文本（绝不让 LLM 编造图片 URL），可带位置、可转发已有公开帖。
  */
 export const generateCharacterMoments = async (params: {
     apiConfig: APIConfig;
@@ -111,14 +168,27 @@ export const generateCharacterMoments = async (params: {
     const selected = pickRandom(characters, Math.min(4, characters.length));
     const blocks = await Promise.all(selected.map(c => buildCharBlock(c, userProfile)));
     const roster = characters.map(c => `- charId="${c.id}" 名字:"${c.name}"`).join('\n');
+    // 已出现过的 NPC 名字：让亲友圈是"回头客"而不是每轮全新陌生人
+    const knownNpcNames = Array.from(new Set(
+        feed.filter(p => p.authorType === 'stranger').map(p => p.authorName)
+    )).slice(0, 12);
 
-    const prompt = `### 任务: 模拟微信朋友圈
-以下角色要发布新的朋友圈动态。请为【每个角色】生成 1~2 条动态，内容要贴合各自人设、近况和说话风格：生活碎片、心情、吐槽、或暗戳戳的小心思。长短不一才真实（有的一句话，有的几行）。
+    const prompt = `### 任务: 模拟微信朋友圈（刷新一轮）
+请生成一批新的朋友圈动态，分两类：
 
-### 本轮发动态的角色
+A. **角色动态** —— 下面列出的候选角色，【严格按人设决定发不发】：高冷、社恐、不爱网上冲浪的角色这一轮可以一条都不发（直接不输出条目）；爱分享的可以发 1~2 条。内容要贴合人设、近况和说话风格：生活碎片、心情、吐槽、或暗戳戳的小心思，长短不一才真实。
+
+B. **NPC 动态** —— ${userProfile.name} 朋友圈里的虚构亲友：闺蜜、死党、爸妈、亲戚、同学、同事等，生成 2~4 条。NPC 的身份和昵称要像真实微信好友（如"老妈"、"莉莉酱🍓"、"工位邻居老王"），内容贴合用户资料里的生活背景（家长里短、晒娃晒饭、加班吐槽、旅行打卡、转发养生文……）。
+
+### 用户资料（NPC 关系网围绕 TA 展开）
+名字: ${userProfile.name}
+简介: ${userProfile.bio || '（没写简介）'}
+${knownNpcNames.length > 0 ? `已出现过的亲友（优先沿用这些人，保持人物连续性）: ${knownNpcNames.join('、')}` : ''}
+
+### 本轮候选发动态的角色
 ${blocks.join('\n\n')}
 
-### 全部角色名单（点赞/评论可用）
+### 全部角色名单（评论/点赞可用）
 ${roster}
 
 ### 朋友圈现有动态（可选择转发其中某条，转发时填 repostOfPostId）
@@ -126,33 +196,60 @@ ${feedDigest(feed, characters, userProfile.name)}
 
 ### 规则
 1. 动态是纯文字，**禁止**编造任何图片 URL 或描述"[图片]"占位。
-2. location 可选：偶尔带一个符合人设的地点（如"老城区·巷口咖啡"），大多数动态不带。
+2. location 可选：偶尔带一个符合身份的地点（如"老城区·巷口咖啡"），大多数动态不带。
 3. 转发(repostOfPostId)是低频行为：整轮最多 1 条，且必须用上面列出的真实 postId；转发时 content 写转发语。
-4. 角色之间可以互动：likedByCharIds 填会给这条动态点赞的其他角色 charId；comments 是其他角色的评论（0~3 条，要符合评论者人设）。
-5. **绝对禁止**以用户 "${userProfile.name}" 的身份发动态、点赞或评论。
-6. 禁止上帝视角，角色不知道自己是 AI。
+4. **每条动态都必须带至少 10 条评论（10~16 条）**：评论者混合「角色名单里的角色」（用 charId）和「围观的 NPC 亲友」（用 npcName）。评论要有来有回——可以用 replyToName 回复楼上某人；每条都要口语化、短、贴评论者身份。
+5. heat 按内容判断这条动态的热度："normal"（普通日常）/ "hot"（小热门，有点意思）/ "viral"（爆火：内容劲爆/爆笑/感人，全朋友圈都在讨论）。爆火的动态评论给到 15~16 条、likedByNpcNames 给 10 个以上。
+6. **绝对禁止**以用户 "${userProfile.name}" 的身份发动态、点赞或评论。
+7. 禁止上帝视角，角色不知道自己是 AI，NPC 是普通人。
 
 ### 输出格式 (JSON Array)
 [
   {
-    "charId": "发布者 charId",
+    "authorKind": "character 或 npc",
+    "charId": "角色帖必填：发布者 charId",
+    "npcName": "NPC 帖必填：NPC 的微信昵称",
+    "npcRelation": "NPC 帖可选：与用户的关系（闺蜜/妈妈/同事…）",
     "content": "动态文字内容",
     "location": "可选，所在位置",
     "repostOfPostId": "可选，转发的原帖 postId",
-    "likedByCharIds": ["可选，点赞角色的 charId"],
-    "comments": [{ "charId": "评论角色 charId", "content": "评论内容" }]
+    "heat": "normal|hot|viral",
+    "likedByCharIds": ["点赞角色的 charId"],
+    "likedByNpcNames": ["点赞的 NPC 昵称"],
+    "comments": [
+      { "charId": "角色评论填 charId", "content": "评论内容", "replyToName": "可选，回复楼上谁" },
+      { "npcName": "NPC 评论填昵称", "content": "评论内容" }
+    ]
   }
 ]`;
 
-    const json = await callLLM(apiConfig, prompt, 0.95, 6000);
+    const json = await callLLM(apiConfig, prompt, 0.95, 16000);
     const now = Date.now();
     const posts: SocialPost[] = [];
 
     json.forEach((item: any, idx: number) => {
-        const author = charById(characters, item?.charId);
-        if (!author) return; // 丢弃无法归属的内容（含模仿用户的）
         const content = String(item?.content || '').trim();
         if (!content) return;
+
+        // 作者归属：角色帖按 charId；NPC 帖按 npcName（禁止冒充用户）
+        const author = charById(characters, item?.charId);
+        const npcName = String(item?.npcName || '').trim();
+        let authorName: string;
+        let authorAvatar: string;
+        let authorType: SocialPost['authorType'];
+        let authorCharId: string | undefined;
+        if (author) {
+            authorName = author.name;
+            authorAvatar = author.avatar;
+            authorType = 'character';
+            authorCharId = author.id;
+        } else if (npcName && npcName !== userProfile.name) {
+            authorName = npcName;
+            authorAvatar = npcAvatar(npcName);
+            authorType = 'stranger';
+        } else {
+            return; // 丢弃无法归属的内容（含模仿用户的）
+        }
 
         let repostOf: SocialPost['repostOf'] = null;
         if (item?.repostOfPostId) {
@@ -167,45 +264,36 @@ ${feedDigest(feed, characters, userProfile.name)}
             }
         }
 
-        const likedBy = (Array.isArray(item?.likedByCharIds) ? item.likedByCharIds : [])
+        const charLikes = (Array.isArray(item?.likedByCharIds) ? item.likedByCharIds : [])
             .map((id: any) => charById(characters, id))
-            .filter((c?: CharacterProfile): c is CharacterProfile => !!c && c.id !== author.id)
+            .filter((c?: CharacterProfile): c is CharacterProfile => !!c && c.id !== authorCharId)
             .map((c: CharacterProfile) => ({ id: c.id, name: c.name }));
+        const npcLikes = (Array.isArray(item?.likedByNpcNames) ? item.likedByNpcNames : [])
+            .map((n: any) => String(n || '').trim())
+            .filter((n: string) => !!n && n !== userProfile.name && n !== authorName)
+            .slice(0, 20)
+            .map((n: string) => ({ id: `npc-${n}`, name: n }));
+        const likedBy = [...charLikes, ...npcLikes];
 
-        const comments: SocialComment[] = (Array.isArray(item?.comments) ? item.comments : [])
-            .map((cm: any) => {
-                const commenter = charById(characters, cm?.charId);
-                const text = String(cm?.content || '').trim();
-                if (!commenter || !text) return null;
-                return {
-                    id: newId('cmt'),
-                    authorName: commenter.name,
-                    authorAvatar: commenter.avatar,
-                    content: text,
-                    likes: 0,
-                    isCharacter: true,
-                    authorType: 'character',
-                    authorCharId: commenter.id,
-                } as SocialComment;
-            })
-            .filter((c: SocialComment | null): c is SocialComment => !!c);
+        const comments = parseMixedComments(item?.comments, characters, userProfile.name);
+        const heat = String(item?.heat || 'normal').toLowerCase();
 
         posts.push({
             id: newId('moment'),
-            authorName: author.name,
-            authorAvatar: author.avatar,
+            authorName,
+            authorAvatar,
             title: '',
             content,
             images: [],
-            likes: 0,
+            likes: heatLikes(heat, likedBy.length),
             isCollected: false,
             isLiked: false,
             comments,
             // 错开几秒，保证排序稳定且“先生成的在下面”
             timestamp: now - idx * 1000,
             tags: [],
-            authorType: 'character',
-            authorCharId: author.id,
+            authorType,
+            authorCharId,
             likedBy,
             repostOf,
             location: item?.location ? String(item.location).slice(0, 30) : undefined,

@@ -15,12 +15,18 @@ export interface MomentsFeedProps {
     embedded?: boolean;
     /** 独立 App 模式下返回桌面 */
     onBack?: () => void;
+    /**
+     * 宿主（ChatHub）的返回键拦截：发布页/评论框等内层页面打开时，
+     * 宿主返回键应先关掉它们回到动态流，而不是直接退出整个 App 回桌面。
+     * 处理器返回 true 表示这次返回已被消费。
+     */
+    backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 const COVER_FALLBACK = 'linear-gradient(135deg, #5b7c99 0%, #2c3e50 60%, #1a252f 100%)';
 
 /** 微信式朋友圈：封面头图 + 动态流 + 发布 + 角色互动 */
-const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
+const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandlerRef }) => {
     const { characters, apiConfig, addToast, userProfile } = useOS();
 
     const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -34,11 +40,31 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
     const [commentDraft, setCommentDraft] = useState<{ postId: string; replyTo?: { commentId: string; name: string } } | null>(null);
     const [commentText, setCommentText] = useState('');
     const [sharePost, setSharePost] = useState<SocialPost | null>(null);
+    /** 转发选项面板：转发到朋友圈 / 转发给某个角色 */
+    const [repostChooser, setRepostChooser] = useState<SocialPost | null>(null);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
     const coverInputRef = useRef<HTMLInputElement>(null);
     const postsRef = useRef<SocialPost[]>(posts);
     postsRef.current = posts;
+
+    // 宿主返回键拦截：内层页面（图片预览/发布页/评论框/转发面板）打开时先关它们，
+    // 修复「发布朋友圈页点返回直接退回桌面」的问题
+    const overlayStateRef = useRef({ view, previewImage, commentDraft, sharePost, repostChooser });
+    overlayStateRef.current = { view, previewImage, commentDraft, sharePost, repostChooser };
+    useEffect(() => {
+        if (!backHandlerRef) return;
+        backHandlerRef.current = () => {
+            const s = overlayStateRef.current;
+            if (s.previewImage) { setPreviewImage(null); return true; }
+            if (s.view === 'publish') { setView('feed'); setRepostPrefill(null); return true; }
+            if (s.commentDraft) { setCommentDraft(null); return true; }
+            if (s.sharePost) { setSharePost(null); return true; }
+            if (s.repostChooser) { setRepostChooser(null); return true; }
+            return false;
+        };
+        return () => { backHandlerRef.current = null; };
+    }, [backHandlerRef]);
 
     useEffect(() => {
         DB.getSocialPosts()
@@ -87,7 +113,8 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
                 const likedBy = target.likedBy || [];
                 if (likedBy.some(l => l.id === op.liker.id)) return;
                 const nextLiked = [...likedBy, op.liker];
-                touched.set(target.id, { ...target, likedBy: nextLiked, likes: nextLiked.length });
+                // 爆款帖的 likes 含热度补值（> 具名列表长度），增量保留
+                touched.set(target.id, { ...target, likedBy: nextLiked, likes: Math.max(target.likes + 1, nextLiked.length) });
             } else if (op.type === 'comment') {
                 touched.set(target.id, { ...target, comments: [...(target.comments || []), op.comment] });
             }
@@ -190,10 +217,13 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
 
     const handleToggleLike = (post: SocialPost) => {
         const likedBy = post.likedBy || [];
-        const next = likedBy.some(l => l.id === 'user')
+        const removing = likedBy.some(l => l.id === 'user');
+        const next = removing
             ? likedBy.filter(l => l.id !== 'user')
             : [...likedBy, { id: 'user', name: userProfile.name }];
-        upsertPosts([{ ...post, likedBy: next, likes: next.length }]);
+        // 爆款帖的 likes 含热度补值（> 具名列表长度），按增量调整而不是直接重置
+        const likes = Math.max(post.likes + (removing ? -1 : 1), next.length);
+        upsertPosts([{ ...post, likedBy: next, likes }]);
     };
 
     const handleSendComment = () => {
@@ -249,7 +279,12 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
 
     // --- 转发 / 分享到聊天 ---
 
+    // 点「转发」弹出选项：转发到朋友圈，或直接转发给某个角色（出现角色选项）
     const handleRepost = (post: SocialPost) => {
+        setRepostChooser(post);
+    };
+
+    const handleRepostToMoments = (post: SocialPost) => {
         // 转发已是转发帖时，指向最初的原帖（与微信一致）
         const origin = post.repostOf || {
             postId: post.id,
@@ -257,25 +292,38 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
             content: (post.content || post.title || '').trim(),
             images: (post.images || []).filter(s => s.startsWith('data:image') || /^https?:\/\//.test(s)),
         };
+        setRepostChooser(null);
         setRepostPrefill(origin);
         setView('publish');
     };
 
-    const handleShareToChat = async (charId: string) => {
-        if (!sharePost) return;
+    const sendPostToChat = async (charId: string, post: SocialPost): Promise<boolean> => {
         try {
             await DB.saveMessage({
                 charId,
                 role: 'user',
                 type: 'social_card',
                 content: '[分享帖子]',
-                metadata: { post: sharePost },
+                metadata: { post },
             });
-            setSharePost(null);
-            addToast('已分享到聊天', 'success');
+            return true;
         } catch (e) {
-            addToast('分享失败', 'error');
+            return false;
         }
+    };
+
+    const handleRepostToChar = async (charId: string) => {
+        if (!repostChooser) return;
+        const ok = await sendPostToChat(charId, repostChooser);
+        setRepostChooser(null);
+        addToast(ok ? `已转发给 ${characters.find(c => c.id === charId)?.name || '角色'}` : '转发失败', ok ? 'success' : 'error');
+    };
+
+    const handleShareToChat = async (charId: string) => {
+        if (!sharePost) return;
+        const ok = await sendPostToChat(charId, sharePost);
+        setSharePost(null);
+        addToast(ok ? '已分享到聊天' : '分享失败', ok ? 'success' : 'error');
     };
 
     // --- 渲染 ---
@@ -405,6 +453,29 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack }) => {
                     addToast={addToast}
                 />
             )}
+
+            {/* 转发选项：转发到朋友圈 / 转发给角色 */}
+            <Modal isOpen={!!repostChooser} title="转发" onClose={() => setRepostChooser(null)}>
+                <button
+                    onClick={() => repostChooser && handleRepostToMoments(repostChooser)}
+                    className="w-full py-3 mb-3 rounded-2xl bg-[#07c160] text-white text-sm font-bold active:scale-95 transition-transform"
+                >
+                    转发到朋友圈
+                </button>
+                <p className="text-[11px] text-slate-400 mb-2">或转发给角色（对方会在聊天里收到这条动态）：</p>
+                {characters.length === 0 ? (
+                    <div className="text-center text-xs text-slate-300 py-6">还没有可转发的角色</div>
+                ) : (
+                    <div className="grid grid-cols-4 gap-4 p-2">
+                        {characters.map(c => (
+                            <button key={c.id} onClick={() => handleRepostToChar(c.id)} className="flex flex-col items-center gap-2 group">
+                                <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 group-active:scale-90 transition-transform" />
+                                <span className="text-[10px] text-slate-600 truncate w-full text-center">{c.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </Modal>
 
             {/* 分享到聊天 */}
             <Modal isOpen={!!sharePost} title="分享到聊天" onClose={() => setSharePost(null)}>
