@@ -1842,7 +1842,7 @@ ${attachedImagesNote}
             {/* Header — safe-top spacer 透明 + backdrop-blur 自适应容器色，跟 iOS status bar 一致 */}
             <div className="shrink-0 z-30 sticky top-0 transition-all">
             <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
-            <div className="bg-white/80 backdrop-blur-xl px-5 flex items-end pb-4 border-b border-slate-200/60 shadow-sm h-24">
+            <div className="bg-white/80 backdrop-blur-xl px-5 flex items-end pb-4 border-b border-dashed border-[#d9d4c8] shadow-sm h-24">
                 {selectionMode ? (
                     <div className="flex items-center justify-between w-full">
                         <button onClick={() => { setSelectionMode(false); setSelectedMsgIds(new Set()); }} className="text-sm font-bold text-slate-500 px-2 py-1">取消</button>
@@ -1903,7 +1903,7 @@ ${attachedImagesNote}
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 bg-[#f0f4f8]" ref={scrollRef}>
+            <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 bg-[#faf9f6] scrap-panel" ref={scrollRef}>
                 {totalMsgCount > messages.length && activeGroup && (
                     <div className="flex justify-center mb-4">
                         <button onClick={async () => {
@@ -1950,8 +1950,8 @@ ${attachedImagesNote}
                 )}
             </div>
 
-            {/* Redesigned Input Area (WeChat/iOS Style) */}
-            <div className="bg-[#f0f2f5] border-t border-slate-200 pb-safe shrink-0 z-40 relative">
+            {/* 输入区（手账拼贴风：纸白底 + 手缝虚线上缘） */}
+            <div className="bg-[#faf9f6] border-t border-dashed border-[#d9d4c8] pb-safe shrink-0 z-40 relative">
                 {activeGroup?.dissolved ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-medium">此群聊已被解散，仅可查看历史消息</div>
                 ) : selectionMode ? (
@@ -1969,7 +1969,7 @@ ${attachedImagesNote}
                         {/* Plus / Actions Button */}
                         <button 
                             onClick={() => { setShowActions(!showActions); setShowEmojiPicker(false); }}
-                            className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform ${showActions ? 'bg-slate-300 rotate-45' : 'bg-transparent hover:bg-slate-200'}`}
+                            className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform ${showActions ? 'bg-[#e7e2d8] rotate-45' : 'bg-transparent hover:bg-[#ece7dc]'}`}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
                         </button>
@@ -1992,7 +1992,7 @@ ${attachedImagesNote}
                                     }
                                 }}
                                 className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-slate-800 placeholder:text-slate-400 py-1"
-                                placeholder="Message..." 
+                                placeholder="说点什么…" 
                                 style={{ height: 'auto', minHeight: '24px' }} 
                             />
                             {/* Emoji Toggle inside input */}
@@ -2022,21 +2022,21 @@ ${attachedImagesNote}
 
                 {/* --- Action Drawer --- */}
                 {showActions && (
-                    <div className="h-64 bg-[#f0f2f5] border-t border-slate-200 p-6 animate-slide-up">
+                    <div className="h-64 bg-[#faf9f6] scrap-panel border-t border-dashed border-[#d9d4c8] p-6 animate-slide-up">
                         <div className="grid grid-cols-4 gap-6">
-                            <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-2 group">
-                                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-200 group-active:scale-95 transition-transform">
+                            <button onClick={() => fileInputRef.current?.click()} className="scrap-action flex flex-col items-center gap-2 group">
+                                <div className="scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center group-active:scale-95 transition-transform">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
                                 </div>
-                                <span className="text-xs text-slate-500">相册</span>
+                                <span className="text-[11px] font-bold tracking-wide text-slate-600">相册</span>
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
 
-                            <button onClick={() => setModalType('transfer')} className="flex flex-col items-center gap-2 group">
-                                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-200 group-active:scale-95 transition-transform">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-orange-500"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                            <button onClick={() => setModalType('transfer')} className="scrap-action flex flex-col items-center gap-2 group">
+                                <div className="scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center group-active:scale-95 transition-transform">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-[#2b2933]"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
                                 </div>
-                                <span className="text-xs text-slate-500">红包</span>
+                                <span className="text-[11px] font-bold tracking-wide text-slate-600">红包</span>
                             </button>
 
                         </div>
@@ -2045,7 +2045,7 @@ ${attachedImagesNote}
 
                 {/* --- Emoji Drawer --- */}
                 {showEmojiPicker && (
-                    <div className="h-64 bg-[#f0f2f5] border-t border-slate-200 animate-slide-up flex flex-col">
+                    <div className="h-64 bg-[#faf9f6] scrap-panel border-t border-dashed border-[#d9d4c8] animate-slide-up flex flex-col">
                         {/* 搜索：按名字/描述模糊匹配导入的表情包 */}
                         <div className="px-4 pt-3 pb-1 shrink-0">
                             <input
@@ -2062,7 +2062,7 @@ ${attachedImagesNote}
                                     if (!term) return true;
                                     return e.name.toLowerCase().includes(term) || ((e as any).description || '').toLowerCase().includes(term);
                                 }).map((e, i) => (
-                                    <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="aspect-square bg-white rounded-xl p-2 border border-slate-200 shadow-sm active:scale-95 flex flex-col items-center justify-center" title={e.name}>
+                                    <button key={i} onClick={() => handleSendMessage(e.url, 'emoji')} className="scrap-card aspect-square rounded-xl p-2 active:scale-95 flex flex-col items-center justify-center" title={e.name}>
                                         <img src={e.url} className="w-full h-full object-contain pointer-events-none" />
                                     </button>
                                 ))}
