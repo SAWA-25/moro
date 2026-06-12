@@ -382,7 +382,7 @@ const packDeskPages = (items: DeskItem[]): PlacedItem[][] => {
 const WIDGET_LABELS: Record<string, string> = {
     clock: '时钟',
     weather: '天气',
-    character: '聊天卡片',
+    character: '絮语卡片',
     schedule: '日程',
     music: '音乐',
     image: '方图',
@@ -648,7 +648,7 @@ const Launcher: React.FC = () => {
                   if (visibleMsgs.length > 0) {
                       const last = visibleMsgs[visibleMsgs.length - 1];
                       const cleanContent = last.content.replace(/\[.*?\]/g, '').trim();
-                      setLastMessage(cleanContent || (last.type === 'image' ? '[图片]' : '[消息]'));
+                      setLastMessage(cleanContent || (last.type === 'image' ? '[一张相片]' : '[一封新信]'));
                   } else {
                       setLastMessage(targetChar.description || "System Ready.");
                   }

@@ -92,8 +92,8 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
 export const INSTALLED_APPS: AppConfig[] = [
   // 神经链接（角色档案）已并入「人设」App：人设库 → 选「角色档案」或「主控面具」
   // { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
-  // 聊天枢纽：单聊 + 群聊 + 联系人 + 朋友圈 一站式入口（原独立「群聊」「Message」App 已合并于此）
-  { id: AppID.GroupChat, name: '聊天', icon: 'Chat', color: 'green' },
+  // 絮语：单聊 + 群聊 + 名册 + 此刻 一站式入口（原独立「群聊」「Message」App 已合并于此）
+  { id: AppID.GroupChat, name: '絮语', icon: 'Chat', color: 'green' },
   // ── 第一页（非 dock 的前 8 个）──
   { id: AppID.Gallery, name: '相册', icon: 'Gallery', color: 'orange' },
   { id: AppID.Music, name: '音乐', icon: 'Music', color: 'rose' },

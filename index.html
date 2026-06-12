@@ -388,6 +388,105 @@
       .scrap-action:nth-child(4n + 2) .scrap-tile { rotate: -2deg; }
       .scrap-action:nth-child(4n + 3) .scrap-tile { rotate: 1.6deg; }
       .scrap-action:nth-child(4n) .scrap-tile { rotate: -1deg; }
+      /* ===== 絮语 · 文具盒纸条（聊天底部功能面板重构版） ===== */
+      /* 横向纸条按钮：白纸面 + 左缘竖贴和纸胶带 + 缝线，图标在左、文案在右 */
+      .stationery-strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-align: left;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(236, 233, 226, 0.95);
+        border-radius: 14px;
+        box-shadow: 0 8px 18px -12px rgba(50, 48, 60, 0.35);
+        padding: 9px 11px;
+        position: relative;
+        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .stationery-strip:active { transform: scale(0.97); }
+      .stationery-strip::before {
+        content: '';
+        position: absolute;
+        left: -4px;
+        top: 50%;
+        height: 24px;
+        width: 9px;
+        transform: translateY(-50%) rotate(2deg);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(243, 240, 233, 0.55));
+        border-top: 1px dashed rgba(160, 156, 146, 0.4);
+        border-bottom: 1px dashed rgba(160, 156, 146, 0.4);
+        box-shadow: 0 1px 2px rgba(50, 48, 60, 0.12);
+        pointer-events: none;
+      }
+      /* 邮票形图标格：米纸底 + 内圈虚线（齿孔感） */
+      .stamp-box {
+        width: 34px;
+        height: 34px;
+        flex-shrink: 0;
+        border-radius: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f6f4ef;
+        color: #2b2933;
+        outline: 1px dashed rgba(120, 116, 106, 0.5);
+        outline-offset: -3px;
+      }
+      /* 墨色实底纸条（开启态 / 特殊通道） */
+      .stationery-strip-ink {
+        background: #2b2933;
+        border-color: #2b2933;
+        color: #ffffff;
+      }
+      .stationery-strip-ink .stamp-box {
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        outline-color: rgba(255, 255, 255, 0.4);
+      }
+      /* 深色聊天框（discord 输入风格）下的纸条 */
+      .stationery-strip-dark {
+        background: rgba(30, 41, 59, 0.92);
+        border-color: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+      }
+      .stationery-strip-dark .stamp-box {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        outline-color: rgba(255, 255, 255, 0.25);
+      }
+      /* 火漆点：功能开启中的状态标记 */
+      .wax-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 9999px;
+        flex-shrink: 0;
+        background: radial-gradient(circle at 35% 30%, #d8625b, #b03a34);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 2px 5px rgba(176, 58, 52, 0.5);
+      }
+      /* 分区标签：墨色小旗 + 右侧延伸缝线 */
+      .drawer-tag {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .drawer-tag > span {
+        background: #2b2933;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        padding: 3px 10px;
+        border-radius: 4px 10px 10px 4px;
+        rotate: -1deg;
+      }
+      .drawer-tag::after {
+        content: '';
+        flex: 1;
+        border-top: 1px dashed rgba(160, 156, 146, 0.5);
+      }
+      /* 纸条交错微旋转：随手摆进抽屉的感觉 */
+      .stationery-grid > .stationery-strip:nth-child(odd) { rotate: -0.7deg; }
+      .stationery-grid > .stationery-strip:nth-child(even) { rotate: 0.55deg; }
       /* 灵动岛通知胶囊：墨色底上加一圈手缝虚线（与 scrap-btn 一致的贴纸车线感）。
          用户的 dynamicIslandStyle.customCss 仍可覆盖（同 .moro-dynamic-island 钩子） */
       .moro-dynamic-island {

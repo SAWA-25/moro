@@ -251,16 +251,16 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     return (
         <>
             <Modal
-                isOpen={modalType === 'transfer'} title={transferMode === 'redpacket' ? '发红包' : 'Credits 转账'} onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onTransfer} className={`flex-1 py-3 text-white rounded-2xl font-bold ${transferMode === 'redpacket' ? 'bg-[#3c1e1e]' : 'bg-orange-500'}`}>{transferMode === 'redpacket' ? '塞进红包' : '确认'}</button></>}
+                isOpen={modalType === 'transfer'} title={transferMode === 'redpacket' ? '塞个红包' : '寄点零花'} onClose={() => setModalType('none')}
+                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onTransfer} className={`flex-1 py-3 text-white rounded-2xl font-bold ${transferMode === 'redpacket' ? 'bg-[#3c1e1e]' : 'bg-orange-500'}`}>{transferMode === 'redpacket' ? '塞进红包' : '寄出'}</button></>}
             >
                 <div className="space-y-3">
-                    {/* 模式切换：普通转账 / Kakao Pay 红包 */}
+                    {/* 模式切换：零花钱 / Kakao Pay 红包 */}
                     <div className="flex bg-slate-100 rounded-2xl p-1">
-                        <button onClick={() => setTransferMode('transfer')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'transfer' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400'}`}>转账</button>
+                        <button onClick={() => setTransferMode('transfer')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'transfer' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400'}`}>零花钱</button>
                         <button onClick={() => setTransferMode('redpacket')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'redpacket' ? 'bg-[#ffeb00] text-[#3c1e1e] shadow-sm' : 'text-slate-400'}`}>红包</button>
                     </div>
-                    <input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} placeholder="金额" className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus />
+                    <input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} placeholder="数目" className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus />
                     {transferMode === 'redpacket' && (
                         <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（恭喜发财，大吉大利）" maxLength={30} className="w-full bg-slate-100 rounded-2xl px-5 py-3 text-sm" />
                     )}
@@ -269,24 +269,24 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             {/* New Category Modal */}
             <Modal 
-                isOpen={modalType === 'add-category'} title="新建表情分类" onClose={() => setModalType('none')}
-                footer={<button onClick={onAddCategory} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">创建</button>}
+                isOpen={modalType === 'add-category'} title="新开一页贴纸" onClose={() => setModalType('none')}
+                footer={<button onClick={onAddCategory} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">建好</button>}
             >
-                <input 
-                    value={newCategoryName} 
-                    onChange={e => setNewCategoryName(e.target.value)} 
-                    placeholder="输入分类名称..." 
+                <input
+                    value={newCategoryName}
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    placeholder="给这页贴纸起个名…"
                     className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-base font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-slate-700" 
                     autoFocus 
                 />
             </Modal>
 
             <Modal 
-                isOpen={modalType === 'emoji-import'} title="表情注入" onClose={() => setModalType('none')}
-                footer={<button onClick={onImportEmoji} className="w-full py-4 bg-primary text-white font-bold rounded-2xl">添加至当前分类</button>}
+                isOpen={modalType === 'emoji-import'} title="收集贴纸" onClose={() => setModalType('none')}
+                footer={<button onClick={onImportEmoji} className="w-full py-4 bg-primary text-white font-bold rounded-2xl">贴进当前分类</button>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">表情将导入到你当前选中的分类。可在末尾追加描述（用于表情搜索，AI 选表情时也能看到）。</p>
+                    <p className="text-xs text-slate-400">贴纸会收进你当前选中的分类。可在末尾追加描述（用于贴纸搜索，AI 选贴纸时也能看到）。</p>
                     <textarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL (每行一个)\n名字--URL--描述 (描述可选)"} className="w-full h-40 bg-slate-100 rounded-2xl p-4 resize-none" />
                 </div>
             </Modal>
@@ -502,10 +502,10 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </Modal>
 
             {/* Archive Settings Modal */}
-            <Modal isOpen={modalType === 'archive-settings'} title="记忆归档设置" onClose={() => { if (!isSummarizing) setModalType('none'); }} footer={
+            <Modal isOpen={modalType === 'archive-settings'} title="装订成册" onClose={() => { if (!isSummarizing) setModalType('none'); }} footer={
                 isSummarizing ?
-                <div className="w-full py-3 bg-slate-100 text-indigo-600 font-bold rounded-2xl text-center flex items-center justify-center gap-2"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>{archiveProgress || '归档中...'}</div> :
-                <button onClick={onArchive} disabled={isSummarizing} className="w-full py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">开始归档</button>
+                <div className="w-full py-3 bg-slate-100 text-indigo-600 font-bold rounded-2xl text-center flex items-center justify-center gap-2"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>{archiveProgress || '装订中…'}</div> :
+                <button onClick={onArchive} disabled={isSummarizing} className="w-full py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">开始装订</button>
             }>
                 <div className="space-y-4">
                     {(() => {
@@ -758,8 +758,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </Modal>
             
              <Modal
-                isOpen={modalType === 'delete-emoji'} title="删除表情包" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteEmoji} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">删除</button></>}
+                isOpen={modalType === 'delete-emoji'} title="撕下贴纸" onClose={() => setModalType('none')}
+                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteEmoji} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">撕掉</button></>}
             >
                 <div className="flex flex-col items-center gap-4 py-2">
                     {Array.isArray(selectedEmoji) ? (
@@ -772,24 +772,24 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         selectedEmoji && <img src={selectedEmoji.url} className="w-24 h-24 object-contain rounded-xl border" />
                     )}
                     <p className="text-center text-sm text-slate-500">
-                        {Array.isArray(selectedEmoji) ? `确定要删除这 ${selectedEmoji.length} 个表情包吗？` : "确定要删除这个表情包吗？"}
+                        {Array.isArray(selectedEmoji) ? `确定要撕下这 ${selectedEmoji.length} 张贴纸吗？` : "确定要撕下这张贴纸吗？"}
                     </p>
                 </div>
             </Modal>
 
             {/* Delete Category Modal */}
             <Modal
-                isOpen={modalType === 'delete-category'} title="删除分类" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteCategory} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">删除</button></>}
+                isOpen={modalType === 'delete-category'} title="撕掉这一页" onClose={() => setModalType('none')}
+                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteCategory} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">撕掉</button></>}
             >
                 <div className="py-4 text-center">
-                    <p className="text-sm text-slate-600">确定要删除分类 <br/><span className="font-bold">"{selectedCategory?.name}"</span> 吗？</p>
-                    <p className="text-[10px] text-red-400 mt-2">注意：分类下的所有表情也将被删除！</p>
+                    <p className="text-sm text-slate-600">确定要撕掉贴纸分类 <br/><span className="font-bold">"{selectedCategory?.name}"</span> 吗？</p>
+                    <p className="text-[10px] text-red-400 mt-2">注意：这一页上的所有贴纸也会一起被撕掉！</p>
                 </div>
             </Modal>
 
             {/* Category Options Modal (shown on long-press) */}
-            <Modal isOpen={modalType === 'category-options'} title="分类操作" onClose={() => setModalType('none')}>
+            <Modal isOpen={modalType === 'category-options'} title="这一页贴纸" onClose={() => setModalType('none')}>
                 <div className="space-y-3">
                     <button onClick={openVisibilityModal} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -803,7 +803,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                             </svg>
-                            删除分类
+                            撕掉这一页
                         </button>
                     )}
                 </div>
@@ -816,7 +816,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             >
                 <div className="space-y-3">
                     <p className="text-xs text-slate-400 leading-relaxed">
-                        选择哪些角色可以使用此表情分组。不勾选任何角色表示所有角色均可使用。
+                        选择哪些角色可以使用这页贴纸。不勾选任何角色表示所有角色均可使用。
                     </p>
                     <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar">
                         {allCharacters.map(c => (
