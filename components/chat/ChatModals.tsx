@@ -596,9 +596,9 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto no-scrollbar p-1">
                     <p className="text-xs text-slate-400 text-center mb-2"><b>短按</b>消息 = 设为隐藏起点（会再次确认） · <b>长按</b>消息 = 跳转到聊天里查看原文</p>
                     {typeof activeCharacter.hideBeforeMessageId === 'number' && activeCharacter.hideBeforeMessageId > 0 && (
-                        <div className="bg-violet-50 border border-violet-200 rounded-xl p-2.5 text-[11px] text-violet-800 leading-relaxed mb-2">
+                        <div className="bg-[#f4f1ea] border border-[#e3ddcf] rounded-xl p-2.5 text-[11px] text-[#5a5648] leading-relaxed mb-2">
                             <b>💡 已经有隐藏起点了</b>：灰色消息是自动/手动归档时标记为"已总结"的，AI 现在看不到原文，但能看到它们的总结。<br/>
-                            <span className="text-violet-600">记忆宫殿向量记忆有自己的水位线（和这里无关），不用手动管。</span>
+                            <span className="text-[#8a8270]">记忆宫殿向量记忆有自己的水位线（和这里无关），不用手动管。</span>
                         </div>
                     )}
                     <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 pb-1.5 -mx-1 px-1">
@@ -902,7 +902,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             disabled={isScheduleGenerating}
                                             className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
                                                 (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle'
-                                                    ? 'bg-violet-100 border-violet-300 text-violet-700'
+                                                    ? 'bg-[#2b2933] border-[#2b2933] text-white'
                                                     : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
                                             }`}
                                         >
@@ -914,7 +914,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             disabled={isScheduleGenerating}
                                             className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
                                                 activeCharacter?.scheduleStyle === 'mindful'
-                                                    ? 'bg-teal-100 border-teal-300 text-teal-700'
+                                                    ? 'bg-[#2b2933] border-[#2b2933] text-white'
                                                     : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
                                             }`}
                                         >
