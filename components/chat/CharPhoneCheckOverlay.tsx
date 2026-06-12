@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary } from '../../types';
+import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID } from '../../types';
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
-import { INSTALLED_APPS, Icons } from '../../constants';
+import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
+import { useOS } from '../../context/OSContext';
+import AppIcon from '../os/AppIcon';
 
 /**
  * 角色查用户手机（反向查手机）。
@@ -58,8 +60,6 @@ interface CharPhoneCheckOverlayProps {
 
 const STEP_MS = 6500;            // 每一步停留时长（想法框阅读时间）
 const TAP_MS = 950;              // 「点开 App」动画时长：先回桌面按图标，再进入页面
-// 桌面 mock 上展示的 app（按 INSTALLED_APPS 的 icon 名过滤）
-const SHOWN_ICONS = ['Chat', 'Social', 'Schedule', 'Gallery', 'Music', 'Settings'];
 // 浏览步骤 → 桌面图标（点开动画里高亮哪个图标）
 const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
     'chat-list': 'Chat',
@@ -68,6 +68,48 @@ const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
     'schedule': 'Schedule',
     'gallery': 'Gallery',
     'music': 'Music',
+};
+
+// 与 Launcher 同源的桌面布局持久化 key：角色看到的就是用户真实排列的桌面
+const DESK_ORDER_KEY = 'moro_desktop_items_v1';
+const LEGACY_APP_ORDER_KEY = 'moro_launcher_app_order';
+
+/** 按用户真实桌面顺序排出全部非 dock App（与 Launcher 的 deskOrder/legacy 迁移一致） */
+const loadUserDeskApps = () => {
+    const base = INSTALLED_APPS.filter(a => !DOCK_APPS.includes(a.id) && a.id !== AppID.CharCreatorDev);
+    let orderedIds: string[] = [];
+    try {
+        const deskRaw = JSON.parse(localStorage.getItem(DESK_ORDER_KEY) || '[]');
+        if (Array.isArray(deskRaw)) {
+            orderedIds = deskRaw
+                .filter((k): k is string => typeof k === 'string' && k.startsWith('app:'))
+                .map(k => k.slice(4));
+        }
+    } catch { /* 布局读取失败时退回默认顺序 */ }
+    if (orderedIds.length === 0) {
+        try {
+            const legacyRaw = JSON.parse(localStorage.getItem(LEGACY_APP_ORDER_KEY) || '[]');
+            if (Array.isArray(legacyRaw)) orderedIds = legacyRaw.filter((k): k is string => typeof k === 'string');
+        } catch { /* ignore */ }
+    }
+    const ordered: typeof INSTALLED_APPS = [];
+    for (const id of orderedIds) {
+        const app = base.find(a => a.id === id);
+        if (app && !ordered.includes(app)) ordered.push(app);
+    }
+    for (const app of base) {
+        if (!ordered.includes(app)) ordered.push(app);
+    }
+    return ordered;
+};
+
+/** 壁纸值 → CSS background（与 PhoneShell 的处理一致：链接/dataURL 包 url()，渐变原样用） */
+const wallpaperBackground = (wallpaper?: string): React.CSSProperties => {
+    if (!wallpaper) return { background: 'linear-gradient(160deg, #6d83b2 0%, #a4b0c8 55%, #d8c8b8 100%)' };
+    const isImage = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:');
+    return isImage
+        ? { backgroundImage: `url(${wallpaper})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+        : { background: wallpaper };
 };
 
 const safeParseScript = (raw: string): CheckScript | null => {
@@ -103,6 +145,13 @@ const safeParseScript = (raw: string): CheckScript | null => {
 const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     char, userProfile, characters, apiConfig, updateCharacter, addToast, onEnd,
 }) => {
+    // 角色看到的是用户**实时真实**的桌面：真壁纸 + 真实安装的全部 App + 真实 dock
+    const { theme } = useOS();
+    const deskApps = useMemo(loadUserDeskApps, []);
+    const dockApps = useMemo(
+        () => DOCK_APPS.map(id => INSTALLED_APPS.find(a => a.id === id)).filter((a): a is typeof INSTALLED_APPS[number] => !!a),
+        []
+    );
     const [phase, setPhase] = useState<'loading' | 'browsing' | 'finished'>('loading');
     const [script, setScript] = useState<CheckScript | null>(null);
     const [stepIdx, setStepIdx] = useState(0);
@@ -278,7 +327,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
     useEffect(() => {
         if (!currentStep || currentStep.app !== 'chat-thread' || !targetChar) { setThreadMsgs([]); return; }
         let cancelled = false;
-        DB.getRecentMessagesByCharId(targetChar.id, 12)
+        DB.getRecentMessagesByCharId(targetChar.id, 40)
             .then(msgs => { if (!cancelled) setThreadMsgs(msgs.filter(m => m.role !== 'system')); })
             .catch(() => { if (!cancelled) setThreadMsgs([]); });
         return () => { cancelled = true; };
@@ -553,40 +602,47 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
-        // home / finished / opening：桌面（opening 时高亮即将点开的图标）
+        // home / finished / opening：用户实时真实的桌面（真壁纸 + 全部 App + dock；
+        // opening 时高亮即将点开的图标）
         const openingIcon = opening && opening !== 'home' ? STEP_ICON[opening as Exclude<StepApp, 'home'>] : null;
         return (
-            <div className="flex-1 overflow-hidden flex flex-col px-6 pt-8">
-                <div className="text-white/90 text-sm font-bold mb-6 text-center drop-shadow">{userProfile.name} 的手机</div>
-                <div className="grid grid-cols-4 gap-5">
-                    {INSTALLED_APPS.filter(a => SHOWN_ICONS.includes(a.icon)).map(a => {
-                        const Icon = Icons[a.icon];
-                        const isTapped = openingIcon === a.icon;
-                        return (
-                            <div key={a.id} className="flex flex-col items-center gap-1.5">
+            <div className="flex-1 overflow-hidden flex flex-col relative" style={wallpaperBackground(theme.wallpaper)}>
+                <div className="text-white text-sm font-bold pt-5 pb-3 text-center" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
+                    {userProfile.name} 的手机
+                </div>
+                <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-2">
+                    <div className="grid grid-cols-4 gap-x-1 gap-y-3">
+                        {deskApps.map(a => {
+                            const isTapped = openingIcon === a.icon;
+                            return (
                                 <div
-                                    className={`rounded-2xl backdrop-blur flex items-center justify-center transition-all duration-300 ${isTapped
-                                        ? 'bg-white scale-90 shadow-xl ring-4 ring-white/60 text-violet-500'
-                                        : 'bg-white/85 shadow-md text-slate-600'}`}
-                                    style={{ width: 52, height: 52 }}
+                                    key={a.id}
+                                    className={`flex justify-center transition-all duration-300 rounded-2xl ${isTapped ? 'scale-90 ring-4 ring-white/70 bg-white/30' : ''}`}
                                 >
-                                    {Icon ? <Icon className="w-6 h-6" /> : null}
+                                    <AppIcon app={a} onClick={() => { /* 角色在翻手机：禁点 */ }} size="sm" />
                                 </div>
-                                <span className={`text-[10px] drop-shadow ${isTapped ? 'text-white font-bold' : 'text-white/90'}`}>{a.name}</span>
-                            </div>
-                        );
-                    })}
+                            );
+                        })}
+                    </div>
                 </div>
                 {openingIcon && (
-                    <div className="mt-8 text-center text-white/85 text-xs animate-fade-in drop-shadow">
+                    <div className="text-center text-white text-xs animate-fade-in pb-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
                         {char.name} 点开了「{INSTALLED_APPS.find(a => a.icon === openingIcon)?.name}」…
                     </div>
                 )}
                 {phase === 'finished' && (
-                    <div className="mt-10 text-center text-white/90 text-sm font-medium animate-fade-in drop-shadow">
+                    <div className="text-center text-white text-sm font-medium animate-fade-in pb-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
                         {char.name} 翻完了，把手机放回了原处…
                     </div>
                 )}
+                {/* 真实 dock（与桌面同款配置） */}
+                <div className="shrink-0 flex justify-center px-4 pb-3">
+                    <div className="glass-pill rounded-full px-4 py-2 flex gap-4 items-center max-w-full overflow-x-auto no-scrollbar">
+                        {dockApps.map(a => (
+                            <AppIcon key={a.id} app={a} onClick={() => { /* 角色在翻手机：禁点 */ }} variant="dock" size="sm" />
+                        ))}
+                    </div>
+                </div>
             </div>
         );
     };

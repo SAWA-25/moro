@@ -159,6 +159,23 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                             </button>
                                         ))}
                                     </div>
+                                    {/* 自定义时间：任意分钟数（≥5），与预设档互斥高亮 */}
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <span className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${!INTERVAL_OPTIONS.some(o => o.value === interval)
+                                            ? 'bg-violet-500 text-white shadow-md'
+                                            : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                            自定义
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={5}
+                                            value={interval}
+                                            onChange={e => setInterval_(Math.max(5, parseInt(e.target.value) || 5))}
+                                            className="w-24 px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
+                                        />
+                                        <span className="text-xs text-slate-400">分钟（最少 5 分钟）</span>
+                                    </div>
                                 </>
                             )}
                         </div>

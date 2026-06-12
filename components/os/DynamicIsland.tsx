@@ -25,6 +25,7 @@ interface LiveNotice {
     body: string;
     avatarUrl?: string;
     at: number;
+    ringtone?: Parameters<typeof playRingtone>[0];
 }
 
 const DynamicIsland: React.FC = () => {
@@ -51,13 +52,39 @@ const DynamicIsland: React.FC = () => {
 
     // 横幅队列：多条消息逐条弹出（每条短驻留），而不是后到的覆盖先到的
     const noticeQueueRef = useRef<LiveNotice[]>([]);
+    const drainingRef = useRef(false);
+    // 桌面（Launcher）时仿 iOS：通知卡片竖向堆叠，而不是岛内单条轮播
+    const [stack, setStack] = useState<Array<LiveNotice & { key: number }>>([]);
+    const stackKeyRef = useRef(0);
+    // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
+    const lastShownRef = useRef<Record<string, number>>({});
 
     const displayNext = React.useCallback(() => {
+        if (noticeTimer.current !== null) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
         const next = noticeQueueRef.current.shift() || null;
+        if (!next) {
+            drainingRef.current = false;
+            noticeRef.current = null;
+            setNotice(null);
+            return;
+        }
+        drainingRef.current = true;
+        lastShownRef.current[next.charId] = Date.now();
+        // 每条消息弹出时各响一次提示音（而不是一批消息只响一次）
+        playRingtone(next.ringtone);
+        if (activeChatRef.current.app === AppID.Launcher) {
+            // 桌面：竖向堆叠通知卡片（仿 iOS 锁屏通知），岛内不放横幅
+            noticeRef.current = null;
+            setNotice(null);
+            const key = ++stackKeyRef.current;
+            setStack(prev => [{ ...next, key }, ...prev].slice(0, 6));
+            window.setTimeout(() => setStack(prev => prev.filter(s => s.key !== key)), 8000);
+            // 稍微错开下一条的弹出节奏，让提示音和入场动画逐条出现
+            noticeTimer.current = window.setTimeout(() => { noticeTimer.current = null; displayNext(); }, noticeQueueRef.current.length > 0 ? 900 : 0);
+            return;
+        }
         noticeRef.current = next;
         setNotice(next);
-        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
-        if (!next) return;
         // 队列里还有等着的就缩短驻留时间，让后续消息尽快逐条弹出
         const dwell = noticeQueueRef.current.length > 0 ? 2600 : 5000;
         noticeTimer.current = window.setTimeout(() => {
@@ -68,8 +95,8 @@ const DynamicIsland: React.FC = () => {
 
     const showNotice = React.useCallback((n: LiveNotice) => {
         noticeQueueRef.current.push(n);
-        // 没有横幅在展示时立即弹出；有则等当前驻留结束后由 displayNext 接力
-        if (!noticeRef.current) displayNext();
+        // 没有横幅在展示/排队时立即弹出；有则等当前驻留结束后由 displayNext 接力
+        if (!drainingRef.current) displayNext();
     }, [displayNext]);
 
     useEffect(() => () => {
@@ -85,17 +112,18 @@ const DynamicIsland: React.FC = () => {
             // 正在该角色聊天页时消息已经可见，不再弹横幅
             const cur = activeChatRef.current;
             if (cur.app === AppID.Chat && cur.charId === d.charId) return;
-            // 会话设置「专属铃声」
-            playRingtone(characters.find(c => c.id === d.charId)?.convoSettings?.ringtone);
+            const srcChar = characters.find(c => c.id === d.charId);
+            // 会话设置「专属铃声」：挂在每条 notice 上，弹出时逐条播放
+            const ringtone = srcChar?.convoSettings?.ringtone;
             // detail.bodies = 本轮逐条消息正文数组（主动消息多气泡时逐条弹横幅）；
             // 没带 bodies 的旧事件退化为单条 body
             const bodies: string[] = (Array.isArray(d.bodies) && d.bodies.length ? d.bodies : [String(d.body)])
                 .map((b: any) => cleanPreview(String(b || '')))
                 .filter((b: string) => !!b.trim())
                 .slice(0, 8);
-            const charName = d.charName || characters.find(c => c.id === d.charId)?.name || '';
+            const charName = d.charName || srcChar?.name || '';
             for (const body of bodies) {
-                showNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now() });
+                showNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now(), ringtone });
             }
         };
         window.addEventListener('proactive-message-sent', onIncoming);
@@ -115,8 +143,8 @@ const DynamicIsland: React.FC = () => {
         }
         prevUnreadRef.current = { ...unreadMessages };
         if (!newest) return;
-        const cur = noticeRef.current;
-        if (cur && cur.charId === newest && Date.now() - cur.at < 4000) return; // 事件横幅已带详情
+        // 事件横幅（含桌面堆叠卡片）刚弹过该角色时不再兜底重复弹
+        if (Date.now() - (lastShownRef.current[newest] || 0) < 4000) return;
         const char = characters.find(c => c.id === newest);
         if (!char) return;
         let cancelled = false;
@@ -128,7 +156,7 @@ const DynamicIsland: React.FC = () => {
                 const last = visible[visible.length - 1];
                 if (last) body = cleanPreview(last.content, last.type as any);
             } catch { /* 预览失败不阻塞横幅 */ }
-            if (!cancelled) showNotice({ charId: char.id, charName: char.name, body, at: Date.now() });
+            if (!cancelled) showNotice({ charId: char.id, charName: char.name, body, at: Date.now(), ringtone: char.convoSettings?.ringtone });
         })();
         return () => { cancelled = true; };
     }, [unreadMessages, characters, showNotice]);
@@ -241,6 +269,46 @@ const DynamicIsland: React.FC = () => {
                     )}
                 </button>
             </div>
+
+            {/* 桌面竖向堆叠通知卡片（仿 iOS）：新消息在最上面，逐条入场 + 各自提示音 */}
+            {!expanded && stack.length > 0 && (
+                <div
+                    className="absolute left-3 right-3 z-[57] flex flex-col gap-2 pointer-events-none"
+                    style={{ top: 'calc(max(6px, var(--safe-top)) + 2.4rem)' }}
+                >
+                    {stack.map(s => (
+                        <button
+                            key={s.key}
+                            onClick={() => {
+                                setStack(prev => prev.filter(x => x.key !== s.key));
+                                jumpToChat(s.charId);
+                            }}
+                            className="pointer-events-auto w-full flex items-start gap-3 p-3 rounded-[1.4rem] text-left text-white border border-white/10 active:scale-[0.98] transition-transform"
+                            style={{
+                                background: 'rgba(18,18,28,0.82)',
+                                backdropFilter: 'blur(18px)',
+                                boxShadow: '0 12px 28px -14px rgba(0,0,0,0.55)',
+                                animation: 'islandDrop 260ms ease-out both',
+                            }}
+                        >
+                            {(characters.find(c => c.id === s.charId)?.avatar || s.avatarUrl) ? (
+                                <img src={characters.find(c => c.id === s.charId)?.avatar || s.avatarUrl} className="w-9 h-9 rounded-xl object-cover border border-white/15 shrink-0" alt="" />
+                            ) : (
+                                <span className="w-9 h-9 rounded-xl bg-white/15 shrink-0" />
+                            )}
+                            <span className="flex-1 min-w-0 flex flex-col leading-snug">
+                                <span className="flex items-baseline justify-between gap-2">
+                                    <span className="text-[12px] font-bold truncate">{s.charName}</span>
+                                    <span className="text-[10px] opacity-50 shrink-0">现在</span>
+                                </span>
+                                <span className="text-[12px] opacity-80 mt-0.5" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                    {s.body}
+                                </span>
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* 下滑通知面板 */}
             {expanded && (

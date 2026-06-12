@@ -6,7 +6,6 @@ import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
-import { ProactiveChat } from '../../utils/proactiveChat';
 
 /**
  * 会话设置（聊天设置）全屏面板。
@@ -127,10 +126,6 @@ const ImgSlot: React.FC<{
     );
 };
 
-const PROACTIVE_PRESETS = [
-    { v: 30, l: '30分' }, { v: 60, l: '1小时' }, { v: 120, l: '2小时' },
-    { v: 240, l: '4小时' }, { v: 480, l: '8小时' }, { v: 1440, l: '1天' },
-];
 const REGION_PRESETS = ['中国大陆', '港澳台', '日本', '韩国', '北美', '欧洲', '东南亚'];
 const CALL_SPRITE_EMOTIONS = ['默认', '开心', '难过', '生气', '惊讶', '害羞', '冷淡', '撒娇'];
 
@@ -242,7 +237,6 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         }
     };
 
-    const proactive = char.proactiveConfig;
     const memberGroups = useMemo(() => groups.filter(g => g.members.includes(char.id) && !g.dissolved), [groups, char.id]);
     const gmMode = cs.groupMemoryMode || 'all';
 
@@ -474,64 +468,9 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Item
-                        label="主动发消息"
-                        right={<Toggle on={!!proactive?.enabled} onToggle={() => {
-                            const next = !proactive?.enabled;
-                            updateCharacter(char.id, { proactiveConfig: { intervalMinutes: 240, ...proactive, enabled: next } });
-                            if (next) ProactiveChat.start(char.id, proactive?.intervalMinutes || 240, { random: !!proactive?.randomMode });
-                            else ProactiveChat.stop(char.id);
-                        }} />}
-                        desc="角色按时间间隔主动给你发消息。"
-                    >
-                        {proactive?.enabled && (
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap gap-1.5">
-                                    <Chip
-                                        active={!!proactive.randomMode}
-                                        onClick={() => {
-                                            // 随机模式：调度间隔由系统在后台随机、每次触发后重抽，
-                                            // 不向用户透露抽到的时长——发不发、说什么完全交给角色人设
-                                            updateConvo({ proactiveRandom: true });
-                                            updateCharacter(char.id, { proactiveConfig: { ...proactive, intervalMinutes: proactive.intervalMinutes || 240, enabled: true, randomMode: true } });
-                                            ProactiveChat.start(char.id, proactive.intervalMinutes || 240, { random: true });
-                                            addToast(`已开启随机主动消息，${char.name} 会按自己的节奏来找你`, 'success');
-                                        }}
-                                    >随机（按人设）</Chip>
-                                    {PROACTIVE_PRESETS.map(p => (
-                                        <Chip
-                                            key={p.v}
-                                            active={!proactive.randomMode && proactive.intervalMinutes === p.v}
-                                            onClick={() => {
-                                                updateConvo({ proactiveRandom: false });
-                                                updateCharacter(char.id, { proactiveConfig: { ...proactive, enabled: true, intervalMinutes: p.v, randomMode: false } });
-                                                ProactiveChat.start(char.id, p.v);
-                                            }}
-                                        >{p.l}</Chip>
-                                    ))}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-400 shrink-0">自定义</span>
-                                    <input
-                                        type="number" min={5}
-                                        value={proactive.intervalMinutes || 240}
-                                        onChange={e => {
-                                            const v = Math.max(5, parseInt(e.target.value) || 240);
-                                            updateConvo({ proactiveRandom: false });
-                                            updateCharacter(char.id, { proactiveConfig: { ...proactive, enabled: true, intervalMinutes: v, randomMode: false } });
-                                            ProactiveChat.start(char.id, v);
-                                        }}
-                                        className="w-24 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[12px] outline-none"
-                                    />
-                                    <span className="text-[10px] text-slate-400">分钟</span>
-                                </div>
-                            </div>
-                        )}
-                    </Item>
-
-                    <Item
                         label="主动语音通话"
                         right={<Toggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
-                        desc="开启后，角色在主动找你时会根据人设和剧情自行决定要不要直接打语音电话给你（需同时开启主动发消息）。来电可接听或挂断，没接到会留下未接来电记录。"
+                        desc="开启后，角色在主动找你时会根据人设和剧情自行决定要不要直接打语音电话给你（主动消息在聊天界面下方 + 号面板里开启）。来电可接听或挂断，没接到会留下未接来电记录。"
                     />
 
                     <Item label="主动发朋友圈" desc="角色自发更新朋友圈的倾向。「随缘」由 TA 心情决定；聊天里 TA 也会提到自己发的动态。">

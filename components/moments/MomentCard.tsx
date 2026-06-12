@@ -108,6 +108,9 @@ const MomentCard: React.FC<MomentCardProps> = ({
                 {post.location && <div className={`text-xs ${NAME_COLOR} mt-2`}>{post.location}</div>}
                 <div className="flex items-center mt-1.5 relative">
                     <span className="text-xs text-slate-400">{formatRelativeTime(post.timestamp)}</span>
+                    {post.likes >= 200 && (
+                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-500 font-bold shrink-0">🔥 爆款</span>
+                    )}
                     {isReacting && (
                         <span className="ml-2 text-[10px] text-slate-300 flex items-center gap-1">
                             <span className="w-2.5 h-2.5 border border-slate-300 border-t-transparent rounded-full animate-spin inline-block" />
@@ -174,6 +177,7 @@ const MomentCard: React.FC<MomentCardProps> = ({
                                 <Heart size={14} weight="fill" className={`${NAME_COLOR} shrink-0 mt-0.5 opacity-80`} />
                                 <span className={`text-[13px] font-medium ${NAME_COLOR} leading-snug break-words`}>
                                     {likedBy.map(l => l.name).join('，')}
+                                    {post.likes > likedBy.length && ` 等 ${post.likes} 人觉得很赞`}
                                 </span>
                             </div>
                         )}

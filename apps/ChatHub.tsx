@@ -256,6 +256,8 @@ const ChatHub: React.FC = () => {
         return 'chats';
     });
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
+    // 朋友圈内层页面（发布页等）的返回拦截：返回键先关内层页面，而不是退出 App 回桌面
+    const momentsBackRef = useRef<(() => boolean) | null>(null);
     // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
     const [convos, setConvos] = useState<Array<{
         kind: 'char' | 'group';
@@ -1516,7 +1518,14 @@ ${attachedImagesNote}
                 <div className="shrink-0 z-10 sticky top-0">
                     <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
                     <div className="bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 h-20">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                        <button
+                        onClick={() => {
+                            // 朋友圈 tab 上有内层页面（发布动态等）打开时，返回键先回到动态流
+                            if (hubTab === 'moments' && momentsBackRef.current?.()) return;
+                            closeApp();
+                        }}
+                        className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform"
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
                     <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '朋友圈'}</span>
@@ -1654,7 +1663,7 @@ ${attachedImagesNote}
                 {/* ── 朋友圈 tab：内嵌完整朋友圈（与独立 朋友圈 App 共用 MomentsFeed） ── */}
                 {hubTab === 'moments' && (
                     <div className="flex-1 min-h-0 overflow-hidden">
-                        <MomentsFeed embedded />
+                        <MomentsFeed embedded backHandlerRef={momentsBackRef} />
                     </div>
                 )}
 
