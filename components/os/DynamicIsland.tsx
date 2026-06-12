@@ -121,29 +121,38 @@ const DynamicIsland: React.FC = () => {
         };
     }, [characters, showNotice]);
 
-    // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 取最后一条做预览
+    // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 按本次新增条数
+    // 取尾部消息，逐条入队弹横幅（一条覆盖一条），而不是只弹最新一条
     useEffect(() => {
         const prev = prevUnreadRef.current;
-        let newest: string | null = null;
+        const bumps: { id: string; delta: number }[] = [];
         for (const [id, n] of Object.entries(unreadMessages)) {
-            if (n > (prev[id] || 0)) newest = id;
+            const delta = n - (prev[id] || 0);
+            if (delta > 0) bumps.push({ id, delta });
         }
         prevUnreadRef.current = { ...unreadMessages };
-        if (!newest) return;
-        // 事件横幅（含桌面堆叠卡片）刚弹过该角色时不再兜底重复弹
-        if (Date.now() - (lastShownRef.current[newest] || 0) < 4000) return;
-        const char = characters.find(c => c.id === newest);
-        if (!char) return;
+        if (!bumps.length) return;
         let cancelled = false;
         (async () => {
-            let body = '发来了新消息';
-            try {
-                const msgs = await DB.getMessagesByCharId(char.id);
-                const visible = msgs.filter(m => m.role !== 'system');
-                const last = visible[visible.length - 1];
-                if (last) body = cleanPreview(last.content, last.type as any);
-            } catch { /* 预览失败不阻塞横幅 */ }
-            if (!cancelled) showNotice({ charId: char.id, charName: char.name, body, at: Date.now(), ringtone: char.convoSettings?.ringtone });
+            for (const { id, delta } of bumps) {
+                // 事件横幅（含桌面堆叠卡片）刚弹过该角色时不再兜底重复弹
+                if (Date.now() - (lastShownRef.current[id] || 0) < 4000) continue;
+                const char = characters.find(c => c.id === id);
+                if (!char) continue;
+                let bodies: string[] = [];
+                try {
+                    const msgs = await DB.getMessagesByCharId(char.id);
+                    const visible = msgs.filter(m => m.role !== 'system');
+                    bodies = visible
+                        .slice(-Math.min(delta, 8))
+                        .map(m => cleanPreview(m.content, m.type as any));
+                } catch { /* 预览失败不阻塞横幅 */ }
+                if (!bodies.length) bodies = ['发来了新消息'];
+                if (cancelled) return;
+                for (const body of bodies) {
+                    showNotice({ charId: char.id, charName: char.name, body, at: Date.now(), ringtone: char.convoSettings?.ringtone });
+                }
+            }
         })();
         return () => { cancelled = true; };
     }, [unreadMessages, characters, showNotice]);
@@ -198,13 +207,16 @@ const DynamicIsland: React.FC = () => {
             <div className="absolute left-1/2 -translate-x-1/2 z-[59]" style={{ top: 'max(6px, var(--safe-top))' }}>
                 <button
                     onClick={() => {
-                        // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）
+                        // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）。
+                        // 同角色排队中的横幅一并丢弃（进聊天页即视为已读），其余角色的
+                        // 横幅由 displayNext 接力继续逐条弹 —— 不能只清当前横幅就返回，
+                        // 否则 drainingRef 卡在 true，队列永久停摆，后续消息只剩兜底的最新一条
                         if (notice) {
                             const target = notice.charId;
-                            if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
-                            noticeRef.current = null;
-                            setNotice(null);
+                            if (noticeTimer.current !== null) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
+                            noticeQueueRef.current = noticeQueueRef.current.filter(q => q.charId !== target);
                             jumpToChat(target);
+                            displayNext();
                             return;
                         }
                         setExpanded(v => !v);
