@@ -1,6 +1,5 @@
 
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
-import { normalizeUserImpression } from './impression';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 
@@ -240,24 +239,6 @@ export const ContextBuilder = {
             }
         }
 
-        // 4. [NEW] 印象档案 (Private Impression)
-        // 这是角色对用户的私密看法，只有角色知道
-        const imp = normalizeUserImpression(char.impression);
-        if (imp) {
-            context += `### [私密档案: 我眼中的${user.name}] (Private Impression)\n`;
-            context += `(注意：以下内容是你内心对TA的真实看法，不要直接告诉用户，但要基于这些看法来决定你的态度。)\n`;
-            context += `- 核心评价: ${imp.personality_core.summary}\n`;
-            context += `- 互动模式: ${imp.personality_core.interaction_style}\n`;
-            context += `- 我观察到的特质: ${imp.personality_core.observed_traits.join(', ')}\n`;
-            context += `- TA的喜好: ${imp.value_map.likes.join(', ')}\n`;
-            if (imp.behavior_profile.emotion_summary) context += `- TA的情绪模式: ${imp.behavior_profile.emotion_summary}\n`;
-            if (imp.emotion_schema.triggers.positive.length) context += `- 正向触发点（什么会让ta开心）: ${imp.emotion_schema.triggers.positive.join(', ')}\n`;
-            context += `- 情绪雷区（负向触发）: ${imp.emotion_schema.triggers.negative.join(', ')}\n`;
-            if (imp.emotion_schema.stress_signals.length) context += `- 压力信号（ta状态不对的征兆）: ${imp.emotion_schema.stress_signals.join(', ')}\n`;
-            context += `- 舒适区: ${imp.emotion_schema.comfort_zone}\n`;
-            context += `- 最近观察到的变化: ${imp.observed_changes ? imp.observed_changes.map(c => typeof c === 'string' ? c : (c as any)?.description ? `[${(c as any).period}] ${(c as any).description}` : JSON.stringify(c)).join('; ') : '无'}\n\n`;
-        }
-
         // 5. 记忆库 (Memory Bank)
         context += `### 记忆系统 (Memory Bank)\n`;
         let memoryContent = "";
@@ -338,7 +319,6 @@ export const ContextBuilder = {
         // Debug: warn about missing context sections
         const missing: string[] = [];
         if (!char.systemPrompt) missing.push('systemPrompt');
-        if (!char.impression) missing.push('impression');
         if (!char.refinedMemories || Object.keys(char.refinedMemories).length === 0) missing.push('refinedMemories');
         if (!char.activeMemoryMonths || char.activeMemoryMonths.length === 0) missing.push('activeMemoryMonths');
         if (!char.mountedWorldbooks || char.mountedWorldbooks.length === 0) missing.push('worldbooks');

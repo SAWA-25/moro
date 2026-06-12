@@ -430,6 +430,7 @@ export function convertSTCardToCharacter(
                 title: wb.title,
                 content: wb.content,
                 category: wb.category,
+                enabled: wb.enabled,
             }));
     }
 

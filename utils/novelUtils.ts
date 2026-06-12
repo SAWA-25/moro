@@ -25,43 +25,7 @@ export const extractWritingTags = (char: CharacterProfile): string[] => {
     const tags = new Set<string>();
     const desc = ((char.description || '') + (char.worldview || '')).toLowerCase();
     
-    // 1. 从 impression 提取（如果有）
-    if (char.impression) {
-        const traits = char.impression.personality_core?.observed_traits || [];
-        const mbti = char.impression.mbti_analysis?.type || '';
-        const likes = char.impression.value_map?.likes || [];
-        const dislikes = char.impression.value_map?.dislikes || [];
-
-        // MBTI 维度
-        if (mbti.includes('N')) { tags.add('意象丰富'); tags.add('跳跃'); }
-        else if (mbti.includes('S')) { tags.add('细节考据'); tags.add('写实'); }
-        if (mbti.includes('T')) { tags.add('逻辑严密'); tags.add('克制'); }
-        else if (mbti.includes('F')) { tags.add('情感细腻'); tags.add('渲染力强'); }
-        if (mbti.includes('J')) { tags.add('结构工整'); tags.add('伏笔'); }
-        else if (mbti.includes('P')) { tags.add('随性'); tags.add('反转'); }
-
-        // 特质映射
-        const traitMap: Record<string, string[]> = {
-            '冷': ['冷峻', '极简'], '傲娇': ['口是心非', '心理戏多'],
-            '温柔': ['治愈', '舒缓'], '乐天': ['轻快', '对话密集'],
-            '中二': ['燃', '夸张'], '电波': ['意识流', '抽象'],
-            '腹黑': ['暗喻', '悬疑'], '社恐': ['内心独白', '敏感'],
-            '强势': ['快节奏', '压迫感'], '猫': ['喵体文学', '慵懒'],
-            '活泼': ['轻快', '跳跃'], '理性': ['逻辑严密', '客观'],
-            '感性': ['情感细腻', '渲染力强'], '高冷': ['冷峻', '留白']
-        };
-        traits.forEach(t => {
-            Object.entries(traitMap).forEach(([key, values]) => {
-                if (t.includes(key)) values.forEach(v => tags.add(v));
-            });
-        });
-
-        // 价值观
-        if (likes.some(l => l.includes('美') || l.includes('艺术'))) tags.add('唯美');
-        if (dislikes.some(d => d.includes('虚伪'))) tags.add('犀利直白');
-    }
-    
-    // 2. 从描述提取（无论有没有 impression）
+    // 1. 从描述提取
     const descMap: Record<string, string[]> = {
         '古风': ['古韵', '半文白'], '武侠': ['快意', '古韵'],
         '科幻': ['硬核', '技术流'], '猫': ['喵体文学', '慵懒'],
@@ -73,7 +37,7 @@ export const extractWritingTags = (char: CharacterProfile): string[] => {
         if (desc.includes(key)) values.forEach(v => tags.add(v));
     });
 
-    // 3. 从 writerPersona 提取
+    // 2. 从 writerPersona 提取
     if (char.writerPersona) {
         const p = char.writerPersona;
         if (p.includes('新手')) tags.add('青涩');
@@ -86,7 +50,7 @@ export const extractWritingTags = (char: CharacterProfile): string[] => {
         if (p.includes('对话')) tags.add('对话密集');
     }
 
-    // 4. Fallback
+    // 3. Fallback
     let result = Array.from(tags);
     if (result.length === 0) {
         // 基于角色名生成稳定的默认标签
@@ -119,8 +83,8 @@ export const extractWritingTags = (char: CharacterProfile): string[] => {
 export const analyzeWriterPersonaSimple = (char: CharacterProfile): string => {
     if (!char) return "未知风格"; 
     
-    const traits = char.impression?.personality_core.observed_traits || [];
-    const mbti = char.impression?.mbti_analysis?.type || '';
+    const traits: string[] = [];
+    const mbti = '';
     const desc = char.description || '';
     
     const personaMap: Record<string, any> = {
@@ -167,7 +131,7 @@ export const analyzeWriterPersonaSimple = (char: CharacterProfile): string => {
 **关注点**: ${persona.focus}，${mbtiInsight}
 **笔触**: ${persona.style}
 **节奏**: ${persona.rhythm}
-**审美**: 喜欢${char.impression?.value_map.likes.join('、') || '未知'}
+**审美**: 未知
 **禁忌**: ${persona.taboo}
 `;
 
@@ -188,8 +152,8 @@ export const analyzeWriterPersonaSimple = (char: CharacterProfile): string => {
 
 // --- Helper: Extract Writing Taboos ---
 export const extractWritingTaboos = (char: CharacterProfile): string => {
-    const traits = char.impression?.personality_core.observed_traits || [];
-    const dislikes = char.impression?.value_map.dislikes || [];
+    const traits: string[] = [];
+    const dislikes: string[] = [];
     
     let taboos = `## ${char.name} 的写作禁区（你必须遵守）：\n`;
     
@@ -280,19 +244,6 @@ ${char.description || '无'}
 
 **背景故事**: 
 ${char.worldview || '无详细背景'}
-
-**性格特质**: 
-${char.impression?.personality_core.observed_traits.join('、') || '未知'}
-
-**MBTI类型**: 
-${char.impression?.mbti_analysis?.type || '未知'}
-
-**核心价值观**:
-- 珍视/喜欢: ${char.impression?.value_map.likes.join('、') || '未知'}
-- 厌恶/讨厌: ${char.impression?.value_map.dislikes.join('、') || '未知'}
-
-**个人癖好/习惯**:
-${char.impression?.behavior_profile.response_patterns || '- 无'}
 
 **近期记忆片段**（了解当前心境）:
 ${char.memories?.slice(-3).map(m => `- ${m.summary}`).join('\n') || '- 无记忆'}
@@ -431,7 +382,7 @@ ${rawPersona}
 };
 
 export const getFewShotExamples = (char: CharacterProfile) => {
-    const traits = char.impression?.personality_core.observed_traits || [];
+    const traits: string[] = [];
     let trait = traits.find(t => ['冷漠','高冷','感性','温柔','乐天','活泼','中二','电波'].some(k => t.includes(k))) || '理性';
     if (trait.includes('冷')) trait = '冷漠';
     if (trait.includes('柔') || trait.includes('感')) trait = '感性';
@@ -506,7 +457,7 @@ ${coreContext}
 书名：《${activeBook?.title}》
 
 **你的角色**：
-1. 你既是小说作者之一，也是${userProfile.name}的${char.impression?.personality_core.summary || '伙伴'}。
+1. 你既是小说作者之一，也是${userProfile.name}的伙伴。
 2. 在【分析】和【吐槽】环节，请完全保持你的人设（语气、性格、对用户的态度）。
 3. 如果你们关系亲密，不要表现得像个陌生的AI工具人；如果你们关系紧张/傲娇，也要体现出来。
 

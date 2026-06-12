@@ -238,7 +238,7 @@ const CharacterProfilePage: React.FC<CharacterProfilePageProps> = ({
                         </svg>
                     </div>
                     <p className="text-[13px] text-[#b0b0b0] mt-1.5 leading-relaxed">
-                        查看与编辑 TA 的人设、记忆与印象，并设置相处方式。
+                        查看与编辑 TA 的人设与记忆，并设置相处方式。
                     </p>
                 </button>
 

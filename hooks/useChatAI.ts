@@ -1060,7 +1060,7 @@ export const useChatAI = ({
                         .filter(Boolean);
                     const preview = bodies[bodies.length - 1] || '发来了新消息';
                     window.dispatchEvent(new CustomEvent('proactive-message-sent', {
-                        detail: { charId: char.id, charName: char.name, body: preview, bodies, avatarUrl: char.avatar },
+                        detail: { charId: char.id, charName: char.name, body: preview, bodies, count: bodies.length, avatarUrl: char.avatar },
                     }));
                 }
             } catch { /* 通知联动失败不影响消息本体 */ }
