@@ -6,6 +6,7 @@ import {
     isMarkdownLang,
     looksLikeHtmlFragment,
     extractRawHtmlChunk,
+    splitOutRichBlocks,
     buildHtmlPreviewSrcDoc,
 } from './chatRichContent';
 
@@ -92,6 +93,38 @@ describe('extractRawHtmlChunk', () => {
 
     it('只有开标签没有闭合时不抽取', () => {
         expect(extractRawHtmlChunk('<div>没闭合')).toBeNull();
+    });
+});
+
+describe('splitOutRichBlocks', () => {
+    it('多行裸 HTML 整块保留，不被切碎（regression: chunkText 把 </div> 切成单独气泡）', () => {
+        const text = '看这个卡片：\n<div style="background:#f7f7f7">\n<div style="color:#576b95">标题</div>\n正文内容\n</div>\n好看吗';
+        const segs = splitOutRichBlocks(text);
+        expect(segs.map(s => s.kind)).toEqual(['text', 'rich', 'text']);
+        expect(segs[1].content).toBe('<div style="background:#f7f7f7">\n<div style="color:#576b95">标题</div>\n正文内容\n</div>');
+    });
+
+    it('围栏代码块整块保留（含 ``` 标记）', () => {
+        const segs = splitOutRichBlocks('前文\n```html\n<div>hi</div>\n```\n后文');
+        expect(segs.map(s => s.kind)).toEqual(['text', 'rich', 'text']);
+        expect(segs[1].content).toBe('```html\n<div>hi</div>\n```');
+    });
+
+    it('纯文本原样返回单段', () => {
+        const segs = splitOutRichBlocks('普通的一句话\n第二句');
+        expect(segs).toEqual([{ kind: 'text', content: '普通的一句话\n第二句' }]);
+    });
+
+    it('HTML 带空行也不拆段', () => {
+        const text = '<div>\n第一段\n\n第二段\n</div>';
+        const segs = splitOutRichBlocks(text);
+        expect(segs).toHaveLength(1);
+        expect(segs[0]).toMatchObject({ kind: 'rich', content: text });
+    });
+
+    it('行内标签与伪 XML 不触发保护', () => {
+        const segs = splitOutRichBlocks('我 <b>超</b> 喜欢你\n<心情>开心</心情>');
+        expect(segs.every(s => s.kind === 'text')).toBe(true);
     });
 });
 

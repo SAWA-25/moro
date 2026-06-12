@@ -86,6 +86,39 @@ export function extractRawHtmlChunk(text: string): RawHtmlChunk | null {
     };
 }
 
+export interface RichSplitSegment {
+    kind: 'rich' | 'text';
+    content: string;
+}
+
+/**
+ * 把文本切成「整块保留的富内容」与「普通文本」段，给消息入库前的分泡逻辑用：
+ * - 富内容 = ``` 围栏代码块、裸块级 HTML（<div>…</div> 等）
+ * - 富内容必须整块单独成一条气泡，否则 chunkText 会按换行把 HTML 切碎成
+ *   "</div>"、"<div style=…>" 这样的纯文本碎泡，渲染端再也拼不回来。
+ */
+export function splitOutRichBlocks(text: string): RichSplitSegment[] {
+    const out: RichSplitSegment[] = [];
+    for (const seg of splitByFences(text)) {
+        if (seg.kind === 'fence') {
+            out.push({ kind: 'rich', content: seg.raw });
+            continue;
+        }
+        let rest = seg.text;
+        while (rest) {
+            const chunk = extractRawHtmlChunk(rest);
+            if (!chunk) {
+                if (rest.trim()) out.push({ kind: 'text', content: rest });
+                break;
+            }
+            if (chunk.before.trim()) out.push({ kind: 'text', content: chunk.before });
+            out.push({ kind: 'rich', content: chunk.html });
+            rest = chunk.after;
+        }
+    }
+    return out;
+}
+
 /** 是否是完整 HTML 文档（含 <html> 或 doctype），完整文档不再套 wrapper。 */
 function isFullDocument(html: string): boolean {
     return /<!doctype\s+html|<html[\s>]/i.test(html);

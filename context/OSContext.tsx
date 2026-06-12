@@ -17,6 +17,7 @@ import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
+import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
 import { setMinimaxRegion } from '../utils/minimaxEndpoint';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -1836,9 +1837,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               continue;
                           }
 
-                          const textChunks = ChatParser.chunkText(part.content)
-                              .map(chunk => ChatParser.sanitize(chunk))
-                              .filter(chunk => ChatParser.hasDisplayContent(chunk));
+                          // 裸块级 HTML 整块保留（不被 chunkText 按行切碎），普通文本照常分泡
+                          const textChunks: string[] = [];
+                          for (const seg of splitOutRichBlocks(part.content)) {
+                              if (seg.kind === 'rich') {
+                                  textChunks.push(seg.content.trim());
+                                  continue;
+                              }
+                              textChunks.push(...ChatParser.chunkText(seg.content)
+                                  .map(chunk => ChatParser.sanitize(chunk))
+                                  .filter(chunk => ChatParser.hasDisplayContent(chunk)));
+                          }
 
                           for (const chunk of textChunks) {
                               const meta = consumeThinkingMeta();

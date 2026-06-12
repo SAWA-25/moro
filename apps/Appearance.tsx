@@ -723,7 +723,9 @@ const Appearance: React.FC = () => {
     });
     addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
   };
-  const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat' | 'bubble' | 'css'>('theme');
+  const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat' | 'css'>('theme');
+  // 气泡工坊全屏编辑器：原独立 tab 已并入「聊天界面」页，从那里的入口卡打开
+  const [showBubbleWorkshop, setShowBubbleWorkshop] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
   const widgetInputRef = useRef<HTMLInputElement>(null);
@@ -913,15 +915,14 @@ const Appearance: React.FC = () => {
       }
   };
 
-  // 气泡工坊：全屏嵌入（编辑器需要整屏空间），返回键 / 保存退出回到主题页
-  if (activeTab === 'bubble') {
-      return <ThemeMaker embedded onRequestClose={() => setActiveTab('theme')} />;
+  // 气泡工坊：全屏嵌入（编辑器需要整屏空间），返回键 / 保存退出回到「聊天界面」页
+  if (showBubbleWorkshop) {
+      return <ThemeMaker embedded onRequestClose={() => { setShowBubbleWorkshop(false); setActiveTab('chat'); }} />;
   }
 
-  const TABS: { id: 'theme' | 'icons' | 'presets' | 'chat' | 'bubble' | 'css'; label: string }[] = [
+  const TABS: { id: 'theme' | 'icons' | 'presets' | 'chat' | 'css'; label: string }[] = [
       { id: 'theme', label: '系统主题' },
       { id: 'chat', label: '聊天界面' },
-      { id: 'bubble', label: '气泡工坊' },
       { id: 'css', label: '自定义 CSS' },
       { id: 'icons', label: '应用图标' },
       { id: 'presets', label: '外观预设' },
@@ -1510,7 +1511,7 @@ const Appearance: React.FC = () => {
                 currentTheme={theme}
             />
         ) : activeTab === 'chat' ? (
-            <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} />
+            <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenBubbleWorkshop={() => setShowBubbleWorkshop(true)} />
         ) : activeTab === 'css' ? (
             <CustomCssStudio theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} addToast={addToast} />
         ) : null}

@@ -33,6 +33,7 @@ import { enqueuePendingDiary, removePendingDiary } from './pendingDiary';
 import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
+import { splitOutRichBlocks } from './chatRichContent';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
 import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
@@ -550,7 +551,28 @@ export async function applyAssistantPostProcessing(
         const firstQuoteMatch = rawContent.match(QUOTE_RE_DOUBLE) || rawContent.match(QUOTE_RE_SINGLE) || rawContent.match(REPLY_RE_CN);
         if (firstQuoteMatch) aiReplyTarget = resolveQuoteTarget(firstQuoteMatch[1]);
 
-        let content = ChatParser.sanitize(rawContent, { keepCitations: true });
+        // ─── 富代码块整块保护 ───
+        // ``` 围栏 / 裸块级 HTML（含正则脚本注入的 HTML）先抽成占位符：
+        //  1) 全局 sanitize 不会剥掉围栏反引号；
+        //  2) chunkText 不会按换行把 HTML 切成 "</div>" 这样的碎泡。
+        // 落库时占位符还原成原文、整块单独成泡，由 MessageItem 直接渲染成效果。
+        const RICH_MARKER = String.fromCharCode(2);
+        const richBlocks: string[] = [];
+        const protectedContent = splitOutRichBlocks(rawContent).map(seg => {
+            if (seg.kind !== 'rich') return seg.content;
+            const idx = richBlocks.push(seg.content.trim()) - 1;
+            return `\n${RICH_MARKER}R${idx}${RICH_MARKER}\n`;
+        }).join('');
+        const RICH_SOLO_RE = new RegExp(`^${RICH_MARKER}R(\\d+)${RICH_MARKER}$`);
+        const RICH_INLINE_RE = new RegExp(`${RICH_MARKER}R(\\d+)${RICH_MARKER}`, 'g');
+        /** 还原 chunk 里的富块占位符；整 chunk 就是一个占位符时返回 rich=true（跳过 sanitize 原样落库） */
+        const resolveRichChunk = (chunk: string): { text: string; rich: boolean } => {
+            const solo = chunk.trim().match(RICH_SOLO_RE);
+            if (solo) return { text: richBlocks[Number(solo[1])] || '', rich: true };
+            return { text: chunk.replace(RICH_INLINE_RE, (_m, n) => richBlocks[Number(n)] || ''), rich: false };
+        };
+
+        let content = ChatParser.sanitize(protectedContent, { keepCitations: true });
         content = content.replace(/\[\[INNER_STATE:\s*[\s\S]*?\]\]/g, '').trim();
         if (!content) return;
 
@@ -577,7 +599,8 @@ export async function applyAssistantPostProcessing(
                     const cleaned = ChatParser.sanitize(textBefore);
                     if (cleaned && ChatParser.hasDisplayContent(cleaned)) {
                         const chunks = ChatParser.chunkText(cleaned);
-                        for (const chunk of chunks) {
+                        for (const rawChunk of chunks) {
+                            const chunk = resolveRichChunk(rawChunk).text;
                             if (!chunk) continue;
                             const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                             await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
@@ -588,8 +611,8 @@ export async function applyAssistantPostProcessing(
                     }
                 }
 
-                const originalText = ChatParser.sanitize(tagMatch[1].trim());
-                const translatedText = ChatParser.sanitize(tagMatch[2].trim());
+                const originalText = resolveRichChunk(ChatParser.sanitize(tagMatch[1].trim())).text;
+                const translatedText = resolveRichChunk(ChatParser.sanitize(tagMatch[2].trim())).text;
                 if (originalText || translatedText) {
                     const biContent = originalText && translatedText
                         ? `${originalText}\n%%BILINGUAL%%\n${translatedText}`
@@ -609,7 +632,8 @@ export async function applyAssistantPostProcessing(
                 const cleaned = ChatParser.sanitize(textAfter.replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '').trim());
                 if (cleaned && ChatParser.hasDisplayContent(cleaned)) {
                     const chunks = ChatParser.chunkText(cleaned);
-                    for (const chunk of chunks) {
+                    for (const rawChunk of chunks) {
+                        const chunk = resolveRichChunk(rawChunk).text;
                         if (!chunk) continue;
                         const replyData = globalMsgIndex === 0 ? aiReplyTarget : undefined;
                         await new Promise(r => setTimeout(r, Math.min(Math.max(chunk.length * 50, 500), 2000)));
@@ -655,6 +679,19 @@ export async function applyAssistantPostProcessing(
                             const delay = Math.min(Math.max(chunk.length * 50, 500), 2000);
                             await new Promise(r => setTimeout(r, delay));
                         }
+
+                        // 富代码块（``` 围栏 / 裸 HTML）整块还原后直接落库：
+                        // 不跑引用/二次 sanitize，避免反引号、标签被剥导致渲染不出来
+                        const resolved = resolveRichChunk(chunk);
+                        if (resolved.rich) {
+                            if (resolved.text) {
+                                await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: resolved.text, metadata: takeMeta(mcdInheritMeta) } as any);
+                                setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+                                globalMsgIndex++;
+                            }
+                            continue;
+                        }
+                        chunk = resolved.text;
 
                         let chunkReplyTarget: { id: number, content: string, name: string } | undefined;
                         const chunkQuoteMatch = chunk.match(QUOTE_RE_DOUBLE) || chunk.match(QUOTE_RE_SINGLE) || chunk.match(REPLY_RE_CN);

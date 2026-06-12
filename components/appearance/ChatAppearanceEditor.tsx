@@ -6,6 +6,8 @@ type Props = {
     updateTheme: (updates: Partial<OSTheme>) => void;
     /** 一键还原全部聊天白框 CSS（全局 + 每个角色），兼作坏 CSS 救援。 */
     onResetAllChrome?: () => void;
+    /** 打开气泡工坊全屏编辑器（原独立 tab 已并入本页） */
+    onOpenBubbleWorkshop?: () => void;
 };
 
 const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> = [
@@ -24,6 +26,26 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
             chatAvatarMode: 'grouped',
             chatBubbleStyle: 'modern',
             chatMessageSpacing: 'default',
+            chatInputStyle: 'rounded',
+            chatSendButtonStyle: 'circle',
+            chatShowTimestamp: 'hover',
+        },
+    },
+    {
+        name: '奶白手帐',
+        desc: '悬浮白卡+居中头像的奶白风',
+        config: {
+            chatChromeStyle: 'floating',
+            chatBackgroundStyle: 'plain',
+            chatHeaderStyle: 'minimal',
+            chatHeaderAlign: 'center',
+            chatHeaderDensity: 'airy',
+            chatStatusStyle: 'subtle',
+            chatAvatarShape: 'circle',
+            chatAvatarSize: 'large',
+            chatAvatarMode: 'grouped',
+            chatBubbleStyle: 'ios',
+            chatMessageSpacing: 'spacious',
             chatInputStyle: 'rounded',
             chatSendButtonStyle: 'circle',
             chatShowTimestamp: 'hover',
@@ -320,7 +342,7 @@ const ChoiceGroup: React.FC<{
     </div>
 );
 
-export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome }) => {
+export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenBubbleWorkshop }) => {
     const avatarShape = theme.chatAvatarShape || defaults.chatAvatarShape;
     const avatarSize = theme.chatAvatarSize || defaults.chatAvatarSize;
     const avatarMode = theme.chatAvatarMode || defaults.chatAvatarMode;
@@ -365,6 +387,24 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
     return (
         <div className="space-y-5">
+            {/* 气泡工坊入口（原独立 tab 并入聊天界面页）：深度自定义气泡颜色/贴纸/头像挂件 */}
+            {onOpenBubbleWorkshop && (
+                <section className={groupClass}>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">气泡工坊</h2>
+                            <p className="mt-1 text-[10px] text-slate-400">深度定制消息气泡：颜色、透明度、背景图、贴纸、头像挂件、语音条样式，保存为可切换的主题。</p>
+                        </div>
+                        <button
+                            onClick={onOpenBubbleWorkshop}
+                            className="shrink-0 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-md transition-transform active:scale-95"
+                        >
+                            打开工坊
+                        </button>
+                    </div>
+                </section>
+            )}
+
             <section className={groupClass}>
                 <div className="mb-3">
                     <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">聊天壳预设</h2>
