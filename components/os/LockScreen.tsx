@@ -53,11 +53,32 @@ const LockScreen: React.FC = () => {
     const [padError, setPadError] = useState(false);
     // 解锁成功后要直达的角色聊天（点通知卡进入）
     const [pendingCharId, setPendingCharId] = useState<string | null>(null);
+    // 解锁退场动画进行中（主题 → 锁屏 → 解锁动画）
+    const [unlocking, setUnlocking] = useState(false);
 
     const contentColor = theme.contentColor || '#3f3d49';
-    const wallpaper = theme.wallpaper;
+    // 锁屏样式自定义（主题 → 锁屏）：专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS
+    const lockStyle = theme.lockScreenStyle;
+    const wallpaper = lockStyle?.wallpaper || theme.wallpaper;
     const bgImageValue = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:')
         ? `url(${wallpaper})` : wallpaper;
+
+    const clockFontStyle: React.CSSProperties =
+        lockStyle?.clockFont === 'sans' ? { fontFamily: 'var(--app-font)', fontStyle: 'normal' }
+        : lockStyle?.clockFont === 'mono' ? { fontFamily: 'var(--font-label)', fontStyle: 'normal' }
+        : lockStyle?.clockFont === 'hand' ? { fontFamily: 'var(--font-hand)', fontStyle: 'normal' }
+        : {}; // 'serif' / 缺省沿用 font-display-italic
+
+    // 通知卡风格：玻璃拟态（默认）/ 纸面手帐 / 墨色
+    const notifCardClass =
+        lockStyle?.notifCardStyle === 'paper'
+            ? 'bg-white/95 rounded-2xl shadow-[0_14px_28px_-18px_rgba(50,48,60,0.45)] border border-slate-100 text-slate-700'
+            : lockStyle?.notifCardStyle === 'ink'
+                ? 'bg-[#16151d]/90 backdrop-blur-xl rounded-2xl shadow-lg border border-white/10 text-white'
+                : 'bg-white/25 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20';
+
+    const unlockAnim = lockStyle?.unlockAnimation || 'fade';
+    const UNLOCK_ANIM_MS = unlockAnim === 'none' ? 0 : 360;
 
     // 未读变化（含锁屏期间新到的主动消息）→ 每条未读消息气泡一张通知卡
     // （角色一次回复拆成几个气泡就出几张卡，与未读数一致），新消息在最上面
@@ -94,11 +115,17 @@ const LockScreen: React.FC = () => {
     }, [unreadMessages, lastMsgTimestamp, characters]);
 
     const doUnlock = (charId?: string | null) => {
-        unlock();
-        if (charId) {
-            setActiveCharacterId(charId);
-            openApp(AppID.Chat);
-        }
+        const finish = () => {
+            unlock();
+            if (charId) {
+                setActiveCharacterId(charId);
+                openApp(AppID.Chat);
+            }
+        };
+        if (UNLOCK_ANIM_MS <= 0 || unlocking) { finish(); return; }
+        // 先播放退场动画再真正解锁（动画种类来自主题 → 锁屏 → 解锁动画）
+        setUnlocking(true);
+        window.setTimeout(finish, UNLOCK_ANIM_MS);
     };
 
     const requestUnlock = (charId?: string | null) => {
@@ -140,16 +167,26 @@ const LockScreen: React.FC = () => {
     return (
         <div
             className="moro-lock-screen relative w-full h-full bg-cover bg-center overflow-hidden font-light select-none overscroll-none"
-            style={{ backgroundImage: bgImageValue, color: contentColor, animation: 'lockReveal 600ms ease-out both' }}
-            onClick={() => { if (!showPad) requestUnlock(); }}
+            style={{
+                backgroundImage: bgImageValue,
+                color: contentColor,
+                animation: unlocking
+                    ? `lockExit${unlockAnim === 'slide' ? 'Slide' : unlockAnim === 'zoom' ? 'Zoom' : 'Fade'} ${UNLOCK_ANIM_MS}ms ease-in both`
+                    : 'lockReveal 600ms ease-out both',
+            }}
+            onClick={() => { if (!showPad && !unlocking) requestUnlock(); }}
         >
             {/* 锁屏柔和淡入：与开机「世界入场」退场衔接；body 背景本就是壁纸，故是无缝融入而非硬切。 */}
             <style>{`
                 @keyframes lockReveal{from{opacity:0}to{opacity:1}}
                 @keyframes lockNotifIn{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
                 @keyframes lockPadShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
+                @keyframes lockExitFade{from{opacity:1}to{opacity:0}}
+                @keyframes lockExitSlide{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-12%)}}
+                @keyframes lockExitZoom{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.12)}}
             `}</style>
             {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
+            {lockStyle?.customCss && <style>{lockStyle.customCss}</style>}
             <div className="absolute inset-0 bg-black/5 backdrop-blur-sm" />
 
             {/* 治愈系氛围光斑：缓慢漂移的暖紫/蜜桃光晕 */}
@@ -160,10 +197,10 @@ const LockScreen: React.FC = () => {
                      style={{ background: 'radial-gradient(circle, rgba(253,213,184,0.25), transparent 70%)' }} />
             </div>
 
-            {/* 时钟 */}
-            <div className="absolute top-16 w-full text-center pointer-events-none">
+            {/* 时钟（字体风格来自主题 → 锁屏 → 时钟字体） */}
+            <div className="moro-lock-clock absolute top-16 w-full text-center pointer-events-none">
                 <div className="text-[10px] label-mono font-bold opacity-50 mb-2">Moro · Lock</div>
-                <div className="text-7xl tracking-tight opacity-95 font-display-italic font-semibold">
+                <div className="text-7xl tracking-tight opacity-95 font-display-italic font-semibold" style={clockFontStyle}>
                     {virtualTime.hours.toString().padStart(2, '0')}<span className="animate-pulse">:</span>{virtualTime.minutes.toString().padStart(2, '0')}
                 </div>
                 <div className="label-mono opacity-70 mt-2 text-[10px] font-bold">Moro Simulation</div>
@@ -177,7 +214,7 @@ const LockScreen: React.FC = () => {
                         <div
                             key={n.key}
                             onClick={(e) => { e.stopPropagation(); requestUnlock(n.charId); }}
-                            className="bg-white/25 backdrop-blur-xl rounded-2xl p-3.5 shadow-lg border border-white/20 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform"
+                            className={`moro-lock-notif ${notifCardClass} p-3.5 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform`}
                             style={{ animation: `lockNotifIn 420ms cubic-bezier(0.2,0.9,0.3,1.2) both`, animationDelay: `${i * 70}ms` }}
                         >
                             <img src={n.avatar} alt={n.name} className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-sm" />
@@ -199,7 +236,7 @@ const LockScreen: React.FC = () => {
                             {/* 仿 iOS 的折叠堆叠：两层卡片边缘从最上面那张下探出来 */}
                             <div className="absolute left-3 right-3 -bottom-1.5 h-4 rounded-2xl bg-white/15 backdrop-blur-xl border border-white/15" />
                             <div className="absolute left-6 right-6 -bottom-3 h-4 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/10" />
-                            <div className="relative bg-white/25 backdrop-blur-xl rounded-2xl p-3 shadow-lg border border-white/20 flex items-center gap-3">
+                            <div className={`moro-lock-notif relative ${notifCardClass} p-3 flex items-center gap-3`}>
                                 <img src={notifications[MAX_FULL_CARDS].avatar} alt="" className="w-8 h-8 rounded-xl object-cover shrink-0 shadow-sm" />
                                 <div className="flex-1 min-w-0 text-left">
                                     <div className="text-xs font-bold truncate">{notifications[MAX_FULL_CARDS].name}</div>

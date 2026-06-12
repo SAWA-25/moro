@@ -29,7 +29,9 @@ interface LiveNotice {
 }
 
 const DynamicIsland: React.FC = () => {
-    const { unreadMessages, characters, openApp, setActiveCharacterId, clearUnread, activeApp, activeCharacterId } = useOS();
+    const { unreadMessages, characters, openApp, setActiveCharacterId, clearUnread, activeApp, activeCharacterId, theme } = useOS();
+    // 灵动岛样式自定义（主题 → 灵动岛）：背景 / 文字色 / 圆角 / 自定义 CSS
+    const islandStyle = theme.dynamicIslandStyle;
     // 正在跟该角色聊天时不弹横幅（用 ref 让事件监听器拿到最新值，不重挂监听）
     const activeChatRef = useRef<{ app: AppID; charId: string | null }>({ app: activeApp, charId: activeCharacterId });
     activeChatRef.current = { app: activeApp, charId: activeCharacterId };
@@ -193,6 +195,7 @@ const DynamicIsland: React.FC = () => {
                 @keyframes islandDrop { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 @keyframes islandPop { 0% { transform: scale(0.9); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
             `}</style>
+            {islandStyle?.customCss && <style>{islandStyle.customCss}</style>}
 
             {/* 展开时的遮罩：点空白处收起 */}
             {expanded && (
@@ -228,13 +231,15 @@ const DynamicIsland: React.FC = () => {
                         if (dy > 24) { setExpanded(true); touchStartY.current = null; }
                     }}
                     onTouchEnd={() => { touchStartY.current = null; }}
-                    className="moro-dynamic-island flex items-center justify-center gap-2 rounded-full text-white shadow-lg select-none"
+                    className="moro-dynamic-island flex items-center justify-center gap-2 rounded-full shadow-lg select-none"
                     style={{
-                        background: '#0b0b12',
+                        background: islandStyle?.background || '#0b0b12',
+                        color: islandStyle?.textColor || '#ffffff',
                         height: notice ? '38px' : '26px',
                         minWidth: notice ? undefined : '92px',
                         maxWidth: '78vw',
                         padding: notice ? '0 14px 0 8px' : '0 12px',
+                        ...(typeof islandStyle?.radius === 'number' ? { borderRadius: `${islandStyle.radius}px` } : {}),
                         animation: notice ? 'islandPop 320ms ease-out' : undefined,
                         transition: 'min-width 300ms ease, height 240ms ease',
                         WebkitTapHighlightColor: 'transparent',
