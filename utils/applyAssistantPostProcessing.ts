@@ -35,7 +35,7 @@ import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { splitOutRichBlocks } from './chatRichContent';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
-import { applyRegexToText } from './regex/store';
+import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
@@ -555,10 +555,17 @@ export async function applyAssistantPostProcessing(
         // ``` 围栏 / 裸块级 HTML（含正则脚本注入的 HTML）先抽成占位符：
         //  1) 全局 sanitize 不会剥掉围栏反引号；
         //  2) chunkText 不会按换行把 HTML 切成 "</div>" 这样的碎泡。
+        // 另外把「显示层正则脚本（markdownOnly）能命中的整段」也按富块保护 ——
+        // 否则 <status>…</status> 这类伪 XML 被拆泡后，气泡渲染层的美化正则
+        // 永远匹配不上，正则注入的 HTML 也就渲染不出来（ST 单消息不拆泡，
+        // Moro 拆泡必须显式保护）。
         // 落库时占位符还原成原文、整块单独成泡，由 MessageItem 直接渲染成效果。
         const RICH_MARKER = String.fromCharCode(2);
         const richBlocks: string[] = [];
-        const protectedContent = splitOutRichBlocks(rawContent).map(seg => {
+        const protectedContent = splitOutRichBlocks(rawContent).flatMap(seg => {
+            if (seg.kind === 'rich') return [seg];
+            return splitOutDisplayRegexSegments(seg.content, char, userProfile?.name);
+        }).map(seg => {
             if (seg.kind !== 'rich') return seg.content;
             const idx = richBlocks.push(seg.content.trim()) - 1;
             return `\n${RICH_MARKER}R${idx}${RICH_MARKER}\n`;
