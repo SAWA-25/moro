@@ -386,7 +386,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Item>
 
-                    <Item label="输入框文案" desc="输入框为空时显示的占位文字（默认 Message...）。">
+                    <Item label="输入框文案" desc="输入框为空时显示的占位文字（默认「说点什么…」）。">
                         <input
                             value={cs.inputPlaceholderText || ''}
                             onChange={e => updateConvo({ inputPlaceholderText: e.target.value || undefined })}
