@@ -1642,6 +1642,11 @@ export interface CharacterProfile {
   activeMsg2Config?: ActiveMsg2CharacterConfig;
   activeBuffs?: CharacterBuff[];
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
+
+  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新） */
+  affection?: number;
+  /** 当前心情（与好感值同一评估链路更新），显示在心声面板 */
+  currentMood?: { emoji?: string; label: string; updatedAt: number };
   emotionConfig?: {
     enabled: boolean;
     api?: {

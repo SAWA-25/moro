@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Brain, PencilSimple, MapPin, Microphone, MagicWand, Detective, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal, Heart } from '@phosphor-icons/react';
+import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Brain, PencilSimple, MapPin, Microphone, MagicWand, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal, Heart } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
@@ -799,13 +799,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <span className="text-xs font-bold">AI 画图</span>
                             </button>
 
-                            {/* Peek Inner Voice */}
-                            <button onClick={() => onPanelAction('inner-voice')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-violet-300 border-violet-400/20' : 'bg-violet-50 text-violet-400 border-violet-100'}`}>
-                                    <Detective className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">偷看心声</span>
-                            </button>
+                            {/* 偷看心声入口已移至顶栏角色头像（点头像查看心声/好感/心情） */}
 
                             {/* 查手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
                             <button onClick={() => onPanelAction('check-phone')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>

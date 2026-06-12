@@ -28,6 +28,8 @@ interface ChatHeaderShellProps {
     /** 右上角"聊天设置"入口（齿轮按钮，原 + 面板里的「设置」迁移至此）。传了才渲染。 */
     onOpenChatSettings?: () => void;
     onShowCharsPanel: () => void;
+    /** 左上角角色头像点击：打开「心声」面板（心声 / 好感值 / 当前心情）。 */
+    onAvatarClick?: () => void;
     /** 右上角"角色设置"入口（⋮ 按钮）。传了才渲染。 */
     onOpenSettings?: () => void;
     onDeleteBuff?: (buffId: string) => void;
@@ -72,6 +74,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     onClose,
     onOpenChatSettings,
     onShowCharsPanel,
+    onAvatarClick,
     onOpenSettings,
     onDeleteBuff,
     hideBuffs = false,
@@ -326,9 +329,14 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         </div>
     ) : null;
 
+    // 头像点击 = 打开心声面板（与外层"打开角色列表"分离，stopPropagation 防止双触发）
+    const handleAvatarClick = onAvatarClick
+        ? (e: React.MouseEvent) => { e.stopPropagation(); onAvatarClick(); }
+        : undefined;
+
     const renderCenteredInfo = () => (
         <div className="flex w-full min-w-0 max-w-full flex-col items-center text-center">
-            <img src={activeCharacter.avatar} className={`moro-chat-avatar w-10 h-10 object-cover shadow-sm ${avatarRadiusClass}`} alt="avatar" />
+            <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-10 h-10 object-cover shadow-sm ${avatarRadiusClass} ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
             <div className={`moro-chat-name mt-1 font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
             {buffs.length > 0 && (
                 <div className="mt-1 min-h-[18px] w-full">
@@ -340,7 +348,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
     const renderStandardInfo = () => (
         <>
-            <img src={activeCharacter.avatar} className={`moro-chat-avatar w-10 h-10 object-cover shadow-sm ${avatarRadiusClass}`} alt="avatar" />
+            <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-10 h-10 object-cover shadow-sm ${avatarRadiusClass} ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
             <div className="moro-chat-info flex-1 min-w-0 flex flex-col items-start text-left">
                 <div className={`moro-chat-name font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
                 <div className="moro-chat-status flex items-center gap-2 flex-wrap">
