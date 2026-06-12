@@ -98,7 +98,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                     <span className="text-sm font-bold text-slate-700">启用主动消息</span>
                     <button
                         onClick={() => setEnabled(!enabled)}
-                        className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-violet-500' : 'bg-slate-200'}`}
+                        className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
                     >
                         <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
                     </button>
@@ -186,7 +186,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                 <span className="text-sm font-bold text-slate-700">使用副 API</span>
                                 <button
                                     onClick={() => { setUseSecondaryApi(!useSecondaryApi); setShowApiSection(!useSecondaryApi); }}
-                                    className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-violet-500' : 'bg-slate-200'}`}
+                                    className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
                                 >
                                     <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${useSecondaryApi ? 'translate-x-5' : 'translate-x-0'}`} />
                                 </button>

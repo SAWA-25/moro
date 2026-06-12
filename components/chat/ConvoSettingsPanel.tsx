@@ -50,11 +50,12 @@ interface ConvoSettingsPanelProps {
 
 // ── UI 原子 ────────────────────────────────────────────────────────────────
 
-// 开关（参考设计：墨色实底 + 大滑钮 + 柔影，黑白手帐风）
+// 开关（黑白手帐风：墨色实底 + 内圈手缝虚线 + 大滑钮柔影；关闭态为米纸底）
 const Toggle: React.FC<{ on: boolean; onToggle: () => void; tone?: string }> = ({ on, onToggle, tone }) => (
     <button
         onClick={onToggle}
-        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${on ? (tone || 'bg-slate-900') : 'bg-slate-200'}`}
+        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${on ? (tone || 'bg-[#2b2933]') : 'bg-[#e7e2d8]'}`}
+        style={{ outline: `1px dashed ${on ? 'rgba(255,255,255,0.35)' : 'rgba(167,162,151,0.45)'}`, outlineOffset: '-4px' }}
         role="switch" aria-checked={on}
     >
         <div className={`w-5 h-5 bg-white rounded-full shadow-[0_2px_5px_rgba(30,28,40,0.3)] transition-transform duration-300 ${on ? 'translate-x-[18px]' : ''}`} />

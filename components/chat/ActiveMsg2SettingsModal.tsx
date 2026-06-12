@@ -184,7 +184,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           </div>
           <button
             onClick={() => setEnabled(!enabled)}
-            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
@@ -290,7 +290,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 </div>
                 <button
                   onClick={() => setUseSecondaryApi(!useSecondaryApi)}
-                  className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+                  className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${useSecondaryApi ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>

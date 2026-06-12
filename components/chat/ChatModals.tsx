@@ -316,7 +316,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={() => setSettingsHideSysLogs(!settingsHideSysLogs)}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">隐藏系统日志</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${settingsHideSysLogs ? 'bg-primary' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${settingsHideSysLogs ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settingsHideSysLogs ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -329,7 +329,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleTranslation}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">消息翻译</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationEnabled ? 'bg-primary' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${translationEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -380,7 +380,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleXhs}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">小红书</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${xhsEnabled ? 'bg-red-400' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${xhsEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${xhsEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -393,7 +393,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleHtmlMode}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">HTML 模块模式</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${htmlModeEnabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${htmlModeEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${htmlModeEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -419,7 +419,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleChatVoice}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">语音消息</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${chatVoiceEnabled ? 'bg-emerald-400' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${chatVoiceEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${chatVoiceEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -452,7 +452,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                      title="时间感知强化是「时间感知」的重要功能。开启时会向上下文注入「距离上次聊天已过去多久」的提示，强化角色的时间观念、让 ta 主动匹配现实世界时间。关掉后不再注入这组提示词，角色不会被强制强化时间观念、也不会被强制匹配现实世界——但具体会弱化多少，取决于 API（模型）自己的理解。"
                                  >?</span>
                              </div>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${timeAwarenessEnabled ? 'bg-primary' : 'bg-slate-200'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${timeAwarenessEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${timeAwarenessEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -875,7 +875,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 <button
                                     onClick={onToggleScheduleFeature}
                                     aria-label="切换日程与情绪总开关"
-                                    className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center flex-shrink-0 ${isScheduleFeatureEnabled ? 'bg-primary' : 'bg-slate-300'}`}
+                                    className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center flex-shrink-0 ${isScheduleFeatureEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
                                 >
                                     <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${isScheduleFeatureEnabled ? 'translate-x-4' : ''}`}></div>
                                 </button>
