@@ -10,7 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
 import { processImage } from '../utils/file';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
@@ -172,8 +172,8 @@ const GroupMessageItem = React.memo(({
                         <div className="absolute -right-2 -top-2 text-white/20"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.324.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
                         <div className="bg-white/20 p-2 rounded-full shrink-0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 7.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z" /><path fillRule="evenodd" d="M1.5 4.875C1.5 3.839 2.34 3 3.375 3h17.25c1.035 0 1.875.84 1.875 1.875v9.75c0 1.036-.84 1.875-1.875 1.875H3.375A1.875 1.875 0 0 1 1.5 14.625v-9.75ZM8.25 9.75a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0ZM18.75 9a.75.75 0 0 0-.75.75v.008c0 .414.336.75.75.75h.008a.75.75 0 0 0 .75-.75V9.75a.75.75 0 0 0-.75-.75h-.008ZM4.5 9.75A.75.75 0 0 1 5.25 9h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75-.75H5.25a.75.75 0 0 1-.75-.75V9.75Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
                         <div className="z-10">
-                            <div className="font-bold text-sm tracking-wide">红包 / 转账</div>
-                            <div className="text-[10px] opacity-90">Moro Pay</div>
+                            <div className="font-bold text-sm tracking-wide">一点心意</div>
+                            <div className="text-[10px] opacity-90">随信附上 · Moro Pay</div>
                         </div>
                     </div>
                 );
@@ -508,17 +508,17 @@ const ChatHub: React.FC = () => {
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
-        if (!m) return '暂无消息';
+        if (!m) return '还没说过话';
         switch (m.type) {
-            case 'image': return '[图片]';
-            case 'emoji': return '[表情包]';
-            case 'transfer': return '[红包]';
-            case 'voice': return '[语音]';
-            case 'interaction': return m.content || '[戳一戳]';
+            case 'image': return '[一张相片]';
+            case 'emoji': return '[一枚贴纸]';
+            case 'transfer': return '[一点心意]';
+            case 'voice': return '[一段留声]';
+            case 'interaction': return m.content || '[碰了碰]';
             case 'system': return m.content;
             default: {
                 const t = typeof m.content === 'string' ? m.content : '';
-                return /^(data:|https?:\/\/)/i.test(t.trim()) ? '[媒体]' : t.slice(0, 40);
+                return /^(data:|https?:\/\/)/i.test(t.trim()) ? '[一份附件]' : t.slice(0, 40);
             }
         }
     };
@@ -1528,7 +1528,7 @@ ${attachedImagesNote}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '此刻'}</span>
+                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '往来' : hubTab === 'contacts' ? '名册' : '此刻'}</span>
                     <div className="flex-1"></div>
                     {hubTab !== 'moments' && (
                         <div className="relative">
@@ -1629,7 +1629,7 @@ ${attachedImagesNote}
                         {convos.length === 0 && (
                             <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2">
                                 <ChatsTeardrop size={36} className="opacity-50" />
-                                还没有任何会话。去「联系人」找个角色开聊，或点右上角创建群聊。
+                                这里还空着。去「名册」找个人说说话，或点右上角拉个群。
                             </div>
                         )}
                     </div>
@@ -1672,11 +1672,11 @@ ${attachedImagesNote}
                     <div className="grid grid-cols-3">
                         <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">聊天</span>
+                            <span className="text-[10px] font-bold">往来</span>
                         </button>
                         <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <AddressBook size={22} weight={hubTab === 'contacts' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">联系人</span>
+                            <span className="text-[10px] font-bold">名册</span>
                         </button>
                         <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
@@ -1945,7 +1945,7 @@ ${attachedImagesNote}
                             <div className="w-6 h-6 rounded-full bg-slate-300 border-2 border-white"></div>
                             <div className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white"></div>
                         </div>
-                        <span className="text-xs text-slate-400 font-medium">成员正在输入...</span>
+                        <span className="text-xs text-slate-400 font-medium">有人正在落笔…</span>
                     </div>
                 )}
             </div>
@@ -1956,30 +1956,31 @@ ${attachedImagesNote}
                     <div className="p-4 text-center text-xs text-slate-400 font-medium">此群聊已被解散，仅可查看历史消息</div>
                 ) : selectionMode ? (
                     <div className="p-3 flex justify-center bg-white">
-                        <button 
-                            onClick={deleteSelectedMessages} 
-                            className="w-full py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2"
+                        <button
+                            onClick={deleteSelectedMessages}
+                            className="w-full py-3 bg-white text-red-500 font-bold rounded-2xl border border-red-200 shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
+                            style={{ outline: '1px dashed rgba(239,68,68,0.4)', outlineOffset: '-4px' }}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                            删除 ({selectedMsgIds.size})
+                            <Scissors size={20} weight="bold" />
+                            撕掉 {selectedMsgIds.size} 条
                         </button>
                     </div>
                 ) : (
                     <div className="p-2 flex items-end gap-2">
-                        {/* Plus / Actions Button */}
-                        <button 
-                            onClick={() => { setShowActions(!showActions); setShowEmojiPicker(false); }}
-                            className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-transform ${showActions ? 'bg-[#e7e2d8] rotate-45' : 'bg-transparent hover:bg-[#ece7dc]'}`}
+                        {/* 左外侧：贴纸册入口（与单聊一致） */}
+                        <button
+                            onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowActions(false); }}
+                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-600 transition-colors hover:bg-[#ece7dc]"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                            <Sticker size={24} weight={showEmojiPicker ? 'fill' : 'bold'} />
                         </button>
 
                         {/* Input Field Container */}
                         <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-xl flex items-end px-3 py-2 border border-slate-200 focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-200 transition-all">
-                            <textarea 
-                                rows={1} 
-                                value={input} 
-                                onChange={e => setInput(e.target.value)} 
+                            <textarea
+                                rows={1}
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter' && !e.shiftKey) {
                                         e.preventDefault();
@@ -1992,15 +1993,15 @@ ${attachedImagesNote}
                                     }
                                 }}
                                 className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-slate-800 placeholder:text-slate-400 py-1"
-                                placeholder="说点什么…" 
-                                style={{ height: 'auto', minHeight: '24px' }} 
+                                placeholder="说点什么…"
+                                style={{ height: 'auto', minHeight: '24px' }}
                             />
-                            {/* Emoji Toggle inside input */}
-                            <button 
-                                onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowActions(false); }}
-                                className="p-1 -mr-1 ml-1 text-slate-400 hover:text-yellow-500 transition-colors shrink-0"
+                            {/* 输入框内右侧：回形针 = 别上点什么（功能抽屉） */}
+                            <button
+                                onClick={() => { setShowActions(!showActions); setShowEmojiPicker(false); }}
+                                className={`p-1 -mr-1 ml-1 text-slate-400 hover:text-slate-700 transition-transform shrink-0 ${showActions ? 'rotate-45 text-slate-700' : ''}`}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 0 1-6.364 0M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Z" /></svg>
+                                <Paperclip size={24} weight={showActions ? 'bold' : 'regular'} />
                             </button>
                         </div>
 
@@ -2015,30 +2016,32 @@ ${attachedImagesNote}
                             }}
                             className={`h-9 px-4 shrink-0 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all ${input.trim() ? 'bg-[#2b2933] text-white' : 'bg-[#e7e2d8] text-[#6b6657]'}`}
                         >
-                            发送
+                            寄出
                         </button>
                     </div>
                 )}
 
-                {/* --- Action Drawer --- */}
+                {/* --- 文具盒抽屉（与单聊同一套纸条按钮） --- */}
                 {showActions && (
-                    <div className="h-64 bg-[#faf9f6] scrap-panel border-t border-dashed border-[#d9d4c8] p-6 animate-slide-up">
-                        <div className="grid grid-cols-4 gap-6">
-                            <button onClick={() => fileInputRef.current?.click()} className="scrap-action flex flex-col items-center gap-2 group">
-                                <div className="scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center group-active:scale-95 transition-transform">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
+                    <div className="h-64 bg-[#faf9f6] scrap-panel border-t border-dashed border-[#d9d4c8] px-4 py-4 animate-slide-up overflow-y-auto no-scrollbar">
+                        <div className="stationery-grid grid grid-cols-2 gap-x-3 gap-y-2.5">
+                            <div className="drawer-tag col-span-2"><span>寄 给 大 家</span></div>
+                            <button onClick={() => fileInputRef.current?.click()} className="stationery-strip">
+                                <div className="stamp-box"><ImageSquare size={20} weight="bold" /></div>
+                                <div className="flex-1 min-w-0 text-left">
+                                    <div className="text-[12px] font-bold tracking-wide text-slate-700">贴照片</div>
+                                    <div className="text-[9px] mt-0.5 text-slate-400 truncate">从相册挑一张寄去</div>
                                 </div>
-                                <span className="text-[11px] font-bold tracking-wide text-slate-600">相册</span>
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
 
-                            <button onClick={() => setModalType('transfer')} className="scrap-action flex flex-col items-center gap-2 group">
-                                <div className="scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center group-active:scale-95 transition-transform">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-[#2b2933]"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                            <button onClick={() => setModalType('transfer')} className="stationery-strip">
+                                <div className="stamp-box"><Coins size={20} weight="bold" /></div>
+                                <div className="flex-1 min-w-0 text-left">
+                                    <div className="text-[12px] font-bold tracking-wide text-slate-700">寄零花</div>
+                                    <div className="text-[9px] mt-0.5 text-slate-400 truncate">给群里塞点心意</div>
                                 </div>
-                                <span className="text-[11px] font-bold tracking-wide text-slate-600">红包</span>
                             </button>
-
                         </div>
                     </div>
                 )}
@@ -2051,7 +2054,7 @@ ${attachedImagesNote}
                             <input
                                 value={emojiSearch}
                                 onChange={e => setEmojiSearch(e.target.value)}
-                                placeholder="按名字或描述搜索表情…"
+                                placeholder="翻找贴纸：按名字或描述…"
                                 className="w-full px-3 py-1.5 text-xs rounded-full outline-none border bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-slate-400"
                             />
                         </div>
@@ -2227,7 +2230,7 @@ ${attachedImagesNote}
             </Modal>
 
             {/* Transfer Modal */}
-            <Modal isOpen={modalType === 'transfer'} title="发送红包" onClose={() => setModalType('none')} footer={<button onClick={() => { handleSendMessage(`[红包] ${transferAmount} Credits`, 'transfer', { amount: transferAmount }); setModalType('none'); }} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">塞进红包</button>}>
+            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={() => setModalType('none')} footer={<button onClick={() => { handleSendMessage(`[红包] ${transferAmount} Credits`, 'transfer', { amount: transferAmount }); setModalType('none'); }} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">塞进红包</button>}>
                 <div className="space-y-4">
                     <div className="text-center py-4 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
                     <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="金额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />

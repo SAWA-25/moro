@@ -1706,7 +1706,7 @@ ${recent || '（你们还没怎么聊过）'}
 
     const handleAddCategory = async () => {
         if (!newCategoryName.trim()) {
-             addToast('请输入分类名称', 'error');
+             addToast('先给这页贴纸起个名字吧', 'error');
              return;
         }
         const newCat = { id: `cat-${Date.now()}`, name: newCategoryName.trim() };
@@ -1715,7 +1715,7 @@ ${recent || '（你们还没怎么聊过）'}
         setActiveCategory(newCat.id);
         setModalType('none');
         setNewCategoryName('');
-        addToast('分类创建成功', 'success');
+        addToast('新的一页建好了', 'success');
     };
 
     const handleImportEmoji = async () => {
@@ -1747,7 +1747,7 @@ ${recent || '（你们还没怎么聊过）'}
         await loadEmojiData();
         setModalType('none');
         setEmojiImportText('');
-        addToast('表情包导入成功', 'success');
+        addToast('贴纸收集好了', 'success');
     };
 
     const handleDeleteCategory = async () => {
@@ -1757,7 +1757,7 @@ ${recent || '（你们还没怎么聊过）'}
         setActiveCategory('default');
         setModalType('none');
         setSelectedCategory(null);
-        addToast('分类及包含表情已删除', 'success');
+        addToast('这一页连同上面的贴纸都撕掉了', 'success');
     };
 
     const handleSaveCategoryVisibility = async (categoryId: string, allowedCharacterIds: string[] | undefined) => {
@@ -2224,10 +2224,10 @@ ${recent || '（你们还没怎么聊过）'}
         const emojisToDelete = Array.isArray(selectedEmoji) ? selectedEmoji : [selectedEmoji];
         try {
             await Promise.all(emojisToDelete.map(emoji => DB.deleteEmoji(emoji.name)));
-            addToast(Array.isArray(selectedEmoji) ? `已删除 ${selectedEmoji.length} 个表情包` : '表情包已删除', 'success');
+            addToast(Array.isArray(selectedEmoji) ? `撕下了 ${selectedEmoji.length} 张贴纸` : '贴纸撕下来了', 'success');
         } catch (err) {
             console.error('Failed to delete emojis:', err);
-            addToast('删除表情包失败', 'error');
+            addToast('贴纸没撕下来，再试一次', 'error');
         } finally {
             await loadEmojiData();
             setModalType('none');
@@ -2784,8 +2784,8 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
              <Modal
-                isOpen={showSystemCmdModal} title="系统命令" onClose={() => setShowSystemCmdModal(false)}
-                footer={<><button onClick={() => setShowSystemCmdModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()} className={`flex-1 py-3 font-bold rounded-2xl text-white ${systemCmdInput.trim() ? 'bg-slate-900' : 'bg-slate-300'}`}>执行命令</button></>}
+                isOpen={showSystemCmdModal} title="幕后指令" onClose={() => setShowSystemCmdModal(false)}
+                footer={<><button onClick={() => setShowSystemCmdModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()} className={`flex-1 py-3 font-bold rounded-2xl text-white ${systemCmdInput.trim() ? 'bg-slate-900' : 'bg-slate-300'}`}>下达指令</button></>}
              >
                 <div className="space-y-3">
                     <div className="rounded-2xl bg-slate-900 px-4 py-3">
@@ -2805,8 +2805,8 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* 位置分享 Modal */}
              <Modal
-                isOpen={showLocationModal} title="分享位置" onClose={() => setShowLocationModal(false)}
-                footer={<><button onClick={() => setShowLocationModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={handleSendLocation} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-2xl">发送位置</button></>}
+                isOpen={showLocationModal} title="落脚点" onClose={() => setShowLocationModal(false)}
+                footer={<><button onClick={() => setShowLocationModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={handleSendLocation} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-2xl">寄出位置</button></>}
              >
                 <div className="space-y-3">
                     <input value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="地点名称（如：江汉路 星巴克）" maxLength={40} className="w-full bg-slate-100 rounded-2xl px-5 py-3.5 text-sm font-bold" autoFocus />
@@ -2817,10 +2817,10 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* AI 画图 Modal */}
              <Modal
-                isOpen={showImageGenModal} title="AI 画图" onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
+                isOpen={showImageGenModal} title="画一张" onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
                 footer={imageGenPreview
-                    ? <><button onClick={() => setImageGenPreview(null)} className="flex-1 py-3 bg-slate-100 rounded-2xl">重画</button><button onClick={handleSendGeneratedImage} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl">发送图片</button></>
-                    : <button onClick={handleGenerateImage} disabled={isGeneratingImage} className={`w-full py-3 font-bold rounded-2xl text-white ${isGeneratingImage ? 'bg-fuchsia-300' : 'bg-fuchsia-500'}`}>{isGeneratingImage ? '生成中…' : '生成'}</button>}
+                    ? <><button onClick={() => setImageGenPreview(null)} className="flex-1 py-3 bg-slate-100 rounded-2xl">重画</button><button onClick={handleSendGeneratedImage} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl">寄出这张</button></>
+                    : <button onClick={handleGenerateImage} disabled={isGeneratingImage} className={`w-full py-3 font-bold rounded-2xl text-white ${isGeneratingImage ? 'bg-fuchsia-300' : 'bg-fuchsia-500'}`}>{isGeneratingImage ? '画着呢…' : '开画'}</button>}
              >
                 <div className="space-y-3">
                     {imageGenPreview ? (
@@ -3645,9 +3645,9 @@ ${recent || '（你们还没怎么聊过）'}
 
 
             {/* Forward Modal */}
-            <Modal isOpen={showForwardModal} title="转发聊天记录" onClose={() => setShowForwardModal(false)}>
+            <Modal isOpen={showForwardModal} title="转交聊天记录" onClose={() => setShowForwardModal(false)}>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
-                    <p className="text-xs text-slate-400 mb-3">选择要转发给的角色 (已选 {selectedMsgIds.size} 条消息)</p>
+                    <p className="text-xs text-slate-400 mb-3">选择要把这几页转交给谁（已选 {selectedMsgIds.size} 条消息）</p>
                     {characters.filter(c => c.id !== activeCharacterId).map(c => (
                         <button
                             key={c.id}

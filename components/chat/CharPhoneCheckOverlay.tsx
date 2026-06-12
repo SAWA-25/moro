@@ -497,7 +497,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'chat-list') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">聊天</div>
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">絮语</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80">
                         {contacts.map(({ char: c, preview }) => (
                             <div key={c.id} className={`px-4 py-3 flex items-center gap-3 border-b border-slate-50 ${targetChar?.id === c.id ? 'bg-amber-50' : ''}`}>

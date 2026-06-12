@@ -2126,7 +2126,7 @@ const MessageItem = React.memo(({
                     {address && <div className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{address}</div>}
                     <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-1 text-[10px] text-emerald-500">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 1.04.572l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd" /></svg>
-                        位置分享
+                        落脚点 · 此刻在这
                     </div>
                 </div>
             </div>
@@ -2167,7 +2167,7 @@ const MessageItem = React.memo(({
                 </div>
                 <div className="text-[26px] font-black tracking-tight text-slate-800">₩ {m.metadata?.amount}</div>
                 <div className="mt-2 pt-2 border-t border-slate-50 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">转账给{isUser ? charName : '你'}</span>
+                    <span className="text-[10px] text-slate-400">寄给{isUser ? charName : '你'}的零花钱</span>
                     <span className="text-[10px] text-slate-300">♡</span>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ShareNetwork, Trash, Plus, Smiley, PaperPlaneTilt, Money, BookOpenText, Image, Lock, ArrowsClockwise, ChatCircleDots, CalendarBlank, ForkKnife, Brain, PencilSimple, MapPin, Microphone, MagicWand, StopCircle, X, DeviceMobileCamera, PhoneCall, Terminal, Heart } from '@phosphor-icons/react';
+import { ArrowBendUpRight, BookBookmark, CalendarCheck, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, X } from '@phosphor-icons/react';
 import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
 import { PRESET_THEMES } from './ChatConstants';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
@@ -52,29 +52,37 @@ interface ChatInputAreaProps {
     /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
 }
 
-/** 加号面板贴纸瓦片：手账拼贴风统一按钮（纸贴纸 + 迷你和纸胶带 + 缝线 + 交错微旋转） */
-const ActionTile: React.FC<{
+/** 文具盒纸条按钮：邮票图标格在左、标签 + 小注在右，开启中的功能点上火漆点 */
+const ActionStrip: React.FC<{
     label: string;
+    /** 一行小注：写明这条纸条干什么用 */
+    hint?: string;
     onClick?: () => void;
     disabled?: boolean;
-    /** 功能处于开启状态：墨色实底贴纸 + 角标点 */
+    /** 功能处于开启状态：墨色实底纸条 + 火漆点 */
     active?: boolean;
-    /** 仅外观用墨色实底（不带状态角标点），如系统命令 */
+    /** 仅外观用墨色实底（不带火漆点），如幕后指令 */
     ink?: boolean;
     dark?: boolean;
     children: React.ReactNode;
-}> = ({ label, onClick, disabled, active, ink, dark, children }) => (
+}> = ({ label, hint, onClick, disabled, active, ink, dark, children }) => (
     <button
         onClick={onClick}
         disabled={disabled}
-        className={`scrap-action flex flex-col items-center gap-2 active:scale-95 transition-transform ${disabled ? 'opacity-40' : ''} ${dark ? 'text-slate-200' : 'text-slate-600'}`}
+        className={`stationery-strip ${(active || ink) ? 'stationery-strip-ink' : ''} ${dark && !(active || ink) ? 'stationery-strip-dark' : ''} ${disabled ? 'opacity-40' : ''}`}
     >
-        <div className={`scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center ${(active || ink) ? 'scrap-tile-ink' : ''} ${dark && !(active || ink) ? 'scrap-tile-dark' : ''}`}>
-            {children}
-            {active && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${dark ? 'bg-slate-200 border-slate-900' : 'bg-[#2b2933] border-white'}`} />}
+        <div className="stamp-box">{children}</div>
+        <div className="flex-1 min-w-0">
+            <div className={`text-[12px] font-bold tracking-wide truncate ${(active || ink) ? 'text-white' : dark ? 'text-slate-200' : 'text-slate-700'}`}>{label}</div>
+            {hint && <div className={`text-[9px] mt-0.5 truncate ${(active || ink) ? 'text-white/60' : dark ? 'text-slate-400' : 'text-slate-400'}`}>{hint}</div>}
         </div>
-        <span className="text-[11px] font-bold tracking-wide">{label}</span>
+        {active && <span className="wax-dot" />}
     </button>
+);
+
+/** 文具盒分区标签：墨色小旗 + 缝线延伸 */
+const DrawerTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="drawer-tag col-span-2"><span>{children}</span></div>
 );
 
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
@@ -96,15 +104,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const [actionsPage, setActionsPage] = useState<0 | 1>(0);
     const [emojiSelectionMode, setEmojiSelectionMode] = useState(false);
     const [selectedEmojis, setSelectedEmojis] = useState<any[]>([]);
     const [emojiSearch, setEmojiSearch] = useState('');
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     const isLongPressTriggered = useRef(false); // Track if long press action fired
-    const actionsSwipeStart = useRef<{ x: number; y: number } | null>(null);
-    const actionsSwipeMoved = useRef(false);
     const useIOSStandaloneInputFix = isIOSStandaloneWebApp();
 
     // 表情面板搜索：有关键词时跨分类匹配名字/描述（联动所有导入的表情包），否则按当前分类显示
@@ -310,45 +315,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         clearTimer();
     };
 
-    // --- Actions Panel Swipe (left/right page switch) ---
-    const handleActionsSwipeStart = (e: React.TouchEvent) => {
-        const t = e.touches[0];
-        actionsSwipeStart.current = { x: t.clientX, y: t.clientY };
-        actionsSwipeMoved.current = false;
-    };
-
-    const handleActionsSwipeMove = (e: React.TouchEvent) => {
-        if (!actionsSwipeStart.current) return;
-        const t = e.touches[0];
-        const dx = t.clientX - actionsSwipeStart.current.x;
-        const dy = t.clientY - actionsSwipeStart.current.y;
-        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-            actionsSwipeMoved.current = true;
-        }
-    };
-
-    const handleActionsSwipeEnd = (e: React.TouchEvent) => {
-        if (!actionsSwipeStart.current) return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - actionsSwipeStart.current.x;
-        const dy = t.clientY - actionsSwipeStart.current.y;
-        actionsSwipeStart.current = null;
-        const SWIPE_THRESHOLD = 40;
-        if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy)) {
-            if (dx < 0 && actionsPage === 0) setActionsPage(1);
-            else if (dx > 0 && actionsPage === 1) setActionsPage(0);
-        }
-    };
-
-    const handleActionsClickCapture = (e: React.MouseEvent) => {
-        if (actionsSwipeMoved.current) {
-            e.stopPropagation();
-            e.preventDefault();
-            actionsSwipeMoved.current = false;
-        }
-    };
-
-
     // Wrapper for Click to prevent conflicts
     const handleItemClick = (e: React.MouseEvent, item: any, type: 'emoji' | 'category') => {
         // If long press action triggered, block the click event (do not send)
@@ -509,7 +475,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         {isRecording && (
             <div className="fixed inset-0 z-[120] flex flex-col items-center justify-end pb-24" style={{ background: 'rgba(28,27,34,0.35)', backdropFilter: 'blur(6px)' }}>
                 <div className="w-72 bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-[0_30px_60px_-20px_rgba(40,38,50,0.45)] border border-white/60 p-6 flex flex-col items-center gap-4">
-                    <span className="text-[9px] font-mono font-bold tracking-[0.35em] text-slate-300 uppercase">Recording</span>
+                    <span className="text-[9px] font-mono font-bold tracking-[0.35em] text-slate-300 uppercase">Voice&nbsp;Letter</span>
                     <div className="relative">
                         <div className="absolute inset-0 rounded-full bg-slate-400/25 animate-ping" />
                         <div className="relative w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center shadow-[0_12px_24px_-10px_rgba(15,23,42,0.55)]">
@@ -520,14 +486,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                     {liveTranscript ? (
                         <div className="max-h-16 w-full overflow-y-auto no-scrollbar text-xs text-slate-500 text-center leading-relaxed">{liveTranscript}</div>
                     ) : (
-                        <div className="text-xs text-slate-400">正在录音… 说完点 ✓ 发送</div>
+                        <div className="text-xs text-slate-400">声音正落在纸上……说完就封进信封</div>
                     )}
                     <div className="flex gap-3 w-full">
                         <button onClick={() => stopRecording(false)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold flex items-center justify-center gap-1 active:scale-[0.97] transition-transform">
-                            <X className="w-5 h-5" weight="bold" /> 取消
+                            <X className="w-5 h-5" weight="bold" /> 揉掉
                         </button>
                         <button onClick={() => stopRecording(true)} className="flex-1 py-3 rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-1 shadow-lg shadow-slate-300 active:scale-[0.97] transition-transform">
-                            <StopCircle className="w-5 h-5" weight="fill" /> 发送
+                            <StopCircle className="w-5 h-5" weight="fill" /> 封好寄出
                         </button>
                     </div>
                 </div>
@@ -541,24 +507,27 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         <button
                             onClick={onForwardSelected}
                             disabled={selectedCount === 0}
-                            className={`flex-1 py-3 font-bold rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${selectedCount === 0 ? 'bg-slate-200 text-slate-400 shadow-none' : 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-blue-200'}`}
+                            className={`flex-1 py-3 font-bold rounded-2xl active:scale-95 transition-all flex items-center justify-center gap-2 ${selectedCount === 0 ? 'bg-slate-200 text-slate-400' : 'bg-[#2b2933] text-white shadow-lg shadow-slate-300/70'}`}
+                            style={selectedCount === 0 ? undefined : { outline: '1px dashed rgba(255,255,255,0.35)', outlineOffset: '-4px' }}
                         >
-                            <ShareNetwork className="w-5 h-5" weight="bold" />
-                            转发 ({selectedCount})
+                            <ArrowBendUpRight className="w-5 h-5" weight="bold" />
+                            转交 {selectedCount} 条
                         </button>
                     )}
                     <button
                         onClick={onDeleteSelected}
-                        className={`${onForwardSelected ? 'flex-1' : 'w-full'} py-3 bg-red-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2`}
+                        className={`${onForwardSelected ? 'flex-1' : 'w-full'} py-3 bg-white text-red-500 font-bold rounded-2xl border border-red-200 shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2`}
+                        style={{ outline: '1px dashed rgba(239,68,68,0.4)', outlineOffset: '-4px' }}
                     >
-                        <Trash className="w-5 h-5" weight="bold" />
-                        删除 ({selectedCount})
+                        <Scissors className="w-5 h-5" weight="bold" />
+                        撕掉 {selectedCount} 条
                     </button>
                 </div>
             ) : (
                 <div className="p-3 px-4 flex gap-3 items-end relative">
-                    <button onClick={() => setShowPanel(showPanel === 'actions' ? 'none' : 'actions')} className={actionButtonClass}>
-                        <Plus className="w-6 h-6" weight="bold" />
+                    {/* 左外侧：贴纸册（原表情面板）。文具盒入口挪进输入框右内侧的回形针 */}
+                    <button onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={actionButtonClass}>
+                        <Sticker className="w-6 h-6" weight={showPanel === 'emojis' ? 'fill' : 'bold'} />
                     </button>
                     <div className={`flex-1 min-w-0 flex items-center px-1 transition-all ${useIOSStandaloneInputFix ? 'overflow-visible' : 'overflow-hidden'} ${inputWrapClass} ${isPixelStyle ? 'focus-within:bg-[#fff7ed]' : isDiscordStyle ? 'focus-within:bg-slate-800 focus-within:border-white/20' : 'border border-transparent focus-within:bg-white focus-within:border-primary/30'}`}>
                         <textarea 
@@ -576,8 +545,9 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             placeholder={inputPlaceholder || '说点什么…'}
                             style={{ height: 'auto' }} 
                         />
-                        <button onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={`p-2 shrink-0 ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-primary'}`}>
-                            <Smiley className="w-6 h-6" weight="regular" />
+                        {/* 输入框内右侧：回形针 = 别上点什么（文具盒功能面板） */}
+                        <button onClick={() => setShowPanel(showPanel === 'actions' ? 'none' : 'actions')} className={`p-2 shrink-0 transition-transform ${showPanel === 'actions' ? 'rotate-45' : ''} ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-slate-700'}`}>
+                            <Paperclip className="w-6 h-6" weight={showPanel === 'actions' ? 'bold' : 'regular'} />
                         </button>
                     </div>
                     {(() => {
@@ -598,10 +568,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             : `${sendButtonClass} ${input.trim() ? '' : 'opacity-70'}`}
                     >
                         {sendButtonStyle === 'pill'
-                            ? <span>发送</span>
+                            ? <span>寄出</span>
                             : idleHeart
                               ? <Heart className="w-7 h-7" weight="fill" />
-                              : <PaperPlaneTilt className="w-5 h-5" weight="fill" />}
+                              : <EnvelopeSimple className="w-5 h-5" weight="fill" />}
                     </button>
                         );
                     })()}
@@ -691,7 +661,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <input
                                     value={emojiSearch}
                                     onChange={e => setEmojiSearch(e.target.value)}
-                                    placeholder="按名字或描述搜索表情…"
+                                    placeholder="翻找贴纸：按名字或描述…"
                                     className={`w-full px-3 py-1.5 text-xs rounded-full outline-none border transition-colors ${
                                         isDiscordStyle ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' :
                                         isPixelStyle ? 'bg-[#fff7ed] border-[#8f674a]/40 text-[#6a4c35] placeholder:text-[#9b8677]' :
@@ -714,7 +684,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                             <Trash className="w-8 h-8" weight="fill" />
                                         </button>
                                     ) : (
-                                        <button onClick={() => onPanelAction('emoji-import')} className={emojiImportTileClass}>+</button>
+                                        <button onClick={() => onPanelAction('emoji-import')} className={`${emojiImportTileClass} flex-col gap-1`}>
+                                            <Sticker className="w-7 h-7" weight="bold" />
+                                            <span className="text-[9px] font-bold tracking-widest">收集</span>
+                                        </button>
                                     )}
                                     {displayedEmojis.map((e, i) => {
                                         const isSelected = selectedEmojiUrls.has(e.url);
@@ -746,83 +719,81 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                         </>
                     )}
 
-                    {/* Actions Panel (paginated: page 0 = 内置功能, page 1 = 外部服务) */}
+                    {/* 文具盒面板：分区滚动抽屉（原翻页加号面板重构版，功能一项不少） */}
                     {showPanel === 'actions' && (
-                        <div
-                            className="overflow-y-auto no-scrollbar"
-                            onTouchStart={handleActionsSwipeStart}
-                            onTouchMove={handleActionsSwipeMove}
-                            onTouchEnd={handleActionsSwipeEnd}
-                            onClickCapture={handleActionsClickCapture}
-                        >
-                          <div className={`scrap-panel p-6 grid grid-cols-4 gap-x-6 gap-y-7 ${actionsPage === 0 ? '' : 'hidden'}`}>
-                            <ActionTile label="转账" dark={isDiscordStyle} onClick={() => onPanelAction('transfer')}>
-                                <Money className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                        <div className="overflow-y-auto no-scrollbar">
+                          <div className="scrap-panel stationery-grid px-4 py-4 grid grid-cols-2 gap-x-3 gap-y-2.5">
+                            <DrawerTag>寄 给 T A</DrawerTag>
 
-                            <ActionTile label="戳一戳" dark={isDiscordStyle} onClick={() => onPanelAction('poke')}>
-                                <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-6 h-6 grayscale" />
-                            </ActionTile>
-
-                            <ActionTile label={isSummarizing ? '归档中...' : '记忆归档'} dark={isDiscordStyle} onClick={() => onPanelAction('archive')}>
-                                <BookOpenText className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <ActionStrip label="寄零花" hint="塞张零花钱或红包" dark={isDiscordStyle} onClick={() => onPanelAction('transfer')}>
+                                <Coins className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
                             {/* 「设置」已迁移到聊天页右上角齿轮按钮（ChatHeaderShell.onOpenChatSettings） */}
-                            <ActionTile label="相册" dark={isDiscordStyle} onClick={() => chatImageInputRef.current?.click()}>
-                                <Image className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <ActionStrip label="贴照片" hint="从相册挑一张寄去" dark={isDiscordStyle} onClick={() => chatImageInputRef.current?.click()}>
+                                <ImageSquare className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
                             <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
 
-                            <ActionTile label="重新生成" dark={isDiscordStyle} onClick={onReroll} disabled={!canReroll}>
-                                <ArrowsClockwise className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <ActionStrip label="留个声" hint="录一段声音随信寄出" dark={isDiscordStyle} onClick={() => { setShowPanel('none'); startRecording(); }}>
+                                <CassetteTape className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            <ActionTile label="主动消息" dark={isDiscordStyle} active={isProactiveActive} onClick={() => onPanelAction('proactive')}>
-                                <ChatCircleDots className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <ActionStrip label="落脚点" hint="告诉 TA 你此刻在哪" dark={isDiscordStyle} onClick={() => onPanelAction('location')}>
+                                <MapTrifold className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            {/* 情绪按钮已并入日程 — 情绪/意识流与日程强制同步，配置面板在日程 Modal 下方 */}
+                            <ActionStrip label="画一张" hint="描述画面，画好寄去" dark={isDiscordStyle} onClick={() => onPanelAction('image-gen')}>
+                                <PaintBrush className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            <ActionTile label="日程" dark={isDiscordStyle} onClick={() => onPanelAction('schedule')}>
-                                <CalendarBlank className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <ActionStrip label="碰一碰" hint="轻轻戳 TA 一下" dark={isDiscordStyle} onClick={() => onPanelAction('poke')}>
+                                <HandTap className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            <ActionTile label="语音" dark={isDiscordStyle} onClick={() => { setShowPanel('none'); startRecording(); }}>
-                                <Microphone className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <DrawerTag>两 个 人 的 事</DrawerTag>
 
-                            <ActionTile label="位置" dark={isDiscordStyle} onClick={() => onPanelAction('location')}>
-                                <MapPin className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            {/* 语音通话：用户主动拨语音电话，角色按人设决定接不接 */}
+                            <ActionStrip label="拨过去" hint="现在就想听 TA 说话" dark={isDiscordStyle} onClick={() => onPanelAction('voice-call')}>
+                                <PhoneOutgoing className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            <ActionTile label="AI 画图" dark={isDiscordStyle} onClick={() => onPanelAction('image-gen')}>
-                                <MagicWand className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            {/* 赴约：用户主动发起线下模式（原桌面独立「见面」App 并入此处，与聊天设置「自动线下」共用线下模式） */}
+                            <ActionStrip label="赴个约" hint="放下手机，线下见面" dark={isDiscordStyle} onClick={() => onPanelAction('offline-date')}>
+                                <HandHeart className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            {/* 翻翻手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
+                            <ActionStrip label="翻翻手机" hint="偷偷看一眼 TA 的屏幕" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
+                                <Detective className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="悄悄来信" hint="让 TA 时不时主动找你" dark={isDiscordStyle} active={isProactiveActive} onClick={() => onPanelAction('proactive')}>
+                                <EnvelopeOpen className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <DrawerTag>这 本 手 帐</DrawerTag>
+
+                            <ActionStrip label={isSummarizing ? '装订中…' : '装订成册'} hint="把聊天归档进记忆" dark={isDiscordStyle} onClick={() => onPanelAction('archive')}>
+                                <BookBookmark className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="重写一遍" hint="擦掉上一条回复重来" dark={isDiscordStyle} onClick={onReroll} disabled={!canReroll}>
+                                <Eraser className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            {/* 情绪按钮已并入作息 — 情绪/意识流与日程强制同步，配置面板在日程 Modal 下方 */}
+                            <ActionStrip label="今日作息" hint="TA 的日程与心情" dark={isDiscordStyle} onClick={() => onPanelAction('schedule')}>
+                                <CalendarCheck className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
                             {/* 偷看心声入口已移至顶栏角色头像（点头像查看心声/好感/心情） */}
 
-                            {/* 查手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
-                            <ActionTile label="查手机" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
-                                <DeviceMobileCamera className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                            <DrawerTag>特 别 通 道</DrawerTag>
 
-                            {/* 语音通话：用户主动拨语音电话，角色按人设决定接不接 */}
-                            <ActionTile label="语音通话" dark={isDiscordStyle} onClick={() => onPanelAction('voice-call')}>
-                                <PhoneCall className="w-6 h-6" weight="bold" />
-                            </ActionTile>
-
-                            {/* 见面：用户主动发起线下模式（原桌面独立「见面」App 并入此处，与聊天设置「自动线下」共用线下模式） */}
-                            <ActionTile label="见面" dark={isDiscordStyle} onClick={() => onPanelAction('offline-date')}>
-                                <Heart className="w-6 h-6" weight="bold" />
-                            </ActionTile>
-
-                          </div>
-
-                          {/* Page 1: 外部服务 */}
-                          <div className={`scrap-panel p-6 grid grid-cols-4 gap-x-6 gap-y-7 ${actionsPage === 1 ? '' : 'hidden'}`}>
-                            <ActionTile
-                              label={mcdActivated ? '结束麦请求' : '麦当劳'}
+                            <ActionStrip
+                              label={mcdActivated ? '收摊点单' : '麦麦点单'}
+                              hint={mcdActivated ? '结束这次麦当劳点单' : '麦当劳外送（需配置）'}
                               dark={isDiscordStyle}
                               active={mcdActivated}
                               disabled={!mcdConfigured}
@@ -831,46 +802,31 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 onPanelAction(mcdActivated ? 'mcd-end' : 'mcd-request');
                               }}
                             >
-                                <ForkKnife className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                                <Hamburger className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            {/* 「展示思考」按钮：tap → 直接打开思考链设置弹窗（含开关），不再做 inline toggle */}
-                            <ActionTile
-                              label={showThinkingChain ? '思考已开' : '展示思考'}
+                            {/* 思绪按钮：tap → 直接打开思考链设置弹窗（含开关），不再做 inline toggle */}
+                            <ActionStrip
+                              label={showThinkingChain ? '思绪可见中' : '看看思绪'}
+                              hint="展示 TA 的思考过程"
                               dark={isDiscordStyle}
                               active={showThinkingChain}
                               onClick={() => onPanelAction('thinking-settings')}
                             >
-                                <Brain className="w-6 h-6" weight="bold" />
-                            </ActionTile>
+                                <Lightbulb className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
 
-                            {/* 系统命令：用户以系统身份下达最高优先级指令（暂停扮演 / 生成番外 / 指定角色行为等） */}
-                            <ActionTile label="系统命令" dark={isDiscordStyle} ink onClick={() => onPanelAction('system-command')}>
-                                <Terminal className="w-6 h-6" weight="bold" />
-                            </ActionTile>
-                          </div>
-
-                          {/* 翻页指示器：墨点 + 长条（手账风） */}
-                          <div className="flex items-center justify-center gap-3 pb-3 -mt-2">
-                            <button
-                              type="button"
-                              aria-label="第 1 页"
-                              onClick={() => setActionsPage(0)}
-                              className={`h-2 rounded-full transition-all ${actionsPage === 0 ? (isDiscordStyle ? 'bg-slate-200 w-6' : 'bg-[#2b2933] w-6') : (isDiscordStyle ? 'bg-slate-600 w-2' : 'bg-slate-300 w-2')}`}
-                            />
-                            <button
-                              type="button"
-                              aria-label="第 2 页"
-                              onClick={() => setActionsPage(1)}
-                              className={`h-2 rounded-full transition-all ${actionsPage === 1 ? (isDiscordStyle ? 'bg-slate-200 w-6' : 'bg-[#2b2933] w-6') : (isDiscordStyle ? 'bg-slate-600 w-2' : 'bg-slate-300 w-2')}`}
-                            />
+                            {/* 幕后指令：用户以系统身份下达最高优先级指令（暂停扮演 / 生成番外 / 指定角色行为等） */}
+                            <ActionStrip label="幕后指令" hint="以系统身份改写剧本" dark={isDiscordStyle} ink onClick={() => onPanelAction('system-command')}>
+                                <Scroll className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
                           </div>
                         </div>
                      )}
                      {showPanel === 'chars' && (
                         <div className="p-5 space-y-6 overflow-y-auto no-scrollbar">
                             <div>
-                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">气泡样式</h3>
+                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">信纸花样（气泡主题）</h3>
                                 <div className="flex gap-3 px-1 overflow-x-auto no-scrollbar pb-2">
                                     {Object.values(PRESET_THEMES).map(t => (
                                         <button key={t.id} onClick={() => onUpdateTheme(t.id)} className={`px-6 py-3 rounded-2xl text-xs font-bold border shrink-0 transition-all ${activeThemeId === t.id ? 'bg-primary text-white border-primary' : 'bg-white border-slate-200 text-slate-600'}`}>{t.name}</button>
@@ -886,7 +842,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 </div>
                             </div>
                             <div>
-                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">切换会话</h3>
+                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">换个人聊</h3>
                                 <div className="space-y-3">
                                     {characters.map(c => (
                                         <div key={c.id} onClick={() => onCharSelect(c.id)} className={`flex items-center gap-4 p-3 rounded-[20px] border cursor-pointer ${c.id === activeCharacterId ? 'bg-white border-primary/30 shadow-md' : 'bg-white/50 border-transparent'}`}>
