@@ -1528,7 +1528,7 @@ ${attachedImagesNote}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '朋友圈'}</span>
+                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '聊天' : hubTab === 'contacts' ? '联系人' : '此刻'}</span>
                     <div className="flex-1"></div>
                     {hubTab !== 'moments' && (
                         <div className="relative">
@@ -1680,7 +1680,7 @@ ${attachedImagesNote}
                         </button>
                         <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-violet-500' : 'text-slate-400'}`}>
                             <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">朋友圈</span>
+                            <span className="text-[10px] font-bold">此刻</span>
                         </button>
                     </div>
                 </div>

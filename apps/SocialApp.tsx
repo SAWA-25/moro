@@ -218,7 +218,7 @@ const SocialApp: React.FC = () => {
                         <div className={`text-[13px] font-bold truncate ${detail.authorType === 'character' ? 'text-red-500' : 'text-slate-700'}`}>{detail.author}</div>
                         <div className="text-[10px] text-slate-400">{fmtTime(detail.createdAt)}{detail.authorType === 'character' ? ' · 你认识的人' : detail.authorType === 'user' ? ' · 我的转发' : ''}</div>
                     </div>
-                    <span className="text-[10px] font-bold text-red-400 border border-red-200 rounded-full px-2.5 py-1 shrink-0">小红书</span>
+                    <span className="text-[10px] font-bold text-red-400 border border-red-200 rounded-full px-2.5 py-1 shrink-0">拾光集</span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar pb-4">
@@ -316,7 +316,7 @@ const SocialApp: React.FC = () => {
                 <button onClick={closeApp} className="p-1.5 -ml-1 rounded-full active:bg-slate-100">
                     <CaretLeft className="w-5 h-5 text-slate-600" weight="bold" />
                 </button>
-                <span className="text-[16px] font-black text-red-500 select-none">小红书</span>
+                <span className="text-[16px] font-black text-red-500 select-none">拾光集</span>
                 <div className="flex-1" />
                 <button onClick={() => openApp(AppID.XhsFreeRoam)} title="自由活动（角色自主刷小红书）"
                     className="p-2 rounded-full active:bg-slate-100 text-slate-500">

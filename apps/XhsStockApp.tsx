@@ -234,7 +234,7 @@ const XhsStockApp: React.FC = () => {
                     </svg>
                 </button>
                 <h1 className="text-lg font-semibold text-slate-800 ml-2 tracking-tight">
-                    {view === 'add' ? '添加图片' : '小红书图库'}
+                    {view === 'add' ? '添加图片' : '拾光图库'}
                 </h1>
                 <span className="text-xs text-slate-400 ml-2 font-mono">{images.length}</span>
                 <div className="flex-1" />
