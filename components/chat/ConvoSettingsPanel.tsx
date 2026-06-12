@@ -549,7 +549,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                     <button
                                         key={cat.id}
                                         onClick={() => toggleCategoryForChar(cat)}
-                                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border ${on ? 'bg-violet-50 text-violet-600 border-violet-200' : 'bg-slate-50 text-slate-300 border-slate-100 line-through'}`}
+                                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border ${on ? 'bg-[#f4f1ea] text-[#2b2933] border-[#d9d4c8]' : 'bg-slate-50 text-slate-300 border-slate-100 line-through'}`}
                                     >
                                         {cat.name} ({emojiCounts[cat.id] || 0})
                                     </button>

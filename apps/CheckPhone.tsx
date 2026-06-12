@@ -732,23 +732,23 @@ Format:
 
     if (view === 'select') {
         return (
-            <div className="absolute inset-0 flex flex-col bg-slate-900 font-light overflow-hidden">
-                <div className="h-20 pt-4 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/80 sticky top-0 z-10 shrink-0">
-                    <button onClick={onExit || closeApp} className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white">
+            <div className="absolute inset-0 flex flex-col bg-[#faf9f6] scrap-panel font-light overflow-hidden">
+                <div className="h-20 pt-4 flex items-center justify-between px-4 border-b border-dashed border-[#d9d4c8] bg-white/80 backdrop-blur-md sticky top-0 z-10 shrink-0">
+                    <button onClick={onExit || closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 text-[#2b2933]">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-bold text-white tracking-widest uppercase text-sm">Target Device</span>
+                    <span className="font-bold text-[#2b2933] label-mono text-sm">想偷看谁的手机</span>
                     <div className="w-8"></div>
                 </div>
-                <div className="flex-1 min-h-0 p-6 grid grid-cols-2 gap-5 overflow-y-auto pb-20 no-scrollbar overscroll-contain content-start">
+                <div className="scrap-list flex-1 min-h-0 p-6 grid grid-cols-2 gap-5 overflow-y-auto pb-20 no-scrollbar overscroll-contain content-start">
                     {characters.map(c => (
-                        <div key={c.id} onClick={() => handleSelectChar(c)} className="aspect-[3/4] bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col items-center justify-center gap-4 cursor-pointer active:scale-95 transition-all group hover:border-green-500 hover:shadow-[0_0_15px_rgba(34,197,94,0.3)]">
-                            <div className="w-20 h-20 rounded-full p-[2px] border-2 border-slate-600 group-hover:border-green-500 transition-colors">
+                        <div key={c.id} onClick={() => handleSelectChar(c)} className="scrap-card aspect-[3/4] rounded-2xl p-4 flex flex-col items-center justify-center gap-4 cursor-pointer active:scale-95 transition-all group hover:!border-[#2b2933]">
+                            <div className="w-20 h-20 rounded-full p-[2px] border-2 border-[#e7e2d8] group-hover:border-[#2b2933] transition-colors">
                                 <img src={c.avatar} className="w-full h-full rounded-full object-cover grayscale group-hover:grayscale-0 transition-all" />
                             </div>
                             <div className="text-center">
-                                <div className="font-bold text-slate-300 text-sm group-hover:text-green-400">{c.name}</div>
-                                <div className="text-[10px] text-slate-500 font-mono mt-1">
+                                <div className="font-bold text-[#2b2933] text-sm">{c.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono mt-1">
   CONNECT &gt;
 </div>
                             </div>
@@ -783,7 +783,7 @@ Format:
             )}
 
             {/* Create App Modal */}
-            <Modal isOpen={showCreateModal} title="安装自定义 App" onClose={() => setShowCreateModal(false)} footer={<button onClick={handleCreateCustomApp} className="w-full py-3 bg-blue-500 text-white font-bold rounded-2xl">安装到桌面</button>}>
+            <Modal isOpen={showCreateModal} title="安装自定义 App" onClose={() => setShowCreateModal(false)} footer={<button onClick={handleCreateCustomApp} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">安装到桌面</button>}>
                 <div className="space-y-4">
                     <div className="flex gap-4">
                         <div className="w-16 h-16 rounded-xl flex items-center justify-center text-3xl shadow-md border-2 border-slate-100 shrink-0" style={{ background: newAppColor }}>

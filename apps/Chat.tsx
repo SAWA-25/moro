@@ -2869,8 +2869,8 @@ ${recent || '（你们还没怎么聊过）'}
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" /></svg>
                             </div>
                             <div className="flex items-center gap-4 px-5 pt-3 pb-1">
-                                {/* 渐变圆环头像（ins 式） */}
-                                <div className="shrink-0 p-[3px] rounded-full" style={{ background: 'conic-gradient(from 210deg, #f9ce34, #ee2a7b, #6228d7, #f9ce34)' }}>
+                                {/* 手缝圆环头像（手账风：白纸底 + 墨色虚线缝边） */}
+                                <div className="shrink-0 p-[3px] rounded-full bg-white border-2 border-dashed border-[#bdb7a8] shadow-[0_6px_16px_-8px_rgba(50,48,60,0.4)]">
                                     <img src={displayCharAvatar} className="w-[4.6rem] h-[4.6rem] rounded-full object-cover border-[3px] border-white" alt={displayCharName} />
                                 </div>
                                 {/* 统计行：好感 / 心声 / 心情 */}
@@ -2897,7 +2897,7 @@ ${recent || '（你们还没怎么聊过）'}
                             </div>
                             {/* 双按钮（Follow / Message 式） */}
                             <div className="flex gap-2.5 px-5 py-3.5">
-                                <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-[#0095f6]'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
+                                <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-[#2b2933] shadow-[0_10px_22px_-12px_rgba(43,41,51,0.6)]'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
                                 <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-2.5 text-[13px] font-bold rounded-xl bg-slate-100 text-slate-600 active:scale-[0.98] transition-transform">悄悄合上</button>
                             </div>
                         </div>

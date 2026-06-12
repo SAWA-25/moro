@@ -52,6 +52,31 @@ interface ChatInputAreaProps {
     /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
 }
 
+/** 加号面板贴纸瓦片：手账拼贴风统一按钮（纸贴纸 + 迷你和纸胶带 + 缝线 + 交错微旋转） */
+const ActionTile: React.FC<{
+    label: string;
+    onClick?: () => void;
+    disabled?: boolean;
+    /** 功能处于开启状态：墨色实底贴纸 + 角标点 */
+    active?: boolean;
+    /** 仅外观用墨色实底（不带状态角标点），如系统命令 */
+    ink?: boolean;
+    dark?: boolean;
+    children: React.ReactNode;
+}> = ({ label, onClick, disabled, active, ink, dark, children }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className={`scrap-action flex flex-col items-center gap-2 active:scale-95 transition-transform ${disabled ? 'opacity-40' : ''} ${dark ? 'text-slate-200' : 'text-slate-600'}`}
+    >
+        <div className={`scrap-tile relative w-14 h-14 rounded-2xl flex items-center justify-center ${(active || ink) ? 'scrap-tile-ink' : ''} ${dark && !(active || ink) ? 'scrap-tile-dark' : ''}`}>
+            {children}
+            {active && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${dark ? 'bg-slate-200 border-slate-900' : 'bg-[#2b2933] border-white'}`} />}
+        </div>
+        <span className="text-[11px] font-bold tracking-wide">{label}</span>
+    </button>
+);
+
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     input, setInput, isTyping, selectionMode,
     showPanel, setShowPanel, onSend, onDeleteSelected, onForwardSelected, selectedCount,
@@ -730,184 +755,114 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onTouchEnd={handleActionsSwipeEnd}
                             onClickCapture={handleActionsClickCapture}
                         >
-                          <div className={`p-6 grid grid-cols-4 gap-8 ${actionsPage === 0 ? '' : 'hidden'}`}>
-                            <button onClick={() => onPanelAction('transfer')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-orange-300 border-orange-400/20' : 'bg-orange-50 text-orange-400 border-orange-100'}`}>
-                                    <Money className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">转账</span>
-                            </button>
-                            
-                            <button onClick={() => onPanelAction('poke')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 border-sky-400/20' : 'bg-sky-50 border-sky-100'}`}><img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-6 h-6" /></div>)}
-                                <span className="text-xs font-bold">戳一戳</span>
-                            </button>
-                            
-                            <button onClick={() => onPanelAction('archive')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-indigo-300 border-indigo-400/20' : 'bg-indigo-50 text-indigo-400 border-indigo-100'}`}>
-                                    <BookOpenText className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">{isSummarizing ? '归档中...' : '记忆归档'}</span>
-                            </button>
-                            
+                          <div className={`scrap-panel p-6 grid grid-cols-4 gap-x-6 gap-y-7 ${actionsPage === 0 ? '' : 'hidden'}`}>
+                            <ActionTile label="转账" dark={isDiscordStyle} onClick={() => onPanelAction('transfer')}>
+                                <Money className="w-6 h-6" weight="bold" />
+                            </ActionTile>
+
+                            <ActionTile label="戳一戳" dark={isDiscordStyle} onClick={() => onPanelAction('poke')}>
+                                <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-6 h-6 grayscale" />
+                            </ActionTile>
+
+                            <ActionTile label={isSummarizing ? '归档中...' : '记忆归档'} dark={isDiscordStyle} onClick={() => onPanelAction('archive')}>
+                                <BookOpenText className="w-6 h-6" weight="bold" />
+                            </ActionTile>
+
                             {/* 「设置」已迁移到聊天页右上角齿轮按钮（ChatHeaderShell.onOpenChatSettings） */}
-                            <button onClick={() => chatImageInputRef.current?.click()} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-pink-300 border-pink-400/20' : 'bg-pink-50 text-pink-400 border-pink-100'}`}>
-                                    <Image className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">相册</span>
-                            </button>
+                            <ActionTile label="相册" dark={isDiscordStyle} onClick={() => chatImageInputRef.current?.click()}>
+                                <Image className="w-6 h-6" weight="bold" />
+                            </ActionTile>
                             <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageChange(e, 'chat')} />
 
-                            {/* Regenerate Button */}
-                            <button onClick={onReroll} disabled={!canReroll} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${canReroll ? (isDiscordStyle ? 'text-slate-200' : 'text-slate-600') : 'text-slate-300 opacity-50'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${canReroll ? (isDiscordStyle ? 'bg-slate-800 text-emerald-300 border-emerald-400/20' : 'bg-emerald-50 text-emerald-400 border-emerald-100') : (isDiscordStyle ? 'bg-slate-800 text-slate-600 border-white/10' : 'bg-slate-50 text-slate-300 border-slate-100')}`}>
-                                    <ArrowsClockwise className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">重新生成</span>
-                            </button>
+                            <ActionTile label="重新生成" dark={isDiscordStyle} onClick={onReroll} disabled={!canReroll}>
+                                <ArrowsClockwise className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
-                            {/* Proactive Message Button */}
-                            <button onClick={() => onPanelAction('proactive')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform relative ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isProactiveActive ? (isDiscordStyle ? 'bg-violet-500/15 text-violet-300 border-violet-400/30' : 'bg-violet-50 text-violet-500 border-violet-200') : (isDiscordStyle ? 'bg-slate-800 text-slate-400 border-white/10' : 'bg-slate-50 text-slate-400 border-slate-100')}`}>
-                                    <ChatCircleDots className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">主动消息</span>
-                                {isProactiveActive && <span className={`absolute top-0 right-1 w-2.5 h-2.5 rounded-full border-2 ${isDiscordStyle ? 'bg-violet-400 border-slate-900' : 'bg-violet-500 border-white'}`} />}
-                            </button>
+                            <ActionTile label="主动消息" dark={isDiscordStyle} active={isProactiveActive} onClick={() => onPanelAction('proactive')}>
+                                <ChatCircleDots className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 情绪按钮已并入日程 — 情绪/意识流与日程强制同步，配置面板在日程 Modal 下方 */}
 
-                            {/* Schedule Button */}
-                            <button onClick={() => onPanelAction('schedule')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                {(
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-cyan-300 border-cyan-400/20' : 'bg-cyan-50 text-cyan-500 border-cyan-100'}`}>
-                                    <CalendarBlank className="w-6 h-6" weight="bold" />
-                                </div>)}
-                                <span className="text-xs font-bold">日程</span>
-                            </button>
+                            <ActionTile label="日程" dark={isDiscordStyle} onClick={() => onPanelAction('schedule')}>
+                                <CalendarBlank className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
-                            {/* Voice Message (record & send) */}
-                            <button onClick={() => { setShowPanel('none'); startRecording(); }} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-rose-300 border-rose-400/20' : 'bg-rose-50 text-rose-400 border-rose-100'}`}>
-                                    <Microphone className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">语音</span>
-                            </button>
+                            <ActionTile label="语音" dark={isDiscordStyle} onClick={() => { setShowPanel('none'); startRecording(); }}>
+                                <Microphone className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
-                            {/* Location Share */}
-                            <button onClick={() => onPanelAction('location')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-emerald-300 border-emerald-400/20' : 'bg-emerald-50 text-emerald-500 border-emerald-100'}`}>
-                                    <MapPin className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">位置</span>
-                            </button>
+                            <ActionTile label="位置" dark={isDiscordStyle} onClick={() => onPanelAction('location')}>
+                                <MapPin className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
-                            {/* AI Image Generation */}
-                            <button onClick={() => onPanelAction('image-gen')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-fuchsia-300 border-fuchsia-400/20' : 'bg-fuchsia-50 text-fuchsia-400 border-fuchsia-100'}`}>
-                                    <MagicWand className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">AI 画图</span>
-                            </button>
+                            <ActionTile label="AI 画图" dark={isDiscordStyle} onClick={() => onPanelAction('image-gen')}>
+                                <MagicWand className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 偷看心声入口已移至顶栏角色头像（点头像查看心声/好感/心情） */}
 
                             {/* 查手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
-                            <button onClick={() => onPanelAction('check-phone')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-teal-300 border-teal-400/20' : 'bg-teal-50 text-teal-500 border-teal-100'}`}>
-                                    <DeviceMobileCamera className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">查手机</span>
-                            </button>
+                            <ActionTile label="查手机" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
+                                <DeviceMobileCamera className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 语音通话：用户主动拨语音电话，角色按人设决定接不接 */}
-                            <button onClick={() => onPanelAction('voice-call')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-green-300 border-green-400/20' : 'bg-green-50 text-green-500 border-green-100'}`}>
-                                    <PhoneCall className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">语音通话</span>
-                            </button>
+                            <ActionTile label="语音通话" dark={isDiscordStyle} onClick={() => onPanelAction('voice-call')}>
+                                <PhoneCall className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 见面：用户主动发起线下模式（原桌面独立「见面」App 并入此处，与聊天设置「自动线下」共用线下模式） */}
-                            <button onClick={() => onPanelAction('offline-date')} className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}>
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-pink-300 border-pink-400/20' : 'bg-pink-50 text-pink-400 border-pink-100'}`}>
-                                    <Heart className="w-6 h-6" weight="bold" />
-                                </div>
-                                <span className="text-xs font-bold">见面</span>
-                            </button>
+                            <ActionTile label="见面" dark={isDiscordStyle} onClick={() => onPanelAction('offline-date')}>
+                                <Heart className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                           </div>
 
                           {/* Page 1: 外部服务 */}
-                          <div className={`p-6 grid grid-cols-4 gap-8 ${actionsPage === 1 ? '' : 'hidden'}`}>
-                            <button
+                          <div className={`scrap-panel p-6 grid grid-cols-4 gap-x-6 gap-y-7 ${actionsPage === 1 ? '' : 'hidden'}`}>
+                            <ActionTile
+                              label={mcdActivated ? '结束麦请求' : '麦当劳'}
+                              dark={isDiscordStyle}
+                              active={mcdActivated}
+                              disabled={!mcdConfigured}
                               onClick={() => {
                                 if (!mcdConfigured) { onPanelAction('mcd-not-configured'); return; }
                                 onPanelAction(mcdActivated ? 'mcd-end' : 'mcd-request');
                               }}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'} ${!mcdConfigured ? 'opacity-50' : ''}`}
                             >
-                              {(
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border relative ${
-                                  mcdActivated
-                                    ? (isDiscordStyle ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/40' : 'bg-yellow-100 text-yellow-700 border-yellow-300')
-                                    : (isDiscordStyle ? 'bg-slate-800 text-yellow-300 border-yellow-400/20' : 'bg-yellow-50 text-yellow-600 border-yellow-100')
-                              }`}>
-                                  <ForkKnife className="w-6 h-6" weight="bold" />
-                                  {mcdActivated && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-yellow-300 border-slate-900' : 'bg-yellow-500 border-white'}`} />}
-                              </div>)}
-                              <span className="text-xs font-bold">{mcdActivated ? '结束麦请求' : '麦当劳'}</span>
-                            </button>
+                                <ForkKnife className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 「展示思考」按钮：tap → 直接打开思考链设置弹窗（含开关），不再做 inline toggle */}
-                            <button
+                            <ActionTile
+                              label={showThinkingChain ? '思考已开' : '展示思考'}
+                              dark={isDiscordStyle}
+                              active={showThinkingChain}
                               onClick={() => onPanelAction('thinking-settings')}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
                             >
-                              {(
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border relative ${
-                                  showThinkingChain
-                                    ? (isDiscordStyle ? 'bg-indigo-500/20 text-indigo-300 border-indigo-400/40' : 'bg-indigo-100 text-indigo-600 border-indigo-200')
-                                    : (isDiscordStyle ? 'bg-slate-800 text-indigo-300 border-indigo-400/20' : 'bg-indigo-50 text-indigo-500 border-indigo-100')
-                              }`}>
-                                  <Brain className="w-6 h-6" weight="bold" />
-                                  {showThinkingChain && <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 ${isDiscordStyle ? 'bg-indigo-400 border-slate-900' : 'bg-indigo-500 border-white'}`} />}
-                              </div>)}
-                              <span className="text-xs font-bold">{showThinkingChain ? '思考已开' : '展示思考'}</span>
-                            </button>
+                                <Brain className="w-6 h-6" weight="bold" />
+                            </ActionTile>
 
                             {/* 系统命令：用户以系统身份下达最高优先级指令（暂停扮演 / 生成番外 / 指定角色行为等） */}
-                            <button
-                              onClick={() => onPanelAction('system-command')}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
-                            >
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-emerald-300 border-emerald-400/20' : 'bg-slate-900 text-emerald-400 border-slate-700'}`}>
-                                  <Terminal className="w-6 h-6" weight="bold" />
-                              </div>
-                              <span className="text-xs font-bold">系统命令</span>
-                            </button>
+                            <ActionTile label="系统命令" dark={isDiscordStyle} ink onClick={() => onPanelAction('system-command')}>
+                                <Terminal className="w-6 h-6" weight="bold" />
+                            </ActionTile>
                           </div>
 
-                          {/* 翻页指示器 */}
+                          {/* 翻页指示器：墨点 + 长条（手账风） */}
                           <div className="flex items-center justify-center gap-3 pb-3 -mt-2">
                             <button
                               type="button"
                               aria-label="第 1 页"
                               onClick={() => setActionsPage(0)}
-                              className={`w-2 h-2 rounded-full transition-all ${actionsPage === 0 ? (isDiscordStyle ? 'bg-slate-200 w-5' : 'bg-slate-500 w-5') : (isDiscordStyle ? 'bg-slate-600' : 'bg-slate-300')}`}
+                              className={`h-2 rounded-full transition-all ${actionsPage === 0 ? (isDiscordStyle ? 'bg-slate-200 w-6' : 'bg-[#2b2933] w-6') : (isDiscordStyle ? 'bg-slate-600 w-2' : 'bg-slate-300 w-2')}`}
                             />
                             <button
                               type="button"
                               aria-label="第 2 页"
                               onClick={() => setActionsPage(1)}
-                              className={`w-2 h-2 rounded-full transition-all ${actionsPage === 1 ? (isDiscordStyle ? 'bg-slate-200 w-5' : 'bg-slate-500 w-5') : (isDiscordStyle ? 'bg-slate-600' : 'bg-slate-300')}`}
+                              className={`h-2 rounded-full transition-all ${actionsPage === 1 ? (isDiscordStyle ? 'bg-slate-200 w-6' : 'bg-[#2b2933] w-6') : (isDiscordStyle ? 'bg-slate-600 w-2' : 'bg-slate-300 w-2')}`}
                             />
                           </div>
                         </div>

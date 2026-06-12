@@ -286,6 +286,7 @@
       .moro-widget-clock::after,
       .moro-widget-character::after,
       .moro-widget-schedule::after,
+      .moro-widget-weather::after,
       .moro-widget-music::after {
         content: '';
         position: absolute;
@@ -304,6 +305,7 @@
         pointer-events: none;
       }
       .moro-widget-music::after { transform: translateX(-50%) rotate(2.5deg); width: 58px; }
+      .moro-widget-weather::after { transform: translateX(-50%) rotate(2deg); width: 52px; }
       .moro-widget-schedule::after { transform: translateX(-50%) rotate(1.8deg); }
       /* 蕾丝花边条：手帐页眉装饰（repeat-x 扇贝形），供桌面 / App 页眉使用 */
       .lace-edge {
@@ -338,6 +340,65 @@
       /* 拼贴微旋转工具类（卡片 / 贴图随手用） */
       .tilt-l { rotate: -1.6deg; }
       .tilt-r { rotate: 1.4deg; }
+      /* ===== 加号面板贴纸瓦片（聊天 + 面板 / 各功能格） ===== */
+      /* 纸面板底：极淡点纹，像手帐内页 */
+      .scrap-panel {
+        background-image: radial-gradient(circle at 1px 1px, rgba(120, 116, 106, 0.08) 1px, transparent 0);
+        background-size: 14px 14px;
+      }
+      /* 纸贴纸瓦片：白纸面 + 缝线 + 贴纸投影 */
+      .scrap-tile {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(236, 233, 226, 0.95);
+        outline: 1px dashed rgba(167, 162, 151, 0.4);
+        outline-offset: -4px;
+        box-shadow: 0 10px 20px -12px rgba(50, 48, 60, 0.35);
+        color: #2b2933;
+      }
+      /* 迷你和纸胶带：贴在瓦片上缘 */
+      .scrap-tile::after {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: 50%;
+        width: 30px;
+        height: 10px;
+        transform: translateX(-50%) rotate(-3deg);
+        background: linear-gradient(100deg, rgba(255, 255, 255, 0.65), rgba(243, 240, 233, 0.5));
+        border-left: 1px dashed rgba(160, 156, 146, 0.4);
+        border-right: 1px dashed rgba(160, 156, 146, 0.4);
+        box-shadow: 0 1px 3px rgba(50, 48, 60, 0.12);
+        pointer-events: none;
+      }
+      /* 激活态：墨色实底贴纸 */
+      .scrap-tile-ink {
+        background: #2b2933;
+        border-color: #2b2933;
+        outline-color: rgba(255, 255, 255, 0.35);
+        color: #ffffff;
+      }
+      /* 深色聊天框（discord 输入风格）下的瓦片 */
+      .scrap-tile-dark {
+        background: rgba(30, 41, 59, 0.92);
+        border-color: rgba(255, 255, 255, 0.08);
+        outline-color: rgba(255, 255, 255, 0.22);
+        color: #e2e8f0;
+      }
+      /* 瓦片交错微旋转：随手贴上去的感觉 */
+      .scrap-action:nth-child(4n + 2) .scrap-tile { rotate: -2deg; }
+      .scrap-action:nth-child(4n + 3) .scrap-tile { rotate: 1.6deg; }
+      .scrap-action:nth-child(4n) .scrap-tile { rotate: -1deg; }
+      /* 纸贴卡片：聊天列表 / 联系人等行卡片的贴纸面（白纸 + 缝线 + 软投影） */
+      .scrap-card {
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(236, 233, 226, 0.95);
+        outline: 1px dashed rgba(167, 162, 151, 0.32);
+        outline-offset: -5px;
+        box-shadow: 0 10px 22px -16px rgba(50, 48, 60, 0.3);
+      }
+      /* 列表卡片交错微旋转（拼贴感，幅度比图标更轻） */
+      .scrap-list > .scrap-card:nth-child(5n + 2) { rotate: -0.6deg; }
+      .scrap-list > .scrap-card:nth-child(5n + 4) { rotate: 0.5deg; }
       /* 治愈系微交互：卡片按压回弹 + 悬浮轻抬 */
       .press-soft {
         transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease;
