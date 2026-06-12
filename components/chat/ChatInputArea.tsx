@@ -392,15 +392,17 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
           ? 'bg-white border-t border-slate-200 shadow-none'
           : chromeStyle === 'floating'
             ? 'bg-white/80 backdrop-blur-2xl border-t border-white/60 shadow-[0_-12px_30px_rgba(148,163,184,0.18)]'
-            : 'bg-white/90 backdrop-blur-2xl border-t border-slate-200/50 shadow-[0_-5px_15px_rgba(0,0,0,0.02)]';
+            // 默认输入栏（黑白手帐）：白色圆顶卡片悬浮感，与顶栏呼应
+            : 'bg-white/95 backdrop-blur-2xl rounded-t-[1.75rem] shadow-[0_-14px_30px_-18px_rgba(50,48,60,0.3)]';
     const actionButtonClass = isPixelStyle
         ? 'w-11 h-11 shrink-0 rounded-[4px] border-2 border-[#8f674a] bg-[#f8f0e0] flex items-center justify-center text-[#8f674a] hover:bg-[#fff7ed] transition-colors'
         : isDiscordStyle
           ? 'w-11 h-11 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-200 hover:bg-slate-700 transition-colors'
-          : 'w-11 h-11 shrink-0 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors';
+          // 默认 + 按钮：裸墨色图标，无底色（参考图左下角的极简加号）
+          : 'w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors';
     const inputWrapClass =
         inputStyle === 'rounded'
-            ? 'bg-slate-100 rounded-full'
+            ? 'bg-[#f4f4f6] rounded-full'
             : inputStyle === 'flat'
               ? 'bg-transparent border-b border-slate-200 rounded-none'
               : inputStyle === 'wechat'
@@ -549,6 +551,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             <Smiley className="w-6 h-6" weight="regular" />
                         </button>
                     </div>
+                    {(() => {
+                        // 空输入时的默认圆钮 = 灰色爱心（参考图右下角），点按触发 AI 回复；输入后变实色纸飞机
+                        const idleHeart = !input.trim() && sendButtonStyle !== 'pill' && !isPixelStyle && !isDiscordStyle;
+                        return (
                     <button
                         onClick={() => {
                             // 空输入点发送 = 触发 AI 回复（与空输入回车一致），不再拦截提交
@@ -558,10 +564,18 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             }
                             onSend();
                         }}
-                        className={`${sendButtonClass} ${input.trim() ? '' : 'opacity-70'}`}
+                        className={idleHeart
+                            ? 'w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-rose-300 transition-colors'
+                            : `${sendButtonClass} ${input.trim() ? '' : 'opacity-70'}`}
                     >
-                        {sendButtonStyle === 'pill' ? <span>发送</span> : <PaperPlaneTilt className="w-5 h-5" weight="fill" />}
+                        {sendButtonStyle === 'pill'
+                            ? <span>发送</span>
+                            : idleHeart
+                              ? <Heart className="w-7 h-7" weight="fill" />
+                              : <PaperPlaneTilt className="w-5 h-5" weight="fill" />}
                     </button>
+                        );
+                    })()}
 
                     {emojiSelectionMode && (
                         <div className={`absolute inset-0 z-10 ${isPixelStyle ? 'bg-[#eadfce]/70 backdrop-blur-[2px]' : isDiscordStyle ? 'bg-slate-950/70 backdrop-blur-[2px]' : 'bg-white/60 backdrop-blur-[2px]'}`} />

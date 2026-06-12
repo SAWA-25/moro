@@ -3,11 +3,11 @@ import { ChatTheme } from '../../types';
 
 // Built-in presets map to the new data structure for consistency
 export const PRESET_THEMES: Record<string, ChatTheme> = {
-    // 新默认：纸感极简 —— 双方同为浅灰方角气泡、墨色文字，靠左右对齐区分（参考编辑部手帐风）
+    // 新默认：奶白手帐 —— 用户浅灰胶囊、AI 白底描边胶囊，全圆角（参考黑白手帐聊天界面）
     default: {
         id: 'default', name: 'Paper', type: 'preset',
-        user: { textColor: '#3c3a45', backgroundColor: '#ededf1', borderRadius: 8, opacity: 1, backgroundImageOpacity: 0.5 },
-        ai: { textColor: '#3c3a45', backgroundColor: '#f4f4f6', borderRadius: 8, opacity: 1, backgroundImageOpacity: 0.5 }
+        user: { textColor: '#2e2c36', backgroundColor: '#f1f1f3', borderRadius: 22, opacity: 1, backgroundImageOpacity: 0.5 },
+        ai: { textColor: '#2e2c36', backgroundColor: '#ffffff', borderRadius: 22, opacity: 1, backgroundImageOpacity: 0.5 }
     },
     indigo: {
         id: 'indigo', name: 'Indigo', type: 'preset',
