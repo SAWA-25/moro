@@ -388,6 +388,12 @@
       .scrap-action:nth-child(4n + 2) .scrap-tile { rotate: -2deg; }
       .scrap-action:nth-child(4n + 3) .scrap-tile { rotate: 1.6deg; }
       .scrap-action:nth-child(4n) .scrap-tile { rotate: -1deg; }
+      /* 灵动岛通知胶囊：墨色底上加一圈手缝虚线（与 scrap-btn 一致的贴纸车线感）。
+         用户的 dynamicIslandStyle.customCss 仍可覆盖（同 .moro-dynamic-island 钩子） */
+      .moro-dynamic-island {
+        outline: 1px dashed rgba(255, 255, 255, 0.28);
+        outline-offset: -5px;
+      }
       /* 纸贴卡片：聊天列表 / 联系人等行卡片的贴纸面（白纸 + 缝线 + 软投影） */
       .scrap-card {
         background: rgba(255, 255, 255, 0.96);
