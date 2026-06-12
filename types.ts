@@ -1757,8 +1757,12 @@ export interface ConvoSettings {
     groupMemoryMode?: 'all' | 'none' | 'selected';
     /** groupMemoryMode='selected' 时关联的群 id 列表 */
     linkedGroupIds?: string[];
-    /** 顶栏装饰文案：显示在聊天顶栏下方的小胶囊文字 */
+    /** 顶栏装饰文案：显示在聊天界面最顶部（顶栏上方）的居中小字 */
     headerDecorText?: string;
+    /** 消息区底部装饰文案：显示在消息列表下方、输入栏上方的居中小字 */
+    footerDecorText?: string;
+    /** 输入框占位文案：自定义输入框 placeholder（默认 "Message..."） */
+    inputPlaceholderText?: string;
     /** 旁白模式：允许角色单独输出（动作/场景）旁白气泡 */
     narrationMode?: boolean;
     /** 心声手记开关（默认开）：关闭后聊天里的「偷看心声」入口不可用 */

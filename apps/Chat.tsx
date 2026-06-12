@@ -2835,7 +2835,8 @@ ${recent || '（你们还没怎么聊过）'}
                 </div>
              </Modal>
 
-             {/* 心声面板（入口：顶栏角色头像）：心声 + 好感值 + 当前心情 同屏展示 */}
+             {/* 心声面板（入口：顶栏角色头像）：社交主页式卡片（参考设计 MiMi Space）——
+                 书签缎带 + 渐变圆环头像 + 好感/心声/心情统计行 + Follow/Message 式双按钮 */}
              {showInnerVoiceModal && char && (
                 <div
                     className="absolute inset-0 z-[220] flex items-center justify-center p-5 animate-fade-in"
@@ -2843,46 +2844,66 @@ ${recent || '（你们还没怎么聊过）'}
                     onClick={() => setShowInnerVoiceModal(false)}
                 >
                     <div
-                        className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up"
+                        className="w-full max-w-sm bg-white rounded-[1.8rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up relative"
                         onClick={e => e.stopPropagation()}
                     >
-                        {/* 标题条 */}
-                        <div className="flex items-center justify-between px-6 pt-5 shrink-0">
-                            <span className="text-[10px] font-mono font-bold tracking-[0.35em] text-slate-300 uppercase">Inner Voice</span>
-                            <button onClick={() => setShowInnerVoiceModal(false)} className="p-1.5 -mr-1.5 rounded-full text-slate-300 hover:bg-slate-50 active:scale-95 transition-all" aria-label="关闭">
+                        {/* 右上角书签缎带 */}
+                        <div className="absolute top-0 right-7 w-6 h-10 bg-slate-900 z-10" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)' }} />
+
+                        {/* 标题条：居中标题 + 左上关闭 */}
+                        <div className="relative flex items-center justify-center px-6 pt-5 pb-1 shrink-0">
+                            <button onClick={() => setShowInnerVoiceModal(false)} className="absolute left-4 p-1.5 rounded-full text-slate-400 hover:bg-slate-50 active:scale-95 transition-all" aria-label="关闭">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                             </button>
+                            <div className="text-center">
+                                <div className="text-[12px] font-mono font-bold tracking-[0.45em] text-slate-700 uppercase">Inner&nbsp;Space</div>
+                                <div className="text-[9px] font-mono tracking-[0.3em] text-slate-300 mt-0.5">You &amp; Me</div>
+                            </div>
                         </div>
 
-                        {/* 角色头卡：大头像 + 名字 + 当前心情 */}
-                        <div className="px-6 pt-3 pb-4 flex gap-4 items-start shrink-0">
-                            <img src={displayCharAvatar} className="w-[5.5rem] h-[5.5rem] rounded-2xl object-cover shadow-md shrink-0" alt={displayCharName} />
-                            <div className="flex-1 min-w-0 pt-0.5">
-                                <div className="text-xl font-bold text-slate-800 truncate tracking-wide">{displayCharName}</div>
-                                <div className="text-[10px] font-mono text-teal-400 tracking-[0.25em] mt-0.5 uppercase">You &amp; Me</div>
-                                <div className="mt-2 pl-2.5 border-l-2 border-slate-300 text-[12px] text-slate-500 leading-snug">
-                                    {char.currentMood?.label
-                                        ? <>当前心情 {char.currentMood.emoji ? `${char.currentMood.emoji} ` : ''}<span className="font-bold text-slate-700">{char.currentMood.label}</span></>
-                                        : '当前心情还未捕捉到'}
+                        {/* 主页卡：名字条 + 渐变圆环头像 + 统计行 + 心情签名 */}
+                        <div className="mx-5 mt-2 rounded-3xl border border-slate-100 shadow-[0_10px_28px_-18px_rgba(50,48,60,0.35)] shrink-0">
+                            <div className="flex items-center justify-between px-5 pt-3.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                <span className="text-[14px] font-bold text-slate-800 tracking-widest truncate max-w-[60%]">{displayCharName}</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" /></svg>
+                            </div>
+                            <div className="flex items-center gap-4 px-5 pt-3 pb-1">
+                                {/* 渐变圆环头像（ins 式） */}
+                                <div className="shrink-0 p-[3px] rounded-full" style={{ background: 'conic-gradient(from 210deg, #f9ce34, #ee2a7b, #6228d7, #f9ce34)' }}>
+                                    <img src={displayCharAvatar} className="w-[4.6rem] h-[4.6rem] rounded-full object-cover border-[3px] border-white" alt={displayCharName} />
                                 </div>
-                                {/* 好感值 */}
-                                <div className="mt-2.5">
-                                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 mb-1">
-                                        <span>好感值</span>
-                                        <span className="font-mono text-slate-700">{typeof char.affection === 'number' ? `${Math.round(char.affection)} / 100` : '— / 100'}</span>
+                                {/* 统计行：好感 / 心声 / 心情 */}
+                                <div className="flex-1 flex items-start justify-around text-center">
+                                    <div>
+                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{typeof char.affection === 'number' ? Math.round(char.affection) : '—'}</div>
+                                        <div className="text-[10px] text-slate-400">好感值</div>
                                     </div>
-                                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full bg-slate-900 transition-all duration-700"
-                                            style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%` }}
-                                        />
+                                    <div>
+                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{innerVoiceHistory.length}</div>
+                                        <div className="text-[10px] text-slate-400">心声</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{char.currentMood?.emoji || '🤍'}</div>
+                                        <div className="text-[10px] text-slate-400">{char.currentMood?.label || '心情'}</div>
                                     </div>
                                 </div>
+                            </div>
+                            {/* 好感进度细线 */}
+                            <div className="px-5 pt-1">
+                                <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="h-full rounded-full bg-slate-900 transition-all duration-700" style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%` }} />
+                                </div>
+                            </div>
+                            {/* 双按钮（Follow / Message 式） */}
+                            <div className="flex gap-2.5 px-5 py-3.5">
+                                <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-[#0095f6]'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
+                                <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-2.5 text-[13px] font-bold rounded-xl bg-slate-100 text-slate-600 active:scale-[0.98] transition-transform">悄悄合上</button>
                             </div>
                         </div>
 
                         {/* 心声内容（可滚动） */}
-                        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 space-y-3 pb-2">
+                        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 space-y-3 pt-4 pb-2">
                             {innerVoiceLoading && !innerVoiceCurrent && (
                                 <div className="flex flex-col items-center gap-2 py-8 text-slate-400">
                                     <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
@@ -2909,13 +2930,7 @@ ${recent || '（你们还没怎么聊过）'}
                                     ))}
                                 </div>
                             )}
-                            <p className="text-[10px] text-slate-300 text-center pt-1 pb-2">{displayCharName} 不会知道你偷看过 ——「心声」不会进入对话。</p>
-                        </div>
-
-                        {/* 底部操作 */}
-                        <div className="flex gap-3 p-5 pt-3 shrink-0 border-t border-slate-50">
-                            <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-[0.98] transition-transform">悄悄合上</button>
-                            <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-3 font-bold rounded-2xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-slate-900'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
+                            <p className="text-[10px] text-slate-300 text-center pt-1 pb-3">{displayCharName} 不会知道你偷看过 ——「心声」不会进入对话。</p>
                         </div>
                     </div>
                 </div>
@@ -3046,6 +3061,7 @@ ${recent || '（你们还没怎么聊过）'}
                 statusStyle={osTheme.chatStatusStyle || 'dot'}
                 chromeStyle={osTheme.chatChromeStyle}
                 hideBuffs={osTheme.chatHideHeaderBuffs}
+                decorText={convo?.headerDecorText}
              />
 
             {/* 会话设置「顶部贴边」：顶栏下方装饰横条（不占布局，浮在消息区顶部） */}
@@ -3054,14 +3070,7 @@ ${recent || '（你们还没怎么聊过）'}
                     <img src={convo.headerEdgeImage} alt="" className="absolute top-0 left-0 w-full h-6 object-cover" />
                 </div>
             )}
-            {/* 会话设置「顶栏装饰文案」：顶栏下方居中小胶囊 */}
-            {convo?.headerDecorText && !selectionMode && (
-                <div className="relative z-20 h-0 flex justify-center pointer-events-none">
-                    <div className="absolute top-2 px-3 py-1 rounded-full bg-white/85 backdrop-blur border border-slate-200/80 shadow-sm text-[10px] font-bold text-slate-500 max-w-[70%] truncate">
-                        {convo.headerDecorText}
-                    </div>
-                </div>
-            )}
+            {/* 顶部装饰文案已移到 ChatHeaderShell（顶栏卡片上方居中小字，参考设计） */}
 
             {/* 认知消化结果弹窗 — 全屏玻璃拟态 */}
             {lastDigestResult && (() => {
@@ -3433,6 +3442,13 @@ ${recent || '（你们还没怎么聊过）'}
                 </div>
             )}
 
+            {/* 会话设置「底部装饰文案」：消息列表下方 / 输入栏上方的居中小字（参考设计） */}
+            {convo?.footerDecorText && !selectionMode && (
+                <div className="moro-chat-footdecor shrink-0 z-20 flex justify-center items-center pt-0.5 pb-1.5 px-8">
+                    <span className="text-[13px] font-bold text-slate-500 tracking-wide truncate max-w-full">{convo.footerDecorText}</span>
+                </div>
+            )}
+
             <div className="relative z-40">
                 {mcdActivated && (
                     <div className="flex items-center justify-between px-4 py-1.5 bg-yellow-50 border-b border-yellow-200 text-xs">
@@ -3511,6 +3527,7 @@ ${recent || '（你们还没怎么聊过）'}
                     inputStyle={osTheme.chatInputStyle || 'rounded'}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
                     chromeStyle={osTheme.chatChromeStyle}
+                    inputPlaceholder={convo?.inputPlaceholderText}
                 />
             </div>
 

@@ -73,12 +73,14 @@ const IncomingCallOverlay: React.FC = () => {
 
     return (
         <div className="fixed inset-0 z-[200] flex flex-col items-center bg-slate-900/95 backdrop-blur-xl animate-fade-in" style={{ paddingTop: 'calc(18vh + var(--safe-top, 0px))' }}>
+            {/* 手帐式来电标签：点状纹理 + 等宽小标题 */}
+            <div className="text-[10px] font-mono font-bold tracking-[0.45em] text-white/35 uppercase mb-6">Incoming&nbsp;Call</div>
             <div className="relative mb-7">
                 <span className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" />
                 <span className="absolute -inset-4 rounded-full border border-white/10 animate-pulse" />
-                <img src={char.avatar} className="relative w-28 h-28 rounded-full object-cover ring-4 ring-white/15 shadow-2xl" alt={char.name} />
+                <img src={char.avatar} className="relative w-28 h-28 rounded-full object-cover ring-4 ring-white/20 shadow-2xl" alt={char.name} />
             </div>
-            <div className="text-white text-2xl font-bold mb-2">{char.name}</div>
+            <div className="text-white text-2xl font-bold mb-2 tracking-wide">{char.name}</div>
             <div className="text-white/60 text-sm">邀请你语音通话…</div>
 
             <div className="mt-auto mb-20 flex items-center gap-24">

@@ -50,13 +50,14 @@ interface ConvoSettingsPanelProps {
 
 // ── UI 原子 ────────────────────────────────────────────────────────────────
 
+// 开关（参考设计：墨色实底 + 大滑钮 + 柔影，黑白手帐风）
 const Toggle: React.FC<{ on: boolean; onToggle: () => void; tone?: string }> = ({ on, onToggle, tone }) => (
     <button
         onClick={onToggle}
-        className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center shrink-0 ${on ? (tone || 'bg-primary') : 'bg-slate-200'}`}
+        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${on ? (tone || 'bg-slate-900') : 'bg-slate-200'}`}
         role="switch" aria-checked={on}
     >
-        <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${on ? 'translate-x-4' : ''}`} />
+        <div className={`w-5 h-5 bg-white rounded-full shadow-[0_2px_5px_rgba(30,28,40,0.3)] transition-transform duration-300 ${on ? 'translate-x-[18px]' : ''}`} />
     </button>
 );
 
@@ -366,11 +367,29 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         )}
                     </Item>
 
-                    <Item label="顶栏装饰文案" desc="显示在聊天顶栏下方的小胶囊文字，纯装饰。">
+                    <Item label="顶部装饰文案" desc="显示在聊天界面最顶部（顶栏卡片上方）的居中小字，纯装饰。">
                         <input
                             value={cs.headerDecorText || ''}
                             onChange={e => updateConvo({ headerDecorText: e.target.value || undefined })}
-                            placeholder="如：恋爱进行时 / 三句话冷战中…"
+                            placeholder="如：보고 싶어…ㅠㅠ🖤 / 恋爱进行时"
+                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                    </Item>
+
+                    <Item label="底部装饰文案" desc="显示在消息列表下方、输入栏上方的居中小字，纯装饰。">
+                        <input
+                            value={cs.footerDecorText || ''}
+                            onChange={e => updateConvo({ footerDecorText: e.target.value || undefined })}
+                            placeholder="如：小狗勾流眼泪TT / 今天也想见你"
+                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                    </Item>
+
+                    <Item label="输入框文案" desc="输入框为空时显示的占位文字（默认 Message...）。">
+                        <input
+                            value={cs.inputPlaceholderText || ''}
+                            onChange={e => updateConvo({ inputPlaceholderText: e.target.value || undefined })}
+                            placeholder="如：( ʚಌɞ )삶의 조각들 / 说点什么…"
                             className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
                         />
                     </Item>
