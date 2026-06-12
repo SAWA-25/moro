@@ -1123,8 +1123,8 @@ const Settings: React.FC = () => {
                         <div className="mt-2 pl-2 border-l-2 border-slate-100 space-y-3 py-2">
                             {presetTakeoverName && (
                                 <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 text-[10px] text-sky-700 leading-relaxed">
-                                    采样参数当前由预设「{presetTakeoverName}」接管（温度等以预设里的「生成参数」为准）。
-                                    <button onClick={() => openApp(AppID.Presets)} className="font-bold underline ml-1">打开预设 App</button>
+                                    采样参数当前由字版「{presetTakeoverName}」接管（温度等以活字盘里的「火候」为准）。
+                                    <button onClick={() => openApp(AppID.Presets)} className="font-bold underline ml-1">打开活字盘</button>
                                 </div>
                             )}
                             <p className="text-[10px] text-slate-300 leading-relaxed">
