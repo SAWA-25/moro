@@ -871,17 +871,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                               <span className="text-xs font-bold">{showThinkingChain ? '思考已开' : '展示思考'}</span>
                             </button>
 
-                            {/* 白框：打开该角色专属的「白框自定义 CSS」弹窗 */}
-                            <button
-                              onClick={() => onPanelAction('chrome-css')}
-                              className={`flex flex-col items-center gap-2 active:scale-95 transition-transform ${isDiscordStyle ? 'text-slate-200' : 'text-slate-600'}`}
-                            >
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm border ${isDiscordStyle ? 'bg-slate-800 text-pink-300 border-pink-400/20' : 'bg-pink-50 text-pink-500 border-pink-100'}`}>
-                                  <PencilSimple className="w-6 h-6" weight="bold" />
-                              </div>
-                              <span className="text-xs font-bold">白框</span>
-                            </button>
-
                             {/* 系统命令：用户以系统身份下达最高优先级指令（暂停扮演 / 生成番外 / 指定角色行为等） */}
                             <button
                               onClick={() => onPanelAction('system-command')}
