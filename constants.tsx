@@ -86,19 +86,30 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Regex: ({ className }) => <BracketsCurly className={className} weight="bold" />,
 };
 
+// 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
+// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（人设 / 世界书 / 预设 / 正则 / 主题），
+// 其余按使用频率排在后续页。
 export const INSTALLED_APPS: AppConfig[] = [
   // 神经链接（角色档案）已并入「人设」App：人设库 → 选「角色档案」或「主控面具」
   // { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
-  { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
-  { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
   // 聊天枢纽：单聊 + 群聊 + 联系人 + 朋友圈 一站式入口（原独立「群聊」「Message」App 已合并于此）
   { id: AppID.GroupChat, name: '聊天', icon: 'Chat', color: 'green' },
+  // ── 第一页（非 dock 的前 8 个）──
+  { id: AppID.Gallery, name: '相册', icon: 'Gallery', color: 'orange' },
+  { id: AppID.Music, name: '音乐', icon: 'Music', color: 'rose' },
+  { id: AppID.HotNews, name: '热点', icon: 'HotNews', color: 'red' },
+  { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },
+  { id: AppID.Worldbook, name: '世界书', icon: 'Worldbook', color: 'indigo' },
+  { id: AppID.Presets, name: '预设', icon: 'Presets', color: 'sky' },
+  { id: AppID.Regex, name: '正则', icon: 'Regex', color: 'teal' },
+  { id: AppID.Appearance, name: '主题', icon: 'Appearance', color: 'slate' },
+  // ── 后续页 ──
+  { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   // 查手机已并入聊天 App：聊天界面底部 + 号面板 →「查手机」（不再是独立桌面 App）
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   // 见面已并入聊天 App：聊天界面底部 + 号面板 →「见面」（用户主动发起线下模式）
   // { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
-  { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },
   { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
   { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
@@ -111,22 +122,17 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Songwriting, name: '写歌', icon: 'Songwriting', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
   { id: AppID.Schedule, name: '时光契约', icon: 'Schedule', color: 'cyan' },
-  { id: AppID.Worldbook, name: '世界书', icon: 'Worldbook', color: 'indigo' },
-  { id: AppID.Presets, name: '预设', icon: 'Presets', color: 'sky' },
-  { id: AppID.Regex, name: '正则', icon: 'Regex', color: 'teal' },
-  { id: AppID.HotNews, name: '热点', icon: 'HotNews', color: 'red' },
   { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },
-  { id: AppID.Gallery, name: '相册', icon: 'Gallery', color: 'orange' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '小红书图库', icon: 'XhsStock', color: 'red' },
-  { id: AppID.Appearance, name: '主题', icon: 'Appearance', color: 'slate' },
+  { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
   { id: AppID.Settings, name: '设置', icon: 'Settings', color: 'slate' },
   { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
   { id: AppID.SpecialMoments, name: '特别时光', icon: 'SpecialMoments', color: 'pink' },
-  { id: AppID.Music, name: '音乐', icon: 'Music', color: 'rose' },
   { id: AppID.CharCreatorDev, name: '捏脸·开发', icon: 'CharCreatorDev', color: 'amber' }, // 仅开发模式显示（Launcher 过滤）
   // { id: AppID.QQBridge, name: 'QQ 桥', icon: 'QQBridge', color: 'sky' }, // Hidden temporarily
 ];
 
-export const DOCK_APPS = [AppID.GroupChat, AppID.Social, AppID.Settings];
+// Dock 四枚：聊天 / 电话 / 小红书 / 设置（参考设计的四图标底栏）
+export const DOCK_APPS = [AppID.GroupChat, AppID.Phone, AppID.Social, AppID.Settings];

@@ -4,8 +4,8 @@
 // 1) AI 消息里的 ```html / ```css / ```markdown 围栏代码块直接渲染成效果（而不是代码文本）；
 // 2) 没写语言标识但内容明显是 HTML 的围栏，也按 HTML 预览处理；
 // 3) 正文里裸写的块级 HTML（<div>...</div> 等）同样抽出来渲染。
-// HTML 一律走沙盒 iframe（同 html_card：不给 allow-scripts），Markdown 渲染成 React 节点，
-// 全程不碰 dangerouslySetInnerHTML。
+// HTML 一律走独立 iframe 文档渲染（对齐 ST/JS-Slash-Runner：脚本在 iframe 内执行，
+// 不直接注入聊天 DOM），Markdown 渲染成 React 节点，全程不碰 dangerouslySetInnerHTML。
 
 export type FenceSegment =
     | { kind: 'fence'; lang: string; code: string; raw: string }
@@ -54,7 +54,7 @@ export function looksLikeHtmlFragment(code: string): boolean {
 // 触发裸 HTML 抽取的标签集合：只认块级结构标签，避免把聊天正文里偶发的
 // <b>、<a>、伪 XML（<心情> 等）误判成要渲染的页面。
 const RAW_HTML_TAGS =
-    'div|section|article|table|style|svg|details|figure|main|aside|header|footer|form|ul|ol|center|blockquote|canvas|video|audio|iframe';
+    'div|section|article|table|style|script|svg|details|figure|main|aside|header|footer|form|ul|ol|center|blockquote|canvas|video|audio|iframe';
 const RAW_HTML_OPEN_RE = new RegExp(`<(?:!doctype\\s+html|html|${RAW_HTML_TAGS})(?:\\s[^>]*)?>`, 'i');
 const RAW_HTML_CLOSE_RE = new RegExp(`</(?:html|body|${RAW_HTML_TAGS}|h[1-6]|p)\\s*>`, 'gi');
 

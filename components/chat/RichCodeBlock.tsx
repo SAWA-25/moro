@@ -1,8 +1,10 @@
 // 聊天气泡里的富代码渲染块
 //
-// - HtmlPreviewBlock：```html / ```css 围栏与正文裸 HTML 的沙盒预览卡。
-//   iframe 沙盒策略与 html_card 一致（只给 allow-same-origin 用于量高，
-//   不给 allow-scripts / allow-forms / allow-popups），AI 输出的 <script> 不会执行。
+// - HtmlPreviewBlock：```html / ```css 围栏与正文裸 HTML 的 iframe 预览卡。
+//   对齐 SillyTavern + JS-Slash-Runner 的前端卡渲染语义：iframe 内的
+//   <script> 会执行（allow-scripts），交互式状态栏 / 动画卡 / 美化正则注入的
+//   HTML 都能完整跑起来；高度由父侧 ResizeObserver 自动贴合内容。
+//   HTML 仅在 iframe 文档内执行，不会直接注入聊天 DOM。
 // - MarkdownPreviewBlock：```markdown 围栏的完整 Markdown 渲染
 //   （标题 / 列表 / 表格 / 引用 / 代码 / 链接 / 图片），全部输出 React 节点，
 //   不使用 dangerouslySetInnerHTML。
@@ -65,13 +67,14 @@ export const HtmlPreviewBlock: React.FC<{
             const f = e.currentTarget as HTMLIFrameElement & { __richPreviewRO?: ResizeObserver };
             const doc = f.contentDocument;
             if (!doc || !doc.body) return;
-            // 同 html_card：量内容真实高度并把 iframe 调成等高；超长内容兜底内部滚动
+            // 同 JS-Slash-Runner adjust_iframe_height：量内容真实高度并把 iframe 调成等高，
+            // ResizeObserver 跟随脚本动态改动内容后的高度变化；超长内容兜底内部滚动
             const fit = () => {
                 try {
                     const root = doc.documentElement;
                     const body = doc.body;
                     const natural = Math.max(body.scrollHeight, body.offsetHeight, root ? root.scrollHeight : 0);
-                    f.style.height = Math.min(1600, Math.max(48, natural + 4)) + 'px';
+                    f.style.height = Math.min(2400, Math.max(48, natural + 4)) + 'px';
                 } catch { /* 读不到时静默 */ }
             };
             fit();
@@ -98,7 +101,9 @@ export const HtmlPreviewBlock: React.FC<{
                 <iframe
                     title="rich-html-preview"
                     srcDoc={srcDoc}
-                    sandbox="allow-same-origin"
+                    // 对齐 ST/JS-Slash-Runner：前端卡里的脚本要真的执行（交互卡、动画、
+                    // 美化正则注入的 JS）。allow-same-origin 同时供父侧量高用。
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-modals"
                     referrerPolicy="no-referrer"
                     loading="lazy"
                     className="block w-full border-0 bg-white"

@@ -30,10 +30,23 @@ SillyTavern 正则脚本系统的完整移植：脚本数据结构、执行引�
 1. **用户发送** `apps/Chat.tsx` handleSendText — `USER_INPUT`，落库前改写原文
 2. **AI 输出** `utils/applyAssistantPostProcessing.ts` Step 1.4 — `AI_OUTPUT`，落库前改写原文（在 BLOCK_USER 等指令剥离之前）
 3. **提示词组装** `utils/chatPrompts.ts` buildMessageHistory — 仅 `promptOnly` 脚本，带 `depth`（0 = 最后一条）供 minDepth/maxDepth 过滤
-4. **气泡渲染** `apps/Chat.tsx` displayMessages — 仅 `markdownOnly` 脚本，传给 MessageItem 前替换 content，不动原文
+4. **气泡渲染** `apps/Chat.tsx` displayMessages — 仅 `markdownOnly` 脚本，传给 MessageItem 前替换 content，不动原文；带 `depth`（0 = 最后一条）供 minDepth/maxDepth 过滤
 
 另外世界书注入走 `utils/worldbookRuntime.ts` resolveForChar 末尾的
 `WORLD_INFO` placement。
+
+## 显示层脚本 × 富渲染（分泡保护）
+
+ST 单条消息不拆泡，Moro 的 AI 回复落库前会被 `chunkText` 按换行拆成多条气泡。
+若 `markdownOnly` 脚本要匹配的片段（如 `<status>…</status>` 状态栏伪 XML）被拆散，
+挂载点 4 的渲染层正则永远匹配不上，美化脚本注入的 HTML 也渲染不出来。
+
+所以 `applyAssistantPostProcessing` 在拆泡前，用
+`utils/regex/store.ts` 的 `splitOutDisplayRegexSegments`（基于
+`findDisplayRegexSpans`，编译逻辑与执行时共用 `getScriptFindRegex`）把
+「显示层脚本能命中的整段」当富块整块保护：不拆泡、不被 sanitize 误伤，
+落库后由挂载点 4 在渲染时整段替换，输出的 HTML 走 `RichCodeBlock` 的
+iframe 渲染（脚本可执行，详见 `utils/chatRichContent.ts` 头注）。
 
 ## 与 ST 的差异
 

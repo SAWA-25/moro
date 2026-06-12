@@ -191,7 +191,11 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         return Array.from(map.entries());
     }, [worldbooks]);
     const mountedIds = useMemo(() => new Set((char.mountedWorldbooks || []).map(b => b.id)), [char.mountedWorldbooks]);
-    const categoryMounted = (books: typeof worldbooks) => books.length > 0 && books.every(b => mountedIds.has(b.id));
+    // 与世界书 App 实况同步的「已挂载」判定：只要本卷（分组）有任一条目在挂载列表里
+    // 就算已挂载 —— 卷册语义是整本绑定，世界书 App 后续增删条目不改变绑定状态。
+    // （旧版要求「全部条目都在挂载列表」，世界书 App 里新增一条就会让开关显示成
+    //   未挂载、而注入仍在进行，开关与实际状态脱节。）
+    const categoryMounted = (books: typeof worldbooks) => books.length > 0 && books.some(b => mountedIds.has(b.id));
     // 局部卷册：分组里至少有一条 scope 为 local（缺省即 local）的条目
     const localCategories = useMemo(
         () => bookCategories.filter(([, books]) => books.some(b => (b.scope || 'local') === 'local')),
@@ -201,8 +205,11 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const toggleBookCategory = (category: string, books: typeof worldbooks) => {
         const current = char.mountedWorldbooks || [];
         if (categoryMounted(books)) {
+            // 卸载整卷：live 条目 id + 快照里同分组的残留记录一并清掉
             const ids = new Set(books.map(b => b.id));
-            updateCharacter(char.id, { mountedWorldbooks: current.filter(b => !ids.has(b.id)) });
+            updateCharacter(char.id, {
+                mountedWorldbooks: current.filter(b => !ids.has(b.id) && (b.category || '未分类设定 (General)') !== category),
+            });
             addToast(`已卸载《${category}》`, 'info');
         } else {
             if (mountedLocalCount >= WB_BIND_LIMIT) {

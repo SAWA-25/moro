@@ -51,10 +51,40 @@ const WorldbookApp: React.FC = () => {
     const [tempSelective, setTempSelective] = useState(false);
     const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
     const [tempScanDepth, setTempScanDepth] = useState(4);
+    // 关键词扫描测试：粘贴一段聊天文本，实时演练本条目会不会被触发
+    const [scanTestText, setScanTestText] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const parseKeys = (raw: string): string[] =>
         raw.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+
+    /**
+     * 与 WorldbookRuntime.isEntryTriggered 同一套判定逻辑的本地演练版：
+     * 每行视为一条消息，取最近 scanDepth 行做扫描窗口，返回命中详情。
+     */
+    const scanTestResult = useMemo(() => {
+        if (tempActivation !== 'keyword') return null;
+        const keys = parseKeys(tempKeys);
+        const secondary = parseKeys(tempSecondaryKeys);
+        if (!scanTestText.trim()) return null;
+        if (keys.length === 0) return { triggered: false, hitKeys: [], hitSecondary: [], reason: '没有可用的触发关键词' };
+
+        const lines = scanTestText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
+        const depth = Math.max(1, tempScanDepth || 4);
+        const hay = lines.slice(-depth).join('\n');
+        const hayCmp = tempCaseSensitive ? hay : hay.toLowerCase();
+        const hit = (k: string) => hayCmp.includes(tempCaseSensitive ? k : k.toLowerCase());
+
+        const hitKeys = keys.filter(hit);
+        const hitSecondary = secondary.filter(hit);
+        if (hitKeys.length === 0) {
+            return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息里没有命中任何关键词` };
+        }
+        if (tempSelective && secondary.length > 0 && hitSecondary.length === 0) {
+            return { triggered: false, hitKeys, hitSecondary, reason: '主关键词命中，但二级过滤词一个都没命中（已开启 Selective）' };
+        }
+        return { triggered: true, hitKeys, hitSecondary, reason: '' };
+    }, [tempActivation, tempKeys, tempSecondaryKeys, tempSelective, tempCaseSensitive, tempScanDepth, scanTestText]);
 
     // Grouping Logic
     const groupedBooks = useMemo(() => {
@@ -91,6 +121,7 @@ const WorldbookApp: React.FC = () => {
         setTempSelective(false);
         setTempCaseSensitive(false);
         setTempScanDepth(4);
+        setScanTestText('');
         setIsEditing(true);
     };
 
@@ -112,6 +143,7 @@ const WorldbookApp: React.FC = () => {
         setTempSelective(book.selective ?? !!stEntry?.selective);
         setTempCaseSensitive(book.caseSensitive ?? !!stEntry?.caseSensitive);
         setTempScanDepth(typeof book.scanDepth === 'number' ? book.scanDepth : (book.stData?.scanDepth ?? 4));
+        setScanTestText('');
         setIsEditing(true);
     };
 
@@ -259,7 +291,7 @@ const WorldbookApp: React.FC = () => {
                                     </button>
                                 </div>
                                 <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                                    局部：仅当角色在神经链接「扩展设定」里挂载本书后注入。全局：任意发消息都带上，无需挂载。两者同时生效时，系统提示先写局部、再写全局。
+                                    局部：仅当角色在「聊天设置 → 绑定世界书」里挂载本书后注入。全局：任意发消息都带上，无需挂载。两者同时生效时，系统提示先写局部、再写全局。
                                 </p>
                             </div>
 
@@ -361,6 +393,29 @@ const WorldbookApp: React.FC = () => {
                                             onChange={e => setTempScanDepth(parseInt(e.target.value) || 1)}
                                             className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
                                         />
+                                    </div>
+
+                                    {/* 关键词扫描测试：和聊天注入用同一套判定逻辑，编辑时即可演练 */}
+                                    <div className="pt-1 border-t border-emerald-100">
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">🔍 扫描测试（粘贴聊天文本，每行算一条消息）</label>
+                                        <textarea
+                                            value={scanTestText}
+                                            onChange={e => setScanTestText(e.target.value)}
+                                            placeholder={'例如：\n今晚的月色真好\n要不要一起去学魔法？'}
+                                            className="w-full h-20 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500 resize-none"
+                                        />
+                                        {scanTestResult && (
+                                            <div className={`mt-2 rounded-lg px-3 py-2 text-[11px] leading-relaxed border ${scanTestResult.triggered ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                                <div className="font-bold mb-0.5">{scanTestResult.triggered ? '✅ 会被触发并注入' : '⛔ 不会注入'}</div>
+                                                {scanTestResult.hitKeys.length > 0 && (
+                                                    <div>命中关键词：{scanTestResult.hitKeys.join('、')}</div>
+                                                )}
+                                                {scanTestResult.hitSecondary.length > 0 && (
+                                                    <div>命中二级词：{scanTestResult.hitSecondary.join('、')}</div>
+                                                )}
+                                                {!scanTestResult.triggered && <div>{scanTestResult.reason}</div>}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}

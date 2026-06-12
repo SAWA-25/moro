@@ -2362,9 +2362,22 @@ const MessageItem = React.memo(({
 
     // 围栏感知版：```代码块原样保留，只清理围栏外的普通文本。
     // （否则上面的反引号清理会把 ```html 等围栏整个拆掉，代码内容也会被 junk 规则误伤）
+    // 裸块级 HTML 片段同样原样保留：junk 规则（剥反引号 / [文本](url) 还原 / --- 行清理）
+    // 会破坏标签属性和 <script> 里的 JS，导致 iframe 渲染出来的卡片直接坏掉。
     const stripJunk = (s: string) => s
         .split(/(```[\s\S]*?```)/g)
-        .map(seg => (seg.startsWith('```') && seg.endsWith('```') && seg.length > 6) ? seg : stripJunkPlain(seg))
+        .map(seg => {
+            if (seg.startsWith('```') && seg.endsWith('```') && seg.length > 6) return seg;
+            let out = '';
+            let rest = seg;
+            while (rest) {
+                const chunk = extractRawHtmlChunk(rest);
+                if (!chunk) { out += stripJunkPlain(rest); break; }
+                out += stripJunkPlain(chunk.before) + chunk.html;
+                rest = chunk.after;
+            }
+            return out;
+        })
         .join('')
         .trim();
 

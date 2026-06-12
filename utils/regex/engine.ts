@@ -127,6 +127,26 @@ const filterString = (rawString: string, trimStrings: string[], env: RegexEnviro
     return finalString;
 };
 
+/**
+ * 编译脚本的 findRegex（含 {{user}}/{{char}} 宏替换），失败返回 null。
+ * 供「分泡保护」等需要只做匹配（不替换）的调用方复用，保证与执行时
+ * 编译出的正则完全一致。
+ */
+export function getScriptFindRegex(regexScript: RegexScriptData, env: RegexEnvironment = {}): RegExp | null {
+    if (!regexScript?.findRegex) return null;
+    const src = (() => {
+        switch (Number(regexScript.substituteRegex)) {
+            case substitute_find_regex.RAW:
+                return substituteMacros(regexScript.findRegex, env);
+            case substitute_find_regex.ESCAPED:
+                return substituteMacros(regexScript.findRegex, env, sanitizeRegexMacro);
+            default:
+                return regexScript.findRegex;
+        }
+    })();
+    return getCachedRegex(src);
+}
+
 /** 对单条脚本执行替换（同 ST runRegexScript） */
 export function runRegexScript(regexScript: RegexScriptData, rawString: string, env: RegexEnvironment = {}): string {
     let newString = rawString;

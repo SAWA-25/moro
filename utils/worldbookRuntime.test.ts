@@ -61,6 +61,26 @@ describe('WorldbookRuntime 解析与开关', () => {
         const r = WorldbookRuntime.resolveForChar(charWith([{ id: 'ghost', title: '旧卡快照', content: '内容', category: '某书' }]));
         expect(r.local.map(e => e.id)).toEqual(['ghost']);
     });
+
+    it('整本挂载实况同步：书里新加的条目自动注入，已禁用的新条目不注入', () => {
+        WorldbookRuntime.sync([
+            wb({ id: 'a', title: '老条目', content: 'A' }),
+            wb({ id: 'new1', title: '后来加的', content: 'N1' }),
+            wb({ id: 'new2', title: '后来加的但已关', content: 'N2', enabled: false }),
+            wb({ id: 'other', title: '别的书的条目', content: 'O', category: '别的书' }),
+        ], {});
+        // 挂载快照里只有 a（挂载之后书里又加了 new1/new2）
+        const r = WorldbookRuntime.resolveForChar(charWith([{ id: 'a', title: '老条目', content: '旧快照' }]));
+        expect(r.local.map(e => e.id).sort()).toEqual(['a', 'new1']);
+    });
+
+    it('未填分组的条目：整书开关用「未分类设定 (General)」键（与世界书 App 展示一致）', () => {
+        WorldbookRuntime.sync([
+            wb({ id: 'a', title: '无分组', content: 'x', category: undefined as any }),
+        ], { '未分类设定 (General)': false });
+        const r = WorldbookRuntime.resolveForChar(charWith([{ id: 'a', title: '无分组', content: 'x' }]));
+        expect(r.local).toHaveLength(0);
+    });
 });
 
 describe('buildPromptSections 位置与顺序', () => {
