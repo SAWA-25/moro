@@ -7,6 +7,7 @@ import { DB } from '../utils/db';
 import { CharacterProfile, Anniversary, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
+import WeatherWidget from '../components/os/WeatherWidget';
 
 // --- Isolated Components to prevent full re-renders ---
 
@@ -31,7 +32,7 @@ const DesktopClock = React.memo(() => {
 
     // 手帐拼贴日期卡（参照黑白手帐桌面）：天空蓝照片质感 + 大号日期 + 星期 + FOCUS 胶囊
     return (
-        <div className="moro-clock-card h-full w-full rounded-[2rem] px-6 py-6 relative overflow-hidden animate-rise-in select-none flex flex-col text-white"
+        <div className="moro-clock-card h-full w-full rounded-[2rem] px-5 py-5 relative overflow-hidden animate-rise-in select-none flex flex-col text-white"
             style={{
                 background: 'linear-gradient(168deg, #5d7eab 0%, #4a6a9b 42%, #3e5d8d 100%)',
                 boxShadow: '0 20px 44px -20px rgba(52, 74, 110, 0.55)',
@@ -51,19 +52,20 @@ const DesktopClock = React.memo(() => {
                 </div>
                 <div className="text-[13px] label-mono font-bold tracking-[0.3em] mt-1 opacity-95">{dayName}</div>
 
-                <div className="mt-auto flex items-end justify-between gap-3">
+                {/* 半宽卡片：时间/问候与按钮纵向堆叠，避免挤压（参照设计稿 FOCUS 胶囊在卡片下部） */}
+                <div className="mt-auto flex flex-col gap-2.5 min-w-0">
                     <div className="min-w-0">
-                        <div className="text-[22px] font-semibold leading-none tabular-nums" style={{ textShadow: '0 1px 10px rgba(30,48,80,0.3)' }}>
+                        <div className="text-[20px] font-semibold leading-none tabular-nums" style={{ textShadow: '0 1px 10px rgba(30,48,80,0.3)' }}>
                             {hh}<span className="opacity-60 animate-pulse mx-0.5">:</span>{mm}
                         </div>
-                        <div className="moro-clock-greeting text-[11px] mt-2 opacity-85 font-medium tracking-wide truncate">{greeting}</div>
+                        <div className="moro-clock-greeting text-[11px] mt-1.5 opacity-85 font-medium tracking-wide truncate">{greeting}</div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
                         {/* 一键锁屏：只切换到锁屏界面，主动消息 / 推送 / 锁屏通知卡照常运行 */}
                         <button
                             onClick={lock}
-                            className="w-9 h-9 rounded-full press-soft inline-flex items-center justify-center"
+                            className="w-9 h-9 shrink-0 rounded-full press-soft inline-flex items-center justify-center"
                             style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)' }}
                             aria-label="一键锁屏"
                         >
@@ -71,7 +73,7 @@ const DesktopClock = React.memo(() => {
                         </button>
                         <button
                             onClick={() => openApp(AppID.Appearance)}
-                            className="moro-palette-btn label-mono text-[10px] font-bold px-5 py-2.5 rounded-full press-soft"
+                            className="moro-palette-btn label-mono text-[10px] font-bold px-4 py-2.5 rounded-full press-soft min-w-0 truncate"
                             style={{ background: 'rgba(255,255,255,0.24)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.45)', color: '#ffffff', textShadow: '0 1px 6px rgba(30,48,80,0.3)' }}
                         >
                             Focus
@@ -341,7 +343,7 @@ const loadStoredDeskOrder = (): string[] => {
 const buildDefaultKeys = (appKeys: string[], widgetKeys: Set<string>): string[] => {
     const mid = ['widget:schedule', 'widget:music', 'widget:image', 'widget:imgtl', 'widget:imgtr', 'widget:imgwide']
         .filter(k => widgetKeys.has(k));
-    return ['widget:clock', 'widget:character', ...appKeys.slice(0, 8), ...mid, ...appKeys.slice(8)];
+    return ['widget:clock', 'widget:weather', 'widget:character', ...appKeys.slice(0, 8), ...mid, ...appKeys.slice(8)];
 };
 
 /** first-fit 装箱：按顺序放进当前页网格，放不下开新页（不回填旧页，保证顺序直觉） */
@@ -379,6 +381,7 @@ const packDeskPages = (items: DeskItem[]): PlacedItem[][] => {
 
 const WIDGET_LABELS: Record<string, string> = {
     clock: '时钟',
+    weather: '天气',
     character: '聊天卡片',
     schedule: '日程',
     music: '音乐',
@@ -462,7 +465,9 @@ const Launcher: React.FC = () => {
     const clampW = (n: number) => Math.max(1, Math.min(PAGE_COLS, Math.round(n)));
     const clampH = (n: number) => Math.max(1, Math.min(PAGE_ROWS, Math.round(n)));
     const widgetItems: DeskItem[] = ([
-        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 6 },
+        // 参照手帐桌面设计稿：左半蓝色日期卡 + 右半天气卡（尺寸可在 主题 → 桌面小组件 覆盖）
+        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 2, h: 6 },
+        { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 3 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
         { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
         { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
@@ -770,6 +775,8 @@ const Launcher: React.FC = () => {
       switch (item.id) {
           case 'clock':
               return <DesktopClock />;
+          case 'weather':
+              return <WeatherWidget contentColor={contentColor} />;
           case 'character':
               return (
                   <CharacterWidget
