@@ -53,7 +53,7 @@ const CharacterCard: React.FC<{
     </div>
 );
 
-/** onExit：人设库（PersonaHubApp）嵌入时返回选择页；不传则关闭 App 回桌面（旧行为） */
+/** onExit：剪影集（PersonaHubApp）嵌入时返回封面页；不传则关闭 App 回桌面（旧行为） */
 const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
   const closeApp = onExit || closeAppOS;

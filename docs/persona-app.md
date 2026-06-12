@@ -1,9 +1,26 @@
 # 人设 App（SillyTavern Persona Management 移植）
 
-把酒馆（SillyTavern）的用户人设管理搬进 Moro：桌面新增「人设」App，可以保存
-多套「你是谁」（名字 / 头像 / 小标题 / 描述），点击即启用，支持绑定角色（进
+把酒馆（SillyTavern）的用户人设管理搬进 Moro：桌面入口现名「**剪影集**」
+（PersonaHubApp，黑白拼贴手账风封面页），内含「登场人物」（角色档案，
+Character.tsx）与「**扮相手账**」（用户人设，PersonaApp.tsx）。扮相手账可以保存
+多套「你是谁」（署名 / 照片 / 页角注记 / 自述），点击即启用，支持绑定角色（进
 对应聊天自动切换）、默认人设、描述注入位置（嵌入提示词 / @Depth / 不注入）、
 绑定世界书分组（=ST 人设世界书）、备份恢复。
+
+UI 文案与功能术语对照（代码字段 / ST 语义不变，只换了说法）：
+
+| 界面词 | 实际语义 |
+|--------|----------|
+| 一页扮相 | 一条 `Persona` 记录 |
+| 戴上 / 佩戴中 | 激活人设（`os_active_persona_id`） |
+| 钉为常驻（图钉） | 默认人设（`os_default_persona_id`） |
+| 别在角色上（别针） | `Persona.connections` 角色绑定 |
+| 剪一份 / 撕掉 | 复制 / 删除 |
+| 署名 / 页角注记 / 自述拼贴 | name / title / description |
+| 自述寄往何处：缝进提示词 / 夹进对话 / 压在箱底 | position：IN_PROMPT / AT_DEPTH / NONE |
+| 以谁的口吻 | depth role（system / user / assistant） |
+| 随页夹带的世界书 | `Persona.lorebookCategory` |
+| 整本装箱 / 拆箱回填 | JSON 备份 / 恢复 |
 
 ## 文件地图
 

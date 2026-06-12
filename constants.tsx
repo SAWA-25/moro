@@ -38,7 +38,7 @@ import {
   Planet,
   Wrench,
   Faders,
-  MaskHappy,
+  UserSwitch,
   BracketsCurly,
 } from '@phosphor-icons/react';
 
@@ -82,15 +82,15 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   VRWorld: ({ className }) => <Planet className={className} weight="bold" />,
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
   Presets: ({ className }) => <Faders className={className} weight="bold" />,
-  Personas: ({ className }) => <MaskHappy className={className} weight="bold" />,
+  Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
   Regex: ({ className }) => <BracketsCurly className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
-// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（人设 / 世界书 / 预设 / 正则 / 主题），
+// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（剪影集 / 世界书 / 预设 / 正则 / 主题），
 // 其余按使用频率排在后续页。
 export const INSTALLED_APPS: AppConfig[] = [
-  // 神经链接（角色档案）已并入「人设」App：人设库 → 选「角色档案」或「主控面具」
+  // 神经链接（角色档案）已并入「剪影集」App：封面页 → 选「登场人物」或「扮相手账」
   // { id: AppID.Character, name: '神经链接', icon: 'Character', color: 'indigo' },
   // 絮语：单聊 + 群聊 + 名册 + 此刻 一站式入口（原独立「群聊」「Message」App 已合并于此）
   { id: AppID.GroupChat, name: '絮语', icon: 'Chat', color: 'green' },
@@ -98,7 +98,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Gallery, name: '相册', icon: 'Gallery', color: 'orange' },
   { id: AppID.Music, name: '音乐', icon: 'Music', color: 'rose' },
   { id: AppID.HotNews, name: '热点', icon: 'HotNews', color: 'red' },
-  { id: AppID.Personas, name: '人设', icon: 'Personas', color: 'violet' },
+  { id: AppID.Personas, name: '剪影集', icon: 'Personas', color: 'violet' },
   { id: AppID.Worldbook, name: '世界书', icon: 'Worldbook', color: 'indigo' },
   { id: AppID.Presets, name: '预设', icon: 'Presets', color: 'sky' },
   { id: AppID.Regex, name: '正则', icon: 'Regex', color: 'teal' },
