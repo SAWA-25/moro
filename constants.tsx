@@ -18,7 +18,7 @@ import {
   Books,
   Question,
   GameController,
-  Globe,
+  NewspaperClipping,
   PenNib,
   PiggyBank,
   Compass,
@@ -37,7 +37,7 @@ import {
   Newspaper,
   Planet,
   Wrench,
-  Faders,
+  Stamp,
   UserSwitch,
   BracketsCurly,
 } from '@phosphor-icons/react';
@@ -61,7 +61,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Study: ({ className }) => <Books className={className} weight="bold" />,
   FAQ: ({ className }) => <Question className={className} weight="bold" />,
   Game: ({ className }) => <GameController className={className} weight="bold" />,
-  Worldbook: ({ className }) => <Globe className={className} weight="bold" />,
+  Worldbook: ({ className }) => <NewspaperClipping className={className} weight="bold" />,
   Novel: ({ className }) => <PenNib className={className} weight="bold" />,
   Bank: ({ className }) => <PiggyBank className={className} weight="bold" />,
   XhsFreeRoam: ({ className }) => <Compass className={className} weight="bold" />,
@@ -81,13 +81,13 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   HotNews: ({ className }) => <Newspaper className={className} weight="fill" />,
   VRWorld: ({ className }) => <Planet className={className} weight="bold" />,
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
-  Presets: ({ className }) => <Faders className={className} weight="bold" />,
+  Presets: ({ className }) => <Stamp className={className} weight="bold" />,
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
   Regex: ({ className }) => <BracketsCurly className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
-// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（剪影集 / 世界书 / 预设 / 正则 / 主题），
+// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（剪影集 / 剪报夹 / 活字盘 / 正则 / 主题），
 // 其余按使用频率排在后续页。
 export const INSTALLED_APPS: AppConfig[] = [
   // 神经链接（角色档案）已并入「剪影集」App：封面页 → 选「登场人物」或「扮相手账」
@@ -99,8 +99,8 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Music, name: '音乐', icon: 'Music', color: 'rose' },
   { id: AppID.HotNews, name: '热点', icon: 'HotNews', color: 'red' },
   { id: AppID.Personas, name: '剪影集', icon: 'Personas', color: 'violet' },
-  { id: AppID.Worldbook, name: '世界书', icon: 'Worldbook', color: 'indigo' },
-  { id: AppID.Presets, name: '预设', icon: 'Presets', color: 'sky' },
+  { id: AppID.Worldbook, name: '剪报夹', icon: 'Worldbook', color: 'indigo' },
+  { id: AppID.Presets, name: '活字盘', icon: 'Presets', color: 'sky' },
   { id: AppID.Regex, name: '正则', icon: 'Regex', color: 'teal' },
   { id: AppID.Appearance, name: '主题', icon: 'Appearance', color: 'slate' },
   // ── 后续页 ──

@@ -936,7 +936,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">核心指令 (System Prompt)</label>
                                <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white rounded-3xl p-5 text-sm shadow-sm resize-none focus:ring-1 focus:ring-primary/20 transition-all" placeholder="设定..." />
                                <p className="text-[10px] text-slate-400 mt-1.5 pl-2 leading-relaxed">
-                                   支持酒馆宏：{'{{user}}'} / {'{{char}}'}（及 {'<user>'} / {'<char>'}）发送时自动替换为用户名 / 角色名。启用预设 App 时，这里的人设对应预设里的 Char Description 占位。
+                                   支持酒馆宏：{'{{user}}'} / {'{{char}}'}（及 {'<user>'} / {'<char>'}）发送时自动替换为用户名 / 角色名。开着活字盘（预设）时，这里的人设对应字版里的 Char Description 占位。
                                </p>
                            </div>
 
@@ -961,7 +961,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     placeholder={'<START>\n{{user}}: 在画什么？\n{{char}}: 在画云。'}
                                 />
                                <p className="text-[10px] text-slate-400 mt-1.5 pl-2 leading-relaxed">
-                                   角色说话风格的参考示例，不会和角色描述混在一起。用 <code className="bg-slate-100 px-1 rounded">&lt;START&gt;</code> 分隔多段示例（同酒馆惯例）；启用预设 App 时对应 Chat Examples 占位。
+                                   角色说话风格的参考示例，不会和角色描述混在一起。用 <code className="bg-slate-100 px-1 rounded">&lt;START&gt;</code> 分隔多段示例（同酒馆惯例）；开着活字盘（预设）时对应 Chat Examples 占位。
                                </p>
                            </div>
 

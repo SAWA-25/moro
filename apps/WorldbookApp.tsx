@@ -1,28 +1,58 @@
+/**
+ * 剪报夹 —— 世界书（Lorebook）管理，黑白拼贴手账风界面。
+ *
+ * 词汇对照（代码字段 / ST 语义不变，只换了说法）：
+ *  - 剪报 = 一条世界书条目；卷册 = category 分组（同一卷 = 同一本书）
+ *  - 钉死 = 常驻注入（ST 蓝灯 constant）；暗号 = 关键词触发（ST 绿灯）
+ *  - 满世界跟着 = 全局 scope；随卷出场 = 局部 scope（需角色挂载）
+ *  - 整卷封存 = 整书开关关闭
+ * 功能与旧版完全一致：条目/整书开关、局部/全局、插入位置（含 @深度）、顺序、
+ * 关键词激活（主/二级暗号、Selective、大小写、扫描深度、演练台）、ST 导入信息展示。
+ */
 import React, { useState, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { Worldbook, WorldbookPosition } from '../types';
-import Modal from '../components/os/Modal';
-import { DiamondsFour, BookOpen } from '@phosphor-icons/react';
+import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key } from '@phosphor-icons/react';
+
+// ── 黑白手账设计 token（与扮相手账同一套语言） ─────────────
+const INK = '#1c1b1a';
+const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
+const DOT_BG: React.CSSProperties = {
+    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
+    backgroundSize: '16px 16px',
+};
+const RULED_BG: React.CSSProperties = {
+    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(28,27,26,0.13) 23px, rgba(28,27,26,0.13) 24px)',
+    lineHeight: '24px',
+};
+
+const Tape: React.FC<{ className?: string }> = ({ className }) => (
+    <div
+        aria-hidden
+        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
+    />
+);
 
 const POSITION_OPTIONS: { value: WorldbookPosition; label: string }[] = [
-    { value: 'before_char', label: '角色定义前 (↑Char)' },
-    { value: 'after_char', label: '角色定义后 (↓Char · 默认)' },
-    { value: 'depth_system', label: '@深度 · 系统 (@D System)' },
-    { value: 'depth_user', label: '@深度 · 用户 (@D User)' },
-    { value: 'depth_assistant', label: '@深度 · AI (@D Assistant)' },
+    { value: 'before_char', label: '角色卡之前（↑CHAR）' },
+    { value: 'after_char', label: '角色卡之后（↓CHAR · 默认）' },
+    { value: 'depth_system', label: '夹进对话 · 旁白口吻（@深度）' },
+    { value: 'depth_user', label: '夹进对话 · 你的口吻（@深度）' },
+    { value: 'depth_assistant', label: '夹进对话 · TA 的口吻（@深度）' },
 ];
 
 const positionLabel = (p?: WorldbookPosition) =>
-    POSITION_OPTIONS.find(o => o.value === (p || 'after_char'))?.label || '角色定义后';
+    POSITION_OPTIONS.find(o => o.value === (p || 'after_char'))?.label || '角色卡之后';
 
-/** 小型开关（条目/整书共用） */
-const MiniToggle: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string }> = ({ on, onChange, title }) => (
+/** 墨块开关（剪报/整卷共用）：方形手账开关，黑=开 */
+const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string }> = ({ on, onChange, title }) => (
     <button
         onClick={(e) => { e.stopPropagation(); onChange(!on); }}
         title={title}
-        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${on ? 'bg-indigo-500' : 'bg-slate-300'}`}
+        className={`relative w-10 h-5 border-2 border-[#1c1b1a] shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'}`}
     >
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`}></span>
+        <span className={`absolute top-0 bottom-0 w-4 transition-all ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-[#1c1b1a]'}`} />
     </button>
 );
 
@@ -44,14 +74,14 @@ const WorldbookApp: React.FC = () => {
     const [tempPosition, setTempPosition] = useState<WorldbookPosition>('after_char');
     const [tempDepth, setTempDepth] = useState(4);
     const [tempOrder, setTempOrder] = useState(100);
-    // 关键词激活（ST 绿灯条目移植）
+    // 暗号出场（ST 绿灯条目移植）
     const [tempActivation, setTempActivation] = useState<'always' | 'keyword'>('always');
     const [tempKeys, setTempKeys] = useState('');
     const [tempSecondaryKeys, setTempSecondaryKeys] = useState('');
     const [tempSelective, setTempSelective] = useState(false);
     const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
     const [tempScanDepth, setTempScanDepth] = useState(4);
-    // 关键词扫描测试：粘贴一段聊天文本，实时演练本条目会不会被触发
+    // 暗号演练台：粘贴一段聊天文本，实时演练本条剪报会不会出场
     const [scanTestText, setScanTestText] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -67,7 +97,7 @@ const WorldbookApp: React.FC = () => {
         const keys = parseKeys(tempKeys);
         const secondary = parseKeys(tempSecondaryKeys);
         if (!scanTestText.trim()) return null;
-        if (keys.length === 0) return { triggered: false, hitKeys: [], hitSecondary: [], reason: '没有可用的触发关键词' };
+        if (keys.length === 0) return { triggered: false, hitKeys: [], hitSecondary: [], reason: '还没留下任何可用的暗号' };
 
         const lines = scanTestText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
         const depth = Math.max(1, tempScanDepth || 4);
@@ -78,10 +108,10 @@ const WorldbookApp: React.FC = () => {
         const hitKeys = keys.filter(hit);
         const hitSecondary = secondary.filter(hit);
         if (hitKeys.length === 0) {
-            return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息里没有命中任何关键词` };
+            return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息里没对上任何暗号` };
         }
         if (tempSelective && secondary.length > 0 && hitSecondary.length === 0) {
-            return { triggered: false, hitKeys, hitSecondary, reason: '主关键词命中，但二级过滤词一个都没命中（已开启 Selective）' };
+            return { triggered: false, hitKeys, hitSecondary, reason: '主暗号对上了，但二级暗号一个都没对上（开着「需同时对上二级暗号」）' };
         }
         return { triggered: true, hitKeys, hitSecondary, reason: '' };
     }, [tempActivation, tempKeys, tempSecondaryKeys, tempSelective, tempCaseSensitive, tempScanDepth, scanTestText]);
@@ -90,18 +120,13 @@ const WorldbookApp: React.FC = () => {
     const groupedBooks = useMemo(() => {
         const groups: Record<string, Worldbook[]> = {};
         const defaultCat = '未分类设定 (General)';
-        
+
         worldbooks.forEach(wb => {
             const cat = wb.category || defaultCat;
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(wb);
         });
-        
-        // Auto-expand the first category if none selected and groups exist
-        if (!expandedCategory && Object.keys(groups).length > 0) {
-            // setExpandedCategory(Object.keys(groups)[0]); // Optional: Auto open first
-        }
-        
+
         return groups;
     }, [worldbooks]);
 
@@ -149,14 +174,14 @@ const WorldbookApp: React.FC = () => {
 
     const handleSave = async () => {
         if (!tempTitle.trim()) {
-            addToast('请输入标题', 'error');
+            addToast('这条剪报还没有标题', 'error');
             return;
         }
 
         const category = tempCategory.trim() || '未分类设定 (General)';
         const keys = parseKeys(tempKeys);
         if (tempActivation === 'keyword' && keys.length === 0) {
-            addToast('关键词触发模式至少需要一个关键词', 'error');
+            addToast('暗号出场模式至少要留一个暗号', 'error');
             return;
         }
         const settings = {
@@ -180,7 +205,7 @@ const WorldbookApp: React.FC = () => {
                 category: category,
                 ...settings,
             });
-            addToast('已保存 (同步至相关角色)', 'success');
+            addToast('贴牢了（已同步到相关角色）', 'success');
         } else {
             const newBook: Worldbook = {
                 id: `wb-${Date.now()}`,
@@ -192,7 +217,7 @@ const WorldbookApp: React.FC = () => {
                 ...settings,
             };
             addWorldbook(newBook);
-            addToast('新条目已创建', 'success');
+            addToast('新剪报已夹进卷里', 'success');
         }
         setIsEditing(false);
     };
@@ -221,416 +246,459 @@ const WorldbookApp: React.FC = () => {
         setPreviewBookId(previewBookId === id ? null : id);
     };
 
-    // --- Render ---
+    // 出场方式小戳：钉死（常驻）= 实心，暗号 = 钥匙
+    const triggerStamp = (book: Worldbook) => book.activation === 'keyword'
+        ? <span className="inline-flex items-center gap-0.5"><Key size={10} weight="bold" />暗号</span>
+        : <span>■ 钉死</span>;
 
-    // EDIT MODAL (Full Screen Overlay Style)
+    // ── 编辑页（全屏纸面） ────────────────────────────────
     if (isEditing) {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans animate-fade-in">
-                <div className="h-16 flex items-center justify-between px-4 bg-white/80 backdrop-blur-md border-b border-slate-200 shrink-0 z-20">
-                    <button onClick={() => setIsEditing(false)} className="px-3 py-1 text-slate-500 font-bold text-sm">取消</button>
-                    <span className="font-bold text-slate-800">{editingBook ? '编辑条目' : '新建条目'}</span>
-                    <button onClick={handleSave} className="px-4 py-1.5 bg-indigo-500 text-white rounded-full text-xs font-bold shadow-md active:scale-95 transition-transform">保存</button>
+            <div className="h-full w-full bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+                <div className="relative flex items-center gap-3 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0">
+                    <button onClick={() => setIsEditing(false)} className={`px-2.5 py-2 rotate-[-2deg] text-[10px] font-black ${STICKER}`}>
+                        ✕ 不改了
+                    </button>
+                    <div className="flex-1 min-w-0">
+                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">{editingBook ? 'RE-CLIP' : 'NEW CLIP'}</div>
+                        <h2 className="text-lg font-black tracking-wide truncate">{editingBook ? '修剪这条剪报' : '新剪一条'}</h2>
+                    </div>
+                    <button
+                        onClick={handleSave}
+                        className="px-4 py-2 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all rotate-[1.5deg]"
+                    >
+                        贴牢
+                    </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-wider">标题 (Title)</label>
-                            <input 
-                                value={tempTitle}
-                                onChange={e => setTempTitle(e.target.value)}
-                                placeholder="例如: 魔法体系、公司背景..." 
-                                className="w-full text-lg font-bold text-slate-800 bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
-                            />
-                        </div>
+                <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
+                    <div>
+                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">剪报标题 / HEADLINE</label>
+                        <input
+                            value={tempTitle}
+                            onChange={e => setTempTitle(e.target.value)}
+                            placeholder="比如：魔法体系、公司背景…"
+                            className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed placeholder:text-[#1c1b1a]/25"
+                        />
+                    </div>
 
-                        <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-wider">分组 (Group)</label>
-                            <div className="relative">
-                                <input 
-                                    value={tempCategory}
-                                    onChange={e => setTempCategory(e.target.value)}
-                                    placeholder="例如: 世界观、人物、地理..." 
-                                    className="w-full text-sm text-slate-700 bg-white border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all"
-                                    list="category-suggestions"
-                                />
-                                <datalist id="category-suggestions">
-                                    {Object.keys(groupedBooks).map(cat => (
-                                        <option key={cat} value={cat} />
-                                    ))}
-                                </datalist>
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-1 pl-1">输入相同名称可自动归入已有分组（同一分组 = 同一本世界书）。</p>
-                        </div>
+                    <div>
+                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">归入哪一卷 / VOLUME</label>
+                        <input
+                            value={tempCategory}
+                            onChange={e => setTempCategory(e.target.value)}
+                            placeholder="比如：世界观、人物、地理…"
+                            className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1.5 text-sm outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                            list="category-suggestions"
+                        />
+                        <datalist id="category-suggestions">
+                            {Object.keys(groupedBooks).map(cat => (
+                                <option key={cat} value={cat} />
+                            ))}
+                        </datalist>
+                        <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>✎ 写同一个卷名就归进同一卷（同一卷 = 同一本世界书）。</p>
+                    </div>
 
-                        {/* 条目级设置：开关 / 作用域 / 位置 / 深度 / 顺序 */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 block">条目开关 (Enabled)</label>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">关闭后任何场景都不会注入此条目</p>
-                                </div>
-                                <MiniToggle on={tempEnabled} onChange={setTempEnabled} />
-                            </div>
-
+                    {/* 剪报级设置：开关 / 贴在哪里 / 位置 / 深度 / 顺序 */}
+                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-4">
+                        <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
+                        <div className="flex items-center justify-between">
                             <div>
-                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">作用域 (Scope)</label>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setTempScope('local')}
-                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempScope === 'local' ? 'bg-indigo-500 text-white border-indigo-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
-                                    >
-                                        局部 (需角色挂载)
-                                    </button>
-                                    <button
-                                        onClick={() => setTempScope('global')}
-                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempScope === 'global' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
-                                    >
-                                        全局 (所有对话)
-                                    </button>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                                    局部：仅当角色在「聊天设置 → 绑定世界书」里挂载本书后注入。全局：任意发消息都带上，无需挂载。两者同时生效时，系统提示先写局部、再写全局。
-                                </p>
+                                <label className="text-[11px] font-black block">这条剪报的开关</label>
+                                <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>关掉之后，任何场合都不会被寄出去</p>
                             </div>
+                            <InkSwitch on={tempEnabled} onChange={setTempEnabled} />
+                        </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className={tempPosition.startsWith('depth_') ? '' : 'col-span-2'}>
-                                    <label className="text-xs font-bold text-slate-500 mb-1.5 block">插入位置 (Position)</label>
+                        <div>
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">贴在哪里 / SCOPE</label>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setTempScope('local')}
+                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[-0.5deg] ${tempScope === 'local' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                >
+                                    随卷出场（要挂载）
+                                </button>
+                                <button
+                                    onClick={() => setTempScope('global')}
+                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[0.5deg] ${tempScope === 'global' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                >
+                                    满世界跟着（全局）
+                                </button>
+                            </div>
+                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                                ✎ 随卷出场：要在「聊天手帐 → 剪报夹页」里夹上这一卷才寄出。满世界跟着：任何聊天都自动带上，不用挂载。两边同时有货时，先写随卷的、再写全局的。
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className={tempPosition.startsWith('depth_') ? '' : 'col-span-2'}>
+                                <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">插进信里的位置 / POSITION</label>
+                                <div className="relative">
                                     <select
                                         value={tempPosition}
                                         onChange={e => setTempPosition(e.target.value as WorldbookPosition)}
-                                        className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
+                                        className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
                                         {POSITION_OPTIONS.map(o => (
                                             <option key={o.value} value={o.value}>{o.label}</option>
                                         ))}
                                     </select>
+                                    <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                                 </div>
-                                {tempPosition.startsWith('depth_') && (
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">深度 (Depth)</label>
-                                        <input
-                                            type="number" min={0}
-                                            value={tempDepth}
-                                            onChange={e => setTempDepth(parseInt(e.target.value) || 0)}
-                                            className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
-                                        />
-                                    </div>
-                                )}
                             </div>
-
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">插入顺序 (Order)</label>
-                                <input
-                                    type="number"
-                                    value={tempOrder}
-                                    onChange={e => setTempOrder(parseInt(e.target.value) || 0)}
-                                    className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-indigo-500"
-                                />
-                                <p className="text-[10px] text-slate-400 mt-1">同一位置内数值小的排前面（与 SillyTavern 最终生效顺序一致）。@深度位置 = 以所选角色身份插到聊天历史倒数第 N 条处（深度 0 = 最末尾）。</p>
-                            </div>
-
-                            {/* 激活方式（ST 蓝灯/绿灯移植） */}
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 mb-1.5 block">激活方式 (Activation)</label>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setTempActivation('always')}
-                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempActivation === 'always' ? 'bg-sky-500 text-white border-sky-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
-                                    >
-                                        🔵 常驻 (Constant)
-                                    </button>
-                                    <button
-                                        onClick={() => setTempActivation('keyword')}
-                                        className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${tempActivation === 'keyword' ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
-                                    >
-                                        🟢 关键词触发
-                                    </button>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                                    常驻：开关开着就注入（ST 蓝灯）。关键词触发：扫描最近的聊天消息，命中关键词才注入（ST 绿灯）——适合大体量设定按需出场，省 token。
-                                </p>
-                            </div>
-
-                            {tempActivation === 'keyword' && (
-                                <div className="space-y-3 bg-emerald-50/50 border border-emerald-100 rounded-lg p-3">
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">触发关键词（逗号分隔，任一命中即激活）</label>
-                                        <input
-                                            value={tempKeys}
-                                            onChange={e => setTempKeys(e.target.value)}
-                                            placeholder="例如: 魔法, 咒语, 法术"
-                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">二级过滤词（可选，逗号分隔）</label>
-                                        <input
-                                            value={tempSecondaryKeys}
-                                            onChange={e => setTempSecondaryKeys(e.target.value)}
-                                            placeholder="例如: 学院, 导师"
-                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
-                                        />
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 block">需同时命中二级词 (Selective)</label>
-                                            <p className="text-[10px] text-slate-400 mt-0.5">开启后：主关键词 + 任一二级词都命中才注入</p>
-                                        </div>
-                                        <MiniToggle on={tempSelective} onChange={setTempSelective} />
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs font-bold text-slate-500">大小写敏感</label>
-                                        <MiniToggle on={tempCaseSensitive} onChange={setTempCaseSensitive} />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">扫描深度（最近 N 条消息）</label>
-                                        <input
-                                            type="number" min={1}
-                                            value={tempScanDepth}
-                                            onChange={e => setTempScanDepth(parseInt(e.target.value) || 1)}
-                                            className="w-full text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500"
-                                        />
-                                    </div>
-
-                                    {/* 关键词扫描测试：和聊天注入用同一套判定逻辑，编辑时即可演练 */}
-                                    <div className="pt-1 border-t border-emerald-100">
-                                        <label className="text-xs font-bold text-slate-500 mb-1.5 block">🔍 扫描测试（粘贴聊天文本，每行算一条消息）</label>
-                                        <textarea
-                                            value={scanTestText}
-                                            onChange={e => setScanTestText(e.target.value)}
-                                            placeholder={'例如：\n今晚的月色真好\n要不要一起去学魔法？'}
-                                            className="w-full h-20 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:border-emerald-500 resize-none"
-                                        />
-                                        {scanTestResult && (
-                                            <div className={`mt-2 rounded-lg px-3 py-2 text-[11px] leading-relaxed border ${scanTestResult.triggered ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-                                                <div className="font-bold mb-0.5">{scanTestResult.triggered ? '✅ 会被触发并注入' : '⛔ 不会注入'}</div>
-                                                {scanTestResult.hitKeys.length > 0 && (
-                                                    <div>命中关键词：{scanTestResult.hitKeys.join('、')}</div>
-                                                )}
-                                                {scanTestResult.hitSecondary.length > 0 && (
-                                                    <div>命中二级词：{scanTestResult.hitSecondary.join('、')}</div>
-                                                )}
-                                                {!scanTestResult.triggered && <div>{scanTestResult.reason}</div>}
-                                            </div>
-                                        )}
-                                    </div>
+                            {tempPosition.startsWith('depth_') && (
+                                <div>
+                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">夹在第几层</label>
+                                    <input
+                                        type="number" min={0}
+                                        value={tempDepth}
+                                        onChange={e => setTempDepth(parseInt(e.target.value) || 0)}
+                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                    />
                                 </div>
                             )}
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block tracking-wider">设定内容 (Content)</label>
-                            <textarea 
-                                value={tempContent}
-                                onChange={e => setTempContent(e.target.value)}
-                                placeholder="在此输入详细的设定内容，支持 Markdown 格式..." 
-                                className="w-full h-80 bg-white border border-slate-200 rounded-xl p-4 text-sm text-slate-700 leading-relaxed resize-none outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all font-mono"
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">先后顺序 / ORDER</label>
+                            <input
+                                type="number"
+                                value={tempOrder}
+                                onChange={e => setTempOrder(parseInt(e.target.value) || 0)}
+                                className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                             />
+                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>
+                                ✎ 同一个位置里，数字小的排前面（和 SillyTavern 最终生效顺序一致）。「夹进对话」= 以所选口吻插到聊天记录倒数第 N 条处（0 = 紧贴最末尾）。
+                            </p>
                         </div>
+
+                        {/* 出场方式（ST 蓝灯/绿灯移植） */}
+                        <div>
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">出场方式 / TRIGGER</label>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setTempActivation('always')}
+                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[-0.5deg] ${tempActivation === 'always' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                >
+                                    ■ 钉死（每次都在）
+                                </button>
+                                <button
+                                    onClick={() => setTempActivation('keyword')}
+                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[0.5deg] flex items-center justify-center gap-1 ${tempActivation === 'keyword' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                >
+                                    <Key size={11} weight="bold" /> 对上暗号才出场
+                                </button>
+                            </div>
+                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                                ✎ 钉死：开关开着就每次寄出（ST 蓝灯）。暗号：翻最近的聊天，提到暗号才出场（ST 绿灯）——大部头设定按需登场，省墨水（token）。
+                            </p>
+                        </div>
+
+                        {tempActivation === 'keyword' && (
+                            <div className="space-y-3 border-2 border-dashed border-[#1c1b1a]/40 p-3">
+                                <div>
+                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">触发暗号（逗号分隔，对上任何一个就出场）</label>
+                                    <input
+                                        value={tempKeys}
+                                        onChange={e => setTempKeys(e.target.value)}
+                                        placeholder="比如：魔法, 咒语, 法术"
+                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">二级暗号（可选，逗号分隔）</label>
+                                    <input
+                                        value={tempSecondaryKeys}
+                                        onChange={e => setTempSecondaryKeys(e.target.value)}
+                                        placeholder="比如：学院, 导师"
+                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <label className="text-[11px] font-black block">需同时对上二级暗号</label>
+                                        <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>开着：主暗号 + 任一二级暗号都对上才出场（Selective）</p>
+                                    </div>
+                                    <InkSwitch on={tempSelective} onChange={setTempSelective} />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[11px] font-black">暗号分大小写</label>
+                                    <InkSwitch on={tempCaseSensitive} onChange={setTempCaseSensitive} />
+                                </div>
+                                <div>
+                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">回看几条消息（扫描深度）</label>
+                                    <input
+                                        type="number" min={1}
+                                        value={tempScanDepth}
+                                        onChange={e => setTempScanDepth(parseInt(e.target.value) || 1)}
+                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                    />
+                                </div>
+
+                                {/* 暗号演练台：和聊天注入用同一套判定逻辑，编辑时即可演练 */}
+                                <div className="pt-2 border-t border-dashed border-[#1c1b1a]/30">
+                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">暗号演练台（贴一段聊天进来，每行算一条消息）</label>
+                                    <textarea
+                                        value={scanTestText}
+                                        onChange={e => setScanTestText(e.target.value)}
+                                        placeholder={'比如：\n今晚的月色真好\n要不要一起去学魔法？'}
+                                        className="w-full h-20 bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] resize-none placeholder:text-[#1c1b1a]/25"
+                                    />
+                                    {scanTestResult && (
+                                        <div className={`mt-2 px-3 py-2 text-[11px] leading-relaxed border-2 ${scanTestResult.triggered ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-dashed border-[#1c1b1a]/60 bg-white'}`}>
+                                            <div className="font-black mb-0.5">{scanTestResult.triggered ? '✓ 会出场，剪报照常寄出' : '✗ 不会出场'}</div>
+                                            {scanTestResult.hitKeys.length > 0 && (
+                                                <div>对上的暗号：{scanTestResult.hitKeys.join('、')}</div>
+                                            )}
+                                            {scanTestResult.hitSecondary.length > 0 && (
+                                                <div>对上的二级暗号：{scanTestResult.hitSecondary.join('、')}</div>
+                                            )}
+                                            {!scanTestResult.triggered && <div>{scanTestResult.reason}</div>}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="pb-6">
+                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">剪报内容 / CLIPPING</label>
+                        <textarea
+                            value={tempContent}
+                            onChange={e => setTempContent(e.target.value)}
+                            placeholder="把设定誊在这里，Markdown 随便用…"
+                            className="w-full h-72 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                            style={RULED_BG}
+                        />
                     </div>
                 </div>
             </div>
         );
     }
 
-    // LIST VIEW
+    // ── 列表页（卷册 + 剪报） ─────────────────────────────
     return (
-        <div className="h-full w-full relative overflow-hidden font-sans bg-slate-100 flex flex-col">
-            {/* Background Atmosphere */}
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 via-slate-100 to-violet-50 pointer-events-none"></div>
-            <div className="absolute -top-20 -right-20 w-64 h-64 bg-indigo-200/20 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-white/80 to-transparent pointer-events-none z-10"></div>
-
-            {/* Header */}
-            <div className="h-20 bg-white/70 backdrop-blur-xl flex items-end pb-3 px-6 border-b border-white/40 shrink-0 sticky top-0 z-20 shadow-sm">
-                <div className="flex justify-between items-center w-full">
-                    <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+        <div className="h-full w-full relative overflow-hidden bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+            {/* 刊头 */}
+            <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
+                <div className="flex items-center gap-3">
+                    <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`} title="合上剪报夹">
+                        <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                        </svg>
+                        <span className="text-[10px] font-black">合上</span>
                     </button>
-                    <span className="font-bold text-slate-700 text-lg tracking-wide flex items-center gap-2">
-                        <DiamondsFour size={18} className="text-indigo-500" /> 世界书
-                    </span>
-                    <button onClick={handleCreate} className="w-9 h-9 bg-indigo-500 text-white rounded-full shadow-lg shadow-indigo-200 flex items-center justify-center active:scale-90 transition-transform hover:bg-indigo-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                    </button>
+                    <div className="flex-1 min-w-0 relative">
+                        <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
+                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">CLIPPINGS BINDER — LOREBOOK</div>
+                        <div className="flex items-baseline gap-2">
+                            <h1 className="text-2xl font-black tracking-[0.08em]">剪报夹</h1>
+                            <span className="text-sm text-[#1c1b1a]/55 truncate" style={HAND_CN}>世界观、人物、暗号，都剪下来夹好</span>
+                        </div>
+                    </div>
+                    <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
+                        <span className="text-base font-black leading-none">{worldbooks.length}</span>
+                        <span className="label-mono text-[7px] text-[#1c1b1a]/55 leading-none mt-0.5">条</span>
+                    </div>
                 </div>
             </div>
 
-            {/* Content List */}
-            <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-4 no-scrollbar relative z-0">
+            {/* 卷册列表 */}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-4 pb-28 space-y-5">
                 {Object.keys(groupedBooks).length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-4 opacity-60">
-                        <BookOpen size={48} className="text-slate-400" />
-                        <span className="text-xs font-medium">世界还是空白的...</span>
+                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-6 rotate-[-0.6deg] text-center space-y-2">
+                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
+                        <NewspaperClipping size={36} weight="bold" className="mx-auto text-[#1c1b1a]/40" />
+                        <p className="text-lg" style={HAND_CN}>夹子还是空的。</p>
+                        <p className="text-xs text-[#1c1b1a]/55 leading-relaxed">点右下角的剪刀，把第一条设定剪下来贴进去。</p>
                     </div>
                 )}
 
                 {Object.entries(groupedBooks).map(([category, books]) => {
                     const bookEnabled = worldbookGroupToggles[category] !== false;
+                    const open = expandedCategory === category;
                     return (
-                    <div key={category} className={`animate-slide-up ${bookEnabled ? '' : 'opacity-60'}`}>
-                        {/* Category Header（分组 = 一本世界书） */}
-                        <div
-                            onClick={() => toggleCategory(category)}
-                            className="flex items-center gap-2 py-2 px-1 cursor-pointer select-none group"
-                        >
-                            <div className={`transition-transform duration-300 ${expandedCategory === category ? 'rotate-90' : ''}`}>
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-400 group-hover:text-indigo-500"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                        <div key={category} className={`animate-slide-up transition-opacity ${bookEnabled ? '' : 'opacity-55'}`}>
+                            {/* 卷脊（分组 = 一卷 = 一本世界书） */}
+                            <div
+                                onClick={() => toggleCategory(category)}
+                                className={`relative bg-white border-2 border-[#1c1b1a] px-3 py-2.5 flex items-center gap-2 cursor-pointer select-none ${open ? 'shadow-none translate-x-[2px] translate-y-[2px]' : 'shadow-[3px_3px_0_#1c1b1a]'} transition-all`}
+                            >
+                                <span className={`text-sm font-black transition-transform inline-block ${open ? 'rotate-90' : ''}`}>▸</span>
+                                <h3 className="text-sm font-black truncate">{category}</h3>
+                                <span className="label-mono text-[8px] border border-[#1c1b1a]/50 px-1 py-0.5 shrink-0">{books.length} 条</span>
+                                {!bookEnabled && <span className="label-mono text-[8px] bg-[#1c1b1a] text-[#f7f5ef] px-1.5 py-0.5 rotate-[-2deg] shrink-0">整卷封存</span>}
+                                <div className="ml-auto flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                                    <span className="text-[11px] text-[#1c1b1a]/50" style={HAND_CN}>整卷</span>
+                                    <InkSwitch
+                                        on={bookEnabled}
+                                        onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `《${category}》整卷已展开` : `《${category}》整卷已封存（所有剪报暂停寄出）`, 'info'); }}
+                                        title="封存后这一卷的所有剪报（包括全局的）都不再寄出"
+                                    />
+                                </div>
                             </div>
-                            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">{category}</h3>
-                            <span className="text-[9px] bg-white/50 px-1.5 rounded text-slate-400 border border-white/50">{books.length}</span>
-                            {!bookEnabled && <span className="text-[9px] bg-red-50 px-1.5 rounded text-red-400 border border-red-100 font-bold">整书已关</span>}
-                            <div className="ml-auto flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                <span className="text-[9px] text-slate-400">整书开关</span>
-                                <MiniToggle
-                                    on={bookEnabled}
-                                    onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `《${category}》整书已开启` : `《${category}》整书已关闭（所有条目暂停注入）`, 'info'); }}
-                                    title="关闭后本书所有条目（含全局条目）都不再注入"
-                                />
-                            </div>
-                        </div>
 
-                        {/* Group Items */}
-                        <div className={`space-y-3 pl-2 transition-all duration-300 overflow-hidden ${expandedCategory === category ? 'max-h-[1000px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-                            {books.map(book => (
-                                <div key={book.id} className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
-                                    {/* Item Header */}
-                                    <div 
-                                        onClick={() => togglePreview(book.id)}
-                                        className="p-4 cursor-pointer flex justify-between items-start"
-                                    >
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <div className={`w-1.5 h-1.5 rounded-full ${previewBookId === book.id ? 'bg-indigo-400' : 'bg-slate-300'}`}></div>
-                                                <h4 className={`text-sm font-bold truncate transition-colors ${book.enabled === false ? 'text-slate-400 line-through' : previewBookId === book.id ? 'text-indigo-700' : 'text-slate-700'}`}>{book.title}</h4>
+                            {/* 卷里的剪报 */}
+                            <div className={`space-y-3 pl-3 border-l-2 border-dashed border-[#1c1b1a]/30 ml-2 transition-all duration-300 overflow-hidden ${open ? 'max-h-[1000px] opacity-100 mt-3 pb-1' : 'max-h-0 opacity-0'}`}>
+                                {books.map((book, i) => (
+                                    <div key={book.id} className={`relative bg-white border-2 border-[#1c1b1a]/45 shadow-sm ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'}`}>
+                                        {/* 剪报头 */}
+                                        <div
+                                            onClick={() => togglePreview(book.id)}
+                                            className="p-3 cursor-pointer flex items-start gap-2"
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h4 className={`text-sm font-black truncate ${book.enabled === false ? 'text-[#1c1b1a]/35 line-through decoration-2' : ''}`}>{book.title}</h4>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const next = book.scope === 'global' ? 'local' : 'global';
+                                                            updateWorldbook(book.id, { scope: next });
+                                                            addToast(next === 'global' ? `「${book.title}」现在满世界跟着（所有聊天生效）` : `「${book.title}」收回卷里了（要挂载这一卷才出场）`, 'info');
+                                                        }}
+                                                        title="点一下在 随卷 / 全局 之间换"
+                                                        className={`label-mono text-[8px] px-1.5 py-0.5 border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-[#1c1b1a] text-[#f7f5ef] border-[#1c1b1a]' : 'bg-white text-[#1c1b1a]/70 border-[#1c1b1a]/50'}`}
+                                                    >
+                                                        {book.scope === 'global' ? '全局' : '随卷'}
+                                                    </button>
+                                                </div>
+                                                <div className="label-mono text-[8px] text-[#1c1b1a]/45 truncate flex items-center gap-1.5">
+                                                    {triggerStamp(book)}
+                                                    <span>· {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}</span>
+                                                </div>
+                                                {book.activation === 'keyword' && (book.keys?.length || 0) > 0 && (
+                                                    <div className="text-[11px] text-[#1c1b1a]/50 truncate mt-0.5" style={HAND_CN}>
+                                                        暗号：{book.keys!.slice(0, 3).join(' / ')}{book.keys!.length > 3 ? '…' : ''}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                                                <InkSwitch
+                                                    on={book.enabled !== false}
+                                                    onChange={(on) => updateWorldbook(book.id, { enabled: on })}
+                                                    title="这条剪报的开关"
+                                                />
                                                 <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        const next = book.scope === 'global' ? 'local' : 'global';
-                                                        updateWorldbook(book.id, { scope: next });
-                                                        addToast(next === 'global' ? `「${book.title}」已切为全局（所有对话生效）` : `「${book.title}」已切回局部（需角色挂载）`, 'info');
-                                                    }}
-                                                    title="点击切换 局部 / 全局"
-                                                    className={`text-[9px] px-1.5 py-0.5 rounded font-bold border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-indigo-50 text-indigo-500 border-indigo-100'}`}
+                                                    onClick={(e) => { e.stopPropagation(); handleEdit(book); }}
+                                                    className={`p-1.5 ${STICKER}`}
+                                                    title="修剪这条"
                                                 >
-                                                    {book.scope === 'global' ? '全局' : '局部'}
+                                                    <NotePencil size={13} weight="bold" color={INK} />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => requestDelete(e, book)}
+                                                    className={`p-1.5 rotate-[2deg] ${STICKER}`}
+                                                    title="把这条丢掉"
+                                                >
+                                                    <Trash size={13} weight="bold" color={INK} />
                                                 </button>
                                             </div>
-                                            <div className="text-[10px] text-slate-400 font-mono pl-3.5 truncate">
-                                                {book.activation === 'keyword' ? '🟢' : '🔵'} {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}
-                                                {book.activation === 'keyword' && (book.keys?.length || 0) > 0 && ` · 🔑 ${book.keys!.slice(0, 3).join('/')}${book.keys!.length > 3 ? '…' : ''}`}
+                                        </div>
+
+                                        {/* 展开的剪报正文 */}
+                                        {previewBookId === book.id && (
+                                            <div className="px-3 pb-3 pt-0 animate-fade-in">
+                                                <div className="border-t border-dashed border-[#1c1b1a]/30 mb-2.5" />
+                                                {/* SillyTavern 导入条目：展示原卡设置。关键词激活现已由 WorldbookRuntime 执行
+                                                    （新导入自动启用；旧导入条目在编辑器里保存一次即可接上） */}
+                                                {book.source === 'sillytavern' && (
+                                                    <div className="mb-2.5 flex flex-wrap gap-1.5 label-mono text-[8px]">
+                                                        <span className="px-1.5 py-0.5 bg-[#1c1b1a] text-[#f7f5ef] rotate-[-1deg]">ST 舶来</span>
+                                                        {book.stData?.entry && (
+                                                            <>
+                                                                <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">
+                                                                    {book.stData.entry.constant ? '■ 钉死 (constant)' : '⚿ 暗号出场'}
+                                                                </span>
+                                                                {book.stData.entry.enabled === false && (
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a] bg-white line-through">原卡里就停用</span>
+                                                                )}
+                                                                {(book.stData.entry.keys?.length || 0) > 0 && (
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">暗号: {book.stData.entry.keys!.join(', ')}</span>
+                                                                )}
+                                                                {(book.stData.entry.secondaryKeys?.length || 0) > 0 && (
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">二级暗号: {book.stData.entry.secondaryKeys!.join(', ')}</span>
+                                                                )}
+                                                                {book.stData.entry.insertionOrder !== undefined && (
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">顺序: {book.stData.entry.insertionOrder}</span>
+                                                                )}
+                                                                {book.stData.entry.position !== undefined && (
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">位置: {String(book.stData.entry.position)}</span>
+                                                                )}
+                                                            </>
+                                                        )}
+                                                        {book.stData?.bookName && (
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">原书: {book.stData.bookName}</span>
+                                                        )}
+                                                        {book.stData?.scanDepth !== undefined && (
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">scan_depth: {book.stData.scanDepth}</span>
+                                                        )}
+                                                        {book.stData?.tokenBudget !== undefined && (
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">token_budget: {book.stData.tokenBudget}</span>
+                                                        )}
+                                                        {book.stData?.recursiveScanning !== undefined && (
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">递归扫描: {book.stData.recursiveScanning ? '开' : '关'}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                <p className="text-xs text-[#1c1b1a]/75 leading-relaxed whitespace-pre-wrap select-text">
+                                                    {book.content || <span className="italic text-[#1c1b1a]/35">这条还没写内容…</span>}
+                                                </p>
                                             </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-2 ml-2" onClick={e => e.stopPropagation()}>
-                                            <MiniToggle
-                                                on={book.enabled !== false}
-                                                onChange={(on) => updateWorldbook(book.id, { enabled: on })}
-                                                title="条目开关"
-                                            />
-                                        </div>
-
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleEdit(book); }} 
-                                                className="p-2 rounded-full hover:bg-white text-slate-400 hover:text-indigo-600 transition-colors"
-                                                title="编辑"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
-                                            </button>
-                                            <button 
-                                                onClick={(e) => requestDelete(e, book)} 
-                                                className="p-2 rounded-full hover:bg-red-50 text-slate-300 hover:text-red-500 transition-colors"
-                                                title="删除"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                                            </button>
-                                        </div>
+                                        )}
                                     </div>
-
-                                    {/* Expanded Content Preview */}
-                                    {previewBookId === book.id && (
-                                        <div className="px-4 pb-4 pt-0 animate-fade-in">
-                                            <div className="h-px w-full bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-3"></div>
-                                            {/* SillyTavern 导入条目：展示原卡设置。关键词激活现已由 WorldbookRuntime 执行
-                                                （新导入自动启用；旧导入条目在编辑器里保存一次即可接上） */}
-                                            {book.source === 'sillytavern' && (
-                                                <div className="mb-3 flex flex-wrap gap-1.5 text-[9px] font-mono">
-                                                    <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-500 border border-indigo-100 font-bold">SillyTavern</span>
-                                                    {book.stData?.entry && (
-                                                        <>
-                                                            <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">
-                                                                {book.stData.entry.constant ? '🔵 常驻 (constant)' : '🟢 关键词触发'}
-                                                            </span>
-                                                            {book.stData.entry.enabled === false && (
-                                                                <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-400 border border-red-100">原卡已禁用</span>
-                                                            )}
-                                                            {(book.stData.entry.keys?.length || 0) > 0 && (
-                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">关键词: {book.stData.entry.keys!.join(', ')}</span>
-                                                            )}
-                                                            {(book.stData.entry.secondaryKeys?.length || 0) > 0 && (
-                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">过滤词: {book.stData.entry.secondaryKeys!.join(', ')}</span>
-                                                            )}
-                                                            {book.stData.entry.insertionOrder !== undefined && (
-                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">顺序: {book.stData.entry.insertionOrder}</span>
-                                                            )}
-                                                            {book.stData.entry.position !== undefined && (
-                                                                <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">位置: {String(book.stData.entry.position)}</span>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                    {book.stData?.bookName && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">书: {book.stData.bookName}</span>
-                                                    )}
-                                                    {book.stData?.scanDepth !== undefined && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">scan_depth: {book.stData.scanDepth}</span>
-                                                    )}
-                                                    {book.stData?.tokenBudget !== undefined && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">token_budget: {book.stData.tokenBudget}</span>
-                                                    )}
-                                                    {book.stData?.recursiveScanning !== undefined && (
-                                                        <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200">递归扫描: {book.stData.recursiveScanning ? '开' : '关'}</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                            <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap font-light select-text">
-                                                {book.content || <span className="italic text-slate-400">暂无内容...</span>}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
                     );
                 })}
             </div>
 
-            {/* Delete Confirmation Modal */}
-            <Modal 
-                isOpen={showDeleteConfirm} 
-                title="删除确认" 
-                onClose={() => setShowDeleteConfirm(false)}
-                footer={
-                    <div className="flex gap-3 w-full">
-                        <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
-                        <button onClick={confirmDelete} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200 active:scale-95 transition-transform">确认删除</button>
-                    </div>
-                }
+            {/* 剪一条新的：右下角剪刀贴纸（替代原顶栏 + 号） */}
+            <button
+                onClick={handleCreate}
+                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[3px_3px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                title="剪一条新剪报"
             >
-                <div className="text-center py-4 text-sm text-slate-600 flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-1">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                    </div>
-                    <div>
-                        确定要删除 <span className="font-bold text-slate-900">"{editingBook?.title}"</span> 吗？
-                        <br/><span className="text-xs text-red-400 opacity-80 mt-1 block">此操作无法撤销。</span>
+                <Scissors size={16} weight="bold" />
+                <span className="text-xs font-black">剪一条</span>
+            </button>
+
+            {/* 丢弃确认（撕边纸卡） */}
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
+                    <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={() => setShowDeleteConfirm(false)} />
+                    <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
+                        <button
+                            onClick={() => setShowDeleteConfirm(false)}
+                            className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rotate-[4deg] ${STICKER}`}
+                            aria-label="合上"
+                        >
+                            <X size={14} weight="bold" color={INK} />
+                        </button>
+                        <div className="px-5 pt-6 pb-2">
+                            <div className="label-mono text-[9px] text-[#1c1b1a]/45">DISCARD / 不可复原</div>
+                            <h3 className="text-lg font-black tracking-wide mt-0.5">把这条剪报丢掉？</h3>
+                            <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
+                        </div>
+                        <div className="px-5 py-3 text-sm text-[#1c1b1a]/70 leading-relaxed">
+                            「{editingBook?.title}」丢进废纸篓就找不回来了。
+                        </div>
+                        <div className="px-5 pb-5 pt-2 flex gap-3">
+                            <button onClick={() => setShowDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
+                            <button
+                                onClick={confirmDelete}
+                                className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                            >
+                                丢掉！
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </Modal>
+            )}
         </div>
     );
 };

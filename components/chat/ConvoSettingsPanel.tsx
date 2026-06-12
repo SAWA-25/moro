@@ -757,11 +757,11 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
                 </Page>
 
-                {/* ═══ P.07 世界书夹页 ═══ */}
-                <Page no="07" title="世界书夹页" en="World Books" tape="blue" pattern="star" paper="mint">
+                {/* ═══ P.07 剪报夹页（世界书挂载） ═══ */}
+                <Page no="07" title="剪报夹页" en="Clippings" tape="blue" pattern="star" paper="mint">
                     <Entry
                         mark="❃" title="夹进本子的卷册"
-                        note={`全局卷自己会进来，这里只挑局部卷，合计最多夹 ${WB_BIND_LIMIT} 卷。每条的开关和作用域去世界书 App 里拨。`}
+                        note={`全局卷自己会进来，这里只挑局部卷，合计最多夹 ${WB_BIND_LIMIT} 卷。每条剪报的开关和作用域去「剪报夹」App 里拨。`}
                         side={<PinButton onClick={clearMountedWorldbooks}>全部取下</PinButton>}
                     >
                         <div className="text-[10px] mb-2.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkSoft }}>
@@ -769,7 +769,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         </div>
 
                         {localCategories.length === 0 && (
-                            <PinButton onClick={() => openApp(AppID.Worldbook)}>书架还空着，去「世界书」App 装一卷 ⇢</PinButton>
+                            <PinButton onClick={() => openApp(AppID.Worldbook)}>书架还空着，去「剪报夹」App 剪一卷 ⇢</PinButton>
                         )}
 
                         {/* 已夹好的卷册（糖果贴纸，点击即取下） */}

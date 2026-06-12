@@ -634,7 +634,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                         {/* 随页夹带的世界书（ST persona lorebook → 世界书分组绑定） */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">随页夹带的世界书 / ENCLOSED LORE</label>
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">随页夹带的卷册（世界书）/ ENCLOSED CLIPPINGS</label>
                             <div className="relative">
                                 <select
                                     value={selected.lorebookCategory || ''}
@@ -647,7 +647,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                             </div>
                             <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                ✎ 戴着这一页聊天时，所选分组里的世界书条目就算没挂到角色身上，也会按各自的位置和开关一并寄出。
+                                ✎ 戴着这一页聊天时，所选卷册里的剪报（世界书条目）就算没挂到角色身上，也会按各自的位置和开关一并寄出。
                             </p>
                         </div>
                     </div>
@@ -679,7 +679,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 {/* 页脚手写备忘 */}
                 <p className="text-center text-[13px] text-[#1c1b1a]/45 pb-5 leading-relaxed" style={HAND_CN}>
                     点哪一页就戴上哪一页：署名、照片、自述会写进「档案」，聊天和 prompt 立刻生效。<br />
-                    开着预设 App 时，自述落在 Persona Description 那个占位上。
+                    开着活字盘（预设）时，自述落在 Persona Description 那个占位上。
                 </p>
             </div>
 
