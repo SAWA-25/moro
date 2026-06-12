@@ -5,6 +5,8 @@ import React, { useRef, useState } from 'react';
 import { Message, ChatTheme } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import McdCard from './McdCard';
+import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
+import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
 
 /** Telegram 式消息回执：单勾=已发出，双勾=已读，红色感叹号=发送失败（metadata.msgStatus） */
 const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
@@ -2245,54 +2247,102 @@ const MessageItem = React.memo(({
         return nodes;
     };
 
-    // --- Enhanced Text Rendering (Markdown Lite) ---
-    const renderContent = (text: string) => {
-        // 1. Split by Code Blocks (triple backtick)
-        const parts = text.split(/(```[\s\S]*?```)/g);
-        return parts.map((part, index) => {
-            // Render Code Block
-            if (part.startsWith('```') && part.endsWith('```')) {
-                const codeContent = part.replace(/^```\w*\n?/, '').replace(/```$/, '');
+    // --- Plain text lines (Markdown Lite: quote / header / inline) ---
+    const renderPlainLines = (part: string, baseKey: string): React.ReactNode[] => {
+        // Clean stray backtick artifacts from non-code text
+        const cleanedPart = part
+            .replace(/``+/g, '')
+            .replace(/(^|\s)`(\s|$)/gm, '$1$2');
+
+        // Render Regular Text (split by newlines for paragraph spacing)
+        return cleanedPart.split('\n').map((line, lineIdx) => {
+            const key = `${baseKey}-${lineIdx}`;
+
+            // Quote Format "> text"
+            if (line.trim().startsWith('>')) {
+                const quoteText = line.trim().substring(1).trim();
+                if (!quoteText) return null;
                 return (
-                    <pre key={index} className="bg-black/80 text-gray-100 p-3 rounded-lg text-xs font-mono overflow-x-auto my-2 whitespace-pre shadow-inner border border-white/10">
-                        {codeContent}
-                    </pre>
+                    <div key={key} className="my-1 pl-2.5 border-l-[3px] border-current opacity-70 italic text-[13px]">
+                        {renderInline(quoteText)}
+                    </div>
                 );
             }
 
-            // Clean stray backtick artifacts from non-code text
-            let cleanedPart = part
-                .replace(/``+/g, '')
-                .replace(/(^|\s)`(\s|$)/gm, '$1$2');
+            // Markdown Header "# text" → render as bold text (strip the #)
+            const headerMatch = line.match(/^#{1,6}\s+(.+)$/);
+            if (headerMatch) {
+                return <div key={key} className="min-h-[1.2em] font-bold">{renderInline(headerMatch[1])}</div>;
+            }
 
-            // Render Regular Text (split by newlines for paragraph spacing)
-            return cleanedPart.split('\n').map((line, lineIdx) => {
-                const key = `${index}-${lineIdx}`;
+            return <div key={key} className="min-h-[1.2em]">{renderInline(line)}</div>;
+        });
+    };
 
-                // Quote Format "> text"
-                if (line.trim().startsWith('>')) {
-                    const quoteText = line.trim().substring(1).trim();
-                    if (!quoteText) return null;
-                    return (
-                        <div key={key} className="my-1 pl-2.5 border-l-[3px] border-current opacity-70 italic text-[13px]">
-                            {renderInline(quoteText)}
-                        </div>
-                    );
+    // 普通文本段：先把裸写的块级 HTML（<div>...</div> 等）抽出来直渲为沙盒预览，
+    // 剩余文字走 Markdown Lite。
+    const renderTextSegment = (text: string, baseKey: string, msgCss: string): React.ReactNode[] => {
+        const nodes: React.ReactNode[] = [];
+        let rest = text;
+        let n = 0;
+        while (rest) {
+            const chunk = extractRawHtmlChunk(rest);
+            if (!chunk) {
+                if (rest.trim()) nodes.push(...renderPlainLines(rest, `${baseKey}-t${n}`));
+                break;
+            }
+            if (chunk.before.trim()) nodes.push(...renderPlainLines(chunk.before, `${baseKey}-t${n}`));
+            nodes.push(<HtmlPreviewBlock key={`${baseKey}-h${n}`} html={chunk.html} css={msgCss} />);
+            rest = chunk.after;
+            n++;
+        }
+        return nodes;
+    };
+
+    // --- Enhanced Text Rendering ---
+    // Markdown Lite + 富代码直渲：```html / ```css / ```markdown 围栏与正文裸 HTML
+    // 不再显示成代码文本，而是直接渲染效果（详见 utils/chatRichContent.ts）。
+    const renderContent = (text: string) => {
+        const segments = splitByFences(text);
+
+        // 消息级 CSS：本消息所有 ```css 围栏汇总，注入每个 HTML 预览，HTML+CSS 配套代码开箱即渲染
+        const msgCss = segments
+            .filter(s => s.kind === 'fence' && isCssLang(s.lang))
+            .map(s => (s as { code: string }).code)
+            .join('\n');
+        const hasHtmlTarget = segments.some(s => s.kind === 'fence'
+            ? (isHtmlLang(s.lang) || (!s.lang && looksLikeHtmlFragment(s.code)))
+            : !!extractRawHtmlChunk(s.text));
+
+        return segments.map((seg, index) => {
+            if (seg.kind === 'fence') {
+                // ```html（或无语言标识但内容是 HTML）→ 沙盒预览
+                if (isHtmlLang(seg.lang) || (!seg.lang && looksLikeHtmlFragment(seg.code))) {
+                    return <HtmlPreviewBlock key={index} html={seg.code} css={msgCss} />;
                 }
-
-                // Markdown Header "# text" → render as bold text (strip the #)
-                const headerMatch = line.match(/^#{1,6}\s+(.+)$/);
-                if (headerMatch) {
-                    return <div key={key} className="min-h-[1.2em] font-bold">{renderInline(headerMatch[1])}</div>;
+                // ```css → 有 HTML 预览时折叠成「已应用」小条；纯 CSS 消息单独预览（body 级样式可见）
+                if (isCssLang(seg.lang)) {
+                    return hasHtmlTarget
+                        ? <CssAppliedChip key={index} code={seg.code} />
+                        : <HtmlPreviewBlock key={index} html="" css={seg.code} label="CSS" sourceCode={seg.code} />;
                 }
-
-                return <div key={key} className="min-h-[1.2em]">{renderInline(line)}</div>;
-            });
+                // ```markdown → 完整 Markdown 渲染
+                if (isMarkdownLang(seg.lang)) {
+                    return <MarkdownPreviewBlock key={index} text={seg.code} />;
+                }
+                // 其它语言保持原行为：深色代码块
+                return (
+                    <pre key={index} className="bg-black/80 text-gray-100 p-3 rounded-lg text-xs font-mono overflow-x-auto my-2 whitespace-pre shadow-inner border border-white/10">
+                        {seg.code}
+                    </pre>
+                );
+            }
+            return <React.Fragment key={index}>{renderTextSegment(seg.text, `${index}`, msgCss)}</React.Fragment>;
         });
     };
 
     // Robust content cleanup: strip legacy markers, separators, bilingual tags, stray formatting
-    const stripJunk = (s: string) => s
+    const stripJunkPlain = (s: string) => s
         .replace(/%%TRANS%%[\s\S]*/gi, '')           // legacy translation marker
         .replace(/%%BILINGUAL%%/gi, '\n')            // raw bilingual marker → newline
         .replace(/<\/?翻译>|<\/?原文>|<\/?译文>/g, '')  // stray bilingual XML tags
@@ -2308,7 +2358,14 @@ const MessageItem = React.memo(({
         .replace(/``+/g, '')                          // empty/stray backtick pairs
         .replace(/(^|\s)`(\s|$)/gm, '$1$2')         // lone backticks at boundaries
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')    // markdown links → just text
-        .replace(/\n{3,}/g, '\n\n')                  // collapse excess newlines
+        .replace(/\n{3,}/g, '\n\n');                 // collapse excess newlines
+
+    // 围栏感知版：```代码块原样保留，只清理围栏外的普通文本。
+    // （否则上面的反引号清理会把 ```html 等围栏整个拆掉，代码内容也会被 junk 规则误伤）
+    const stripJunk = (s: string) => s
+        .split(/(```[\s\S]*?```)/g)
+        .map(seg => (seg.startsWith('```') && seg.endsWith('```') && seg.length > 6) ? seg : stripJunkPlain(seg))
+        .join('')
         .trim();
 
     const rawContent = m.content;
