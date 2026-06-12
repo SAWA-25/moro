@@ -649,19 +649,19 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
     return (
         <div className="absolute inset-0 z-[430] flex flex-col overflow-hidden animate-fade-in"
-            style={{ background: 'linear-gradient(160deg, #6d83b2 0%, #a4b0c8 55%, #d8c8b8 100%)', paddingTop: 'max(8px, var(--safe-top))' }}>
-            {/* 顶栏：状态 + 退出申请 */}
+            style={{ background: 'linear-gradient(165deg, #f4f2ed 0%, #eae7e0 55%, #efe7dd 100%)', paddingTop: 'max(8px, var(--safe-top))' }}>
+            {/* 顶栏：状态 + 退出申请（奶白手帐风：墨色文字 + 白描边头像） */}
             <div className="shrink-0 px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                    <img src={char.avatar} className="w-7 h-7 rounded-full object-cover border border-white/50 shrink-0" alt="" />
-                    <span className="text-xs font-bold text-white drop-shadow truncate">
+                    <img src={char.avatar} className="w-7 h-7 rounded-full object-cover ring-2 ring-white shadow-sm shrink-0" alt="" />
+                    <span className="text-xs font-bold text-slate-600 truncate">
                         {phase === 'loading' ? `${char.name} 拿走了你的手机…` : `${char.name} 正在看你的手机`}
                     </span>
                 </div>
                 {phase !== 'loading' && !endedRef.current && (
                     <button
                         onClick={() => { setExitOpen(true); setExitTab('menu'); setConsentReply(''); setJudgeComment(''); }}
-                        className="shrink-0 px-3 py-1.5 rounded-full bg-white/25 backdrop-blur text-white text-[11px] font-bold border border-white/40 active:scale-95 transition-all"
+                        className="shrink-0 px-3 py-1.5 rounded-full bg-white text-slate-600 text-[11px] font-bold border border-slate-200 shadow-[0_8px_16px_-10px_rgba(50,48,60,0.4)] active:scale-95 transition-all"
                     >
                         我想拿回手机
                     </button>
@@ -670,12 +670,12 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
             {/* 主屏 */}
             {phase === 'loading' ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white/90">
-                    <div className="w-9 h-9 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-                    <div className="text-xs drop-shadow">{char.name} 拿起了你的手机，解锁了屏幕…</div>
+                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500">
+                    <div className="w-9 h-9 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+                    <div className="text-xs">{char.name} 拿起了你的手机，解锁了屏幕…</div>
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 mx-3 mb-3 rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-white/30 bg-slate-100/70 backdrop-blur">
+                <div className="flex-1 min-h-0 mx-3 mb-3 rounded-3xl overflow-hidden flex flex-col border border-white/70 bg-slate-100/70 backdrop-blur shadow-[0_24px_48px_-20px_rgba(50,48,60,0.4)]">
                     {renderScreen()}
                 </div>
             )}
@@ -695,8 +695,10 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
             {/* 退出闸门弹窗 */}
             {exitOpen && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 animate-fade-in p-6">
-                    <div className="w-full max-w-[320px] bg-white rounded-2xl overflow-hidden shadow-2xl">
+                <div className="absolute inset-0 z-20 flex items-center justify-center animate-fade-in p-6" style={{ background: 'rgba(20,20,28,0.4)', backdropFilter: 'blur(4px)' }}>
+                    <div className="w-full max-w-[320px] bg-white rounded-[1.6rem] overflow-hidden shadow-2xl relative">
+                        {/* 右上角书签缎带 */}
+                        <div className="absolute top-0 right-6 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
                         <div className="px-5 pt-5 pb-3 text-center">
                             <div className="text-[15px] font-bold text-slate-800">想拿回手机？</div>
                             <div className="text-[12px] text-slate-500 mt-1.5 leading-relaxed">
@@ -707,15 +709,15 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                         {exitTab === 'menu' && (
                             <div className="px-5 pb-5 space-y-2">
                                 <button onClick={() => { setExitTab('consent'); void askConsent(); }} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-xl bg-emerald-500 text-white text-[13px] font-bold active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl bg-slate-900 text-white text-[13px] font-bold shadow-lg shadow-slate-200 active:scale-95 transition-all disabled:opacity-50">
                                     好声好气地要回来（征得同意）
                                 </button>
                                 <button onClick={() => setExitTab('questions')} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-xl bg-indigo-500 text-white text-[13px] font-bold active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl bg-slate-100 text-slate-700 text-[13px] font-bold active:scale-95 transition-all disabled:opacity-50">
                                     回答 TA 的三个问题
                                 </button>
                                 <button onClick={() => { void finish('forced', `${userProfile.name} 一把抢回了手机，${char.name} 没看完。`); }} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-xl bg-red-500 text-white text-[13px] font-bold active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl bg-white text-rose-500 text-[13px] font-bold border border-rose-200 active:scale-95 transition-all disabled:opacity-50">
                                     强制抢回（TA 会记住的）
                                 </button>
                                 <button onClick={() => setExitOpen(false)}
@@ -762,7 +764,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                                     </div>
                                 )}
                                 <button onClick={() => void submitAnswers()} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-xl bg-indigo-500 text-white text-[13px] font-bold active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl bg-slate-900 text-white text-[13px] font-bold shadow-lg shadow-slate-200 active:scale-95 transition-all disabled:opacity-50">
                                     {exitBusy ? 'TA 在听…' : '交卷'}
                                 </button>
                                 <button onClick={() => { setExitTab('menu'); setJudgeComment(''); }}

@@ -47,6 +47,8 @@ interface ChatInputAreaProps {
     inputStyle?: 'default' | 'rounded' | 'flat' | 'wechat' | 'ios' | 'telegram' | 'discord' | 'pixel';
     sendButtonStyle?: 'circle' | 'pill' | 'minimal';
     chromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
+    /** 自定义输入框占位文案（会话设置「输入框文案」，默认 "Message..."） */
+    inputPlaceholder?: string;
     /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
 }
 
@@ -65,6 +67,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     inputStyle = 'default',
     sendButtonStyle = 'circle',
     chromeStyle = 'soft',
+    inputPlaceholder,
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -479,25 +482,26 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
         )}
         {/* 语音消息录音浮层 */}
         {isRecording && (
-            <div className="fixed inset-0 z-[120] flex flex-col items-center justify-end pb-24 bg-black/40 backdrop-blur-sm">
-                <div className="w-72 bg-white rounded-3xl shadow-2xl p-6 flex flex-col items-center gap-4">
+            <div className="fixed inset-0 z-[120] flex flex-col items-center justify-end pb-24" style={{ background: 'rgba(28,27,34,0.35)', backdropFilter: 'blur(6px)' }}>
+                <div className="w-72 bg-white/95 backdrop-blur-xl rounded-[2rem] shadow-[0_30px_60px_-20px_rgba(40,38,50,0.45)] border border-white/60 p-6 flex flex-col items-center gap-4">
+                    <span className="text-[9px] font-mono font-bold tracking-[0.35em] text-slate-300 uppercase">Recording</span>
                     <div className="relative">
-                        <div className="absolute inset-0 rounded-full bg-rose-400/30 animate-ping" />
-                        <div className="relative w-16 h-16 rounded-full bg-rose-500 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-full bg-slate-400/25 animate-ping" />
+                        <div className="relative w-16 h-16 rounded-full bg-slate-900 flex items-center justify-center shadow-[0_12px_24px_-10px_rgba(15,23,42,0.55)]">
                             <Microphone className="w-7 h-7 text-white" weight="fill" />
                         </div>
                     </div>
-                    <div className="text-2xl font-bold text-slate-700 tabular-nums">{Math.floor(recordSecs / 60)}:{String(recordSecs % 60).padStart(2, '0')}</div>
+                    <div className="text-2xl font-bold text-slate-700 tabular-nums tracking-wider">{Math.floor(recordSecs / 60)}:{String(recordSecs % 60).padStart(2, '0')}</div>
                     {liveTranscript ? (
                         <div className="max-h-16 w-full overflow-y-auto no-scrollbar text-xs text-slate-500 text-center leading-relaxed">{liveTranscript}</div>
                     ) : (
                         <div className="text-xs text-slate-400">正在录音… 说完点 ✓ 发送</div>
                     )}
-                    <div className="flex gap-4 w-full">
-                        <button onClick={() => stopRecording(false)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
+                    <div className="flex gap-3 w-full">
+                        <button onClick={() => stopRecording(false)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-500 font-bold flex items-center justify-center gap-1 active:scale-[0.97] transition-transform">
                             <X className="w-5 h-5" weight="bold" /> 取消
                         </button>
-                        <button onClick={() => stopRecording(true)} className="flex-1 py-3 rounded-2xl bg-rose-500 text-white font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
+                        <button onClick={() => stopRecording(true)} className="flex-1 py-3 rounded-2xl bg-slate-900 text-white font-bold flex items-center justify-center gap-1 shadow-lg shadow-slate-300 active:scale-[0.97] transition-transform">
                             <StopCircle className="w-5 h-5" weight="fill" /> 发送
                         </button>
                     </div>
@@ -544,7 +548,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             autoCorrect="on"
                             autoCapitalize="sentences"
                             className={`flex-1 min-w-0 bg-transparent px-4 py-3 ${useIOSStandaloneInputFix ? 'text-[16px]' : 'text-[15px]'} resize-none max-h-24 no-scrollbar ${isDiscordStyle ? 'text-white placeholder:text-slate-500' : isPixelStyle ? 'text-[#6a4c35] placeholder:text-[#9b8677]' : ''}`} 
-                            placeholder="Message..." 
+                            placeholder={inputPlaceholder || 'Message...'}
                             style={{ height: 'auto' }} 
                         />
                         <button onClick={() => setShowPanel(showPanel === 'emojis' ? 'none' : 'emojis')} className={`p-2 shrink-0 ${isDiscordStyle ? 'text-slate-400 hover:text-sky-300' : isPixelStyle ? 'text-[#8f674a] hover:text-[#a16207]' : 'text-slate-400 hover:text-primary'}`}>

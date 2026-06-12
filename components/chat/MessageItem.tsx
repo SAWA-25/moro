@@ -2134,35 +2134,42 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
-        // 红包卡片：Kakao Pay 风格（亮黄底 + 深棕文字）
+        // 红包卡片（参考设计：奶油底 + 墨色字的手帐风，保留暖黄的「红包」识别色）
         const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';
         return commonLayout(
-            <div className="w-64 rounded-2xl p-4 shadow-lg relative overflow-hidden active:scale-[0.98] transition-transform" style={{ background: 'linear-gradient(135deg, #ffeb00 0%, #ffd900 100%)', color: '#3c1e1e' }}>
-                <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full" style={{ backgroundColor: 'rgba(60,30,30,0.08)' }} />
-                <div className="absolute -bottom-6 -left-2 w-16 h-16 rounded-full" style={{ backgroundColor: 'rgba(60,30,30,0.06)' }} />
+            <div className="w-64 rounded-[1.4rem] p-4 relative overflow-hidden active:scale-[0.98] transition-transform border border-amber-200/70 shadow-[0_14px_28px_-18px_rgba(180,130,20,0.5)]" style={{ background: 'linear-gradient(150deg, #fffbeb 0%, #fef3c7 100%)', color: '#42361e' }}>
+                {/* 右上书签缎带 */}
+                <div className="absolute top-0 right-5 w-4 h-7 bg-amber-400/90" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
                 <div className="flex items-center gap-2 mb-3 relative">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center font-black text-[13px]" style={{ backgroundColor: '#3c1e1e', color: '#ffeb00' }}>K</div>
-                    <span className="font-bold text-[13px] opacity-90">Kakao Pay 红包</span>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[13px] bg-amber-400/30">🧧</div>
+                    <span className="text-[10px] font-mono font-bold tracking-[0.25em] uppercase opacity-60">Lucky&nbsp;Pocket</span>
                 </div>
                 <div className="relative">
                     <div className="text-[13px] font-medium opacity-80 mb-1.5 truncate">「{note}」</div>
-                    <div className="text-2xl font-black tracking-tight">₩ {m.metadata?.amount}</div>
-                    <div className="text-[10px] opacity-60 mt-1.5">{isUser ? `发给${charName}的红包` : '发给你的红包 · 点开收下'}</div>
+                    <div className="text-[26px] font-black tracking-tight">₩ {m.metadata?.amount}</div>
+                    <div className="mt-2 pt-2 border-t border-amber-900/10 text-[10px] opacity-60">{isUser ? `发给${charName}的红包` : '发给你的红包 · 点开收下'}</div>
                 </div>
             </div>
         );
     }
 
     if (m.type === 'transfer') {
+        // 转账卡片（参考设计：白卡 + 墨色大金额 + 细线分隔的极简手帐风）
         return commonLayout(
-            <div className="w-64 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-4 text-white shadow-lg relative overflow-hidden group active:scale-[0.98] transition-transform">
-                    <div className="absolute top-0 right-0 p-4 opacity-20"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-12 h-12"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.324.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-white/20 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M12 7.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z" /><path fillRule="evenodd" d="M1.5 4.875C1.5 3.839 2.34 3 3.375 3h17.25c1.035 0 1.875.84 1.875 1.875v9.75c0 1.036-.84 1.875-1.875 1.875H3.375A1.875 1.875 0 0 1 1.5 14.625v-9.75ZM8.25 9.75a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0ZM18.75 9a.75.75 0 0 0-.75.75v.008c0 .414.336.75.75.75h.008a.75.75 0 0 0 .75-.75V9.75a.75.75 0 0 0-.75-.75h-.008ZM4.5 9.75A.75.75 0 0 1 5.25 9h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75-.75H5.25a.75.75 0 0 1-.75-.75V9.75Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
-                        <span className="font-medium text-white/90">Moro Pay</span>
+            <div className="w-64 bg-white rounded-[1.4rem] p-4 relative overflow-hidden active:scale-[0.98] transition-transform border border-slate-100 shadow-[0_14px_28px_-18px_rgba(50,48,60,0.4)]">
+                {/* 右上书签缎带 */}
+                <div className="absolute top-0 right-5 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
+                <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
                     </div>
-                    <div className="text-2xl font-bold tracking-tight mb-1">₩ {m.metadata?.amount}</div>
-                    <div className="text-[10px] text-white/70">转账给{isUser ? charName : '你'}</div>
+                    <span className="text-[10px] font-mono font-bold tracking-[0.25em] uppercase text-slate-400">Transfer&nbsp;·&nbsp;Moro&nbsp;Pay</span>
+                </div>
+                <div className="text-[26px] font-black tracking-tight text-slate-800">₩ {m.metadata?.amount}</div>
+                <div className="mt-2 pt-2 border-t border-slate-50 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">转账给{isUser ? charName : '你'}</span>
+                    <span className="text-[10px] text-slate-300">♡</span>
+                </div>
             </div>
         );
     }

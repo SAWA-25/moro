@@ -703,14 +703,14 @@ const PhoneShell: React.FC = () => {
           {/* Overlays: Global Mini Player (when music is playing in background) */}
           <GlobalMiniPlayer />
 
-          {/* Overlays: Toasts (Top) */}
+          {/* Overlays: Toasts (Top) — 奶白胶囊手帐风：细描边 + 柔影 + 墨色小圆点 */}
           <div className="absolute top-12 left-0 w-full flex flex-col items-center gap-2 pointer-events-none z-[60]">
               {toasts.map(toast => (
-                 <div key={toast.id} className="animate-fade-in bg-white/95 backdrop-blur-xl px-4 py-3 rounded-2xl shadow-xl border border-black/5 flex items-center gap-3 max-w-[85%] ring-1 ring-white/20">
-                     {toast.type === 'success' && <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0"></div>}
-                     {toast.type === 'error' && <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0"></div>}
-                     {toast.type === 'info' && <div className="w-2.5 h-2.5 rounded-full bg-primary shrink-0"></div>}
-                     <span className="text-xs font-bold text-slate-800 truncate leading-none">{toast.message}</span>
+                 <div key={toast.id} className="animate-fade-in bg-white/95 backdrop-blur-xl px-4 py-2.5 rounded-full shadow-[0_16px_32px_-16px_rgba(50,48,60,0.45)] border border-slate-100 flex items-center gap-2.5 max-w-[85%]">
+                     {toast.type === 'success' && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.7)' }}></span>}
+                     {toast.type === 'error' && <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(251,113,133,0.7)' }}></span>}
+                     {toast.type === 'info' && <span className="w-2 h-2 rounded-full bg-slate-800 shrink-0"></span>}
+                     <span className="text-xs font-bold text-slate-700 truncate leading-none">{toast.message}</span>
                  </div>
               ))}
            </div>

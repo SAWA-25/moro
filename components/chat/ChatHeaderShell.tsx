@@ -41,6 +41,8 @@ interface ChatHeaderShellProps {
     headerDensity?: 'compact' | 'default' | 'airy';
     statusStyle?: 'subtle' | 'pill' | 'dot';
     chromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
+    /** 最顶部装饰文案：显示在顶栏卡片上方的居中小字（会话设置「顶部装饰文案」） */
+    decorText?: string;
     /** 动森彩蛋模式：头部换成木质草绿栏。 */
 }
 
@@ -84,6 +86,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     headerDensity = 'default',
     statusStyle = 'subtle',
     chromeStyle = 'soft',
+    decorText,
 }) => {
     const buffs: CharacterBuff[] = hideBuffs ? [] : (activeCharacter.activeBuffs || []);
     const [openBuff, setOpenBuff] = useState<CharacterBuff | null>(null);
@@ -384,6 +387,12 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         <div className="shrink-0 z-30 sticky top-0">
         {/* safe-top spacer：透明 + backdrop-blur 跟 iOS status bar 一致自适应容器色，刘海下不再铺白带 */}
         <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
+        {/* 最顶部装饰文案（参考设计：顶栏卡片上方居中的一行小字） */}
+        {decorText && !selectionMode && (
+            <div className="moro-chat-topdecor flex justify-center items-center pt-1 pb-1.5 px-8">
+                <span className={`text-[12px] font-bold tracking-wide truncate max-w-full ${isDarkHeader ? 'text-slate-300' : 'text-slate-500'}`}>{decorText}</span>
+            </div>
+        )}
         {/* header 主体：moro-chat-header 钩子 + 内容垂直居中（items-center）；safe-top 已由上面 spacer 让位 */}
         <div className={`moro-chat-header ${headerDensityClass} flex items-center relative ${headerToneClass}`} style={headerSafeStyle}>
             {selectionMode ? (
