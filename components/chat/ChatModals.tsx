@@ -1,6 +1,8 @@
 
 import React, { useRef, useState } from 'react';
 import Modal from '../os/Modal';
+import JournalSheet, { SealBtn, CandyToggle, LinedInput, LinedArea, NoteStrip } from './JournalSheet';
+import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, ApiPreset, APIConfig } from '../../types';
 import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
@@ -250,22 +252,68 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
     return (
         <>
-            <Modal
-                isOpen={modalType === 'transfer'} title={transferMode === 'redpacket' ? '塞个红包' : '寄点零花'} onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onTransfer} className={`flex-1 py-3 text-white rounded-2xl font-bold ${transferMode === 'redpacket' ? 'bg-[#3c1e1e]' : 'bg-orange-500'}`}>{transferMode === 'redpacket' ? '塞进红包' : '寄出'}</button></>}
+            <JournalSheet
+                open={modalType === 'transfer'} title="零花信封" en="Pocket Money Post"
+                sub={transferMode === 'redpacket' ? '把心意封进红包递过去' : '把零花钱折好塞进信封'}
+                tape={transferMode === 'redpacket' ? 'blush' : 'lemon'} pattern="heart" paper="cream"
+                onClose={() => setModalType('none')}
+                footer={<>
+                    <SealBtn kind="ghost" onClick={() => setModalType('none')}>再想想</SealBtn>
+                    <SealBtn kind={transferMode === 'redpacket' ? 'berry' : 'rose'} onClick={onTransfer}>
+                        {transferMode === 'redpacket' ? '封进红包递去' : '塞进信封寄走'}
+                    </SealBtn>
+                </>}
             >
-                <div className="space-y-3">
-                    {/* 模式切换：零花钱 / Kakao Pay 红包 */}
-                    <div className="flex bg-slate-100 rounded-2xl p-1">
-                        <button onClick={() => setTransferMode('transfer')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'transfer' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400'}`}>零花钱</button>
-                        <button onClick={() => setTransferMode('redpacket')} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-colors ${transferMode === 'redpacket' ? 'bg-[#ffeb00] text-[#3c1e1e] shadow-sm' : 'text-slate-400'}`}>红包</button>
+                <div className="space-y-4">
+                    {/* 模式切换：零花钱 / 红包，两张大贴纸 */}
+                    <div className="flex gap-2.5">
+                        <button
+                            onClick={() => setTransferMode('transfer')}
+                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
+                            style={{
+                                transform: 'rotate(-0.6deg)',
+                                background: transferMode === 'transfer' ? '#f5e295' : '#fffdfa',
+                                color: transferMode === 'transfer' ? '#5a4818' : '#a892a3',
+                                border: transferMode === 'transfer' ? '1px solid rgba(90,72,24,0.2)' : '1px dashed #ddc9d3',
+                                borderRadius: '6px 12px 7px 12px',
+                                boxShadow: transferMode === 'transfer' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                ...CUTE_STACK,
+                            }}
+                        >💴 零花钱</button>
+                        <button
+                            onClick={() => setTransferMode('redpacket')}
+                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
+                            style={{
+                                transform: 'rotate(0.8deg)',
+                                background: transferMode === 'redpacket' ? '#f08a8a' : '#fffdfa',
+                                color: transferMode === 'redpacket' ? '#5d1f1f' : '#a892a3',
+                                border: transferMode === 'redpacket' ? '1px solid rgba(93,31,31,0.2)' : '1px dashed #ddc9d3',
+                                borderRadius: '12px 6px 12px 7px',
+                                boxShadow: transferMode === 'redpacket' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                ...CUTE_STACK,
+                            }}
+                        >🧧 红包</button>
                     </div>
-                    <input type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)} placeholder="数目" className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-lg font-bold" autoFocus />
+                    {/* 数目：写在横线上的大字 */}
+                    <div className="flex items-end gap-2 px-1">
+                        <span className="text-[18px] font-bold pb-1.5 select-none" style={{ color: '#c98ba0' }}>¥</span>
+                        <input
+                            type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
+                            placeholder="写个数目"
+                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-dashed border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4] placeholder:text-[15px]"
+                            style={{ color: PAPER_TONES.ink, caretColor: '#f29db0' }}
+                            autoFocus
+                        />
+                    </div>
                     {transferMode === 'redpacket' && (
-                        <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（恭喜发财，大吉大利）" maxLength={30} className="w-full bg-slate-100 rounded-2xl px-5 py-3 text-sm" />
+                        <LinedInput
+                            value={transferNote} onChange={e => setTransferNote(e.target.value)}
+                            tag="封皮上的一句话"
+                            placeholder="比如：恭喜发财，大吉大利" maxLength={30}
+                        />
                     )}
                 </div>
-            </Modal>
+            </JournalSheet>
 
             {/* New Category Modal */}
             <Modal 
@@ -502,11 +550,20 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </Modal>
 
             {/* Archive Settings Modal */}
-            <Modal isOpen={modalType === 'archive-settings'} title="装订成册" onClose={() => { if (!isSummarizing) setModalType('none'); }} footer={
-                isSummarizing ?
-                <div className="w-full py-3 bg-slate-100 text-indigo-600 font-bold rounded-2xl text-center flex items-center justify-center gap-2"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>{archiveProgress || '装订中…'}</div> :
-                <button onClick={onArchive} disabled={isSummarizing} className="w-full py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">开始装订</button>
-            }>
+            <JournalSheet
+                open={modalType === 'archive-settings'} title="装订成册" en="Bookbinding"
+                sub="把这一阵的聊天折成一册小书"
+                tape="blue" pattern="stripe" paper="lined"
+                onClose={() => { if (!isSummarizing) setModalType('none'); }}
+                footer={
+                    isSummarizing
+                        ? <div className="w-full py-3 rounded-[12px] text-[13px] font-bold text-center flex items-center justify-center gap-2" style={{ background: '#fffdfa', border: '1.5px dashed #ddc9d3', color: '#8a6478', ...CUTE_STACK }}>
+                            <div className="w-4 h-4 border-2 border-[#d18ba0] border-t-transparent rounded-full animate-spin" />
+                            {archiveProgress || '正在穿针装订…'}
+                        </div>
+                        : <SealBtn kind="rose" full onClick={onArchive} disabled={isSummarizing}>送去装订</SealBtn>
+                }
+            >
                 <div className="space-y-4">
                     {(() => {
                         const palaceOn = !!(activeCharacter as any).memoryPalaceEnabled;
@@ -515,78 +572,108 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         const activeName = activePrompt?.name || '理性精炼 (Rational)';
                         if (palaceOn && autoOn) {
                             return (
-                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-[11px] text-emerald-800 leading-relaxed">
-                                    ✅ <b>自动归档已开启</b>。palace 处理后系统会按日期自动把聊天归档到"本月日度总结"。<br/>
-                                    自动归档走的是 <b>记忆宫殿内置风格</b>（保证向量检索质量稳定），
-                                    下方模板<b>只对这里的"开始归档"按钮生效</b>——你在这换风格不会影响自动归档。
-                                </div>
+                                <NoteStrip tone="good">
+                                    <b>自动装订已经开着</b>：palace 处理完会按日期把聊天自动收进「本月日度总结」。
+                                    自动那条线用的是<b>记忆宫殿内置的笔法</b>（保证向量检索稳定）；
+                                    下面挑的笔法<b>只管这里的手动装订</b>，怎么换都不影响自动装订。
+                                </NoteStrip>
                             );
                         }
                         if (palaceOn && !autoOn) {
                             return (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed">
-                                    ⚠️ 记忆宫殿已开，但 <b>自动归档没开</b>——palace 只在后台做向量索引，
-                                    <b>不</b>会自动写到"本月日度总结"里。<br/>
-                                    想让它自动写 → 神经链接 → 角色 → 记忆宫殿开关下面的 <b>"📚 自动归档"</b>；
-                                    或者继续用下方按钮手动按当前选中的 <b>「{activeName}」</b> 风格跑。
-                                </div>
+                                <NoteStrip tone="warn">
+                                    记忆宫殿开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
+                                    <b>不会</b>自动写进「本月日度总结」。想让它自动写：神经链接 → 角色 →
+                                    记忆宫殿开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
+                                    按选中的<b>《{activeName}》</b>笔法手动装订一次。
+                                </NoteStrip>
                             );
                         }
                         return (
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-700 leading-relaxed">
-                                📋 <b>纯手动模式</b>（没开记忆宫殿）。下方按钮会用选中的
-                                <b className="text-slate-900"> 「{activeName}」</b> 风格把聊天按天总结到"本月日度总结"。
-                                归档完会自动隐藏已总结的旧消息（保留最近一部分可见）。
-                            </div>
+                            <NoteStrip>
+                                <b>纯手装本</b>（记忆宫殿没开）。按钮会按选中的<b>《{activeName}》</b>笔法
+                                把聊天按天总结进「本月日度总结」；订完会自动把已总结的旧消息收起来（留最近一段可见）。
+                            </NoteStrip>
                         );
                     })()}
-                    <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                        <label className="text-[10px] font-bold text-indigo-400 uppercase mb-2 block">选择提示词模板</label>
+                    {/* 笔法（提示词模板）列表 */}
+                    <div>
+                        <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>挑一种装订笔法</div>
                         <div className="flex flex-col gap-2">
                             {archivePrompts.map(p => {
                                 const isSelected = selectedPromptId === p.id;
                                 return (
-                                <div key={p.id} onClick={() => setSelectedPromptId(p.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center justify-between ${isSelected ? 'bg-white border-indigo-500 shadow-sm ring-1 ring-indigo-500' : 'bg-white/50 border-indigo-200 hover:bg-white'}`}>
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className={`text-xs font-bold ${isSelected ? 'text-indigo-700' : 'text-slate-600'}`}>{p.name}</span>
+                                    <div
+                                        key={p.id}
+                                        onClick={() => setSelectedPromptId(p.id)}
+                                        className="px-3 py-2.5 cursor-pointer flex items-center justify-between gap-2 transition-all"
+                                        style={{
+                                            background: isSelected ? '#fdeef3' : '#fffdfa',
+                                            border: isSelected ? '1.5px solid #e6a3b8' : '1px dashed #ddc9d3',
+                                            borderRadius: '6px 12px 7px 12px',
+                                            boxShadow: isSelected ? '0 1px 3px rgba(122,90,114,0.2)' : 'none',
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            {isSelected && <span aria-hidden className="text-[11px] shrink-0">📌</span>}
+                                            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: isSelected ? '#8a3d55' : PAPER_TONES.inkSoft }}>{p.name}</span>
+                                        </div>
+                                        <div className="flex gap-1.5 shrink-0">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); setSelectedPromptId(p.id); onEditPrompt(); }}
+                                                className="text-[10px] font-bold px-2 py-1 rounded-full active:scale-95 transition-transform"
+                                                style={{ background: '#fff', border: '1px dashed #ddc9d3', color: '#a07a8c' }}
+                                            >翻开看看</button>
+                                            {!p.id.startsWith('preset_') && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onDeletePrompt(p.id); }}
+                                                    className="text-[10px] px-2 py-1 rounded-full active:scale-95 transition-transform"
+                                                    style={{ color: '#d4798f', border: '1px dashed #eab6c6' }}
+                                                    aria-label={`撕掉《${p.name}》`}
+                                                >撕掉</button>
+                                            )}
+                                        </div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={(e) => { e.stopPropagation(); setSelectedPromptId(p.id); onEditPrompt(); }} className="text-[10px] text-slate-400 hover:text-indigo-500 px-2 py-1 rounded bg-slate-100 hover:bg-indigo-50">编辑/查看</button>
-                                        {!p.id.startsWith('preset_') && (
-                                            <button onClick={(e) => { e.stopPropagation(); onDeletePrompt(p.id); }} className="text-[10px] text-red-300 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50">×</button>
-                                        )}
-                                    </div>
-                                </div>
                                 );
                             })}
                         </div>
-                        <button onClick={onCreatePrompt} className="mt-3 w-full py-2 text-xs font-bold text-indigo-500 border border-dashed border-indigo-300 rounded-lg hover:bg-indigo-100">+ 新建自定义提示词</button>
+                        <button
+                            onClick={onCreatePrompt}
+                            className="mt-2.5 w-full py-2 text-[11px] font-bold rounded-[10px] active:scale-[0.98] transition-transform"
+                            style={{ border: '1.5px dashed #d6b8c6', color: '#b25e7a', background: 'rgba(255,253,250,0.6)', ...CUTE_STACK }}
+                        >＋ 自创一种笔法</button>
                     </div>
-                    <div className="text-[10px] text-slate-400 bg-slate-50 p-3 rounded-xl leading-relaxed">
-                        • <b>理性精炼</b>: 适合生成条理清晰的事件日志，便于 AI 长期记忆检索。<br/>
-                        • <b>日记风格</b>: 适合生成第一人称的角色日记，更有代入感和情感色彩。<br/>
-                        • 支持变量: <code>{'${dateStr}'}</code>, <code>{'${char.name}'}</code>, <code>{'${userProfile.name}'}</code>, <code>{'${rawLog}'}</code>
-                    </div>
+                    <NoteStrip>
+                        《理性精炼》订出条理清楚的事件日志，方便 AI 翻旧账；《日记风格》订成 TA 第一人称的日记，更有温度。
+                        笔法里可以用变量：<code>{'${dateStr}'}</code>、<code>{'${char.name}'}</code>、<code>{'${userProfile.name}'}</code>、<code>{'${rawLog}'}</code>。
+                    </NoteStrip>
                 </div>
-            </Modal>
+            </JournalSheet>
 
             {/* Prompt Editor Modal */}
-            <Modal isOpen={modalType === 'prompt-editor'} title="编辑提示词" onClose={() => setModalType('archive-settings')} footer={<button onClick={onSavePrompt} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存预设</button>}>
-                <div className="space-y-3">
-                    <input 
-                        value={editingPrompt?.name || ''} 
-                        onChange={e => setEditingPrompt((prev: any) => prev ? {...prev, name: e.target.value} : null)}
-                        placeholder="预设名称"
-                        className="w-full px-4 py-2 bg-slate-100 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20"
+            <JournalSheet
+                open={modalType === 'prompt-editor'} title="笔法手稿" en="Binding Recipe"
+                sub="这套笔法决定小书订出来的口吻"
+                tape="silver" pattern="plain" paper="plain"
+                onClose={() => setModalType('archive-settings')}
+                footer={<SealBtn kind="rose" full onClick={onSavePrompt}>存好这套笔法</SealBtn>}
+            >
+                <div className="space-y-3.5">
+                    <LinedInput
+                        value={editingPrompt?.name || ''}
+                        onChange={e => setEditingPrompt((prev: any) => prev ? { ...prev, name: e.target.value } : null)}
+                        tag="笔法的名字"
+                        placeholder="给这套笔法起个名…"
+                        className="font-bold"
                     />
-                    <textarea 
-                        value={editingPrompt?.content || ''} 
-                        onChange={e => setEditingPrompt((prev: any) => prev ? {...prev, content: e.target.value} : null)}
-                        className="w-full h-64 bg-slate-100 rounded-xl p-3 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 leading-relaxed"
-                        placeholder="输入提示词内容..."
+                    <LinedArea
+                        value={editingPrompt?.content || ''}
+                        onChange={e => setEditingPrompt((prev: any) => prev ? { ...prev, content: e.target.value } : null)}
+                        className="h-64"
+                        placeholder="写下装订要用的提示词…"
                     />
                 </div>
-            </Modal>
+            </JournalSheet>
 
             {/* History Manager Modal */}
             <Modal
@@ -856,30 +943,28 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </Modal>
 
             {/* Schedule Modal */}
-            <Modal
-                isOpen={modalType === 'schedule'} title={`${activeCharacter?.name || '角色'}の日程`} onClose={() => setModalType('none')}
+            <JournalSheet
+                open={modalType === 'schedule'} title="今日作息" en="Day Planner" tall
+                sub={`${activeCharacter?.name || 'TA'} 的一天，翻开看看`}
+                tape="mint" pattern="dot" paper="cream"
+                onClose={() => setModalType('none')}
             >
-                <div className="max-h-[70vh] overflow-y-auto -mx-2 px-2">
+                <div>
                     {/* 总开关：关闭时不调副 API、不生成日程、不注入情绪 buff */}
                     {onToggleScheduleFeature && (
-                        <div className="mb-4 bg-slate-50 border border-slate-200 rounded-2xl p-3">
-                            <div className="flex items-center justify-between">
-                                <div className="flex-1 min-w-0 pr-3">
-                                    <p className="text-xs font-bold text-slate-700">日程与情绪 Buff</p>
-                                    <p className="text-[10px] text-slate-500 leading-relaxed mt-0.5">
-                                        {isScheduleFeatureEnabled
-                                            ? '已开启：会调用副 API 生成今日日程，并在对话中评估情绪 buff。'
-                                            : '已关闭：不调副 API，不生成日程，不注入情绪 buff。'}
-                                    </p>
+                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>☘</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>作息与心情挂件</span>
                                 </div>
-                                <button
-                                    onClick={onToggleScheduleFeature}
-                                    aria-label="切换日程与情绪总开关"
-                                    className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center flex-shrink-0 ${isScheduleFeatureEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
-                                >
-                                    <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${isScheduleFeatureEnabled ? 'translate-x-4' : ''}`}></div>
-                                </button>
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                    {isScheduleFeatureEnabled
+                                        ? '开着：会请副 API 排出 TA 今天的日程，聊天时顺带掂量心情 buff。'
+                                        : '关着：不请副 API、不排日程，也不会往对话里塞心情 buff。'}
+                                </p>
                             </div>
+                            <CandyToggle on={!!isScheduleFeatureEnabled} onToggle={onToggleScheduleFeature} candy="#8fceae" />
                         </div>
                     )}
 
@@ -889,37 +974,44 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             {onScheduleStyleChange && (
                                 <div className="mb-4">
                                     {!activeCharacter?.scheduleStyle && (
-                                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-3">
-                                            <p className="text-xs text-amber-700 font-bold mb-1">请选择日程风格</p>
-                                            <p className="text-[11px] text-amber-600 leading-relaxed">
-                                                不同风格会影响角色的内心独白生成方式。选择后会自动重新生成今日日程。
-                                            </p>
+                                        <div className="mb-3">
+                                            <NoteStrip tone="warn">
+                                                先挑一种过日子的写法——写法不同，TA 内心独白的味道也不同；挑好会立刻重排今天的日程。
+                                            </NoteStrip>
                                         </div>
                                     )}
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2.5">
                                         <button
                                             onClick={() => onScheduleStyleChange('lifestyle')}
                                             disabled={isScheduleGenerating}
-                                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
-                                                (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle'
-                                                    ? 'bg-[#2b2933] border-[#2b2933] text-white'
-                                                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                                            }`}
+                                            className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
+                                            style={{
+                                                transform: 'rotate(-0.5deg)',
+                                                background: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#bfe1cf' : '#fffdfa',
+                                                color: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#264a36' : '#a892a3',
+                                                border: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '1px solid rgba(38,74,54,0.2)' : '1px dashed #ddc9d3',
+                                                borderRadius: '6px 12px 7px 12px',
+                                                boxShadow: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                            }}
                                         >
-                                            <span className="block text-sm mb-0.5">生活系</span>
-                                            <span className="block text-[10px] opacity-70 font-normal">虚构日常 · 跑步做饭逛街</span>
+                                            <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>生活系</span>
+                                            <span className="block text-[9.5px] leading-snug">把日常编出来：跑步、做饭、逛街</span>
                                         </button>
                                         <button
                                             onClick={() => onScheduleStyleChange('mindful')}
                                             disabled={isScheduleGenerating}
-                                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all border ${
-                                                activeCharacter?.scheduleStyle === 'mindful'
-                                                    ? 'bg-[#2b2933] border-[#2b2933] text-white'
-                                                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                                            }`}
+                                            className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
+                                            style={{
+                                                transform: 'rotate(0.6deg)',
+                                                background: activeCharacter?.scheduleStyle === 'mindful' ? '#d6c8e8' : '#fffdfa',
+                                                color: activeCharacter?.scheduleStyle === 'mindful' ? '#3a2c50' : '#a892a3',
+                                                border: activeCharacter?.scheduleStyle === 'mindful' ? '1px solid rgba(58,44,80,0.2)' : '1px dashed #ddc9d3',
+                                                borderRadius: '12px 6px 12px 7px',
+                                                boxShadow: activeCharacter?.scheduleStyle === 'mindful' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                            }}
                                         >
-                                            <span className="block text-sm mb-0.5">意识系</span>
-                                            <span className="block text-[10px] opacity-70 font-normal">真实内心 · 不虚构不说谎</span>
+                                            <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>意识系</span>
+                                            <span className="block text-[9.5px] leading-snug">只写真实内心：不编造、不说谎</span>
                                         </button>
                                     </div>
                                 </div>
@@ -935,8 +1027,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 onCoverImageChange={onScheduleCoverChange}
                                 isGenerating={isScheduleGenerating}
                             />
-                            <p className="text-[10px] text-slate-400 text-center mt-3 leading-relaxed">
-                                点击日程项可编辑 · 长按可删除
+                            <p className="text-[10px] text-center mt-3 leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                                点一条可以改 · 按住不放是删掉
                             </p>
 
                             {/* 情绪 / 意识流 API — 与日程强制同步 */}
@@ -952,7 +1044,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         </>
                     )}
                 </div>
-            </Modal>
+            </JournalSheet>
         </>
     );
 };

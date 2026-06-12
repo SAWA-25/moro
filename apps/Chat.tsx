@@ -28,8 +28,9 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
-import DraftSheet, { DR, PressBtn, FieldInput, FieldArea, NoteLine } from '../components/chat/DraftSheet';
-import { PhoneSlash, Crosshair } from '@phosphor-icons/react';
+import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
+import { MONO_STACK, SERIF_STACK, CUTE_STACK } from '../components/handbook/paper';
+import { PhoneSlash } from '@phosphor-icons/react';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
@@ -2758,29 +2759,43 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* 语音通话拨号中覆盖层：呼叫 → 角色决策 → 接通跳电话 App / 未接听 */}
              {voiceCallPhase !== 'none' && char && (
-                <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center animate-fade-in" style={{ background: '#0d1733' }}>
-                    <div className="font-mono text-[9px] font-bold tracking-[0.4em] uppercase mb-9" style={{ color: voiceCallPhase === 'dialing' ? '#7d93d9' : '#54648a' }}>
-                        {voiceCallPhase === 'dialing' ? 'SIGNAL · OUTBOUND' : 'SIGNAL · NO REPLY'}
+                <div
+                    className="fixed inset-0 z-[120] flex flex-col items-center justify-center animate-fade-in"
+                    style={{
+                        backgroundColor: '#fbf2ee',
+                        backgroundImage: 'radial-gradient(rgba(242,157,176,0.2) 1.2px, transparent 1.2px)',
+                        backgroundSize: '18px 18px',
+                    }}
+                >
+                    <div className="text-[9px] font-bold tracking-[0.4em] uppercase mb-8 select-none" style={{ ...MONO_STACK, color: voiceCallPhase === 'dialing' ? '#d18ba0' : '#b3a3ad' }}>
+                        {voiceCallPhase === 'dialing' ? '☎ Calling — Hold On' : '☎ No Answer Today'}
                     </div>
-                    <div className="relative mb-7">
+                    <div className="relative mb-7" style={{ transform: 'rotate(-2deg)' }}>
                         {voiceCallPhase === 'dialing' && (
                             <>
-                                <span className="absolute -inset-2 rounded-[22px] border-2 animate-ping" style={{ borderColor: 'rgba(125,147,217,0.5)' }} />
-                                <span className="absolute -inset-5 rounded-[26px] border animate-ping" style={{ borderColor: 'rgba(125,147,217,0.3)', animationDelay: '0.4s' }} />
-                                <span className="absolute -inset-8 rounded-[30px] border animate-ping" style={{ borderColor: 'rgba(125,147,217,0.15)', animationDelay: '0.8s' }} />
+                                <span className="absolute -inset-3 rounded-[10px] border-2 border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.55)' }} />
+                                <span className="absolute -inset-6 rounded-[12px] border border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.35)', animationDelay: '0.4s' }} />
+                                <span className="absolute -inset-9 rounded-[14px] border border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.18)', animationDelay: '0.8s' }} />
                             </>
                         )}
-                        <img src={char.avatar} className="relative w-24 h-24 rounded-[18px] object-cover border-2" style={{ borderColor: 'rgba(232,237,251,0.3)' }} alt={char.name} />
+                        {/* 拍立得相框：TA 的照片别在画面正中 */}
+                        <div className="relative bg-white p-2 pb-7 rounded-[4px]" style={{ boxShadow: '0 4px 14px rgba(122,90,114,0.3)' }}>
+                            <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(251,184,200,0.75)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                            <img src={char.avatar} className="relative w-24 h-24 object-cover" alt={char.name} />
+                            <span className="absolute bottom-1.5 left-0 right-0 text-center text-[9px] select-none" style={{ ...MONO_STACK, color: '#a892a3' }}>
+                                {voiceCallPhase === 'dialing' ? 'ring ring…' : 'missed'}
+                            </span>
+                        </div>
                     </div>
-                    <div className="text-xl font-bold mb-1.5" style={{ color: '#f2f5fa' }}>{char.name}</div>
-                    <div className="text-[13px] mb-12" style={{ color: 'rgba(242,245,250,0.55)' }}>
-                        {voiceCallPhase === 'dialing' ? '线路已经搭好，等 TA 拿起来…' : 'TA 这次没接，先放下吧'}
+                    <div className="text-xl font-bold mb-1.5" style={{ ...SERIF_STACK, color: '#3d2f3d' }}>{char.name}</div>
+                    <div className="text-[13px] mb-12" style={{ color: '#7a5a72' }}>
+                        {voiceCallPhase === 'dialing' ? '铃声已经响过去了，等 TA 把听筒拿起来…' : '这回 TA 没接到，晚点再拨一次吧'}
                     </div>
                     {voiceCallPhase === 'dialing' && (
                         <button
                             onClick={() => { void cancelVoiceCall(); }}
-                            className="w-16 h-16 rounded-[16px] flex items-center justify-center active:translate-y-[1px] transition-transform"
-                            style={{ background: DR.red, color: '#fff', border: `1px solid ${DR.red}`, borderBottomWidth: 3, borderBottomColor: '#a93423' }}
+                            className="w-16 h-16 rounded-full flex items-center justify-center active:translate-y-[2px] active:shadow-none transition-all"
+                            style={{ background: '#e26b84', color: '#fff', border: '1.5px solid #c14a64', boxShadow: '2px 3px 0 #f3c1cd' }}
                             aria-label="挂断这通呼叫"
                         >
                             <PhoneSlash className="w-7 h-7" weight="fill" />
@@ -2790,90 +2805,93 @@ ${recent || '（你们还没怎么聊过）'}
              )}
 
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
-             <DraftSheet
-                open={showSystemCmdModal} code="FN-11" title="导演席" sub="越过台词本，直接给这场戏下调度"
+             <JournalSheet
+                open={showSystemCmdModal} title="红笔批注" en="Director's Red Pen" sub="在剧本页边写一句不容商量的话"
+                tape="lavender" pattern="plain" paper="lined"
                 onClose={() => setShowSystemCmdModal(false)}
                 footer={<>
-                    <PressBtn kind="ghost" onClick={() => setShowSystemCmdModal(false)}>先不说</PressBtn>
-                    <PressBtn kind="dark" onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()}>下达调度</PressBtn>
+                    <SealBtn kind="ghost" onClick={() => setShowSystemCmdModal(false)}>先收笔</SealBtn>
+                    <SealBtn kind="ink" onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()}>落笔生效</SealBtn>
                 </>}
              >
                 <div className="space-y-3">
-                    <div className="rounded-[14px] px-4 py-3.5" style={{ background: DR.ink, border: '1px solid #101a2e', borderBottomWidth: 3 }}>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span aria-hidden className="w-1.5 h-1.5 rounded-[2px]" style={{ background: DR.green }} />
-                            <span className="font-mono text-[9px] font-bold tracking-[0.3em] uppercase" style={{ color: '#8fa3c8' }}>SYS · DIRECT LINE</span>
-                            <span aria-hidden className="flex-1 border-t border-dotted" style={{ borderColor: '#3c4c6e' }} />
+                    {/* 批注纸：左缘一道红线，像批改作业的页边 */}
+                    <div className="relative rounded-[8px] pl-9 pr-3 py-3" style={{ background: '#fffdfa', border: '1px dashed #dcc3cf' }}>
+                        <span aria-hidden className="absolute left-6 top-2 bottom-2 w-[1.5px]" style={{ background: 'rgba(226,107,132,0.55)' }} />
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                            <span aria-hidden className="text-[10px] leading-none" style={{ color: '#e26b84' }}>✦</span>
+                            <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#c98ba0' }}>In Red Ink</span>
                         </div>
-                        <div className="flex gap-2">
-                            <span aria-hidden className="font-mono text-sm font-bold shrink-0 select-none leading-relaxed" style={{ color: DR.green }}>&gt;_</span>
-                            <textarea
-                                value={systemCmdInput}
-                                onChange={e => setSystemCmdInput(e.target.value)}
-                                placeholder={`写给剧情的调度令，比如：\n› 让${char?.name || '角色'}对${userProfile?.name || '用户'}发起查手机\n› 暂停演出，补一段两人初遇的番外\n› 改用${char?.name || '角色'}的第一人称写眼下这一刻`}
-                                rows={4}
-                                className="w-full bg-transparent placeholder:text-[#5d6f93] text-sm font-mono resize-none outline-none leading-relaxed"
-                                style={{ color: '#d7e3f8', caretColor: DR.green }}
-                                autoFocus
-                            />
-                        </div>
+                        <textarea
+                            value={systemCmdInput}
+                            onChange={e => setSystemCmdInput(e.target.value)}
+                            placeholder={`想改的戏写在这儿，比如：\n· 让${char?.name || '角色'}主动拿走${userProfile?.name || '用户'}的手机翻一翻\n· 暂停这场戏，补一段两人初遇的番外\n· 接下来这段换成${char?.name || '角色'}的第一人称来写`}
+                            rows={4}
+                            className="w-full bg-transparent placeholder:text-[#cfb8c4] text-[13px] resize-none outline-none leading-relaxed"
+                            style={{ color: '#3d2f3d', caretColor: '#e26b84' }}
+                            autoFocus
+                        />
                     </div>
-                    <NoteLine>这句话以「系统」名义生效——压过角色人设和此前全部剧情，发出后立刻照办。</NoteLine>
+                    <NoteStrip tone="danger">这一笔以「系统」的名义落下——盖过 TA 的人设和此前全部剧情，写完立刻照办。</NoteStrip>
                 </div>
-             </DraftSheet>
+             </JournalSheet>
 
              {/* 位置分享 Modal */}
-             <DraftSheet
-                open={showLocationModal} code="FN-03" title="此刻坐标" sub="把你站着的这个点钉进对话"
+             <JournalSheet
+                open={showLocationModal} title="落脚点" en="You Are Here" sub="给 TA 画张能找到你的小地图"
+                tape="sky" pattern="dot" paper="grid"
                 onClose={() => setShowLocationModal(false)}
                 footer={<>
-                    <PressBtn kind="ghost" onClick={() => setShowLocationModal(false)}>收回</PressBtn>
-                    <PressBtn kind="primary" onClick={handleSendLocation}>钉给 TA</PressBtn>
+                    <SealBtn kind="ghost" onClick={() => setShowLocationModal(false)}>先不说</SealBtn>
+                    <SealBtn kind="rose" onClick={handleSendLocation}>插上小旗寄出</SealBtn>
                 </>}
              >
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                     <div className="flex items-center gap-2">
-                        <span aria-hidden className="w-7 h-7 rounded-[8px] border flex items-center justify-center shrink-0" style={{ borderColor: DR.line, background: DR.card, color: DR.blue }}>
-                            <Crosshair className="w-4 h-4" weight="bold" />
-                        </span>
-                        <span className="font-mono text-[9px] font-bold tracking-[0.3em] uppercase" style={{ color: DR.sub }}>PIN · HERE</span>
-                        <span aria-hidden className="flex-1 border-t border-dotted" style={{ borderColor: DR.line }} />
+                        <span aria-hidden className="text-[15px] leading-none" style={{ transform: 'rotate(-6deg)', display: 'inline-block' }}>🚩</span>
+                        <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#9bb3c4' }}>Mark The Spot</span>
+                        <span aria-hidden className="flex-1 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.25)' }} />
                     </div>
-                    <FieldInput value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="这地方叫什么（例：江汉路那家星巴克）" maxLength={40} className="font-bold" autoFocus />
-                    <FieldInput value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="门牌、楼层或一句备注，留空也行" maxLength={80} />
-                    <NoteLine>对面会收到一张坐标卡片——你此刻落在哪儿，TA 一眼就能对上。</NoteLine>
+                    <LinedInput value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="这儿叫什么（比如：江汉路口那家咖啡店）" maxLength={40} className="font-bold" autoFocus />
+                    <LinedInput value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="几楼几号、怎么找到你，空着也行" maxLength={80} />
+                    <NoteStrip>TA 会收到一张插着小旗的位置卡片，一眼就知道你这会儿落在哪儿。</NoteStrip>
                 </div>
-             </DraftSheet>
+             </JournalSheet>
 
              {/* AI 画图 Modal */}
-             <DraftSheet
-                open={showImageGenModal} code="FN-02" title="即兴画室" sub="口述一个画面，当场出一张小样"
+             <JournalSheet
+                open={showImageGenModal} title="随手画一张" en="Doodle Post" sub="把想看的画面讲出来，画好就寄"
+                tape="lemon" pattern="star" paper="dot"
                 onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
                 footer={imageGenPreview
                     ? <>
-                        <PressBtn kind="ghost" onClick={() => setImageGenPreview(null)}>推翻重来</PressBtn>
-                        <PressBtn kind="primary" onClick={handleSendGeneratedImage}>就这张，寄出</PressBtn>
+                        <SealBtn kind="ghost" onClick={() => setImageGenPreview(null)}>不行，重画</SealBtn>
+                        <SealBtn kind="rose" onClick={handleSendGeneratedImage}>就它了，寄出</SealBtn>
                     </>
-                    : <PressBtn kind="primary" full onClick={handleGenerateImage} disabled={isGeneratingImage}>{isGeneratingImage ? '颜料未干，稍候…' : '落笔开画'}</PressBtn>}
+                    : <SealBtn kind="rose" full onClick={handleGenerateImage} disabled={isGeneratingImage}>{isGeneratingImage ? '颜料还没干，等等…' : '开始画'}</SealBtn>}
              >
-                <div className="space-y-3">
+                <div className="space-y-3.5">
                     {imageGenPreview ? (
-                        <div className="relative rounded-[14px] border p-2.5" style={{ background: DR.card, borderColor: DR.line }}>
-                            <img src={imageGenPreview} className="w-full rounded-[10px]" alt="刚出炉的画稿小样" />
-                            <div className="flex items-center justify-between pt-2 px-0.5">
-                                <span className="font-mono text-[8px] font-bold tracking-[0.25em] uppercase" style={{ color: DR.blue }}>PLATE · 01</span>
-                                <span className="font-mono text-[8px] tracking-[0.2em] uppercase" style={{ color: `${DR.sub}88` }}>FRESH PROOF</span>
+                        <div className="px-4 py-1">
+                            {/* 刚画好的拍立得 */}
+                            <div className="relative bg-white p-2 pb-8 rounded-[4px]" style={{ boxShadow: '0 4px 14px rgba(122,90,114,0.28)', transform: 'rotate(-1.2deg)' }}>
+                                <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(245,226,149,0.85)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                                <img src={imageGenPreview} className="w-full" alt="刚画好的一张" />
+                                <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
+                                    <span className="text-[10px] font-bold" style={{ ...CUTE_STACK, color: '#7a5a72' }}>刚晾干的一张</span>
+                                    <span className="text-[8px] tracking-[0.2em] uppercase select-none" style={{ ...MONO_STACK, color: '#bfa8b8' }}>fresh print</span>
+                                </div>
                             </div>
                         </div>
                     ) : (
                         <>
-                            <FieldArea value={imageGenPrompt} onChange={e => setImageGenPrompt(e.target.value)} placeholder="把想要的画面讲给画师听（例：雨停后的天台，水洼里泡着霓虹）" rows={3} autoFocus />
-                            <FieldInput value={imageGenModel} onChange={e => setImageGenModel(e.target.value)} placeholder={`指定生图模型，留空则按 ${DEFAULT_IMAGE_GEN_MODEL} 来`} className="font-mono" style={{ fontSize: 12 }} />
-                            <NoteLine>请求走当前 API 的 /images/generations 端点，填的模型得会画图才行；画成后作为聊天图片寄出，相册里也留一份。</NoteLine>
+                            <LinedArea value={imageGenPrompt} onChange={e => setImageGenPrompt(e.target.value)} placeholder="想要什么画面，讲给画笔听（比如：雨停后的天台，水洼里漂着霓虹的影子）" rows={3} autoFocus />
+                            <LinedInput value={imageGenModel} onChange={e => setImageGenModel(e.target.value)} tag="换支画笔（生图模型）" placeholder={`空着就用 ${DEFAULT_IMAGE_GEN_MODEL}`} style={{ fontSize: 12 }} />
+                            <NoteStrip>画的请求走当前 API 的 /images/generations 端点，填的模型得会画画；寄出后相册里也会留一张底。</NoteStrip>
                         </>
                     )}
                 </div>
-             </DraftSheet>
+             </JournalSheet>
 
              {/* 心声面板（入口：顶栏角色头像）：社交主页式卡片（参考设计 MiMi Space）——
                  书签缎带 + 渐变圆环头像 + 好感/心声/心情统计行 + Follow/Message 式双按钮 */}
