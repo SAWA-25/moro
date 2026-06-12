@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ChatCircle, Heart, Lock, PaperPlaneTilt, Repeat } from '@phosphor-icons/react';
 import { SocialComment, SocialPost } from '../../types';
 import { displayableImages, formatRelativeTime, postDisplayText } from './momentsUtils';
@@ -18,8 +18,6 @@ interface MomentCardProps {
     onPreviewImage: (src: string) => void;
 }
 
-const NAME_COLOR = 'text-[#576b95]'; // 微信朋友圈昵称蓝
-
 /** 图片网格：1 张大图，2-9 张三列宫格 */
 const ImageGrid: React.FC<{ images: string[]; onPreview: (src: string) => void }> = ({ images, onPreview }) => {
     if (images.length === 0) return null;
@@ -28,31 +26,29 @@ const ImageGrid: React.FC<{ images: string[]; onPreview: (src: string) => void }
             <img
                 src={images[0]}
                 onClick={(e) => { e.stopPropagation(); onPreview(images[0]); }}
-                className="mt-2 max-w-[70%] max-h-56 rounded-lg object-cover cursor-pointer"
+                className="mt-2.5 max-w-[70%] max-h-56 rounded-2xl object-cover cursor-pointer border border-slate-100"
             />
         );
     }
     return (
-        <div className={`mt-2 grid grid-cols-3 gap-1 ${images.length === 4 ? 'max-w-[70%]' : 'max-w-[85%]'}`}>
+        <div className={`mt-2.5 grid grid-cols-3 gap-1.5 ${images.length === 4 ? 'max-w-[70%]' : 'max-w-[85%]'}`}>
             {images.slice(0, 9).map((img, i) => (
                 <img
                     key={i}
                     src={img}
                     onClick={(e) => { e.stopPropagation(); onPreview(img); }}
-                    className="aspect-square w-full rounded-md object-cover cursor-pointer bg-slate-100"
+                    className="aspect-square w-full rounded-xl object-cover cursor-pointer bg-slate-100 border border-slate-100"
                 />
             ))}
         </div>
     );
 };
 
-/** 单条朋友圈动态卡片 */
+/** 单条「此刻」动态：纸卡拼贴风（原创排版——圆头像 + 墨色名字 + 常驻图标操作行） */
 const MomentCard: React.FC<MomentCardProps> = ({
     post, userName, isReacting,
     onToggleLike, onComment, onRepost, onShareToChat, onDeletePost, onDeleteComment, onPreviewImage,
 }) => {
-    const [showActions, setShowActions] = useState(false);
-
     const isOwn = post.authorType === 'user';
     const images = displayableImages(post);
     const text = postDisplayText(post);
@@ -63,121 +59,110 @@ const MomentCard: React.FC<MomentCardProps> = ({
     const handleCommentTap = (c: SocialComment) => {
         const isOwnComment = c.authorType === 'user' || (!c.authorType && c.authorName === userName);
         if (isOwnComment) {
-            if (window.confirm('删除这条评论？')) onDeleteComment(post, c);
+            if (window.confirm('删除这条留言？')) onDeleteComment(post, c);
         } else {
             onComment(post, { commentId: c.id, name: c.authorName });
         }
     };
 
+    // 常驻操作行的小圆钮（替代隐藏式弹出条，按键直接可见）
+    const ActionBtn: React.FC<{ onClick: () => void; label: string; children: React.ReactNode; active?: boolean }> = ({ onClick, label, children, active }) => (
+        <button
+            onClick={onClick}
+            title={label}
+            className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all active:scale-90 ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-150 border-slate-200 hover:text-slate-600'}`}
+        >
+            {children}
+        </button>
+    );
+
     return (
-        <div className="flex gap-3 px-4 py-4 border-b border-slate-100/80 bg-white">
-            {/* 头像 */}
-            <img src={post.authorAvatar} className="w-11 h-11 rounded-lg object-cover shrink-0 bg-slate-100" />
+        <div className="mx-3 my-3 rounded-[1.4rem] bg-white border border-slate-100 shadow-[0_14px_28px_-22px_rgba(50,48,60,0.4)] px-4 py-4 flex gap-3">
+            {/* 头像（圆形 + 白描边） */}
+            <img src={post.authorAvatar} className="w-10 h-10 rounded-full object-cover shrink-0 bg-slate-100 ring-2 ring-slate-50" />
 
             <div className="flex-1 min-w-0">
-                {/* 昵称 */}
-                <div className={`text-[15px] font-bold ${NAME_COLOR} leading-tight flex items-center gap-1.5`}>
-                    <span className="truncate">{post.authorName}</span>
-                    {post.visibility === 'private' && <Lock size={13} className="text-slate-300 shrink-0" />}
+                {/* 名字 + 时间（墨色名字，时间右对齐小字） */}
+                <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-[14px] font-bold text-slate-800 leading-tight flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">{post.authorName}</span>
+                        {post.visibility === 'private' && <Lock size={12} className="text-slate-300 shrink-0" />}
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-300 shrink-0">{formatRelativeTime(post.timestamp)}</span>
                 </div>
 
                 {/* 正文 */}
-                {text && <p className="text-[15px] text-slate-800 leading-relaxed whitespace-pre-wrap mt-1 break-words">{text}</p>}
+                {text && <p className="text-[14px] text-slate-700 leading-relaxed whitespace-pre-wrap mt-1.5 break-words">{text}</p>}
 
                 {/* 图片 */}
                 <ImageGrid images={images} onPreview={onPreviewImage} />
 
-                {/* 转发原帖 */}
+                {/* 转发原帖：虚线纸片 */}
                 {post.repostOf && (
-                    <div className="mt-2 bg-slate-100 rounded-lg p-2.5 flex gap-2 items-start">
+                    <div className="mt-2.5 bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-2.5 flex gap-2 items-start">
                         {post.repostOf.images && post.repostOf.images[0] && (
                             <img
                                 src={post.repostOf.images[0]}
                                 onClick={(e) => { e.stopPropagation(); onPreviewImage(post.repostOf!.images![0]); }}
-                                className="w-12 h-12 rounded-md object-cover shrink-0 cursor-pointer"
+                                className="w-12 h-12 rounded-xl object-cover shrink-0 cursor-pointer"
                             />
                         )}
-                        <p className="text-[13px] text-slate-500 leading-snug line-clamp-4 break-words">
-                            <span className={`font-medium ${NAME_COLOR}`}>{post.repostOf.authorName}</span>
+                        <p className="text-[12px] text-slate-500 leading-snug line-clamp-4 break-words">
+                            <span className="font-bold text-slate-700">{post.repostOf.authorName}</span>
                             ：{post.repostOf.content || '(图片动态)'}
                         </p>
                     </div>
                 )}
 
-                {/* 位置 + 时间 + 操作 */}
-                {post.location && <div className={`text-xs ${NAME_COLOR} mt-2`}>{post.location}</div>}
-                <div className="flex items-center mt-1.5 relative">
-                    <span className="text-xs text-slate-400">{formatRelativeTime(post.timestamp)}</span>
-                    {post.likes >= 200 && (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-500 font-bold shrink-0">🔥 爆款</span>
-                    )}
-                    {isReacting && (
-                        <span className="ml-2 text-[10px] text-slate-300 flex items-center gap-1">
-                            <span className="w-2.5 h-2.5 border border-slate-300 border-t-transparent rounded-full animate-spin inline-block" />
-                            生成中…
-                        </span>
-                    )}
+                {/* 位置 + 状态徽标 */}
+                {(post.location || post.likes >= 200 || isReacting) && (
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        {post.location && <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-50 border border-slate-100 text-slate-400">📍 {post.location}</span>}
+                        {post.likes >= 200 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-500 font-bold">🔥 大热门</span>
+                        )}
+                        {isReacting && (
+                            <span className="text-[10px] text-slate-300 flex items-center gap-1">
+                                <span className="w-2.5 h-2.5 border border-slate-300 border-t-transparent rounded-full animate-spin inline-block" />
+                                大家正在路过…
+                            </span>
+                        )}
+                    </div>
+                )}
+
+                {/* 常驻操作行：赞 / 留言 / 转发 / 递给 TA（+ 自己的帖可撕掉） */}
+                <div className="flex items-center gap-2 mt-3">
+                    <ActionBtn onClick={() => onToggleLike(post)} label={userLiked ? '取消赞' : '赞'} active={userLiked}>
+                        <Heart size={15} weight={userLiked ? 'fill' : 'regular'} />
+                    </ActionBtn>
+                    <ActionBtn onClick={() => onComment(post)} label="留言">
+                        <ChatCircle size={15} />
+                    </ActionBtn>
+                    <ActionBtn onClick={() => onRepost(post)} label="转贴">
+                        <Repeat size={15} />
+                    </ActionBtn>
+                    <ActionBtn onClick={() => onShareToChat(post)} label="递给 TA">
+                        <PaperPlaneTilt size={15} />
+                    </ActionBtn>
                     {isOwn && (
                         <button
-                            onClick={() => { if (window.confirm('删除这条动态？')) onDeletePost(post); }}
-                            className="ml-3 text-xs text-slate-400 active:text-red-400"
+                            onClick={() => { if (window.confirm('撕掉这条瞬间？')) onDeletePost(post); }}
+                            className="ml-auto text-[11px] text-slate-300 active:text-rose-400"
                         >
-                            删除
+                            撕掉
                         </button>
                     )}
-
-                    {/* ·· 操作按钮 */}
-                    <div className="ml-auto relative">
-                        {showActions && (
-                            <div className="absolute right-9 top-1/2 -translate-y-1/2 flex items-center bg-[#4c4c4c] rounded-md text-white text-xs shadow-lg animate-fade-in z-10 whitespace-nowrap">
-                                <button
-                                    onClick={() => { setShowActions(false); onToggleLike(post); }}
-                                    className="flex items-center gap-1 px-3 py-2 active:opacity-70"
-                                >
-                                    <Heart size={14} weight={userLiked ? 'fill' : 'regular'} className={userLiked ? 'text-red-400' : ''} />
-                                    {userLiked ? '取消' : '赞'}
-                                </button>
-                                <span className="w-px h-4 bg-white/20" />
-                                <button
-                                    onClick={() => { setShowActions(false); onComment(post); }}
-                                    className="flex items-center gap-1 px-3 py-2 active:opacity-70"
-                                >
-                                    <ChatCircle size={14} /> 评论
-                                </button>
-                                <span className="w-px h-4 bg-white/20" />
-                                <button
-                                    onClick={() => { setShowActions(false); onRepost(post); }}
-                                    className="flex items-center gap-1 px-3 py-2 active:opacity-70"
-                                >
-                                    <Repeat size={14} /> 转发
-                                </button>
-                                <span className="w-px h-4 bg-white/20" />
-                                <button
-                                    onClick={() => { setShowActions(false); onShareToChat(post); }}
-                                    className="flex items-center gap-1 px-3 py-2 active:opacity-70"
-                                >
-                                    <PaperPlaneTilt size={14} /> 分享
-                                </button>
-                            </div>
-                        )}
-                        <button
-                            onClick={() => setShowActions(v => !v)}
-                            className="w-7 h-5 bg-slate-100 rounded flex items-center justify-center text-[#576b95] font-black tracking-tighter active:bg-slate-200 transition-colors"
-                        >
-                            ··
-                        </button>
-                    </div>
                 </div>
 
-                {/* 点赞 + 评论区块 */}
+                {/* 赞 + 留言区块：虚线纸条 */}
                 {(likedBy.length > 0 || comments.length > 0) && (
-                    <div className="mt-2 bg-slate-50 rounded-lg overflow-hidden">
+                    <div className="mt-2.5 bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 overflow-hidden">
                         {likedBy.length > 0 && (
-                            <div className={`flex items-start gap-1.5 px-3 py-2 ${comments.length > 0 ? 'border-b border-slate-200/60' : ''}`}>
-                                <Heart size={14} weight="fill" className={`${NAME_COLOR} shrink-0 mt-0.5 opacity-80`} />
-                                <span className={`text-[13px] font-medium ${NAME_COLOR} leading-snug break-words`}>
+                            <div className={`flex items-start gap-1.5 px-3 py-2 ${comments.length > 0 ? 'border-b border-dashed border-slate-200' : ''}`}>
+                                <Heart size={13} weight="fill" className="text-rose-300 shrink-0 mt-0.5" />
+                                <span className="text-[12px] font-medium text-slate-600 leading-snug break-words">
                                     {likedBy.map(l => l.name).join('，')}
-                                    {post.likes > likedBy.length && ` 等 ${post.likes} 人觉得很赞`}
+                                    {post.likes > likedBy.length && ` 等 ${post.likes} 人路过点了赞`}
                                 </span>
                             </div>
                         )}
@@ -187,16 +172,16 @@ const MomentCard: React.FC<MomentCardProps> = ({
                                     <button
                                         key={c.id}
                                         onClick={() => handleCommentTap(c)}
-                                        className="block w-full text-left text-[13px] leading-relaxed py-0.5 active:bg-slate-100 rounded break-words"
+                                        className="block w-full text-left text-[12px] leading-relaxed py-0.5 active:bg-slate-100 rounded break-words"
                                     >
-                                        <span className={`font-medium ${NAME_COLOR}`}>{c.authorName}</span>
+                                        <span className="font-bold text-slate-700">{c.authorName}</span>
                                         {c.replyTo && (
                                             <>
-                                                <span className="text-slate-700"> 回复 </span>
-                                                <span className={`font-medium ${NAME_COLOR}`}>{c.replyTo.name}</span>
+                                                <span className="text-slate-500"> 回 </span>
+                                                <span className="font-bold text-slate-700">{c.replyTo.name}</span>
                                             </>
                                         )}
-                                        <span className="text-slate-700">：{c.content}</span>
+                                        <span className="text-slate-600">：{c.content}</span>
                                     </button>
                                 ))}
                             </div>

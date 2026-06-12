@@ -122,7 +122,7 @@ const CharacterWidget = React.memo(({
                      {/* 消息预览：手写体标签 + 灰底气泡里的最近一条 */}
                      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                          <div className="flex items-center gap-2 min-w-0">
-                             <span className="font-hand text-[17px] leading-none opacity-55 truncate">{char?.name || 'WeChat'}</span>
+                             <span className="font-hand text-[17px] leading-none opacity-55 truncate">{char?.name || 'Letters'}</span>
                              {unreadCount === 0 && (
                                  <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: '0 0 6px #4ade80' }} />
                              )}

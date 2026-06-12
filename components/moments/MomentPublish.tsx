@@ -24,7 +24,7 @@ interface MomentPublishProps {
 
 const MAX_IMAGES = 9;
 
-/** 发表页：仿微信朋友圈发布界面（取消 / 发表 / 这一刻的想法 / 图片九宫格 / 位置 / 提醒谁看 / 谁可以看） */
+/** 发布页（原创手帐风）：取消 / 贴出去 / 心情输入 / 图片宫格 / 位置 / 喊谁来看 / 谁可以看 */
 const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost, onCancel, onPublish, addToast }) => {
     const [content, setContent] = useState('');
     const [images, setImages] = useState<string[]>([]);
@@ -88,13 +88,13 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                 style={{ paddingTop: 'max(12px, env(safe-area-inset-top))', paddingBottom: '10px' }}
             >
                 <button onClick={onCancel} className="text-slate-600 text-sm px-1 py-1 active:opacity-60">取消</button>
-                <span className="text-sm font-bold text-slate-800">{isRepost ? '转发' : '发表'}</span>
+                <span className="text-sm font-bold text-slate-800">{isRepost ? '转贴' : '贴一条瞬间'}</span>
                 <button
                     onClick={handlePublish}
                     disabled={!canPublish}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${canPublish ? 'bg-[#07c160] text-white shadow-md shadow-green-200 active:scale-95' : 'bg-slate-100 text-slate-300'}`}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${canPublish ? 'bg-slate-900 text-white shadow-md shadow-slate-200 active:scale-95' : 'bg-slate-100 text-slate-300'}`}
                 >
-                    发表
+                    贴出去
                 </button>
             </div>
 
@@ -103,7 +103,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                     <textarea
                         value={content}
                         onChange={e => setContent(e.target.value)}
-                        placeholder={isRepost ? '说说你的看法...' : '这一刻的想法...'}
+                        placeholder={isRepost ? '想补一句什么…' : '现在脑子里飘过什么…'}
                         autoFocus
                         className="w-full min-h-[120px] resize-none outline-none text-base leading-relaxed placeholder:text-slate-300 text-slate-800"
                     />
@@ -115,7 +115,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                                 <img src={initialRepost.images[0]} className="w-12 h-12 rounded-lg object-cover shrink-0" />
                             )}
                             <p className="text-[13px] text-slate-500 leading-snug line-clamp-3">
-                                <span className="text-[#576b95] font-medium">{initialRepost.authorName}</span>
+                                <span className="text-slate-700 font-bold">{initialRepost.authorName}</span>
                                 ：{initialRepost.content || '(图片动态)'}
                             </p>
                         </div>
@@ -171,7 +171,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                         className="w-full flex items-center gap-3 px-5 py-4 border-b border-slate-50 active:bg-slate-50"
                     >
                         <UserCirclePlus size={20} className="text-slate-600" />
-                        <span className="text-sm text-slate-700 flex-1 text-left">提醒谁看</span>
+                        <span className="text-sm text-slate-700 flex-1 text-left">喊谁来看</span>
                         <span className="text-xs text-slate-400 max-w-[40%] truncate">{mentionedNames}</span>
                         <CaretRight size={14} className="text-slate-300" />
                     </button>
@@ -197,7 +197,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                 footer={
                     <>
                         <button onClick={() => { setLocation(''); setShowLocationModal(false); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl text-sm active:scale-95 transition-transform">不显示位置</button>
-                        <button onClick={() => { setLocation(locationDraft.trim()); setShowLocationModal(false); }} className="flex-1 py-3 bg-[#07c160] text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">确定</button>
+                        <button onClick={() => { setLocation(locationDraft.trim()); setShowLocationModal(false); }} className="flex-1 py-3 bg-slate-900 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">确定</button>
                     </>
                 }
             >
@@ -206,17 +206,17 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                     onChange={e => setLocationDraft(e.target.value)}
                     placeholder="输入一个位置，如：海边·落日观景台"
                     maxLength={30}
-                    className="w-full text-sm bg-slate-50 rounded-xl px-4 py-3 outline-none border border-slate-100 focus:border-[#07c160]/50 text-slate-800 placeholder:text-slate-300"
+                    className="w-full text-sm bg-slate-50 rounded-xl px-4 py-3 outline-none border border-slate-100 focus:border-slate-400/60 text-slate-800 placeholder:text-slate-300"
                 />
             </Modal>
 
             {/* 提醒谁看：角色多选（被提醒的角色保证互动） */}
             <Modal
                 isOpen={showMentionModal}
-                title="提醒谁看"
+                title="喊谁来看"
                 onClose={() => setShowMentionModal(false)}
                 footer={
-                    <button onClick={() => setShowMentionModal(false)} className="flex-1 py-3 bg-[#07c160] text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">完成</button>
+                    <button onClick={() => setShowMentionModal(false)} className="flex-1 py-3 bg-slate-900 text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">完成</button>
                 }
             >
                 <p className="text-[11px] text-slate-400 bg-slate-50 p-2 rounded-lg mb-3">被提醒的角色一定会来你这条动态下互动。</p>
@@ -228,7 +228,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                             <button key={c.id} onClick={() => toggleMention(c.id)} className="w-full flex items-center gap-3 p-2 rounded-xl active:bg-slate-50">
                                 <img src={c.avatar} className="w-9 h-9 rounded-full object-cover" />
                                 <span className="text-sm text-slate-700 flex-1 text-left truncate">{c.name}</span>
-                                <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${checked ? 'bg-[#07c160] border-[#07c160]' : 'border-slate-200'}`}>
+                                <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${checked ? 'bg-slate-900 border-slate-900' : 'border-slate-200'}`}>
                                     {checked && <span className="text-white text-[10px] font-bold">✓</span>}
                                 </span>
                             </button>
@@ -247,14 +247,14 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                         <button
                             key={opt.key}
                             onClick={() => { setVisibility(opt.key); setShowVisibilityModal(false); }}
-                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-colors ${visibility === opt.key ? 'border-[#07c160] bg-green-50/50' : 'border-slate-100 active:bg-slate-50'}`}
+                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-colors ${visibility === opt.key ? 'border-slate-800 bg-slate-50' : 'border-slate-100 active:bg-slate-50'}`}
                         >
-                            <span className={visibility === opt.key ? 'text-[#07c160]' : 'text-slate-500'}>{opt.icon}</span>
+                            <span className={visibility === opt.key ? 'text-slate-800' : 'text-slate-500'}>{opt.icon}</span>
                             <span className="flex-1 text-left">
                                 <span className="block text-sm font-bold text-slate-700">{opt.label}</span>
                                 <span className="block text-[11px] text-slate-400">{opt.desc}</span>
                             </span>
-                            {visibility === opt.key && <span className="text-[#07c160] text-sm font-bold">✓</span>}
+                            {visibility === opt.key && <span className="text-slate-800 text-sm font-bold">✓</span>}
                         </button>
                     ))}
                 </div>
