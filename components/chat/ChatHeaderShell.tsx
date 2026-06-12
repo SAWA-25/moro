@@ -200,7 +200,8 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         headerStyle === 'gradient'
             ? 'bg-gradient-to-r from-primary/20 via-primary/10 to-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm'
             : headerStyle === 'minimal'
-              ? 'bg-white/95 backdrop-blur-md border-b border-slate-200/50 shadow-sm'
+              // 默认顶栏（黑白手帐）：白色圆底卡片悬浮感 —— 大圆角下缘 + 柔影，无分割线
+              ? 'bg-white/95 backdrop-blur-md rounded-b-[2rem] shadow-[0_14px_30px_-18px_rgba(50,48,60,0.3)]'
               : headerStyle === 'wechat'
                 ? 'bg-[#f7f7f7]/95 backdrop-blur-md border-b border-black/5 shadow-none'
                 : headerStyle === 'telegram'
@@ -336,8 +337,9 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
     const renderCenteredInfo = () => (
         <div className="flex w-full min-w-0 max-w-full flex-col items-center text-center">
-            <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-10 h-10 object-cover shadow-sm ${avatarRadiusClass} ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
-            <div className={`moro-chat-name mt-1 font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
+            {/* 大头像居中（黑白手帐式）：白描边 + 柔影，是顶栏的视觉主角 */}
+            <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-14 h-14 object-cover ${avatarRadiusClass} ring-[3px] ring-white shadow-[0_10px_24px_-10px_rgba(50,48,60,0.4)] ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
+            <div className={`moro-chat-name mt-1.5 text-[15px] font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
             {buffs.length > 0 && (
                 <div className="mt-1 min-h-[18px] w-full">
                     {renderBuffRow(true)}

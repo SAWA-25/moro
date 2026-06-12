@@ -2,50 +2,42 @@
  * 方形「正在播放」组件 — 用于桌面第二页的风车布局
  * — 全局 Music Context 驱动，点击跳到 Music App。
  * — 填满父容器（由父的 aspect-square 约束成方形）。
+ * — 黑白手帐桌面风：黑色胶囊卡 + 手写体 Music 标签 + 白色圆形播放钮。
  */
 import React from 'react';
-import { Play, Pause, SkipBack, SkipForward } from '@phosphor-icons/react';
+import { Play, Pause, SkipForward, MusicNote } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
 import { useMusic } from '../../context/MusicContext';
 import { AppID } from '../../types';
 
-const formatTime = (sec: number) => {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-};
-
 const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentColor }) => {
   const { openApp } = useOS();
-  const { current, playing, progress, duration, togglePlay, nextSong, prevSong } = useMusic();
+  const { current, playing, progress, duration, togglePlay, nextSong } = useMusic();
+  void contentColor; // 黑胶囊固定白字，但保留 prop 兼容旧调用
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
   const hasSong = !!current;
 
   const albumPic = current?.albumPic;
-  const title = current?.name || '抽一张来听';
-  const artists = current?.artists || '— 轻触，进入';
-  const statusText = !hasSong ? 'Standby' : (playing ? 'Now Playing' : 'Paused');
-  const dotColor = !hasSong ? '#fbbf24' : (playing ? '#4ade80' : '#fbbf24');
+  const title = current?.name || 'Music';
+  const subtitle = hasSong ? (current?.artists || '') : 'Tap to ...';
 
   const stopProp = (e: React.MouseEvent) => { e.stopPropagation(); };
   const handlePlay = (e: React.MouseEvent) => { e.stopPropagation(); if (hasSong) togglePlay(); else openApp(AppID.Music); };
   const handleNext = (e: React.MouseEvent) => { e.stopPropagation(); if (hasSong) nextSong(); };
-  const handlePrev = (e: React.MouseEvent) => { e.stopPropagation(); if (hasSong) prevSong(); };
 
   return (
     <div
       onClick={() => openApp(AppID.Music)}
-      className="glass-card relative w-full h-full rounded-[1.75rem] overflow-hidden cursor-pointer animate-fade-in group press-soft flex flex-col justify-between"
+      className="relative w-full h-full rounded-[2.4rem] overflow-hidden cursor-pointer animate-fade-in group press-soft flex flex-col items-center justify-between px-4 py-5 text-white"
       style={{
-        padding: '12px',
-        color: contentColor,
+        background: 'linear-gradient(180deg, #232229 0%, #17161c 100%)',
+        boxShadow: '0 18px 38px -16px rgba(23,22,28,0.65)',
       }}
     >
-      {/* 背景封面（不再实时 blur — 改用低透明度覆盖） */}
-      {albumPic ? (
-        <div className="absolute inset-0 opacity-15 pointer-events-none"
+      {/* 背景封面：低透明度铺底，保持黑胶囊质感 */}
+      {albumPic && (
+        <div className="absolute inset-0 opacity-20 pointer-events-none"
           style={{
             backgroundImage: `url(${albumPic})`,
             backgroundSize: 'cover',
@@ -53,120 +45,63 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
             transform: 'scale(1.1)',
           }}
         />
-      ) : (
-        <div className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              'radial-gradient(120% 100% at 95% 100%, rgba(196,181,253,0.20), transparent 55%),' +
-              'radial-gradient(100% 80% at 0% 0%, rgba(253,213,184,0.16), transparent 60%)',
-          }}
-        />
       )}
 
-      {/* 顶部：封面 + 文字 */}
-      <div className="relative flex items-center gap-2 z-10 min-w-0">
-        <div
-          className="w-9 h-9 shrink-0 rounded-lg overflow-hidden relative"
-          style={{
-            background: 'rgba(255,255,255,0.7)',
-            border: '1px solid #ececf2',
-            boxShadow: '0 4px 10px -6px rgba(63,61,86,0.3)',
-          }}
-        >
-          {albumPic ? (
-            <img src={albumPic} alt="" className="w-full h-full object-cover"
-              style={{ animation: playing ? 'spin 14s linear infinite' : 'none' }} />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="text-[10px] font-bold opacity-50" style={{ letterSpacing: '0.15em' }}>♪</span>
-            </div>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 mb-0.5">
-            <span className="w-1 h-1 rounded-full shrink-0"
-              style={{
-                background: dotColor,
-                boxShadow: playing ? `0 0 6px ${dotColor}` : 'none',
-                animation: playing ? 'pulse 2s ease-in-out infinite' : 'none',
-              }} />
-            <span className="text-[7.5px] label-mono font-bold opacity-55">
-              {statusText}
-            </span>
-          </div>
-          <div className="text-[11.5px] font-semibold truncate leading-tight">{title}</div>
-          <div className="text-[9px] opacity-55 truncate leading-tight mt-[1px]">{artists}</div>
-        </div>
+      {/* 顶部：暗色内圈唱片 / 封面 */}
+      <div
+        className="relative z-10 w-12 h-12 shrink-0 rounded-full overflow-hidden flex items-center justify-center"
+        style={{
+          background: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.12)',
+        }}
+      >
+        {albumPic ? (
+          <img src={albumPic} alt="" className="w-full h-full object-cover rounded-full"
+            style={{ animation: playing ? 'spin 14s linear infinite' : 'none' }} />
+        ) : (
+          <MusicNote size={18} weight="fill" className="opacity-80" />
+        )}
       </div>
 
-      {/* 中间：均衡器条 */}
-      <div className="relative flex-1 flex items-center justify-center gap-[3px] z-10 opacity-40 py-1">
-        {[5, 9, 4, 7, 5, 8, 4].map((h, i) => (
-          <div
-            key={i}
-            className="w-[2px] rounded-full"
-            style={{
-              height: `${h * 1.2}px`,
-              background: 'currentColor',
-              animation: playing ? `pulse ${1.2 + (i * 0.1)}s ease-in-out infinite` : 'none',
-              animationDelay: `${i * 70}ms`,
-            }}
-          />
-        ))}
+      {/* 中部：手写体 Music 标签 + 歌名 */}
+      <div className="relative z-10 flex flex-col items-center min-w-0 w-full px-1 gap-0.5">
+        <div className="font-hand text-[22px] leading-none truncate max-w-full">{hasSong ? 'Music' : title}</div>
+        <div className="font-hand text-[13px] opacity-60 truncate max-w-full">{hasSong ? title : subtitle}</div>
+        {hasSong && subtitle && (
+          <div className="text-[8.5px] opacity-40 truncate max-w-full">{subtitle}</div>
+        )}
       </div>
 
-      {/* 底部：进度 + 控件 */}
-      <div className="relative z-10 flex flex-col gap-1.5">
-        {/* 进度条 */}
-        <div className="flex flex-col gap-0.5">
-          <div className="h-[3px] w-full rounded-full overflow-hidden"
-            style={{ background: 'rgba(63,61,86,0.10)' }}>
-            <div className="h-full rounded-full transition-[width] duration-150"
-              style={{
-                width: `${pct}%`,
-                background: 'linear-gradient(90deg, #a5b4fc, #c4b5fd)',
-                boxShadow: '0 0 6px rgba(196,181,253,0.55)',
-              }} />
-          </div>
-          <div className="flex justify-between text-[7.5px] uppercase font-medium opacity-50" style={{ letterSpacing: '0.15em' }}>
-            <span>{formatTime(progress)}</span>
-            <span>{hasSong ? `-${formatTime(Math.max(0, duration - progress))}` : '--:--'}</span>
-          </div>
-        </div>
-
-        {/* 播放控件 */}
-        <div className="flex justify-center items-center gap-3">
-          <button
-            aria-label="Previous"
-            onClick={handlePrev}
-            onMouseDown={stopProp}
-            className="w-6 h-6 flex items-center justify-center opacity-70 hover:opacity-100 active:scale-90 transition disabled:opacity-30"
-            disabled={!hasSong}
-          >
-            <SkipBack size={14} weight="fill" />
-          </button>
+      {/* 底部：白色播放圆钮 + 下一首小箭头 + 细进度条 */}
+      <div className="relative z-10 w-full flex flex-col items-center gap-2.5">
+        <div className="flex items-center justify-center gap-3 w-full">
           <button
             aria-label={playing ? 'Pause' : 'Play'}
             onClick={handlePlay}
             onMouseDown={stopProp}
-            className="w-9 h-9 flex items-center justify-center rounded-full active:scale-95 transition"
+            className="w-11 h-11 flex items-center justify-center rounded-full active:scale-95 transition"
             style={{
-              background: '#2c2a35',
-              color: '#ffffff',
-              boxShadow: '0 8px 18px -8px rgba(44,42,53,0.6)',
+              background: '#ffffff',
+              color: '#17161c',
+              boxShadow: '0 8px 20px -8px rgba(0,0,0,0.6)',
             }}
           >
-            {playing ? <Pause size={15} weight="fill" /> : <Play size={15} weight="fill" />}
+            {playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" className="translate-x-[1px]" />}
           </button>
           <button
             aria-label="Next"
             onClick={handleNext}
             onMouseDown={stopProp}
-            className="w-6 h-6 flex items-center justify-center opacity-70 hover:opacity-100 active:scale-90 transition disabled:opacity-30"
+            className="w-7 h-7 flex items-center justify-center rounded-full opacity-60 hover:opacity-100 active:scale-90 transition disabled:opacity-25"
+            style={{ border: '1px solid rgba(255,255,255,0.25)' }}
             disabled={!hasSong}
           >
-            <SkipForward size={14} weight="fill" />
+            <SkipForward size={12} weight="fill" />
           </button>
+        </div>
+        <div className="h-[3px] w-3/4 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.14)' }}>
+          <div className="h-full rounded-full transition-[width] duration-150"
+            style={{ width: `${pct}%`, background: 'rgba(255,255,255,0.85)' }} />
         </div>
       </div>
     </div>

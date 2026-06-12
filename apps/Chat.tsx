@@ -2543,7 +2543,7 @@ ${recent || '（你们还没怎么聊过）'}
               ? 'flex flex-col h-full bg-white overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
               : chatChromeStyle === 'floating'
                 ? 'flex flex-col h-full bg-[#eef2ff] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
-                : 'flex flex-col h-full bg-[#f7f7f9] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
+                : 'flex flex-col h-full bg-[#fafafa] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
     const chatRootStyle: React.CSSProperties = char.chatBackground
         ? {
             backgroundImage: `url(${char.chatBackground})`,
@@ -3272,6 +3272,21 @@ ${recent || '（你们还没怎么聊过）'}
                         !nextMessage ||
                         nextMessage.role !== m.role ||
                         Math.abs(nextMessage.timestamp - m.timestamp) > messageGroupGapMs;
+                    // 时间分割线（黑白手帐式「🤍 Today 22:28」）：会话开头或间隔超过 30 分钟时插入
+                    const needsTimeDivider = m.role !== 'system' &&
+                        (!prevMessage || Math.abs(m.timestamp - prevMessage.timestamp) > messageGroupGapMs);
+                    const dividerLabel = (() => {
+                        if (!needsTimeDivider) return '';
+                        const d = new Date(m.timestamp);
+                        const today = new Date();
+                        const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+                        const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+                        const dayStr = sameDay(d, today) ? 'Today'
+                            : sameDay(d, yesterday) ? 'Yesterday'
+                            : d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+                        const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                        return `${dayStr} ${timeStr}`;
+                    })();
                     return (
                         <div
                             key={m.id || i}
@@ -3281,6 +3296,13 @@ ${recent || '（你们还没怎么聊过）'}
                                 'transition-all duration-300',
                             ].filter(Boolean).join(' ')}
                         >
+                        {needsTimeDivider && (
+                            <div className="flex items-center justify-center gap-1.5 py-3 select-none">
+                                <span className="text-[11px] opacity-60">🤍</span>
+                                <span className="text-[11px] font-medium text-slate-400 tracking-wide">{dividerLabel}</span>
+                                <span className="text-[11px] opacity-60">💬</span>
+                            </div>
+                        )}
                         <MessageItem
                             msg={m}
                             isFirstInGroup={breaksWithPrevious}

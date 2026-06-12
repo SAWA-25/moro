@@ -344,8 +344,10 @@ interface OSContextType {
   clearSuspendedCall: () => void;
 }
 
-// 默认壁纸：纸感留白 + 底部淡薰衣草色，承托白色毛玻璃卡片（编辑部治愈风）。
-export const DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fdfdfd 0%, #f4f4f8 52%, #e7e9f4 100%)';
+// 默认壁纸：奶白手帐纸面 —— 由上至下微微变暖的米白，承托白色拼贴卡片（黑白手帐风）。
+export const DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fbfaf7 0%, #f5f3ee 55%, #efede6 100%)';
+// 上一代默认壁纸：检测到老用户还停留在旧默认时自动迁移到新默认（自定义壁纸不受影响）。
+export const LEGACY_DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fdfdfd 0%, #f4f4f8 52%, #e7e9f4 100%)';
 
 const defaultTheme: OSTheme = {
   hue: 248, // 墨色微紫（与 index.html :root 默认一致）
@@ -353,7 +355,7 @@ const defaultTheme: OSTheme = {
   lightness: 36,
   wallpaper: DEFAULT_WALLPAPER,
   darkMode: false,
-  contentColor: '#3f3d49', // 默认墨色文字（浅色纸面背景）
+  contentColor: '#2b2933', // 默认墨色文字（浅色纸面背景）
 };
 
 const defaultApiConfig: APIConfig = {
@@ -881,6 +883,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                          loadedTheme.hue = defaultTheme.hue;
                          loadedTheme.saturation = defaultTheme.saturation;
                          loadedTheme.lightness = defaultTheme.lightness;
+                     }
+                 }
+                 // 上一代默认壁纸/默认墨色 → 跟随新默认美化（用户自定义值不受影响）
+                 if (loadedTheme.wallpaper === LEGACY_DEFAULT_WALLPAPER) {
+                     loadedTheme.wallpaper = DEFAULT_WALLPAPER;
+                     if ((loadedTheme.contentColor || '#3f3d49') === '#3f3d49') {
+                         loadedTheme.contentColor = defaultTheme.contentColor;
                      }
                  }
                  // Strip the legacy Unsplash hard-coded wallpaper, keep user-imported http(s) URLs
