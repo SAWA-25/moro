@@ -382,10 +382,29 @@ const defaultUserProfile: UserProfile = {
     bio: 'No description yet.'
 };
 
+// Moro 四张本地表情头像（public/moro-avatars/）：平静 / 撒娇 / 可怜 / 疑惑
+// 主头像用「平静」，其余按情绪映射到 sprites，全部 App 经由 character.avatar / sprites 共享
+export const MORO_AVATARS = {
+  calm: '/moro-avatars/calm.jpg',     // 平静M
+  coy: '/moro-avatars/coy.jpg',       // 撒娇M
+  pity: '/moro-avatars/pity.jpg',     // 可怜M
+  puzzled: '/moro-avatars/puzzled.jpg' // 疑惑M
+} as const;
+
+// 旧版 Moro 远程头像（已废弃，用于老用户数据迁移判定）
+const LEGACY_MORO_AVATAR = 'https://sharkpan.xyz/f/BZ3VSa/head.png';
+const LEGACY_MORO_SPRITES: Record<string, string> = {
+  'normal': 'https://sharkpan.xyz/f/w3QQFq/01.png',
+  'happy': 'https://sharkpan.xyz/f/MKg7ta/02.png',
+  'sad': 'https://sharkpan.xyz/f/3WnMce/03.png',
+  'angry': 'https://sharkpan.xyz/f/5n1xSj/04.png',
+  'shy': 'https://sharkpan.xyz/f/kdwet6/05.png'
+};
+
 const moroV2: CharacterProfile = {
   id: 'preset-moro-v2', // Unique ID to prevent duplication
   name: 'Moro',
-  avatar: 'https://sharkpan.xyz/f/BZ3VSa/head.png',
+  avatar: MORO_AVATARS.calm,
   description: 'AI助理 / 猫娘AI · 你最忠实的电子损友',
 
   systemPrompt: `[Role Definition]
@@ -459,11 +478,11 @@ Moro 是小手机的内置猫娘AI。
 `,
 
   sprites: {
-      'normal': 'https://sharkpan.xyz/f/w3QQFq/01.png',
-      'happy': 'https://sharkpan.xyz/f/MKg7ta/02.png',
-      'sad': 'https://sharkpan.xyz/f/3WnMce/03.png',
-      'angry': 'https://sharkpan.xyz/f/5n1xSj/04.png',
-      'shy': 'https://sharkpan.xyz/f/kdwet6/05.png',
+      'normal': MORO_AVATARS.calm,    // 平静
+      'happy': MORO_AVATARS.coy,      // 撒娇
+      'sad': MORO_AVATARS.pity,       // 可怜
+      'angry': MORO_AVATARS.puzzled,  // 疑惑
+      'shy': MORO_AVATARS.coy,        // 撒娇（复用）
       'chibi': 'https://sharkpan.xyz/f/oWZQF4/S2.png' // Default Room Sprite (家园 Moro chibi)
   },
   
@@ -1117,9 +1136,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                  // 人设性格增强升级：仅当老用户的人设仍是旧版默认（从未自定义）时才替换为新版
                  const needsPersonaUpgrade = (existingMoro.systemPrompt || '').trim() === LEGACY_MORO_SYSTEM_PROMPT.trim()
                      && existingMoro.systemPrompt !== moroV2.systemPrompt;
+                 // 头像升级：老用户仍在用旧版远程头像/情绪图（从未自定义）→ 换成本地四张表情头像
+                 const needsAvatarUpgrade = existingMoro.avatar === LEGACY_MORO_AVATAR;
+                 const needsSpriteUpgrade = Object.entries(LEGACY_MORO_SPRITES)
+                     .some(([k, url]) => currentSprites[k] === url);
 
-                 if (isCorrupted || !existingMoro.roomConfig || needsWallUpdate || needsSkinSets || hasMisplacedPixelChibi || needsPersonaUpgrade) {
+                 if (isCorrupted || !existingMoro.roomConfig || needsWallUpdate || needsSkinSets || hasMisplacedPixelChibi || needsPersonaUpgrade || needsAvatarUpgrade || needsSpriteUpgrade) {
                      const restoredSprites = { ...moroV2.sprites, ...currentSprites };
+                     // 旧版远程情绪图 → 新本地表情头像（用户自定义过的不动）
+                     for (const [k, url] of Object.entries(LEGACY_MORO_SPRITES)) {
+                         if (restoredSprites[k] === url) restoredSprites[k] = moroV2.sprites![k];
+                     }
 
                      if (!restoredSprites['normal']) restoredSprites['normal'] = moroV2.sprites!['normal'];
                      if (!restoredSprites['happy']) restoredSprites['happy'] = moroV2.sprites!['happy'];
@@ -1151,7 +1178,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                          sprites: restoredSprites,
                          roomConfig: updatedRoomConfig,
                          dateSkinSets: mergedSkins,
-                         ...(needsPersonaUpgrade ? { systemPrompt: moroV2.systemPrompt } : {})
+                         ...(needsPersonaUpgrade ? { systemPrompt: moroV2.systemPrompt } : {}),
+                         ...(needsAvatarUpgrade ? { avatar: moroV2.avatar } : {})
                      };
                      
                      await DB.saveCharacter(updatedMoro);
