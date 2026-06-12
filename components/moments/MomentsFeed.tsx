@@ -23,9 +23,7 @@ export interface MomentsFeedProps {
     backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
-const COVER_FALLBACK = 'linear-gradient(135deg, #5b7c99 0%, #2c3e50 60%, #1a252f 100%)';
-
-/** 微信式朋友圈：封面头图 + 动态流 + 发布 + 角色互动 */
+/** 「此刻」动态簿（原创手帐拼贴风）：纸面页眉（拍立得封面 + 用户名片 + 贴纸按钮）+ 纸卡动态流 + 发布 + 角色互动 */
 const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandlerRef }) => {
     const { characters, apiConfig, addToast, userProfile } = useOS();
 
@@ -153,7 +151,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 apiConfig, characters, userProfile, feed: postsRef.current,
             });
             if (fresh.length === 0) {
-                addToast('这一轮大家都没发朋友圈', 'info');
+                addToast('这一轮大家都没贴新瞬间', 'info');
             } else {
                 upsertPosts(fresh);
                 addToast(`刷到 ${fresh.length} 条新动态`, 'success');
@@ -191,7 +189,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         upsertPosts([post]);
         setView('feed');
         setRepostPrefill(null);
-        addToast('发表成功', 'success');
+        addToast('贴出去了', 'success');
 
         // 公开动态 → 异步角色反应轮
         if (data.visibility === 'public' && apiConfig.apiKey && characters.length > 0) {
@@ -285,7 +283,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
     };
 
     const handleRepostToMoments = (post: SocialPost) => {
-        // 转发已是转发帖时，指向最初的原帖（与微信一致）
+        // 转贴已是转贴的帖子时，链条收敛到最初的原帖，避免套娃嵌套
         const origin = post.repostOf || {
             postId: post.id,
             authorName: post.authorName,
@@ -331,59 +329,106 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
     const draftPost = commentDraft ? posts.find(p => p.id === commentDraft.postId) : null;
 
     return (
-        <div className="h-full w-full flex flex-col relative overflow-hidden font-sans text-slate-900" style={{ background: 'linear-gradient(165deg, #f4f2ed 0%, #eee9e1 100%)' }}>
+        <div
+            className="h-full w-full flex flex-col relative overflow-hidden font-sans text-slate-900 scrap-panel"
+            style={{
+                background: 'linear-gradient(165deg, #f4f2ed 0%, #eee9e1 100%)',
+                paddingTop: embedded ? '0px' : 'max(8px, var(--safe-top))',
+            }}
+        >
+            {/* 独立模式顶栏：返回 + 页签字标 */}
+            {!embedded && (
+                <div className="relative flex items-center justify-center px-2 py-2 shrink-0">
+                    {onBack && (
+                        <button onClick={onBack} className="absolute left-2 p-2 active:opacity-50" aria-label="返回">
+                            <CaretLeft size={22} weight="bold" className="text-slate-700" />
+                        </button>
+                    )}
+                    <span className="text-[12px] font-mono font-bold tracking-[0.35em] uppercase text-slate-500">此刻</span>
+                </div>
+            )}
+
             {/* 主滚动区 */}
             <div className="flex-1 overflow-y-auto no-scrollbar">
-                {/* 封面头图 */}
-                <div className="relative h-64 w-full" style={cover ? undefined : { background: COVER_FALLBACK }}>
-                    {cover && <img src={cover} className="absolute inset-0 w-full h-full object-cover" />}
-                    <div
-                        className="absolute inset-0 cursor-pointer"
-                        onClick={() => coverInputRef.current?.click()}
-                        title="更换封面"
-                    />
-                    <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverPick} />
+                {/* 页眉：纸面名片 + 拍立得封面 + 贴纸按钮行 */}
+                <div className="px-3 pt-3">
+                    <div className="relative bg-white rounded-[1.8rem] border border-slate-100 shadow-[0_18px_36px_-24px_rgba(50,48,60,0.45)] px-5 pt-6 pb-5">
+                        {/* 和纸胶带：压住页眉卡上缘 */}
+                        <span
+                            className="absolute -top-2 left-9 w-[72px] h-5 -rotate-[2.5deg] pointer-events-none"
+                            style={{
+                                background: 'linear-gradient(100deg, rgba(255,255,255,0.6), rgba(243,240,233,0.45))',
+                                boxShadow: '0 2px 6px rgba(50,48,60,0.14)',
+                                borderLeft: '1px dashed rgba(160,156,146,0.45)',
+                                borderRight: '1px dashed rgba(160,156,146,0.45)',
+                            }}
+                        />
 
-                    {/* 顶部按钮 */}
-                    <div
-                        className="absolute top-0 left-0 right-0 flex items-center justify-between px-3"
-                        style={{ paddingTop: embedded ? '10px' : 'max(12px, env(safe-area-inset-top))' }}
-                    >
-                        {!embedded && onBack ? (
+                        <div className="flex items-start gap-3">
+                            {/* 左：字标 + 用户名片 */}
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[10px] font-mono font-bold tracking-[0.35em] uppercase text-slate-300 select-none">Moments Log</div>
+                                <div className="mt-3 flex items-center gap-2.5">
+                                    <img src={userProfile.avatar} className="w-12 h-12 rounded-2xl object-cover bg-slate-100 border-2 border-white shadow-md ring-1 ring-slate-100 shrink-0" />
+                                    <div className="min-w-0">
+                                        <div className="text-[16px] font-bold text-slate-800 leading-tight truncate">{userProfile.name}</div>
+                                        <div className="mt-1 text-[10px] font-mono text-slate-300 tracking-wider">已贴 {posts.length} 条瞬间</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 右：拍立得封面贴纸（点按更换，作原「封面头图」用途） */}
                             <button
-                                onClick={(e) => { e.stopPropagation(); onBack(); }}
-                                className="w-9 h-9 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-transform"
+                                onClick={() => coverInputRef.current?.click()}
+                                title="更换封面"
+                                className="relative shrink-0 tilt-r active:scale-95 transition-transform"
                             >
-                                <CaretLeft size={18} weight="bold" />
+                                <div className="bg-white p-1.5 pb-5 rounded-md border border-slate-100 shadow-[0_12px_22px_-12px_rgba(50,48,60,0.5)]">
+                                    {cover ? (
+                                        <img src={cover} className="w-[76px] h-[76px] rounded-[3px] object-cover" />
+                                    ) : (
+                                        <div className="w-[76px] h-[76px] rounded-[3px] bg-slate-50 border border-dashed border-slate-200 flex flex-col items-center justify-center gap-1 text-slate-300">
+                                            <Camera size={18} />
+                                            <span className="text-[9px]">贴张封面</span>
+                                        </div>
+                                    )}
+                                    <span className="absolute bottom-1 left-0 right-0 text-center text-[8px] font-mono tracking-[0.25em] uppercase text-slate-300 select-none">Cover</span>
+                                </div>
+                                <span
+                                    className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-9 h-3.5 -rotate-[4deg] pointer-events-none"
+                                    style={{
+                                        background: 'linear-gradient(100deg, rgba(255,255,255,0.65), rgba(243,240,233,0.5))',
+                                        boxShadow: '0 1px 3px rgba(50,48,60,0.12)',
+                                        borderLeft: '1px dashed rgba(160,156,146,0.4)',
+                                        borderRight: '1px dashed rgba(160,156,146,0.4)',
+                                    }}
+                                />
                             </button>
-                        ) : <span />}
-                        <div className="flex items-center gap-2">
+                        </div>
+                        <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverPick} />
+
+                        {/* 贴纸按钮行：翻新动态（纸面）/ 贴一条（墨色） */}
+                        <div className="flex gap-2.5 mt-5">
                             <button
-                                onClick={(e) => { e.stopPropagation(); handleRefresh(); }}
-                                className="w-9 h-9 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-transform"
-                                title="刷新动态"
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
+                                className="scrap-btn-paper flex-1 py-2.5 text-[12px] font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
+                                title="看看大家有没有贴新瞬间"
                             >
-                                <ArrowsClockwise size={18} weight="bold" className={isRefreshing ? 'animate-spin' : ''} />
+                                <ArrowsClockwise size={15} weight="bold" className={isRefreshing ? 'animate-spin' : ''} />
+                                {isRefreshing ? '收集中…' : '翻翻新动态'}
                             </button>
                             <button
-                                onClick={(e) => { e.stopPropagation(); setRepostPrefill(null); setView('publish'); }}
-                                className="w-9 h-9 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center text-white active:scale-90 transition-transform"
-                                title="发表动态"
+                                onClick={() => { setRepostPrefill(null); setView('publish'); }}
+                                className="scrap-btn flex-1 py-2.5 text-[12px] font-bold flex items-center justify-center gap-1.5"
+                                title="贴一条瞬间"
                             >
-                                <Camera size={18} weight="bold" />
+                                <Camera size={15} weight="bold" />
+                                贴一条
                             </button>
                         </div>
                     </div>
-
-                    {/* 右下角：昵称 + 头像（压在封面下沿） */}
-                    <div className="absolute -bottom-7 right-4 flex items-start gap-3 pointer-events-none">
-                        <span className="text-white font-bold text-base drop-shadow-md mt-2 max-w-[40vw] truncate">{userProfile.name}</span>
-                        <img src={userProfile.avatar} className="w-16 h-16 rounded-xl object-cover border-2 border-white shadow-md bg-slate-200" />
-                    </div>
                 </div>
-
-                {/* 封面下留白（给头像让位） */}
-                <div className="h-12" />
 
                 {/* 刷新中提示条 */}
                 {isRefreshing && (
@@ -394,11 +439,11 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 )}
 
                 {/* 动态流（纸卡拼贴流） */}
-                <div className="pb-28">
+                <div className="pt-1 pb-28">
                     {posts.length === 0 && !isRefreshing && (
-                        <div className="flex flex-col items-center justify-center py-24 text-slate-300 gap-3">
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-300 gap-3 px-8 text-center">
                             <Camera size={44} className="opacity-40" />
-                            <span className="text-xs">这里还空着——点右上角贴一条瞬间，或刷新看看大家在干嘛</span>
+                            <span className="text-xs leading-relaxed">这一页还空着——点「贴一条」留下你的瞬间，或「翻翻新动态」看看大家在干嘛</span>
                         </div>
                     )}
                     {posts.map(post => (

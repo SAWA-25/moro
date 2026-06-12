@@ -121,7 +121,7 @@ const MomentPublish: React.FC<MomentPublishProps> = ({ characters, initialRepost
                         </div>
                     )}
 
-                    {/* 图片九宫格选择（转发不再附图，与微信一致） */}
+                    {/* 图片宫格选择（转贴模式只带原帖摘要，不再另附新图） */}
                     {!isRepost && (
                         <div className="grid grid-cols-3 gap-2 mt-4">
                             {images.map((img, i) => (
