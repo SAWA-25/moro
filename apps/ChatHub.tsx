@@ -83,7 +83,7 @@ const GroupMessageItem = React.memo(({
     if (msg.role === 'system' || msg.type === 'system') {
         return (
             <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
-                <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-violet-400' : ''}`}>
+                <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
                     {msg.content}
                 </span>
             </div>
@@ -94,7 +94,7 @@ const GroupMessageItem = React.memo(({
     if (msg.type === 'interaction') {
         return (
             <div className="flex justify-center my-2 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
-                <span className={`flex items-center gap-1 px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-500 text-[10px] ${selectionMode && isSelected ? 'ring-2 ring-violet-400' : ''}`}>
+                <span className={`flex items-center gap-1 px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-500 text-[10px] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
                     <img src={twemojiUrl('1f449')} alt="poke" className="w-3.5 h-3.5" />
                     {isUser ? `我${msg.content.replace(/^\[|\]$/g, '')}` : msg.content.replace(/^\[|\]$/g, '')}
                 </span>
@@ -179,7 +179,7 @@ const GroupMessageItem = React.memo(({
                 );
             default:
                 return (
-                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-violet-500 text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
+                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
                         {msg.content}
                     </div>
                 );
@@ -199,7 +199,7 @@ const GroupMessageItem = React.memo(({
         >
             {selectionMode && (
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 cursor-pointer z-10">
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-violet-500 border-violet-500' : 'border-slate-300 bg-white'}`}>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-[#2b2933] border-[#2b2933]' : 'border-slate-300 bg-white'}`}>
                         {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
                     </div>
                 </div>
@@ -1513,7 +1513,7 @@ ${attachedImagesNote}
 
     if (view === 'list') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-light">
+            <div className="h-full w-full bg-[#faf9f6] scrap-panel flex flex-col font-light">
                 {/* safe-top spacer 透明 + backdrop-blur，下方容器/list bubbles 透出+模糊（跟 iOS 系统 status bar 一致），避免 header 白 bg 在刘海下铺一条突兀白带 */}
                 <div className="shrink-0 z-10 sticky top-0">
                     <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
@@ -1532,7 +1532,7 @@ ${attachedImagesNote}
                     <div className="flex-1"></div>
                     {hubTab !== 'moments' && (
                         <div className="relative">
-                            <button onClick={() => setShowPlusMenu(v => !v)} className="p-2 -mr-2 text-violet-500 bg-violet-50 hover:bg-violet-100 rounded-full transition-colors" title="添加">
+                            <button onClick={() => setShowPlusMenu(v => !v)} className="p-2 -mr-2 text-[#2b2933] scrap-btn-paper transition-colors" title="添加">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                             </button>
                             {showPlusMenu && (
@@ -1542,17 +1542,17 @@ ${attachedImagesNote}
                                     <div className="absolute right-0 top-full mt-2 z-50 w-40 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('add-friend'); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-violet-50 active:bg-violet-100 transition-colors"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-[#f4f1ea] active:bg-[#ece7dc] transition-colors"
                                         >
-                                            <AddressBook size={18} className="text-violet-500 shrink-0" />
+                                            <AddressBook size={18} className="text-[#2b2933] shrink-0" />
                                             添加好友
                                         </button>
                                         <div className="h-px bg-slate-100 mx-3" />
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-violet-50 active:bg-violet-100 transition-colors"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-[#f4f1ea] active:bg-[#ece7dc] transition-colors"
                                         >
-                                            <UsersThree size={18} className="text-violet-500 shrink-0" />
+                                            <UsersThree size={18} className="text-[#2b2933] shrink-0" />
                                             创建群聊
                                         </button>
                                     </div>
@@ -1565,7 +1565,7 @@ ${attachedImagesNote}
 
                 {/* ── 消息 tab：单聊 + 群聊混排 ── */}
                 {hubTab === 'chats' && (
-                    <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
                         {convos.map(cv => {
                             if (cv.kind === 'group') {
                                 const g = groups.find(x => x.id === cv.id);
@@ -1573,7 +1573,7 @@ ${attachedImagesNote}
                                     <div
                                         key={`g-${cv.id}`}
                                         onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
-                                        className={`bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30 ${cv.dissolved ? 'opacity-70' : ''}`}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.dissolved ? 'opacity-70' : ''}`}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -1615,7 +1615,7 @@ ${attachedImagesNote}
                                 <div
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
-                                    className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30"
+                                    className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]"
                                 >
                                     <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                     <div className="flex-1 min-w-0">
@@ -1637,9 +1637,9 @@ ${attachedImagesNote}
 
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
-                    <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+                    <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
                         {characters.map(c => (
-                            <div key={c.id} onClick={() => openPrivateChat(c.id)} className="bg-white p-3.5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-violet-50/30">
+                            <div key={c.id} onClick={() => openPrivateChat(c.id)} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
@@ -1647,7 +1647,7 @@ ${attachedImagesNote}
                                 </div>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); openCharacterSettings(c.id); }}
-                                    className="p-2 rounded-full text-slate-400 hover:text-violet-500 hover:bg-violet-50 transition-colors shrink-0"
+                                    className="p-2 rounded-full text-slate-400 hover:text-[#2b2933] hover:bg-[#f4f1ea] transition-colors shrink-0"
                                     title="角色设置"
                                 >
                                     <GearSix size={18} weight="bold" />
@@ -1668,31 +1668,31 @@ ${attachedImagesNote}
                 )}
 
                 {/* ── 底部导航：聊天 / 联系人 / 朋友圈 ── */}
-                <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-slate-200/60 pb-safe">
+                <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-dashed border-[#d9d4c8] pb-safe">
                     <div className="grid grid-cols-3">
-                        <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-violet-500' : 'text-slate-400'}`}>
+                        <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">聊天</span>
                         </button>
-                        <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-violet-500' : 'text-slate-400'}`}>
+                        <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <AddressBook size={22} weight={hubTab === 'contacts' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">联系人</span>
                         </button>
-                        <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-violet-500' : 'text-slate-400'}`}>
+                        <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">此刻</span>
                         </button>
                     </div>
                 </div>
 
-                <Modal isOpen={modalType === 'create'} title="创建群聊" onClose={() => setModalType('none')} footer={<button onClick={handleCreateGroup} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg shadow-violet-200">创建</button>}>
+                <Modal isOpen={modalType === 'create'} title="创建群聊" onClose={() => setModalType('none')} footer={<button onClick={handleCreateGroup} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">创建</button>}>
                     <div className="space-y-4">
-                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} placeholder="群聊名称" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-violet-500/20 transition-all" />
+                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} placeholder="群聊名称" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-400/20 transition-all" />
                         <div>
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">选择成员</label>
                             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
                                 {characters.map(c => (
-                                    <div key={c.id} onClick={() => toggleMemberSelection(c.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all cursor-pointer ${selectedMembers.has(c.id) ? 'border-violet-500 bg-violet-50 ring-1 ring-violet-500' : 'border-slate-100 bg-white hover:border-slate-300'}`}>
+                                    <div key={c.id} onClick={() => toggleMemberSelection(c.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all cursor-pointer ${selectedMembers.has(c.id) ? 'border-[#2b2933] bg-[#f4f1ea] ring-1 ring-[#2b2933]' : 'border-slate-100 bg-white hover:border-slate-300'}`}>
                                         <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
                                         <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{c.name}</span>
                                     </div>
@@ -1743,7 +1743,7 @@ ${attachedImagesNote}
                                             <button
                                                 key={id}
                                                 onClick={() => toggleAdminSelection(id)}
-                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempAdminIds.has(id) ? 'border-violet-500 bg-violet-50 text-violet-600 ring-1 ring-violet-500' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempAdminIds.has(id) ? 'border-[#2b2933] bg-[#f4f1ea] text-[#2b2933] ring-1 ring-[#2b2933]' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
                                             >
                                                 {tempAdminIds.has(id) ? '🛡 ' : ''}{c.name}
                                             </button>
@@ -1772,7 +1772,7 @@ ${attachedImagesNote}
                                         if (blockedByChar) setVerifyCharId(c.id);
                                         else openPrivateChat(c.id);
                                     }}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-violet-300 hover:bg-violet-50/50 active:scale-[0.98] transition-all"
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-slate-400 hover:bg-[#f7f4ee] active:scale-[0.98] transition-all"
                                 >
                                     <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${blockedByChar ? 'grayscale' : ''}`} />
                                     <span className="text-sm text-slate-700 font-medium truncate flex-1">{c.name}</span>
@@ -1877,7 +1877,7 @@ ${attachedImagesNote}
                         {canReroll && !isTyping && (
                             <button 
                                 onClick={handleReroll} 
-                                className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-violet-600 transition-colors"
+                                className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#2b2933] transition-colors"
                                 title="重新生成回复"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
@@ -1892,7 +1892,7 @@ ${attachedImagesNote}
                                 setTempMyNickname(activeGroup?.memberNicknames?.['user'] || '');
                                 setModalType('settings');
                             }}
-                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-violet-600 transition-all active:scale-90"
+                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#2b2933] transition-all active:scale-90"
                             title="群设置"
                         >
                             <GearSix size={20} weight="bold" />
@@ -1975,7 +1975,7 @@ ${attachedImagesNote}
                         </button>
 
                         {/* Input Field Container */}
-                        <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-xl flex items-end px-3 py-2 border border-slate-200 focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-100 transition-all">
+                        <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-xl flex items-end px-3 py-2 border border-slate-200 focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-200 transition-all">
                             <textarea 
                                 rows={1} 
                                 value={input} 
@@ -2013,7 +2013,7 @@ ${attachedImagesNote}
                                 }
                                 handleSendMessage(input);
                             }}
-                            className={`h-9 px-4 shrink-0 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all ${input.trim() ? 'bg-violet-500 text-white' : 'bg-violet-100 text-violet-500'}`}
+                            className={`h-9 px-4 shrink-0 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all ${input.trim() ? 'bg-[#2b2933] text-white' : 'bg-[#e7e2d8] text-[#6b6657]'}`}
                         >
                             发送
                         </button>
@@ -2052,7 +2052,7 @@ ${attachedImagesNote}
                                 value={emojiSearch}
                                 onChange={e => setEmojiSearch(e.target.value)}
                                 placeholder="按名字或描述搜索表情…"
-                                className="w-full px-3 py-1.5 text-xs rounded-full outline-none border bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-violet-300"
+                                className="w-full px-3 py-1.5 text-xs rounded-full outline-none border bg-white border-slate-200 text-slate-700 placeholder:text-slate-400 focus:border-slate-400"
                             />
                         </div>
                         <div className="flex-1 p-4 pt-2 overflow-y-auto no-scrollbar">
@@ -2075,11 +2075,11 @@ ${attachedImagesNote}
             {/* --- Modals --- */}
 
             {/* Group Settings Modal */}
-            <Modal isOpen={modalType === 'settings'} title="群组设置" onClose={() => setModalType('none')} footer={<button onClick={handleUpdateGroupInfo} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg shadow-violet-200">保存修改</button>}>
+            <Modal isOpen={modalType === 'settings'} title="群组设置" onClose={() => setModalType('none')} footer={<button onClick={handleUpdateGroupInfo} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">保存修改</button>}>
                 <div className="space-y-6">
                     {/* Header Info */}
                     <div className="flex justify-center">
-                        <div onClick={() => groupAvatarInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-violet-400">
+                        <div onClick={() => groupAvatarInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-slate-400">
                             {activeGroup?.avatar ? <img src={activeGroup.avatar} className="w-full h-full object-cover opacity-90 group-hover:opacity-100" /> : <span className="text-xs text-slate-400 font-bold">更换头像</span>}
                             <div className="absolute inset-0 bg-black/20 hidden group-hover:flex items-center justify-center text-white"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" /></svg></div>
                         </div>
@@ -2087,13 +2087,13 @@ ${attachedImagesNote}
                     </div>
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群名称</label>
-                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-violet-300 transition-all" />
+                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-slate-400 transition-all" />
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">修改后会在群里发系统通知，成员们都能"看到"群名变化。</p>
                     </div>
 
                     <div>
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">我的群名片</label>
-                        <input value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-violet-300 transition-all" />
+                        <input value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-slate-400 transition-all" />
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">你在本群显示的昵称，留空则用默认名字。成员也会根据心情或剧情改自己的群名片。</p>
                     </div>
 
@@ -2109,7 +2109,7 @@ ${attachedImagesNote}
                                     <div
                                         key={mid}
                                         onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setModalType('member-profile'); }}
-                                        className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-violet-300 cursor-pointer transition-all relative"
+                                        className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all relative"
                                     >
                                         <img src={c.avatar} className={`w-10 h-10 rounded-full object-cover ${muted ? 'grayscale opacity-60' : ''}`} />
                                         {muted && <SpeakerSlash size={12} weight="fill" className="absolute top-1.5 right-1.5 text-red-400" />}
@@ -2118,7 +2118,7 @@ ${attachedImagesNote}
                                 );
                             })}
                             {userCanManage(activeGroup) && !activeGroup?.dissolved && (
-                                <div onClick={() => setModalType('add-member')} className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-violet-300 cursor-pointer transition-all text-slate-300 hover:text-violet-400">
+                                <div onClick={() => setModalType('add-member')} className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-slate-400 cursor-pointer transition-all text-slate-300 hover:text-slate-500">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                                     <span className="text-[9px] font-medium">添加</span>
                                 </div>
@@ -2130,7 +2130,7 @@ ${attachedImagesNote}
                     {/* Context Limit */}
                     <div className="pt-2 border-t border-slate-100">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">AI 上下文条数 ({contextLimit})</label>
-                        <input type="range" min="20" max="5000" step="10" value={contextLimit} onChange={e => { const v = parseInt(e.target.value); setContextLimit(v); localStorage.setItem('groupchat_context_limit', String(v)); }} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-violet-500" />
+                        <input type="range" min="20" max="5000" step="10" value={contextLimit} onChange={e => { const v = parseInt(e.target.value); setContextLimit(v); localStorage.setItem('groupchat_context_limit', String(v)); }} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-[#2b2933]" />
                         <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>20 (省流)</span><span>5000 (超长记忆)</span></div>
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">控制每次触发AI导演时发送的群聊历史消息数量。越多上下文越丰富，但消耗更多token。</p>
                     </div>
@@ -2138,7 +2138,7 @@ ${attachedImagesNote}
                     {/* Private Chat Group Context Cap */}
                     <div className="pt-2 border-t border-slate-100">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">私聊里"近期群活动"取条数 ({tempPrivateContextCap})</label>
-                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => setTempPrivateContextCap(parseInt(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-violet-500" />
+                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => setTempPrivateContextCap(parseInt(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-[#2b2933]" />
                         <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>20 (省流)</span><span>500 (完整)</span></div>
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">本群成员在自己的私聊里，最多看到本群最近多少条消息作为"近期群活动"上下文。每个群独立配额，避免活跃群把安静群挤掉。</p>
                     </div>
@@ -2175,7 +2175,7 @@ ${attachedImagesNote}
                         <label className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-3 block">危险区域</label>
                         
                         <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => setPreserveContext(!preserveContext)}>
-                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-violet-500 border-violet-500' : 'bg-slate-100 border-slate-300'}`}>
+                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-[#2b2933] border-[#2b2933]' : 'bg-slate-100 border-slate-300'}`}>
                                  {preserveContext && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
                              </div>
                              <span className="text-xs text-slate-600">清空时保留最后10条记录 (维持语境)</span>
@@ -2266,7 +2266,7 @@ ${attachedImagesNote}
                             </div>
 
                             <div className="grid grid-cols-3 gap-2">
-                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openPrivateChat(member.id); }} className="py-3 bg-violet-50 text-violet-600 font-bold rounded-2xl border border-violet-100 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
+                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openPrivateChat(member.id); }} className="py-3 bg-[#f4f1ea] text-[#2b2933] font-bold rounded-2xl border border-[#e7e2d8] active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
                                     发消息
                                 </button>
@@ -2330,7 +2330,7 @@ ${attachedImagesNote}
                         return (
                             <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
                                 {candidates.map(c => (
-                                    <div key={c.id} onClick={() => handleAddMember(c.id)} className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-violet-300 cursor-pointer transition-all">
+                                    <div key={c.id} onClick={() => handleAddMember(c.id)} className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all">
                                         <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
                                         <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{c.name}</span>
                                     </div>
