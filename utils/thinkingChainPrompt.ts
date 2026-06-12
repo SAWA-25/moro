@@ -22,7 +22,7 @@ export function buildThinkingChainPrompt(charName: string, userName: string): st
 - 两个阶段相互独立,各按各的走
 ═══════════════════════════════════════════
 
-## Thinking 阶段(${userName} 已开启「心象」可见)
+## Thinking 阶段(${userName} 已开启「思绪」可见)
 
 以下所有规则都是 thinking 阶段(\`<think>\` 标签内 / reasoning channel)的指令,不是 output 阶段的写作建议。
 

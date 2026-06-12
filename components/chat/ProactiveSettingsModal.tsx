@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import Modal from '../os/Modal';
+import JournalSheet, { SealBtn, CandyToggle, StickerChip, LinedInput, NoteStrip } from './JournalSheet';
+import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile } from '../../types';
 
 interface ProactiveSettingsModalProps {
@@ -13,13 +14,13 @@ interface ProactiveSettingsModalProps {
 }
 
 const INTERVAL_OPTIONS = [
-    { label: '30 分钟', value: 30 },
+    { label: '半小时', value: 30 },
     { label: '1 小时', value: 60 },
     { label: '2 小时', value: 120 },
     { label: '4 小时', value: 240 },
     { label: '8 小时', value: 480 },
     { label: '12 小时', value: 720 },
-    { label: '24 小时', value: 1440 },
+    { label: '一整天', value: 1440 },
 ];
 
 const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
@@ -72,168 +73,132 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     };
 
     return (
-        <Modal isOpen={isOpen} title="主动消息" onClose={onClose} footer={
-            <>
-                <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">
-                    取消
-                </button>
-                {isProactiveActive ? (
-                    <button onClick={handleStop} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg">
-                        停止
-                    </button>
-                ) : null}
-                <button onClick={handleSave} className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg">
-                    {enabled ? '启动' : '保存'}
-                </button>
-            </>
-        }>
-            <div className="space-y-5">
-                {/* Description */}
-                <p className="text-xs text-slate-400 leading-relaxed">
-                    开启后，{char.name} 会按照设定的间隔主动给你发消息，就像真人一样随手发来一条。
-                </p>
-
-                {/* Enable Toggle */}
-                <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-slate-700">启用主动消息</span>
-                    <button
-                        onClick={() => setEnabled(!enabled)}
-                        className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
-                    >
-                        <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
-                    </button>
+        <JournalSheet
+            open={isOpen} title="悄悄来信" en="Surprise Mail"
+            sub={`让 ${char.name} 隔三差五先想起你`}
+            tape="lavender" pattern="heart" paper="dot"
+            onClose={onClose}
+            footer={<>
+                <SealBtn kind="ghost" onClick={onClose}>先不安排</SealBtn>
+                {isProactiveActive && <SealBtn kind="berry" onClick={handleStop}>叫停信差</SealBtn>}
+                <SealBtn kind="rose" onClick={handleSave}>{enabled ? '派出信差' : '记下安排'}</SealBtn>
+            </>}
+        >
+            <div className="space-y-4">
+                {/* 总开关 */}
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>✉</span>
+                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>开启悄悄来信</span>
+                        </div>
+                        <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                            开了之后，{char.name} 会按下面的安排自己先发消息来——就像真人忽然想起你，随手敲来一句。
+                        </p>
+                    </div>
+                    <CandyToggle on={enabled} onToggle={() => setEnabled(!enabled)} candy="#bfa3dd" />
                 </div>
 
-                {/* Status indicator */}
+                {/* 进行中提示 */}
                 {isProactiveActive && (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-violet-50 rounded-xl border border-violet-100">
-                        <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse" />
-                        <span className="text-xs text-violet-600 font-medium">主动消息进行中</span>
+                    <div className="flex items-center gap-2 rounded-[8px] px-3 py-2" style={{ background: 'rgba(240,250,245,0.9)', border: '1px dashed #bfe1cf' }}>
+                        <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: '#5ca57f' }} />
+                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>信差已经在路上，TA 会挑时候来信</span>
                     </div>
                 )}
 
-                {/* Interval Selection */}
                 {enabled && (
                     <>
-                        <div>
-                            <label className="text-sm font-bold text-slate-700 block mb-2">触发方式</label>
-                            <div className="grid grid-cols-2 gap-2 mb-3">
-                                <button
-                                    onClick={() => setRandomMode(false)}
-                                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${!randomMode
-                                        ? 'bg-violet-500 text-white shadow-md'
-                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                    }`}
-                                >
-                                    固定间隔
-                                </button>
-                                <button
-                                    onClick={() => setRandomMode(true)}
-                                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${randomMode
-                                        ? 'bg-violet-500 text-white shadow-md'
-                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                    }`}
-                                >
-                                    随机时间
-                                </button>
+                        {/* 触发方式 */}
+                        <div className="pt-1">
+                            <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>什么时候来信</div>
+                            <div className="flex gap-2 mb-3">
+                                <StickerChip seed="pm-fixed" active={!randomMode} candy="#d6c8e8" onClick={() => setRandomMode(false)}>掐着点来</StickerChip>
+                                <StickerChip seed="pm-random" active={randomMode} candy="#d6c8e8" onClick={() => setRandomMode(true)}>凭 TA 心情</StickerChip>
                             </div>
                             {randomMode ? (
-                                <p className="text-[11px] text-slate-400 leading-relaxed bg-violet-50/60 rounded-xl px-3 py-2 border border-violet-100">
-                                    系统会在后台随机安排时机（不向你透露具体时间）：当你有一阵子没回复消息时，
-                                    {char.name} 会按照自己的性格决定要不要主动找你、说什么——完全交给角色人设。
-                                </p>
+                                <NoteStrip>
+                                    时机交给 TA：系统会在后台悄悄安排（不告诉你具体时间）。当你有一阵子没回消息，
+                                    {char.name} 会照着自己的性子决定要不要先开口、说点什么——全凭人设来。
+                                </NoteStrip>
                             ) : (
                                 <>
-                                    <label className="text-sm font-bold text-slate-700 block mb-2">发送间隔</label>
-                                    <div className="grid grid-cols-3 gap-2">
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>隔多久寄一封</div>
+                                    <div className="flex flex-wrap gap-2">
                                         {INTERVAL_OPTIONS.map(opt => (
-                                            <button
-                                                key={opt.value}
+                                            <StickerChip
+                                                key={opt.value} seed={`iv-${opt.value}`}
+                                                active={interval === opt.value}
                                                 onClick={() => setInterval_(opt.value)}
-                                                className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${interval === opt.value
-                                                    ? 'bg-violet-500 text-white shadow-md'
-                                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                                                }`}
-                                            >
-                                                {opt.label}
-                                            </button>
+                                            >{opt.label}</StickerChip>
                                         ))}
                                     </div>
-                                    {/* 自定义时间：任意分钟数（≥5），与预设档互斥高亮 */}
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <span className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${!INTERVAL_OPTIONS.some(o => o.value === interval)
-                                            ? 'bg-violet-500 text-white shadow-md'
-                                            : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                            自定义
-                                        </span>
+                                    {/* 自定义分钟数：与预设档互斥高亮 */}
+                                    <div className="flex items-center gap-2 mt-2.5">
+                                        <StickerChip
+                                            seed="iv-custom"
+                                            active={!INTERVAL_OPTIONS.some(o => o.value === interval)}
+                                            onClick={() => { /* 输入框改值即生效 */ }}
+                                        >自己定</StickerChip>
                                         <input
                                             type="number"
                                             min={5}
                                             value={interval}
                                             onChange={e => setInterval_(Math.max(5, parseInt(e.target.value) || 5))}
-                                            className="w-24 px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
+                                            className="w-16 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0]"
+                                            style={{ color: PAPER_TONES.ink, caretColor: '#f29db0' }}
                                         />
-                                        <span className="text-xs text-slate-400">分钟（最少 5 分钟）</span>
+                                        <span className="text-[10px]" style={{ color: PAPER_TONES.inkSoft }}>分钟一封（最少 5 分钟）</span>
                                     </div>
                                 </>
                             )}
                         </div>
 
-                        {/* Secondary API Toggle */}
-                        <div className="pt-2 border-t border-slate-100">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="text-sm font-bold text-slate-700">使用副 API</span>
-                                <button
-                                    onClick={() => { setUseSecondaryApi(!useSecondaryApi); setShowApiSection(!useSecondaryApi); }}
-                                    className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
-                                >
-                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${useSecondaryApi ? 'translate-x-5' : 'translate-x-0'}`} />
-                                </button>
+                        {/* 副 API */}
+                        <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                            <div className="flex items-start justify-between gap-3 mb-1">
+                                <div className="min-w-0">
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>走另一条邮路（副 API）</span>
+                                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                        来信单独走一条 API，不占主线路的额度；不开就还走主 API。
+                                    </p>
+                                </div>
+                                <CandyToggle
+                                    on={useSecondaryApi}
+                                    onToggle={() => { setUseSecondaryApi(!useSecondaryApi); setShowApiSection(!useSecondaryApi); }}
+                                />
                             </div>
-                            <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
-                                使用单独的 API 发送主动消息，避免消耗主 API 额度。不开启则使用主 API。
-                            </p>
 
                             {showApiSection && (
-                                <div className="space-y-3 bg-slate-50 rounded-2xl p-3">
-                                    <div>
-                                        <label className="text-xs text-slate-500 font-medium block mb-1">API URL</label>
-                                        <input
-                                            type="text"
-                                            value={secUrl}
-                                            onChange={e => setSecUrl(e.target.value)}
-                                            placeholder="https://api.example.com/v1"
-                                            className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500 font-medium block mb-1">API Key</label>
-                                        <input
-                                            type="password"
-                                            value={secKey}
-                                            onChange={e => setSecKey(e.target.value)}
-                                            placeholder="sk-..."
-                                            className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500 font-medium block mb-1">Model</label>
-                                        <input
-                                            type="text"
-                                            value={secModel}
-                                            onChange={e => setSecModel(e.target.value)}
-                                            placeholder="gpt-4o-mini"
-                                            className="w-full px-3 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
-                                        />
-                                    </div>
+                                <div className="space-y-3 rounded-[8px] p-3 mt-2" style={{ background: 'rgba(255,253,250,0.7)', border: '1px dashed #ddc9d3' }}>
+                                    <LinedInput
+                                        tag="POST ROAD · URL"
+                                        type="text"
+                                        value={secUrl}
+                                        onChange={e => setSecUrl(e.target.value)}
+                                        placeholder="https://api.example.com/v1"
+                                    />
+                                    <LinedInput
+                                        tag="KEY"
+                                        type="password"
+                                        value={secKey}
+                                        onChange={e => setSecKey(e.target.value)}
+                                        placeholder="sk-..."
+                                    />
+                                    <LinedInput
+                                        tag="MODEL"
+                                        type="text"
+                                        value={secModel}
+                                        onChange={e => setSecModel(e.target.value)}
+                                        placeholder="gpt-4o-mini"
+                                    />
                                 </div>
                             )}
                         </div>
                     </>
                 )}
             </div>
-        </Modal>
+        </JournalSheet>
     );
 };
 
