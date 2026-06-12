@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useOS, DEFAULT_WALLPAPER } from '../context/OSContext';
-import { OSTheme, DesktopDecoration, AppearancePreset, Toast } from '../types';
+import { OSTheme, DesktopDecoration, DesktopWidgetPref, AppearancePreset, Toast } from '../types';
 import { INSTALLED_APPS, Icons } from '../constants';
 import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
@@ -711,6 +711,305 @@ const CustomCssStudio: React.FC<{
     );
 };
 
+// ── 「桌面与锁屏」编辑器 ──────────────────────────────────────────────────────
+// 桌面小组件（显示/删除、网格尺寸横竖样式、自定义 CSS）+ 灵动岛美化 + 锁屏美化（壁纸/时钟字体/通知卡/解锁动画/CSS）
+
+const DESKTOP_WIDGET_DEFS: { id: string; label: string; defaultW: number; defaultH: number; desc: string }[] = [
+    { id: 'clock', label: '时钟日期卡', defaultW: 4, defaultH: 6, desc: '大号日期 + 时间 + 问候语' },
+    { id: 'character', label: '聊天预览卡', defaultW: 4, defaultH: 2, desc: '最近消息 + 未读角标' },
+    { id: 'schedule', label: '日程卡', defaultW: 4, defaultH: 5, desc: '角色今日日程' },
+    { id: 'music', label: '音乐卡', defaultW: 2, defaultH: 4, desc: '正在播放' },
+    { id: 'image', label: '方图卡', defaultW: 2, defaultH: 4, desc: '自定义图片格' },
+];
+
+const WIDGET_SIZE_PRESETS: { label: string; w: number; h: number }[] = [
+    { label: '小方块 2×4', w: 2, h: 4 },
+    { label: '横版 4×3', w: 4, h: 3 },
+    { label: '竖版 2×6', w: 2, h: 6 },
+    { label: '大卡 4×6', w: 4, h: 6 },
+];
+
+const SmallChip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+    <button
+        onClick={onClick}
+        className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold transition-all ${active ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+    >{children}</button>
+);
+
+const DesktopLockEditor: React.FC<{
+    theme: OSTheme;
+    updateTheme: (u: Partial<OSTheme>) => void;
+    addToast: (msg: string, type: Toast['type']) => void;
+}> = ({ theme, updateTheme, addToast }) => {
+    const prefs = theme.desktopWidgetPrefs || {};
+    const island = theme.dynamicIslandStyle || {};
+    const lock = theme.lockScreenStyle || {};
+    const lockWallpaperRef = useRef<HTMLInputElement>(null);
+    const [cssOpenId, setCssOpenId] = useState<string | null>(null);
+
+    const setPref = (id: string, patch: Partial<DesktopWidgetPref>) => {
+        const next: DesktopWidgetPref = { ...(prefs[id] || {}), ...patch };
+        if (!next.hidden) delete next.hidden;
+        if (!next.w) delete next.w;
+        if (!next.h) delete next.h;
+        if (!next.customCss?.trim()) delete next.customCss;
+        const all = { ...prefs };
+        if (Object.keys(next).length === 0) delete all[id];
+        else all[id] = next;
+        updateTheme({ desktopWidgetPrefs: Object.keys(all).length ? all : undefined });
+    };
+
+    const setIsland = (patch: Partial<NonNullable<OSTheme['dynamicIslandStyle']>>) => {
+        const next = { ...island, ...patch };
+        (Object.keys(next) as (keyof typeof next)[]).forEach(k => {
+            const v = next[k];
+            if (v === undefined || v === '' || (k === 'customCss' && !String(v).trim())) delete next[k];
+        });
+        updateTheme({ dynamicIslandStyle: Object.keys(next).length ? next : undefined });
+    };
+
+    const setLock = (patch: Partial<NonNullable<OSTheme['lockScreenStyle']>>) => {
+        const next = { ...lock, ...patch };
+        (Object.keys(next) as (keyof typeof next)[]).forEach(k => {
+            const v = next[k];
+            if (v === undefined || v === '' || (k === 'customCss' && !String(v).trim())) delete next[k];
+        });
+        updateTheme({ lockScreenStyle: Object.keys(next).length ? next : undefined });
+    };
+
+    const handleLockWallpaperUpload = async (file: File) => {
+        try {
+            addToast('正在处理锁屏壁纸…', 'info');
+            const dataUrl = await processImage(file, { maxWidth: 1600, quality: 0.92 });
+            setLock({ wallpaper: dataUrl });
+            addToast('锁屏壁纸已更新', 'success');
+        } catch (e: any) {
+            addToast(e.message, 'error');
+        }
+    };
+
+    return (
+        <>
+            {/* 01 桌面小组件 */}
+            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">桌面小组件</h2>
+                <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">
+                    控制每个小组件的显示 / 删除、网格尺寸（横版 / 竖版 / 方形随意改），还能注入自定义 CSS。
+                    位置直接在桌面长按拖拽调整；小组件图（贴纸图槽位）在「系统主题」页设置。
+                </p>
+                <div className="space-y-4">
+                    {DESKTOP_WIDGET_DEFS.map(def => {
+                        const p = prefs[def.id] || {};
+                        const visible = !p.hidden;
+                        const w = p.w || def.defaultW;
+                        const h = p.h || def.defaultH;
+                        const isDefaultSize = !p.w && !p.h;
+                        return (
+                            <div key={def.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-[13px] font-bold text-slate-700">{def.label}</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">{def.desc} · 当前 {w}×{h}</div>
+                                    </div>
+                                    {/* 显示 / 删除开关 */}
+                                    <button
+                                        onClick={() => setPref(def.id, { hidden: visible ? true : undefined })}
+                                        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${visible ? 'bg-slate-900' : 'bg-slate-200'}`}
+                                        role="switch" aria-checked={visible}
+                                    >
+                                        <div className={`w-5 h-5 bg-white rounded-full shadow-[0_2px_5px_rgba(30,28,40,0.3)] transition-transform duration-300 ${visible ? 'translate-x-[18px]' : ''}`} />
+                                    </button>
+                                </div>
+                                {visible && (
+                                    <>
+                                        <div className="flex flex-wrap gap-1.5 mt-3">
+                                            <SmallChip active={isDefaultSize} onClick={() => setPref(def.id, { w: undefined, h: undefined })}>默认 {def.defaultW}×{def.defaultH}</SmallChip>
+                                            {WIDGET_SIZE_PRESETS.map(s => (
+                                                <SmallChip
+                                                    key={s.label}
+                                                    active={!isDefaultSize && w === s.w && h === s.h}
+                                                    onClick={() => setPref(def.id, { w: s.w, h: s.h })}
+                                                >{s.label}</SmallChip>
+                                            ))}
+                                        </div>
+                                        {/* 微调：宽（1-4 列）/ 高（1-12 行） */}
+                                        <div className="flex items-center gap-4 mt-3">
+                                            {([['宽', 'w', w, 4], ['高', 'h', h, 12]] as const).map(([label, key, val, max]) => (
+                                                <div key={key} className="flex items-center gap-1.5">
+                                                    <span className="text-[10px] font-bold text-slate-400">{label}</span>
+                                                    <button onClick={() => setPref(def.id, { [key]: Math.max(1, val - 1) } as any)} className="w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-sm leading-none active:scale-90">−</button>
+                                                    <span className="text-[12px] font-mono font-bold text-slate-700 w-4 text-center">{val}</span>
+                                                    <button onClick={() => setPref(def.id, { [key]: Math.min(max, val + 1) } as any)} className="w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-sm leading-none active:scale-90">＋</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* 自定义 CSS */}
+                                        <button
+                                            onClick={() => setCssOpenId(cssOpenId === def.id ? null : def.id)}
+                                            className="mt-3 text-[11px] font-bold text-slate-500 underline decoration-dotted underline-offset-2"
+                                        >{cssOpenId === def.id ? '收起自定义 CSS' : '自定义 CSS…'}</button>
+                                        {cssOpenId === def.id && (
+                                            <div className="mt-2">
+                                                <textarea
+                                                    value={p.customCss || ''}
+                                                    onChange={e => setPref(def.id, { customCss: e.target.value })}
+                                                    placeholder={`.moro-widget-${def.id} { /* 你的样式 */ }\n.moro-widget-${def.id} .moro-clock-card { border-radius: 12px; }`}
+                                                    rows={5}
+                                                    spellCheck={false}
+                                                    className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                                                />
+                                                <p className="text-[10px] text-slate-400 mt-1">钩子类：<code className="font-mono">.moro-widget-{def.id}</code>（小组件所在网格容器）。</p>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </section>
+
+            {/* 02 灵动岛 */}
+            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">灵动岛</h2>
+                <p className="text-[10px] text-slate-400 mb-4">悬浮在状态栏中央的通知胶囊：换底色 / 文字色 / 圆角，或直接写 CSS。</p>
+                <div className="space-y-4">
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">背景（支持渐变，如 linear-gradient(...)）</div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="color"
+                                value={/^#[0-9a-fA-F]{6}$/.test(island.background || '') ? island.background! : '#0b0b12'}
+                                onChange={e => setIsland({ background: e.target.value })}
+                                className="w-9 h-9 rounded-xl border border-slate-200 bg-white p-1 shrink-0"
+                            />
+                            <input
+                                value={island.background || ''}
+                                onChange={e => setIsland({ background: e.target.value || undefined })}
+                                placeholder="#0b0b12（默认墨黑）"
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-mono outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">文字颜色</div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="color"
+                                value={/^#[0-9a-fA-F]{6}$/.test(island.textColor || '') ? island.textColor! : '#ffffff'}
+                                onChange={e => setIsland({ textColor: e.target.value })}
+                                className="w-9 h-9 rounded-xl border border-slate-200 bg-white p-1 shrink-0"
+                            />
+                            <input
+                                value={island.textColor || ''}
+                                onChange={e => setIsland({ textColor: e.target.value || undefined })}
+                                placeholder="#ffffff（默认白）"
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-mono outline-none"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                            <span>圆角</span><span className="font-mono">{typeof island.radius === 'number' ? `${island.radius}px` : '胶囊全圆'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="range" min={0} max={24}
+                                value={typeof island.radius === 'number' ? island.radius : 24}
+                                onChange={e => setIsland({ radius: parseInt(e.target.value) >= 24 ? undefined : parseInt(e.target.value) })}
+                                className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-800"
+                            />
+                            <SmallChip active={typeof island.radius !== 'number'} onClick={() => setIsland({ radius: undefined })}>全圆</SmallChip>
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">自定义 CSS（钩子类 .moro-dynamic-island）</div>
+                        <textarea
+                            value={island.customCss || ''}
+                            onChange={e => setIsland({ customCss: e.target.value })}
+                            placeholder={`.moro-dynamic-island {\n  border: 1px solid rgba(255,255,255,0.25);\n}`}
+                            rows={4}
+                            spellCheck={false}
+                            className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                        />
+                    </div>
+                    <button
+                        onClick={() => { updateTheme({ dynamicIslandStyle: undefined }); addToast('灵动岛已恢复默认', 'success'); }}
+                        className="text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2"
+                    >恢复默认</button>
+                </div>
+            </section>
+
+            {/* 03 锁屏 */}
+            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">锁屏</h2>
+                <p className="text-[10px] text-slate-400 mb-4">专属壁纸 / 时钟字体 / 消息通知卡风格 / 解锁动画，全部即时生效。</p>
+                <div className="space-y-5">
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">锁屏专属壁纸（缺省沿用桌面壁纸）</div>
+                        <div
+                            onClick={() => lockWallpaperRef.current?.click()}
+                            className="aspect-[2/1] bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-slate-400 overflow-hidden relative"
+                        >
+                            {lock.wallpaper ? (
+                                <img src={lock.wallpaper} className="w-full h-full object-cover" alt="" />
+                            ) : (
+                                <span className="text-[10px] text-slate-300">点击上传锁屏壁纸</span>
+                            )}
+                        </div>
+                        <input
+                            type="file" accept="image/*" ref={lockWallpaperRef} className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) void handleLockWallpaperUpload(f); e.target.value = ''; }}
+                        />
+                        {lock.wallpaper && (
+                            <button onClick={() => setLock({ wallpaper: undefined })} className="mt-1.5 text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2">清除，沿用桌面壁纸</button>
+                        )}
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">时钟字体</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {([['serif', '衬线斜体'], ['sans', '无衬线'], ['mono', '等宽'], ['hand', '手写']] as const).map(([v, label]) => (
+                                <SmallChip key={v} active={(lock.clockFont || 'serif') === v} onClick={() => setLock({ clockFont: v === 'serif' ? undefined : v })}>{label}</SmallChip>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">消息通知卡风格</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {([['glass', '玻璃拟态'], ['paper', '纸面手帐'], ['ink', '墨色']] as const).map(([v, label]) => (
+                                <SmallChip key={v} active={(lock.notifCardStyle || 'glass') === v} onClick={() => setLock({ notifCardStyle: v === 'glass' ? undefined : v })}>{label}</SmallChip>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">解锁动画</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {([['fade', '淡出'], ['slide', '上滑'], ['zoom', '放大'], ['none', '无']] as const).map(([v, label]) => (
+                                <SmallChip key={v} active={(lock.unlockAnimation || 'fade') === v} onClick={() => setLock({ unlockAnimation: v === 'fade' ? undefined : v })}>{label}</SmallChip>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">自定义 CSS（钩子类 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif）</div>
+                        <textarea
+                            value={lock.customCss || ''}
+                            onChange={e => setLock({ customCss: e.target.value })}
+                            placeholder={`.moro-lock-notif {\n  border-radius: 8px;\n}`}
+                            rows={4}
+                            spellCheck={false}
+                            className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                        />
+                    </div>
+                    <button
+                        onClick={() => { updateTheme({ lockScreenStyle: undefined }); addToast('锁屏样式已恢复默认', 'success'); }}
+                        className="text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2"
+                    >恢复默认</button>
+                </div>
+            </section>
+        </>
+    );
+};
+
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter } = useOS();
   // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
@@ -723,7 +1022,7 @@ const Appearance: React.FC = () => {
     });
     addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
   };
-  const [activeTab, setActiveTab] = useState<'theme' | 'icons' | 'presets' | 'chat' | 'css'>('theme');
+  const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'>('theme');
   // 气泡工坊全屏编辑器：原独立 tab 已并入「聊天界面」页，从那里的入口卡打开
   const [showBubbleWorkshop, setShowBubbleWorkshop] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -920,8 +1219,9 @@ const Appearance: React.FC = () => {
       return <ThemeMaker embedded onRequestClose={() => { setShowBubbleWorkshop(false); setActiveTab('chat'); }} />;
   }
 
-  const TABS: { id: 'theme' | 'icons' | 'presets' | 'chat' | 'css'; label: string }[] = [
+  const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'; label: string }[] = [
       { id: 'theme', label: '系统主题' },
+      { id: 'desktop', label: '桌面与锁屏' },
       { id: 'chat', label: '聊天界面' },
       { id: 'css', label: '自定义 CSS' },
       { id: 'icons', label: '应用图标' },
@@ -1510,6 +1810,8 @@ const Appearance: React.FC = () => {
                 addToast={addToast}
                 currentTheme={theme}
             />
+        ) : activeTab === 'desktop' ? (
+            <DesktopLockEditor theme={theme} updateTheme={updateTheme} addToast={addToast} />
         ) : activeTab === 'chat' ? (
             <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenBubbleWorkshop={() => setShowBubbleWorkshop(true)} />
         ) : activeTab === 'css' ? (

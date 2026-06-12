@@ -454,10 +454,14 @@ const Launcher: React.FC = () => {
     return ordered;
   }, [devDebugVisible, legacyAppOrder]);
 
-  // 桌面项全集（含尺寸）：固定五个组件 + 外观里设置过的小组件图 + 全部非 dock App
+  // 桌面项全集（含尺寸）：固定五个组件 + 外观里设置过的小组件图 + 全部非 dock App。
+  // theme.desktopWidgetPrefs（主题 → 桌面小组件）可隐藏组件、覆盖网格尺寸（横版/竖版/方形）。
   const deskItems = useMemo(() => {
     const lw = theme.launcherWidgets || {};
-    const widgetItems: DeskItem[] = [
+    const prefs = theme.desktopWidgetPrefs || {};
+    const clampW = (n: number) => Math.max(1, Math.min(PAGE_COLS, Math.round(n)));
+    const clampH = (n: number) => Math.max(1, Math.min(PAGE_ROWS, Math.round(n)));
+    const widgetItems: DeskItem[] = ([
         { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 6 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
         { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
@@ -466,7 +470,17 @@ const Launcher: React.FC = () => {
         ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
         ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
         ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
-    ];
+    ] as DeskItem[])
+        .filter(it => !prefs[it.id]?.hidden)
+        .map(it => {
+            const p = prefs[it.id];
+            if (!p) return it;
+            return {
+                ...it,
+                w: p.w ? clampW(p.w) : it.w,
+                h: p.h ? clampH(p.h) : it.h,
+            };
+        });
     const appItems: DeskItem[] = gridApps.map(a => ({ key: `app:${a.id}`, kind: 'app', id: a.id, w: 1, h: 2 }));
     const byKey = new Map<string, DeskItem>();
     for (const it of [...widgetItems, ...appItems]) byKey.set(it.key, it);
@@ -484,7 +498,13 @@ const Launcher: React.FC = () => {
     }
     for (const it of byKey.values()) ordered.push(it);
     return ordered;
-  }, [gridApps, theme.launcherWidgets, deskOrder]);
+  }, [gridApps, theme.launcherWidgets, theme.desktopWidgetPrefs, deskOrder]);
+
+  // 小组件自定义 CSS（主题 → 桌面小组件）：拼接注入，配合 .moro-widget-<id> 钩子类生效
+  const widgetCustomCss = useMemo(() => {
+      const prefs = theme.desktopWidgetPrefs || {};
+      return Object.values(prefs).map(p => p?.customCss || '').filter(Boolean).join('\n');
+  }, [theme.desktopWidgetPrefs]);
 
   useEffect(() => { deskItemsRef.current = deskItems; }, [deskItems]);
   useEffect(() => { editModeRef.current = editMode; }, [editMode]);
@@ -805,6 +825,9 @@ const Launcher: React.FC = () => {
   return (
     <div className="h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none">
 
+      {/* 小组件自定义 CSS（主题 → 桌面小组件，.moro-widget-* 钩子类） */}
+      {widgetCustomCss && <style>{widgetCustomCss}</style>}
+
       {/* 编辑模式：项目抖动动画 + 「完成」按钮 */}
       {editMode && (
         <>
@@ -905,7 +928,7 @@ const Launcher: React.FC = () => {
                           <div
                               key={item.key}
                               data-desk-item={item.key}
-                              className={`relative min-w-0 min-h-0 ${editMode ? 'animate-icon-jiggle' : ''} ${draggingKey === item.key ? 'opacity-30' : ''}`}
+                              className={`relative min-w-0 min-h-0 ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode ? 'animate-icon-jiggle' : ''} ${draggingKey === item.key ? 'opacity-30' : ''}`}
                               style={{
                                   gridColumn: `${col + 1} / span ${item.w}`,
                                   gridRow: `${row + 1} / span ${item.h}`,

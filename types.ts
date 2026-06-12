@@ -270,6 +270,51 @@ export interface OSTheme {
    *  moro-character-card / moro-app-tile / moro-dock / moro-status-bar / moro-lock-screen 等）做全局美化。
    *  在「主题 → 自定义 CSS」编辑，实时生效。 */
   globalCustomCss?: string;
+  /** 桌面小组件自定义（key = widget id：clock / character / schedule / music / image / imgtl / imgtr / imgwide）。
+   *  在「主题 → 桌面小组件」编辑：隐藏（删除）、改网格尺寸（横版/竖版/方形）、注入小组件自定义 CSS。 */
+  desktopWidgetPrefs?: Record<string, DesktopWidgetPref>;
+  /** 灵动岛样式自定义（背景 / 文字色 / 圆角 / 自定义 CSS），在「主题 → 灵动岛」编辑。 */
+  dynamicIslandStyle?: DynamicIslandStyle;
+  /** 锁屏样式自定义（专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS），在「主题 → 锁屏」编辑。 */
+  lockScreenStyle?: LockScreenStyle;
+}
+
+/** 单个桌面小组件的自定义项 */
+export interface DesktopWidgetPref {
+  /** 从桌面移除（不渲染、不占格） */
+  hidden?: boolean;
+  /** 网格宽度覆盖（1-4 列）。与 h 搭配实现横版 / 竖版 / 方形 */
+  w?: number;
+  /** 网格高度覆盖（1-12 行） */
+  h?: number;
+  /** 注入桌面的原生 CSS，配合 .moro-widget-<id> 钩子类（如 .moro-widget-clock）自定义样式 */
+  customCss?: string;
+}
+
+/** 灵动岛样式自定义 */
+export interface DynamicIslandStyle {
+  /** 胶囊背景（CSS color / gradient），默认 #0b0b12 */
+  background?: string;
+  /** 文字颜色，默认白 */
+  textColor?: string;
+  /** 圆角 px。缺省为全圆胶囊 */
+  radius?: number;
+  /** 注入的原生 CSS（配合 .moro-dynamic-island 钩子类） */
+  customCss?: string;
+}
+
+/** 锁屏样式自定义 */
+export interface LockScreenStyle {
+  /** 锁屏专属壁纸（缺省沿用桌面壁纸） */
+  wallpaper?: string;
+  /** 时钟字体风格 */
+  clockFont?: 'serif' | 'sans' | 'mono' | 'hand';
+  /** 消息通知卡风格：玻璃拟态 / 纸面手帐 / 墨色 */
+  notifCardStyle?: 'glass' | 'paper' | 'ink';
+  /** 解锁进入桌面的过渡动画 */
+  unlockAnimation?: 'slide' | 'fade' | 'zoom' | 'none';
+  /** 注入的原生 CSS（配合 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif 钩子类） */
+  customCss?: string;
 }
 
 export interface AppearancePreset {
