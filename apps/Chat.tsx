@@ -28,6 +28,8 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
+import DraftSheet, { DR, PressBtn, FieldInput, FieldArea, NoteLine } from '../components/chat/DraftSheet';
+import { PhoneSlash, Crosshair } from '@phosphor-icons/react';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
@@ -2756,84 +2758,122 @@ ${recent || '（你们还没怎么聊过）'}
 
              {/* 语音通话拨号中覆盖层：呼叫 → 角色决策 → 接通跳电话 App / 未接听 */}
              {voiceCallPhase !== 'none' && char && (
-                <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-slate-900/95 backdrop-blur-md animate-fade-in">
-                    <div className="relative mb-6">
+                <div className="fixed inset-0 z-[120] flex flex-col items-center justify-center animate-fade-in" style={{ background: '#0d1733' }}>
+                    <div className="font-mono text-[9px] font-bold tracking-[0.4em] uppercase mb-9" style={{ color: voiceCallPhase === 'dialing' ? '#7d93d9' : '#54648a' }}>
+                        {voiceCallPhase === 'dialing' ? 'SIGNAL · OUTBOUND' : 'SIGNAL · NO REPLY'}
+                    </div>
+                    <div className="relative mb-7">
                         {voiceCallPhase === 'dialing' && (
                             <>
-                                <span className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" />
-                                <span className="absolute -inset-3 rounded-full border border-emerald-300/20 animate-pulse" />
+                                <span className="absolute -inset-2 rounded-[22px] border-2 animate-ping" style={{ borderColor: 'rgba(125,147,217,0.5)' }} />
+                                <span className="absolute -inset-5 rounded-[26px] border animate-ping" style={{ borderColor: 'rgba(125,147,217,0.3)', animationDelay: '0.4s' }} />
+                                <span className="absolute -inset-8 rounded-[30px] border animate-ping" style={{ borderColor: 'rgba(125,147,217,0.15)', animationDelay: '0.8s' }} />
                             </>
                         )}
-                        <img src={char.avatar} className="relative w-24 h-24 rounded-full object-cover ring-4 ring-white/15 shadow-2xl" alt={char.name} />
+                        <img src={char.avatar} className="relative w-24 h-24 rounded-[18px] object-cover border-2" style={{ borderColor: 'rgba(232,237,251,0.3)' }} alt={char.name} />
                     </div>
-                    <div className="text-white text-xl font-bold mb-1.5">{char.name}</div>
-                    <div className="text-white/60 text-sm mb-12">
-                        {voiceCallPhase === 'dialing' ? '正在呼叫…' : '对方未接听'}
+                    <div className="text-xl font-bold mb-1.5" style={{ color: '#f2f5fa' }}>{char.name}</div>
+                    <div className="text-[13px] mb-12" style={{ color: 'rgba(242,245,250,0.55)' }}>
+                        {voiceCallPhase === 'dialing' ? '线路已经搭好，等 TA 拿起来…' : 'TA 这次没接，先放下吧'}
                     </div>
                     {voiceCallPhase === 'dialing' && (
                         <button
                             onClick={() => { void cancelVoiceCall(); }}
-                            className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                            aria-label="取消呼叫"
+                            className="w-16 h-16 rounded-[16px] flex items-center justify-center active:translate-y-[1px] transition-transform"
+                            style={{ background: DR.red, color: '#fff', border: `1px solid ${DR.red}`, borderBottomWidth: 3, borderBottomColor: '#a93423' }}
+                            aria-label="挂断这通呼叫"
                         >
-                            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style={{ transform: 'rotate(135deg)' }}><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                            <PhoneSlash className="w-7 h-7" weight="fill" />
                         </button>
                     )}
                 </div>
              )}
 
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
-             <Modal
-                isOpen={showSystemCmdModal} title="幕后指令" onClose={() => setShowSystemCmdModal(false)}
-                footer={<><button onClick={() => setShowSystemCmdModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()} className={`flex-1 py-3 font-bold rounded-2xl text-white ${systemCmdInput.trim() ? 'bg-slate-900' : 'bg-slate-300'}`}>下达指令</button></>}
+             <DraftSheet
+                open={showSystemCmdModal} code="FN-11" title="导演席" sub="越过台词本，直接给这场戏下调度"
+                onClose={() => setShowSystemCmdModal(false)}
+                footer={<>
+                    <PressBtn kind="ghost" onClick={() => setShowSystemCmdModal(false)}>先不说</PressBtn>
+                    <PressBtn kind="dark" onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()}>下达调度</PressBtn>
+                </>}
              >
                 <div className="space-y-3">
-                    <div className="rounded-2xl bg-slate-900 px-4 py-3">
-                        <div className="text-[9px] font-bold tracking-widest text-slate-400 mb-1.5">⌘ SYSTEM MODE</div>
-                        <textarea
-                            value={systemCmdInput}
-                            onChange={e => setSystemCmdInput(e.target.value)}
-                            placeholder={`以系统身份输入命令，例如：\n· ${char?.name || '角色'}对${userProfile?.name || '用户'}发起查手机\n· 暂停角色扮演，生成一段两人初遇的番外\n· 切换到${char?.name || '角色'}的第一人称视角描写此刻`}
-                            rows={4}
-                            className="w-full bg-transparent text-emerald-300 placeholder-slate-500 text-sm font-mono resize-none outline-none leading-relaxed"
-                            autoFocus
-                        />
+                    <div className="rounded-[14px] px-4 py-3.5" style={{ background: DR.ink, border: '1px solid #101a2e', borderBottomWidth: 3 }}>
+                        <div className="flex items-center gap-2 mb-2">
+                            <span aria-hidden className="w-1.5 h-1.5 rounded-[2px]" style={{ background: DR.green }} />
+                            <span className="font-mono text-[9px] font-bold tracking-[0.3em] uppercase" style={{ color: '#8fa3c8' }}>SYS · DIRECT LINE</span>
+                            <span aria-hidden className="flex-1 border-t border-dotted" style={{ borderColor: '#3c4c6e' }} />
+                        </div>
+                        <div className="flex gap-2">
+                            <span aria-hidden className="font-mono text-sm font-bold shrink-0 select-none leading-relaxed" style={{ color: DR.green }}>&gt;_</span>
+                            <textarea
+                                value={systemCmdInput}
+                                onChange={e => setSystemCmdInput(e.target.value)}
+                                placeholder={`写给剧情的调度令，比如：\n› 让${char?.name || '角色'}对${userProfile?.name || '用户'}发起查手机\n› 暂停演出，补一段两人初遇的番外\n› 改用${char?.name || '角色'}的第一人称写眼下这一刻`}
+                                rows={4}
+                                className="w-full bg-transparent placeholder:text-[#5d6f93] text-sm font-mono resize-none outline-none leading-relaxed"
+                                style={{ color: '#d7e3f8', caretColor: DR.green }}
+                                autoFocus
+                            />
+                        </div>
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed px-1">你的身份将是<b>系统</b>：命令优先级高于角色人设与之前的一切剧情，发送后角色/叙事会立即按命令执行。</p>
+                    <NoteLine>这句话以「系统」名义生效——压过角色人设和此前全部剧情，发出后立刻照办。</NoteLine>
                 </div>
-             </Modal>
+             </DraftSheet>
 
              {/* 位置分享 Modal */}
-             <Modal
-                isOpen={showLocationModal} title="落脚点" onClose={() => setShowLocationModal(false)}
-                footer={<><button onClick={() => setShowLocationModal(false)} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={handleSendLocation} className="flex-1 py-3 bg-emerald-500 text-white font-bold rounded-2xl">寄出位置</button></>}
+             <DraftSheet
+                open={showLocationModal} code="FN-03" title="此刻坐标" sub="把你站着的这个点钉进对话"
+                onClose={() => setShowLocationModal(false)}
+                footer={<>
+                    <PressBtn kind="ghost" onClick={() => setShowLocationModal(false)}>收回</PressBtn>
+                    <PressBtn kind="primary" onClick={handleSendLocation}>钉给 TA</PressBtn>
+                </>}
              >
                 <div className="space-y-3">
-                    <input value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="地点名称（如：江汉路 星巴克）" maxLength={40} className="w-full bg-slate-100 rounded-2xl px-5 py-3.5 text-sm font-bold" autoFocus />
-                    <input value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="详细地址 / 补充说明（可选）" maxLength={80} className="w-full bg-slate-100 rounded-2xl px-5 py-3 text-sm" />
-                    <p className="text-[11px] text-slate-400 leading-relaxed px-1">对方会收到一张位置卡片，并知道你此刻在哪儿。</p>
+                    <div className="flex items-center gap-2">
+                        <span aria-hidden className="w-7 h-7 rounded-[8px] border flex items-center justify-center shrink-0" style={{ borderColor: DR.line, background: DR.card, color: DR.blue }}>
+                            <Crosshair className="w-4 h-4" weight="bold" />
+                        </span>
+                        <span className="font-mono text-[9px] font-bold tracking-[0.3em] uppercase" style={{ color: DR.sub }}>PIN · HERE</span>
+                        <span aria-hidden className="flex-1 border-t border-dotted" style={{ borderColor: DR.line }} />
+                    </div>
+                    <FieldInput value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="这地方叫什么（例：江汉路那家星巴克）" maxLength={40} className="font-bold" autoFocus />
+                    <FieldInput value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="门牌、楼层或一句备注，留空也行" maxLength={80} />
+                    <NoteLine>对面会收到一张坐标卡片——你此刻落在哪儿，TA 一眼就能对上。</NoteLine>
                 </div>
-             </Modal>
+             </DraftSheet>
 
              {/* AI 画图 Modal */}
-             <Modal
-                isOpen={showImageGenModal} title="画一张" onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
+             <DraftSheet
+                open={showImageGenModal} code="FN-02" title="即兴画室" sub="口述一个画面，当场出一张小样"
+                onClose={() => { if (!isGeneratingImage) { setShowImageGenModal(false); setImageGenPreview(null); } }}
                 footer={imageGenPreview
-                    ? <><button onClick={() => setImageGenPreview(null)} className="flex-1 py-3 bg-slate-100 rounded-2xl">重画</button><button onClick={handleSendGeneratedImage} className="flex-1 py-3 bg-fuchsia-500 text-white font-bold rounded-2xl">寄出这张</button></>
-                    : <button onClick={handleGenerateImage} disabled={isGeneratingImage} className={`w-full py-3 font-bold rounded-2xl text-white ${isGeneratingImage ? 'bg-fuchsia-300' : 'bg-fuchsia-500'}`}>{isGeneratingImage ? '画着呢…' : '开画'}</button>}
+                    ? <>
+                        <PressBtn kind="ghost" onClick={() => setImageGenPreview(null)}>推翻重来</PressBtn>
+                        <PressBtn kind="primary" onClick={handleSendGeneratedImage}>就这张，寄出</PressBtn>
+                    </>
+                    : <PressBtn kind="primary" full onClick={handleGenerateImage} disabled={isGeneratingImage}>{isGeneratingImage ? '颜料未干，稍候…' : '落笔开画'}</PressBtn>}
              >
                 <div className="space-y-3">
                     {imageGenPreview ? (
-                        <img src={imageGenPreview} className="w-full rounded-2xl border border-slate-100 shadow-sm" alt="AI 生成预览" />
+                        <div className="relative rounded-[14px] border p-2.5" style={{ background: DR.card, borderColor: DR.line }}>
+                            <img src={imageGenPreview} className="w-full rounded-[10px]" alt="刚出炉的画稿小样" />
+                            <div className="flex items-center justify-between pt-2 px-0.5">
+                                <span className="font-mono text-[8px] font-bold tracking-[0.25em] uppercase" style={{ color: DR.blue }}>PLATE · 01</span>
+                                <span className="font-mono text-[8px] tracking-[0.2em] uppercase" style={{ color: `${DR.sub}88` }}>FRESH PROOF</span>
+                            </div>
+                        </div>
                     ) : (
                         <>
-                            <textarea value={imageGenPrompt} onChange={e => setImageGenPrompt(e.target.value)} placeholder="描述想画的画面（如：雨后的城市天台，霓虹灯倒映在水洼里）" rows={3} className="w-full bg-slate-100 rounded-2xl px-5 py-3.5 text-sm resize-none" autoFocus />
-                            <input value={imageGenModel} onChange={e => setImageGenModel(e.target.value)} placeholder={`生图模型（默认 ${DEFAULT_IMAGE_GEN_MODEL}）`} className="w-full bg-slate-100 rounded-2xl px-5 py-2.5 text-xs font-mono" />
-                            <p className="text-[11px] text-slate-400 leading-relaxed px-1">走当前 API 的 /images/generations 端点，模型名需支持图片生成。生成的图片会作为聊天图片发送并存入相册。</p>
+                            <FieldArea value={imageGenPrompt} onChange={e => setImageGenPrompt(e.target.value)} placeholder="把想要的画面讲给画师听（例：雨停后的天台，水洼里泡着霓虹）" rows={3} autoFocus />
+                            <FieldInput value={imageGenModel} onChange={e => setImageGenModel(e.target.value)} placeholder={`指定生图模型，留空则按 ${DEFAULT_IMAGE_GEN_MODEL} 来`} className="font-mono" style={{ fontSize: 12 }} />
+                            <NoteLine>请求走当前 API 的 /images/generations 端点，填的模型得会画图才行；画成后作为聊天图片寄出，相册里也留一份。</NoteLine>
                         </>
                     )}
                 </div>
-             </Modal>
+             </DraftSheet>
 
              {/* 心声面板（入口：顶栏角色头像）：社交主页式卡片（参考设计 MiMi Space）——
                  书签缎带 + 渐变圆环头像 + 好感/心声/心情统计行 + Follow/Message 式双按钮 */}
