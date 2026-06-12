@@ -6,11 +6,18 @@ import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
+import {
+    PAPER_TONES, PAPERS, PaperKind, WashiTape, PAPER_SHADOW,
+    MONO_STACK, SERIF_STACK, CUTE_STACK, tiltFor,
+} from '../handbook/paper';
 
 /**
- * 会话设置（聊天设置）全屏面板。
- * 结构对照参考设计：01 会话信息 / 02 绑定世界书 / 03 背景图 / 04 样式预设 / 05 体验 / 06 数据。
- * 所有更改即时保存：会话专属配置写 char.convoSettings，老字段沿用原 per-char 持久化。
+ * 聊天手帐（会话设置）全屏面板 —— 手账风重构版。
+ * 原 01~06 分区重排成 11 张「纸页」：
+ *   P.01 名字与名片 / P.02 氛围布置 / P.03 记性 / P.04 说话的样子 / P.05 TA 的小日子
+ *   P.06 相片角 / P.07 世界书夹页 / P.08 底纸与贴纸 / P.09 裁缝铺 / P.10 使用习惯 / P.11 收纳箱
+ * 功能、数据流与持久化与旧版完全一致：会话专属配置写 char.convoSettings，
+ * 老字段沿用原 per-char 持久化；所有更改即时保存。
  */
 
 interface ConvoSettingsPanelProps {
@@ -48,71 +55,137 @@ interface ConvoSettingsPanelProps {
     onRemoveBg: () => void;
 }
 
-// ── UI 原子 ────────────────────────────────────────────────────────────────
+// ── 手账 UI 原子 ──────────────────────────────────────────────────────────
 
-// 开关（黑白手帐风：墨色实底 + 内圈手缝虚线 + 大滑钮柔影；关闭态为米纸底）
-const Toggle: React.FC<{ on: boolean; onToggle: () => void; tone?: string }> = ({ on, onToggle, tone }) => (
+/** 糖果开关：撕角矩形 + 缝线虚框，开 = 糖果色实底，滑钮是带小爱心的白贴纸 */
+const CandyToggle: React.FC<{ on: boolean; onToggle: () => void; candy?: string }> = ({ on, onToggle, candy = '#f29db0' }) => (
     <button
-        onClick={onToggle}
-        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${on ? (tone || 'bg-[#2b2933]') : 'bg-[#e7e2d8]'}`}
-        style={{ outline: `1px dashed ${on ? 'rgba(255,255,255,0.35)' : 'rgba(167,162,151,0.45)'}`, outlineOffset: '-4px' }}
-        role="switch" aria-checked={on}
+        onClick={onToggle} role="switch" aria-checked={on}
+        className="relative w-[52px] h-[26px] shrink-0 transition-all duration-300 active:scale-95"
+        style={{
+            background: on ? candy : '#fdf7f2',
+            border: on ? '1.5px solid rgba(61,47,61,0.18)' : '1.5px dashed #dcc3cf',
+            borderRadius: '8px 12px 9px 12px',
+            boxShadow: on ? 'inset 0 1px 3px rgba(61,47,61,0.15)' : 'none',
+        }}
     >
-        <div className={`w-5 h-5 bg-white rounded-full shadow-[0_2px_5px_rgba(30,28,40,0.3)] transition-transform duration-300 ${on ? 'translate-x-[18px]' : ''}`} />
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...MONO_STACK, left: 7, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...MONO_STACK, right: 6, color: '#d8c2cd', opacity: on ? 0 : 1 }}>off</span>
+        <span
+            className="absolute top-1/2 -translate-y-1/2 w-[18px] h-[18px] bg-white flex items-center justify-center text-[9px] leading-none transition-all duration-300"
+            style={{ left: on ? 29 : 3, borderRadius: '6px 8px 6px 8px', boxShadow: '0 1px 3px rgba(122,90,114,0.4)', color: on ? candy : '#e0ccd6' }}
+        >♥</span>
     </button>
 );
 
-const Chip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+/** 标签贴纸：每张按文字种子微微歪一点，选中 = 糖果底，未选 = 白纸虚线框 */
+const StickerChip: React.FC<{
+    active: boolean; onClick: () => void; seed: string;
+    candy?: string; strike?: boolean; title?: string; children: React.ReactNode;
+}> = ({ active, onClick, seed, candy = '#fbb8c8', strike, title, children }) => (
     <button
-        onClick={onClick}
-        className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all ${active ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-    >
-        {children}
-    </button>
+        onClick={onClick} title={title}
+        className={`px-2.5 py-1 text-[11px] font-bold transition-all active:scale-90 max-w-full truncate ${strike ? 'line-through' : ''}`}
+        style={{
+            transform: `rotate(${tiltFor(seed) * 0.55}deg)`,
+            background: active ? candy : '#fffdfa',
+            color: active ? '#5a3140' : '#a892a3',
+            border: active ? '1px solid rgba(90,49,64,0.18)' : '1px dashed #ddc9d3',
+            borderRadius: '5px 11px 6px 11px',
+            boxShadow: active ? '0 1px 2px rgba(122,90,114,0.28)' : 'none',
+            ...CUTE_STACK,
+        }}
+    >{children}</button>
 );
 
-const Sect: React.FC<{ num: string; title: string; children: React.ReactNode }> = ({ num, title, children }) => (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex items-baseline gap-2 px-4 pt-4 pb-1">
-            <span className="text-[18px] font-black text-slate-200 leading-none select-none">{num}</span>
-            <span className="text-[12px] font-bold text-slate-500 tracking-widest">{title}</span>
-        </div>
-        <div className="px-4 pb-4 divide-y divide-slate-50">{children}</div>
+/** 图钉小按钮：跳转 / 展开类动作统一用它 */
+const PinButton: React.FC<{ onClick: () => void; children: React.ReactNode; disabled?: boolean; tone?: 'rose' | 'mint' }> = ({ onClick, children, disabled, tone = 'rose' }) => (
+    <button
+        onClick={onClick} disabled={disabled}
+        className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform whitespace-nowrap disabled:opacity-40"
+        style={tone === 'mint'
+            ? { background: '#eefaf3', border: '1px solid #bfe1cf', color: '#3f7d5c', boxShadow: '0 1px 2px rgba(122,90,114,0.12)', ...CUTE_STACK }
+            : { background: '#fffdfa', border: '1px solid #eed6df', color: '#b25e7a', boxShadow: '0 1px 2px rgba(122,90,114,0.15)', ...CUTE_STACK }}
+    >{children}</button>
+);
+
+/** 横线手写输入：像直接写在本子的格线上 */
+const LineInput: React.FC<{ value: string; onChange: (v: string) => void; placeholder?: string; tag?: string }> = ({ value, onChange, placeholder, tag }) => (
+    <div className="w-full">
+        {tag && <div className="text-[9px] mb-0.5 tracking-wider" style={{ ...MONO_STACK, color: '#a892a3' }}>{tag}</div>}
+        <input
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full bg-transparent px-1 py-1.5 text-[13px] outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4]"
+            style={{ color: PAPER_TONES.ink, caretColor: '#f29db0' }}
+        />
     </div>
 );
 
-const Item: React.FC<{ label: string; desc?: string; right?: React.ReactNode; children?: React.ReactNode }> = ({ label, desc, right, children }) => (
-    <div className="py-3">
-        <div className="flex items-center justify-between gap-3">
-            <label className="text-[12px] font-bold text-slate-600">{label}</label>
-            {right}
+type TapeProps = React.ComponentProps<typeof WashiTape>;
+
+/** 纸页：一张带胶带标题、页码角标的手账纸 */
+const Page: React.FC<{
+    no: string; title: string; en: string;
+    tape?: TapeProps['color']; pattern?: TapeProps['pattern']; paper?: PaperKind;
+    children: React.ReactNode;
+}> = ({ no, title, en, tape = 'rose', pattern = 'stripe', paper = 'plain', children }) => {
+    const pk = PAPERS[paper];
+    return (
+        <section className="relative rounded-[14px]" style={{ background: pk.bg, ...pk.style, ...PAPER_SHADOW }}>
+            <div className="absolute -top-3 left-4 z-10">
+                <WashiTape color={tape} pattern={pattern} rotate={-2}>{title}</WashiTape>
+            </div>
+            <div className="flex justify-end px-4 pt-2.5">
+                <span className="text-[8.5px] tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</span>
+            </div>
+            <div className="px-4 pb-7 pt-1">{children}</div>
+            <span className="absolute bottom-2 right-4 text-[9px] select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>✂ P.{no}</span>
+        </section>
+    );
+};
+
+/** 条目：花朵记号 + 标题 + 旁注小字，条目间用缝线分隔 */
+const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode }> = ({ mark = '✿', title, note, side, children }) => (
+    <div className="py-3 border-b border-dashed last:border-b-0" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+        <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }}>{mark}</span>
+                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{title}</span>
+                </div>
+                {note && <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>{note}</p>}
+            </div>
+            {side && <div className="shrink-0 pt-0.5">{side}</div>}
         </div>
-        {desc && <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{desc}</p>}
-        {children && <div className="mt-2">{children}</div>}
+        {children && <div className="mt-2.5">{children}</div>}
     </div>
 );
 
-/** 图片槽位：预览 + 上传 + 清除（统一走 processImage 压缩） */
-const ImgSlot: React.FC<{
-    label: string;
-    value?: string;
-    fallbackHint?: string;
-    aspect?: string;
+/** 拍立得相框：白边 + 顶部小胶带 + 底部手写标签，点击贴照片 */
+const Polaroid: React.FC<{
+    label: string; value?: string; hint?: string; aspect?: string;
     onChange: (dataUrl: string | undefined) => void;
-}> = ({ label, value, fallbackHint, aspect = 'aspect-[2/1]', onChange }) => {
+}> = ({ label, value, hint, aspect = 'aspect-square', onChange }) => {
     const inputRef = useRef<HTMLInputElement>(null);
     return (
-        <div>
-            <div className="text-[10px] font-bold text-slate-400 mb-1">{label}</div>
-            <div
-                onClick={() => inputRef.current?.click()}
-                className={`${aspect} bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-primary/50 overflow-hidden relative`}
-            >
-                {value ? (
-                    <img src={value} className="w-full h-full object-cover" alt="" />
-                ) : (
-                    <span className="text-[9px] text-slate-300 px-2 text-center leading-relaxed">未设置{fallbackHint ? `（${fallbackHint}）` : ''}</span>
-                )}
+        <div style={{ transform: `rotate(${tiltFor(label) * 0.6}deg)` }}>
+            <div className="bg-white p-1.5 rounded-[3px] relative" style={{ boxShadow: '0 2px 6px rgba(122,90,114,0.22)' }}>
+                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-8 h-3 pointer-events-none" style={{ background: 'rgba(251,184,200,0.7)', transform: 'rotate(-4deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                <div
+                    onClick={() => inputRef.current?.click()}
+                    className={`${aspect} overflow-hidden flex items-center justify-center cursor-pointer`}
+                    style={{ background: '#faf3f6', border: value ? 'none' : '1px dashed #e4cdd8' }}
+                >
+                    {value
+                        ? <img src={value} className="w-full h-full object-cover" alt="" />
+                        : <span className="text-[8.5px] text-center px-1.5 leading-relaxed" style={{ color: '#bfa8b8' }}>＋ 贴一张{hint ? <><br />{hint}</> : null}</span>}
+                </div>
+                <div className="flex items-center justify-between gap-1 pt-1">
+                    <span className="text-[9px] font-bold truncate" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>{label}</span>
+                    {value && <button onClick={() => onChange(undefined)} className="text-[8px] shrink-0" style={{ color: '#d4798f' }}>撕掉</button>}
+                </div>
             </div>
             <input
                 type="file" accept="image/*" ref={inputRef} className="hidden"
@@ -123,13 +196,14 @@ const ImgSlot: React.FC<{
                     e.target.value = '';
                 }}
             />
-            {value && <button onClick={() => onChange(undefined)} className="text-[9px] text-red-400 mt-0.5">清除</button>}
         </div>
     );
 };
 
 const REGION_PRESETS = ['中国大陆', '港澳台', '日本', '韩国', '北美', '欧洲', '东南亚'];
+// callSprites 的存储键，不能改动（与生图 / 通话管线对齐）
 const CALL_SPRITE_EMOTIONS = ['默认', '开心', '难过', '生气', '惊讶', '害羞', '冷淡', '撒娇'];
+const LANG_OPTIONS = ['中文', 'English', '日本語', '한국어', 'Français', 'Español'];
 
 const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const {
@@ -160,13 +234,13 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const loadVoices = async () => {
         if (voices || voicesLoading) return;
         const key = resolveMiniMaxApiKey(apiConfig);
-        if (!key) { addToast('请先在设置中配置 MiniMax API Key', 'error'); return; }
+        if (!key) { addToast('先去全局设置里填好 MiniMax API Key 哦', 'error'); return; }
         setVoicesLoading(true);
         try {
             const r = await fetchMiniMaxVoices(key, 'all');
             setVoices([...(r.system_voice || []), ...(r.voice_cloning || []), ...(r.voice_generation || [])]);
         } catch (e: any) {
-            addToast(e?.message || '获取音色列表失败', 'error');
+            addToast(e?.message || '嗓音名册没取回来，再试一次？', 'error');
         } finally { setVoicesLoading(false); }
     };
 
@@ -212,23 +286,23 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
             updateCharacter(char.id, {
                 mountedWorldbooks: current.filter(b => !ids.has(b.id) && (b.category || '未分类设定 (General)') !== category),
             });
-            addToast(`已卸载《${category}》`, 'info');
+            addToast(`《${category}》已从本子里取下`, 'info');
         } else {
             if (mountedLocalCount >= WB_BIND_LIMIT) {
-                addToast(`最多绑定 ${WB_BIND_LIMIT} 本，先取消一些再试`, 'error');
+                addToast(`本子最多夹 ${WB_BIND_LIMIT} 卷，先取下几卷再来`, 'error');
                 return;
             }
             const additions = books
                 .filter(b => !mountedIds.has(b.id))
                 .map(b => ({ id: b.id, title: b.title, content: b.content, category: b.category, enabled: b.enabled }));
             updateCharacter(char.id, { mountedWorldbooks: [...current, ...additions] });
-            addToast(`已挂载《${category}》（${additions.length} 条）`, 'success');
+            addToast(`《${category}》已夹进本子（${additions.length} 条）`, 'success');
         }
     };
     const clearMountedWorldbooks = () => {
         if (!(char.mountedWorldbooks || []).length) return;
         updateCharacter(char.id, { mountedWorldbooks: [] });
-        addToast('已清空本会话绑定的世界书', 'info');
+        addToast('夹页全部取下了', 'info');
     };
 
     // ── 表情分类对本角色可用性 ──
@@ -256,313 +330,276 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     };
 
     return (
-        <div className="absolute inset-0 z-[260] flex flex-col bg-[#f3f4f8] animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
-            {/* 顶栏 */}
-            <div className="shrink-0 flex items-center gap-2 px-3 py-3 bg-white/80 backdrop-blur-md border-b border-slate-100">
-                <button onClick={onClose} className="p-2 -ml-1 rounded-full hover:bg-black/5 active:scale-90 transition-transform" aria-label="返回">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-5 h-5 text-slate-600">
+        <div
+            className="absolute inset-0 z-[260] flex flex-col animate-fade-in"
+            style={{
+                paddingTop: 'var(--safe-top)',
+                backgroundColor: '#f6ecf1',
+                backgroundImage: 'radial-gradient(rgba(242,157,176,0.16) 1.2px, transparent 1.2px)',
+                backgroundSize: '18px 18px',
+            }}
+        >
+            {/* 封面条（顶栏） */}
+            <div
+                className="shrink-0 flex items-center gap-3 px-3 py-3"
+                style={{ background: 'linear-gradient(135deg, #fbd3de 0%, #f3e3f2 70%, #fdeee4 100%)', borderBottom: '1.5px dashed rgba(122,90,114,0.3)' }}
+            >
+                <button
+                    onClick={onClose}
+                    className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                    style={{ boxShadow: '0 1px 3px rgba(122,90,114,0.3)', border: '1px dashed #eab6c6' }}
+                    aria-label="合上手帐"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="#9c5e74" className="w-[18px] h-[18px]">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                     </svg>
                 </button>
-                <div className="min-w-0">
-                    <div className="text-[15px] font-bold text-slate-700 leading-tight">聊天设置</div>
-                    <div className="text-[10px] text-slate-400 truncate">{cs.remarkName || char.name} · 更改即时保存</div>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-[16px] font-bold leading-tight" style={{ ...SERIF_STACK, color: '#5a3140' }}>聊天手帐</span>
+                        <span className="text-[8.5px] tracking-[0.24em] select-none" style={{ ...MONO_STACK, color: '#b07a8d' }}>CHAT NOTE</span>
+                    </div>
+                    <div className="text-[10px] truncate mt-0.5" style={{ color: '#a96f84' }}>{cs.remarkName || char.name} 的专页 · 落笔即存</div>
                 </div>
+                <span className="text-[18px] select-none shrink-0" style={{ transform: 'rotate(8deg)', opacity: 0.55 }} aria-hidden>✎</span>
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-3 pb-10">
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
 
-                {/* ════ 01 会话信息 ════ */}
-                <Sect num="01" title="会话信息">
-                    <Item label="备注名" desc="聊天顶栏、消息列表与聊天列表里显示的名字，不改变角色本名。">
-                        <input
+                {/* ═══ P.01 名字与名片 ═══ */}
+                <Page no="01" title="名字与名片" en="Name Tags" tape="rose" pattern="stripe" paper="lined">
+                    <Entry mark="♡" title="给 TA 起的小名" note="写在这里的名字会出现在聊天顶栏和会话列表里；TA 的本名不会被改动。">
+                        <LineInput
                             value={cs.remarkName || ''}
-                            onChange={e => updateConvo({ remarkName: e.target.value || undefined })}
+                            onChange={v => updateConvo({ remarkName: v || undefined })}
                             placeholder={char.name}
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
                         />
-                    </Item>
+                    </Entry>
 
-                    <Item label="TA 对我的备注" desc="角色对你的称呼，会注入提示词——TA 平时就这么叫你。">
-                        <input
+                    <Entry mark="♡" title="TA 叫我什么" note="TA 平日里对你的称呼，会写进提示词——以后 TA 就这么喊你。">
+                        <LineInput
                             value={cs.userNickname || ''}
-                            onChange={e => updateConvo({ userNickname: e.target.value || undefined })}
-                            placeholder="如：阿宝 / 小朋友 / 主人…"
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                            onChange={v => updateConvo({ userNickname: v || undefined })}
+                            placeholder="比如：阿宝 / 小朋友 / 主人…"
                         />
-                    </Item>
+                    </Entry>
 
-                    <Item label="角色资料条目" desc="角色主页展示的微信号 / 地区 / 个性签名，由你自行设定（不再 AI 生成），留空则不显示。">
-                        <div className="space-y-2">
-                            <div>
-                                <div className="text-[10px] font-bold text-slate-400 mb-1">微信号</div>
-                                <input
-                                    value={char.socialProfile?.handle || ''}
-                                    onChange={e => updateCharacter(char.id, { socialProfile: { ...char.socialProfile, handle: e.target.value } })}
-                                    placeholder={`默认 moro_${char.id.slice(0, 10)}`}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
-                                />
-                            </div>
-                            <div>
-                                <div className="text-[10px] font-bold text-slate-400 mb-1">地区</div>
-                                <input
-                                    value={char.socialProfile?.region || ''}
-                                    onChange={e => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, region: e.target.value || undefined } })}
-                                    placeholder="如：安徽 亳州 / 日本 京都…"
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
-                                />
-                            </div>
-                            <div>
-                                <div className="text-[10px] font-bold text-slate-400 mb-1">个性签名</div>
-                                <input
-                                    value={char.socialProfile?.bio || ''}
-                                    onChange={e => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, bio: e.target.value || undefined } })}
-                                    placeholder="角色主页展示的一句话签名…"
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
-                                />
-                            </div>
+                    <Entry mark="♡" title="TA 的名片" note="角色主页上的微信号、地区和签名都由你来填（不再交给 AI 编），空着就不展示。">
+                        <div className="space-y-2.5">
+                            <LineInput
+                                tag="WECHAT ID"
+                                value={char.socialProfile?.handle || ''}
+                                onChange={v => updateCharacter(char.id, { socialProfile: { ...char.socialProfile, handle: v } })}
+                                placeholder={`默认 moro_${char.id.slice(0, 10)}`}
+                            />
+                            <LineInput
+                                tag="AREA"
+                                value={char.socialProfile?.region || ''}
+                                onChange={v => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, region: v || undefined } })}
+                                placeholder="比如：安徽 亳州 / 日本 京都…"
+                            />
+                            <LineInput
+                                tag="MOTTO"
+                                value={char.socialProfile?.bio || ''}
+                                onChange={v => updateCharacter(char.id, { socialProfile: { handle: char.socialProfile?.handle || '', ...char.socialProfile, bio: v || undefined } })}
+                                placeholder="挂在 TA 主页上的一句话…"
+                            />
                         </div>
-                    </Item>
+                    </Entry>
+                </Page>
 
-                    <Item label="关联群聊记忆" desc="私聊时携带 TA 所在群聊的近期活动作背景。不关联 = 群里发生的事这段单聊完全不知道。">
-                        <div className="flex flex-wrap gap-1.5">
-                            <Chip active={gmMode === 'all'} onClick={() => updateConvo({ groupMemoryMode: 'all' })}>全部群聊</Chip>
-                            <Chip active={gmMode === 'none'} onClick={() => updateConvo({ groupMemoryMode: 'none' })}>不关联</Chip>
-                            <Chip active={gmMode === 'selected'} onClick={() => updateConvo({ groupMemoryMode: 'selected' })}>指定群</Chip>
-                        </div>
-                        {gmMode === 'selected' && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {memberGroups.length === 0 && <span className="text-[10px] text-slate-300">TA 还不在任何群聊里</span>}
-                                {memberGroups.map(g => {
-                                    const on = (cs.linkedGroupIds || []).includes(g.id);
-                                    return (
-                                        <Chip key={g.id} active={on} onClick={() => {
-                                            const cur = cs.linkedGroupIds || [];
-                                            updateConvo({ linkedGroupIds: on ? cur.filter(id => id !== g.id) : [...cur, g.id] });
-                                        }}>{g.name}</Chip>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </Item>
-
-                    <Item
-                        label="记忆摘要"
-                        desc="月度精炼记忆（由记忆归档生成），注入对话作为长期记忆。"
-                        right={
-                            <button onClick={() => setMemoryOpen(v => !v)} className="text-[11px] font-bold text-primary">
-                                {refinedMonths.length} 个月 {memoryOpen ? '收起' : '查看'}
-                            </button>
-                        }
-                    >
-                        {memoryOpen && (
-                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                {refinedMonths.length === 0 && <p className="text-[10px] text-slate-300">还没有归档记忆。在聊天里执行「记忆归档」后这里会出现月度总结。</p>}
-                                {refinedMonths.map(([month, content]) => (
-                                    <div key={month} className="bg-slate-50 rounded-xl p-2.5">
-                                        <div className="text-[10px] font-bold text-slate-400 mb-1">{month}</div>
-                                        <p className="text-[11px] text-slate-500 leading-relaxed whitespace-pre-wrap line-clamp-4">{content}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </Item>
-
-                    <Item label="顶部装饰文案" desc="显示在聊天界面最顶部（顶栏卡片上方）的居中小字，纯装饰。">
-                        <input
+                {/* ═══ P.02 氛围布置 ═══ */}
+                <Page no="02" title="氛围布置" en="Mood Decor" tape="lemon" pattern="dot" paper="dot">
+                    <Entry mark="✩" title="页眉小字" note="挂在聊天界面最顶端（顶栏卡片上方）的一句居中装饰话，纯粹好看用。">
+                        <LineInput
                             value={cs.headerDecorText || ''}
-                            onChange={e => updateConvo({ headerDecorText: e.target.value || undefined })}
-                            placeholder="如：보고 싶어…ㅠㅠ🖤 / 恋爱进行时"
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                            onChange={v => updateConvo({ headerDecorText: v || undefined })}
+                            placeholder="比如：보고 싶어…ㅠㅠ🖤 / 恋爱进行时"
                         />
-                    </Item>
+                    </Entry>
 
-                    <Item label="底部装饰文案" desc="显示在消息列表下方、输入栏上方的居中小字，纯装饰。">
-                        <input
+                    <Entry mark="✩" title="页脚小字" note="垫在消息列表下方、输入栏上方的一句居中装饰话，同样只是装饰。">
+                        <LineInput
                             value={cs.footerDecorText || ''}
-                            onChange={e => updateConvo({ footerDecorText: e.target.value || undefined })}
-                            placeholder="如：小狗勾流眼泪TT / 今天也想见你"
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                            onChange={v => updateConvo({ footerDecorText: v || undefined })}
+                            placeholder="比如：小狗勾流眼泪TT / 今天也想见你"
                         />
-                    </Item>
+                    </Entry>
 
-                    <Item label="输入框文案" desc="输入框为空时显示的占位文字（默认「说点什么…」）。">
-                        <input
+                    <Entry mark="✩" title="输入框里的水印字" note="输入框空着的时候浮现的提示语（不填就是「说点什么…」）。">
+                        <LineInput
                             value={cs.inputPlaceholderText || ''}
-                            onChange={e => updateConvo({ inputPlaceholderText: e.target.value || undefined })}
-                            placeholder="如：( ʚಌɞ )삶의 조각들 / 说点什么…"
-                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20"
+                            onChange={v => updateConvo({ inputPlaceholderText: v || undefined })}
+                            placeholder="比如：( ʚಌɞ )삶의 조각들 / 说点什么…"
                         />
-                    </Item>
+                    </Entry>
 
-                    <Item label={`对话记忆 · 近端条数${unlimitedContext ? '（不限制）' : ` (${contextLimit})`}`} desc="每次对话携带的最近消息条数。再早的内容靠记忆摘要与记忆宫殿补足。">
-                        <div className="flex items-center gap-2">
+                    <Entry mark="✩" title="这本子的铃声" note="TA 来新消息时灵动岛横幅的提示音，点一下贴纸就能试听。">
+                        <div className="flex flex-wrap gap-2">
+                            {RINGTONE_PRESETS.map(p => (
+                                <StickerChip
+                                    key={p.id} seed={`ring-${p.id}`}
+                                    active={(cs.ringtone || 'none') === p.id}
+                                    onClick={() => { updateConvo({ ringtone: p.id as any }); playRingtone(p.id); }}
+                                >{p.label}</StickerChip>
+                            ))}
+                        </div>
+                    </Entry>
+
+                    <Entry
+                        mark="✩" title="把时间藏起来"
+                        note="本会话不再显示消息时间（盖过全局外观设置）。"
+                        side={<CandyToggle on={!!cs.hideTimestamp} onToggle={() => updateConvo({ hideTimestamp: !cs.hideTimestamp })} />}
+                    />
+                </Page>
+
+                {/* ═══ P.03 记性 ═══ */}
+                <Page no="03" title="记性" en="Memory" tape="sky" pattern="plain" paper="grid">
+                    <Entry
+                        mark="✦"
+                        title={`随身记忆 · ${unlimitedContext ? '不设上限' : `最近 ${contextLimit} 条`}`}
+                        note="每次对话随身携带的最近消息条数；更早的往事交给记忆摘要和记忆宫殿补全。"
+                    >
+                        <div className="flex items-center gap-2.5">
                             <input
                                 type="range" min={20} max={5000} step={10}
                                 value={Math.min(contextLimit, 5000)}
                                 disabled={unlimitedContext}
                                 onChange={e => setContextLimit(parseInt(e.target.value))}
-                                className="flex-1 h-2 bg-slate-200 rounded-full appearance-none accent-primary disabled:opacity-40"
+                                className="flex-1 disabled:opacity-40"
+                                style={{ accentColor: '#f29db0' }}
                             />
-                            <Chip active={unlimitedContext} onClick={() => setContextLimit(unlimitedContext ? 500 : 100000)}>不限制</Chip>
+                            <StickerChip seed="不设上限" active={unlimitedContext} onClick={() => setContextLimit(unlimitedContext ? 500 : 100000)}>不设上限</StickerChip>
                         </div>
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="旁白模式" right={<Toggle on={!!cs.narrationMode} onToggle={() => updateConvo({ narrationMode: !cs.narrationMode })} />}
-                        desc="开启后角色可单独发出（动作 / 场景旁白）气泡，描写此刻的动作、神态与环境。"
-                    />
-
-                    <Item
-                        label="心声手记" right={<Toggle on={cs.innerVoiceEnabled !== false} onToggle={() => updateConvo({ innerVoiceEnabled: cs.innerVoiceEnabled === false })} />}
-                        desc="「偷看心声」入口开关：生成角色没说出口的内心独白，不进入对话上下文。"
-                    />
-
-                    <Item label="专属铃声" desc="本会话新消息的通知音（灵动岛弹横幅时播放），点选即试听。">
-                        <div className="flex flex-wrap gap-1.5">
-                            {RINGTONE_PRESETS.map(p => (
-                                <Chip
-                                    key={p.id}
-                                    active={(cs.ringtone || 'none') === p.id}
-                                    onClick={() => { updateConvo({ ringtone: p.id as any }); playRingtone(p.id); }}
-                                >{p.label}</Chip>
-                            ))}
+                    <Entry mark="✦" title="群里的事要不要带过来" note="单聊时把 TA 所在群聊的近期动静当作背景。选「都不带」的话，群里发生过什么这段单聊一概不知。">
+                        <div className="flex flex-wrap gap-2">
+                            <StickerChip seed="gm-all" active={gmMode === 'all'} onClick={() => updateConvo({ groupMemoryMode: 'all' })}>全都带上</StickerChip>
+                            <StickerChip seed="gm-none" active={gmMode === 'none'} onClick={() => updateConvo({ groupMemoryMode: 'none' })}>都不带</StickerChip>
+                            <StickerChip seed="gm-sel" active={gmMode === 'selected'} onClick={() => updateConvo({ groupMemoryMode: 'selected' })}>挑几个群</StickerChip>
                         </div>
-                    </Item>
-
-                    <Item
-                        label="对照翻译" right={<Toggle on={translationEnabled} onToggle={onToggleTranslation} />}
-                        desc="开启后 AI 消息自动翻译为「选」的语言显示，点「译」切换到目标语言。"
-                    >
-                        {translationEnabled && (
-                            <div className="space-y-2.5">
-                                <div>
-                                    <div className="text-[10px] font-bold text-slate-400 mb-1">选（气泡显示语言）</div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {['中文', 'English', '日本語', '한국어', 'Français', 'Español'].map(l => (
-                                            <Chip key={`s-${l}`} active={translateSourceLang === l} onClick={() => onSetTranslateSourceLang(l)}>{l}</Chip>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-slate-400 mb-1">译成</div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {['中文', 'English', '日本語', '한국어', 'Français', 'Español'].map(l => (
-                                            <Chip key={`t-${l}`} active={translateTargetLang === l} onClick={() => onSetTranslateLang(l)}>{l}</Chip>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-slate-400 mb-1">译文风格</div>
-                                    <input
-                                        value={cs.translateStyle || ''}
-                                        onChange={e => updateConvo({ translateStyle: e.target.value || undefined })}
-                                        placeholder="如：口语化 / 文学腔 / 保留语气词…（追加进翻译要求）"
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
-                                    />
-                                </div>
+                        {gmMode === 'selected' && (
+                            <div className="flex flex-wrap gap-2 mt-2.5">
+                                {memberGroups.length === 0 && <span className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>TA 还没加进任何群聊</span>}
+                                {memberGroups.map(g => {
+                                    const on = (cs.linkedGroupIds || []).includes(g.id);
+                                    return (
+                                        <StickerChip key={g.id} seed={g.id} active={on} candy="#b9d3e0" onClick={() => {
+                                            const cur = cs.linkedGroupIds || [];
+                                            updateConvo({ linkedGroupIds: on ? cur.filter(id => id !== g.id) : [...cur, g.id] });
+                                        }}>{g.name}</StickerChip>
+                                    );
+                                })}
                             </div>
                         )}
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="隐藏时间戳" right={<Toggle on={!!cs.hideTimestamp} onToggle={() => updateConvo({ hideTimestamp: !cs.hideTimestamp })} />}
-                        desc="本会话不显示消息时间（覆盖全局外观设置）。"
-                    />
+                    <Entry
+                        mark="✦" title="往月的回忆册"
+                        note="按月精炼出的长期记忆（记忆归档生成），每次聊天都会随身翻阅。"
+                        side={
+                            <PinButton onClick={() => setMemoryOpen(v => !v)}>
+                                {refinedMonths.length} 本 · {memoryOpen ? '合上' : '翻开'}
+                            </PinButton>
+                        }
+                    >
+                        {memoryOpen && (
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                {refinedMonths.length === 0 && (
+                                    <p className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>
+                                        还没攒下回忆。在聊天里做一次「记忆归档」，月度小结就会被夹进这里。
+                                    </p>
+                                )}
+                                {refinedMonths.map(([month, content]) => (
+                                    <div key={month} className="rounded-[8px] p-2.5" style={{ background: '#fffdfa', border: '1px dashed #e4cdd8' }}>
+                                        <div className="text-[9px] mb-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{month}</div>
+                                        <p className="text-[11px] leading-relaxed whitespace-pre-wrap line-clamp-4" style={{ color: PAPER_TONES.inkSoft }}>{content}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Entry>
+                </Page>
 
-                    <Item
-                        label="时间感知" right={<Toggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />}
-                        desc="注入「距离上次聊天已过去多久」等提示，强化角色的时间观念、主动匹配现实时间。"
-                    />
-
-                    <Item label="所在地区" desc="角色生活的地区：作息、时差、天气、日常话题都会贴合此地区。">
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                            {REGION_PRESETS.map(r => (
-                                <Chip key={r} active={cs.region === r} onClick={() => updateConvo({ region: cs.region === r ? undefined : r })}>{r}</Chip>
-                            ))}
+                {/* ═══ P.04 说话的样子 ═══ */}
+                <Page no="04" title="说话的样子" en="Voice and Words" tape="mint" pattern="stripe" paper="lined">
+                    <Entry mark="❀" title="TA 打字的习惯" note="「一句一句蹦」像真人那样把话拆成几条短消息发；「一大段说完」则一条讲完。">
+                        <div className="flex gap-2">
+                            <StickerChip seed="bm-split" active={(cs.bubbleStyleMode || 'split') === 'split'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'split' })}>一句一句蹦</StickerChip>
+                            <StickerChip seed="bm-whole" active={cs.bubbleStyleMode === 'whole'} candy="#bfe1cf" onClick={() => updateConvo({ bubbleStyleMode: 'whole' })}>一大段说完</StickerChip>
                         </div>
-                        <input
-                            value={cs.region && !REGION_PRESETS.includes(cs.region) ? cs.region : ''}
-                            onChange={e => updateConvo({ region: e.target.value || undefined })}
-                            placeholder="或自定义：如「日本 京都」「重庆」…"
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none focus:ring-2 focus:ring-primary/20"
-                        />
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="主动查询" right={<Toggle on={!!cs.proactiveLookup} onToggle={() => updateConvo({ proactiveLookup: !cs.proactiveLookup })} />}
-                        desc="开启后角色发消息前会先留意当前时间 / 天气 / 热点等实时信息，把它们自然融进话题（需在全局设置开启实时信息源）。"
+                    <Entry
+                        mark="❀" title="舞台旁白"
+                        note="打开后 TA 能单独发一条（动作 / 场景）旁白泡泡，写写此刻的神态、动作和身边的环境。"
+                        side={<CandyToggle on={!!cs.narrationMode} onToggle={() => updateConvo({ narrationMode: !cs.narrationMode })} />}
                     />
 
-                    <Item
-                        label="主动语音通话"
-                        right={<Toggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
-                        desc="开启后，角色在主动找你时会根据人设和剧情自行决定要不要直接打语音电话给你（主动消息在聊天界面下方 + 号面板里开启）。来电可接听或挂断，没接到会留下未接来电记录。"
+                    <Entry
+                        mark="❀" title="偷听小心思"
+                        note="「偷看心声」入口的总开关：能看到 TA 没说出口的内心话，这些不会被算进对话上下文。"
+                        side={<CandyToggle on={cs.innerVoiceEnabled !== false} onToggle={() => updateConvo({ innerVoiceEnabled: cs.innerVoiceEnabled === false })} />}
                     />
 
-                    <Item label="主动发朋友圈" desc="角色自发更新朋友圈的倾向。「随缘」由 TA 心情决定；聊天里 TA 也会提到自己发的动态。">
-                        <div className="flex flex-wrap gap-1.5 items-center">
-                            <Chip active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} onClick={() => updateConvo({ momentsAutoPost: 'off' })}>关闭</Chip>
-                            <Chip active={cs.momentsAutoPost === 'random'} onClick={() => updateConvo({ momentsAutoPost: 'random' })}>随缘</Chip>
-                            <Chip active={typeof cs.momentsAutoPost === 'number'} onClick={() => updateConvo({ momentsAutoPost: typeof cs.momentsAutoPost === 'number' ? cs.momentsAutoPost : 24 })}>自定义</Chip>
-                            {typeof cs.momentsAutoPost === 'number' && (
-                                <span className="inline-flex items-center gap-1">
-                                    <input
-                                        type="number" min={1}
-                                        value={cs.momentsAutoPost}
-                                        onChange={e => updateConvo({ momentsAutoPost: Math.max(1, parseInt(e.target.value) || 24) })}
-                                        className="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[12px] outline-none"
-                                    />
-                                    <span className="text-[10px] text-slate-400">小时/条</span>
-                                </span>
-                            )}
-                        </div>
-                    </Item>
+                    <Entry
+                        mark="❀" title="双语对照"
+                        note="打开后 AI 消息先以「气泡语言」显示，点「译」再换成目标语言。"
+                        side={<CandyToggle on={translationEnabled} onToggle={onToggleTranslation} />}
+                    >
+                        {translationEnabled && (
+                            <div className="space-y-3">
+                                <div>
+                                    <div className="text-[9px] mb-1 tracking-wider" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>气泡先显示</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {LANG_OPTIONS.map(l => (
+                                            <StickerChip key={`s-${l}`} seed={`s-${l}`} active={translateSourceLang === l} candy="#d6c8e8" onClick={() => onSetTranslateSourceLang(l)}>{l}</StickerChip>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[9px] mb-1 tracking-wider" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>点「译」后变成</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {LANG_OPTIONS.map(l => (
+                                            <StickerChip key={`t-${l}`} seed={`t-${l}`} active={translateTargetLang === l} candy="#d6c8e8" onClick={() => onSetTranslateLang(l)}>{l}</StickerChip>
+                                        ))}
+                                    </div>
+                                </div>
+                                <LineInput
+                                    tag="译文的笔调"
+                                    value={cs.translateStyle || ''}
+                                    onChange={v => updateConvo({ translateStyle: v || undefined })}
+                                    placeholder="比如：口语化 / 文学腔 / 保留语气词…（会追加进翻译要求）"
+                                />
+                            </div>
+                        )}
+                    </Entry>
 
-                    <Item
-                        label="允许 char 看手机" right={<Toggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
-                        desc="开启后角色会不定期主动拿走你的手机翻看（界面变成你的桌面，TA 一边翻一边冒想法，还可能替你回消息/拉黑别人）。中途想拿回手机需征得 TA 同意、答对 TA 出的三个问题或强行抢回。关闭则角色不会发起。"
+                    <Entry
+                        mark="❀" title="斗图的兴致"
+                        note="打开后 TA 会在情绪对上的时候，自己联想着发表情包。"
+                        side={<CandyToggle on={!!cs.emojiAssociation} onToggle={() => updateConvo({ emojiAssociation: !cs.emojiAssociation })} />}
                     />
 
-                    <Item
-                        label="自动线下" right={<Toggle on={!!cs.autoOffline} onToggle={() => updateConvo({ autoOffline: !cs.autoOffline })} />}
-                        desc="对话发展到见面情境时角色会进入线下模式：弹出线下场景窗口记录现场情景，你可在窗口内发言/行动。退出后情景进入上下文，角色会主动发消息收尾。关闭则角色不会进入线下模式。"
-                    />
-
-                    <Item label="发消息方式" desc="碎片短句 = 像真人一样拆成多条短消息；完整段落 = 一条说完。">
-                        <div className="flex gap-1.5">
-                            <Chip active={(cs.bubbleStyleMode || 'split') === 'split'} onClick={() => updateConvo({ bubbleStyleMode: 'split' })}>碎片短句</Chip>
-                            <Chip active={cs.bubbleStyleMode === 'whole'} onClick={() => updateConvo({ bubbleStyleMode: 'whole' })}>完整段落</Chip>
-                        </div>
-                    </Item>
-
-                    <Item
-                        label="表情联想" right={<Toggle on={!!cs.emojiAssociation} onToggle={() => updateConvo({ emojiAssociation: !cs.emojiAssociation })} />}
-                        desc="开启后角色会在情绪合适的时机联想并发送表情包。"
-                    />
-
-                    <Item label="表情分类总览" desc="点击分类可切换该分类的表情对本角色是否可用。">
-                        <div className="flex flex-wrap gap-1.5">
-                            {categories.length === 0 && <span className="text-[10px] text-slate-300">还没有表情分类</span>}
+                    <Entry mark="❀" title="TA 能翻的表情抽屉" note="点一下分类贴纸，决定那个抽屉里的表情 TA 用不用得了。划线的就是对 TA 上了锁。">
+                        <div className="flex flex-wrap gap-2">
+                            {categories.length === 0 && <span className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>还没建过表情分类</span>}
                             {categories.map(cat => {
                                 const on = categoryEnabledForChar(cat);
                                 return (
-                                    <button
-                                        key={cat.id}
-                                        onClick={() => toggleCategoryForChar(cat)}
-                                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border ${on ? 'bg-[#f4f1ea] text-[#2b2933] border-[#d9d4c8]' : 'bg-slate-50 text-slate-300 border-slate-100 line-through'}`}
-                                    >
-                                        {cat.name} ({emojiCounts[cat.id] || 0})
-                                    </button>
+                                    <StickerChip key={cat.id} seed={cat.id} active={on} strike={!on} candy="#bfe1cf" onClick={() => toggleCategoryForChar(cat)}>
+                                        {cat.name} · {emojiCounts[cat.id] || 0} 张
+                                    </StickerChip>
                                 );
                             })}
                         </div>
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="角色音色（MiniMax）"
-                        desc={char.voiceProfile?.voiceId ? `当前：${char.voiceProfile.voiceName || char.voiceProfile.voiceId}` : '未设置。语音消息与音视频通话都会用这个音色。'}
-                        right={<button onClick={loadVoices} className="text-[11px] font-bold text-primary">{voicesLoading ? '加载中…' : voices ? '' : '选择音色'}</button>}
+                    <Entry
+                        mark="❀" title="TA 的嗓音（MiniMax）"
+                        note={char.voiceProfile?.voiceId ? `现在用的是：${char.voiceProfile.voiceName || char.voiceProfile.voiceId}` : '还没挑过。语音条和音视频通话都会用这把嗓音。'}
+                        side={!voices ? <PinButton onClick={loadVoices}>{voicesLoading ? '翻名册中…' : '挑个嗓音'}</PinButton> : undefined}
                     >
                         {voices && (
                             <select
@@ -573,41 +610,134 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                     updateCharacter(char.id, {
                                         voiceProfile: { ...char.voiceProfile, provider: 'minimax', voiceId: v.voice_id, voiceName: v.voice_name || v.voice_id },
                                     });
-                                    addToast(`音色已设为 ${v.voice_name || v.voice_id}`, 'success');
+                                    addToast(`嗓音换成了 ${v.voice_name || v.voice_id}`, 'success');
                                 }}
-                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[12px] outline-none"
+                                className="w-full px-3 py-2.5 text-[12px] outline-none rounded-[8px]"
+                                style={{ background: '#fffdfa', border: '1px dashed #dcc3cf', color: PAPER_TONES.ink }}
                             >
-                                <option value="">选择音色…</option>
+                                <option value="">点这里挑一个嗓音…</option>
                                 {voices.map(v => <option key={v.voice_id} value={v.voice_id}>{v.voice_name || v.voice_id}</option>)}
                             </select>
                         )}
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="语音消息" right={<Toggle tone="bg-emerald-400" on={!!char.chatVoiceEnabled} onToggle={() => updateCharacter(char.id, { chatVoiceEnabled: !char.chatVoiceEnabled })} />}
-                        desc="AI 回复自动生成语音条（需配置 MiniMax 与角色音色）。"
+                    <Entry
+                        mark="❀" title="用语音条回你"
+                        note="AI 回复自动配上一条语音（要先配好 MiniMax 和上面那把嗓音）。"
+                        side={<CandyToggle candy="#8fceae" on={!!char.chatVoiceEnabled} onToggle={() => updateCharacter(char.id, { chatVoiceEnabled: !char.chatVoiceEnabled })} />}
                     >
                         {char.chatVoiceEnabled && (
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-2">
                                 {[{ v: '', l: '默认' }, { v: 'en', l: 'English' }, { v: 'ja', l: '日本語' }, { v: 'ko', l: '한국어' }, { v: 'fr', l: 'Français' }, { v: 'es', l: 'Español' }].map(o => (
-                                    <Chip key={o.v} active={(char.chatVoiceLang || '') === o.v} onClick={() => updateCharacter(char.id, { chatVoiceLang: o.v })}>{o.l}</Chip>
+                                    <StickerChip key={o.v} seed={`vl-${o.v}`} active={(char.chatVoiceLang || '') === o.v} candy="#bfe1cf" onClick={() => updateCharacter(char.id, { chatVoiceLang: o.v })}>{o.l}</StickerChip>
                                 ))}
                             </div>
                         )}
-                    </Item>
+                    </Entry>
 
-                    <Item label="会话立绘" desc="角色立绘会以半透明形式出现在聊天界面右下角（galgame 式）；生图参考用于 img2img / edits 的底图。">
-                        <div className="grid grid-cols-3 gap-2">
-                            <ImgSlot label="角色·会话头像" aspect="aspect-square" value={cs.charAvatarOverride} fallbackHint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
-                            <ImgSlot label="角色立绘" aspect="aspect-square" value={cs.spriteImage} onChange={v => updateConvo({ spriteImage: v })} />
-                            <ImgSlot label="生图参考" aspect="aspect-square" value={cs.spriteRefImage} onChange={v => updateConvo({ spriteRefImage: v })} />
+                    <Entry
+                        mark="❀" title="会做小卡片"
+                        note="TA 会在合适的场景递来邀请函、票根、通知单这类可视化小卡片（默认开着）。"
+                        side={<CandyToggle candy="#bfa3dd" on={char.htmlModeEnabled !== false} onToggle={() => updateCharacter(char.id, { htmlModeEnabled: char.htmlModeEnabled === false })} />}
+                    >
+                        {char.htmlModeEnabled !== false && (
+                            <textarea
+                                value={char.htmlModeCustomPrompt || ''}
+                                onChange={e => updateCharacter(char.id, { htmlModeCustomPrompt: e.target.value })}
+                                placeholder="想补充的叮嘱（会追加在内置提示词后面）…"
+                                className="w-full h-20 rounded-[8px] p-3 text-[12px] resize-none outline-none placeholder:text-[#cfb8c4]"
+                                style={{ background: '#fffdfa', border: '1px dashed #d8c3e6', color: PAPER_TONES.ink }}
+                            />
+                        )}
+                    </Entry>
+                </Page>
+
+                {/* ═══ P.05 TA 的小日子 ═══ */}
+                <Page no="05" title="TA 的小日子" en="Daily Life" tape="lavender" pattern="heart" paper="cream">
+                    <Entry mark="☘" title="TA 住在哪儿" note="TA 生活的地方：作息、时差、天气、日常话题都会照着这片土地来。">
+                        <div className="flex flex-wrap gap-2 mb-2.5">
+                            {REGION_PRESETS.map(r => (
+                                <StickerChip key={r} seed={`rg-${r}`} active={cs.region === r} candy="#d6c8e8" onClick={() => updateConvo({ region: cs.region === r ? undefined : r })}>{r}</StickerChip>
+                            ))}
                         </div>
-                    </Item>
+                        <LineInput
+                            value={cs.region && !REGION_PRESETS.includes(cs.region) ? cs.region : ''}
+                            onChange={v => updateConvo({ region: v || undefined })}
+                            placeholder="或者自己写一个：「日本 京都」「重庆」…"
+                        />
+                    </Entry>
 
-                    <Item label="视频通话 · 通话立绘" desc="「默认」立绘会作为音视频通话的背景形象，其余情绪态为生图 / 通话表现的配置位。">
-                        <div className="grid grid-cols-4 gap-2">
+                    <Entry
+                        mark="☘" title="TA 知道现在几点"
+                        note="往提示词里塞「距上次聊天过了多久」这类线索，让 TA 对时间更敏感、贴着现实的钟点过日子。"
+                        side={<CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />}
+                    />
+
+                    <Entry
+                        mark="☘" title="出门前看一眼世界"
+                        note="TA 主动发消息前会先瞄一眼当下的时间、天气和热点，再自然地揉进话题（要先在全局设置里打开实时信息源）。"
+                        side={<CandyToggle on={!!cs.proactiveLookup} onToggle={() => updateConvo({ proactiveLookup: !cs.proactiveLookup })} />}
+                    />
+
+                    <Entry
+                        mark="☘" title="TA 会突然打电话来"
+                        note="TA 主动找你时，会按人设和剧情自己决定要不要直接拨语音电话（主动消息在聊天界面下方 + 号面板里开启）。来电可接可挂，没接到会留一条未接记录。"
+                        side={<CandyToggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
+                    />
+
+                    <Entry mark="☘" title="TA 发朋友圈的勤快度" note="TA 自己更新朋友圈的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <StickerChip seed="mp-off" active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'off' })}>不发</StickerChip>
+                            <StickerChip seed="mp-rnd" active={cs.momentsAutoPost === 'random'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'random' })}>看心情</StickerChip>
+                            <StickerChip seed="mp-num" active={typeof cs.momentsAutoPost === 'number'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: typeof cs.momentsAutoPost === 'number' ? cs.momentsAutoPost : 24 })}>定个频率</StickerChip>
+                            {typeof cs.momentsAutoPost === 'number' && (
+                                <span className="inline-flex items-baseline gap-1">
+                                    <input
+                                        type="number" min={1}
+                                        value={cs.momentsAutoPost}
+                                        onChange={e => updateConvo({ momentsAutoPost: Math.max(1, parseInt(e.target.value) || 24) })}
+                                        className="w-14 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0]"
+                                        style={{ color: PAPER_TONES.ink }}
+                                    />
+                                    <span className="text-[10px]" style={{ color: PAPER_TONES.inkSoft }}>小时一条</span>
+                                </span>
+                            )}
+                        </div>
+                    </Entry>
+
+                    <Entry
+                        mark="☘" title="把手机借给 TA 玩"
+                        note="TA 会不定期主动拿走你的手机翻一翻（屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人）。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢。关着的话 TA 不会动你手机。"
+                        side={<CandyToggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
+                    />
+
+                    <Entry
+                        mark="☘" title="聊着聊着就见面"
+                        note="对话发展到要见面的情境时，TA 会自己进入线下模式：弹出现场小窗记录情景，你能在窗里说话、行动。退出后这段情景会进上下文，TA 还会主动发消息收个尾。关着则不会触发。"
+                        side={<CandyToggle on={!!cs.autoOffline} onToggle={() => updateConvo({ autoOffline: !cs.autoOffline })} />}
+                    />
+
+                    <Entry
+                        mark="☘" title="TA 也刷小红书"
+                        note="TA 能在聊天里搜索、浏览、发帖、评论小红书（要先在全局配好 MCP 或 Cookie）。"
+                        side={<CandyToggle candy="#f08a8a" on={!!char.xhsEnabled} onToggle={() => updateCharacter(char.id, { xhsEnabled: !char.xhsEnabled })} />}
+                    />
+                </Page>
+
+                {/* ═══ P.06 相片角 ═══ */}
+                <Page no="06" title="相片角" en="Photo Corner" tape="blush" pattern="plain" paper="plain">
+                    <Entry mark="❅" title="贴在聊天角落的立绘" note="立绘会半透明地立在聊天界面右下角（galgame 那种感觉）；「生图底图」是 img2img / edits 用的参考图。">
+                        <div className="grid grid-cols-3 gap-3">
+                            <Polaroid label="这页的头像" aspect="aspect-square" value={cs.charAvatarOverride} hint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
+                            <Polaroid label="立绘本体" aspect="aspect-square" value={cs.spriteImage} onChange={v => updateConvo({ spriteImage: v })} />
+                            <Polaroid label="生图底图" aspect="aspect-square" value={cs.spriteRefImage} onChange={v => updateConvo({ spriteRefImage: v })} />
+                        </div>
+                    </Entry>
+
+                    <Entry mark="❅" title="通话时的八副表情" note="「默认」那张会当成音视频通话的背景形象；其余情绪格子留给生图与通话表现用。">
+                        <div className="grid grid-cols-4 gap-3">
                             {CALL_SPRITE_EMOTIONS.map(emo => (
-                                <ImgSlot
+                                <Polaroid
                                     key={emo} label={emo} aspect="aspect-[3/4]"
                                     value={cs.callSprites?.[emo]}
                                     onChange={v => {
@@ -618,193 +748,200 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                 />
                             ))}
                         </div>
-                    </Item>
+                    </Entry>
 
-                    <Item
-                        label="每轮对话生图" right={<Toggle on={!!cs.perTurnImageGen} onToggle={() => updateConvo({ perTurnImageGen: !cs.perTurnImageGen })} />}
-                        desc="生图管线配置位：开启后每轮回复尝试按场景配图（需接入生图 API，配合上方「生图参考」）。"
+                    <Entry
+                        mark="❅" title="每轮都配一张图"
+                        note="生图管线的配置位：打开后每轮回复都会试着按场景配图（要接好生图 API，配合上面的「生图底图」）。"
+                        side={<CandyToggle on={!!cs.perTurnImageGen} onToggle={() => updateConvo({ perTurnImageGen: !cs.perTurnImageGen })} />}
                     />
+                </Page>
 
-                    <Item
-                        label="小红书" right={<Toggle tone="bg-red-400" on={!!char.xhsEnabled} onToggle={() => updateCharacter(char.id, { xhsEnabled: !char.xhsEnabled })} />}
-                        desc="角色可在聊天中搜索、浏览、发帖、评论小红书（需全局配置 MCP 或 Cookie）。"
-                    />
-
-                    <Item
-                        label="HTML 模块模式" right={<Toggle tone="bg-fuchsia-500" on={char.htmlModeEnabled !== false} onToggle={() => updateCharacter(char.id, { htmlModeEnabled: char.htmlModeEnabled === false })} />}
-                        desc="AI 在合适场景输出邀请函 / 票据 / 通知等可视化卡片（默认开启）。"
+                {/* ═══ P.07 世界书夹页 ═══ */}
+                <Page no="07" title="世界书夹页" en="World Books" tape="blue" pattern="star" paper="mint">
+                    <Entry
+                        mark="❃" title="夹进本子的卷册"
+                        note={`全局卷自己会进来，这里只挑局部卷，合计最多夹 ${WB_BIND_LIMIT} 卷。每条的开关和作用域去世界书 App 里拨。`}
+                        side={<PinButton onClick={clearMountedWorldbooks}>全部取下</PinButton>}
                     >
-                        {char.htmlModeEnabled !== false && (
-                            <textarea
-                                value={char.htmlModeCustomPrompt || ''}
-                                onChange={e => updateCharacter(char.id, { htmlModeCustomPrompt: e.target.value })}
-                                placeholder="自定义补充提示词（追加在内置之后）…"
-                                className="w-full h-20 bg-slate-50 rounded-xl p-3 text-[12px] resize-none border border-slate-200 outline-none focus:border-fuchsia-300"
-                            />
-                        )}
-                    </Item>
-                </Sect>
-
-                {/* ════ 02 绑定世界书 ════ */}
-                <Sect num="02" title="绑定世界书">
-                    <Item
-                        label="卷册（可多选）"
-                        desc={`全局卷自动注入；此处选局部。合计≤${WB_BIND_LIMIT} 本。条目开关与作用域在世界书 App 里管理。`}
-                        right={
-                            <button
-                                onClick={clearMountedWorldbooks}
-                                className="text-[11px] font-bold text-slate-400 border border-slate-200 rounded-full px-3 py-1 active:scale-95 transition-transform"
-                            >清空</button>
-                        }
-                    >
-                        <div className="text-[11px] text-slate-500 mb-2">
-                            已绑定 {mountedLocalCount} 本 · 可选局部 {localCategories.length} 本 · 合计≤{WB_BIND_LIMIT}
+                        <div className="text-[10px] mb-2.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkSoft }}>
+                            已夹 {mountedLocalCount} / {WB_BIND_LIMIT} · 书架上可选 {localCategories.length} 卷
                         </div>
 
                         {localCategories.length === 0 && (
-                            <button onClick={() => openApp(AppID.Worldbook)} className="text-[11px] text-primary font-bold">还没有局部世界书，去「世界书」App 创建 →</button>
+                            <PinButton onClick={() => openApp(AppID.Worldbook)}>书架还空着，去「世界书」App 装一卷 ⇢</PinButton>
                         )}
 
-                        {/* 已绑定的卷册（黑色 chip，点击即卸载） */}
+                        {/* 已夹好的卷册（糖果贴纸，点击即取下） */}
                         {mountedLocalCount > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mb-2">
+                            <div className="flex flex-wrap gap-2 mb-2.5">
                                 {localCategories.filter(([, books]) => categoryMounted(books)).map(([category, books]) => (
-                                    <button
-                                        key={`sel-${category}`}
+                                    <StickerChip
+                                        key={`sel-${category}`} seed={`sel-${category}`}
+                                        active candy="#9dc1d5"
                                         onClick={() => toggleBookCategory(category, books)}
-                                        className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-slate-900 text-white active:scale-95 transition-transform max-w-full truncate"
-                                    >{category}</button>
+                                    >📎 {category}</StickerChip>
                                 ))}
                             </div>
                         )}
 
                         {localCategories.length > 0 && (
-                            <button onClick={() => setWbListOpen(v => !v)} className="text-[11px] font-bold text-slate-500 border border-slate-200 rounded-full px-3 py-1 mb-2 active:scale-95 transition-transform">
-                                {wbListOpen ? '收起' : '展开选择'}
-                            </button>
+                            <div className="mb-2.5">
+                                <PinButton onClick={() => setWbListOpen(v => !v)}>{wbListOpen ? '合上书架' : '翻翻书架'}</PinButton>
+                            </div>
                         )}
 
                         {wbListOpen && (
                             <div>
-                                <input
+                                <LineInput
                                     value={wbSearch}
-                                    onChange={e => setWbSearch(e.target.value)}
-                                    placeholder="搜索卷名…"
-                                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-[13px] outline-none focus:ring-2 focus:ring-primary/20 mb-2"
+                                    onChange={setWbSearch}
+                                    placeholder="找一卷…"
                                 />
-                                <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
+                                <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-1 mt-2.5">
                                     {localCategories
                                         .filter(([category]) => !wbSearch.trim() || category.toLowerCase().includes(wbSearch.trim().toLowerCase()))
                                         .map(([category, books]) => {
                                             const on = categoryMounted(books);
                                             return (
-                                                <button
-                                                    key={category}
-                                                    onClick={() => toggleBookCategory(category, books)}
+                                                <StickerChip
+                                                    key={category} seed={category}
+                                                    active={on} candy="#9dc1d5"
                                                     title={`${books.length} 条目`}
-                                                    className={`px-3 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-all max-w-full truncate ${on ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}
-                                                >{category}</button>
+                                                    onClick={() => toggleBookCategory(category, books)}
+                                                >{category}</StickerChip>
                                             );
                                         })}
                                     {localCategories.length > 0 && wbSearch.trim() && localCategories.every(([category]) => !category.toLowerCase().includes(wbSearch.trim().toLowerCase())) && (
-                                        <span className="text-[10px] text-slate-300 py-1">没有匹配「{wbSearch.trim()}」的卷册</span>
+                                        <span className="text-[10px] py-1" style={{ color: PAPER_TONES.inkFaint }}>书架上找不到「{wbSearch.trim()}」</span>
                                     )}
                                 </div>
                             </div>
                         )}
-                    </Item>
-                </Sect>
+                    </Entry>
+                </Page>
 
-                {/* ════ 03 背景图 ════ */}
-                <Sect num="03" title="背景图">
-                    <Item label="头像与画板" desc="仅作用于本会话的形象覆盖。">
-                        <div className="grid grid-cols-3 gap-2">
-                            <ImgSlot label="角色·本会话头像" aspect="aspect-square" value={cs.charAvatarOverride} fallbackHint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
-                            <ImgSlot label="主控·本会话头像" aspect="aspect-square" value={cs.userAvatarOverride} fallbackHint="沿用我的头像" onChange={v => updateConvo({ userAvatarOverride: v })} />
-                            <ImgSlot label="身份卡画板" aspect="aspect-square" value={cs.idCardImage} fallbackHint="角色资料页顶部" onChange={v => updateConvo({ idCardImage: v })} />
+                {/* ═══ P.08 底纸与贴纸 ═══ */}
+                <Page no="08" title="底纸与贴纸" en="Wallpaper" tape="cream" pattern="lace" paper="sky">
+                    <Entry mark="✿" title="只在这页换的脸" note="只对本会话生效的形象覆盖，别的页面照旧。">
+                        <div className="grid grid-cols-3 gap-3">
+                            <Polaroid label="TA 的头像" aspect="aspect-square" value={cs.charAvatarOverride} hint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
+                            <Polaroid label="我的头像" aspect="aspect-square" value={cs.userAvatarOverride} hint="沿用我的头像" onChange={v => updateConvo({ userAvatarOverride: v })} />
+                            <Polaroid label="身份卡画板" aspect="aspect-square" value={cs.idCardImage} hint="角色资料页顶部" onChange={v => updateConvo({ idCardImage: v })} />
                         </div>
-                    </Item>
-                    <Item label="界面背景" desc="消息区背景即聊天壁纸；贴边是装饰横条；顶栏 / 输入栏背景通过白框样式注入。">
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <div className="text-[10px] font-bold text-slate-400 mb-1">消息区背景（聊天壁纸）</div>
-                                <div onClick={() => bgInputRef.current?.click()} className="aspect-[2/1] bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-primary/50 overflow-hidden">
-                                    {char.chatBackground
-                                        ? <img src={char.chatBackground} className="w-full h-full object-cover" alt="" />
-                                        : <span className="text-[9px] text-slate-300">未设置（原画质上传）</span>}
+                    </Entry>
+
+                    <Entry mark="✿" title="铺在聊天里的底纸" note="消息区底纸就是聊天壁纸；两条「细横条」是贴边装饰；顶栏 / 输入栏的底纸靠白框样式注入。">
+                        <div className="grid grid-cols-2 gap-3">
+                            {/* 聊天壁纸：沿用 onBgUpload 管线，原画质收录 */}
+                            <div style={{ transform: 'rotate(-0.8deg)' }}>
+                                <div className="bg-white p-1.5 rounded-[3px] relative" style={{ boxShadow: '0 2px 6px rgba(122,90,114,0.22)' }}>
+                                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-8 h-3 pointer-events-none" style={{ background: 'rgba(251,184,200,0.7)', transform: 'rotate(-4deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                                    <div
+                                        onClick={() => bgInputRef.current?.click()}
+                                        className="aspect-[2/1] overflow-hidden flex items-center justify-center cursor-pointer"
+                                        style={{ background: '#faf3f6', border: char.chatBackground ? 'none' : '1px dashed #e4cdd8' }}
+                                    >
+                                        {char.chatBackground
+                                            ? <img src={char.chatBackground} className="w-full h-full object-cover" alt="" />
+                                            : <span className="text-[8.5px] text-center px-1.5 leading-relaxed" style={{ color: '#bfa8b8' }}>＋ 贴一张<br />原画质收录</span>}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-1 pt-1">
+                                        <span className="text-[9px] font-bold truncate" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>聊天壁纸（消息区）</span>
+                                        {char.chatBackground && <button onClick={onRemoveBg} className="text-[8px] shrink-0" style={{ color: '#d4798f' }}>撕掉</button>}
+                                    </div>
                                 </div>
                                 <input type="file" ref={bgInputRef} className="hidden" accept="image/*" onChange={e => e.target.files?.[0] && onBgUpload(e.target.files[0])} />
-                                {char.chatBackground && <button onClick={onRemoveBg} className="text-[9px] text-red-400 mt-0.5">清除</button>}
                             </div>
-                            <ImgSlot label="顶部·头像背后（顶栏背景）" value={cs.headerBgImage} onChange={v => updateConvo({ headerBgImage: v })} />
-                            <ImgSlot label="顶部贴边（顶栏下横条）" aspect="aspect-[4/1]" value={cs.headerEdgeImage} onChange={v => updateConvo({ headerEdgeImage: v })} />
-                            <ImgSlot label="消息区贴边（输入栏上横条）" aspect="aspect-[4/1]" value={cs.msgEdgeImage} onChange={v => updateConvo({ msgEdgeImage: v })} />
-                            <ImgSlot label="底部输入栏背景" aspect="aspect-[4/1]" value={cs.inputBarImage} onChange={v => updateConvo({ inputBarImage: v })} />
+                            <Polaroid label="顶栏背景（头像后面）" aspect="aspect-[2/1]" value={cs.headerBgImage} onChange={v => updateConvo({ headerBgImage: v })} />
+                            <Polaroid label="顶栏下的细横条" aspect="aspect-[4/1]" value={cs.headerEdgeImage} onChange={v => updateConvo({ headerEdgeImage: v })} />
+                            <Polaroid label="输入栏上的细横条" aspect="aspect-[4/1]" value={cs.msgEdgeImage} onChange={v => updateConvo({ msgEdgeImage: v })} />
+                            <Polaroid label="输入栏的底" aspect="aspect-[4/1]" value={cs.inputBarImage} onChange={v => updateConvo({ inputBarImage: v })} />
                         </div>
-                    </Item>
-                </Sect>
+                    </Entry>
+                </Page>
 
-                {/* ════ 04 样式预设 ════ */}
-                <Sect num="04" title="样式预设">
-                    <Item
-                        label="界面主题" desc="气泡 / 头像 / 顶栏 / 输入栏等全局聊天样式在「外观」App 里调整。"
-                        right={<button onClick={() => openApp(AppID.Appearance)} className="text-[11px] font-bold text-primary">去外观 →</button>}
+                {/* ═══ P.09 裁缝铺 ═══ */}
+                <Page no="09" title="裁缝铺" en="Tailor Shop" tape="silver" pattern="stripe" paper="plain">
+                    <Entry
+                        mark="✄" title="整体的衣裳"
+                        note="气泡、头像、顶栏、输入栏这些全局聊天样式，都在「外观」App 里量体裁衣。"
+                        side={<PinButton onClick={() => openApp(AppID.Appearance)}>去外观挑 ⇢</PinButton>}
                     />
-                    <Item
-                        label="本会话专属白框 CSS" desc="只对这个角色生效的聊天界面自定义样式（.moro-chat-* 钩子），叠加在全局之上。"
-                        right={<button onClick={onOpenChromeCss} className="text-[11px] font-bold text-primary">编辑 →</button>}
+                    <Entry
+                        mark="✄" title="只属于 TA 的针线（CSS）"
+                        note="只对这个角色生效的聊天界面自定义样式（.moro-chat-* 钩子），缝在全局样式之上。"
+                        side={<PinButton onClick={onOpenChromeCss}>动手缝 ⇢</PinButton>}
                     />
-                </Sect>
+                </Page>
 
-                {/* ════ 05 体验 ════ */}
-                <Sect num="05" title="体验">
-                    <Item
-                        label="隐藏系统日志" right={<Toggle on={hideSysLogs} onToggle={onToggleHideSysLogs} />}
-                        desc="不再显示 Date / App 产生的上下文提示文本（转账、戳一戳、图片发送提示除外）。"
+                {/* ═══ P.10 使用习惯 ═══ */}
+                <Page no="10" title="使用习惯" en="Habits" tape="lavender" pattern="dot" paper="lined">
+                    <Entry
+                        mark="✤" title="收起系统碎碎念"
+                        note="不再显示 Date / App 冒出来的上下文提示文本（转账、戳一戳、图片发送提示还是会留着）。"
+                        side={<CandyToggle on={hideSysLogs} onToggle={onToggleHideSysLogs} />}
                     />
-                    <Item
-                        label="拉黑保护（整体开关）"
-                        right={<Toggle tone="bg-rose-500" on={charBlockProtect} onToggle={() => {
+                    <Entry
+                        mark="✤" title="谁也不许拉黑我"
+                        note="打开后所有角色都不会再做出「拉黑你」的举动（对全部会话生效）。已经存在的拉黑不受影响，会照常自动解除。"
+                        side={<CandyToggle candy="#ec7d9e" on={charBlockProtect} onToggle={() => {
                             const next = !charBlockProtect;
                             setCharBlockProtect(next);
                             setCharBlockDisabled(next);
                         }} />}
-                        desc="开启后，所有角色都不会再触发「拉黑你」的行为（对全部会话生效）。已有的拉黑状态不受影响，会照常自动解除。"
                     />
-                    <Item
-                        label="管理上下文 / 隐藏历史" desc="从某条消息开始显示，隐藏之前的记录（不被 AI 读取）。"
-                        right={<button onClick={onOpenHistoryManager} className="text-[11px] font-bold text-primary">打开 →</button>}
+                    <Entry
+                        mark="✤" title="把以前的页折起来"
+                        note="从某条消息开始展示，之前的记录折进去藏好（AI 也读不到）。"
+                        side={<PinButton onClick={onOpenHistoryManager}>去折页 ⇢</PinButton>}
                     />
-                </Sect>
+                </Page>
 
-                {/* ════ 06 数据 ════ */}
-                <Sect num="06" title="数据">
-                    <Item
-                        label="导出聊天记录" desc={`当前共 ${messagesCount} 条可见消息，导出为 JSON 文件。`}
-                        right={<button onClick={onExportChat} className="text-[11px] font-bold text-primary">导出 →</button>}
+                {/* ═══ P.11 收纳箱 ═══ */}
+                <Page no="11" title="收纳箱" en="Archive Box" tape="blush" pattern="heart" paper="cream">
+                    <Entry
+                        mark="❒" title="把聊天装进盒子"
+                        note={`这一页现在有 ${messagesCount} 条看得见的消息，可以整册打包成 JSON 文件带走。`}
+                        side={<PinButton onClick={onExportChat}>打包带走 ⇢</PinButton>}
                     />
                     {char.memoryPalaceEnabled && onForceVectorize && (
-                        <Item
-                            label="记忆宫殿向量化" desc="将所有未处理的聊天记录交给记忆宫殿向量化，完成后可安全清空聊天。"
-                            right={
-                                <button onClick={onForceVectorize} disabled={isVectorizing} className="text-[11px] font-bold text-emerald-600 disabled:opacity-40">
-                                    {isVectorizing ? '处理中…' : '🏰 一键向量化'}
-                                </button>
+                        <Entry
+                            mark="❒" title="送进记忆宫殿"
+                            note="把还没处理的聊天记录全部交给记忆宫殿做向量化，办完之后就能放心清空聊天。"
+                            side={
+                                <PinButton tone="mint" onClick={onForceVectorize} disabled={isVectorizing}>
+                                    {isVectorizing ? '搬运中…' : '🏰 全部送去'}
+                                </PinButton>
                             }
                         />
                     )}
-                    <Item label="危险区域" desc="清空本会话的聊天记录。">
-                        <div className="flex items-center gap-2 mb-2 cursor-pointer" onClick={onTogglePreserveContext}>
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-primary border-primary' : 'bg-slate-100 border-slate-300'}`}>
-                                {preserveContext && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                    <Entry mark="❒" title="碎纸机" note="把这一页的聊天记录整个绞碎，动手前想清楚。">
+                        <div className="rounded-[10px] p-3" style={{ border: '1.5px dashed #e8a0b0', background: 'rgba(255,235,240,0.6)' }}>
+                            <div className="flex items-center gap-2 mb-2.5 cursor-pointer select-none" onClick={onTogglePreserveContext}>
+                                <div
+                                    className="w-4 h-4 rounded-[5px] flex items-center justify-center transition-colors shrink-0"
+                                    style={preserveContext
+                                        ? { background: '#ec7d9e', border: '1px solid #d4607f' }
+                                        : { background: '#fff', border: '1.5px dashed #dcb4c2' }}
+                                >
+                                    {preserveContext && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                                </div>
+                                <span className="text-[11px]" style={{ color: PAPER_TONES.inkSoft }}>留下最近 10 条垫底，免得 TA 彻底失忆</span>
                             </div>
-                            <span className="text-[11px] text-slate-500">清空时保留最后 10 条记录（维持语境）</span>
+                            <button
+                                onClick={onClearHistory}
+                                className="w-full py-2.5 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
+                                style={{ background: '#fff', border: '1.5px solid #e8889d', color: '#d4536f', boxShadow: '2px 2px 0 #f3c1cd', ...CUTE_STACK }}
+                            >启动碎纸机 · 清空记录</button>
                         </div>
-                        <button onClick={onClearHistory} className="w-full py-2.5 bg-red-50 text-red-500 text-[12px] font-bold rounded-xl border border-red-100 active:scale-95 transition-transform">
-                            执行清空
-                        </button>
-                    </Item>
-                </Sect>
+                    </Entry>
+                </Page>
+
+                {/* 卷尾语 */}
+                <div className="text-center text-[10px] pb-1 select-none" style={{ ...CUTE_STACK, color: '#c39aab' }}>
+                    ☾ 这一册先写到这里 · 每一笔都已自动存好
+                </div>
             </div>
         </div>
     );
