@@ -334,6 +334,8 @@ const validateCustomCss = (css: string): CssValidationResult => {
     const selectorRegex = /([^{}]+)\{/g;
     let selectorMatch = selectorRegex.exec(sourceWithoutComments);
     while (selectorMatch) {
+        // 捕获到局部 const：forEach 回调里 TS 无法保证 let selectorMatch 仍非空
+        const matchIndex = selectorMatch.index;
         const selectorGroup = selectorMatch[1].trim();
         if (!selectorGroup.startsWith('@')) {
             const selectorList = selectorGroup.split(',').map(item => item.trim()).filter(Boolean);
@@ -341,7 +343,7 @@ const validateCustomCss = (css: string): CssValidationResult => {
                 if (!TARGET_SELECTOR_REGEX.test(selector)) {
                     pushError(
                         `选择器 \`${selector}\` 超出限定范围，仅允许以 .moro-bubble-user / .moro-bubble-ai 开头。`,
-                        findLineNumberByIndex(sourceWithoutComments, selectorMatch.index)
+                        findLineNumberByIndex(sourceWithoutComments, matchIndex)
                     );
                 }
             });
@@ -1231,8 +1233,8 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                                 </div>
                             </div>
 
-                            {activeTab !== 'css' && (
-                                <div className={`border-2 p-3 ${showLowContrastWarning ? 'border-[#2b2933] border-dashed bg-[#f4f2ed]' : 'border-[#2b2933] bg-[#fbfaf7]'}`}>
+                            {/* 对比度提示：外层已限定 activeTab !== 'css' && toolSection === 'base'，此处无需重复判断 */}
+                            <div className={`border-2 p-3 ${showLowContrastWarning ? 'border-[#2b2933] border-dashed bg-[#f4f2ed]' : 'border-[#2b2933] bg-[#fbfaf7]'}`}>
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div>
                                             <div className="text-[11px] font-bold text-[#2b2933] label-mono">清晰度 {activeContrastScore.grade} · {activeContrastScore.ratio.toFixed(2)}:1</div>
@@ -1252,7 +1254,6 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                                         </div>
                                     )}
                                 </div>
-                            )}
 
                             {/* Colors & Opacity */}
                             <div className="grid grid-cols-2 gap-4">

@@ -317,7 +317,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 id: `line-${Date.now()}`,
                 authorId: 'user',
                 content: userMessage.trim(),
-                section: currentSection,
+                section: currentSection as SongLine['section'],
                 timestamp: Date.now(),
             };
             setPendingLines(prev => [...prev, newLine]);
@@ -331,7 +331,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 content: m.content
             }));
 
-            await injectMemoryPalace(collaborator, undefined, `${updatedSong.title || ''} ${updatedSong.theme || ''} ${userMessage}`.trim() || undefined);
+            await injectMemoryPalace(collaborator, undefined, `${updatedSong.title || ''} ${userMessage}`.trim() || undefined);
             const systemPrompt = SongPrompts.buildMentorSystemPrompt(collaborator, userProfile, updatedSong, msgContext);
             let userPrompt = SongPrompts.buildUserMessage(updatedSong, userMessage, currentSection);
             if (requestedType) {
@@ -430,7 +430,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     id: `line-${baseTime}-ex${i}`,
                                     authorId: collaborator.id,
                                     content: parsed.example_lines[i],
-                                    section: currentSection,
+                                    section: currentSection as SongLine['section'],
                                     annotation: '示范参考',
                                     timestamp: baseTime + 10 + i,
                                 });
@@ -1788,9 +1788,9 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         <div className="rounded-2xl p-4 shizuku-glass" style={{ border: `1px solid ${MusicC.faint}40` }}>
                             <div className="grid grid-cols-3 gap-3">
                                 {[
-                                    { label: '起点色', color: customCoverFrom, position: 'from' },
-                                    { label: '中间色', color: customCoverVia, position: 'via' },
-                                    { label: '终点色', color: customCoverTo,  position: 'to'   }
+                                    { label: '起点色', color: customCoverFrom, position: 'from' as const },
+                                    { label: '中间色', color: customCoverVia, position: 'via' as const },
+                                    { label: '终点色', color: customCoverTo,  position: 'to' as const }
                                 ].map(item => (
                                     <label key={item.label} className="space-y-1.5">
                                         <span className="block text-[10px]" style={{ color: MusicC.muted }}>{item.label}</span>

@@ -577,7 +577,7 @@ export default function MemoryPalaceApp() {
         // （比如刚从 Moro 的聊天退出就打开回忆标本馆），在 picker 里跑会把旧角色当前角色拿去检测
         if (view !== 'palace') return;
         // 已经尝试过或已确认过，不再重复检测（避免 LLM 偶发重置人格）
-        const skipKey = `mp_personality_tried_${char.id}`;
+        const skipKey = `mp_personality_tried_${char!.id}`;
         if (localStorage.getItem(skipKey)) return;
         if (!lightLLMBaseUrl || !lightLLMApiKey) return;
 
@@ -1998,7 +1998,7 @@ export default function MemoryPalaceApp() {
                     </div>
                     <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8, fontFamily: 'serif', color: '#1a1a1a' }}>尚未建档</div>
                     <div style={{ fontSize: 13, marginBottom: 20, color: '#1a1a1a' }}>
-                        还没给 {char.name} 立一只标本柜
+                        还没给 {char!.name} 立一只标本柜
                     </div>
                     <div style={{ fontSize: 12, color: '#57534e', marginBottom: 20, fontFamily: 'monospace' }}>
                         回名册页，给 Ta 开一个标本柜
@@ -2007,7 +2007,7 @@ export default function MemoryPalaceApp() {
                 {/* 切换到其他角色 */}
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#727272', marginBottom: 8 }}>切换角色</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {characters.filter(c => c.id !== char.id).map(c => (
+                    {characters.filter(c => c.id !== char!.id).map(c => (
                         <div
                             key={c.id}
                             onClick={() => handleSwitchChar(c.id)}
@@ -2054,7 +2054,7 @@ export default function MemoryPalaceApp() {
                     <Icon name="crystal" size={40} />
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: '#545454', marginBottom: 8 }}>
-                    正在分析 {char.name} 的性格特征…
+                    正在分析 {char!.name} 的性格特征…
                 </div>
                 <div style={{ fontSize: 12, color: '#a2a2a2', textAlign: 'center', lineHeight: 1.6 }}>
                     根据角色人设和已有记忆<br />判断认知风格与反刍倾向
@@ -2070,7 +2070,7 @@ export default function MemoryPalaceApp() {
                     <Icon name="mask" size={40} />
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#282828', marginBottom: 16 }}>
-                    {char.name} 的性格分析结果
+                    {char!.name} 的性格分析结果
                 </div>
 
                 <div style={{
@@ -2113,17 +2113,17 @@ export default function MemoryPalaceApp() {
                     <button
                         onClick={() => {
                             // 防御：只把结果应用到产生它的角色
-                            if (pendingPersonalityCharId && pendingPersonalityCharId !== char.id) {
+                            if (pendingPersonalityCharId && pendingPersonalityCharId !== char!.id) {
                                 setPendingPersonality(null);
                                 setPendingPersonalityCharId(null);
                                 return;
                             }
-                            updateCharacter(char.id, {
+                            updateCharacter(char!.id, {
                                 personalityStyle: pendingPersonality.style,
                                 ruminationTendency: pendingPersonality.ruminationTendency,
                             } as any);
                             // 标记已定过人格，之后永不自动重测
-                            try { localStorage.setItem(`mp_personality_tried_${char.id}`, '1'); } catch {}
+                            try { localStorage.setItem(`mp_personality_tried_${char!.id}`, '1'); } catch {}
                             setPendingPersonality(null);
                             setPendingPersonalityCharId(null);
                         }}
@@ -2138,17 +2138,17 @@ export default function MemoryPalaceApp() {
                     <button
                         onClick={() => {
                             // 防御：只把跳过写到产生结果的角色
-                            if (pendingPersonalityCharId && pendingPersonalityCharId !== char.id) {
+                            if (pendingPersonalityCharId && pendingPersonalityCharId !== char!.id) {
                                 setPendingPersonality(null);
                                 setPendingPersonalityCharId(null);
                                 return;
                             }
                             // 用默认值，让用户后续在认知参数里改
-                            updateCharacter(char.id, {
+                            updateCharacter(char!.id, {
                                 personalityStyle: 'emotional',
                                 ruminationTendency: 0.3,
                             } as any);
-                            try { localStorage.setItem(`mp_personality_tried_${char.id}`, '1'); } catch {}
+                            try { localStorage.setItem(`mp_personality_tried_${char!.id}`, '1'); } catch {}
                             setPendingPersonality(null);
                             setPendingPersonalityCharId(null);
                         }}
@@ -2970,7 +2970,7 @@ create table if not exists memory_vectors (
                             <label className={labelClass}>认知风格</label>
                             <select
                                 value={(char as any).personalityStyle || 'emotional'}
-                                onChange={e => updateCharacter(char.id, { personalityStyle: e.target.value } as any)}
+                                onChange={e => updateCharacter(char!.id, { personalityStyle: e.target.value } as any)}
                                 className={inputClass}
                                 style={{ fontFamily: 'inherit', fontSize: 12 }}
                             >
@@ -2985,7 +2985,7 @@ create table if not exists memory_vectors (
                             <input
                                 type="range" min="0" max="1" step="0.1"
                                 value={(char as any).ruminationTendency ?? 0.3}
-                                onChange={e => updateCharacter(char.id, { ruminationTendency: parseFloat(e.target.value) } as any)}
+                                onChange={e => updateCharacter(char!.id, { ruminationTendency: parseFloat(e.target.value) } as any)}
                                 style={{ width: '100%' }}
                             />
                         </div>
@@ -3003,8 +3003,8 @@ create table if not exists memory_vectors (
                         <span>导入旧记忆</span>
                     </div>
                     <div style={{ fontSize: 11, color: '#737373', marginBottom: 12, lineHeight: 1.6 }}>
-                        按月将旧的日度记忆 ({char.memories?.length || 0} 条) 送给 LLM，
-                        以 {char.name} 的第一人称视角重新提取为记忆节点。可选择具体月份，不选则全部导入。旧数据不会被删除。
+                        按月将旧的日度记忆 ({char!.memories?.length || 0} 条) 送给 LLM，
+                        以 {char!.name} 的第一人称视角重新提取为记忆节点。可选择具体月份，不选则全部导入。旧数据不会被删除。
                     </div>
 
                     {/* 开销提示：旧记忆一次性灌入 LLM 是一次性高消耗，提醒用户避免误用昂贵 API */}
@@ -3166,7 +3166,7 @@ create table if not exists memory_vectors (
                             cursor: digesting ? 'not-allowed' : 'pointer',
                         }}
                     >
-                        {digesting ? `${char.name}正在静静地回想…` : '手动触发消化'}
+                        {digesting ? `${char!.name}正在静静地回想…` : '手动触发消化'}
                     </button>
                 </div>
                 </>)}
@@ -3281,8 +3281,8 @@ create table if not exists memory_vectors (
                         onClick={() => setShowCharPicker(!showCharPicker)}
                         style={{ fontSize: 18, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     >
-                        <img src={char.avatar} alt="" style={{ width: 24, height: 24, borderRadius: 3, objectFit: 'cover' }} />
-                        {char.name} 的回忆标本馆
+                        <img src={char!.avatar} alt="" style={{ width: 24, height: 24, borderRadius: 3, objectFit: 'cover' }} />
+                        {char!.name} 的回忆标本馆
                         <span style={{ fontSize: 10, color: '#a2a2a2' }}>▼</span>
                     </div>
                     <div style={{ fontSize: 12, color: '#a2a2a2', marginTop: 4 }}>

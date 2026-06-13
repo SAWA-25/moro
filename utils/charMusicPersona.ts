@@ -236,7 +236,7 @@ export const CharMusicPersona = {
 
         // 解析：结构化 parse 优先；不行就 scavenge（逐字段正则抠）
         // 两条线结果合并 — 任何字段单项 OK 都先收下
-        const structured = extractJson<PersonaDraft>(rawText) || {};
+        const structured: Partial<PersonaDraft> = extractJson<PersonaDraft>(rawText) || {};
         const scavenged = scavengeFields(rawText);
         const draft: Partial<PersonaDraft> = {
             bio: sanitizeStr(structured.bio) || sanitizeStr(scavenged.bio),
