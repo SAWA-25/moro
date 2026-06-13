@@ -765,6 +765,8 @@ interface MessageItemProps {
     charName: string;
     userAvatar: string;
     onLongPress: (m: Message) => void;
+    /** 左滑气泡触发引用回复（Telegram 式 swipe-to-reply）。 */
+    onSwipeReply?: (m: Message) => void;
     selectionMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
@@ -808,6 +810,9 @@ interface MessageItemProps {
     blockedMark?: boolean;
 }
 
+const SWIPE_REPLY_TRIGGER = 56; // px：左滑超过此距离松手即触发引用
+const SWIPE_REPLY_MAX = 84;     // px：气泡最多跟随手指左移的距离（含阻尼）
+
 const MessageItem = React.memo(({
     msg: m,
     isFirstInGroup,
@@ -817,6 +822,7 @@ const MessageItem = React.memo(({
     charName,
     userAvatar,
     onLongPress,
+    onSwipeReply,
     selectionMode,
     isSelected,
     onToggleSelect,
@@ -856,6 +862,11 @@ const MessageItem = React.memo(({
     const shouldShowAvatar = avatarMode === 'every_message' || isLastInGroup;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 }); // Track touch start position
+    // 左滑引用：swipeX 为气泡跟手左移量（负值），swipeActive 表示已锁定为水平滑动手势
+    const [swipeX, setSwipeX] = useState(0);
+    const swipeActive = useRef(false);
+    const swipeTriggered = useRef(false);
+    const canSwipeReply = !!onSwipeReply && !selectionMode && m.role !== 'system';
     // 角色头像单击/双击区分：260ms 内第二次点击 = 戳一戳，否则单击进角色设置
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const handleAvatarClick = (e: React.MouseEvent) => {
@@ -884,6 +895,9 @@ const MessageItem = React.memo(({
             startPos.current = { x: e.clientX, y: e.clientY };
         }
         
+        swipeActive.current = false;
+        swipeTriggered.current = false;
+
         longPressTimer.current = setTimeout(() => {
             if (!selectionMode) {
                 onLongPress(m);
@@ -896,12 +910,16 @@ const MessageItem = React.memo(({
             clearTimeout(longPressTimer.current);
             longPressTimer.current = null;
         }
+        if (swipeActive.current) {
+            if (swipeTriggered.current) onSwipeReply?.(m);
+            swipeActive.current = false;
+            swipeTriggered.current = false;
+            setSwipeX(0); // 触发 CSS transition 回弹
+        }
     };
 
-    // New handler to cancel long press if user drags/scrolls
+    // Handle drag: cancel long press on scroll, and drive 左滑引用手势
     const handleMove = (e: React.TouchEvent | React.MouseEvent) => {
-        if (!longPressTimer.current) return;
-
         let clientX, clientY;
         if ('touches' in e) {
             clientX = e.touches[0].clientX;
@@ -911,13 +929,38 @@ const MessageItem = React.memo(({
             clientY = e.clientY;
         }
 
-        const diffX = Math.abs(clientX - startPos.current.x);
-        const diffY = Math.abs(clientY - startPos.current.y);
+        const dx = clientX - startPos.current.x; // 有符号：左滑为负
+        const dy = clientY - startPos.current.y;
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
 
         // If moved more than 10px, assume scrolling and cancel long press
-        if (diffX > 10 || diffY > 10) {
+        if (longPressTimer.current && (absX > 10 || absY > 10)) {
             clearTimeout(longPressTimer.current);
             longPressTimer.current = null;
+        }
+
+        if (!canSwipeReply) return;
+
+        // 锁定为水平左滑手势：横向位移占主导且方向向左
+        if (!swipeActive.current && dx < -12 && absX > absY * 1.2) {
+            swipeActive.current = true;
+        }
+        if (swipeActive.current) {
+            // 阻尼：超过触发线后位移衰减，给出"拉到头"的手感
+            let offset = dx;
+            if (offset < -SWIPE_REPLY_TRIGGER) {
+                offset = -SWIPE_REPLY_TRIGGER - (-offset - SWIPE_REPLY_TRIGGER) * 0.35;
+            }
+            offset = Math.min(0, Math.max(offset, -SWIPE_REPLY_MAX));
+            setSwipeX(offset);
+            const reached = dx <= -SWIPE_REPLY_TRIGGER;
+            if (reached && !swipeTriggered.current) {
+                swipeTriggered.current = true;
+                try { navigator.vibrate?.(12); } catch {}
+            } else if (!reached && swipeTriggered.current) {
+                swipeTriggered.current = false;
+            }
         }
     };
 
@@ -1251,6 +1294,23 @@ const MessageItem = React.memo(({
                     </div>
                 )}
 
+                {/* 左滑引用：从右侧边缘渐入的回复图标，越过触发线后高亮 */}
+                {canSwipeReply && swipeX < 0 && (() => {
+                    const progress = Math.min(1, -swipeX / SWIPE_REPLY_TRIGGER);
+                    return (
+                        <div
+                            className="absolute right-2 top-1/2 z-10 pointer-events-none"
+                            style={{ opacity: progress, transform: `translateY(-50%) scale(${0.6 + 0.4 * progress})` }}
+                        >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm transition-colors ${progress >= 1 ? 'bg-primary text-white' : 'bg-slate-200/90 text-slate-500'}`}>
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                                </svg>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 {/* Avatar - Absolute Positioned */}
                 {!isUser && (
                     <div
@@ -1278,7 +1338,11 @@ const MessageItem = React.memo(({
                     Added min-w-0 to prevent flexbox overflow issues.
                     Added explicit margins to clear absolute avatars.
                 */}
-                <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? 'ml-12' : 'mr-12'}`} {...interactionProps}>
+                <div
+                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? 'ml-12' : 'mr-12'}`}
+                    style={canSwipeReply ? { transform: `translateX(${swipeX}px)`, transition: swipeActive.current ? 'none' : 'transform 0.22s cubic-bezier(0.22,1,0.36,1)' } : undefined}
+                    {...interactionProps}
+                >
                     {!isUser && m.metadata?.thinkingChain && (
                         <div className={`relative w-full ${selectionMode ? 'pl-7' : ''}`}>
                             {selectionMode && onToggleThinkingSelect && (

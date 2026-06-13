@@ -2214,6 +2214,14 @@ ${recent || '（你们还没怎么聊过）'}
         setModalType('none');
     };
 
+    // 左滑气泡触发引用：直接拿到该条消息设为回复目标（与长按菜单的「引用/回复」同效）
+    const handleSwipeReply = useCallback((msg: Message) => {
+        setReplyTarget({
+            ...msg,
+            metadata: { ...msg.metadata, senderName: msg.role === 'user' ? '我' : char.name }
+        });
+    }, [char.name]);
+
     const handleCopyMessage = () => {
         if (!selectedMessage) return;
         navigator.clipboard.writeText(selectedMessage.content);
@@ -3377,6 +3385,7 @@ ${recent || '（你们还没怎么聊过）'}
                             charName={displayCharName}
                             userAvatar={displayUserAvatar}
                             onLongPress={handleMessageLongPress}
+                            onSwipeReply={handleSwipeReply}
                             selectionMode={selectionMode}
                             isSelected={selectedMsgIds.has(m.id)}
                             onToggleSelect={toggleMessageSelection}
