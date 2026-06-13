@@ -8,55 +8,57 @@ import { formatMessageForPrompt } from '../utils/messageFormat';
 import { getDiaryDateStr as getLocalDateStr, parseJsonLoose, callDiaryLLM } from './diaryShared';
 
 // ============ 常量 ============
+// 拼贴手账重制：文案 / 布局 / 按键全部原创。心情、印章、信纸的 key/id 持久化不可改，
+// 只换显示用的 emoji / 名称；功能、数据模型、LLM 契约保持不变。
 
 // 心情（5 选 1，存 key）
 const MOODS = [
-    { key: 'sunny', emoji: '☀️', label: '晴朗' },
-    { key: 'rainy', emoji: '🌧️', label: '阴雨' },
-    { key: 'starry', emoji: '🌙', label: '星夜' },
-    { key: 'cozy', emoji: '🫖', label: '惬意' },
-    { key: 'wild', emoji: '🧭', label: '放飞' },
+    { key: 'sunny', emoji: '☀️', label: '放晴' },
+    { key: 'rainy', emoji: '🌧️', label: '落雨' },
+    { key: 'starry', emoji: '🌠', label: '星河' },
+    { key: 'cozy', emoji: '🫖', label: '温吞' },
+    { key: 'wild', emoji: '🧭', label: '撒野' },
 ] as const;
 
 // 印章（可多选，存 key）
 const SEALS = [
-    { key: 'secret', emoji: '🔒', label: '秘密' },
-    { key: 'gratitude', emoji: '💐', label: '感恩' },
-    { key: 'courage', emoji: '🔥', label: '勇气' },
-    { key: 'dream', emoji: '🌙', label: '梦想' },
+    { key: 'secret', emoji: '🔒', label: '私密' },
+    { key: 'gratitude', emoji: '💐', label: '谢谢' },
+    { key: 'courage', emoji: '🔥', label: '打气' },
+    { key: 'dream', emoji: '🌙', label: '心愿' },
     { key: 'routine', emoji: '📎', label: '日常' },
 ] as const;
 
-// 信纸样式：作用在整本日记的时间线背景上（与 JournalApp 的纸张概念一致，但口味不同）
+// 信纸样式：作用在整本日记的时间线背景上（口味偏牛皮纸拼贴）
 const PAPER_STYLES: { id: string; name: string; css: string; text: string; sub: string; style?: React.CSSProperties }[] = [
-    { id: 'plain', name: '素白', css: 'bg-[#fdfcf8]', text: 'text-slate-700', sub: 'text-slate-400' },
+    { id: 'plain', name: '米白', css: 'bg-[#fbfaf7]', text: 'text-[#3b3833]', sub: 'text-[#a79c8e]' },
     {
-        id: 'grid', name: '方格', css: 'bg-white', text: 'text-slate-700', sub: 'text-slate-400',
-        style: { backgroundImage: 'linear-gradient(#eef0f3 1px, transparent 1px), linear-gradient(90deg, #eef0f3 1px, transparent 1px)', backgroundSize: '22px 22px' },
+        id: 'grid', name: '格纹', css: 'bg-[#fffdf8]', text: 'text-[#3b3833]', sub: 'text-[#a79c8e]',
+        style: { backgroundImage: 'linear-gradient(#e7e2d6 1px, transparent 1px), linear-gradient(90deg, #e7e2d6 1px, transparent 1px)', backgroundSize: '22px 22px' },
     },
     {
-        id: 'lined', name: '横线', css: 'bg-[#fffdf2]', text: 'text-slate-700', sub: 'text-slate-400',
-        style: { backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #ecebdd 27px, #ecebdd 28px)' },
+        id: 'lined', name: '信笺', css: 'bg-[#fffdf2]', text: 'text-[#3b3833]', sub: 'text-[#a79c8e]',
+        style: { backgroundImage: 'repeating-linear-gradient(transparent, transparent 27px, #e9e3d4 27px, #e9e3d4 28px)' },
     },
     {
-        id: 'pink', name: '粉色', css: 'bg-pink-50', text: 'text-slate-700', sub: 'text-pink-400/80',
-        style: { backgroundImage: 'radial-gradient(#fbcfe8 1.5px, transparent 1.5px)', backgroundSize: '26px 26px' },
+        id: 'pink', name: '蜜桃', css: 'bg-[#fdf2f4]', text: 'text-[#3b3833]', sub: 'text-[#d98a98]',
+        style: { backgroundImage: 'radial-gradient(#f4c9d2 1.5px, transparent 1.5px)', backgroundSize: '26px 26px' },
     },
-    { id: 'dark', name: '深色', css: 'bg-slate-900', text: 'text-white/90', sub: 'text-white/40' },
+    { id: 'dark', name: '墨夜', css: 'bg-[#2b2933]', text: 'text-white/90', sub: 'text-white/40' },
 ];
 
-// 写作提示（本地内置，「换一个」随机切换）
+// 写作提示（本地内置，「换一题」随机切换）
 const WRITING_PROMPTS = [
-    '今天最让你印象深刻的一个瞬间是什么？',
-    '如果用一种天气形容今天的心情，会是什么？为什么？',
-    '最近有什么小事让你偷偷开心了很久？',
-    '写一件你今天本来想做、却没做成的事。',
-    '此刻你最想对谁说一句什么话？',
+    '今天有哪个瞬间，过去好久还记得？',
+    '要是用一种天气形容今天的心情，会是哪种？为什么？',
+    '最近有件小事，让你偷偷高兴了很久吧？',
+    '写一件你今天本来想做、最后没做成的事。',
+    '此刻最想对谁说一句话？说什么？',
     '今天吃到 / 看到 / 听到的最好的东西是什么？',
-    '记录一个你最近反复想起的画面。',
-    '如果今天可以重来一次，你想改变哪个选择？',
-    '写下一个你从没告诉过别人的小习惯。',
-    '最近哪个瞬间让你觉得「啊，活着真好」？',
+    '记下一个你最近总会想起的画面。',
+    '如果今天能重来一次，你想改哪个选择？',
+    '写一个你从没告诉过别人的小习惯。',
+    '最近哪一刻，让你觉得"啊，还好活着"？',
 ];
 
 const moodOf = (key?: string) => MOODS.find(m => m.key === key);
@@ -113,7 +115,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
     useEffect(() => {
         DB.getAllExchangeDiaryBooks().then(setBooks).catch(e => {
             console.warn('📔 [日记社] 加载失败:', e);
-            addToast('日记本加载失败', 'error');
+            addToast('本子没打开', 'error');
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -134,7 +136,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
 
     const openCreateForm = () => {
         if (characters.length === 0) {
-            addToast('请先创建一个角色', 'info');
+            addToast('先去捏一个角色吧', 'info');
             return;
         }
         setBookForm({ title: '', charIds: [], paperStyle: 'plain' });
@@ -155,8 +157,8 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
     const submitBookForm = async () => {
         if (!bookForm) return;
         const title = bookForm.title.trim();
-        if (!title) { addToast('给日记本起个名字吧', 'info'); return; }
-        if (bookForm.charIds.length === 0) { addToast('至少选择一位参与的角色', 'info'); return; }
+        if (!title) { addToast('先给本子取个名字', 'info'); return; }
+        if (bookForm.charIds.length === 0) { addToast('至少拉一个人进来', 'info'); return; }
 
         try {
             if (bookForm.id) {
@@ -165,7 +167,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
                 // 活跃角色被移出成员时回退到第一位成员
                 const activeCharId = bookForm.charIds.includes(book.activeCharId) ? book.activeCharId : bookForm.charIds[0];
                 await persistBook({ ...book, title, charIds: bookForm.charIds, activeCharId, paperStyle: bookForm.paperStyle });
-                addToast('日记本已更新', 'success');
+                addToast('本子改好了', 'success');
             } else {
                 const now = Date.now();
                 const newBook: ExchangeDiaryBook = {
@@ -180,11 +182,11 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
                 };
                 await persistBook(newBook);
                 setActiveBookId(newBook.id);
-                addToast('日记本已创建', 'success');
+                addToast('新本子开张了', 'success');
             }
             setBookForm(null);
         } catch (e: any) {
-            addToast(`保存失败: ${e.message}`, 'error');
+            addToast(`没存上: ${e.message}`, 'error');
         }
     };
 
@@ -196,9 +198,9 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
             if (activeBookId === deletingBook.id) setActiveBookId(null);
             setDeletingBook(null);
             setBookForm(null);
-            addToast('日记本已删除', 'success');
+            addToast('整本撕掉了', 'success');
         } catch (e: any) {
-            addToast(`删除失败: ${e.message}`, 'error');
+            addToast(`没删掉: ${e.message}`, 'error');
         }
     };
 
@@ -245,7 +247,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
     // --- AI 帮我起头：替用户拟 2-3 句日记开头，插入输入框 ---
     const handleAiOpening = async () => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('opening');
         try {
             const prompt = `你是一位温柔的日记写作助手。用户「${userProfile.name}」想写今天的日记，但不知道怎么开头。
@@ -256,9 +258,9 @@ ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(
             const text = await callLLM([{ role: 'user', content: prompt }], 0.9);
             const cleaned = text.replace(/^["'「『]+|["'」』]+$/g, '').trim();
             setDraftContent(prev => (prev.trim() ? `${prev.trimEnd()}\n${cleaned}` : cleaned));
-            addToast('开头已写好，接着写吧', 'success');
+            addToast('开头给你起好了，接着写 ✎', 'success');
         } catch (e: any) {
-            addToast(`起头失败: ${e.message}`, 'error');
+            addToast(`起头没成: ${e.message}`, 'error');
         } finally {
             setAiBusy(null);
         }
@@ -270,7 +272,7 @@ ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(
     // 上下文 = 完整人设 (buildCoreContext) + 用户最新一篇 + 今天的聊天节选 + 本子近况。
     const requestCharEntry = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('entry');
         try {
             const latestUserEntry = [...book.entries]
@@ -331,7 +333,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
             // 注意：异步期间 book 可能已被其它操作更新，重新从内存态取最新版本再追加
             const fresh = booksRefLatest(book.id) || book;
             await persistBook({ ...fresh, entries: [...fresh.entries, entry] });
-            addToast(`${char.name} 写下了一篇日记`, 'success');
+            addToast(`${char.name} 写了一篇`, 'success');
         } catch (e: any) {
             addToast(`${char.name} 没写出来: ${e.message}`, 'error');
         } finally {
@@ -344,12 +346,12 @@ mood 必须从这些选项里选: ${moodOptions}`;
     // 把今天与活跃角色的聊天，让 LLM 以角色视角写成一篇日记式总结（isSummary 标记）
     const generateDailySummary = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('summary');
         try {
             const chatExcerpt = await getTodayChatExcerpt(char);
             if (!chatExcerpt.trim()) {
-                addToast(`今天还没有和 ${char.name} 的对话`, 'info');
+                addToast(`今天还没和 ${char.name} 聊过呢`, 'info');
                 return;
             }
             const moodOptions = MOODS.map(m => `${m.key}(${m.emoji}${m.label})`).join(' / ');
@@ -397,9 +399,9 @@ mood 必须从这些选项里选: ${moodOptions}`;
             };
             const fresh = booksRefLatest(book.id) || book;
             await persistBook({ ...fresh, entries: [...fresh.entries, entry] });
-            addToast('今日对话总结已写入日记', 'success');
+            addToast('今天的对话总结贴进去了', 'success');
         } catch (e: any) {
-            addToast(`总结失败: ${e.message}`, 'error');
+            addToast(`总结没成: ${e.message}`, 'error');
         } finally {
             setAiBusy(null);
         }
@@ -422,7 +424,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const publishUserEntry = async () => {
         if (!activeBook) return;
         const content = draftContent.trim();
-        if (!content) { addToast('写点什么再发布吧', 'info'); return; }
+        if (!content) { addToast('写点什么再贴上去吧', 'info'); return; }
         const char = activeChar;
 
         const now = Date.now();
@@ -441,13 +443,13 @@ mood 必须从这些选项里选: ${moodOptions}`;
         try {
             const updated = await persistBook({ ...activeBook, entries: [...activeBook.entries, entry] });
             setComposerOpen(false);
-            addToast('日记已发布', 'success');
+            addToast('贴进本子了', 'success');
             // 发布后自动请活跃角色回应一篇（未配置 API 时静默跳过，可稍后手动请 TA 写）
             if (char && apiConfig.apiKey) {
                 void requestCharEntry(updated, char);
             }
         } catch (e: any) {
-            addToast(`发布失败: ${e.message}`, 'error');
+            addToast(`没贴上: ${e.message}`, 'error');
         }
     };
 
@@ -456,9 +458,9 @@ mood 必须从这些选项里选: ${moodOptions}`;
         try {
             await persistBook({ ...activeBook, entries: activeBook.entries.filter(e => e.id !== deletingEntry.id) });
             setDeletingEntry(null);
-            addToast('已删除', 'success');
+            addToast('撕掉了', 'success');
         } catch (e: any) {
-            addToast(`删除失败: ${e.message}`, 'error');
+            addToast(`没删掉: ${e.message}`, 'error');
         }
     };
 
@@ -474,7 +476,16 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const Avatar: React.FC<{ src?: string; name: string; size?: string }> = ({ src, name, size = 'w-9 h-9' }) => (
         src
             ? <img src={src} className={`${size} rounded-full object-cover border border-black/5 shrink-0`} alt={name} />
-            : <div className={`${size} rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-bold shrink-0`}>{name.slice(0, 1)}</div>
+            : <div className={`${size} rounded-full bg-[#e7ddc9] text-[#8a7a55] flex items-center justify-center text-xs font-bold shrink-0`}>{name.slice(0, 1)}</div>
+    );
+
+    // 拍立得头像（时间线里用，带一点歪斜的拼贴感）
+    const Polaroid: React.FC<{ src?: string; name: string; tilt: string }> = ({ src, name, tilt }) => (
+        <div className="bg-white p-[3px] pb-1.5 shadow-md border border-[#ece9e2] shrink-0" style={{ rotate: tilt }}>
+            {src
+                ? <img src={src} className="w-9 h-9 object-cover" alt={name} />
+                : <div className="w-9 h-9 bg-[#e7ddc9] text-[#8a7a55] flex items-center justify-center text-sm font-bold">{name.slice(0, 1)}</div>}
+        </div>
     );
 
     // 时间线按日期分组（日期新→旧；同一天内按时间正序，像翻日记一样自然）
@@ -506,7 +517,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const bookFormModal = bookForm ? (
         <Modal
             isOpen={true}
-            title={bookForm.id ? '日记本设定' : '新建日记本'}
+            title={bookForm.id ? '本子设定' : '开一本新的'}
             onClose={() => setBookForm(null)}
             footer={
                 <div className="flex gap-2 w-full">
@@ -516,69 +527,64 @@ mood 必须从这些选项里选: ${moodOptions}`;
                                 const b = books.find(x => x.id === bookForm.id);
                                 if (b) setDeletingBook(b);
                             }}
-                            className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-bold text-sm active:scale-95 transition-transform"
-                        >删除</button>
+                            className="px-4 py-3 bg-[#f6e4e2] text-[#b03a34] rounded-full font-bold text-sm active:scale-95 transition-transform"
+                        >撕掉</button>
                     )}
-                    <button onClick={() => setBookForm(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold text-sm">取消</button>
-                    <button onClick={submitBookForm} className="flex-1 py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform">
-                        {bookForm.id ? '保存' : '创建'}
+                    <button onClick={() => setBookForm(null)} className="scrap-btn-paper flex-1 py-3 font-bold text-sm">先不弄</button>
+                    <button onClick={submitBookForm} className="scrap-btn flex-1 py-3 font-bold text-sm">
+                        {bookForm.id ? '存好' : '开张'}
                     </button>
                 </div>
             }
         >
             <div className="space-y-4 max-h-[55vh] overflow-y-auto no-scrollbar pr-1">
-                <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">名字</label>
-                    <input
-                        value={bookForm.title}
-                        onChange={e => setBookForm(prev => prev ? { ...prev, title: e.target.value } : prev)}
-                        placeholder="比如：三人份的夏天"
-                        maxLength={24}
-                        className="mt-1 w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 outline-none focus:border-amber-300 text-sm text-slate-700"
-                    />
-                </div>
+                <div className="drawer-tag mb-1"><span>本子名</span></div>
+                <input
+                    value={bookForm.title}
+                    onChange={e => setBookForm(prev => prev ? { ...prev, title: e.target.value } : prev)}
+                    placeholder="比如：我们仨的夏天"
+                    maxLength={24}
+                    className="w-full px-4 py-3 rounded-2xl bg-[#faf6ee] border border-[#ece4d3] outline-none focus:border-[#d8625b] text-sm text-[#4a463f] font-hand text-base"
+                    style={{ outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: '-5px' }}
+                />
 
-                <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">参与角色（可多选）</label>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                        {characters.map(c => {
-                            const selected = bookForm.charIds.includes(c.id);
-                            return (
-                                <button
-                                    key={c.id}
-                                    onClick={() => toggleFormChar(c.id)}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-2xl border text-left transition-all active:scale-95 ${
-                                        selected ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-white border-slate-100'
-                                    }`}
-                                >
-                                    <Avatar src={c.avatar} name={c.name} size="w-8 h-8" />
-                                    <span className={`text-sm truncate ${selected ? 'font-bold text-amber-800' : 'text-slate-600'}`}>{c.name}</span>
-                                    {selected && <span className="ml-auto text-amber-500 text-xs">✓</span>}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">信纸</label>
-                    <div className="mt-2 flex gap-2 flex-wrap">
-                        {PAPER_STYLES.map(p => (
+                <div className="drawer-tag mb-1"><span>拉谁进来 · 可多选</span></div>
+                <div className="grid grid-cols-2 gap-2">
+                    {characters.map(c => {
+                        const selected = bookForm.charIds.includes(c.id);
+                        return (
                             <button
-                                key={p.id}
-                                onClick={() => setBookForm(prev => prev ? { ...prev, paperStyle: p.id } : prev)}
-                                className={`flex flex-col items-center gap-1 active:scale-95 transition-transform`}
+                                key={c.id}
+                                onClick={() => toggleFormChar(c.id)}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-2xl border text-left transition-all active:scale-95 ${
+                                    selected ? 'bg-[#faf0ee] border-[#e3b4af] ring-1 ring-[#ecc9c5]' : 'bg-white border-[#ece4d3]'
+                                }`}
                             >
-                                <span
-                                    className={`w-12 h-12 rounded-xl border ${p.css} ${
-                                        bookForm.paperStyle === p.id ? 'border-amber-400 ring-2 ring-amber-300' : 'border-slate-200'
-                                    }`}
-                                    style={p.style}
-                                />
-                                <span className={`text-[10px] ${bookForm.paperStyle === p.id ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>{p.name}</span>
+                                <Avatar src={c.avatar} name={c.name} size="w-8 h-8" />
+                                <span className={`text-sm truncate font-hand ${selected ? 'font-bold text-[#b03a34]' : 'text-[#6b665d]'}`}>{c.name}</span>
+                                {selected && <span className="ml-auto text-[#d8625b] text-xs">✓</span>}
                             </button>
-                        ))}
-                    </div>
+                        );
+                    })}
+                </div>
+
+                <div className="drawer-tag mb-1"><span>信纸</span></div>
+                <div className="flex gap-2 flex-wrap">
+                    {PAPER_STYLES.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => setBookForm(prev => prev ? { ...prev, paperStyle: p.id } : prev)}
+                            className="flex flex-col items-center gap-1 active:scale-95 transition-transform"
+                        >
+                            <span
+                                className={`w-12 h-12 rounded-lg border ${p.css} ${
+                                    bookForm.paperStyle === p.id ? 'border-[#d8625b] ring-2 ring-[#ecc9c5]' : 'border-[#ddd6c8]'
+                                }`}
+                                style={p.style}
+                            />
+                            <span className={`text-[11px] font-hand ${bookForm.paperStyle === p.id ? 'text-[#b03a34] font-bold' : 'text-[#a79c8e]'}`}>{p.name}</span>
+                        </button>
+                    ))}
                 </div>
             </div>
         </Modal>
@@ -589,17 +595,17 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const deleteBookModal = deletingBook ? (
         <Modal
             isOpen={true}
-            title="删除日记本"
+            title="撕掉整本"
             onClose={() => setDeletingBook(null)}
             footer={
                 <div className="flex gap-2 w-full">
-                    <button onClick={() => setDeletingBook(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold text-sm">取消</button>
-                    <button onClick={handleDeleteBook} className="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold text-sm">删除</button>
+                    <button onClick={() => setDeletingBook(null)} className="scrap-btn-paper flex-1 py-3 font-bold text-sm">留着</button>
+                    <button onClick={handleDeleteBook} className="flex-1 py-3 bg-[#b03a34] text-white rounded-full font-bold text-sm active:scale-95 transition-transform">撕掉</button>
                 </div>
             }
         >
-            <p className="text-sm text-slate-600 leading-relaxed">
-                确定要删除《{deletingBook.title}》吗？里面的 {deletingBook.entries.length} 篇日记会一并消失，无法恢复。
+            <p className="text-sm text-[#4a463f] leading-relaxed">
+                确定撕掉《{deletingBook.title}》吗？里面的 {deletingBook.entries.length} 篇会一起没了，捡不回来。
             </p>
         </Modal>
     ) : null;
@@ -607,17 +613,17 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const deleteEntryModal = deletingEntry ? (
         <Modal
             isOpen={true}
-            title="删除这篇日记"
+            title="撕掉这一页"
             onClose={() => setDeletingEntry(null)}
             footer={
                 <div className="flex gap-2 w-full">
-                    <button onClick={() => setDeletingEntry(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold text-sm">取消</button>
-                    <button onClick={handleDeleteEntry} className="flex-1 py-3 bg-red-500 text-white rounded-2xl font-bold text-sm">删除</button>
+                    <button onClick={() => setDeletingEntry(null)} className="scrap-btn-paper flex-1 py-3 font-bold text-sm">留着</button>
+                    <button onClick={handleDeleteEntry} className="flex-1 py-3 bg-[#b03a34] text-white rounded-full font-bold text-sm active:scale-95 transition-transform">撕掉</button>
                 </div>
             }
         >
-            <p className="text-sm text-slate-600 leading-relaxed">
-                {deletingEntry.authorName} 在 {deletingEntry.date} 写的这篇会被永久删除。
+            <p className="text-sm text-[#4a463f] leading-relaxed">
+                {deletingEntry.authorName} 在 {deletingEntry.date} 写的这一页，撕了就回不来了。
             </p>
         </Modal>
     ) : null;
@@ -627,88 +633,85 @@ mood 必须从这些选项里选: ${moodOptions}`;
     const composerModal = composerOpen && activeBook ? (
         <Modal
             isOpen={true}
-            title="写今天的日记"
+            title="写今天这一页"
             onClose={() => setComposerOpen(false)}
             footer={
                 <div className="flex gap-2 w-full">
-                    <button onClick={() => setComposerOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold text-sm">取消</button>
+                    <button onClick={() => setComposerOpen(false)} className="scrap-btn-paper flex-1 py-3 font-bold text-sm">先不写</button>
                     <button
                         onClick={publishUserEntry}
                         disabled={!draftContent.trim()}
-                        className="flex-1 py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform disabled:opacity-40 disabled:active:scale-100"
-                    >发布</button>
+                        className="scrap-btn flex-1 py-3 font-bold text-sm disabled:opacity-40 disabled:active:scale-100"
+                    >贴上去</button>
                 </div>
             }
         >
             <div className="space-y-3 max-h-[55vh] overflow-y-auto no-scrollbar pr-1">
                 {/* 写作提示 */}
-                <div className="rounded-2xl bg-amber-50 border border-amber-100 px-3 py-2.5">
+                <div className="rounded-2xl bg-[#faf6ee] border border-[#ece4d3] px-3 py-2.5" style={{ outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: '-5px' }}>
                     <div className="flex items-start gap-2">
-                        <span className="text-base leading-none mt-0.5">💡</span>
-                        <p className="flex-1 text-[13px] text-amber-800 leading-relaxed">{currentPrompt}</p>
+                        <span className="text-base leading-none mt-0.5">📌</span>
+                        <p className="flex-1 text-[14px] text-[#7a6f4f] leading-relaxed font-hand">{currentPrompt}</p>
                     </div>
                     <div className="flex gap-2 mt-2">
                         <button
                             onClick={() => setCurrentPrompt(p => randomPrompt(p))}
-                            className="px-3 py-1.5 rounded-full bg-white border border-amber-200 text-amber-600 text-[11px] font-bold active:scale-95 transition-transform"
-                        >换一个</button>
+                            className="px-3 py-1.5 rounded-full bg-white border border-[#e3b4af] text-[#b03a34] text-[11px] font-bold active:scale-95 transition-transform"
+                        >换一题</button>
                         <button
                             onClick={handleAiOpening}
                             disabled={aiBusy !== null}
-                            className="px-3 py-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+                            className="scrap-btn px-3 py-1.5 text-[11px] font-bold disabled:opacity-50 flex items-center gap-1.5"
                         >
-                            {aiBusy === 'opening' ? <Spinner /> : '✨'} AI 帮我起头
+                            {aiBusy === 'opening' ? <Spinner /> : '✎'} 帮我起个头
                         </button>
                     </div>
                 </div>
 
                 {/* 心情 */}
-                <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">今天的心情</label>
-                    <div className="mt-1.5 flex gap-1.5">
-                        {MOODS.map(m => (
-                            <button
-                                key={m.key}
-                                onClick={() => setDraftMood(m.key)}
-                                className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border transition-all active:scale-95 ${
-                                    draftMood === m.key ? 'bg-amber-50 border-amber-300 ring-1 ring-amber-200' : 'bg-white border-slate-100'
-                                }`}
-                            >
-                                <span className="text-lg leading-none">{m.emoji}</span>
-                                <span className={`text-[10px] ${draftMood === m.key ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>{m.label}</span>
-                            </button>
-                        ))}
-                    </div>
+                <div className="drawer-tag"><span>今天什么心情</span></div>
+                <div className="flex gap-1.5">
+                    {MOODS.map(m => (
+                        <button
+                            key={m.key}
+                            onClick={() => setDraftMood(m.key)}
+                            className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border transition-all active:scale-95 ${
+                                draftMood === m.key ? 'bg-[#faf0ee] border-[#e3b4af] ring-1 ring-[#ecc9c5]' : 'bg-white border-[#ece4d3]'
+                            }`}
+                        >
+                            <span className="text-lg leading-none">{m.emoji}</span>
+                            <span className={`text-[11px] font-hand ${draftMood === m.key ? 'text-[#b03a34] font-bold' : 'text-[#a79c8e]'}`}>{m.label}</span>
+                        </button>
+                    ))}
                 </div>
 
                 {/* 印章 */}
-                <div>
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">盖个印章（可多选）</label>
-                    <div className="mt-1.5 flex gap-1.5 flex-wrap">
-                        {SEALS.map(s => (
-                            <button
-                                key={s.key}
-                                onClick={() => toggleSeal(s.key)}
-                                className={`px-2.5 py-1.5 rounded-full border text-[11px] flex items-center gap-1 transition-all active:scale-95 ${
-                                    draftSeals.includes(s.key) ? 'bg-rose-50 border-rose-300 text-rose-600 font-bold' : 'bg-white border-slate-100 text-slate-400'
-                                }`}
-                            >
-                                <span>{s.emoji}</span>{s.label}
-                            </button>
-                        ))}
-                    </div>
+                <div className="drawer-tag"><span>盖几枚印章</span></div>
+                <div className="flex gap-1.5 flex-wrap">
+                    {SEALS.map(s => (
+                        <button
+                            key={s.key}
+                            onClick={() => toggleSeal(s.key)}
+                            className={`px-2.5 py-1.5 rounded-full border text-[12px] flex items-center gap-1 transition-all active:scale-95 font-hand ${
+                                draftSeals.includes(s.key) ? 'bg-[#faf0ee] border-[#e3b4af] text-[#b03a34] font-bold' : 'bg-white border-[#ece4d3] text-[#a79c8e]'
+                            }`}
+                        >
+                            <span>{s.emoji}</span>{s.label}
+                        </button>
+                    ))}
                 </div>
 
                 {/* 正文 */}
                 <textarea
                     value={draftContent}
                     onChange={e => setDraftContent(e.target.value)}
-                    placeholder="今天发生了什么……"
+                    placeholder="今天过得怎么样……"
                     rows={6}
-                    className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 outline-none focus:border-amber-300 text-sm text-slate-700 leading-relaxed resize-none"
+                    className="w-full px-4 py-3 rounded-2xl bg-[#faf6ee] border border-[#ece4d3] outline-none focus:border-[#d8625b] text-sm text-[#4a463f] leading-relaxed resize-none"
+                    style={{ outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: '-5px' }}
                 />
                 {activeChar && (
-                    <p className="text-[11px] text-slate-400">发布后会自动请「{activeChar.name}」也写一篇回应。</p>
+                    <p className="text-[12px] text-[#a79c8e] font-hand">贴上去后，会自动请「{activeChar.name}」也写一页回应。</p>
                 )}
             </div>
         </Modal>
@@ -718,32 +721,33 @@ mood 必须从这些选项里选: ${moodOptions}`;
 
     if (!activeBook) {
         return (
-            <div className="h-full w-full bg-amber-50 flex flex-col font-light">
+            <div className="h-full w-full flex flex-col font-light" style={{ background: '#f4f2ed', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.06) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
                 {bookFormModal}
                 {deleteBookModal}
-                <div className="pt-12 pb-4 px-6 border-b border-amber-100 bg-amber-50/80 backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between shrink-0">
-                    <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-amber-100/50 active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-amber-900"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                <div className="relative pt-12 pb-3 px-5 sticky top-0 z-20 flex items-center justify-between shrink-0" style={{ background: '#efe9dc', borderBottom: '1px solid rgba(180,172,156,0.5)' }}>
+                    <button onClick={closeApp} className="scrap-btn-paper w-9 h-9 flex items-center justify-center" aria-label="返回">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#2b2933]"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    {tabSwitcher || <span className="font-bold text-amber-900 text-lg tracking-wide">日记社</span>}
-                    <button onClick={openCreateForm} className="p-2 -mr-2 rounded-full hover:bg-amber-100/50 active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-amber-900"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    {tabSwitcher || <span className="font-hand text-2xl font-bold text-[#2b2933]">合写本子</span>}
+                    <button onClick={openCreateForm} className="scrap-btn w-9 h-9 flex items-center justify-center" aria-label="开一本新的">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     </button>
+                    <div className="lace-edge absolute left-0 right-0 -bottom-[10px]"></div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-5 pb-20 no-scrollbar">
+                <div className="flex-1 overflow-y-auto p-5 pt-7 pb-20 no-scrollbar">
                     {books.length === 0 ? (
                         <div className="flex flex-col items-center justify-center gap-3 pt-24 text-center">
-                            <span className="text-5xl">📔</span>
-                            <p className="text-sm text-amber-800/70 font-medium">还没有日记本</p>
-                            <p className="text-xs text-amber-600/60 max-w-[220px] leading-relaxed">建一本，拉上喜欢的角色们，一起写交换日记吧</p>
-                            <button onClick={openCreateForm} className="mt-2 px-6 py-3 bg-amber-500 text-white rounded-2xl font-bold text-sm active:scale-95 transition-transform shadow-md shadow-amber-200">
-                                + 新建日记本
+                            <span className="text-5xl rotate-[-6deg]">📔</span>
+                            <p className="font-hand text-2xl text-[#6b665d]">架子上还没有本子</p>
+                            <p className="font-hand text-lg text-[#a79c8e] max-w-[240px] leading-relaxed">开一本，把喜欢的人都拉进来，一起写</p>
+                            <button onClick={openCreateForm} className="scrap-btn mt-2 px-6 py-3 font-bold text-sm">
+                                ＋ 开一本新的
                             </button>
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {books.map(b => {
+                            {books.map((b, i) => {
                                 const members = b.charIds
                                     .map(id => characters.find(c => c.id === id))
                                     .filter((c): c is CharacterProfile => !!c);
@@ -752,32 +756,35 @@ mood 必须从这些选项里选: ${moodOptions}`;
                                     <div
                                         key={b.id}
                                         onClick={() => setActiveBookId(b.id)}
-                                        className="relative bg-white rounded-r-2xl rounded-l-md border-l-4 border-l-amber-700 shadow-[2px_4px_12px_rgba(0,0,0,0.08)] p-4 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+                                        className={`scrap-card press-soft relative p-4 cursor-pointer overflow-hidden ${i % 2 ? 'tilt-r' : 'tilt-l'}`}
+                                        style={{ borderRadius: '4px 16px 16px 4px' }}
                                     >
-                                        <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-r from-black/10 to-transparent pointer-events-none"></div>
-                                        <div className="flex items-start justify-between gap-2">
+                                        <div className="absolute inset-y-0 left-0 w-3 pointer-events-none" style={{ background: 'linear-gradient(90deg, rgba(43,41,51,0.16), transparent)' }}></div>
+                                        {/* 书脊和纸胶带 */}
+                                        <span aria-hidden className="pointer-events-none absolute" style={{ top: -8, left: 24, width: 56, height: 18, transform: 'rotate(-4deg)', background: 'linear-gradient(100deg, rgba(216,98,91,0.32), rgba(216,98,91,0.16))', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)' }}></span>
+                                        <div className="flex items-start justify-between gap-2 pl-2">
                                             <div className="min-w-0">
-                                                <h3 className="font-bold text-amber-900 text-base truncate">{b.title}</h3>
-                                                <p className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                                                <h3 className="font-hand font-bold text-[#2b2933] text-xl truncate">{b.title}</h3>
+                                                <p className="label-mono text-[9px] text-[#a79c8e] mt-0.5">
                                                     {b.entries.length} 篇 · {getLocalDateStr(new Date(b.updatedAt))}
                                                 </p>
                                             </div>
                                             <button
                                                 onClick={e => { e.stopPropagation(); openEditForm(b); }}
-                                                className="p-2 -mt-1 -mr-1 rounded-full text-slate-400 hover:bg-slate-50 active:scale-90 transition-transform shrink-0"
-                                                aria-label="日记本设定"
+                                                className="p-2 -mt-1 -mr-1 rounded-full text-[#a79c8e] hover:bg-[#f0ece2] active:scale-90 transition-transform shrink-0 text-lg leading-none"
+                                                aria-label="本子设定"
                                             >⋯</button>
                                         </div>
-                                        <div className="flex items-center justify-between mt-3">
+                                        <div className="flex items-center justify-between mt-3 pl-2">
                                             <div className="flex -space-x-2">
                                                 {members.slice(0, 5).map(c => (
                                                     <img key={c.id} src={c.avatar} className="w-7 h-7 rounded-full object-cover border-2 border-white" alt={c.name} />
                                                 ))}
                                                 {members.length > 5 && (
-                                                    <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold flex items-center justify-center border-2 border-white">+{members.length - 5}</span>
+                                                    <span className="w-7 h-7 rounded-full bg-[#e7ddc9] text-[#8a7a55] text-[10px] font-bold flex items-center justify-center border-2 border-white">+{members.length - 5}</span>
                                                 )}
                                             </div>
-                                            <span className={`w-5 h-5 rounded-md border border-slate-200 ${paper.css}`} style={paper.style} title={`信纸: ${paper.name}`}></span>
+                                            <span className={`w-5 h-5 rounded-md border border-[#ddd6c8] ${paper.css}`} style={paper.style} title={`信纸：${paper.name}`}></span>
                                         </div>
                                     </div>
                                 );
@@ -805,18 +812,18 @@ mood 必须从这些选项里选: ${moodOptions}`;
             {deleteEntryModal}
             {composerModal}
 
-            {/* 头部 */}
-            <div className="pt-12 pb-4 px-5 bg-amber-500 shadow-lg shrink-0 rounded-b-[1.5rem] z-20">
+            {/* 头部（墨色封面 + 蕾丝下边） */}
+            <div className="relative pt-12 pb-5 px-5 shrink-0 z-20" style={{ background: '#2b2933' }}>
                 <div className="flex items-center justify-between">
-                    <button onClick={() => setActiveBookId(null)} className="p-2 -ml-2 text-white/80 hover:text-white active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
+                    <button onClick={() => setActiveBookId(null)} className="scrap-btn-paper w-9 h-9 flex items-center justify-center" aria-label="返回">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#2b2933]"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
                     </button>
                     <div className="min-w-0 text-center">
-                        <div className="text-[10px] text-white/70 uppercase tracking-widest font-bold">Exchange Diary Club</div>
-                        <div className="text-lg font-bold text-white truncate max-w-[180px]">{activeBook.title}</div>
+                        <div className="label-mono text-[9px] text-white/45">everyone's diary</div>
+                        <div className="font-hand text-2xl font-bold text-white truncate max-w-[200px]">{activeBook.title}</div>
                     </div>
-                    <button onClick={() => openEditForm(activeBook)} className="p-2 -mr-2 text-white/80 hover:text-white active:scale-90 transition-transform" aria-label="日记本设定">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                    <button onClick={() => openEditForm(activeBook)} className="scrap-btn-paper w-9 h-9 flex items-center justify-center" aria-label="本子设定">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#2b2933]"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
                     </button>
                 </div>
 
@@ -833,41 +840,47 @@ mood 必须从这些选项里选: ${moodOptions}`;
                                 }`}
                             >
                                 <Avatar src={c.avatar} name={c.name} size="w-6 h-6" />
-                                <span className={`text-xs font-bold ${isActive ? 'text-amber-700' : 'text-white/90'}`}>{c.name}</span>
-                                {isActive && <span className="text-[9px] text-amber-500">●</span>}
+                                <span className={`text-xs font-bold font-hand ${isActive ? 'text-[#2b2933]' : 'text-white/90'}`}>{c.name}</span>
+                                {isActive && <span className="text-[9px] text-[#d8625b]">●</span>}
                             </button>
                         );
                     })}
                 </div>
+                <div className="lace-edge absolute left-0 right-0 -bottom-[9px]"></div>
             </div>
 
-            {/* 操作按钮区 */}
-            <div className="px-4 py-3 flex gap-2 bg-white border-b border-slate-100 shrink-0 z-10">
+            {/* 操作按钮区（牛皮纸纸条工具条） */}
+            <div className="px-4 py-3.5 flex gap-2 shrink-0 z-10" style={{ background: '#efe9dc', borderBottom: '1px solid rgba(180,172,156,0.5)' }}>
                 <button
                     onClick={openComposer}
-                    className="flex-1 py-2.5 rounded-2xl bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform shadow-sm shadow-amber-200"
-                >✍️ 写日记</button>
+                    className="stationery-strip stationery-strip-ink flex-1 justify-center"
+                >
+                    <span className="stamp-box">✍️</span>
+                    <span className="font-hand font-bold text-base">写一页</span>
+                </button>
                 <button
                     onClick={() => activeChar && void requestCharEntry(activeBook, activeChar)}
                     disabled={aiBusy !== null || !activeChar}
-                    className="flex-1 py-2.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"
+                    className="stationery-strip flex-1 justify-center disabled:opacity-50 disabled:active:scale-100"
                 >
-                    {aiBusy === 'entry' ? <Spinner /> : '📖'} 请 TA 写一篇
+                    <span className="stamp-box">{aiBusy === 'entry' ? <Spinner /> : '📖'}</span>
+                    <span className="font-hand font-bold text-base">请 TA 写</span>
                 </button>
                 <button
                     onClick={() => activeChar && void generateDailySummary(activeBook, activeChar)}
                     disabled={aiBusy !== null || !activeChar}
-                    className="flex-1 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-600 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"
+                    className="stationery-strip flex-1 justify-center disabled:opacity-50 disabled:active:scale-100"
                 >
-                    {aiBusy === 'summary' ? <Spinner /> : '💬'} 今日对话总结
+                    <span className="stamp-box">{aiBusy === 'summary' ? <Spinner /> : '💬'}</span>
+                    <span className="font-hand font-bold text-base">今日总结</span>
                 </button>
             </div>
 
             {/* AI 写作中提示条 */}
             {(aiBusy === 'entry' || aiBusy === 'summary') && activeChar && (
-                <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-[11px] text-amber-700 shrink-0">
-                    <span className="text-amber-500"><Spinner /></span>
-                    {aiBusy === 'entry' ? `${activeChar.name} 正在写日记…` : `${activeChar.name} 正在回顾今天的对话…`}
+                <div className="px-4 py-2 bg-[#faf0ee] border-b border-[#ecc9c5] flex items-center gap-2 text-[12px] text-[#b03a34] shrink-0 font-hand">
+                    <span className="text-[#d8625b]"><Spinner /></span>
+                    {aiBusy === 'entry' ? `${activeChar.name} 正在写……` : `${activeChar.name} 正在回想今天……`}
                 </div>
             )}
 
@@ -876,50 +889,54 @@ mood 必须从这些选项里选: ${moodOptions}`;
                 <div className="p-4 pb-24 space-y-5">
                     {grouped.length === 0 && (
                         <div className={`text-center pt-20 space-y-2 ${paper.sub}`}>
-                            <div className="text-4xl">🖋️</div>
-                            <p className="text-sm">第一页还空着，写点什么吧</p>
+                            <div className="text-4xl rotate-[-6deg]">🖋️</div>
+                            <p className="font-hand text-xl">第一页还空着，写点什么吧 ✎</p>
                         </div>
                     )}
                     {grouped.map(group => (
                         <div key={group.date}>
-                            {/* 日期分隔头 */}
+                            {/* 日期分隔头：手写日签 + 两侧缝线 */}
                             <div className="flex items-center gap-3 mb-3">
-                                <div className={`flex-1 h-px ${isDark ? 'bg-white/10' : 'bg-black/5'}`}></div>
-                                <span className={`text-[11px] font-mono font-bold ${paper.sub}`}>{dateLabel(group.date)}</span>
-                                <div className={`flex-1 h-px ${isDark ? 'bg-white/10' : 'bg-black/5'}`}></div>
+                                <div className={`flex-1 border-t border-dashed ${isDark ? 'border-white/15' : 'border-black/10'}`}></div>
+                                <span
+                                    className={`font-hand text-sm font-bold px-2.5 py-0.5 rounded-md ${paper.text}`}
+                                    style={{ background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.75)', border: isDark ? '1px dashed rgba(255,255,255,0.2)' : '1px dashed rgba(120,116,106,0.4)' }}
+                                >{dateLabel(group.date)}</span>
+                                <div className={`flex-1 border-t border-dashed ${isDark ? 'border-white/15' : 'border-black/10'}`}></div>
                             </div>
 
-                            <div className="space-y-3">
-                                {group.list.map(e => {
+                            <div className="space-y-3.5">
+                                {group.list.map((e, idx) => {
                                     const isUser = e.author === 'user';
                                     const mood = moodOf(e.mood);
                                     return (
                                         <div key={e.id} className={`flex gap-2.5 ${isUser ? 'flex-row-reverse' : ''}`}>
-                                            <Avatar src={e.avatar} name={e.authorName} />
+                                            <Polaroid src={e.avatar} name={e.authorName} tilt={isUser ? '3deg' : '-3deg'} />
                                             <div className={`max-w-[82%] min-w-0 ${isUser ? 'items-end' : 'items-start'} flex flex-col`}>
                                                 {/* 作者行 */}
                                                 <div className={`flex items-center gap-1.5 mb-1 px-1 ${isUser ? 'flex-row-reverse' : ''}`}>
-                                                    <span className={`text-[11px] font-bold ${paper.text} opacity-70`}>{e.authorName}</span>
-                                                    {mood && <span className="text-[13px]" title={mood.label}>{mood.emoji}</span>}
+                                                    <span className={`font-hand text-sm font-bold ${paper.text} opacity-80`}>{e.authorName}</span>
+                                                    {mood && <span className="text-[14px]" title={mood.label}>{mood.emoji}</span>}
                                                     {e.isSummary && (
-                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-600">对话总结</span>
+                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#e7eef5] text-[#5b7fa6]">今日总结</span>
                                                     )}
-                                                    <span className={`text-[10px] font-mono ${paper.sub}`}>{timeLabel(e.timestamp)}</span>
+                                                    <span className={`label-mono text-[9px] ${paper.sub}`}>{timeLabel(e.timestamp)}</span>
                                                 </div>
-                                                {/* 正文卡片：用户右侧琥珀描边，角色左侧白卡 */}
-                                                <div className={`relative rounded-2xl px-4 py-3 shadow-sm border ${
-                                                    isUser
-                                                        ? 'bg-amber-50/95 border-amber-200 rounded-tr-md'
-                                                        : 'bg-white/95 border-black/5 rounded-tl-md'
-                                                }`}>
-                                                    <p className="text-[13.5px] text-slate-700 leading-relaxed whitespace-pre-wrap break-words">{e.content}</p>
+                                                {/* 正文便签：用户右侧蜜桃描边，角色左侧奶白卡，带角落和纸胶带 */}
+                                                <div
+                                                    className={`relative px-4 py-3 shadow-sm border ${isUser ? 'bg-[#fdf3f0] border-[#ecc9c5]' : 'bg-white/97 border-[#ece4d3]'}`}
+                                                    style={{ borderRadius: isUser ? '14px 4px 14px 14px' : '4px 14px 14px 14px', rotate: idx % 2 ? '0.5deg' : '-0.5deg' }}
+                                                >
+                                                    {/* 角落和纸胶带 */}
+                                                    <span aria-hidden className="pointer-events-none absolute" style={{ top: -7, [isUser ? 'right' : 'left']: 12, width: 34, height: 13, transform: `rotate(${isUser ? 4 : -4}deg)`, background: isUser ? 'linear-gradient(100deg, rgba(216,98,91,0.3), rgba(216,98,91,0.15))' : 'linear-gradient(100deg, rgba(255,255,255,0.7), rgba(233,225,209,0.55))', borderLeft: '1px dashed rgba(160,156,146,0.45)', borderRight: '1px dashed rgba(160,156,146,0.45)' } as React.CSSProperties}></span>
+                                                    <p className="text-[13.5px] text-[#4a463f] leading-relaxed whitespace-pre-wrap break-words">{e.content}</p>
                                                     {/* 印章 */}
                                                     {e.seals && e.seals.length > 0 && (
                                                         <div className={`flex gap-1 mt-2 flex-wrap ${isUser ? 'justify-end' : ''}`}>
                                                             {e.seals.map(k => {
                                                                 const s = sealOf(k);
                                                                 return s ? (
-                                                                    <span key={k} className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-500 border border-rose-100 flex items-center gap-0.5">
+                                                                    <span key={k} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#faf0ee] text-[#b03a34] border border-[#ecc9c5] flex items-center gap-0.5 font-hand">
                                                                         {s.emoji}{s.label}
                                                                     </span>
                                                                 ) : null;
@@ -930,8 +947,8 @@ mood 必须从这些选项里选: ${moodOptions}`;
                                                 {/* ⋯ 删除 */}
                                                 <button
                                                     onClick={() => setDeletingEntry(e)}
-                                                    className={`mt-0.5 px-2 text-xs ${paper.sub} hover:text-red-400 active:scale-90 transition-transform`}
-                                                    aria-label="删除这篇日记"
+                                                    className={`mt-0.5 px-2 text-base ${paper.sub} hover:text-[#b03a34] active:scale-90 transition-transform`}
+                                                    aria-label="撕掉这一页"
                                                 >⋯</button>
                                             </div>
                                         </div>
