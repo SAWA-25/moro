@@ -22,6 +22,7 @@ import { Share } from '@capacitor/share';
 import { WhiteDaySession, isWhiteDayEventAvailable, WHITEDAY_RECORD_KEY } from './WhiteDayEvent';
 import { Like520Session, isLike520EventAvailable, isLike520Past, LIKE520_RECORD_KEY } from './Like520Event';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT, tinyRotate } from '../apps/almanac/handbookKit';
 
 // ============================================================
 // 情人节立绘 Sprite 映射 (占位 emoji，等图片整理好后替换为图床URL)
@@ -1162,22 +1163,16 @@ export const ValentineController: React.FC<ValentineControllerProps> = ({ onClos
 // ============================================================
 
 interface EventCardTheme {
-    /** 当期渐变（active）—— 不带透明度 */
-    activeGradient: string;
-    /** 往期渐变（past）—— 通常加 /70 透明度 */
-    pastGradient: string;
-    /** 当期阴影颜色 className（如 shadow-pink-200） */
-    activeShadow: string;
-    /** 文案副色调（如 text-pink-100） */
-    subColor: string;
-    /** hint 颜色（如 text-pink-200/60） */
-    hintColor: string;
-    /** 长按提示颜色 */
-    helpColor: string;
-    /** 头像边框 */
-    avatarRing: string;
-    /** 当期 hasRecord 小圆点 */
-    dotColor: string;
+    /** 纸片底色 */
+    noteBg: string;
+    /** 强调色（票签 / 印章 / hasRecord 圆点） */
+    accent: string;
+    /** 胶带色（rgba） */
+    tape: string;
+    /** 主文字色 */
+    ink: string;
+    /** 次要文字色 */
+    inkSoft: string;
 }
 
 interface EventCardProps {
@@ -1213,34 +1208,33 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
 
     return (
         <div className="mb-6" style={{ contain: 'layout paint' }}>
-            <div
-                className={`rounded-3xl p-6 text-white relative overflow-hidden ${isPast ? `${theme.pastGradient} shadow-lg` : `${theme.activeGradient} shadow-xl ${theme.activeShadow}`}`}
-            >
-                {/* 装饰圆 —— 用 pointer-events-none 避免拦截 */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-tr-full pointer-events-none" />
+            <PaperNote className="px-5 py-5" rotate={tinyRotate(recordKey)} bg={theme.noteBg}>
+                <WashiTape className="-top-2 left-8" color={theme.tape} rotate={-12} width={84} height={24} />
+                <WashiTape className="-top-2 right-8" color={theme.tape} rotate={12} width={70} height={22} />
 
                 {isPast && (
-                    <div className="absolute top-4 right-4 bg-white/20 text-white/85 text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">
-                        往期活动
+                    <div className="absolute top-3 right-3">
+                        <Postmark size={42} color={theme.accent} rotate={-12}>往期</Postmark>
                     </div>
                 )}
 
                 <div className="relative">
-                    <div className="text-3xl mb-2">{icon}</div>
-                    {eyebrow && <div className="text-[10px] tracking-[6px] mb-1 opacity-80">{eyebrow}</div>}
-                    <h2 className="text-xl font-bold mb-1">{title}</h2>
-                    <p className={`${theme.subColor} text-xs mb-4`}>
+                    <div className="flex items-center gap-2.5 mb-1">
+                        <span className="text-3xl">{icon}</span>
+                        {eyebrow && <TapeLabel color={theme.accent} textColor="#fff7ef">{eyebrow}</TapeLabel>}
+                    </div>
+                    <h2 className="text-[22px] font-black mb-1 mt-1" style={{ fontFamily: HAND_FONT, color: theme.ink }}>{title}</h2>
+                    <p className="text-[12px] mb-2 leading-relaxed" style={{ color: theme.inkSoft }}>
                         {isPast ? subtitlePast : subtitleActive}
                     </p>
-                    <div className={`text-[10px] ${theme.hintColor} mb-4`}>
+                    <div className="text-[11px] mb-4 inline-block px-2 py-0.5" style={{ color: theme.accent, background: '#fff', borderRadius: 8, fontFamily: HAND_FONT }}>
                         {isPast ? hintPast : hintActive}
                     </div>
 
                     {characters.length === 0 ? (
-                        <div className="text-center text-xs text-white/70 py-3">还没有角色</div>
+                        <div className="text-center text-[12px] py-3" style={{ color: theme.inkSoft }}>还没有角色</div>
                     ) : (
-                        <div className="max-h-64 overflow-y-auto -mx-1 px-1">
+                        <div className="max-h-64 overflow-y-auto no-scrollbar -mx-1 px-1">
                             <div className="grid grid-cols-3 gap-3">
                                 {characters.map(c => {
                                     const hasRecord = !!c.specialMomentRecords?.[recordKey];
@@ -1256,15 +1250,16 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
                                             onMouseUp={endLP}
                                             onMouseLeave={endLP}
                                             onContextMenu={(e) => { e.preventDefault(); if (hasRecord) onLongPressDelete(c.id); }}
-                                            className={`flex flex-col items-center gap-2 p-3 bg-white/15 rounded-2xl border ${isPending ? 'border-white/80 ring-2 ring-white/60' : 'border-white/20'} active:scale-95 transition-transform relative`}
+                                            className="flex flex-col items-center gap-2 p-3 rounded-2xl active:scale-95 transition-transform relative"
+                                            style={{ background: '#fff', boxShadow: isPending ? `0 0 0 2.5px ${theme.accent}` : '0 2px 6px rgba(96,66,40,0.12)' }}
                                         >
                                             {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:') ? (
-                                                <img src={c.avatar} loading="lazy" decoding="async" alt="" className={`w-12 h-12 rounded-full object-cover border-2 ${theme.avatarRing}`} />
+                                                <img src={c.avatar} loading="lazy" decoding="async" alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: '2px solid #f3ead7' }} />
                                             ) : (
-                                                <span className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl bg-white/10 border-2 ${theme.avatarRing}`}>{c.avatar || '🌸'}</span>
+                                                <span className="w-12 h-12 rounded-full flex items-center justify-center text-2xl" style={{ background: '#f3ead7', border: '2px solid #fff' }}>{c.avatar || '🌸'}</span>
                                             )}
-                                            <span className="text-[11px] font-bold truncate w-full text-center">{c.name}</span>
-                                            {hasRecord && <span className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${theme.dotColor}`} />}
+                                            <span className="text-[11px] font-bold truncate w-full text-center" style={{ color: theme.ink }}>{c.name}</span>
+                                            {hasRecord && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full" style={{ background: theme.accent }} />}
                                         </button>
                                     );
                                 })}
@@ -1272,48 +1267,39 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
                         </div>
                     )}
                     {characters.length > 0 && (
-                        <p className={`text-[10px] ${theme.helpColor} mt-3 text-center`}>长按角色可删除记录</p>
+                        <p className="text-[10px] mt-3 text-center" style={{ color: theme.inkSoft }}>长按角色可撕掉这张记录</p>
                     )}
                 </div>
-            </div>
+            </PaperNote>
         </div>
     );
 };
 
 const SpecialEventCard = React.memo(SpecialEventCardImpl);
 
-// 三个活动主题
+// 三个活动主题（手账风：各自一张不同色的便签纸）
 const THEME_LIKE520: EventCardTheme = {
-    activeGradient: 'bg-gradient-to-br from-pink-400 via-rose-400 to-amber-300',
-    pastGradient: 'bg-gradient-to-br from-pink-300/70 via-rose-300/70 to-amber-200/70',
-    activeShadow: 'shadow-rose-200',
-    subColor: 'text-rose-50/90',
-    hintColor: 'text-rose-100/60',
-    helpColor: 'text-rose-100/40',
-    avatarRing: 'border-white/30',
-    dotColor: 'bg-white/70',
+    noteBg: '#fdeef0',
+    accent: '#d96a82',
+    tape: 'rgba(231,163,180,0.66)',
+    ink: '#7a3b4c',
+    inkSoft: '#b07d8a',
 };
 
 const THEME_WHITEDAY: EventCardTheme = {
-    activeGradient: 'bg-gradient-to-br from-amber-500 via-orange-400 to-yellow-400',
-    pastGradient: 'bg-gradient-to-br from-amber-400/70 via-orange-300/70 to-yellow-300/70',
-    activeShadow: 'shadow-amber-200',
-    subColor: 'text-amber-100',
-    hintColor: 'text-amber-200/60',
-    helpColor: 'text-amber-200/40',
-    avatarRing: 'border-white/30',
-    dotColor: 'bg-white/70',
+    noteBg: '#fdf4e3',
+    accent: '#c98a3f',
+    tape: 'rgba(231,196,120,0.7)',
+    ink: '#6b4a2e',
+    inkSoft: '#b08a5a',
 };
 
 const THEME_VALENTINE: EventCardTheme = {
-    activeGradient: 'bg-gradient-to-br from-pink-500 via-rose-500 to-red-400',
-    pastGradient: 'bg-gradient-to-br from-pink-400/70 via-rose-400/70 to-red-300/70',
-    activeShadow: 'shadow-pink-200',
-    subColor: 'text-pink-100',
-    hintColor: 'text-pink-200/60',
-    helpColor: 'text-pink-200/40',
-    avatarRing: 'border-white/30',
-    dotColor: 'bg-white/60',
+    noteBg: '#fbecef',
+    accent: '#c8475f',
+    tape: 'rgba(231,140,156,0.66)',
+    ink: '#7a2b3e',
+    inkSoft: '#b06b78',
 };
 
 // ============================================================
@@ -1439,18 +1425,22 @@ export const SpecialMomentsApp: React.FC<{ onExit?: () => void }> = ({ onExit })
     }
 
     return (
-        <div className="h-full w-full bg-gradient-to-b from-pink-50 via-white to-rose-50 flex flex-col font-light">
+        <PaperPage kind="sticky">
+          <div className="h-full w-full flex flex-col" style={{ color: '#7a3b4c' }}>
             {/* Header */}
-            <div className="h-16 flex items-center justify-between px-4 border-b border-pink-100 bg-white/80 backdrop-blur-sm shrink-0">
-                <button onClick={exitApp} className="p-2 -ml-2 rounded-full hover:bg-pink-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="relative flex items-center justify-between px-4 pt-3 pb-2 shrink-0 z-10" style={{ paddingTop: 'calc(var(--safe-top) + 6px)' }}>
+                <button onClick={exitApp} className="px-3 py-1.5 text-[12px] font-bold active:scale-95 transition-transform" style={{ background: '#fffdf7', boxShadow: '0 2px 6px rgba(120,60,70,0.18)', transform: 'rotate(-1.5deg)', color: '#9a5a66' }}>
+                    ← 回封面
                 </button>
-                <span className="font-bold text-slate-700">特别时光</span>
-                <div className="w-8" />
+                <div className="text-center select-none" style={{ fontFamily: HAND_FONT }}>
+                    <div className="text-[20px] font-black leading-none" style={{ color: '#8a3b4c' }}>特别时光</div>
+                    <div className="text-[9px] tracking-[0.3em] mt-0.5" style={{ color: '#bb8a92' }}>KEEPSAKES</div>
+                </div>
+                <Postmark size={42} color="#c8475f" rotate={10}>留念</Postmark>
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-6 z-10">
                 {/* 520 */}
                 {visibility.like520.show && (
                     <SpecialEventCard
@@ -1542,7 +1532,8 @@ export const SpecialMomentsApp: React.FC<{ onExit?: () => void }> = ({ onExit })
                     onConfirm={() => handleDeleteRecord(deleteTargetId)}
                 />
             )}
-        </div>
+          </div>
+        </PaperPage>
     );
 };
 
@@ -1558,17 +1549,20 @@ const ConfirmDeleteModal: React.FC<{
 }> = ({ title, charName, note, onCancel, onConfirm }) => (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 animate-fade-in">
         <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
-        <div className="relative bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl">
-            <div className="text-center mb-4">
-                <div className="text-3xl mb-2">🗑️</div>
-                <h3 className="font-bold text-slate-700 text-base">{title}</h3>
-                <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                    将删除 <span className="font-bold text-slate-600">{charName}</span> 的记录。{note}
-                </p>
-            </div>
-            <div className="flex gap-3">
-                <button onClick={onCancel} className="flex-1 py-2.5 bg-slate-100 text-slate-500 font-bold rounded-xl active:scale-95 transition-transform text-sm">取消</button>
-                <button onClick={onConfirm} className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-xl active:scale-95 transition-transform text-sm">确认删除</button>
+        <div className="relative w-full max-w-xs animate-slide-up" style={{ background: '#fffdf7', borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(-0.8deg)' }}>
+            <WashiTape className="-top-2 left-1/2 -translate-x-1/2" color="rgba(200,71,95,0.55)" rotate={3} width={96} height={24} />
+            <div className="p-6">
+                <div className="text-center mb-4">
+                    <div className="text-3xl mb-2">✂️</div>
+                    <h3 className="font-black text-[18px]" style={{ fontFamily: HAND_FONT, color: '#7a3b4c' }}>{title}</h3>
+                    <p className="text-[12px] mt-2 leading-relaxed" style={{ color: '#a98e9a' }}>
+                        要撕掉 <span className="font-bold" style={{ color: '#7a3b4c' }}>{charName}</span> 的这张记录。{note}
+                    </p>
+                </div>
+                <div className="flex gap-3">
+                    <button onClick={onCancel} className="flex-1 py-2.5 font-bold rounded-xl active:scale-95 transition-transform text-[13px]" style={{ background: '#f0e9da', color: '#9a8262' }}>留着</button>
+                    <button onClick={onConfirm} className="flex-1 py-2.5 font-black rounded-xl active:scale-95 transition-transform text-[14px]" style={{ background: '#c8475f', color: '#fff7ef', fontFamily: HAND_FONT }}>撕掉它</button>
+                </div>
             </div>
         </div>
     </div>

@@ -2252,6 +2252,22 @@ export interface Anniversary {
     lastThoughtGeneratedAt?: number;
 }
 
+/**
+ * 岁时记 · 日历贴纸
+ * 用户 / 角色往某一天贴的一条标记。author='user' 是手动贴的；
+ * author='character' 是角色按人设自己惦记/想做的事（AI 生成，charId 必填）。
+ */
+export interface CalendarMark {
+    id: string;
+    date: string;            // 'YYYY-MM-DD'
+    text: string;
+    author: 'user' | 'character';
+    charId?: string;         // author==='character' 时为该角色 id
+    color?: string;          // 贴纸/胶带色（hex 或 tailwind 友好的色值）
+    emoji?: string;          // 可选小贴纸
+    createdAt: number;
+}
+
 export interface SocialComment {
     id: string;
     authorName: string;
