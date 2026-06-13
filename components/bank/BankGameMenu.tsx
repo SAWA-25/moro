@@ -92,6 +92,9 @@ const BankGameMenu: React.FC<Props> = ({
         setAvatarMode('url');
     };
 
+    // 库存告急：有在售商品 ≤3 份时，给「商品」子标签也贴个小红点（与外层「经营」书签呼应）
+    const menuLowStock = state.shop.unlockedRecipes.some(id => (state.shop.stock?.[id] ?? 0) <= 3);
+
     return (
         <div className="space-y-5">
             {/* 三枚纸签 Tab */}
@@ -106,10 +109,13 @@ const BankGameMenu: React.FC<Props> = ({
                         <button
                             key={t.key}
                             onClick={() => setTab(t.key as any)}
-                            className="flex-1 py-2.5 px-3 text-[14px] font-black transition-transform active:scale-95 flex items-center justify-center gap-1.5"
+                            className="relative flex-1 py-2.5 px-3 text-[14px] font-black transition-transform active:scale-95 flex items-center justify-center gap-1.5"
                             style={{ fontFamily: HAND_FONT, borderRadius: '8px 11px 7px 10px', transform: `rotate(${[-1.2, 0.8, -0.6][i]}deg)`,
                                 ...(on ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' } : { background: '#efe2cd', color: '#a98e6f' }) }}
                         >
+                            {t.key === 'menu' && menuLowStock && (
+                                <span aria-hidden className="absolute w-2 h-2 rounded-full animate-pulse" style={{ top: 4, right: 6, background: '#e5484d', boxShadow: '0 0 0 2px #fffdf7' }} />
+                            )}
                             {t.key === 'staff' ? <UsersThree size={15} weight="bold" /> : t.key === 'menu' ? <CookingPot size={15} weight="bold" /> : <Target size={15} weight="bold" />}
                             <span>{t.label}</span>
                         </button>
