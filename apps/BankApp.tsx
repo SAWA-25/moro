@@ -25,12 +25,12 @@ const INITIAL_STATE: BankFullState = {
         shopName: '咖啡馆',
         shopLevel: 1,
         appeal: 100,
-        background: 'https://sharkpan.xyz/f/5n1gSj/bg.png', 
+        background: '',
         staff: [
             {
                 id: 'staff-001',
                 name: '系统',
-                avatar: 'https://sharkpan.xyz/f/gXayCw/XT.png',
+                avatar: '🐱',
                 role: 'manager',
                 fatigue: 0,
                 maxFatigue: 100,
@@ -49,6 +49,12 @@ const INITIAL_STATE: BankFullState = {
     todaySpent: 0,
     lastLoginDate: new Date().toISOString().split('T')[0],
 };
+
+// 失效图床：sharkpan.xyz 已无法访问，历史默认资源（店铺背景 / 系统店员头像 / 咖啡馆房间贴图）
+// 都指向它，会渲染成裂图。加载时统一清洗成可用的兜底（emoji / 留空走渐变），并配合 <img onError>。
+const DEAD_IMG_HOSTS = ['sharkpan.xyz'];
+const isDeadImg = (u?: string | null): boolean =>
+    typeof u === 'string' && DEAD_IMG_HOSTS.some(h => u.includes(h));
 
 const BankApp: React.FC = () => {
     const { closeApp, characters, addToast, apiConfig, userProfile } = useOS();
@@ -151,13 +157,46 @@ const BankApp: React.FC = () => {
         }
 
         // Use loaded dollhouse or initialize fresh
-        const dh = loadedDollhouse || INITIAL_DOLLHOUSE;
+        let dh = loadedDollhouse || INITIAL_DOLLHOUSE;
         dollhouseRef.current = dh;
         setDollhouseState(dh);
 
         // If this is a fresh install with no saved dollhouse, persist the initial state
         if (!loadedDollhouse) {
             await DB.saveBankDollhouse(dh);
+        }
+
+        // 清洗失效图床(sharkpan)留下的死链：救回历史存档里裂掉的店员头像 / 房间贴图 / 贴纸 / 背景。
+        // 幂等——没有死链就什么都不做、不写库。
+        {
+            let shopChanged = false;
+            const cleanStaff = currentState.shop.staff.map(s =>
+                isDeadImg(s.avatar)
+                    ? (shopChanged = true, { ...s, avatar: s.id === 'staff-001' ? '🐱' : '🙂' })
+                    : s
+            );
+            let cleanBg = currentState.shop.background;
+            if (isDeadImg(cleanBg)) { cleanBg = ''; shopChanged = true; }
+            if (shopChanged) {
+                currentState = { ...currentState, shop: { ...currentState.shop, staff: cleanStaff, background: cleanBg } };
+            }
+
+            let dhChanged = false;
+            const cleanRooms = dh.rooms.map(r => {
+                let room = r;
+                if (isDeadImg(room.roomTextureUrl)) { room = { ...room, roomTextureUrl: undefined }; dhChanged = true; }
+                if (room.stickers?.some(st => isDeadImg(st.url))) {
+                    room = { ...room, stickers: room.stickers.map(st => isDeadImg(st.url) ? { ...st, url: '⭐' } : st) };
+                    dhChanged = true;
+                }
+                return room;
+            });
+            if (dhChanged) {
+                dh = { ...dh, rooms: cleanRooms };
+                dollhouseRef.current = dh;
+                setDollhouseState(dh);
+                await DB.saveBankDollhouse(dh);
+            }
         }
 
         // Strip dollhouse from shop state (it's now managed separately)

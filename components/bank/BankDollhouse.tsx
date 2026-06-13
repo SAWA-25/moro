@@ -798,7 +798,7 @@ const BankDollhouse: React.FC<Props> = ({
                                     onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
                                     onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
                                 >
-                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} /> : sticker.url}
+                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : sticker.url}
                                     {editMode && (
                                         <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
                                             <button
@@ -839,7 +839,7 @@ const BankDollhouse: React.FC<Props> = ({
                                     onPointerDown={(e) => { e.stopPropagation(); handleStickerPressStart(sticker.id, room.id, sticker.surface); }}
                                     onPointerUp={(e) => { e.stopPropagation(); void handleStickerPointerUp(e.nativeEvent); }}
                                 >
-                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} /> : sticker.url}
+                                    {isUrl ? <img src={sticker.url} alt="" className="w-10 h-10 object-contain drop-shadow-sm" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : sticker.url}
                                     {editMode && (
                                         <div className="absolute -right-8 top-0 flex flex-col gap-0.5 z-40">
                                             <button
@@ -871,6 +871,7 @@ const BankDollhouse: React.FC<Props> = ({
                                     transform: `scale(${roomTextureScale})`,
                                     transformOrigin: 'center center',
                                 }}
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                             />
                         </div>
                     )}
@@ -923,7 +924,7 @@ const BankDollhouse: React.FC<Props> = ({
                             >
                                 <div className="drop-shadow-md origin-bottom" style={{ transform: `scale(${staffScale})` }}>
                                     {isStaffUrl
-                                        ? <img src={staff.avatar} className="w-10 h-10 object-contain" draggable={false} />
+                                        ? <img src={staff.avatar} className="w-10 h-10 object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                                         : <span className="text-3xl">{staff.avatar}</span>
                                     }
                                 </div>
