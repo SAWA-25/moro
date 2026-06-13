@@ -65,8 +65,16 @@ interface Props {
 // 咖啡店「默认布景」——纯展示层，只在主店铺、且用户没自定义「全屋贴图」时渲染。
 // 解决空房间问题（历史默认贴图是已失效的图床死链）。pointer-events-none，
 // 不写任何存档、不挡装修操作、层级在演员/贴纸之下，用户随时可在其上继续装饰。
-const CafeBackdrop: React.FC = () => (
+const CafeBackdrop = React.memo(() => (
     <div className="absolute inset-0 z-[2] pointer-events-none select-none overflow-hidden" aria-hidden>
+        {/* 彩旗 */}
+        <div className="absolute left-[6%] right-[6%]" style={{ top: '2%', height: 2, background: '#c9b08e', borderRadius: 2 }} />
+        <div className="absolute left-0 right-0 flex justify-center gap-1" style={{ top: '2%' }}>
+            {Array.from({ length: 13 }).map((_, i) => (
+                <div key={i} style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: `10px solid ${['#f3a6a0', '#f6c87a', '#9ccf9c', '#9bc4e0', '#caa6e0'][i % 5]}`, opacity: 0.9 }} />
+            ))}
+        </div>
+
         {/* 吊灯 */}
         {[38, 62].map(x => (
             <div key={x} className="absolute" style={{ left: `${x}%`, top: 0, transform: 'translateX(-50%)' }}>
@@ -74,6 +82,36 @@ const CafeBackdrop: React.FC = () => (
                 <div style={{ width: 22, height: 13, borderRadius: '0 0 13px 13px', background: 'linear-gradient(180deg,#f7cb80,#eaa64e)', boxShadow: '0 6px 16px rgba(240,180,90,0.5)' }} />
             </div>
         ))}
+
+        {/* 吊篮绿植 */}
+        {[20, 47].map(x => (
+            <div key={x} className="absolute" style={{ left: `${x}%`, top: 0, transform: 'translateX(-50%)' }}>
+                <div style={{ width: 1.5, height: 13, margin: '0 auto', background: '#c9b08e' }} />
+                <div style={{ width: 20, height: 11, borderRadius: '4px 4px 9px 9px', background: 'linear-gradient(180deg,#d59e6c,#b07f50)' }} />
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: -1 }}>
+                    {[0, 1, 2].map(k => <div key={k} style={{ width: 5, height: 10 + (k % 2) * 4, borderRadius: '0 0 60% 60%', background: '#7bb274' }} />)}
+                </div>
+            </div>
+        ))}
+
+        {/* 墙上相框 */}
+        <div className="absolute" style={{ left: '15%', top: '37%', transform: 'rotate(-2deg)' }}>
+            <div style={{ width: 34, height: 28, borderRadius: 3, background: '#fff', boxShadow: '0 0 0 3px #b98e63, 0 4px 8px rgba(0,0,0,0.12)', padding: 3 }}>
+                <div style={{ width: '100%', height: '100%', borderRadius: 2, background: 'linear-gradient(135deg,#ffe0b3,#f6b9a0)' }} />
+            </div>
+        </div>
+        <div className="absolute" style={{ left: '40%', top: '43%', transform: 'rotate(2deg)' }}>
+            <div style={{ width: 28, height: 24, borderRadius: 3, background: '#fff', boxShadow: '0 0 0 3px #b98e63, 0 4px 8px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>☕</div>
+        </div>
+
+        {/* 挂钟 */}
+        <div className="absolute" style={{ left: '61%', top: '38%', transform: 'translateX(-50%)' }}>
+            <div style={{ position: 'relative', width: 30, height: 30, borderRadius: '50%', background: '#fff', boxShadow: '0 0 0 3px #b98e63, 0 4px 8px rgba(0,0,0,0.12)' }}>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', width: 9, height: 1.5, background: '#6b4528', transformOrigin: 'left center', transform: 'translateY(-50%) rotate(-60deg)' }} />
+                <div style={{ position: 'absolute', top: '50%', left: '50%', width: 7, height: 1.5, background: '#6b4528', transformOrigin: 'left center', transform: 'translateY(-50%) rotate(40deg)' }} />
+                <div style={{ position: 'absolute', top: '50%', left: '50%', width: 3, height: 3, borderRadius: '50%', background: '#6b4528', transform: 'translate(-50%,-50%)' }} />
+            </div>
+        </div>
 
         {/* 营业中吊牌 */}
         <div className="absolute" style={{ left: '64%', top: '6%', transform: 'rotate(4deg)' }}>
@@ -135,12 +173,26 @@ const CafeBackdrop: React.FC = () => (
             </div>
         </div>
 
+        {/* 地毯 */}
+        <div className="absolute" style={{ left: '50%', top: '90%', transform: 'translate(-50%,-50%)', width: 128, height: 26, borderRadius: '50%', background: 'radial-gradient(ellipse at center,#eccaa2 0%,#dcb088 70%,#cda378 100%)', boxShadow: 'inset 0 0 0 3px rgba(255,255,255,0.22)', opacity: 0.8 }} />
+
+        {/* 双人小桌（演员站在桌前，像坐着的客人） */}
+        {[30, 70].map((x, i) => (
+            <div key={x} className="absolute" style={{ left: `${x}%`, top: '82%', transform: 'translateX(-50%)' }}>
+                <div style={{ position: 'absolute', left: -14, top: 2, width: 9, height: 14, borderRadius: '4px 4px 0 0', background: '#caa173' }} />
+                <div style={{ position: 'absolute', right: -14, top: 2, width: 9, height: 14, borderRadius: '4px 4px 0 0', background: '#caa173' }} />
+                <div style={{ position: 'relative', width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(180deg,#ead3b5,#d4b48c)', boxShadow: '0 4px 8px rgba(90,55,30,0.2)' }}>
+                    <span style={{ position: 'absolute', top: 3, left: '50%', transform: 'translateX(-50%)', fontSize: 12 }}>{i === 0 ? '☕' : '🍰'}</span>
+                </div>
+            </div>
+        ))}
+
         {/* 落地盆栽 */}
         {['7%', '91%'].map((x, i) => (
-            <div key={i} className="absolute" style={{ left: x, top: '79%', transform: 'translateX(-50%)', fontSize: 26, lineHeight: 1, filter: 'drop-shadow(0 4px 4px rgba(80,55,30,0.2))' }}>🪴</div>
+            <div key={i} className="absolute" style={{ left: x, top: '78%', transform: 'translateX(-50%)', fontSize: 26, lineHeight: 1, filter: 'drop-shadow(0 4px 4px rgba(80,55,30,0.2))' }}>🪴</div>
         ))}
     </div>
-);
+));
 
 const BankDollhouse: React.FC<Props> = ({
     shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook
