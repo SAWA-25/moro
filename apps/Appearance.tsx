@@ -319,7 +319,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
     };
 
     const handleSave = () => {
-        const name = newName.trim() || `预设 ${new Date().toLocaleDateString('zh-CN')}`;
+        const name = newName.trim() || `存档 ${new Date().toLocaleDateString('zh-CN')}`;
         onSave(name);
         setNewName('');
     };
@@ -329,7 +329,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
             const blob = await onExport(id);
             const preset = presets.find(p => p.id === id);
             const fileName = `appearance_${preset?.name || 'preset'}.zip`;
-            const title = `外观预设 - ${preset?.name || 'preset'}`;
+            const title = `拼贴册存档 - ${preset?.name || 'preset'}`;
 
             if (Capacitor.isNativePlatform()) {
                 // Native: 写到 Cache 再调系统分享
@@ -369,9 +369,9 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
                     }
                 }
             }
-            addToast('预设已导出', 'success');
+            addToast('存档导出了', 'success');
         } catch (e: any) {
-            addToast(e.message || '导出失败', 'error');
+            addToast(e.message || '导出没成', 'error');
         }
     };
 
@@ -381,7 +381,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
         try {
             await onImport(file);
         } catch (err: any) {
-            addToast(err.message || '导入失败', 'error');
+            addToast(err.message || '夹入没成', 'error');
         }
         if (importRef.current) importRef.current.value = '';
     };
@@ -397,80 +397,80 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
     return (
         <div className="space-y-5">
             {/* One-click Reset */}
-            <section className="bg-gradient-to-br from-rose-50 to-orange-50 rounded-3xl p-5 shadow-sm border border-rose-100">
+            <section className="bg-[#f4f2ed] p-5 border-2 border-[#2b2933] border-dashed shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <div className="flex items-center gap-2 mb-2">
-                    <h2 className="text-sm font-bold text-rose-500 uppercase tracking-widest">一键还原外观</h2>
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">撕回最初那页</h2>
                 </div>
-                <p className="text-[10px] text-slate-500 mb-3 leading-relaxed">
-                    把主题色、壁纸、字体、应用图标、桌面小组件、装饰贴纸全部还原成最初始状态。在不同版本之间反复导入预设导致图标错乱时使用。<br/>
-                    <span className="text-slate-400">已保存的外观预设不会被删除，随时还能切回去。</span>
+                <p className="text-[10px] text-[#6b6b6b] mb-3 leading-relaxed">
+                    把主色、壁纸、字体、图标、桌面贴图、贴纸全部撕回出厂的样子。版本之间反复导预设、图标乱套时用它。<br/>
+                    <span className="text-[#8b8996]">已存的存档不会丢，随时还能翻回去。</span>
                 </p>
                 {!confirmReset ? (
                     <button onClick={() => setConfirmReset(true)}
-                        className="w-full py-2.5 bg-white text-rose-500 font-bold text-xs rounded-xl border border-rose-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        className="w-full py-2.5 bg-[#fbfaf7] text-[#2b2933] font-bold text-xs label-mono border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        还原为初始外观
+                        撕回出厂样
                     </button>
                 ) : (
                     <div className="flex gap-2">
                         <button onClick={handleReset} disabled={resetting}
-                            className="flex-1 py-2.5 bg-rose-500 text-white font-bold text-xs rounded-xl shadow-sm active:scale-95 transition-transform disabled:opacity-50">
-                            {resetting ? '正在还原...' : '确认还原'}
+                            className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold text-xs label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform disabled:opacity-50">
+                            {resetting ? '撕回中…' : '确认撕回'}
                         </button>
                         <button onClick={() => setConfirmReset(false)} disabled={resetting}
-                            className="flex-1 py-2.5 bg-white text-slate-500 font-bold text-xs rounded-xl border border-slate-200 active:scale-95 transition-transform disabled:opacity-50">
-                            取消
+                            className="flex-1 py-2.5 bg-[#fbfaf7] text-[#6b6b6b] font-bold text-xs label-mono border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform disabled:opacity-50">
+                            算了
                         </button>
                     </div>
                 )}
             </section>
 
             {/* Save Current */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">保存当前外观</h2>
-                <p className="text-[10px] text-slate-400 mb-3">将当前的主题色、壁纸、字体、图标、装饰等完整外观保存为预设，方便随时切换。</p>
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-3">把这页存起来</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-3">把当前的主色、壁纸、字体、图标、贴纸整页存成一份，以后随时翻回来。</p>
                 <div className="flex gap-2">
                     <input
                         value={newName}
                         onChange={e => setNewName(e.target.value)}
-                        placeholder="预设名称（可选）"
-                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-primary transition-all"
+                        placeholder="给这页起个名（可留空）"
+                        className="flex-1 bg-[#f4f2ed] border-2 border-[#2b2933] px-4 py-2.5 text-xs outline-none focus:shadow-[2px_2px_0_#2b2933] transition-all"
                         onKeyDown={e => e.key === 'Enter' && handleSave()}
                     />
                     <button onClick={handleSave}
-                        className="px-5 py-2.5 bg-primary text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-transform shrink-0">
-                        保存
+                        className="px-5 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold text-xs label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
+                        存档
                     </button>
                 </div>
             </section>
 
             {/* Import */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">导入外观预设</h2>
-                <p className="text-[10px] text-slate-400 mb-3">从 .zip 文件导入他人分享的外观预设（兼容旧版 .json）。系统整合备份也会包含当前外观设置，单独预设文件更适合分享。</p>
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-3">夹一页进来</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-3">从 .zip 文件夹入别人分享的外观存档（也认旧版 .json）。系统整机备份里也带当前外观，单独的存档更适合分享。</p>
                 <input type="file" ref={importRef} className="hidden" accept=".zip,.json,application/zip,application/json" onChange={handleImport} />
                 <button onClick={() => importRef.current?.click()}
-                    className="w-full py-2.5 bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-500 font-bold text-xs rounded-xl border border-blue-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                    className="w-full py-2.5 bg-[#fbfaf7] text-[#2b2933] font-bold text-xs label-mono border-2 border-dashed border-[#2b2933] hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-all flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                    选择文件导入
+                    选个文件夹入
                 </button>
             </section>
 
             {/* Preset List */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">已保存预设 ({presets.length})</h2>
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-3">存档册 · {presets.length} 页</h2>
                 {presets.length === 0 ? (
                     <div className="text-center py-8">
                         <div className="text-3xl mb-2 opacity-40">
-                            <Sparkle size={48} weight="fill" className="mx-auto text-slate-300" />
+                            <Sparkle size={48} weight="fill" className="mx-auto text-[#c4c1b8]" />
                         </div>
-                        <p className="text-xs text-slate-400">还没有外观预设</p>
-                        <p className="text-[10px] text-slate-300 mt-1">保存当前外观或导入预设文件开始使用</p>
+                        <p className="text-xs text-[#8b8996]">册子还是空的</p>
+                        <p className="text-[10px] text-[#c4c1b8] mt-1">存一页当前外观，或夹一份别人的进来</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
                         {presets.map(preset => (
-                            <div key={preset.id} className="bg-slate-50 rounded-2xl border border-slate-100 overflow-hidden">
+                            <div key={preset.id} className="bg-[#f4f2ed] border-2 border-[#2b2933] overflow-hidden shadow-[2px_2px_0_rgba(43,41,51,0.15)]">
                                 {/* Preview bar */}
                                 <div className="h-14 relative overflow-hidden"
                                     style={{
@@ -481,14 +481,14 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
                                             return `url("${wp}") center/cover`;
                                         })(),
                                     }}>
-                                    <div className="absolute inset-0 bg-black/10" />
+                                    <div className="absolute inset-0 bg-[#2b2933]/10" />
                                     <div className="absolute bottom-1.5 left-3 flex gap-1">
-                                        <div className="w-4 h-4 rounded-full" style={{ backgroundColor: `hsl(${preset.theme.hue}, ${preset.theme.saturation}%, ${preset.theme.lightness}%)` }} />
-                                        <div className="w-4 h-4 rounded-full" style={{ backgroundColor: preset.theme.contentColor || '#fff' }} />
+                                        <div className="w-4 h-4 border border-[#2b2933]" style={{ backgroundColor: `hsl(${preset.theme.hue}, ${preset.theme.saturation}%, ${preset.theme.lightness}%)` }} />
+                                        <div className="w-4 h-4 border border-[#2b2933]" style={{ backgroundColor: preset.theme.contentColor || '#fff' }} />
                                     </div>
                                     {preset.theme.desktopDecorations && preset.theme.desktopDecorations.length > 0 && (
-                                        <div className="absolute bottom-1.5 right-3 text-[8px] text-white/80 bg-black/30 px-1.5 py-0.5 rounded-full backdrop-blur-sm">
-                                            {preset.theme.desktopDecorations.length} 装饰
+                                        <div className="absolute bottom-1.5 right-3 text-[8px] text-[#fbfaf7] bg-[#2b2933] px-1.5 py-0.5 label-mono">
+                                            贴纸 {preset.theme.desktopDecorations.length}
                                         </div>
                                     )}
                                 </div>
@@ -500,50 +500,50 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
                                             <input
                                                 value={editName}
                                                 onChange={e => setEditName(e.target.value)}
-                                                className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-primary"
+                                                className="flex-1 bg-[#fbfaf7] border-2 border-[#2b2933] px-3 py-1.5 text-xs outline-none focus:shadow-[2px_2px_0_#2b2933]"
                                                 autoFocus
                                                 onKeyDown={e => { if (e.key === 'Enter') handleRename(preset.id); if (e.key === 'Escape') setEditingId(null); }}
                                             />
-                                            <button onClick={() => handleRename(preset.id)} className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg">确定</button>
-                                            <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-lg">取消</button>
+                                            <button onClick={() => handleRename(preset.id)} className="px-3 py-1.5 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold label-mono">好</button>
+                                            <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933] text-[10px] font-bold label-mono">退</button>
                                         </div>
                                     ) : (
                                         <div className="flex items-center justify-between mb-2">
                                             <div>
-                                                <div className="text-xs font-bold text-slate-700">{preset.name}</div>
-                                                <div className="text-[9px] text-slate-400">{new Date(preset.createdAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                                                <div className="text-xs font-bold text-[#2b2933]">{preset.name}</div>
+                                                <div className="text-[9px] text-[#8b8996] font-mono">{new Date(preset.createdAt).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                                             </div>
                                         </div>
                                     )}
 
                                     <div className="flex gap-1.5 flex-wrap">
                                         <button onClick={() => onApply(preset.id)}
-                                            className="px-3 py-1.5 bg-primary text-white text-[10px] font-bold rounded-lg active:scale-95 transition-transform shadow-sm">
-                                            应用
+                                            className="px-3 py-1.5 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                            翻到这页
                                         </button>
                                         <button onClick={() => handleExport(preset.id)}
-                                            className="px-3 py-1.5 bg-green-50 text-green-600 text-[10px] font-bold rounded-lg border border-green-200 active:scale-95 transition-transform">
+                                            className="px-3 py-1.5 bg-[#fbfaf7] text-[#2b2933] text-[10px] font-bold label-mono border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform">
                                             导出
                                         </button>
                                         <button onClick={() => { setEditingId(preset.id); setEditName(preset.name); }}
-                                            className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-lg border border-slate-200 active:scale-95 transition-transform">
-                                            重命名
+                                            className="px-3 py-1.5 bg-[#fbfaf7] text-[#6b6b6b] text-[10px] font-bold label-mono border-2 border-[#2b2933]/30 active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                            改名
                                         </button>
                                         {confirmDeleteId === preset.id ? (
                                             <div className="flex gap-1">
                                                 <button onClick={() => { onDelete(preset.id); setConfirmDeleteId(null); }}
-                                                    className="px-3 py-1.5 bg-red-500 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-transform">
-                                                    确认删除
+                                                    className="px-3 py-1.5 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                                    确认撕掉
                                                 </button>
                                                 <button onClick={() => setConfirmDeleteId(null)}
-                                                    className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[10px] font-bold rounded-lg active:scale-95 transition-transform">
-                                                    取消
+                                                    className="px-3 py-1.5 bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933] text-[10px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                                    算了
                                                 </button>
                                             </div>
                                         ) : (
                                             <button onClick={() => setConfirmDeleteId(preset.id)}
-                                                className="px-3 py-1.5 bg-red-50 text-red-400 text-[10px] font-bold rounded-lg border border-red-200 active:scale-95 transition-transform">
-                                                删除
+                                                className="px-3 py-1.5 bg-[#fbfaf7] text-[#2b2933] text-[10px] font-bold label-mono border-2 border-dashed border-[#2b2933]/50 active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                                撕掉
                                             </button>
                                         )}
                                     </div>
@@ -554,8 +554,8 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
                 )}
             </section>
 
-            <div className="text-[10px] text-slate-400 text-center px-4 pb-4">
-                外观预设既可以单独导入/导出，也会随系统整合备份一起保存。你可以保存多个预设并随时切换。
+            <div className="text-[10px] text-[#8b8996] text-center px-4 pb-4 font-hand text-sm">
+                每页存档都能单独导入/导出，也会随整机备份一起留着。想存几页存几页，随时翻着换。
             </div>
         </div>
     );
@@ -659,19 +659,19 @@ const CustomCssStudio: React.FC<{
 .moro-dock-icon { background: rgba(255,255,255,0.12) !important; }`;
     return (
         <div className="space-y-5">
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">全局 CSS · 整机美化</h2>
-                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
-                    注入整机（桌面 / 锁屏 / 所有 App），输入即时生效。桌面各零件都有 .moro-* 钩子类可精准定位；
-                    写崩了删掉内容即可恢复（Dock 与桌面 Palette 按钮受保护，永远可点，从那里能回到这里）。
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">整机手写码</h2>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
+                    写进整机（桌面 / 锁屏 / 所有 App），落笔即生效。桌面每个零件都有 .moro-* 钩子类可精准点名；
+                    写崩了删掉就好（Dock 和桌面 Palette 按钮受保护、永远能点，从那能摸回这里）。
                 </p>
                 <div className="mb-3">
-                    <div className="text-[10px] font-bold text-slate-400 mb-1.5">实时预览（桌面零件）</div>
+                    <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-1.5">取景框（桌面零件）</div>
                     <DesktopMiniPreview theme={theme} />
                 </div>
                 <div className="flex flex-wrap gap-1 mb-2">
                     {GLOBAL_HOOKS.map(h => (
-                        <code key={h} className="text-[9px] bg-slate-100 text-slate-500 border border-slate-200 rounded px-1.5 py-0.5">{h}</code>
+                        <code key={h} className="text-[9px] bg-[#2b2933] text-[#fbfaf7] px-1.5 py-0.5">{h}</code>
                     ))}
                 </div>
                 <textarea
@@ -679,32 +679,32 @@ const CustomCssStudio: React.FC<{
                     onChange={(e) => updateTheme({ globalCustomCss: e.target.value })}
                     spellCheck={false}
                     placeholder={GLOBAL_EXAMPLE}
-                    className="w-full h-44 bg-slate-900 text-emerald-200 font-mono text-[11px] leading-relaxed rounded-2xl p-3.5 resize-none outline-none border border-slate-700 focus:border-primary/60"
+                    className="w-full h-44 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] leading-relaxed p-3.5 resize-none outline-none border-2 border-[#2b2933] focus:ring-2 focus:ring-[#2b2933]"
                 />
                 <div className="flex gap-2 mt-2">
                     <button
-                        onClick={() => { updateTheme({ globalCustomCss: GLOBAL_EXAMPLE }); addToast('已填入示例 CSS', 'success'); }}
-                        className="flex-1 py-2 rounded-xl bg-slate-100 text-slate-500 text-[11px] font-bold active:scale-[0.98] transition-transform">填入示例</button>
+                        onClick={() => { updateTheme({ globalCustomCss: GLOBAL_EXAMPLE }); addToast('样张填进去了', 'success'); }}
+                        className="flex-1 py-2 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-[11px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">填样张</button>
                     <button
-                        onClick={() => { updateTheme({ globalCustomCss: '' }); addToast('已清空全局 CSS', 'success'); }}
-                        className="flex-1 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-500 text-[11px] font-bold active:scale-[0.98] transition-transform">清空还原</button>
+                        onClick={() => { updateTheme({ globalCustomCss: '' }); addToast('整机手写码擦了', 'success'); }}
+                        className="flex-1 py-2 border-2 border-dashed border-[#2b2933]/50 bg-[#f4f2ed] text-[#2b2933] text-[11px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">擦干净</button>
                 </div>
             </section>
 
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">聊天白框 · 全局 CSS</h2>
-                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">
-                    作用于所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。单个角色的专属白框仍在该角色聊天「＋ → 白框」里设置，叠加在这层之上。
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">聊天白框 · 手写码</h2>
+                <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
+                    管所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。单个角色的专属白框还是在该角色聊天「＋ → 白框」里写，叠在这层之上。
                 </p>
                 <div className="mb-3">
-                    <div className="text-[10px] font-bold text-slate-400 mb-1.5">实时预览（聊天白框）</div>
+                    <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-1.5">取景框（聊天白框）</div>
                     <ChromeMiniPreview chromeCss={theme.chatChromeCustomCss} />
                 </div>
                 <ChromeCssEditor value={theme.chatChromeCustomCss || ''} onChange={(css) => updateTheme({ chatChromeCustomCss: css })} />
                 <button
-                    onClick={() => { if (window.confirm('确定还原全部聊天白框美化？将清空「全局」以及「每个角色」的自定义 CSS。')) onResetAllChrome(); }}
-                    className="mt-3 w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-600 transition-all hover:bg-rose-100 active:scale-[0.99]">
-                    一键还原全部聊天白框美化（救援）
+                    onClick={() => { if (window.confirm('确定把全部聊天白框手写码都撕掉？会清空「全局」和「每个角色」的码。')) onResetAllChrome(); }}
+                    className="mt-3 w-full border-2 border-dashed border-[#2b2933]/50 bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
+                    一键全撕 · 救援
                 </button>
             </section>
         </div>
@@ -732,7 +732,7 @@ const WIDGET_SIZE_PRESETS: { label: string; w: number; h: number }[] = [
 const SmallChip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
-        className={`px-2.5 py-1.5 rounded-full text-[11px] font-bold transition-all ${active ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+        className={`px-2.5 py-1.5 text-[11px] font-bold border-2 transition-all ${active ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933] shadow-[2px_2px_0_rgba(43,41,51,0.3)]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30 hover:border-[#2b2933]'}`}
     >{children}</button>
 );
 
@@ -779,10 +779,10 @@ const DesktopLockEditor: React.FC<{
 
     const handleLockWallpaperUpload = async (file: File) => {
         try {
-            addToast('正在处理锁屏壁纸…', 'info');
+            addToast('正在裁锁屏壁纸…', 'info');
             const dataUrl = await processImage(file, { maxWidth: 1600, quality: 0.92 });
             setLock({ wallpaper: dataUrl });
-            addToast('锁屏壁纸已更新', 'success');
+            addToast('锁屏壁纸贴好了', 'success');
         } catch (e: any) {
             addToast(e.message, 'error');
         }
@@ -791,11 +791,11 @@ const DesktopLockEditor: React.FC<{
     return (
         <>
             {/* 01 桌面小组件 */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">桌面小组件</h2>
-                <p className="text-[10px] text-slate-400 mb-4 leading-relaxed">
-                    控制每个小组件的显示 / 删除、网格尺寸（横版 / 竖版 / 方形随意改），还能注入自定义 CSS。
-                    位置直接在桌面长按拖拽调整；小组件图（贴纸图槽位）在「系统主题」页设置。
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">桌面零件</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-4 leading-relaxed">
+                    管每个零件的露出 / 收起、占格大小（横、竖、方随你改），还能给它写专属手写码。
+                    位置直接在桌面长按拖动；零件里的贴图槽在「调色页」里设。
                 </p>
                 <div className="space-y-4">
                     {DESKTOP_WIDGET_DEFS.map(def => {
@@ -805,19 +805,19 @@ const DesktopLockEditor: React.FC<{
                         const h = p.h || def.defaultH;
                         const isDefaultSize = !p.w && !p.h;
                         return (
-                            <div key={def.id} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                            <div key={def.id} className="border-2 border-[#2b2933]/20 bg-[#f4f2ed] p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="text-[13px] font-bold text-slate-700">{def.label}</div>
-                                        <div className="text-[10px] text-slate-400 mt-0.5">{def.desc} · 当前 {w}×{h}</div>
+                                        <div className="text-[13px] font-bold text-[#2b2933]">{def.label}</div>
+                                        <div className="text-[10px] text-[#8b8996] mt-0.5">{def.desc} · 当前 {w}×{h}</div>
                                     </div>
                                     {/* 显示 / 删除开关 */}
                                     <button
                                         onClick={() => setPref(def.id, { hidden: visible ? true : undefined })}
-                                        className={`w-11 h-[26px] rounded-full p-[3px] transition-all duration-300 flex items-center shrink-0 ${visible ? 'bg-slate-900' : 'bg-slate-200'}`}
+                                        className={`w-11 h-[26px] p-[2px] border-2 border-[#2b2933] transition-all duration-300 flex items-center shrink-0 ${visible ? 'bg-[#2b2933]' : 'bg-[#fbfaf7]'}`}
                                         role="switch" aria-checked={visible}
                                     >
-                                        <div className={`w-5 h-5 bg-white rounded-full shadow-[0_2px_5px_rgba(30,28,40,0.3)] transition-transform duration-300 ${visible ? 'translate-x-[18px]' : ''}`} />
+                                        <div className={`w-[18px] h-[18px] border border-[#2b2933] transition-transform duration-300 ${visible ? 'translate-x-[18px] bg-[#fbfaf7]' : 'bg-[#2b2933]'}`} />
                                     </button>
                                 </div>
                                 {visible && (
@@ -836,18 +836,18 @@ const DesktopLockEditor: React.FC<{
                                         <div className="flex items-center gap-4 mt-3">
                                             {([['宽', 'w', w, 4], ['高', 'h', h, 12]] as const).map(([label, key, val, max]) => (
                                                 <div key={key} className="flex items-center gap-1.5">
-                                                    <span className="text-[10px] font-bold text-slate-400">{label}</span>
-                                                    <button onClick={() => setPref(def.id, { [key]: Math.max(1, val - 1) } as any)} className="w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-sm leading-none active:scale-90">−</button>
-                                                    <span className="text-[12px] font-mono font-bold text-slate-700 w-4 text-center">{val}</span>
-                                                    <button onClick={() => setPref(def.id, { [key]: Math.min(max, val + 1) } as any)} className="w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-sm leading-none active:scale-90">＋</button>
+                                                    <span className="text-[10px] font-bold text-[#8b8996] label-mono">{label}</span>
+                                                    <button onClick={() => setPref(def.id, { [key]: Math.max(1, val - 1) } as any)} className="w-6 h-6 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-sm leading-none active:translate-x-[1px] active:translate-y-[1px]">−</button>
+                                                    <span className="text-[12px] font-mono font-bold text-[#2b2933] w-4 text-center">{val}</span>
+                                                    <button onClick={() => setPref(def.id, { [key]: Math.min(max, val + 1) } as any)} className="w-6 h-6 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-sm leading-none active:translate-x-[1px] active:translate-y-[1px]">＋</button>
                                                 </div>
                                             ))}
                                         </div>
                                         {/* 自定义 CSS */}
                                         <button
                                             onClick={() => setCssOpenId(cssOpenId === def.id ? null : def.id)}
-                                            className="mt-3 text-[11px] font-bold text-slate-500 underline decoration-dotted underline-offset-2"
-                                        >{cssOpenId === def.id ? '收起自定义 CSS' : '自定义 CSS…'}</button>
+                                            className="mt-3 text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono"
+                                        >{cssOpenId === def.id ? '收起手写码' : '给它写码…'}</button>
                                         {cssOpenId === def.id && (
                                             <div className="mt-2">
                                                 <textarea
@@ -856,9 +856,9 @@ const DesktopLockEditor: React.FC<{
                                                     placeholder={`.moro-widget-${def.id} { /* 你的样式 */ }\n.moro-widget-${def.id} .moro-clock-card { border-radius: 12px; }`}
                                                     rows={5}
                                                     spellCheck={false}
-                                                    className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                                                    className="w-full px-3 py-2.5 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] outline-none leading-relaxed border-2 border-[#2b2933]"
                                                 />
-                                                <p className="text-[10px] text-slate-400 mt-1">钩子类：<code className="font-mono">.moro-widget-{def.id}</code>（小组件所在网格容器）。</p>
+                                                <p className="text-[10px] text-[#8b8996] mt-1">钩子类：<code className="font-mono text-[#2b2933]">.moro-widget-{def.id}</code>（零件所在网格容器）。</p>
                                             </div>
                                         )}
                                     </>
@@ -870,91 +870,91 @@ const DesktopLockEditor: React.FC<{
             </section>
 
             {/* 02 灵动岛 */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">灵动岛</h2>
-                <p className="text-[10px] text-slate-400 mb-4">悬浮在状态栏中央的通知胶囊：换底色 / 文字色 / 圆角，或直接写 CSS。</p>
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">灵动岛</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-4">浮在状态栏中央那颗通知胶囊：换底色 / 字色 / 圆角，或直接写码。</p>
                 <div className="space-y-4">
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">背景（支持渐变，如 linear-gradient(...)）</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">底色（认渐变，如 linear-gradient(...)）</div>
                         <div className="flex items-center gap-2">
                             <input
                                 type="color"
                                 value={/^#[0-9a-fA-F]{6}$/.test(island.background || '') ? island.background! : '#0b0b12'}
                                 onChange={e => setIsland({ background: e.target.value })}
-                                className="w-9 h-9 rounded-xl border border-slate-200 bg-white p-1 shrink-0"
+                                className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] p-1 shrink-0"
                             />
                             <input
                                 value={island.background || ''}
                                 onChange={e => setIsland({ background: e.target.value || undefined })}
                                 placeholder="#0b0b12（默认墨黑）"
-                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-mono outline-none"
+                                className="flex-1 px-3 py-2 bg-[#f4f2ed] border-2 border-[#2b2933] text-[12px] font-mono outline-none"
                             />
                         </div>
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">文字颜色</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">字色</div>
                         <div className="flex items-center gap-2">
                             <input
                                 type="color"
                                 value={/^#[0-9a-fA-F]{6}$/.test(island.textColor || '') ? island.textColor! : '#ffffff'}
                                 onChange={e => setIsland({ textColor: e.target.value })}
-                                className="w-9 h-9 rounded-xl border border-slate-200 bg-white p-1 shrink-0"
+                                className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] p-1 shrink-0"
                             />
                             <input
                                 value={island.textColor || ''}
                                 onChange={e => setIsland({ textColor: e.target.value || undefined })}
                                 placeholder="#ffffff（默认白）"
-                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-[12px] font-mono outline-none"
+                                className="flex-1 px-3 py-2 bg-[#f4f2ed] border-2 border-[#2b2933] text-[12px] font-mono outline-none"
                             />
                         </div>
                     </div>
                     <div>
-                        <div className="flex justify-between text-[11px] font-bold text-slate-500 mb-1.5">
-                            <span>圆角</span><span className="font-mono">{typeof island.radius === 'number' ? `${island.radius}px` : '胶囊全圆'}</span>
+                        <div className="flex justify-between text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">
+                            <span>圆角</span><span className="font-mono text-[#8b8996]">{typeof island.radius === 'number' ? `${island.radius}px` : '全圆胶囊'}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <input
                                 type="range" min={0} max={24}
                                 value={typeof island.radius === 'number' ? island.radius : 24}
                                 onChange={e => setIsland({ radius: parseInt(e.target.value) >= 24 ? undefined : parseInt(e.target.value) })}
-                                className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-slate-800"
+                                className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
                             />
                             <SmallChip active={typeof island.radius !== 'number'} onClick={() => setIsland({ radius: undefined })}>全圆</SmallChip>
                         </div>
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">自定义 CSS（钩子类 .moro-dynamic-island）</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（钩子类 .moro-dynamic-island）</div>
                         <textarea
                             value={island.customCss || ''}
                             onChange={e => setIsland({ customCss: e.target.value })}
                             placeholder={`.moro-dynamic-island {\n  border: 1px solid rgba(255,255,255,0.25);\n}`}
                             rows={4}
                             spellCheck={false}
-                            className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                            className="w-full px-3 py-2.5 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] outline-none leading-relaxed border-2 border-[#2b2933]"
                         />
                     </div>
                     <button
-                        onClick={() => { updateTheme({ dynamicIslandStyle: undefined }); addToast('灵动岛已恢复默认', 'success'); }}
-                        className="text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2"
-                    >恢复默认</button>
+                        onClick={() => { updateTheme({ dynamicIslandStyle: undefined }); addToast('灵动岛撕回默认了', 'success'); }}
+                        className="text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono"
+                    >撕回默认</button>
                 </div>
             </section>
 
             {/* 03 锁屏 */}
-            <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">锁屏</h2>
-                <p className="text-[10px] text-slate-400 mb-4">专属壁纸 / 时钟字体 / 消息通知卡风格 / 解锁动画，全部即时生效。</p>
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">锁屏</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-4">专属壁纸 / 时钟字体 / 通知卡样式 / 解锁动画，落笔即生效。</p>
                 <div className="space-y-5">
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">锁屏专属壁纸（缺省沿用桌面壁纸）</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">锁屏专属壁纸（不设就沿用桌面的）</div>
                         <div
                             onClick={() => lockWallpaperRef.current?.click()}
-                            className="aspect-[2/1] bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-slate-400 overflow-hidden relative"
+                            className="aspect-[2/1] bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/50 flex items-center justify-center cursor-pointer hover:border-[#2b2933] overflow-hidden relative"
                         >
                             {lock.wallpaper ? (
                                 <img src={lock.wallpaper} className="w-full h-full object-cover" alt="" />
                             ) : (
-                                <span className="text-[10px] text-slate-300">点击上传锁屏壁纸</span>
+                                <span className="text-[10px] text-[#8b8996]">点一下贴张锁屏壁纸</span>
                             )}
                         </div>
                         <input
@@ -962,11 +962,11 @@ const DesktopLockEditor: React.FC<{
                             onChange={e => { const f = e.target.files?.[0]; if (f) void handleLockWallpaperUpload(f); e.target.value = ''; }}
                         />
                         {lock.wallpaper && (
-                            <button onClick={() => setLock({ wallpaper: undefined })} className="mt-1.5 text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2">清除，沿用桌面壁纸</button>
+                            <button onClick={() => setLock({ wallpaper: undefined })} className="mt-1.5 text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono">撕掉，沿用桌面壁纸</button>
                         )}
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">时钟字体</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">时钟字体</div>
                         <div className="flex flex-wrap gap-1.5">
                             {([['serif', '衬线斜体'], ['sans', '无衬线'], ['mono', '等宽'], ['hand', '手写']] as const).map(([v, label]) => (
                                 <SmallChip key={v} active={(lock.clockFont || 'serif') === v} onClick={() => setLock({ clockFont: v === 'serif' ? undefined : v })}>{label}</SmallChip>
@@ -974,7 +974,7 @@ const DesktopLockEditor: React.FC<{
                         </div>
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">消息通知卡风格</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">通知卡样式</div>
                         <div className="flex flex-wrap gap-1.5">
                             {([['glass', '玻璃拟态'], ['paper', '纸面手帐'], ['ink', '墨色']] as const).map(([v, label]) => (
                                 <SmallChip key={v} active={(lock.notifCardStyle || 'glass') === v} onClick={() => setLock({ notifCardStyle: v === 'glass' ? undefined : v })}>{label}</SmallChip>
@@ -982,7 +982,7 @@ const DesktopLockEditor: React.FC<{
                         </div>
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">解锁动画</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">解锁动画</div>
                         <div className="flex flex-wrap gap-1.5">
                             {([['fade', '淡出'], ['slide', '上滑'], ['zoom', '放大'], ['none', '无']] as const).map(([v, label]) => (
                                 <SmallChip key={v} active={(lock.unlockAnimation || 'fade') === v} onClick={() => setLock({ unlockAnimation: v === 'fade' ? undefined : v })}>{label}</SmallChip>
@@ -990,20 +990,20 @@ const DesktopLockEditor: React.FC<{
                         </div>
                     </div>
                     <div>
-                        <div className="text-[11px] font-bold text-slate-500 mb-1.5">自定义 CSS（钩子类 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif）</div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（钩子类 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif）</div>
                         <textarea
                             value={lock.customCss || ''}
                             onChange={e => setLock({ customCss: e.target.value })}
                             placeholder={`.moro-lock-notif {\n  border-radius: 8px;\n}`}
                             rows={4}
                             spellCheck={false}
-                            className="w-full px-3 py-2.5 bg-slate-900 text-emerald-100 font-mono text-[11px] rounded-xl outline-none leading-relaxed"
+                            className="w-full px-3 py-2.5 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] outline-none leading-relaxed border-2 border-[#2b2933]"
                         />
                     </div>
                     <button
-                        onClick={() => { updateTheme({ lockScreenStyle: undefined }); addToast('锁屏样式已恢复默认', 'success'); }}
-                        className="text-[11px] font-bold text-slate-400 underline decoration-dotted underline-offset-2"
-                    >恢复默认</button>
+                        onClick={() => { updateTheme({ lockScreenStyle: undefined }); addToast('锁屏撕回默认了', 'success'); }}
+                        className="text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono"
+                    >撕回默认</button>
                 </div>
             </section>
         </>
@@ -1020,7 +1020,7 @@ const Appearance: React.FC = () => {
     (characters || []).forEach((c: any) => {
       if (c?.chromeCustomCss) { updateCharacter(c.id, { chromeCustomCss: '' } as any); n++; }
     });
-    addToast(n ? `已还原 ${n} 处聊天白框美化` : '没有需要还原的白框美化', n ? 'success' : 'info');
+    addToast(n ? `撕掉了 ${n} 处白框手写码` : '没有要撕的白框手写码', n ? 'success' : 'info');
   };
   const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'>('theme');
   // 气泡工坊全屏编辑器：原独立 tab 已并入「聊天界面」页，从那里的入口卡打开
@@ -1107,7 +1107,7 @@ const Appearance: React.FC = () => {
     try {
       const dataUrl = await processImage(file, { maxWidth: 400, quality: 0.85 });
       addDecoration(dataUrl, 'image');
-      addToast('装饰已添加', 'success');
+      addToast('贴纸贴上了', 'success');
     } catch (e: any) {
       addToast(e.message, 'error');
     }
@@ -1124,11 +1124,11 @@ const Appearance: React.FC = () => {
 
   const handleWallpaperUpload = async (file: File) => {
       try {
-          addToast('正在处理壁纸 (原画质)...', 'info');
+          addToast('正在裁壁纸（原画质）…', 'info');
           // Use skipCompression to keep original quality
           const dataUrl = await processImage(file, { skipCompression: true });
           updateTheme({ wallpaper: dataUrl });
-          addToast('壁纸更新成功', 'success');
+          addToast('壁纸贴好了', 'success');
       } catch (e: any) {
           addToast(e.message, 'error');
       }
@@ -1138,12 +1138,12 @@ const Appearance: React.FC = () => {
       const url = wallpaperUrl.trim();
       if (!url) return;
       if (!/^https?:\/\//i.test(url) && !url.startsWith('data:') && !url.startsWith('blob:')) {
-          addToast('请填写以 http(s):// 开头的图片地址', 'error');
+          addToast('要 http(s):// 开头的图片地址', 'error');
           return;
       }
       updateTheme({ wallpaper: url });
       setWallpaperUrl('');
-      addToast('壁纸已应用', 'success');
+      addToast('壁纸贴好了', 'success');
   };
 
   const handleWidgetUpload = async (file: File) => {
@@ -1153,7 +1153,7 @@ const Appearance: React.FC = () => {
           const dataUrl = await processImage(file, { maxWidth: maxW, quality: 0.9 });
           const current = theme.launcherWidgets || {};
           updateTheme({ launcherWidgets: { ...current, [activeWidgetSlot]: dataUrl } });
-          addToast('小组件已更新', 'success');
+          addToast('贴图换好了', 'success');
       } catch (e: any) {
           addToast(e.message, 'error');
       }
@@ -1177,19 +1177,19 @@ const Appearance: React.FC = () => {
           return;
       }
 
-      addToast('正在处理字体文件...', 'info');
+      addToast('正在收字体文件…', 'info');
       
       const reader = new FileReader();
       reader.onload = async (ev) => {
           try {
               const dataUrl = ev.target?.result as string;
               updateTheme({ customFont: dataUrl });
-              addToast('系统字体已更新', 'success');
+              addToast('字体换好了', 'success');
           } catch(err) {
-              addToast('字体加载失败', 'error');
+              addToast('字体没读进来', 'error');
           }
       };
-      reader.onerror = () => addToast('读取失败', 'error');
+      reader.onerror = () => addToast('文件没读进来', 'error');
       reader.readAsDataURL(file);
       
       // Clear input
@@ -1200,7 +1200,7 @@ const Appearance: React.FC = () => {
       if (!webFontUrl.trim()) return;
       updateTheme({ customFont: webFontUrl.trim() });
       setWebFontUrl('');
-      addToast('网络字体已应用', 'success');
+      addToast('网络字体贴好了', 'success');
   };
 
   const handleIconUpload = async (file: File) => {
@@ -1208,7 +1208,7 @@ const Appearance: React.FC = () => {
       try {
           const dataUrl = await processImage(file);
           setCustomIcon(selectedAppId, dataUrl);
-          addToast('应用图标已更新', 'success');
+          addToast('图标换好了', 'success');
       } catch (e: any) {
           addToast(e.message, 'error');
       }
@@ -1220,33 +1220,34 @@ const Appearance: React.FC = () => {
   }
 
   const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'; label: string }[] = [
-      { id: 'theme', label: '系统主题' },
-      { id: 'desktop', label: '桌面与锁屏' },
-      { id: 'chat', label: '聊天界面' },
-      { id: 'css', label: '自定义 CSS' },
-      { id: 'icons', label: '应用图标' },
-      { id: 'presets', label: '外观预设' },
+      { id: 'theme', label: '调色页' },
+      { id: 'desktop', label: '桌面页' },
+      { id: 'chat', label: '对话页' },
+      { id: 'css', label: '手写码' },
+      { id: 'icons', label: '图标贴' },
+      { id: 'presets', label: '存档册' },
   ];
 
   return (
-    <div className="h-full w-full bg-slate-50 flex flex-col font-light">
-      <div className="h-20 bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 shrink-0 z-10 sticky top-0">
-        <div className="flex items-center gap-2 w-full">
-            <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-                </svg>
+    <div className="h-full w-full bg-[#f4f2ed] flex flex-col font-light">
+      <div className="h-20 bg-[#fbfaf7] flex items-end pb-3 px-4 border-b-2 border-[#2b2933] shrink-0 z-10 sticky top-0">
+        <div className="flex items-center gap-3 w-full">
+            <button onClick={closeApp} className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] flex items-center justify-center active:translate-x-[1px] active:translate-y-[1px] transition-transform shadow-[2px_2px_0_#2b2933]">
+                <span className="text-[#2b2933] text-lg leading-none -mt-0.5">‹</span>
             </button>
-            <h1 className="text-xl font-medium text-slate-700 tracking-wide">主题</h1>
+            <div className="flex flex-col">
+                <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">拼贴册</h1>
+                <span className="text-[8px] label-mono text-[#8b8996] mt-1">SCRAPBOOK · 黑白手账</span>
+            </div>
         </div>
       </div>
 
-      <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20 overflow-x-auto no-scrollbar">
+      <div className="flex border-b-2 border-[#2b2933] bg-[#fbfaf7] sticky top-0 z-20 overflow-x-auto no-scrollbar gap-1 px-2">
           {TABS.map(tab => (
               <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`shrink-0 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.id ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}
+                  className={`shrink-0 px-3.5 py-2.5 text-xs font-bold label-mono transition-colors whitespace-nowrap -mb-[2px] border-2 ${activeTab === tab.id ? 'text-[#2b2933] border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7]' : 'text-[#8b8996] border-transparent'}`}
               >{tab.label}</button>
           ))}
       </div>
@@ -1254,161 +1255,161 @@ const Appearance: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
         {activeTab === 'theme' ? (
             <>
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">实时预览</h2>
-                    <p className="text-[10px] text-slate-400 mb-3">壁纸 / 主题色 / 文字色 / 全局 CSS 的改动会立即反映在这块小桌面上。</p>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">取景框</h2>
+                    <p className="text-[10px] text-[#6b6b6b] mb-3">壁纸 / 主色 / 字色 / 全局码 一改，这块小桌面立刻跟着变。</p>
                     <DesktopMiniPreview theme={theme} />
                 </section>
 
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Preset Themes</h2>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-4">色票本</h2>
                     <div className="flex gap-3 mb-6 overflow-x-auto no-scrollbar pb-1">
                         {THEME_PRESETS.map(preset => (
-                            <button 
+                            <button
                                 key={preset.name}
                                 onClick={() => updateTheme(preset.config)}
                                 className="flex flex-col items-center gap-1.5 shrink-0 group"
                             >
-                                <div className="w-10 h-10 rounded-full shadow-sm border-2 border-white ring-1 ring-black/5 transition-transform group-active:scale-95" style={{ backgroundColor: preset.color }}></div>
-                                <span className="text-[10px] text-slate-500 font-medium">{preset.name}</span>
+                                <div className="w-10 h-10 border-2 border-[#2b2933] shadow-[2px_2px_0_rgba(43,41,51,0.3)] transition-transform group-active:translate-x-[1px] group-active:translate-y-[1px]" style={{ backgroundColor: preset.color }}></div>
+                                <span className="text-[9px] text-[#6b6b6b] label-mono">{preset.name}</span>
                             </button>
                         ))}
                     </div>
 
                     <div className="space-y-5">
                         <div>
-                            <div className="flex justify-between text-xs text-slate-500 mb-2 font-medium">
-                                <span>Hue</span><span>{theme.hue}°</span>
+                            <div className="flex justify-between text-[10px] text-[#8b8996] mb-2 label-mono">
+                                <span>色相 HUE</span><span>{theme.hue}°</span>
                             </div>
-                            <input type="range" min="0" max="360" value={theme.hue} onChange={(e) => updateTheme({ hue: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" />
-                            <div className="h-2 w-full rounded-full mt-3 opacity-50" style={{ background: `linear-gradient(to right, hsl(0, 50%, 80%), hsl(60, 50%, 80%), hsl(120, 50%, 80%), hsl(180, 50%, 80%), hsl(240, 50%, 80%), hsl(300, 50%, 80%), hsl(360, 50%, 80%))`}}></div>
+                            <input type="range" min="0" max="360" value={theme.hue} onChange={(e) => updateTheme({ hue: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
+                            <div className="h-2 w-full mt-3 opacity-60 border border-[#2b2933]/30" style={{ background: `linear-gradient(to right, hsl(0, 50%, 80%), hsl(60, 50%, 80%), hsl(120, 50%, 80%), hsl(180, 50%, 80%), hsl(240, 50%, 80%), hsl(300, 50%, 80%), hsl(360, 50%, 80%))`}}></div>
                         </div>
                         <div>
-                            <div className="flex justify-between text-xs text-slate-500 mb-2 font-medium">
-                                <span>Saturation</span><span>{theme.saturation}%</span>
+                            <div className="flex justify-between text-[10px] text-[#8b8996] mb-2 label-mono">
+                                <span>浓淡 SAT</span><span>{theme.saturation}%</span>
                             </div>
-                            <input type="range" min="0" max="100" value={theme.saturation} onChange={(e) => updateTheme({ saturation: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" />
+                            <input type="range" min="0" max="100" value={theme.saturation} onChange={(e) => updateTheme({ saturation: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                         </div>
                         <div>
-                            <div className="flex justify-between text-xs text-slate-500 mb-2 font-medium">
-                                <span>Lightness</span><span>{theme.lightness}%</span>
+                            <div className="flex justify-between text-[10px] text-[#8b8996] mb-2 label-mono">
+                                <span>明暗 LIGHT</span><span>{theme.lightness}%</span>
                             </div>
-                            <input type="range" min="10" max="95" value={theme.lightness} onChange={(e) => updateTheme({ lightness: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" />
+                            <input type="range" min="10" max="95" value={theme.lightness} onChange={(e) => updateTheme({ lightness: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                         </div>
                         <div>
-                            <div className="flex justify-between text-xs text-slate-500 mb-2 font-medium">
-                                <span>Text/Widget Color</span>
+                            <div className="flex justify-between text-[10px] text-[#8b8996] mb-2 label-mono">
+                                <span>字 / 组件墨色</span>
                             </div>
-                            <div className="flex gap-4 items-center bg-slate-50 p-2 rounded-xl border border-slate-100">
-                                <div 
+                            <div className="flex gap-4 items-center bg-[#f4f2ed] p-2 border-2 border-[#2b2933]">
+                                <div
                                     onClick={() => updateTheme({ contentColor: '#ffffff' })}
-                                    className={`w-8 h-8 rounded-full border-2 cursor-pointer shadow-sm ${theme.contentColor === '#ffffff' ? 'border-primary ring-2 ring-primary/20' : 'border-slate-200'}`} 
+                                    className={`w-8 h-8 border-2 cursor-pointer ${theme.contentColor === '#ffffff' ? 'border-[#2b2933] shadow-[2px_2px_0_#2b2933]' : 'border-[#2b2933]/30'}`}
                                     style={{ backgroundColor: '#ffffff' }}
                                 />
-                                <div 
+                                <div
                                     onClick={() => updateTheme({ contentColor: '#334155' })} // Slate-700
-                                    className={`w-8 h-8 rounded-full border-2 cursor-pointer shadow-sm ${theme.contentColor === '#334155' ? 'border-primary ring-2 ring-primary/20' : 'border-slate-200'}`} 
+                                    className={`w-8 h-8 border-2 cursor-pointer ${theme.contentColor === '#334155' ? 'border-[#2b2933] shadow-[2px_2px_0_#2b2933]' : 'border-[#2b2933]/30'}`}
                                     style={{ backgroundColor: '#334155' }}
                                 />
-                                <div className="h-6 w-px bg-slate-200 mx-1"></div>
-                                <input 
-                                    type="color" 
-                                    value={theme.contentColor || '#ffffff'} 
+                                <div className="h-6 w-0.5 bg-[#2b2933] mx-1"></div>
+                                <input
+                                    type="color"
+                                    value={theme.contentColor || '#ffffff'}
                                     onChange={(e) => updateTheme({ contentColor: e.target.value })}
-                                    className="w-8 h-8 rounded-lg border-none cursor-pointer bg-transparent p-0" 
+                                    className="w-8 h-8 border border-[#2b2933] cursor-pointer bg-transparent p-0"
                                 />
-                                <span className="text-xs text-slate-400 font-mono">{theme.contentColor}</span>
+                                <span className="text-xs text-[#8b8996] font-mono">{theme.contentColor}</span>
                             </div>
                         </div>
                     </div>
                 </section>
 
                 {/* Global Font Section */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">全局字体 (Global Font)</h2>
-                    
-                    <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
-                        <button onClick={() => setFontMode('local')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${fontMode === 'local' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>本地文件</button>
-                        <button onClick={() => setFontMode('web')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${fontMode === 'web' ? 'bg-white text-primary shadow-sm' : 'text-slate-400'}`}>网络 URL</button>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-4">字体</h2>
+
+                    <div className="flex border-2 border-[#2b2933] mb-4">
+                        <button onClick={() => setFontMode('local')} className={`flex-1 py-1.5 text-xs font-bold label-mono transition-all ${fontMode === 'local' ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#8b8996]'}`}>本地</button>
+                        <button onClick={() => setFontMode('web')} className={`flex-1 py-1.5 text-xs font-bold label-mono transition-all border-l-2 border-[#2b2933] ${fontMode === 'web' ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#8b8996]'}`}>网址</button>
                     </div>
 
                     {fontMode === 'local' ? (
                         <>
-                            <div 
-                                className="w-full h-24 bg-slate-100 rounded-2xl overflow-hidden relative shadow-inner mb-2 group cursor-pointer border-2 border-dashed border-slate-200 hover:border-primary/50 flex items-center justify-center flex-col gap-2" 
+                            <div
+                                className="w-full h-24 bg-[#f4f2ed] overflow-hidden relative mb-2 group cursor-pointer border-2 border-dashed border-[#2b2933]/50 hover:border-[#2b2933] flex items-center justify-center flex-col gap-2"
                                 onClick={() => fontInputRef.current?.click()}
                             >
                                 {theme.customFont && theme.customFont.startsWith('data:') ? (
                                     <>
-                                        <span className="text-lg font-bold text-slate-700">Abc 字体预览</span>
-                                        <span className="text-[10px] text-slate-400">已应用本地字体</span>
+                                        <span className="text-lg font-bold text-[#2b2933]">Abc 样字</span>
+                                        <span className="text-[10px] text-[#8b8996] label-mono">本地字体已贴上</span>
                                     </>
                                 ) : (
                                     <>
-                                        <span className="text-2xl text-slate-400">Aa</span>
-                                        <span className="text-xs text-slate-400">上传字体文件 (.ttf / .otf)</span>
+                                        <span className="text-2xl text-[#8b8996] font-display-italic">Aa</span>
+                                        <span className="text-xs text-[#8b8996]">贴一个字体文件 (.ttf / .otf)</span>
                                     </>
                                 )}
-                                <div className="absolute inset-0 bg-black/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-white text-xs font-bold bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">更换字体</span>
+                                <div className="absolute inset-0 bg-[#2b2933]/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-[#fbfaf7] text-xs font-bold bg-[#2b2933] px-3 py-1 label-mono">换字体</span>
                                 </div>
                             </div>
                             <input type="file" ref={fontInputRef} className="hidden" accept=".ttf,.otf,.woff,.woff2" onChange={handleFontUpload} />
                         </>
                     ) : (
                         <div className="space-y-2">
-                            <input 
-                                value={webFontUrl} 
-                                onChange={e => setWebFontUrl(e.target.value)} 
-                                placeholder="输入字体文件 URL (https://...)" 
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-primary transition-all"
+                            <input
+                                value={webFontUrl}
+                                onChange={e => setWebFontUrl(e.target.value)}
+                                placeholder="贴一条字体文件 URL (https://...)"
+                                className="w-full bg-[#f4f2ed] border-2 border-[#2b2933] px-4 py-3 text-xs outline-none focus:shadow-[2px_2px_0_#2b2933] transition-all"
                             />
-                            <button onClick={applyWebFont} className="w-full py-2 bg-primary text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-transform">
-                                应用网络字体
+                            <button onClick={applyWebFont} className="w-full py-2 bg-[#2b2933] text-[#fbfaf7] font-bold text-xs label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                贴上网络字体
                             </button>
-                            <div className="text-[10px] text-slate-400 px-1">
+                            <div className="text-[10px] text-[#8b8996] px-1">
                                 {theme.customFont && theme.customFont.startsWith('http') ? (
-                                    <span className="text-green-500">当前使用: {theme.customFont}</span>
-                                ) : '提示: 请确保链接直通字体文件 (.ttf/.woff)'}
+                                    <span className="text-[#2b2933] font-bold">正在用：{theme.customFont}</span>
+                                ) : '提示：链接要直通字体文件 (.ttf/.woff)'}
                             </div>
                         </div>
                     )}
 
                     {theme.customFont && (
-                        <button onClick={() => updateTheme({ customFont: undefined })} className="w-full py-2 text-xs font-bold text-red-400 bg-red-50 rounded-lg hover:bg-red-100 mt-2">恢复默认字体</button>
+                        <button onClick={() => updateTheme({ customFont: undefined })} className="w-full py-2 text-xs font-bold label-mono text-[#2b2933] border-2 border-dashed border-[#2b2933]/50 hover:bg-[#2b2933] hover:text-[#fbfaf7] mt-2 transition-colors">撕掉 · 还原默认字体</button>
                     )}
                 </section>
 
                 {/* Status Bar Toggle */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">状态栏 (Status Bar)</h2>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-4">顶栏</h2>
                     <div className="flex items-center justify-between">
                         <div>
-                            <div className="text-sm font-medium text-slate-700">隐藏顶部时间栏</div>
-                            <div className="text-[10px] text-slate-400 mt-0.5">隐藏屏幕顶部的时间、电量等信息</div>
+                            <div className="text-sm font-bold text-[#2b2933]">藏起顶部时间栏</div>
+                            <div className="text-[10px] text-[#6b6b6b] mt-0.5">把屏幕顶上的时间、电量这些都收起来</div>
                         </div>
                         <button
                             onClick={() => updateTheme({ hideStatusBar: !theme.hideStatusBar })}
-                            className={`w-12 h-7 rounded-full transition-colors relative ${theme.hideStatusBar ? 'bg-primary' : 'bg-slate-200'}`}
+                            className={`w-12 h-7 border-2 border-[#2b2933] transition-colors relative ${theme.hideStatusBar ? 'bg-[#2b2933]' : 'bg-[#fbfaf7]'}`}
                         >
-                            <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${theme.hideStatusBar ? 'translate-x-6' : 'translate-x-1'}`} />
+                            <div className={`absolute top-[2px] w-5 h-5 border border-[#2b2933] transition-transform ${theme.hideStatusBar ? 'translate-x-[20px] bg-[#fbfaf7]' : 'translate-x-[2px] bg-[#2b2933]'}`} />
                         </button>
                     </div>
                 </section>
 
                 {/* Wallpaper Section */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Wallpaper</h2>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-4">壁纸</h2>
                     <LongPressArea
-                        className="aspect-[9/16] w-1/2 mx-auto bg-slate-100 rounded-2xl overflow-hidden relative shadow-inner mb-4 group cursor-pointer"
+                        className="aspect-[9/16] w-1/2 mx-auto bg-[#f4f2ed] overflow-hidden relative mb-4 group cursor-pointer border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.25)]"
                         onClick={() => wallpaperInputRef.current?.click()}
                         onLongPress={() => {
                             if (theme.wallpaper === DEFAULT_WALLPAPER) {
-                                addToast('当前已是默认壁纸', 'info');
+                                addToast('已经是默认壁纸了', 'info');
                                 return;
                             }
                             updateTheme({ wallpaper: DEFAULT_WALLPAPER });
-                            addToast('已恢复默认壁纸', 'success');
+                            addToast('壁纸撕回默认了', 'success');
                         }}
                     >
                          <div
@@ -1421,63 +1422,63 @@ const Appearance: React.FC = () => {
                                         : `url("${theme.wallpaper}") center/cover`,
                             }}
                          />
-                         <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                             <span className="text-white text-xs font-bold bg-black/20 px-3 py-1 rounded-full backdrop-blur-md">更换壁纸</span>
+                         <div className="absolute inset-0 bg-[#2b2933]/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                             <span className="text-[#fbfaf7] text-xs font-bold bg-[#2b2933] px-3 py-1 label-mono">换壁纸</span>
                          </div>
                     </LongPressArea>
                     <input type="file" ref={wallpaperInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleWallpaperUpload(e.target.files[0])} />
-                    <p className="text-center text-[10px] text-slate-400 mb-4">点击上传 / 长按恢复默认壁纸 (支持原画质)</p>
+                    <p className="text-center text-[10px] text-[#8b8996] mb-4">点一下贴新的 · 长按撕回默认（原画质）</p>
 
-                    <div className="border-t border-slate-100 pt-4 space-y-2">
-                        <p className="text-[11px] font-bold text-slate-500">从 URL 导入</p>
+                    <div className="border-t-2 border-dashed border-[#2b2933]/30 pt-4 space-y-2">
+                        <p className="text-[11px] font-bold text-[#2b2933] label-mono">从网址贴</p>
                         <input
                             value={wallpaperUrl}
                             onChange={e => setWallpaperUrl(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') applyWallpaperUrl(); }}
-                            placeholder="输入图片地址 (https://...)"
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:border-primary transition-all"
+                            placeholder="贴一条图片地址 (https://...)"
+                            className="w-full bg-[#f4f2ed] border-2 border-[#2b2933] px-4 py-3 text-xs outline-none focus:shadow-[2px_2px_0_#2b2933] transition-all"
                         />
                         <button
                             onClick={applyWallpaperUrl}
                             disabled={!wallpaperUrl.trim()}
-                            className="w-full py-2 bg-primary text-white font-bold text-xs rounded-xl shadow-md active:scale-95 transition-transform disabled:opacity-40 disabled:active:scale-100"
+                            className="w-full py-2 bg-[#2b2933] text-[#fbfaf7] font-bold text-xs label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform disabled:opacity-40"
                         >
-                            应用网络壁纸
+                            贴上网络壁纸
                         </button>
-                        <p className="text-[10px] text-slate-400">直接引用网络图片，不占用本地存储</p>
+                        <p className="text-[10px] text-[#8b8996]">直接引网图，不占本地空间</p>
                     </div>
                 </section>
 
                 {/* Page 1 Desktop Square Image */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">首页方形图片</h2>
-                    <p className="text-[10px] text-slate-400 mb-4">桌面首页右下角的方形图片槽位，长按移除</p>
-                    <div className="flex justify-center bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-2">首页方块照</h2>
+                    <p className="text-[10px] text-[#6b6b6b] mb-4">桌面首页右下角那格方照片，长按撕掉</p>
+                    <div className="flex justify-center bg-[#f4f2ed] p-3 border-2 border-dashed border-[#2b2933]/30">
                         {(() => {
                             const slot = 'dsq';
                             const img = (theme.launcherWidgets || {})[slot];
                             return (
                                 <LongPressArea
-                                    className={`w-40 aspect-square rounded-2xl overflow-hidden relative cursor-pointer transition-transform active:scale-95 ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
+                                    className={`w-40 aspect-square overflow-hidden relative cursor-pointer transition-transform active:translate-x-[1px] active:translate-y-[1px] ${img ? 'border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.25)]' : 'border-2 border-dashed border-[#2b2933]/50 bg-[#fbfaf7] flex items-center justify-center'}`}
                                     onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
                                     onLongPress={() => {
                                         if (img) {
                                             removeWidget(slot);
-                                            addToast('已移除方图', 'success');
+                                            addToast('方照撕掉了', 'success');
                                         }
                                     }}
                                 >
                                     {img ? (
                                         <>
                                             <img src={img} className="w-full h-full object-cover" />
-                                            <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                                                <span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">更换</span>
+                                            <div className="absolute inset-0 bg-[#2b2933]/0 hover:bg-[#2b2933]/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                                                <span className="text-[#fbfaf7] text-[10px] font-bold bg-[#2b2933] px-2 py-0.5 label-mono">换</span>
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="text-slate-300 text-center">
+                                        <div className="text-[#8b8996] text-center">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-7 h-7 mx-auto mb-1"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                            <span className="text-[10px]">方图</span>
+                                            <span className="text-[10px]">方照</span>
                                         </div>
                                     )}
                                 </LongPressArea>
@@ -1487,35 +1488,35 @@ const Appearance: React.FC = () => {
                 </section>
 
                 {/* Page 2 Widget Images */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
-                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">桌面小组件</h2>
-                    <p className="text-[10px] text-slate-400 mb-4">上传小组件图片（如时钟截图、推图等），长按移除</p>
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-2">桌面贴图</h2>
+                    <p className="text-[10px] text-[#6b6b6b] mb-4">贴小组件图片（时钟截图、推图之类），长按撕掉</p>
                     <input type="file" ref={widgetInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleWidgetUpload(e.target.files[0])} />
-                    <div className="space-y-2 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                    <div className="space-y-2 bg-[#f4f2ed] p-3 border-2 border-dashed border-[#2b2933]/30">
                         <div className="flex gap-2">
                             {['tl', 'tr'].map(slot => {
                                 const img = (theme.launcherWidgets || {})[slot];
                                 return (
                                     <LongPressArea
                                         key={slot}
-                                        className={`flex-1 aspect-square rounded-xl overflow-hidden relative cursor-pointer transition-transform active:scale-95 ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
+                                        className={`flex-1 aspect-square overflow-hidden relative cursor-pointer transition-transform active:translate-x-[1px] active:translate-y-[1px] ${img ? 'border-2 border-[#2b2933] shadow-[2px_2px_0_rgba(43,41,51,0.25)]' : 'border-2 border-dashed border-[#2b2933]/50 bg-[#fbfaf7] flex items-center justify-center'}`}
                                         onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
                                         onLongPress={() => {
                                             if (img) {
                                                 removeWidget(slot);
-                                                addToast('已移除小组件', 'success');
+                                                addToast('贴图撕掉了', 'success');
                                             }
                                         }}
                                     >
                                         {img ? (
                                             <>
                                                 <img src={img} className="w-full h-full object-cover" />
-                                                <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                                                    <span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">更换</span>
+                                                <div className="absolute inset-0 bg-[#2b2933]/0 hover:bg-[#2b2933]/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                                                    <span className="text-[#fbfaf7] text-[10px] font-bold bg-[#2b2933] px-2 py-0.5 label-mono">换</span>
                                                 </div>
                                             </>
                                         ) : (
-                                            <div className="text-slate-300 text-center">
+                                            <div className="text-[#8b8996] text-center">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mx-auto mb-1"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                                                 <span className="text-[9px]">图片</span>
                                             </div>
@@ -1529,26 +1530,26 @@ const Appearance: React.FC = () => {
                             const img = (theme.launcherWidgets || {})[slot];
                             return (
                                 <LongPressArea
-                                    className={`w-full h-20 rounded-xl overflow-hidden relative cursor-pointer transition-transform active:scale-[0.98] ${img ? 'shadow-sm' : 'border-2 border-dashed border-slate-200 bg-white flex items-center justify-center'}`}
+                                    className={`w-full h-20 overflow-hidden relative cursor-pointer transition-transform active:translate-x-[1px] active:translate-y-[1px] ${img ? 'border-2 border-[#2b2933] shadow-[2px_2px_0_rgba(43,41,51,0.25)]' : 'border-2 border-dashed border-[#2b2933]/50 bg-[#fbfaf7] flex items-center justify-center'}`}
                                     onClick={() => { setActiveWidgetSlot(slot); widgetInputRef.current?.click(); }}
                                     onLongPress={() => {
                                         if (img) {
                                             removeWidget(slot);
-                                            addToast('已移除横幅', 'success');
+                                            addToast('长条撕掉了', 'success');
                                         }
                                     }}
                                 >
                                     {img ? (
                                         <>
                                             <img src={img} className="w-full h-full object-cover" />
-                                            <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
-                                                <span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">更换</span>
+                                            <div className="absolute inset-0 bg-[#2b2933]/0 hover:bg-[#2b2933]/20 transition-colors flex items-center justify-center opacity-0 hover:opacity-100">
+                                                <span className="text-[#fbfaf7] text-[10px] font-bold bg-[#2b2933] px-2 py-0.5 label-mono">换</span>
                                             </div>
                                         </>
                                     ) : (
-                                        <div className="text-slate-300 text-center">
+                                        <div className="text-[#8b8996] text-center">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mx-auto mb-0.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                            <span className="text-[9px]">横幅</span>
+                                            <span className="text-[9px]">长条</span>
                                         </div>
                                     )}
                                 </LongPressArea>
@@ -1558,16 +1559,16 @@ const Appearance: React.FC = () => {
                 </section>
 
                 {/* Desktop Decoration DIY Section */}
-                <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                     <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest">桌面装饰 DIY</h2>
-                        <span className="text-[10px] bg-gradient-to-r from-pink-100 to-purple-100 text-pink-500 px-2 py-0.5 rounded-full font-bold">花里胡哨模式</span>
+                        <h2 className="text-base font-bold font-display-italic text-[#2b2933]">贴纸拼贴</h2>
+                        <span className="text-[9px] bg-[#2b2933] text-[#fbfaf7] px-2 py-0.5 label-mono -rotate-3">尽情贴</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 mb-4">自由添加装饰贴纸，调整位置/大小/旋转/透明度，打造你的专属痛机桌面！</p>
+                    <p className="text-[10px] text-[#6b6b6b] mb-4">随手往桌面贴贴纸，挪位置 / 调大小 / 转角度 / 改透明度，拼出只属于你的那一页！</p>
                     <input type="file" ref={decoInputRef} className="hidden" accept="image/*" onChange={(e) => { if (e.target.files?.[0]) handleDecoUpload(e.target.files[0]); e.target.value = ''; }} />
 
                     {/* Live Preview */}
-                    <div className="relative w-full aspect-[9/16] bg-slate-100 rounded-2xl overflow-hidden mb-4 border border-slate-200 shadow-inner"
+                    <div className="relative w-full aspect-[9/16] bg-slate-100 overflow-hidden mb-4 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.25)]"
                          style={{ background: theme.wallpaper ? `url(${theme.wallpaper}) center/cover` : `linear-gradient(135deg, hsl(${theme.hue}, ${theme.saturation}%, ${theme.lightness}%), hsl(${theme.hue + 30}, ${theme.saturation}%, ${Math.max(theme.lightness - 15, 10)}%))` }}>
                         <div className="absolute inset-0 bg-black/10"></div>
                         {/* Render widget previews */}
@@ -1593,7 +1594,7 @@ const Appearance: React.FC = () => {
                         {/* Render decorations in preview */}
                         {decorations.map(deco => (
                             <div key={deco.id}
-                                className={`absolute cursor-pointer transition-all duration-100 ${editingDecoId === deco.id ? 'ring-2 ring-pink-400 ring-offset-1' : ''}`}
+                                className={`absolute cursor-pointer transition-all duration-100 ${editingDecoId === deco.id ? 'ring-2 ring-[#fbfaf7] ring-offset-2 ring-offset-[#2b2933]' : ''}`}
                                 style={{
                                     left: `${deco.x}%`, top: `${deco.y}%`,
                                     transform: `translate(-50%, -50%) scale(${deco.scale * 0.4}) rotate(${deco.rotation}deg)${deco.flip ? ' scaleX(-1)' : ''}`,
@@ -1605,9 +1606,9 @@ const Appearance: React.FC = () => {
                         ))}
                         {decorations.length === 0 && (
                             <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="text-center text-white/40">
-                                    <Sparkle size={48} weight="fill" className="text-white/60 mb-2" />
-                                    <div className="text-[10px] font-bold">添加装饰开始DIY</div>
+                                <div className="text-center text-white/50">
+                                    <Sparkle size={48} weight="fill" className="text-white/70 mb-2" />
+                                    <div className="text-[10px] font-bold label-mono">贴第一张贴纸吧</div>
                                 </div>
                             </div>
                         )}
@@ -1616,34 +1617,34 @@ const Appearance: React.FC = () => {
                     {/* Add Decoration Buttons */}
                     <div className="flex gap-2 mb-4">
                         <button onClick={() => setShowPresetPicker(!showPresetPicker)}
-                            className="flex-1 py-2.5 bg-gradient-to-r from-pink-50 to-purple-50 text-pink-500 font-bold text-xs rounded-xl border border-pink-200 active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                            className="flex-1 py-2.5 bg-[#fbfaf7] text-[#2b2933] font-bold text-xs label-mono border-2 border-[#2b2933] hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-all flex items-center justify-center gap-1.5">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>
-                            预设贴纸
+                            现成贴纸
                         </button>
                         <button onClick={() => decoInputRef.current?.click()}
-                            className="flex-1 py-2.5 bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-500 font-bold text-xs rounded-xl border border-blue-200 active:scale-95 transition-transform flex items-center justify-center gap-1.5">
+                            className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold text-xs label-mono border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-all flex items-center justify-center gap-1.5">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
-                            上传自定义
+                            贴自己的
                         </button>
                     </div>
 
                     {/* Preset Picker */}
                     {showPresetPicker && (
-                        <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 mb-4 animate-fade-in">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-3">选择预设装饰</div>
+                        <div className="bg-[#f4f2ed] p-3 border-2 border-dashed border-[#2b2933]/40 mb-4 animate-fade-in">
+                            <div className="text-[10px] text-[#8b8996] font-bold label-mono mb-3">挑一张现成贴纸</div>
                             {['stars', 'hearts', 'flowers', 'ribbons', 'animals', 'shapes', 'badges'].map(cat => {
                                 const items = PRESET_DECOS.filter(p => p.category === cat);
                                 if (items.length === 0) return null;
                                 const catInfo = CATEGORY_LABELS[cat];
                                 return (
                                     <div key={cat} className="mb-3">
-                                        <div className="text-[10px] text-slate-500 mb-1.5 flex items-center gap-1">{catInfo && <TwemojiImg code={catInfo.code} className="w-3.5 h-3.5 inline-block" />} {catInfo?.label || cat}</div>
+                                        <div className="text-[10px] text-[#6b6b6b] mb-1.5 flex items-center gap-1 label-mono">{catInfo && <TwemojiImg code={catInfo.code} className="w-3.5 h-3.5 inline-block" />} {catInfo?.label || cat}</div>
                                         <div className="flex gap-2 flex-wrap">
                                             {items.map(preset => (
                                                 <button key={preset.name} onClick={() => addDecoration(preset.content, 'preset')}
-                                                    className="w-14 h-14 bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center gap-0.5 hover:border-pink-300 hover:shadow-sm active:scale-90 transition-all group">
+                                                    className="w-14 h-14 bg-[#fbfaf7] border-2 border-[#2b2933]/30 flex flex-col items-center justify-center gap-0.5 hover:border-[#2b2933] hover:shadow-[2px_2px_0_#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-all group">
                                                     <img src={preset.content} className="w-8 h-8 object-contain group-hover:scale-110 transition-transform" />
-                                                    <span className="text-[8px] text-slate-400">{preset.name}</span>
+                                                    <span className="text-[8px] text-[#8b8996]">{preset.name}</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -1656,79 +1657,79 @@ const Appearance: React.FC = () => {
                     {/* Decoration List & Editor */}
                     {decorations.length > 0 && (
                         <div className="space-y-2">
-                            <div className="text-[10px] text-slate-400 font-bold uppercase mb-2">已添加装饰 ({decorations.length})</div>
+                            <div className="text-[10px] text-[#8b8996] font-bold label-mono mb-2">已贴 {decorations.length} 张</div>
                             {decorations.map((deco, idx) => (
-                                <div key={deco.id} className={`bg-slate-50 rounded-xl border transition-all ${editingDecoId === deco.id ? 'border-pink-300 shadow-md' : 'border-slate-100'}`}>
+                                <div key={deco.id} className={`bg-[#f4f2ed] border-2 transition-all ${editingDecoId === deco.id ? 'border-[#2b2933] shadow-[2px_2px_0_#2b2933]' : 'border-[#2b2933]/20'}`}>
                                     {/* Decoration header row */}
                                     <div className="flex items-center gap-2 p-2.5 cursor-pointer" onClick={() => setEditingDecoId(editingDecoId === deco.id ? null : deco.id)}>
-                                        <div className="w-10 h-10 bg-white rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                                        <div className="w-10 h-10 bg-[#fbfaf7] border-2 border-[#2b2933] flex items-center justify-center overflow-hidden shrink-0">
                                             <img src={deco.content} className="w-8 h-8 object-contain" style={{ transform: deco.flip ? 'scaleX(-1)' : undefined }} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <div className="text-xs font-bold text-slate-600">装饰 #{idx + 1}</div>
-                                            <div className="text-[9px] text-slate-400">位置 ({Math.round(deco.x)}, {Math.round(deco.y)}) · {deco.scale}x · {deco.rotation}°</div>
+                                            <div className="text-xs font-bold text-[#2b2933]">第 {idx + 1} 张</div>
+                                            <div className="text-[9px] text-[#8b8996]">位置 ({Math.round(deco.x)}, {Math.round(deco.y)}) · {deco.scale}x · {deco.rotation}°</div>
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); removeDecoration(deco.id); }} className="p-1.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                                        <button onClick={(e) => { e.stopPropagation(); removeDecoration(deco.id); }} className="p-1.5 text-[#8b8996] hover:text-[#fbfaf7] hover:bg-[#2b2933] transition-colors">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
                                         </button>
                                         <div className={`w-5 h-5 flex items-center justify-center transition-transform ${editingDecoId === deco.id ? 'rotate-180' : ''}`}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-[#8b8996]"><path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
                                         </div>
                                     </div>
 
                                     {/* Expanded edit controls */}
                                     {editingDecoId === deco.id && (
-                                        <div className="px-3 pb-3 space-y-4 animate-fade-in border-t border-slate-100 pt-3">
+                                        <div className="px-3 pb-3 space-y-4 animate-fade-in border-t-2 border-dashed border-[#2b2933]/30 pt-3">
                                             {/* Position X */}
                                             <div>
                                                 <div className="flex justify-between mb-1.5">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">水平位置 X</label>
-                                                    <span className="text-[10px] text-slate-500 font-mono">{Math.round(deco.x)}%</span>
+                                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">左右</label>
+                                                    <span className="text-[10px] text-[#6b6b6b] font-mono">{Math.round(deco.x)}%</span>
                                                 </div>
-                                                <input type="range" min="0" max="100" value={deco.x} onChange={(e) => updateDecoration(deco.id, { x: parseFloat(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-pink-400" />
+                                                <input type="range" min="0" max="100" value={deco.x} onChange={(e) => updateDecoration(deco.id, { x: parseFloat(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                             </div>
                                             {/* Position Y */}
                                             <div>
                                                 <div className="flex justify-between mb-1.5">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">垂直位置 Y</label>
-                                                    <span className="text-[10px] text-slate-500 font-mono">{Math.round(deco.y)}%</span>
+                                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">上下</label>
+                                                    <span className="text-[10px] text-[#6b6b6b] font-mono">{Math.round(deco.y)}%</span>
                                                 </div>
-                                                <input type="range" min="0" max="100" value={deco.y} onChange={(e) => updateDecoration(deco.id, { y: parseFloat(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-pink-400" />
+                                                <input type="range" min="0" max="100" value={deco.y} onChange={(e) => updateDecoration(deco.id, { y: parseFloat(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                             </div>
                                             {/* Scale & Rotation */}
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
                                                     <div className="flex justify-between mb-1.5">
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">缩放</label>
-                                                        <span className="text-[10px] text-slate-500 font-mono">{deco.scale}x</span>
+                                                        <label className="text-[10px] font-bold text-[#8b8996] label-mono">缩放</label>
+                                                        <span className="text-[10px] text-[#6b6b6b] font-mono">{deco.scale}x</span>
                                                     </div>
-                                                    <input type="range" min="0.2" max="3" step="0.1" value={deco.scale} onChange={(e) => updateDecoration(deco.id, { scale: parseFloat(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-purple-400" />
+                                                    <input type="range" min="0.2" max="3" step="0.1" value={deco.scale} onChange={(e) => updateDecoration(deco.id, { scale: parseFloat(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                                 </div>
                                                 <div>
                                                     <div className="flex justify-between mb-1.5">
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase">旋转</label>
-                                                        <span className="text-[10px] text-slate-500 font-mono">{deco.rotation}°</span>
+                                                        <label className="text-[10px] font-bold text-[#8b8996] label-mono">旋转</label>
+                                                        <span className="text-[10px] text-[#6b6b6b] font-mono">{deco.rotation}°</span>
                                                     </div>
-                                                    <input type="range" min="-180" max="180" value={deco.rotation} onChange={(e) => updateDecoration(deco.id, { rotation: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-purple-400" />
+                                                    <input type="range" min="-180" max="180" value={deco.rotation} onChange={(e) => updateDecoration(deco.id, { rotation: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                                 </div>
                                             </div>
                                             {/* Opacity */}
                                             <div>
                                                 <div className="flex justify-between mb-1.5">
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase">透明度</label>
-                                                    <span className="text-[10px] text-slate-500 font-mono">{Math.round(deco.opacity * 100)}%</span>
+                                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">透明度</label>
+                                                    <span className="text-[10px] text-[#6b6b6b] font-mono">{Math.round(deco.opacity * 100)}%</span>
                                                 </div>
-                                                <input type="range" min="0.1" max="1" step="0.05" value={deco.opacity} onChange={(e) => updateDecoration(deco.id, { opacity: parseFloat(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-blue-400" />
+                                                <input type="range" min="0.1" max="1" step="0.05" value={deco.opacity} onChange={(e) => updateDecoration(deco.id, { opacity: parseFloat(e.target.value) })} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                             </div>
                                             {/* Quick Actions */}
                                             <div className="flex gap-2 flex-wrap">
                                                 <button onClick={() => updateDecoration(deco.id, { flip: !deco.flip })}
-                                                    className={`px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all active:scale-95 ${deco.flip ? 'bg-pink-50 text-pink-500 border-pink-200' : 'bg-white text-slate-400 border-slate-200'}`}>
-                                                    镜像翻转
+                                                    className={`px-3 py-1.5 text-[10px] font-bold label-mono border-2 transition-all active:translate-x-[1px] active:translate-y-[1px] ${deco.flip ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>
+                                                    翻面
                                                 </button>
                                                 <button onClick={() => updateDecoration(deco.id, { rotation: 0, scale: 1, opacity: 1, flip: false })}
-                                                    className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-white text-slate-400 border border-slate-200 active:scale-95 transition-all">
-                                                    重置参数
+                                                    className="px-3 py-1.5 text-[10px] font-bold label-mono bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933]/30 active:translate-x-[1px] active:translate-y-[1px] transition-all">
+                                                    复位
                                                 </button>
                                                 <button onClick={() => {
                                                     const dup: DesktopDecoration = { ...deco, id: `deco-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, x: Math.min(deco.x + 8, 95), y: Math.min(deco.y + 8, 95) };
@@ -1736,20 +1737,20 @@ const Appearance: React.FC = () => {
                                                     updateTheme({ desktopDecorations: next });
                                                     setEditingDecoId(dup.id);
                                                 }}
-                                                    className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-white text-slate-400 border border-slate-200 active:scale-95 transition-all">
-                                                    复制一个
+                                                    className="px-3 py-1.5 text-[10px] font-bold label-mono bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933]/30 active:translate-x-[1px] active:translate-y-[1px] transition-all">
+                                                    再贴一张
                                                 </button>
                                                 {/* Layer controls */}
                                                 <button onClick={() => {
                                                     const maxZ = Math.max(...decorations.map(d => d.zIndex), 0);
                                                     updateDecoration(deco.id, { zIndex: maxZ + 1 });
                                                 }}
-                                                    className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-white text-slate-400 border border-slate-200 active:scale-95 transition-all">
-                                                    置顶
+                                                    className="px-3 py-1.5 text-[10px] font-bold label-mono bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933]/30 active:translate-x-[1px] active:translate-y-[1px] transition-all">
+                                                    压最上
                                                 </button>
                                                 <button onClick={() => updateDecoration(deco.id, { zIndex: 0 })}
-                                                    className="px-3 py-1.5 text-[10px] font-bold rounded-lg bg-white text-slate-400 border border-slate-200 active:scale-95 transition-all">
-                                                    置底
+                                                    className="px-3 py-1.5 text-[10px] font-bold label-mono bg-[#fbfaf7] text-[#6b6b6b] border-2 border-[#2b2933]/30 active:translate-x-[1px] active:translate-y-[1px] transition-all">
+                                                    塞最下
                                                 </button>
                                             </div>
                                         </div>
@@ -1758,12 +1759,12 @@ const Appearance: React.FC = () => {
                             ))}
                             {/* Clear all button */}
                             <button onClick={() => { updateTheme({ desktopDecorations: [] }); setEditingDecoId(null); }}
-                                className="w-full py-2 text-xs font-bold text-red-400 bg-red-50 rounded-xl hover:bg-red-100 transition-colors mt-2">
-                                清空所有装饰
+                                className="w-full py-2 text-xs font-bold label-mono text-[#2b2933] border-2 border-dashed border-[#2b2933]/50 hover:bg-[#2b2933] hover:text-[#fbfaf7] transition-colors mt-2">
+                                全撕光
                             </button>
                         </div>
                     )}
-                    <div className="text-[10px] text-slate-400 mt-3 px-1">提示: 装饰会叠加显示在桌面第二页上，可自由调节每个装饰的位置、大小、旋转和透明度。支持上传自定义图片或使用预设贴纸。</div>
+                    <div className="text-[10px] text-[#8b8996] mt-3 px-1 font-hand text-sm">提示：贴纸叠在桌面第二页上，每张都能单独挪位置、调大小、转角度、改透明度。可以贴自己的图，也能用现成贴纸。</div>
                 </section>
             </>
         ) : activeTab === 'icons' ? (
@@ -1773,8 +1774,8 @@ const Appearance: React.FC = () => {
                     const customUrl = customIcons[app.id];
                     return (
                         <div key={app.id} className="flex flex-col items-center gap-2">
-                             <div 
-                                className="w-16 h-16 rounded-2xl shadow-sm bg-slate-200 overflow-hidden relative group cursor-pointer"
+                             <div
+                                className="w-16 h-16 border-2 border-[#2b2933] shadow-[2px_2px_0_#2b2933] bg-[#f4f2ed] overflow-hidden relative group cursor-pointer"
                                 onClick={() => { setSelectedAppId(app.id); iconInputRef.current?.click(); }}
                              >
                                  {customUrl ? (
@@ -1784,13 +1785,13 @@ const Appearance: React.FC = () => {
                                          <Icon className="w-8 h-8" />
                                      </div>
                                  )}
-                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-white"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                 <div className="absolute inset-0 bg-[#2b2933]/45 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-[#fbfaf7]"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
                                  </div>
                              </div>
-                             <span className="text-[10px] text-slate-500 font-medium">{app.name}</span>
+                             <span className="text-[10px] text-[#6b6b6b] font-bold">{app.name}</span>
                              {customUrl && (
-                                 <button onClick={() => setCustomIcon(app.id, undefined)} className="text-[10px] text-red-400">重置</button>
+                                 <button onClick={() => setCustomIcon(app.id, undefined)} className="text-[10px] text-[#2b2933] underline label-mono">撕掉</button>
                              )}
                         </div>
                     );

@@ -170,7 +170,7 @@ const defaults = {
     chatSendButtonStyle: 'circle',
 } as const;
 
-const groupClass = 'rounded-3xl border border-slate-100 bg-white p-5 shadow-sm';
+const groupClass = 'border-2 border-[#2b2933] bg-[#fbfaf7] p-5 shadow-[3px_3px_0_rgba(43,41,51,0.18)]';
 
 
 const choices = {
@@ -259,8 +259,8 @@ const choices = {
 } as const;
 
 const cardButton = (active: boolean) =>
-    `rounded-2xl border px-3 py-2 text-left transition-all active:scale-[0.98] ${
-        active ? 'border-primary/40 bg-primary/10 text-primary shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+    `border-2 px-3 py-2 text-left transition-all active:translate-x-[1px] active:translate-y-[1px] ${
+        active ? 'border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] shadow-[2px_2px_0_rgba(43,41,51,0.3)]' : 'border-[#2b2933]/30 bg-[#fbfaf7] text-[#6b6b6b] hover:border-[#2b2933]'
     }`;
 
 const avatarClass = (shape: string, size: string) => {
@@ -330,7 +330,7 @@ const ChoiceGroup: React.FC<{
     onPick: (value: string) => void;
 }> = ({ title, items, value, onPick }) => (
     <div>
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</div>
+        <div className="mb-2 text-[10px] font-bold label-mono text-[#8b8996]">{title}</div>
         <div className="flex flex-wrap gap-2">
             {items.map((item) => (
                 <button key={item.value} onClick={() => onPick(item.value)} className={cardButton(value === item.value)}>
@@ -392,14 +392,14 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <section className={groupClass}>
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                            <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">气泡工坊</h2>
-                            <p className="mt-1 text-[10px] text-slate-400">深度定制消息气泡：颜色、透明度、背景图、贴纸、头像挂件、语音条样式，保存为可切换的主题。</p>
+                            <h2 className="text-base font-bold font-display-italic text-[#2b2933]">气泡裁剪台</h2>
+                            <p className="mt-1 text-[10px] text-[#6b6b6b]">细裁每条气泡：颜色、透明度、底图、贴纸、头像挂件、语音条，裁好存成可随时换的一页。</p>
                         </div>
                         <button
                             onClick={onOpenBubbleWorkshop}
-                            className="shrink-0 rounded-2xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-md transition-transform active:scale-95"
+                            className="shrink-0 bg-[#2b2933] px-4 py-2.5 text-xs font-bold label-mono text-[#fbfaf7] shadow-[3px_3px_0_rgba(43,41,51,0.3)] transition-transform active:translate-x-[1px] active:translate-y-[1px] -rotate-1"
                         >
-                            打开工坊
+                            进裁剪台
                         </button>
                     </div>
                 </section>
@@ -407,18 +407,18 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
             <section className={groupClass}>
                 <div className="mb-3">
-                    <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">聊天壳预设</h2>
-                    <p className="mt-1 text-[10px] text-slate-400">先把聊天界面做成可换壳，再继续拆细到更多模块级 DIY。</p>
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">整套壳样张</h2>
+                    <p className="mt-1 text-[10px] text-[#6b6b6b]">先挑一整套现成的聊天壳贴上，再往下逐块细调。</p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {presets.map((preset) => (
                         <button
                             key={preset.name}
                             onClick={() => updateTheme(preset.config)}
-                            className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition-all hover:border-primary/30 hover:bg-white active:scale-[0.98]"
+                            className="border-2 border-[#2b2933]/30 bg-[#f4f2ed] p-3 text-left transition-all hover:border-[#2b2933] hover:shadow-[2px_2px_0_#2b2933] active:translate-x-[1px] active:translate-y-[1px]"
                         >
-                            <div className="text-xs font-bold text-slate-700">{preset.name}</div>
-                            <div className="mt-1 text-[10px] text-slate-400">{preset.desc}</div>
+                            <div className="text-xs font-bold text-[#2b2933]">{preset.name}</div>
+                            <div className="mt-1 text-[10px] text-[#6b6b6b]">{preset.desc}</div>
                         </button>
                     ))}
                 </div>
@@ -426,8 +426,8 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
             <section className={groupClass}>
                 <div className="mb-3">
-                    <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">实时预览</h2>
-                    <p className="mt-1 text-[10px] text-slate-400">头部、消息区和输入栏都会跟着你的选择同步变化。</p>
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">取景框</h2>
+                    <p className="mt-1 text-[10px] text-[#6b6b6b]">顶栏、消息区、输入栏都会跟着你的挑选一起变。</p>
                 </div>
                 <div className={`moro-chat-root overflow-hidden rounded-[28px] ${shellClass(chromeStyle)}`} style={backgroundStyleForPreview(backgroundStyle, chromeStyle)}>
                     {/* 实时套用「白框自定义」CSS：预览各零件挂了同样的 .moro-chat-* 钩子，故能即时反映。
@@ -505,17 +505,17 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <div className="mt-4">
                     <ChoiceGroup title="在线状态样式" items={choices.status} value={statusStyle} onPick={(value) => updateTheme({ chatStatusStyle: value as OSTheme['chatStatusStyle'] })} />
                 </div>
-                <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                <div className="mt-4 flex items-center justify-between border-2 border-dashed border-[#2b2933]/40 bg-[#f4f2ed] px-3 py-2.5">
                     <div className="min-w-0 pr-3">
-                        <div className="text-[11px] font-bold text-slate-700">显示情绪栏</div>
-                        <div className="mt-0.5 text-[10px] text-slate-400">角色名下方的情绪 buff 胶囊；关掉后顶栏更干净（位置/样式也可在「白框自定义」里用 .moro-chat-buffs 调）。</div>
+                        <div className="text-[11px] font-bold text-[#2b2933]">露出情绪栏</div>
+                        <div className="mt-0.5 text-[10px] text-[#6b6b6b]">角色名下那排情绪贴片；关掉顶栏更清爽（位置/样式也能在「白框手写码」里用 .moro-chat-buffs 调）。</div>
                     </div>
                     <button
                         onClick={() => updateTheme({ chatHideHeaderBuffs: showHeaderBuffs })}
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${showHeaderBuffs ? 'bg-primary' : 'bg-slate-300'}`}
+                        className={`relative h-6 w-11 shrink-0 border-2 border-[#2b2933] transition-colors ${showHeaderBuffs ? 'bg-[#2b2933]' : 'bg-[#fbfaf7]'}`}
                         aria-pressed={showHeaderBuffs}
                     >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${showHeaderBuffs ? 'left-[22px]' : 'left-0.5'}`} />
+                        <span className={`absolute top-[1px] h-[18px] w-[18px] bg-[#fbfaf7] border border-[#2b2933] transition-all ${showHeaderBuffs ? 'left-[22px] bg-[#fbfaf7]' : 'left-[1px] bg-[#2b2933]'}`} />
                     </button>
                 </div>
             </section>
@@ -537,17 +537,17 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <div className="mt-4">
                     <ChoiceGroup title="时间戳" items={choices.timestamp} value={showTimestamp} onPick={(value) => updateTheme({ chatShowTimestamp: value as OSTheme['chatShowTimestamp'] })} />
                 </div>
-                <div className="mt-4 flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2.5">
+                <div className="mt-4 flex items-center justify-between border-2 border-dashed border-[#2b2933]/40 bg-[#f4f2ed] px-3 py-2.5">
                     <div className="min-w-0 pr-3">
-                        <div className="text-[11px] font-bold text-slate-700">发送准备中圆点</div>
-                        <div className="mt-0.5 text-[10px] text-slate-400">Instant Push 期间，自己的气泡左侧显示三个跳动的小圆点。</div>
+                        <div className="text-[11px] font-bold text-[#2b2933]">发送时的省略点</div>
+                        <div className="mt-0.5 text-[10px] text-[#6b6b6b]">Instant Push 期间，自己气泡左侧跳三个小点。</div>
                     </div>
                     <button
                         onClick={() => updateTheme({ chatPendingIndicator: !pendingIndicator })}
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${pendingIndicator ? 'bg-primary' : 'bg-slate-300'}`}
+                        className={`relative h-6 w-11 shrink-0 border-2 border-[#2b2933] transition-colors ${pendingIndicator ? 'bg-[#2b2933]' : 'bg-[#fbfaf7]'}`}
                         aria-pressed={pendingIndicator}
                     >
-                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${pendingIndicator ? 'left-[22px]' : 'left-0.5'}`} />
+                        <span className={`absolute top-[1px] h-[18px] w-[18px] border border-[#2b2933] transition-all ${pendingIndicator ? 'left-[22px] bg-[#fbfaf7]' : 'left-[1px] bg-[#2b2933]'}`} />
                     </button>
                 </div>
             </section>
@@ -561,21 +561,21 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
 
             <section className={groupClass}>
                 <div className="mb-3">
-                    <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">白框自定义 (CSS)</h2>
-                    <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-                        全局白框 CSS 在「主题 → 自定义 CSS」标签页编辑（带实时预览）；单个角色的专属白框在该角色聊天 →「＋」菜单 →「白框」里设置，叠加在全局之上。
-                        如果某个角色的 CSS 写坏了导致聊天界面异常、连设置都打不开，点下面一键还原全部即可恢复。
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933]">白框 · 手写码</h2>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[#6b6b6b]">
+                        全局白框手写码在「拼贴册 → 手写码」页里写（带取景框）；单个角色的专属白框在该角色聊天 →「＋」菜单 →「白框」里写，叠在全局之上。
+                        要是某个角色的码写坏了、聊天界面整崩、连设置都进不去，点下面一键全撕即可救回来。
                     </p>
                 </div>
                 <button
-                    onClick={() => { if (window.confirm('确定还原全部聊天白框美化？将清空「全局」以及「每个角色」的自定义 CSS（其它聊天外观设置不受影响）。')) onResetAllChrome?.(); }}
-                    className="w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] font-bold text-rose-600 transition-all hover:bg-rose-100 active:scale-[0.99]">
-                    一键还原全部聊天白框美化（救援）
+                    onClick={() => { if (window.confirm('确定把全部聊天白框手写码都撕掉？会清空「全局」和「每个角色」的码（其它聊天外观不受影响）。')) onResetAllChrome?.(); }}
+                    className="w-full border-2 border-[#2b2933] border-dashed bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
+                    一键全撕 · 救援
                 </button>
             </section>
 
-            <div className="px-2 pb-2 text-center text-[10px] leading-relaxed text-slate-400">
-                这一版先把聊天外观做成模块化换壳。后面如果你想继续往深处玩，我们还可以拆成每个角色单独一套聊天壳，甚至让不同 app 模拟不同平台 UI。
+            <div className="px-2 pb-2 text-center text-[10px] leading-relaxed text-[#8b8996] font-hand text-sm">
+                这一版先把聊天壳做成一块块可换的贴纸。想玩更深的话，往后还能给每个角色单独裱一套壳，甚至让不同 app 装成不同平台的样子。
             </div>
         </div>
     );
