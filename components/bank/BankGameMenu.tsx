@@ -5,6 +5,7 @@ import { SHOP_RECIPES, AVAILABLE_STAFF } from './BankGameConstants';
 import BankAssetIcon from './BankAssetIcon';
 import { processImage } from '../../utils/file';
 import { UsersThree, Target, Sparkle, PawPrint, Link as LinkIcon, Camera, Check, Lightbulb, Confetti, Briefcase, CookingPot, HandWaving, Dog, Cat, Rabbit } from '@phosphor-icons/react';
+import { HAND_FONT } from '../../apps/almanac/handbookKit';
 
 interface Props {
     state: BankFullState;
@@ -25,7 +26,7 @@ const BankGameMenu: React.FC<Props> = ({
     state, characters = [], onUnlockRecipe, onHireStaff, onStaffRest, onFireStaff, onRehireStaff, onDeleteFiredStaff, onUpdateConfig,
     onAddGoal, onDeleteGoal, onEditStaff
 }) => {
-    const [tab, setTab] = useState<'staff' | 'goals'>('staff');
+    const [tab, setTab] = useState<'staff' | 'menu' | 'goals'>('staff');
     const [showCustomHire, setShowCustomHire] = useState(false);
 
     // Custom Hire Form
@@ -91,25 +92,27 @@ const BankGameMenu: React.FC<Props> = ({
 
     return (
         <div className="space-y-5">
-            {/* Premium Tab Bar */}
-            <div className="flex bg-white/60 backdrop-blur-sm p-1.5 rounded-2xl shadow-sm border border-[#E8DCC8]">
+            {/* 三枚纸签 Tab */}
+            <div className="flex gap-2">
                 {[
                     { key: 'staff', label: '员工' },
+                    { key: 'menu', label: '商品' },
                     { key: 'goals', label: '目标' }
-                ].map(t => (
-                    <button
-                        key={t.key}
-                        onClick={() => setTab(t.key as any)}
-                        className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-xl transition-all duration-300 flex items-center justify-center gap-1.5 ${
-                            tab === t.key
-                                ? 'bg-gradient-to-br from-[#8D6E63] to-[#6D4C41] text-white shadow-lg'
-                                : 'text-[#8D6E63] hover:bg-[#FDF6E3]'
-                        }`}
-                    >
-                        {t.key === 'staff' ? <UsersThree size={16} weight="bold" /> : <Target size={16} weight="bold" />}
-                        <span>{t.label}</span>
-                    </button>
-                ))}
+                ].map((t, i) => {
+                    const on = tab === t.key;
+                    return (
+                        <button
+                            key={t.key}
+                            onClick={() => setTab(t.key as any)}
+                            className="flex-1 py-2.5 px-3 text-[14px] font-black transition-transform active:scale-95 flex items-center justify-center gap-1.5"
+                            style={{ fontFamily: HAND_FONT, borderRadius: '8px 11px 7px 10px', transform: `rotate(${[-1.2, 0.8, -0.6][i]}deg)`,
+                                ...(on ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' } : { background: '#efe2cd', color: '#a98e6f' }) }}
+                        >
+                            {t.key === 'staff' ? <UsersThree size={15} weight="bold" /> : t.key === 'menu' ? <CookingPot size={15} weight="bold" /> : <Target size={15} weight="bold" />}
+                            <span>{t.label}</span>
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Staff Management - Premium Design */}
@@ -118,7 +121,7 @@ const BankGameMenu: React.FC<Props> = ({
                     {/* Active Staff Section */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-bold text-[#5D4037] flex items-center gap-2">
+                            <h4 className="text-[15px] font-black flex items-center gap-2" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>
                                 <span className="w-6 h-6 bg-gradient-to-br from-[#A5D6A7] to-[#66BB6A] rounded-lg flex items-center justify-center text-white text-xs">✓</span>
                                 在职员工
                             </h4>
@@ -182,7 +185,7 @@ const BankGameMenu: React.FC<Props> = ({
                     {/* Hire Section */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-bold text-[#5D4037] flex items-center gap-2">
+                            <h4 className="text-[15px] font-black flex items-center gap-2" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>
                                 <span className="w-6 h-6 bg-gradient-to-br from-[#90CAF9] to-[#42A5F5] rounded-lg flex items-center justify-center text-white text-xs">+</span>
                                 人才市场
                             </h4>
@@ -399,7 +402,7 @@ const BankGameMenu: React.FC<Props> = ({
                     {(state.firedStaff || []).length > 0 && (
                         <div>
                             <div className="flex items-center justify-between mb-3">
-                                <h4 className="text-sm font-bold text-[#5D4037] flex items-center gap-2">
+                                <h4 className="text-[15px] font-black flex items-center gap-2" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>
                                     <span className="w-6 h-6 bg-gradient-to-br from-[#EF9A9A] to-[#E57373] rounded-lg flex items-center justify-center text-white text-xs">✕</span>
                                     已解雇员工
                                 </h4>
@@ -439,6 +442,50 @@ const BankGameMenu: React.FC<Props> = ({
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* 商品菜单：解锁可卖商品（营业时随机被点单） */}
+            {tab === 'menu' && (
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                        <h4 className="text-[15px] font-black flex items-center gap-2" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>
+                            <span className="w-6 h-6 bg-gradient-to-br from-[#FFCC80] to-[#FF8A65] rounded-lg flex items-center justify-center text-white text-xs">☕</span>
+                            店铺菜单
+                        </h4>
+                        <span className="text-[10px] text-[#A1887F]">解锁越多，营业花样越多</span>
+                    </div>
+                    {SHOP_RECIPES.map(r => {
+                        const unlocked = state.shop.unlockedRecipes.includes(r.id);
+                        const price = r.price ?? Math.max(10, Math.round(r.appeal * 0.8));
+                        const afford = (state.shop.actionPoints || 0) >= r.cost;
+                        return (
+                            <div key={r.id} className="bg-white p-3.5 rounded-2xl border border-[#E8DCC8] shadow-sm flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFF8E1] to-[#FFE0B2] flex items-center justify-center shrink-0">
+                                    {r.icon.startsWith('http') ? <img src={r.icon} className="w-7 h-7" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-2xl">{r.icon}</span>}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[15px] font-black truncate" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>{r.name}</div>
+                                    <div className="text-[10px] text-[#A1887F] flex items-center gap-2 mt-0.5">
+                                        <span>售价 {state.config.currencySymbol}{price}</span>
+                                        <span>· 人气 +{r.appeal}</span>
+                                    </div>
+                                </div>
+                                {unlocked ? (
+                                    <span className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0" style={{ background: '#E3F2E5', color: '#43A047' }}>✓ 在售</span>
+                                ) : (
+                                    <button
+                                        onClick={() => onUnlockRecipe(r.id, r.cost)}
+                                        disabled={!afford}
+                                        className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-95 transition-all disabled:opacity-40"
+                                        style={{ background: 'linear-gradient(135deg,#8D6E63,#6D4C41)', color: '#fff' }}
+                                    >
+                                        解锁 · {r.cost} AP
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 

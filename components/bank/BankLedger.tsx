@@ -4,6 +4,7 @@ import { DB } from '../../utils/db';
 import { ContextBuilder } from '../../utils/context';
 import { safeResponseJson } from '../../utils/safeApi';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
+import { HAND_FONT, tinyRotate } from '../../apps/almanac/handbookKit';
 
 /**
  * 存钱罐 · 互评账本
@@ -191,13 +192,14 @@ ${thread}
 
     return (
         <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-3 pb-8" style={{ color: '#5D4037' }}>
-            {/* 子视图切换 */}
-            <div className="flex gap-2 mb-4">
-                {([['mine', '我的流水'], ['chars', '角色的账本']] as const).map(([k, label]) => (
-                    <button key={k} onClick={() => setView(k)} className="flex-1 py-2 rounded-xl text-[13px] font-bold active:scale-95 transition-all"
-                        style={view === k
-                            ? { background: 'linear-gradient(135deg,#8D6E63,#6D4C41)', color: '#fff', boxShadow: '0 4px 12px rgba(109,76,65,0.3)' }
-                            : { background: '#F3E9D6', color: '#A1887F' }}>
+            {/* 子视图切换 —— 两枚纸签 */}
+            <div className="flex gap-2.5 mb-4">
+                {([['mine', '我的流水'], ['chars', '角色的账本']] as const).map(([k, label], i) => (
+                    <button key={k} onClick={() => setView(k)} className="flex-1 py-2 text-[14px] font-black active:scale-95 transition-transform"
+                        style={{ fontFamily: HAND_FONT, borderRadius: '8px 11px 7px 10px', transform: `rotate(${i === 0 ? -1 : 1}deg)`,
+                            ...(view === k
+                                ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' }
+                                : { background: '#efe2cd', color: '#a98e6f' }) }}>
                         {label}
                     </button>
                 ))}
@@ -231,7 +233,7 @@ ${thread}
                             const cc = tx.charComment;
                             const ccChar = cc ? charById(cc.charId) : undefined;
                             return (
-                                <div key={tx.id} className="rounded-2xl p-3.5 border border-[#EADFC8]" style={{ background: '#FFFDF7', boxShadow: '0 2px 8px rgba(141,110,99,0.08)' }}>
+                                <div key={tx.id} className="rounded-2xl p-3.5 border border-[#EADFC8]" style={{ background: '#FFFDF7', boxShadow: '0 3px 10px rgba(96,66,40,0.12)', transform: `rotate(${tinyRotate(tx.id)}deg)` }}>
                                     <div className="flex items-center gap-2">
                                         <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0" style={{ background: income ? '#E3F2E5' : '#FCE9E4' }}>{income ? '📥' : '📤'}</span>
                                         <div className="flex-1 min-w-0">
@@ -280,7 +282,7 @@ ${thread}
                             </div>
 
                             <div className="flex items-center justify-between mb-3">
-                                <span className="text-[13px] font-bold">{charById(activeCharId)?.name} 的账本</span>
+                                <span className="text-[15px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>{charById(activeCharId)?.name} 的账本</span>
                                 <button onClick={() => { const c = charById(activeCharId); if (c) genCharEntry(c); }} disabled={genBusy}
                                     className="text-[12px] font-bold px-3.5 py-1.5 rounded-full active:scale-95 transition-all disabled:opacity-50"
                                     style={{ background: 'linear-gradient(135deg,#8D6E63,#6D4C41)', color: '#fff' }}>
@@ -297,7 +299,7 @@ ${thread}
                                     const income = entry.type === 'income';
                                     const ch = charById(entry.charId);
                                     return (
-                                        <div key={entry.id} className="rounded-2xl p-3.5 border border-[#EADFC8]" style={{ background: '#FFFDF7', boxShadow: '0 2px 8px rgba(141,110,99,0.08)' }}>
+                                        <div key={entry.id} className="rounded-2xl p-3.5 border border-[#EADFC8]" style={{ background: '#FFFDF7', boxShadow: '0 3px 10px rgba(96,66,40,0.12)', transform: `rotate(${tinyRotate(entry.id)}deg)` }}>
                                             <div className="flex items-center gap-2">
                                                 <span className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0" style={{ background: income ? '#E3F2E5' : '#FCE9E4' }}>{income ? '📥' : '📤'}</span>
                                                 <div className="flex-1 min-w-0">
