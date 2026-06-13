@@ -48,6 +48,19 @@ export const restockUnitCost = (r: { price?: number; appeal: number }): number =
 export const restockBatchCost = (r: { price?: number; appeal: number }): number =>
     restockUnitCost(r) * RESTOCK_BATCH;
 
+// --- 店铺升级（经营深度）-----------------------------------------------------
+// 花钱包的钱给店铺升级，提升「客流」(每轮营业客人数) 与「档次溢价」(营业收入加成)，
+// 顺带提高过夜营业额。是钱包利润的再投资出口。
+export const MAX_SHOP_LEVEL = 8;
+/** 从 level 升到 level+1 的花费（递增，从钱包扣） */
+export const shopUpgradeCost = (level: number): number => 200 * Math.max(1, level);
+/** 店铺档次溢价：营业总收入按此百分比加成（与口碑加成叠加） */
+export const shopLevelBonusPct = (level: number): number => Math.max(0, (level - 1) * 6);
+/** 等级带来的额外客流（每轮营业多接待的客人数） */
+export const shopLevelExtraCustomers = (level: number): number => Math.max(0, level - 1);
+/** 过夜营业额的等级倍率 */
+export const shopLevelPassiveMult = (level: number): number => 1 + Math.max(0, level - 1) * 0.15;
+
 // 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
 export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
     { name: '上班族小林', avatar: '🧑‍💼' },

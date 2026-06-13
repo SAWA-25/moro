@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -330,8 +330,9 @@ const BankApp: React.FC = () => {
             const appealNow = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
             const dailyAP = 10 + Math.floor(appealNow / 25);
 
-            // 店铺「过夜营业额」→ 进钱包（真实可花的钱），与记账完全无关。
-            const passiveRevenue = currentState.shop.staff.length > 0 ? Math.max(0, Math.floor(appealNow * 0.6)) : 0;
+            // 店铺「过夜营业额」→ 进钱包（真实可花的钱），与记账完全无关。店铺等级越高分红越多。
+            const shopLevelNow = currentState.shop.shopLevel || 1;
+            const passiveRevenue = currentState.shop.staff.length > 0 ? Math.max(0, Math.floor(appealNow * 0.6 * shopLevelPassiveMult(shopLevelNow))) : 0;
 
             // Recover Fatigue
             const updatedStaff = currentState.shop.staff.map(s => ({
@@ -540,6 +541,28 @@ const BankApp: React.FC = () => {
         await DB.saveBankState(newState);
         adjustUserBalance(-cost);
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
+    };
+
+    // --- 店铺升级：花钱包的钱提升等级（客流↑、档次溢价↑、过夜分红↑） ---
+    const handleUpgradeShop = async () => {
+        const cur = stateRef.current;
+        const level = cur.shop.shopLevel || 1;
+        if (level >= MAX_SHOP_LEVEL) {
+            addToast('店铺已是最高等级啦', 'info');
+            return;
+        }
+        const cost = shopUpgradeCost(level);
+        const wallet = Math.round(userProfile.balance || 0);
+        if (wallet < cost) {
+            addToast(`钱包不够升级（需 ${cur.config.currencySymbol}${cost}），先开门营业多赚点`, 'error');
+            return;
+        }
+        const newState = { ...cur, shop: { ...cur.shop, shopLevel: level + 1 } };
+        stateRef.current = newState;
+        setState(newState);
+        await DB.saveBankState(newState);
+        adjustUserBalance(-cost);
+        addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
     };
 
     // --- Fire / Rehire / Delete Staff ---
@@ -897,13 +920,17 @@ ${previousGuestbook}
         }
 
         const appeal = cur.shop.appeal || calculateAppeal(staff.length, cur.shop.unlockedRecipes);
+        const level = cur.shop.shopLevel || 1;
         const reviews = cur.shop.reviews || [];
         const avgRep = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 4.2;
         const repBonusPct = Math.round((avgRep - 4) * 10); // 4★→0；5★→+10%；3★→-10%
+        const levelBonusPct = shopLevelBonusPct(level); // 店铺档次溢价，与口碑加成叠加
         const energetic = staff.filter(s => s.fatigue < 90).length;
         const tiredFactor = energetic === 0 ? 0.5 : 1; // 全员疲惫，客流减半
 
-        const customerCount = Math.max(2, Math.min(9, Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1));
+        // 客流：基础随人气波动，外加店铺等级带来的额外客人；等级越高客流上限越大
+        const customerCount = Math.max(2, Math.min(8 + level,
+            Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1 + shopLevelExtraCustomers(level)));
 
         const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
         let base = 0, tips = 0, lostSales = 0;
@@ -946,7 +973,7 @@ ${previousGuestbook}
             }
         }
 
-        const total = Math.max(1, Math.round((base + tips) * (1 + repBonusPct / 100)));
+        const total = Math.max(1, Math.round((base + tips) * (1 + (repBonusPct + levelBonusPct) / 100)));
         const updatedStaff = staff.map(s => ({ ...s, fatigue: Math.min(s.maxFatigue, s.fatigue + 18) }));
         const mergedReviews = [...newReviews, ...reviews].slice(0, 40);
         const newState: BankFullState = {
@@ -970,6 +997,8 @@ ${previousGuestbook}
             items: Array.from(itemMap.values()).sort((a, b) => b.subtotal - a.subtotal),
             reviews: newReviews,
             repBonusPct,
+            levelBonusPct,
+            shopLevel: level,
             lostSales,
         });
     };
@@ -1101,6 +1130,48 @@ ${previousGuestbook}
                                 />
                             </div>
                         </div>
+
+                        {/* 店铺等级：花钱包的钱升级，提升客流 / 档次溢价 / 过夜分红 */}
+                        {(() => {
+                            const lv = state.shop.shopLevel || 1;
+                            const maxed = lv >= MAX_SHOP_LEVEL;
+                            const upCost = shopUpgradeCost(lv);
+                            const afford = Math.round(userProfile.balance || 0) >= upCost;
+                            const sym = state.config.currencySymbol;
+                            const chips = [`客流 +${shopLevelExtraCustomers(lv)}/轮`, `档次 +${shopLevelBonusPct(lv)}%`, `分红 ×${shopLevelPassiveMult(lv).toFixed(2)}`];
+                            return (
+                                <div className="relative p-4 mb-4" style={{ background: '#fffdf7', borderRadius: 14, boxShadow: '0 4px 12px rgba(96,66,40,0.14)', transform: 'rotate(0.5deg)' }}>
+                                    <WashiTape className="-top-2 right-8" color="rgba(158,201,163,0.7)" rotate={10} width={64} />
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="w-11 h-11 rounded-xl flex flex-col items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#ffe0a3,#f3b24a)', boxShadow: '0 2px 6px rgba(150,110,40,0.3)' }}>
+                                                <span className="text-[8px] font-black leading-none text-white/90">Lv</span>
+                                                <span className="text-[18px] font-black leading-none text-white">{lv}</span>
+                                            </div>
+                                            <div>
+                                                <h3 className="text-[15px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>店铺等级</h3>
+                                                <p className="text-[10px]" style={{ color: '#a98e6f' }}>升级提升客流、收入档次与过夜分红</p>
+                                            </div>
+                                        </div>
+                                        {maxed ? (
+                                            <span className="text-[11px] font-bold px-3 py-2 rounded-full" style={{ background: '#efe2cd', color: '#a98e6f' }}>已满级 ✦</span>
+                                        ) : (
+                                            <button onClick={handleUpgradeShop} disabled={!afford} className="text-[12px] font-black px-3.5 py-2 rounded-full active:scale-95 transition-all disabled:opacity-40" style={{ background: '#5a8a52', color: '#fff7ef', fontFamily: HAND_FONT }} title={afford ? '从钱包扣钱升级' : '钱包余额不够'}>
+                                                升级 · {sym}{upCost}
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mt-3">
+                                        {chips.map((c, i) => (
+                                            <span key={i} className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: '#f3ead7', color: '#8a6f50' }}>{c}</span>
+                                        ))}
+                                    </div>
+                                    {!maxed && (
+                                        <p className="text-[10px] mt-2" style={{ color: '#a98e6f' }}>升到 Lv.{lv + 1}：客流 +{shopLevelExtraCustomers(lv + 1)}/轮 · 档次 +{shopLevelBonusPct(lv + 1)}%</p>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         <BankGameMenu
                             state={state}
@@ -1412,7 +1483,7 @@ ${previousGuestbook}
             <HbModal open={showTutorial} onClose={() => setShowTutorial(false)} title="这间小店怎么玩" sub="一页纸看懂" tapeColor="rgba(231,163,156,0.7)">
                 <div className="space-y-3" style={{ color: '#5b4636' }}>
                     {[
-                        { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出有货的商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。', bg: '#dfeccd' },
+                        { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出有货的商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。在「经营」里花钱包给店铺升级，客流和收入档次都更高。', bg: '#dfeccd' },
                         { emoji: '📦', t: '进货与库存', d: '每件商品都有库存，营业卖一份扣一份；见底就去「经营·商品」花钱包的钱进货。进货价只有售价四成，卖出去就是赚的——货架空了客人会空手而归。', bg: '#e3d2bd' },
                         { emoji: '🧾', t: '商品与口碑', d: '去「经营」花 AP 解锁更多商品；客人会点单、留下 1~5 星评价，口碑越好营业收入越高，点店铺里「⭐口碑」可翻看。', bg: '#f6ddc9' },
                         { emoji: '📖', t: '记账是另一本账', d: '「账本」记的是你现实的钱（进账/支出），和店铺的钱各算各的；记完角色会点评，角色也会记自己的账等你回应。', bg: '#cfe3e0' },
