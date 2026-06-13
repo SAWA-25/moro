@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowBendUpRight, BookBookmark, CalendarCheck, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, X } from '@phosphor-icons/react';
+import { ArrowBendUpRight, BookBookmark, CalendarCheck, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 
@@ -775,6 +775,11 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
                             <ActionStrip label="重写一遍" hint="擦掉上一条回复重来" dark={isDiscordStyle} onClick={onReroll} disabled={!canReroll}>
                                 <Eraser className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            {/* 回神：觉得 TA「说话的味道」跑偏了 → 让 ta 自己暂停、第一人称审视、悄悄校准回来 */}
+                            <ActionStrip label="回个神" hint="TA 跑味了？让 ta 自己校准" dark={isDiscordStyle} onClick={() => onPanelAction('recenter')}>
+                                <Wind className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             {/* 情绪按钮已并入作息 — 情绪/意识流与日程强制同步，配置面板在日程 Modal 下方 */}

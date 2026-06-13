@@ -1092,6 +1092,19 @@ export const useChatAI = ({
             setDiaryStatus('');
             setXhsStatus('');
 
+            // 回神校准：每完成一轮 AI 回复，剩余生效轮数 -1，归零即清除（让校准自然淡出回到常态）。
+            // 放在 finally 顶部，确保无论记忆宫殿是否开启都会衰减；读 charRef 拿最新状态。
+            try {
+                const liveCharForRecenter = charRef.current?.id === char.id ? charRef.current : null;
+                const rc = liveCharForRecenter?.recenterCalibration;
+                if (updateCharacter && rc && rc.turnsLeft > 0) {
+                    const turnsLeft = rc.turnsLeft - 1;
+                    updateCharacter(char.id, {
+                        recenterCalibration: turnsLeft > 0 ? { ...rc, turnsLeft } : undefined,
+                    });
+                }
+            } catch { /* 校准衰减失败不影响主流程 */ }
+
             // Memory Palace — 后台缓冲区处理（不阻塞 UI，内部有并发锁）
             // 使用全局配置（memoryPalaceConfig）。lightLLM 未配置时回退主 apiConfig；
             // embedding 因端点类型特殊（/embeddings），不做回退，必须显式配置。

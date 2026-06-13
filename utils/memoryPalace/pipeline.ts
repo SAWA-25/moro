@@ -64,6 +64,7 @@ import { getEmbeddings } from './embedding';
 import { isRemoteSearchBroken } from './vectorSearch';
 import { spreadActivation } from './activation';
 import { applyPriming, checkRumination } from './priming';
+import { applyRecallFatigue } from './recallFatigue';
 import { expandAndFormat } from './formatter';
 import {
     loadWorkingMemory, saveWorkingMemory, buildWorkingMemory,
@@ -785,6 +786,14 @@ export async function retrieveMemories(
         // 4.6 认知引导召回：让稳定认知影响"想起什么"——与认知同语义的记忆召回分上浮
         const cognitionNodes = await tRetrieve('getCognitionNodes', 'IDB', getCognitionNodes(charId));
         applyCognitionBoost(results, cognitionNodes);
+
+        // 4.7 召回疲劳（习惯化）：连续多轮被注入的同一条记忆逐步降权，
+        //     抵消上面连续性/启动/认知引导带来的正反馈，避免角色「揪着一件小事反复提」。
+        //     放在所有加权之后、最终排序之前——它要对照的是「加权后的真实霸榜情况」。
+        const fatigued = applyRecallFatigue(results, charId);
+        if (fatigued > 0) {
+            console.log(`🏰 [Retrieve] 召回疲劳：${fatigued} 条近期反复出现的记忆已降权（习惯化，防复读）`);
+        }
 
         // 重新排序
         results.sort((a, b) => b.finalScore - a.finalScore);

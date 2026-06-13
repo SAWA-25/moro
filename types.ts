@@ -654,6 +654,15 @@ export interface ScheduleSlot {
     emoji?: string;       // "🏃"
     location?: string;    // "河边"
     innerThought?: string; // 该时段的内心独白，生成时由AI写好，运行时直接注入
+    /**
+     * 日程锚点来源：
+     * - 'self'（默认/缺省）：角色自己安排的活动
+     * - 'chat'：从聊天里协调出来的约定/变更（如"晚上八点一起看电影"）——这类是「日程锚点」，
+     *   优先级最高，角色会围着它安排其它时段。
+     */
+    source?: 'self' | 'chat';
+    /** 是否为锚定时段：聊天里明确约定、角色应当遵守、不应随意改动的事项 */
+    anchored?: boolean;
 }
 
 export interface DailySchedule {
@@ -1838,6 +1847,23 @@ export interface CharacterProfile {
   // 自我领悟词条：消化过程中 self_room 反刍产生的常驻认知
   // 像情绪 buff 一样注入到 contextBuilder 的角色设定下方
   selfInsights?: string[];
+
+  /**
+   * 回神校准：用户触发「回神」后，角色完成一次自我审视，得到一句校准方向。
+   * 在接下来的 turnsLeft 轮 AI 回复里注入 system prompt（悄悄调回本来的样子），
+   * 每回复一轮 turnsLeft--，归零即清除，自然淡出回到常态。运行时字段，会被持久化。
+   */
+  recenterCalibration?: {
+    /** 一句话校准方向（注入 prompt 用） */
+    note: string;
+    /** 第一人称回神独白（留档/可再展示） */
+    monologue?: string;
+    /** 察觉到的偏移点 */
+    drift?: string[];
+    createdAt: number;
+    /** 剩余生效轮数（>0 才注入） */
+    turnsLeft: number;
+  };
 
   // 音乐人格 — 角色自己的网易云式歌单 / 品味 / 正在听
   // 在音乐 App 里以"拜访"形式访问

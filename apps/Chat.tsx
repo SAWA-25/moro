@@ -5,7 +5,8 @@ import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile } from '../types';
 import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
-import { generateDailyScheduleForChar, isScheduleFeatureOn } from '../utils/scheduleGenerator';
+import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
+import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
@@ -102,6 +103,11 @@ const Chat: React.FC = () => {
     const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
+    // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
+    const lastReconcileSigRef = useRef<string>('');
+    // 回神：自我校准结果弹窗 + 进行中状态
+    const [recenterResult, setRecenterResult] = useState<RecenterResult | null>(null);
+    const [isRecentering, setIsRecentering] = useState(false);
     const [allHistoryMessages, setAllHistoryMessages] = useState<Message[]>([]);
     const [transferAmt, setTransferAmt] = useState('');
     const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
@@ -816,6 +822,42 @@ const Chat: React.FC = () => {
         }).catch(() => {});
     }, [activeCharacterId, char?.scheduleFeatureEnabled]);
 
+    // 日程锚点：聊天里出现约定/变更时，自动协调今天的日程（让 char 的日程既自治、又随聊天对齐）
+    // 廉价信号闸（chatHasScheduleSignal）+ 每角色 8 分钟冷却，控制副 API 成本，不每轮都调。
+    useEffect(() => {
+        if (!char || !apiConfig.apiKey || !isScheduleFeatureOn(char)) return;
+        if (!scheduleData || isTyping) return;                 // 还没今日日程 / 回复进行中：先不打扰
+        if (messages.length === 0 || !chatHasScheduleSignal(messages)) return;
+
+        const lastMsgId = messages[messages.length - 1]?.id ?? 0;
+        const sig = `${char.id}:${lastMsgId}`;
+        if (lastReconcileSigRef.current === sig) return;       // 同一批消息不重复触发
+
+        const COOLDOWN_MS = 8 * 60 * 1000;
+        const key = `schedule_reconcile_at_${char.id}`;
+        let last = 0;
+        try { last = Number(localStorage.getItem(key) || '0'); } catch { /* ignore */ }
+        if (Date.now() - last < COOLDOWN_MS) return;
+
+        lastReconcileSigRef.current = sig;
+        try { localStorage.setItem(key, String(Date.now())); } catch { /* ignore */ }
+
+        const targetCharId = char.id;
+        const curChar = char;
+        const curSchedule = scheduleData;
+        let cancelled = false;
+        (async () => {
+            try {
+                const recent = await DB.getRecentMessagesByCharId(targetCharId, 50);
+                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, apiConfig);
+                if (!cancelled && updated) setScheduleData(updated);
+            } catch (e) {
+                console.warn('[Schedule/Reconcile] effect failed:', e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [messages, char?.id, scheduleData?.id, isTyping]);
+
     // Load all messages when history-manager modal opens
     useEffect(() => {
         if (modalType === 'history-manager' && activeCharacterId) {
@@ -1326,6 +1368,37 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         return () => { alive = false; window.removeEventListener('autonomous-life-catchup', onCatchup); };
     }, [activeCharacterId]);
 
+    // 回神：让角色暂停、第一人称审视最近哪里跑偏，再悄悄校准回来。
+    // 用主 API（角色自己的声音）。结果存进 char.recenterCalibration（注入后续几轮）+ 弹窗给用户看独白。
+    const handleRecenter = async () => {
+        if (!char) return;
+        if (isRecentering) { addToast('TA 正在回神，稍等一下…', 'info'); return; }
+        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        setIsRecentering(true);
+        try {
+            const recent = await DB.getRecentMessagesByCharId(char.id, 60);
+            if (recent.length < 2) { addToast('还没聊几句，先聊一会儿再回神吧', 'info'); return; }
+            const result = await runRecenter(char, userProfile, recent, apiConfig);
+            if (!result) { addToast('回神了一下，TA 觉得最近还好，没什么要调的', 'info'); return; }
+            // 写入校准（注入后续 RECENTER_DEFAULT_TURNS 轮 AI 回复）
+            await updateCharacter(char.id, {
+                recenterCalibration: {
+                    note: result.calibration || '回到本来的语气和分寸，别一味讨好、别套模板。',
+                    monologue: result.monologue,
+                    drift: result.drift,
+                    createdAt: Date.now(),
+                    turnsLeft: RECENTER_DEFAULT_TURNS,
+                },
+            });
+            setRecenterResult(result);
+        } catch (e: any) {
+            console.warn('🫧 [Recenter] handler failed:', e?.message || e);
+            addToast('回神失败了，待会儿再试试', 'error');
+        } finally {
+            setIsRecentering(false);
+        }
+    };
+
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'transfer': setModalType('transfer'); break;
@@ -1361,6 +1434,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 break;
             }
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
+            case 'recenter': setShowPanel('none'); handleRecenter(); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
@@ -3313,6 +3387,124 @@ ${recent || '（你们还没怎么聊过）'}
                     </div>
                 );
             })()}
+
+            {/* 回神进行中：轻量遮罩，告诉用户 TA 正在自我审视 */}
+            {isRecentering && (
+                <div
+                    className="absolute inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in"
+                    style={{
+                        background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.16), rgba(0,0,0,0.5))',
+                        backdropFilter: 'blur(8px)',
+                        WebkitBackdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <div className="flex flex-col items-center gap-3">
+                        <div
+                            className="w-14 h-14 rounded-2xl flex items-center justify-center animate-pulse"
+                            style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(129,140,248,0.1))' }}
+                        >
+                            <span style={{ fontSize: 26 }}>🫧</span>
+                        </div>
+                        <div className="text-[13px] font-semibold text-white/90 tracking-wide">{char.name} 正在回神…</div>
+                        <div className="text-[11px] text-white/60">停下来，看看自己最近哪里偏了</div>
+                    </div>
+                </div>
+            )}
+
+            {/* 回神结果弹窗 — 第一人称内心独白（角色当着你的面意识到问题、悄悄调回去） */}
+            {recenterResult && (
+                <div
+                    className="absolute inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in"
+                    style={{
+                        background: 'radial-gradient(ellipse at top, rgba(99,102,241,0.2), rgba(0,0,0,0.55))',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
+                    }}
+                    onClick={() => setRecenterResult(null)}
+                >
+                    <div
+                        className="w-full max-w-sm max-h-[85vh] overflow-hidden flex flex-col relative"
+                        style={{
+                            background: 'linear-gradient(160deg, rgba(255,255,255,0.98) 0%, rgba(238,242,255,0.96) 100%)',
+                            borderRadius: 28,
+                            border: '1px solid rgba(255,255,255,0.7)',
+                            boxShadow: '0 30px 80px -20px rgba(99,102,241,0.35), 0 10px 40px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.9)',
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div
+                            className="absolute top-0 left-0 right-0 h-1 pointer-events-none"
+                            style={{ background: 'linear-gradient(90deg, transparent, #6366f1, #a5b4fc, #6366f1, transparent)' }}
+                        />
+                        {/* 头部 */}
+                        <div className="px-6 pt-7 pb-3 text-center">
+                            <div
+                                className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-3"
+                                style={{
+                                    background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(129,140,248,0.08))',
+                                    boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.9), 0 4px 16px rgba(99,102,241,0.2)',
+                                }}
+                            >
+                                <span style={{ fontSize: 28 }}>🫧</span>
+                            </div>
+                            <div className="text-[11px] tracking-[0.2em] uppercase font-semibold" style={{ color: '#4f46e5' }}>Recenter · 回神</div>
+                            <div className="text-[17px] font-bold mt-1" style={{ color: '#0f172a' }}>{char.name} 回了下神</div>
+                        </div>
+
+                        {/* 内容：第一人称独白 + 偏移点 */}
+                        <div className="flex-1 overflow-y-auto px-5 pb-4 space-y-3 no-scrollbar">
+                            <div
+                                className="rounded-2xl px-4 py-3.5"
+                                style={{
+                                    background: 'rgba(255,255,255,0.75)',
+                                    border: '1px solid rgba(99,102,241,0.18)',
+                                    boxShadow: '0 2px 8px rgba(99,102,241,0.1), inset 0 1px 0 rgba(255,255,255,0.8)',
+                                }}
+                            >
+                                <div className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap">{recenterResult.monologue}</div>
+                            </div>
+
+                            {recenterResult.drift.length > 0 && (
+                                <div
+                                    className="rounded-2xl overflow-hidden"
+                                    style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(99,102,241,0.14)' }}
+                                >
+                                    <div className="px-4 py-2 flex items-center gap-2" style={{ background: 'linear-gradient(90deg, rgba(99,102,241,0.12), transparent)' }}>
+                                        <span style={{ fontSize: 13 }}>🧭</span>
+                                        <span className="text-[12px] font-bold" style={{ color: '#4f46e5' }}>察觉到的偏移</span>
+                                    </div>
+                                    <div className="px-4 py-2 space-y-1.5">
+                                        {recenterResult.drift.map((d, i) => (
+                                            <div key={i} className="text-[12px] leading-relaxed text-slate-600 flex gap-2">
+                                                <span className="shrink-0 mt-[7px] w-1 h-1 rounded-full" style={{ background: '#6366f1' }} />
+                                                <span className="flex-1">{d}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="text-[11px] text-slate-400 text-center px-2 leading-relaxed">
+                                ta 已经悄悄把自己调回来了 · 接下来几句应该能感觉到
+                            </div>
+                        </div>
+
+                        {/* 确认 */}
+                        <div className="px-6 pb-6 pt-1">
+                            <button
+                                onClick={() => setRecenterResult(null)}
+                                className="w-full py-3 text-white text-[13px] font-bold rounded-2xl active:scale-[0.98] transition-transform"
+                                style={{
+                                    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                                    boxShadow: '0 8px 24px -4px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.25)',
+                                }}
+                            >
+                                嗯，继续聊
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 会话设置「角色立绘」：galgame 式半透明立绘，垫在消息气泡之下、背景之上 */}
             {convo?.spriteImage && (
