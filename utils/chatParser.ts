@@ -41,6 +41,8 @@ export interface MusicActionHooks {
         song: CharPlaylistSong,
         target?: AddSongTarget,
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
+    /** char 主动分享歌曲：按关键词真实搜索（网易云），返回可播放的歌曲快照；找不到返回 null。 */
+    searchSong?: (keyword: string) => Promise<MusicActionSnapshot | null>;
 }
 
 /**
@@ -191,6 +193,33 @@ export const ChatParser = {
         } else if (musicMatch) {
             // 没有 hooks（无音乐上下文）— 静默丢弃
             content = content.replace(MUSIC_TAG_GLOBAL_RE, '').trim();
+        }
+
+        // SHARE_SONG — char 主动分享一首真实歌曲（按关键词真实搜索网易云，做成可播放卡片）
+        //   [[SHARE_SONG: 歌名 - 歌手]] / [[SHARE_SONG: 歌名|歌手]] / [[SHARE_SONG: 歌名]]
+        const SHARE_SONG_RE = /\[\[SHARE_SONG:\s*([^\]]*?)\s*\]\]/;
+        const SHARE_SONG_GLOBAL_RE = /\[\[SHARE_SONG:[^\]]*\]\]/g;
+        const shareMatch = content.match(SHARE_SONG_RE);
+        if (shareMatch) {
+            const query = (shareMatch[1] || '').replace(/[|｜]/g, ' ').replace(/\s*-\s*/g, ' ').trim();
+            if (query && musicHooks?.searchSong) {
+                try {
+                    const song = await musicHooks.searchSong(query);
+                    if (song) {
+                        await DB.saveMessage({
+                            charId,
+                            role: 'assistant',
+                            type: 'music_card',
+                            content: '[音乐卡片]',
+                            metadata: { intent: 'share', song },
+                        });
+                        addToast(`${charName} 分享了《${song.name}》`, 'info');
+                    } else {
+                        addToast(`${charName} 想分享一首歌，但没找到《${query}》`, 'info');
+                    }
+                } catch { /* 搜索失败静默 */ }
+            }
+            content = content.replace(SHARE_SONG_GLOBAL_RE, '').trim();
         }
 
         // NEWS_CARD — char 主动把某条热点当作新闻卡片分享（来源 + 标题）

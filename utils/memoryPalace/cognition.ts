@@ -114,6 +114,8 @@ export function formatWorkingMemory(snap: WorkingMemorySnapshot | null): string 
 export const COGNITION_TAG = '认知';
 /** 检索时置顶注入的认知条数上限 */
 const COGNITION_MAX_INJECT = 5;
+/** 认知引导召回：与认知同语义（共享标签）的记忆，召回分小幅上浮 */
+const COGNITION_GUIDE_BOOST = 1.06;
 /** 形成认知的门槛 */
 const STRONG_LINK = 0.65;        // link strength ≥ 此值视为「长在一起」
 const MIN_CLUSTER_SIZE = 3;      // 簇至少 N 个成员
@@ -162,10 +164,54 @@ export async function getCognitionNodes(charId: string): Promise<MemoryNode[]> {
     return all.filter(n => n.origin === 'cognition' && !n.archived);
 }
 
-/** 置顶认知注入块（不占常规 15 名额，越聊越懂 TA）。 */
-export async function formatCognitions(charId: string, userName?: string): Promise<string> {
+/** 取一组节点的高频语义标签（剔除认知自身的管理标签）。 */
+function topTags(nodes: MemoryNode[], n = 5): string[] {
+    const count = new Map<string, number>();
+    for (const node of nodes) {
+        for (const t of (node.tags || [])) {
+            if (t === COGNITION_TAG || t === '长期') continue;
+            count.set(t, (count.get(t) || 0) + 1);
+        }
+    }
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(e => e[0]);
+}
+
+/**
+ * 认知引导召回：让稳定认知影响"想起什么"——与认知共享语义标签的记忆召回分小幅上浮。
+ * （in-place 修改 finalScore；认知节点自身不参与加权）
+ */
+export function applyCognitionBoost(results: ScoredMemory[], cognitions: MemoryNode[]): void {
+    if (cognitions.length === 0) return;
+    const cogTags = new Set<string>();
+    for (const c of cognitions) for (const t of (c.tags || [])) {
+        if (t === COGNITION_TAG || t === '长期') continue;
+        cogTags.add(t);
+    }
+    if (cogTags.size === 0) return;
+    for (const r of results) {
+        if (r.node.origin === 'cognition') continue;
+        if ((r.node.tags || []).some(t => cogTags.has(t))) r.finalScore *= COGNITION_GUIDE_BOOST;
+    }
+}
+
+/**
+ * 置顶认知注入块（不占常规 15 名额，越聊越懂 TA）。
+ * relevanceById：本轮混合检索里认知节点拿到的分数 → 让「和当下最相关」的认知优先注入
+ * （认知真正参与召回，而非只按重要性置顶）。无相关命中时回退到重要性 / 最近访问。
+ */
+export async function formatCognitions(
+    charId: string,
+    userName?: string,
+    relevanceById?: Map<string, number>,
+): Promise<string> {
     const nodes = (await getCognitionNodes(charId))
-        .sort((a, b) => (b.importance - a.importance) || (b.lastAccessedAt - a.lastAccessedAt))
+        .sort((a, b) => {
+            const ra = relevanceById?.get(a.id) ?? 0;
+            const rb = relevanceById?.get(b.id) ?? 0;
+            if (rb !== ra) return rb - ra;               // 本轮相关性优先
+            if (b.importance !== a.importance) return b.importance - a.importance;
+            return b.lastAccessedAt - a.lastAccessedAt;
+        })
         .slice(0, COGNITION_MAX_INJECT);
     if (nodes.length === 0) return '';
     const who = userName || 'TA';
@@ -321,7 +367,8 @@ export async function formCognitions(
                 charId,
                 content: text,
                 room: 'self_room',
-                tags: [COGNITION_TAG, '长期'],
+                // 带上来源簇的语义标签：让认知能「引导召回」同语义的记忆（applyCognitionBoost）
+                tags: [COGNITION_TAG, '长期', ...topTags(cluster)],
                 importance: 8,
                 mood: 'peaceful',
                 embedded: false,

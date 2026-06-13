@@ -247,6 +247,11 @@ export interface PostProcessMusicHooks {
         song: any,
         target?: any,
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
+    /** char 主动分享歌曲：真实搜索返回可播放快照 */
+    searchSong?: (keyword: string) => Promise<{
+        songId: number; name: string; artists: string; album: string;
+        albumPic: string; duration: number; fee: number;
+    } | null>;
 }
 
 export interface PostProcessHooks {

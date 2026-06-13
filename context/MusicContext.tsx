@@ -892,6 +892,27 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return null;
         }
       },
+      // char 主动分享歌曲：真实搜索网易云，取最佳匹配，映射成可播放快照
+      searchSong: async (keyword: string) => {
+        try {
+          const c = loadMusicCfgStandalone();
+          if (!c.workerUrl) return null;
+          const r = await musicApi.search(c, keyword);
+          const s: any = (r?.result?.songs || [])[0];
+          if (!s) return null;
+          return {
+            songId: s.id,
+            name: s.name,
+            artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
+            album: s.al?.name || s.album?.name || '',
+            albumPic: (s.al?.picUrl || s.album?.picUrl || '').replace(/^http:\/\//, 'https://'),
+            duration: (s.dt || s.duration || 0) / 1000,
+            fee: s.fee ?? 0,
+          };
+        } catch {
+          return null;
+        }
+      },
     };
   }, [current, addListeningPartner]);
 

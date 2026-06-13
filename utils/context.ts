@@ -1,5 +1,6 @@
 
 import { CharacterProfile, UserProfile, DailySchedule } from '../types';
+import { buildCityPromptBlock } from './charCity';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 
@@ -237,6 +238,10 @@ export const ContextBuilder = {
                     context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
                 }
             }
+
+            // 真实城市系统：城市真实感接地（聊天 / 查手机 / 线下都读 coreContext，自动带上）
+            const cityBlock = buildCityPromptBlock(char);
+            if (cityBlock) context += `${cityBlock}\n\n`;
         }
 
         // 5. 记忆库 (Memory Bank)
@@ -665,5 +670,17 @@ ${addUsage}
 
 这些是偶尔才用的工具，不是每首歌都要回应。绝大多数时候什么都不做、安静陪着才是最自然的反应；只有当你**真的**被这首歌打动、或它恰好贴合此刻的对话气氛时，再插一次卡。不要把它当成"对方在听歌"的默认回礼。
 `;
+    },
+
+    /**
+     * 主动分享歌曲指令（告诉 LLM 怎么主动推一首真实的歌）。
+     * 对有音乐人格的角色随时可用，不依赖"对方正在听歌"。克制使用。
+     */
+    buildSongShareGuide: (userName?: string): string => {
+        const who = userName || '对方';
+        return `### 【主动分享歌曲】
+当聊到某种心情、某件事、某个氛围，你心里冒出一首想推给${who}的歌时，可以主动分享：在回复里任意位置插入一条
+\`[[SHARE_SONG: 歌名 - 歌手]]\`（也可写 \`歌名|歌手\` 或只写歌名）。系统会真实搜索并生成一张可播放的卡片。
+要求：歌名 / 歌手必须是真实存在的；只在你**真的**有想分享的歌时用，别硬塞；一条消息最多分享一次。`;
     },
 };

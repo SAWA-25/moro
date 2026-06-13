@@ -19,6 +19,7 @@
 | **Instant Push SSE↔Push 契约** | [`docs/instant-push-dual-channel.md`](./docs/instant-push-dual-channel.md) | **改 instant push 路径或排查「报错但收到消息」类 bug 前必读**。SSE ≠ 送达判定通道、catch 不能直接判 send-failed |
 | **Instant Push 通道** | [`docs/instant-push-branch-notes.md`](./docs/instant-push-branch-notes.md)、[`worker/instant-push/README.md`](./worker/instant-push/README.md) | LLM-driven Web Push、worker 端 agentic loop / reasoning / 副作用 directive |
 | **角色离线自主生活 + 离线弹窗授权** | [`docs/autonomous-life.md`](./docs/autonomous-life.md) | 来往·让角色离线时「过自己的日子」（主动消息从生活取材、不围着用户转）、离线动态回顾时间线、浏览器通知授权（Chrome/Edge）。改主动消息 / 离线推送 / 角色日常前必读 |
+| **角色真实城市系统** | [`docs/char-city.md`](./docs/char-city.md) | 真实/架空城市选择 + 原型城市 + 虚拟程度、实时天气按角色城市取、查手机外卖彩蛋（真实本地店）。改角色城市 / 实时接地前看 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、Instant Push Phase 2、sfworker 清单），动后端 / 加功能前先扫一遍。

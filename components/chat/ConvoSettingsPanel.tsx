@@ -705,6 +705,58 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
+                    <Entry mark="☘" title="TA 的城市" note="给 TA 一座城：真实城市会接入真实天气，本地小吃/外卖也按真实情况来（查手机能看到 TA 点的真实外卖）；架空城市可挑个原型，按虚拟程度借用真实风物。">
+                        {(() => {
+                            const city = char.cityConfig;
+                            const mode = city?.mode;
+                            const setCity = (patch: Partial<NonNullable<typeof char.cityConfig>>) =>
+                                updateCharacter(char.id, { cityConfig: { ...(char.cityConfig || { mode: 'real' as const }), ...patch } });
+                            return (
+                                <div className="space-y-2.5">
+                                    <div className="flex flex-wrap gap-2">
+                                        <StickerChip seed="city-off" active={!mode} candy="#d6c8e8" onClick={() => updateCharacter(char.id, { cityConfig: undefined })}>不设定</StickerChip>
+                                        <StickerChip seed="city-real" active={mode === 'real'} candy="#d6c8e8" onClick={() => setCity({ mode: 'real' })}>真实城市</StickerChip>
+                                        <StickerChip seed="city-virtual" active={mode === 'virtual'} candy="#d6c8e8" onClick={() => setCity({ mode: 'virtual' })}>架空城市</StickerChip>
+                                    </div>
+                                    {mode === 'real' && (
+                                        <LineInput
+                                            value={city?.realCity || ''}
+                                            onChange={v => setCity({ realCity: v || undefined })}
+                                            placeholder="真实城市名：「上海」「成都」「东京」…"
+                                        />
+                                    )}
+                                    {mode === 'virtual' && (
+                                        <div className="space-y-2">
+                                            <LineInput
+                                                value={city?.virtualName || ''}
+                                                onChange={v => setCity({ virtualName: v || undefined })}
+                                                placeholder="架空城市名：「A 市」「云港」…"
+                                            />
+                                            <LineInput
+                                                value={city?.prototypeCity || ''}
+                                                onChange={v => setCity({ prototypeCity: v || undefined })}
+                                                placeholder="原型参考城市（可留空）：「上海」「北京」…"
+                                            />
+                                            <div className="flex items-center gap-2 pt-0.5">
+                                                <span className="text-[10px] shrink-0" style={{ color: PAPER_TONES.inkSoft }}>虚拟程度</span>
+                                                <input
+                                                    type="range" min={0} max={100} step={5}
+                                                    value={city?.fictionLevel ?? 50}
+                                                    onChange={e => setCity({ fictionLevel: parseInt(e.target.value, 10) })}
+                                                    className="flex-1 accent-[#bfa3dd]"
+                                                />
+                                                <span className="text-[10px] w-9 text-right tabular-nums" style={{ color: PAPER_TONES.ink }}>{city?.fictionLevel ?? 50}%</span>
+                                            </div>
+                                            <p className="text-[9.5px] leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                                                越低越贴近原型（可直接用真实地名/店名）；越高越架空（只借神韵、改写化用）。
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                    </Entry>
+
                     <Entry
                         mark="☘" title="TA 知道现在几点"
                         note="往提示词里塞「距上次聊天过了多久」这类线索，让 TA 对时间更敏感、贴着现实的钟点过日子。"

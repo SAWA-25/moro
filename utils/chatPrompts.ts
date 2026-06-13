@@ -8,6 +8,7 @@ import { computeCurrentListening, getCurrentSlot } from './charMusicSchedule';
 import { getCharLyricSnippet } from './charLyricCache';
 import { MusicCfg, loadMusicCfgStandalone } from '../context/MusicContext';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
+import { getWeatherCity } from './charCity';
 import { isScheduleFeatureOn } from './scheduleGenerator';
 import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
@@ -157,10 +158,13 @@ export const ChatPrompts = {
         const today = new Date().toISOString().split('T')[0];
 
         // 1. 实时世界信息（天气/新闻/时间）
+        // 真实城市角色：天气按 TA 自己的城市取（虚拟城市不暴露原型给天气块，由城市块接地）
+        const cityWeather = getWeatherCity(char);
+        const realtimeCfg = cityWeather ? { ...config, weatherCity: cityWeather } : config;
         const realtimePromise: Promise<string> = (async () => {
             try {
-                if (config.weatherEnabled || config.newsEnabled) {
-                    const realtimeContext = await RealtimeContextManager.buildFullContext(config);
+                if (realtimeCfg.weatherEnabled || realtimeCfg.newsEnabled) {
+                    const realtimeContext = await RealtimeContextManager.buildFullContext(realtimeCfg);
                     return `\n${realtimeContext}\n`;
                 }
                 const time = RealtimeContextManager.getTimeContext();
@@ -335,6 +339,10 @@ export const ChatPrompts = {
                 if (userListeningContext) {
                     baseSystemPrompt += `\n${ContextBuilder.buildMusicActionGuide(isListeningTogether)}\n`;
                 }
+            }
+            // 主动分享歌曲：有音乐人格的角色随时可主动推一首真实的歌（克制使用），不依赖对方在听歌
+            if (char.musicProfile) {
+                baseSystemPrompt += `\n${ContextBuilder.buildSongShareGuide(userProfile.name)}\n`;
             }
         } catch (e) {
             console.error('Failed to inject music atmosphere:', e);
