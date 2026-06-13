@@ -30,6 +30,24 @@ export const SHOP_RECIPES: ShopRecipe[] = [
     { id: 'recipe-cocktail-001', name: '特调气泡水', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f379.png', cost: 500, appeal: 80, isUnlocked: false, price: 38 },
 ];
 
+// --- 库存 / 进货（经营深度）---------------------------------------------------
+// 经营游戏的核心循环：进货(花钱补库存) → 营业(卖出扣库存) → 利润(进钱包)。
+// 库存与钱包直接挂钩——进货从钱包扣钱，卖货把钱赚回来，毛利来自「进货价 < 售价」。
+export const STARTING_STOCK = 12;     // 商品上架时附赠的起始库存（让新店能先开张）
+export const RESTOCK_BATCH = 20;      // 一次进货补充的份数
+export const STOCK_CAP = 200;         // 单品库存上限（防止无限囤货）
+export const DAILY_STOCK_FLOOR = 5;   // 每日登录把在售商品补到至少这么多（保底，避免彻底断货卡死）
+
+/** 商品售价（全局统一口径：优先 price，否则按人气折算）。进货价与营业收入都以它为唯一来源。 */
+export const recipePrice = (r: { price?: number; appeal: number }): number =>
+    r.price ?? Math.max(10, Math.round(r.appeal * 0.8));
+/** 进货单价：售价的四成，留出六成毛利；最低 1 */
+export const restockUnitCost = (r: { price?: number; appeal: number }): number =>
+    Math.max(1, Math.round(recipePrice(r) * 0.4));
+/** 一次进货（RESTOCK_BATCH 份）的总花费 */
+export const restockBatchCost = (r: { price?: number; appeal: number }): number =>
+    restockUnitCost(r) * RESTOCK_BATCH;
+
 // 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
 export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
     { name: '上班族小林', avatar: '🧑‍💼' },
