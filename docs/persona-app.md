@@ -75,7 +75,7 @@ UI 文案与功能术语对照（代码字段 / ST 语义不变，只换了说�
 - **世界书**：人设可绑定一个分组（一本书），激活时整组按原位置注入。
 - **档案**：底部入口跳人设 App；空人设列表时可一键「把当前档案保存为人设」
   （=ST 的 migrateNonPersonaUser）。
-- **神经链接**：角色卡的开场白（first_mes / alternate_greetings）独立存储
+- **登场人物（原神经链接）**：角色卡的开场白（first_mes / alternate_greetings）独立存储
   （`CharacterProfile.firstMes` / `alternateGreetings`），进入空聊天时左右切换
   选择开场白，宏（{{user}}）按当时启用的人设名替换；对话示例（mes_example）
   同样独立存储（`CharacterProfile.mesExample`），未启用预设时作为「对话示例」块
