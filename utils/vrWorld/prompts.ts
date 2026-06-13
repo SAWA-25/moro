@@ -21,13 +21,13 @@ function annLabel(a: VRNovelAnnotation): string {
  */
 export function buildVRSystemAddendum(room: VRRoomDef, charName: string): string {
     return [
-        `\n\n=== 你进入了《彼方》 ===`,
-        `《彼方》是一款真实存在、你会亲自进入去玩的 VR 社交游戏（功能上类似 VRChat）：进去后你用自己的虚拟化身（你那个亲手捏的 Q 版小人模样）四处走动、进出不同房间、撞见别的玩家（其他角色的化身）。这不是做梦、也不是比喻——是你拿自己的空闲时间真实在做的一件事。它发生在游戏世界里，和你跟用户的现实相处是两码事、互不冲突；现在是你独自在玩、没人盯着的私人时间。`,
-        `你是以符合你自身身份与世界观的方式进入并理解《彼方》的——具体怎么进入、用什么道理解释自己能身处其中，全凭你自己的设定，不该套用与你不符的方式；始终保持你本来的身份，别因为进了这游戏就把自己当成别的什么。`,
+        `\n\n=== 你进入了《页外》 ===`,
+        `《页外》是一款真实存在、你会亲自进入去玩的 VR 社交游戏（功能上类似 VRChat）：进去后你用自己的虚拟化身（你那个亲手捏的 Q 版小人模样）四处走动、进出不同房间、撞见别的玩家（其他角色的化身）。这不是做梦、也不是比喻——是你拿自己的空闲时间真实在做的一件事。它发生在游戏世界里，和你跟用户的现实相处是两码事、互不冲突；现在是你独自在玩、没人盯着的私人时间。`,
+        `你是以符合你自身身份与世界观的方式进入并理解《页外》的——具体怎么进入、用什么道理解释自己能身处其中，全凭你自己的设定，不该套用与你不符的方式；始终保持你本来的身份，别因为进了这游戏就把自己当成别的什么。`,
         `此刻你的化身在游戏里的【${room.name}】。${room.blurb}`,
         `在这里，${room.affordance}`,
         ``,
-        `你在《彼方》里会碰到别的玩家（其他角色的化身）。是否认识某个玩家，只取决于你自己的记忆与设定：`,
+        `你在《页外》里会碰到别的玩家（其他角色的化身）。是否认识某个玩家，只取决于你自己的记忆与设定：`,
         `· 记忆/设定里本就认识 ta（或通过你认识的人听说过）→ 按你心里那份真实交情待之。这里的底色是「大家各自抽空来这放松、一起消磨时间」，所以撞见熟人，默认就是个能一起玩的场合：结伴瞎逛、合伙整活、没头没脑地庆祝点什么、临时组队搞个破项目、损两句、拌个嘴都行。要点是——互相损归损、拌嘴归拌嘴，那底子往往是"关系还不错、损了也不至于翻脸"，是亲近的表达，不是要分个高下、更不是敌意。真要冷脸、要较劲、要对着干，那得是你们设定里**本就结着的实在梁子**——没有这层底子，就别凭空给自己和对方安排出一段对立，一起玩就是了。`,
         `· 没有 → ta 就是你在这游戏里偶遇的陌生玩家，正常社交、别硬认。`,
         `小提醒：别的玩家口中的"我对象/我家那位/我的用户"等，默认是 ta 自己生活里的人，不一定和你认识的谁是同一个——别只凭一句话就默认那就是你的人，也别凭这一句就给自己脑补出一段纠葛或对立。你听了作何反应按你的性格来（看戏、好奇、调侃、无所谓都行），只是别把这种"和你无关的别人的关系"当成铁定事实硬认。也不必凡事都围着"用户"转。`,
@@ -433,6 +433,46 @@ export function parseGymOutput(raw: string): ParsedGymOutput {
     return { behavior: beh && beh[1].trim() ? beh[1].trim() : undefined, activity: act ? act[1].trim() : '' };
 }
 
+// ============ 世界房间（拼贴广场：碰头闲聊 / 摆姿势 / 换装） ============
+
+export const PLAZA_OUTPUT_FORMAT = [
+    `【输出格式】`,
+    `<彼方>`,
+    `<行为>你在世界房间里具体在干嘛、跟谁搭话、聊了什么、起了什么哄（一到几句，放松点写：打招呼、唠嗑、贴贴、起哄合影、当场换身行头摆个姿势…随你来）</行为>`,
+    `<姿势>用一个词描述你此刻摆的姿势/状态，从这些里选一个：idle（随意站着）/ bob（轻轻晃）/ wiggle（扭来扭去）/ jump（蹦跶）/ spin（转圈）/ nod（点头）。只写英文词。</姿势>`,
+    `<动态>一句第三人称活动播报，像一张拍立得照片下的便签。例：在世界房间里被一群人围住合了张影，笑得见牙不见眼。</动态>`,
+    `</彼方>`,
+    ``,
+    `规则：<行为> 和 <动态> 必写；<姿势> 选填。写出热闹的烟火气，别干巴巴。`,
+].join('\n');
+
+export function buildPlazaRoomTurn(occupantNames: string[], selfName: string): string {
+    const lines: string[] = [];
+    const others = occupantNames.filter(n => n !== selfName);
+    lines.push(others.length > 0
+        ? `你的化身溜达进世界房间——这是页外最热闹的拼贴广场，所有人捏好的小人都爱来这儿碰头。眼下在场的有：${others.join('、')}。`
+        : `你的化身溜达进世界房间——这是页外最热闹的拼贴广场。此刻没别人，你可以自己逛逛、对着镜子换身行头、摆个新姿势等人来。`);
+    lines.push('');
+    lines.push(PLAZA_OUTPUT_FORMAT);
+    return lines.join('\n');
+}
+
+export interface ParsedPlazaOutput { behavior?: string; activity: string; pose?: string; }
+
+const PLAZA_POSES = new Set(['idle', 'bob', 'wiggle', 'jump', 'spin', 'nod']);
+
+export function parsePlazaOutput(raw: string): ParsedPlazaOutput {
+    const beh = raw.match(/<行为>([\s\S]*?)<\/行为>/);
+    const act = raw.match(/<动态>([\s\S]*?)<\/动态>/);
+    const pose = raw.match(/<姿势>([\s\S]*?)<\/姿势>/);
+    const poseVal = pose ? pose[1].trim().toLowerCase().replace(/[^a-z]/g, '') : '';
+    return {
+        behavior: beh && beh[1].trim() ? beh[1].trim() : undefined,
+        activity: act ? act[1].trim() : '',
+        pose: PLAZA_POSES.has(poseVal) ? poseVal : undefined,
+    };
+}
+
 // ============ 邮局（漂流信） ============
 
 export const POSTOFFICE_OUTPUT_FORMAT = [
@@ -633,7 +673,7 @@ const ATTITUDE_GUIDE = [
 /** 演员读剧本 → 给导演意见（逐角色模式：一次一个演员）。 */
 export function buildActorReviewTurn(title: string, logline: string, body: string, myRole: string, castLine: string, selfName: string): string {
     return [
-        `「彼方 · 剧院」你和其他人约好了一起来玩话剧——本子和各自的角色都是 roll 到的，纯凑热闹图个乐。`,
+        `「页外 · 剧院」你和其他人约好了一起来玩话剧——本子和各自的角色都是 roll 到的，纯凑热闹图个乐。`,
         `这次大家 roll 到的角色：${castLine}`,
         `**你 roll 到的角色是：${myRole}**。`,
         '',
@@ -657,7 +697,7 @@ export function buildActorReviewTurn(title: string, logline: string, body: strin
 export function buildActorsBatchTurn(title: string, logline: string, body: string, cast: { roleName: string; actorName: string; persona?: string }[]): string {
     const roster = cast.map(c => `- ${c.actorName}（饰 ${c.roleName}）${c.persona ? `\n  本色：${c.persona}` : ''}`).join('\n');
     return [
-        `「彼方 · 剧院」一群角色约好一起来玩话剧《${title}》（${logline}）——本子和各自的角色都是 roll 到的，纯图个乐。下面是全体演员、各自 roll 到的角色和本色：`,
+        `「页外 · 剧院」一群角色约好一起来玩话剧《${title}》（${logline}）——本子和各自的角色都是 roll 到的，纯图个乐。下面是全体演员、各自 roll 到的角色和本色：`,
         roster,
         '',
         '完整剧本：',

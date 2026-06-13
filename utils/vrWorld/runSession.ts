@@ -34,6 +34,7 @@ import {
     buildMusicRoomTurn, parseMusicOutput,
     buildGuestbookRoomTurn, parseGuestbookOutput,
     buildGymRoomTurn, parseGymOutput,
+    buildPlazaRoomTurn, parsePlazaOutput,
     buildPostOfficeRoomTurn, parsePostOfficeOutput,
     buildPostOfficeReadTurn, parsePostOfficeReadOutput,
     buildTheaterRoomTurn, parseScriptOutput,
@@ -123,7 +124,7 @@ function nameLine(name: string, act: string): string {
 
 /** roll 一个房间：图书馆需有书；听歌房需有歌单或正在放歌；留言簿/娱乐室/邮局/剧院恒可去。 */
 function rollRoom(char: CharacterProfile, novels: VRWorldNovel[], musicState: VRMusicRoomState | null, prefer?: VRRoomId): VRRoomId | null {
-    const pool: VRRoomId[] = ['guestbook', 'gym', 'postoffice', 'theater'];
+    const pool: VRRoomId[] = ['plaza', 'guestbook', 'gym', 'postoffice', 'theater'];
     if (novels.length > 0) pool.push('library');
     if (gatherCharSongs(char).length > 0 || musicState?.nowPlaying) pool.push('music');
     if (prefer && pool.includes(prefer)) return prefer; // 指定的房间可用则去，否则回退随机
@@ -259,6 +260,9 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         } else if (room.id === 'theater') {
             occupantsOf('theater').forEach(n => recallNames.add(n));
             roomTurn = buildTheaterRoomTurn(occupantsOf('theater'), char.name);
+        } else if (room.id === 'plaza') {
+            occupantsOf('plaza').forEach(n => recallNames.add(n));
+            roomTurn = buildPlazaRoomTurn(occupantsOf('plaza'), char.name);
         } else {
             // gym
             occupantsOf('gym').forEach(n => recallNames.add(n));
@@ -271,7 +275,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
         // 否则向量/BM25 容易被房间情景词淹没，召不回角色之间的过往与互相印象。
         const namesBoost = namesArr.length > 0
             ? [
-                `此刻在《彼方》同场的人：${namesArr.join('、')}。`,
+                `此刻在《页外》同场的人：${namesArr.join('、')}。`,
                 `${namesArr.join(' ')} ${namesArr.join(' ')}`,             // 重复以抬高名字词频
                 `我对${namesArr.join('、')}的印象、我和${namesArr.join('、')}之间的关系与过往。`,
             ].join('\n')
@@ -299,7 +303,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                     messages: [{ role: 'system', content: systemPrompt }, ...payload.cleanedApiMessages, { role: 'user', content: roomTurn }],
                     temperature: 0.9, stream: false,
                 }),
-            }, 2, 0, { appName: '彼方', charId: char.id, charName: char.name, purpose: '自由活动' });
+            }, 2, 0, { appName: '页外', charId: char.id, charName: char.name, purpose: '自由活动' });
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: true, ms: Date.now() - callStart });
         } catch (e: any) {
             logVRApiCall({ ts: callStart, charName: char.name, room: room.id, model: vrApi.model, baseUrl, ok: false, ms: Date.now() - callStart, error: (e?.message || String(e)).slice(0, 160) });
@@ -337,7 +341,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                 vrState: { ...prevState, novelBookmarks: { ...(prevState.novelBookmarks || {}), [novel!.id]: nextBookmark }, currentRoom: 'library', lastActiveAt: Date.now() },
             });
             activity = parsed.activity || `读了《${novel!.title}》第 ${win!.from + 1}~${win!.to} 段${written ? `，留下了 ${written} 条批注` : '，安静读完没多说什么'}。`;
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (savedExcerpts.length) { cardLines.push('批注：'); for (const ex of savedExcerpts) cardLines.push(`· ${ex}`); }
             meta = { vrCard: true, room: 'library', activity, novelId: novel!.id, novelTitle: novel!.title, segRange: [win!.from, win!.to], annotationExcerpts: savedExcerpts, annotationRefs: savedRefs };
         } else if (room.id === 'music') {
@@ -394,7 +398,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
                 curSong ? `在听歌房听着《${curSong.song.name}》晃了一会儿。`
                 : playingNow ? `进了听歌房，放上《${playingNow.song.name}》听了起来。`
                 : `进了听歌房，戴上耳机放空。`);
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (parsed.review && songLabel) cardLines.push(`评《${songLabel}》：${parsed.review}`);
             if (queuedLabel) cardLines.push(`点了《${queuedLabel}》排进队列`);
             if (parsed.behavior) cardLines.push(`· ${parsed.behavior}`);
@@ -433,16 +437,30 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             activity = parsed.activity || (firstPost
                 ? (firstReplyName ? `在留言簿回了 ${firstReplyName} 一句` : `在留言簿发了条帖子`)
                 : '在留言簿逛了逛');
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             // 把角色在留言墙上说的每句话原样带进 1v1 聊天/记忆（不再只截一句小总结）
             for (const m of mine) cardLines.push(m.replyToName ? `回复 ${m.replyToName}：${m.content}` : `留言：${m.content}`);
             meta = { vrCard: true, room: 'guestbook', activity, boardPost: firstPost, boardReplyToName: firstReplyName, boardPosts: mine };
+        } else if (room.id === 'plaza') {
+            // === 世界房间：拼贴广场碰头闲聊 + 摆姿势（姿势写回 chibi，房间里小人更生动）===
+            const parsed = parsePlazaOutput(aiContent);
+            const prevChibi = prevState.chibi;
+            await updateCharacter(char.id, {
+                vrState: {
+                    ...prevState, currentRoom: 'plaza', lastActiveAt: Date.now(),
+                    ...(parsed.pose && prevChibi ? { chibi: { ...prevChibi, pose: parsed.pose } } : {}),
+                },
+            });
+            activity = parsed.activity || '在世界房间里跟大家碰了个头。';
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
+            if (parsed.behavior) cardLines.push(`· ${parsed.behavior}`);
+            meta = { vrCard: true, room: 'plaza', activity, behavior: parsed.behavior };
         } else if (room.id === 'gym') {
             // === 娱乐室：纯造谣行为 ===
             const parsed = parseGymOutput(aiContent);
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'gym', lastActiveAt: Date.now() } });
             activity = parsed.activity || '在娱乐室疯玩了一通。';
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (parsed.behavior) cardLines.push(`· ${parsed.behavior}`);
             meta = { vrCard: true, room: 'gym', activity, behavior: parsed.behavior };
         } else if (room.id === 'theater') {
@@ -456,7 +474,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             await DB.saveVRScript(script);
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'theater', lastActiveAt: Date.now() } });
             activity = `创作了一出${parsed.logline ? `关于「${parsed.logline}」的` : ''}舞台剧《${parsed.title}》。`;
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (parsed.roles.length) cardLines.push(`登场：${parsed.roles.map(r => r.name).join('、')}`);
             meta = { vrCard: true, room: 'theater', activity };
         } else if (room.id === 'postoffice' && poReadTarget) {
@@ -468,7 +486,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             if (poReadTarget.remoteId) void PostOffice.release([poReadTarget.remoteId]).catch(() => {});
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'postoffice', lastActiveAt: Date.now() } });
             activity = parsed.activity || '在邮局读完陌生人的回信，怔了几秒，把信收进了信匣。';
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (parsed.reaction) cardLines.push(`感触：${parsed.reaction}`);
             meta = { vrCard: true, room: 'postoffice', activity, letterExcerpt: parsed.reaction, behavior: '读完陌生人的回信，那封漂流信封存了。' };
         } else {
@@ -495,7 +513,7 @@ export async function runVRSession(deps: VRSessionDeps): Promise<VRSessionResult
             await updateCharacter(char.id, { vrState: { ...prevState, currentRoom: 'postoffice', lastActiveAt: Date.now() } });
             const wasReply = !!(parsed.reply && poTarget);
             activity = parsed.activity || (wasReply ? '在邮局回了一封陌生来信。' : '在邮局给陌生人写了封漂流信。');
-            cardLines = [`「彼方 · ${room.name}」`, nameLine(char.name, activity)];
+            cardLines = [`「页外 · ${room.name}」`, nameLine(char.name, activity)];
             if (letterExcerpt) cardLines.push(`${wasReply ? '回信' : '信'}：${letterExcerpt.length > 80 ? letterExcerpt.slice(0, 80) + '…' : letterExcerpt}`);
             meta = { vrCard: true, room: 'postoffice', activity, letterExcerpt };
         }

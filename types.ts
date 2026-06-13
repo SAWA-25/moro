@@ -877,7 +877,7 @@ export interface NovelBook {
 // =====================================================================
 
 /** 虚拟世界里的房间。 */
-export type VRRoomId = 'library' | 'music' | 'guestbook' | 'gym' | 'postoffice' | 'theater' | 'cafe';
+export type VRRoomId = 'plaza' | 'library' | 'music' | 'guestbook' | 'gym' | 'postoffice' | 'theater' | 'cafe';
 
 /** 全局小说库里的一本书（所有角色共享原文，各自留批注、各自书签）。 */
 export interface VRWorldNovel {
@@ -942,21 +942,32 @@ export interface VRWorldCharState {
     /** 该角色专属 API 覆盖（用户可单独为「彼方」活动配 api）；不设则回落全局 apiConfig。 */
     api?: { baseUrl: string; apiKey: string; model: string };
     /**
-     * 角色在「彼方」里的 chibi 形象（Q版小人）。启用自主登入时要求设定，可随时编辑。
+     * 角色在「页外」里的 chibi 形象（Q版小人）。启用自主登入时要求设定，可随时编辑。
      * img 不设时回退到角色立绘/头像。
      */
-    chibi?: {
-        /** 形象图（透明背景 PNG，来自特别时光的捏人器 transparentDataUrl） */
-        img: string;
-        /** 捏人器导出的完整状态，回填用于再编辑（state.selected 可作为 presets） */
-        state?: any;
-        /** 站位缩放（默认 1） */
-        scale?: number;
-        /** 垂直微调（px，负数上移，默认 0） */
-        offsetY?: number;
-        /** 是否水平翻转 */
-        flip?: boolean;
-    };
+    chibi?: VRChibi;
+    /** 已存的多套形象（换装位）：随时一键切换；切换会把选中那套写回 chibi。 */
+    chibiLooks?: VRChibi[];
+}
+
+/** 一套 chibi 形象（Q版小人）。捏小人功能与「世界房间」换装共用。 */
+export interface VRChibi {
+    /** 形象图（透明背景 PNG，来自捏人器 transparentDataUrl） */
+    img: string;
+    /** 捏人器导出的完整状态，回填用于再编辑（state.selected 可作为 presets） */
+    state?: any;
+    /** 站位缩放（默认 1） */
+    scale?: number;
+    /** 垂直微调（px，负数上移，默认 0） */
+    offsetY?: number;
+    /** 是否水平翻转 */
+    flip?: boolean;
+    /** 房间内姿势/动画（'idle' | 'bob' | 'wiggle' | 'spin' | 'jump' | 'nod'…），驱动小人在世界里更生动。 */
+    pose?: string;
+    /** 贴纸装饰（emoji，挂在小人头顶），手账拼贴味。 */
+    sticker?: string;
+    /** 这套形象的命名（换装位标签，选填）。 */
+    name?: string;
 }
 
 /** 注入聊天的 vr_card 消息的 metadata 结构。 */
@@ -1976,14 +1987,10 @@ export interface UserVRState {
     activity?: string;
     /** 最近一次更新时间 */
     updatedAt?: number;
-    /** 用户在彼方里的 chibi 形象（同角色 chibi 结构，来自 mode="user" 的捏人器） */
-    chibi?: {
-        img: string;
-        state?: any;
-        scale?: number;
-        offsetY?: number;
-        flip?: boolean;
-    };
+    /** 用户在页外里的 chibi 形象（同角色 chibi 结构，来自 mode="user" 的捏人器） */
+    chibi?: VRChibi;
+    /** 用户存的多套形象（换装位）。 */
+    chibiLooks?: VRChibi[];
 }
 
 export interface Toast {
