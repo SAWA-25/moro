@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { BankTransaction, SavingsGoal, APIConfig } from '../../types';
 import { safeResponseJson } from '../../utils/safeApi';
+import { HAND_FONT } from '../../apps/almanac/handbookKit';
 
 interface Props {
     transactions: BankTransaction[];
@@ -174,7 +175,7 @@ ${txList}
     const budgetStatus = budgetRemaining >= 0 ? 'good' : 'over';
 
     return (
-        <div className="min-h-full pb-24" style={{ background: 'linear-gradient(180deg, #FDF6E3 0%, #FFF8E1 100%)' }}>
+        <div className="min-h-full pb-24" style={{ background: 'transparent' }}>
 
             {/* Hero Section - Summary Card */}
             <div className="relative overflow-hidden">
@@ -210,7 +211,7 @@ ${txList}
                         <div className="text-xs text-white/60 uppercase tracking-widest mb-1">
                             {viewMode === 'today' ? '今日支出' : viewMode === 'week' ? '本周支出' : '本月支出'}
                         </div>
-                        <div className="text-5xl font-black text-white font-mono tracking-tight">
+                        <div className="text-5xl font-black text-white tracking-tight" style={{ fontFamily: HAND_FONT }}>
                             {currency}{totalSpent.toFixed(0)}
                         </div>
                         <div className="text-sm text-white/50 mt-1">
