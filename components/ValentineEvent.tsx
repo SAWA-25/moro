@@ -1319,8 +1319,10 @@ const THEME_VALENTINE: EventCardTheme = {
 // ============================================================
 // 特别时光 App（桌面第三页降级入口）
 // ============================================================
-export const SpecialMomentsApp: React.FC = () => {
+/** onExit：当本 App 嵌在「岁时记」壳里时，顶层返回回到岁时记封面页而非直接关到桌面。未传则回桌面。 */
+export const SpecialMomentsApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, characters, addToast, updateCharacter } = useOS();
+    const exitApp = onExit ?? closeApp;
     const [showSession, setShowSession] = useState(false);
     const [selectedCharId, setSelectedCharId] = useState<string>('');
     const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -1440,7 +1442,7 @@ export const SpecialMomentsApp: React.FC = () => {
         <div className="h-full w-full bg-gradient-to-b from-pink-50 via-white to-rose-50 flex flex-col font-light">
             {/* Header */}
             <div className="h-16 flex items-center justify-between px-4 border-b border-pink-100 bg-white/80 backdrop-blur-sm shrink-0">
-                <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-pink-50">
+                <button onClick={exitApp} className="p-2 -ml-2 rounded-full hover:bg-pink-50">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
                 <span className="font-bold text-slate-700">特别时光</span>
