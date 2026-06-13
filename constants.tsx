@@ -13,7 +13,6 @@ import {
   SealCheck,
   House,
   DeviceMobileCamera,
-  Fire,
   Books,
   Question,
   GameController,
@@ -40,6 +39,7 @@ import {
   UserSwitch,
   Bandaids,
   PencilRuler,
+  PushPin,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -57,7 +57,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Schedule: ({ className }) => <SealCheck className={className} weight="bold" />,
   Room: ({ className }) => <House className={className} weight="bold" />,
   CheckPhone: ({ className }) => <DeviceMobileCamera className={className} weight="bold" />,
-  Social: ({ className }) => <Fire className={className} weight="bold" />,
+  Social: ({ className }) => <PushPin className={className} weight="bold" />,
   Study: ({ className }) => <Books className={className} weight="bold" />,
   FAQ: ({ className }) => <Question className={className} weight="bold" />,
   Game: ({ className }) => <GameController className={className} weight="bold" />,
@@ -115,7 +115,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
-  { id: AppID.Social, name: '拾光墙', icon: 'Social', color: 'red' },
+  { id: AppID.Social, name: '见闻簿', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
   { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },
