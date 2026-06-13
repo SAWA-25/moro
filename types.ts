@@ -1315,10 +1315,36 @@ export interface SpecialMomentRecord {
 export interface BankTransaction {
     id: string;
     amount: number;
-    category: string; 
+    category: string;
     note: string;
     timestamp: number;
     dateStr: string; // YYYY-MM-DD
+    /** 进账 / 支出。默认 expense（兼容旧数据） */
+    type?: 'income' | 'expense';
+    /** 角色对这笔现实账目的点评（AI 生成，一笔一条） */
+    charComment?: { charId: string; charName: string; text: string; ts: number };
+}
+
+/** 账本里一条评论（用户 ↔ 角色互评） */
+export interface LedgerComment {
+    author: 'user' | 'character';
+    text: string;
+    ts: number;
+}
+
+/**
+ * 角色账本：角色按人设给自己记的一条账（AI 生成的进账/支出），
+ * 用户可在下面留言评论，角色会 AI 回复。与用户钱包、店铺均无关。
+ */
+export interface CharLedgerEntry {
+    id: string;
+    charId: string;
+    type: 'income' | 'expense';
+    amount: number;
+    note: string;
+    dateStr: string;   // YYYY-MM-DD
+    ts: number;
+    comments?: LedgerComment[];
 }
 
 export interface SavingsGoal {

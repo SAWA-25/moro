@@ -8,12 +8,12 @@ import {
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
-    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark
+    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 67; // Bumped: v67 新增 calendar_marks（岁时记·实时日历贴纸）
+const DB_VERSION = 68; // Bumped: v68 新增 char_ledgers（存钱罐·角色账本，角色自记账 + 互评）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -28,6 +28,7 @@ const STORE_DIARIES = 'diaries';
 const STORE_TASKS = 'tasks';
 const STORE_ANNIVERSARIES = 'anniversaries';
 const STORE_CALENDAR_MARKS = 'calendar_marks'; // 岁时记·实时日历贴纸（用户手动 + 角色 AI 自标，按 date 检索）
+const STORE_CHAR_LEDGERS = 'char_ledgers';     // 存钱罐·角色账本（角色 AI 自记账 + 用户/角色互评）
 const STORE_ROOM_TODOS = 'room_todos'; 
 const STORE_ROOM_NOTES = 'room_notes'; 
 const STORE_GROUPS = 'groups'; 
@@ -400,6 +401,11 @@ export const openDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(STORE_CALENDAR_MARKS)) {
           const calStore = db.createObjectStore(STORE_CALENDAR_MARKS, { keyPath: 'id' });
           calStore.createIndex('date', 'date', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(STORE_CHAR_LEDGERS)) {
+          const clStore = db.createObjectStore(STORE_CHAR_LEDGERS, { keyPath: 'id' });
+          clStore.createIndex('charId', 'charId', { unique: false });
       }
 
       if (!db.objectStoreNames.contains(STORE_ROOM_TODOS)) {
@@ -1613,6 +1619,30 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_CALENDAR_MARKS, 'readwrite');
       transaction.objectStore(STORE_CALENDAR_MARKS).delete(id);
+  },
+
+  // --- 存钱罐 · 角色账本 ---
+  getAllCharLedgerEntries: async (): Promise<CharLedgerEntry[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_CHAR_LEDGERS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_CHAR_LEDGERS, 'readonly');
+          const request = transaction.objectStore(STORE_CHAR_LEDGERS).getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveCharLedgerEntry: async (entry: CharLedgerEntry): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_CHAR_LEDGERS, 'readwrite');
+      transaction.objectStore(STORE_CHAR_LEDGERS).put(entry);
+  },
+
+  deleteCharLedgerEntry: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_CHAR_LEDGERS, 'readwrite');
+      transaction.objectStore(STORE_CHAR_LEDGERS).delete(id);
   },
 
   getRoomTodo: async (charId: string, date: string): Promise<RoomTodo | null> => {

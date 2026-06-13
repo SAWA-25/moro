@@ -10,6 +10,7 @@ import BankShopScene from '../components/bank/BankShopScene';
 import BankDollhouse from '../components/bank/BankDollhouse';
 import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
+import BankLedger from '../components/bank/BankLedger';
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
@@ -86,6 +87,9 @@ const BankApp: React.FC = () => {
     // Forms
     const [txAmount, setTxAmount] = useState('');
     const [txNote, setTxNote] = useState('');
+    const [txType, setTxType] = useState<'income' | 'expense'>('expense');
+    // 账本子视图：分析 / 互评账本
+    const [reportView, setReportView] = useState<'analytics' | 'ledger'>('analytics');
     const [goalName, setGoalName] = useState('');
     const [goalTarget, setGoalTarget] = useState('');
 
@@ -350,13 +354,15 @@ const BankApp: React.FC = () => {
             category: 'general',
             note: txNote,
             timestamp: Date.now(),
-            dateStr: today
+            dateStr: today,
+            type: txType
         };
         
         await DB.saveTransaction(newTx);
         
         const cur = stateRef.current;
-        const newSpent = cur.todaySpent + amount;
+        // 只有「支出」计入今日花费（进账不算）；记账纯记现实金钱，不再影响店铺 AP
+        const newSpent = cur.todaySpent + (txType === 'expense' ? amount : 0);
         const newState = { ...cur, todaySpent: newSpent };
         stateRef.current = newState;
         setState(newState);
@@ -367,12 +373,20 @@ const BankApp: React.FC = () => {
         setShowAddTxModal(false);
         setTxAmount('');
         setTxNote('');
+        setTxType('expense');
 
-        if (newSpent > cur.config.dailyBudget) {
-            addToast('⚠️ 警报：今日预算已超支！明天可能没有 AP 了...', 'info');
+        if (txType === 'income') {
+            addToast(`进账已记下 +${cur.config.currencySymbol}${amount}`, 'success');
+        } else if (newSpent > cur.config.dailyBudget) {
+            addToast('支出已记下 · 今天有点超出预算啦', 'info');
         } else {
-            addToast('记账成功', 'success');
+            addToast('支出已记下', 'success');
         }
+    };
+
+    // BankLedger 写入了角色点评后，同步回 transactions 状态（持久化已在 BankLedger 内完成）
+    const handleTxUpdated = (updated: BankTransaction) => {
+        setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t));
     };
 
     const handleDeleteTransaction = async (id: string) => {
@@ -939,15 +953,38 @@ ${previousGuestbook}
 
                 {/* 3. Analytics Report */}
                 {activeTab === 'report' && (
-                    <div className="flex-1 overflow-y-auto no-scrollbar">
-                        <BankAnalytics
-                            transactions={transactions}
-                            goals={state.goals}
-                            currency={state.config.currencySymbol}
-                            onDeleteTx={handleDeleteTransaction}
-                            apiConfig={apiConfig}
-                            dailyBudget={state.config.dailyBudget}
-                        />
+                    <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
+                        {/* 子视图切换：分析 / 互评账本 */}
+                        <div className="flex gap-2 px-4 pt-3 shrink-0">
+                            {([['analytics', '📊 账目分析'], ['ledger', '💬 互评账本']] as const).map(([k, label]) => (
+                                <button key={k} onClick={() => setReportView(k)} className="flex-1 py-2 rounded-xl text-[13px] font-bold active:scale-95 transition-all"
+                                    style={reportView === k
+                                        ? { background: 'linear-gradient(135deg,#66BB6A,#43A047)', color: '#fff', boxShadow: '0 4px 12px rgba(67,160,71,0.3)' }
+                                        : { background: '#F3E9D6', color: '#A1887F' }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        {reportView === 'analytics' ? (
+                            <BankAnalytics
+                                transactions={transactions}
+                                goals={state.goals}
+                                currency={state.config.currencySymbol}
+                                onDeleteTx={handleDeleteTransaction}
+                                apiConfig={apiConfig}
+                                dailyBudget={state.config.dailyBudget}
+                            />
+                        ) : (
+                            <BankLedger
+                                transactions={transactions}
+                                onTxUpdated={handleTxUpdated}
+                                characters={characters}
+                                apiConfig={apiConfig}
+                                userProfile={userProfile}
+                                addToast={addToast}
+                                currency={state.config.currencySymbol}
+                            />
+                        )}
                     </div>
                 )}
             </div>
@@ -1108,6 +1145,21 @@ ${previousGuestbook}
                 </button>
             }>
                 <div className="space-y-5">
+                    <div>
+                        <label className="text-xs font-bold text-[#A1887F] uppercase tracking-wider mb-2 block">类型</label>
+                        <div className="flex gap-2">
+                            {([['expense', '📤 支出'], ['income', '📥 进账']] as const).map(([k, label]) => (
+                                <button key={k} onClick={() => setTxType(k)} className="flex-1 py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-all border-2"
+                                    style={txType === k
+                                        ? (k === 'income'
+                                            ? { background: '#E3F2E5', borderColor: '#43A047', color: '#2E7D32' }
+                                            : { background: '#FCE9E4', borderColor: '#E07A5F', color: '#C0392B' })
+                                        : { background: '#FDF6E3', borderColor: '#E8DCC8', color: '#A1887F' }}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <div>
                         <label className="text-xs font-bold text-[#A1887F] uppercase tracking-wider mb-2 block">金额</label>
                         <div className="relative">
