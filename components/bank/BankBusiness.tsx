@@ -19,6 +19,8 @@ export interface BusinessResult {
     items: BusinessSaleItem[];
     reviews: ShopReview[];   // 本轮新增评价
     repBonusPct: number;     // 口碑加成（百分比，仅展示）
+    levelBonusPct?: number;  // 店铺档次溢价（百分比，仅展示）
+    shopLevel?: number;      // 当前店铺等级（仅展示）
     lostSales?: number;      // 因缺货空手而归的客人数（提示去进货）
 }
 
@@ -59,7 +61,7 @@ export const BusinessResultModal: React.FC<{
                         <div className="text-[10px] opacity-80 mt-0.5">已进钱包</div>
                     </div>
                 </div>
-                <div className="text-[11px] opacity-85 mt-2">接待了 {result.customerCount} 位客人 · 含小费 {currency}{result.tips}{result.repBonusPct > 0 ? ` · 口碑加成 +${result.repBonusPct}%` : ''}</div>
+                <div className="text-[11px] opacity-85 mt-2">接待了 {result.customerCount} 位客人 · 含小费 {currency}{result.tips}{result.repBonusPct > 0 ? ` · 口碑加成 +${result.repBonusPct}%` : ''}{result.levelBonusPct && result.levelBonusPct > 0 ? ` · Lv.${result.shopLevel} 档次 +${result.levelBonusPct}%` : ''}</div>
             </div>
             {/* 缺货流失提示 */}
             {!!result.lostSales && result.lostSales > 0 && (
