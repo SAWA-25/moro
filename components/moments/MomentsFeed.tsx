@@ -301,7 +301,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 charId,
                 role: 'user',
                 type: 'social_card',
-                content: '[分享帖子]',
+                content: '[转发的此刻]',
                 metadata: { post },
             });
             return true;
