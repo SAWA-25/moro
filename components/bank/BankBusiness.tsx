@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ShopReview } from '../../types';
+import { paperTexture, WashiTape, HAND_FONT } from '../../apps/almanac/handbookKit';
 
 /**
  * 存钱罐 · 营业结算 & 口碑评价
@@ -45,12 +46,13 @@ export const BusinessResultModal: React.FC<{
 }> = ({ result, currency, onClose, onViewReviews }) => (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-5 animate-fade-in">
         <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-        <div className="relative w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up" style={{ background: '#FFFDF7', boxShadow: '0 20px 50px rgba(96,66,40,0.4)' }}>
+        <div className="relative w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up" style={{ background: '#FFFDF7', boxShadow: '0 20px 50px rgba(96,66,40,0.4)', transform: 'rotate(-0.6deg)' }}>
+            <WashiTape className="top-1 left-12 z-10" color="rgba(255,255,255,0.55)" rotate={-10} width={70} height={16} />
             {/* 头 */}
             <div className="px-5 pt-5 pb-4 text-white" style={{ background: 'linear-gradient(135deg,#66BB6A,#43A047)' }}>
                 <div className="text-[11px] font-bold tracking-[0.2em] opacity-80 uppercase">Business Closed</div>
                 <div className="flex items-end justify-between mt-1">
-                    <span className="text-lg font-black">今日营业结算</span>
+                    <span className="text-[20px] font-black" style={{ fontFamily: HAND_FONT }}>今日营业结算</span>
                     <div className="text-right">
                         <div className="text-[30px] font-black leading-none">{currency}{result.total}</div>
                         <div className="text-[10px] opacity-80 mt-0.5">已进钱包</div>
@@ -116,28 +118,31 @@ export const ReviewsOverlay: React.FC<{
     }, [reviews]);
 
     return (
-        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={{ background: 'linear-gradient(180deg, #FDF6E3 0%, #FFF8E1 100%)' }}>
+        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={paperTexture('kraft')}>
+            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
             {/* 头 */}
-            <div className="pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 text-white" style={{ background: 'linear-gradient(180deg, rgba(141,110,99,0.96), rgba(109,76,65,0.96))' }}>
+            <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
+                <WashiTape className="top-0 left-16" color="rgba(231,196,120,0.7)" rotate={-10} width={70} height={16} />
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center text-xl">⭐</div>
-                        <div>
-                            <div className="font-black text-base">口碑墙</div>
-                            <div className="text-[10px] text-white/60">顾客们的真实心声</div>
+                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-3deg)' }}>⭐</div>
+                        <div style={{ fontFamily: HAND_FONT }}>
+                            <div className="font-black text-[18px]" style={{ color: '#5b4636' }}>口碑墙</div>
+                            <div className="text-[10px]" style={{ color: '#a98e6f' }}>顾客们的真实心声</div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center active:scale-95">
+                    <button onClick={onClose} className="w-9 h-9 flex items-center justify-center active:scale-95" style={{ background: '#fffdf7', borderRadius: 10, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', color: '#7a5c44' }}>
                         <span className="text-lg leading-none">×</span>
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-4" style={{ color: '#5D4037' }}>
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar p-4" style={{ color: '#5D4037' }}>
                 {/* 评分概览 */}
-                <div className="rounded-2xl p-4 mb-4 flex items-center gap-5" style={{ background: '#FFFDF7', boxShadow: '0 2px 10px rgba(141,110,99,0.1)' }}>
+                <div className="relative rounded-2xl p-4 mb-4 flex items-center gap-5" style={{ background: '#FFFDF7', boxShadow: '0 4px 14px rgba(96,66,40,0.16)', transform: 'rotate(-0.5deg)' }}>
+                    <WashiTape className="-top-2 right-10" color="rgba(245,166,35,0.5)" rotate={10} width={64} />
                     <div className="text-center shrink-0">
-                        <div className="text-[34px] font-black leading-none" style={{ color: '#F5A623' }}>{avg || '—'}</div>
+                        <div className="text-[36px] font-black leading-none" style={{ color: '#F5A623', fontFamily: HAND_FONT }}>{avg || '—'}</div>
                         <Stars n={avg} size={14} />
                         <div className="text-[10px] text-[#A1887F] mt-1">{reviews.length} 条评价</div>
                     </div>
