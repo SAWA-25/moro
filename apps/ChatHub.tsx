@@ -515,6 +515,7 @@ const ChatHub: React.FC = () => {
             case 'transfer': return '[一点心意]';
             case 'voice': return '[一段留声]';
             case 'interaction': return m.content || '[碰了碰]';
+            case 'social_card': return '[转发的此刻]';
             case 'system': return m.content;
             default: {
                 const t = typeof m.content === 'string' ? m.content : '';

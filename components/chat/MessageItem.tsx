@@ -1030,7 +1030,7 @@ const MessageItem = React.memo(({
                                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #d4a55a, #b8843a)' }}>{scoreData.charName?.[0] || '?'}</div>
                                     )}
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: '#a07840' }}>Exchange Diary · 交换日记</div>
+                                        <div className="text-[9px] font-bold tracking-widest uppercase" style={{ color: '#a07840' }}>Exchange Diary · 对页信笺</div>
                                         <div className="text-xs font-bold truncate" style={{ color: '#5c3e1a' }}>与 {scoreData.charName} · {scoreData.date}</div>
                                     </div>
                                     <div className="shrink-0 text-right leading-none">
@@ -1068,7 +1068,7 @@ const MessageItem = React.memo(({
                                             ? `贴了 ${(scoreData.userStickerCount || 0) + (scoreData.charStickerCount || 0)} 张贴纸`
                                             : '今天的纸面很干净'}
                                     </span>
-                                    <span className="text-[9px] font-bold" style={{ color: '#a07840' }}>交换日记 ✿</span>
+                                    <span className="text-[9px] font-bold" style={{ color: '#a07840' }}>对页信笺 ✿</span>
                                 </div>
                             </div>
                         </div>
@@ -1890,7 +1890,7 @@ const MessageItem = React.memo(({
                     </div>
                     <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{post.content}</p>
                     <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-1 text-[10px] text-slate-400">
-                        <span className="text-red-400">Spark</span> • 笔记分享
+                        <span className="text-red-400">此刻</span> • 转发
                     </div>
                 </div>
             </div>

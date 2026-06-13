@@ -399,7 +399,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                 .map((s, i) => {
                     const where = s.app === 'chat-thread' && s.targetName ? `点开了与「${s.targetName}」的对话` :
                         s.app === 'chat-list' ? '看了聊天列表' :
-                        s.app === 'moments' ? '翻了朋友圈' :
+                        s.app === 'moments' ? '翻了此刻' :
                         s.app === 'schedule' ? '看了日程' :
                         s.app === 'gallery' ? '翻了相册' :
                         s.app === 'music' ? '看了在听的歌' : '看了桌面';
@@ -535,9 +535,9 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'moments') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">朋友圈</div>
+                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">此刻</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 px-4 py-3 space-y-4">
-                        {moments.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（朋友圈空空如也）</div>}
+                        {moments.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（此刻空空如也）</div>}
                         {moments.map(p => (
                             <div key={p.id} className="border-b border-slate-50 pb-3">
                                 <div className="flex items-center gap-2 mb-1.5">
