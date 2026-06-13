@@ -1495,6 +1495,8 @@ export interface BankShopState {
     totalRevenue?: number;
     /** 顾客评价（最近若干条，营业时产生，决定口碑评分） */
     reviews?: ShopReview[];
+    /** 各商品库存（recipeId → 剩余份数）。营业卖出扣减，进货花钱补充。 */
+    stock?: Record<string, number>;
 }
 
 export interface BankFullState {

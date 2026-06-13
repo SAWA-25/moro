@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -44,6 +44,7 @@ const INITIAL_STATE: BankFullState = {
             }
         ],
         unlockedRecipes: ['recipe-coffee-001'],
+        stock: { 'recipe-coffee-001': STARTING_STOCK },
         activeVisitor: undefined,
         guestbook: [] // New
     },
@@ -181,6 +182,18 @@ const BankApp: React.FC = () => {
         }
         if (!currentState.shop.guestbook) {
             currentState.shop.guestbook = [];
+        }
+        // Migration: 库存系统。老存档没有 stock 字段 / 新解锁过的商品没有库存条目时，
+        // 给在售商品补上起始库存，营业才有货可卖（幂等：已有条目——哪怕是 0——不覆盖）。
+        {
+            const stock = { ...(currentState.shop.stock || {}) };
+            let stockChanged = currentState.shop.stock === undefined;
+            for (const id of currentState.shop.unlockedRecipes) {
+                if (stock[id] === undefined) { stock[id] = STARTING_STOCK; stockChanged = true; }
+            }
+            if (stockChanged) {
+                currentState = { ...currentState, shop: { ...currentState.shop, stock } };
+            }
         }
 
         // --- Dollhouse: Load separately (same pattern as RoomApp's roomConfig) ---
@@ -326,6 +339,13 @@ const BankApp: React.FC = () => {
                 fatigue: Math.max(0, s.fatigue - 30)
             }));
 
+            // 每日把在售商品的库存「保底」补到 DAILY_STOCK_FLOOR——不至于完全断货卡死，
+            // 但量很小，真正的供货还得靠进货。已高于保底线的不动（不覆盖囤的货）。
+            const replenishedStock = { ...(currentState.shop.stock || {}) };
+            for (const id of currentState.shop.unlockedRecipes) {
+                replenishedStock[id] = Math.max(replenishedStock[id] || 0, DAILY_STOCK_FLOOR);
+            }
+
             currentState = {
                 ...currentState,
                 todaySpent: 0,
@@ -336,6 +356,7 @@ const BankApp: React.FC = () => {
                     staff: updatedStaff,
                     activeVisitor: undefined,
                     totalRevenue: (currentState.shop.totalRevenue || 0) + passiveRevenue,
+                    stock: replenishedStock,
                 }
             };
 
@@ -482,13 +503,43 @@ const BankApp: React.FC = () => {
             shop: {
                 ...cur.shop,
                 unlockedRecipes: newUnlocked,
-                appeal: newAppeal
+                appeal: newAppeal,
+                // 上架即附赠一批起始库存，新品当场就能卖
+                stock: { ...(cur.shop.stock || {}), [recipeId]: STARTING_STOCK },
             }
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        addToast('新商品上架！店铺人气上升，营业时就能卖了', 'success');
+        addToast(`新商品上架！附赠 ${STARTING_STOCK} 份起始库存，营业时就能卖了`, 'success');
+    };
+
+    // --- 进货：花钱包的钱补一批库存（毛利来自进货价 < 售价） ---
+    const handleRestock = async (recipeId: string) => {
+        const cur = stateRef.current;
+        if (!cur.shop.unlockedRecipes.includes(recipeId)) return;
+        const r = SHOP_RECIPES.find(x => x.id === recipeId);
+        if (!r) return;
+
+        const curStock = cur.shop.stock?.[recipeId] || 0;
+        if (curStock >= STOCK_CAP) {
+            addToast(`${r.name} 库存已满（${STOCK_CAP}），先卖一些再进货`, 'info');
+            return;
+        }
+        const cost = restockBatchCost(r);
+        const wallet = Math.round(userProfile.balance || 0);
+        if (wallet < cost) {
+            addToast(`钱包不够进货（需 ${cur.config.currencySymbol}${cost}），先开门营业赚一笔吧`, 'error');
+            return;
+        }
+
+        const newStock = { ...(cur.shop.stock || {}), [recipeId]: Math.min(STOCK_CAP, curStock + RESTOCK_BATCH) };
+        const newState = { ...cur, shop: { ...cur.shop, stock: newStock } };
+        stateRef.current = newState;
+        setState(newState);
+        await DB.saveBankState(newState);
+        adjustUserBalance(-cost);
+        addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
     };
 
     // --- Fire / Rehire / Delete Staff ---
@@ -837,6 +888,14 @@ ${previousGuestbook}
             return;
         }
 
+        // 库存：取一份可变副本，营业卖出逐个扣减。货架全空就别开门（不消耗营业冷却），先去进货。
+        const stockLeft: Record<string, number> = { ...(cur.shop.stock || {}) };
+        const availableStock = products.reduce((s, p) => s + Math.max(0, stockLeft[p.id] || 0), 0);
+        if (availableStock === 0) {
+            addToast('货架都空了，先去「经营」里进货，再开门营业', 'info');
+            return;
+        }
+
         const appeal = cur.shop.appeal || calculateAppeal(staff.length, cur.shop.unlockedRecipes);
         const reviews = cur.shop.reviews || [];
         const avgRep = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 4.2;
@@ -847,13 +906,17 @@ ${previousGuestbook}
         const customerCount = Math.max(2, Math.min(9, Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1));
 
         const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
-        let base = 0, tips = 0;
+        let base = 0, tips = 0, lostSales = 0;
         const newReviews: ShopReview[] = [];
         const usedNpc = new Set<string>();
 
         for (let i = 0; i < customerCount; i++) {
-            const p = products[Math.floor(Math.random() * products.length)];
-            const price = p.price ?? Math.max(10, Math.round(p.appeal * 0.8));
+            // 只卖还有库存的商品；若全部售罄，这位客人空手而归（缺货流失，不计收入也不留评）
+            const inStock = products.filter(p => (stockLeft[p.id] || 0) > 0);
+            if (inStock.length === 0) { lostSales++; continue; }
+            const p = inStock[Math.floor(Math.random() * inStock.length)];
+            stockLeft[p.id] = (stockLeft[p.id] || 0) - 1;
+            const price = recipePrice(p);
             base += price;
             if (Math.random() < 0.45) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2)));
             const ex = itemMap.get(p.id);
@@ -894,6 +957,7 @@ ${previousGuestbook}
                 lastBusinessAt: Date.now(),
                 totalRevenue: (cur.shop.totalRevenue || 0) + total,
                 reviews: mergedReviews,
+                stock: stockLeft,
             },
         };
         stateRef.current = newState;
@@ -906,6 +970,7 @@ ${previousGuestbook}
             items: Array.from(itemMap.values()).sort((a, b) => b.subtotal - a.subtotal),
             reviews: newReviews,
             repBonusPct,
+            lostSales,
         });
     };
 
@@ -1034,7 +1099,9 @@ ${previousGuestbook}
                         <BankGameMenu
                             state={state}
                             characters={characters}
+                            walletBalance={Math.round(userProfile.balance || 0)}
                             onUnlockRecipe={handleUnlockRecipe}
+                            onRestock={handleRestock}
                             onHireStaff={handleHireStaff}
                             onStaffRest={handleStaffRest}
                             onFireStaff={handleFireStaff}
@@ -1336,7 +1403,8 @@ ${previousGuestbook}
             <HbModal open={showTutorial} onClose={() => setShowTutorial(false)} title="这间小店怎么玩" sub="一页纸看懂" tapeColor="rgba(231,163,156,0.7)">
                 <div className="space-y-3" style={{ color: '#5b4636' }}>
                     {[
-                        { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。', bg: '#dfeccd' },
+                        { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出有货的商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。', bg: '#dfeccd' },
+                        { emoji: '📦', t: '进货与库存', d: '每件商品都有库存，营业卖一份扣一份；见底就去「经营·商品」花钱包的钱进货。进货价只有售价四成，卖出去就是赚的——货架空了客人会空手而归。', bg: '#e3d2bd' },
                         { emoji: '🧾', t: '商品与口碑', d: '去「经营」花 AP 解锁更多商品；客人会点单、留下 1~5 星评价，口碑越好营业收入越高，点店铺里「⭐口碑」可翻看。', bg: '#f6ddc9' },
                         { emoji: '📖', t: '记账是另一本账', d: '「账本」记的是你现实的钱（进账/支出），和店铺的钱各算各的；记完角色会点评，角色也会记自己的账等你回应。', bg: '#cfe3e0' },
                         { emoji: '⚡', t: '行动点 AP', d: '每天登录领 AP，用来解锁商品、雇店员、装修房间。店员忙累了要歇会儿才能再营业。', bg: '#e7dcc4' },

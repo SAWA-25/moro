@@ -19,6 +19,7 @@ export interface BusinessResult {
     items: BusinessSaleItem[];
     reviews: ShopReview[];   // 本轮新增评价
     repBonusPct: number;     // 口碑加成（百分比，仅展示）
+    lostSales?: number;      // 因缺货空手而归的客人数（提示去进货）
 }
 
 const isUrl = (v?: string) => !!v && (v.startsWith('http') || v.startsWith('data:'));
@@ -60,6 +61,13 @@ export const BusinessResultModal: React.FC<{
                 </div>
                 <div className="text-[11px] opacity-85 mt-2">接待了 {result.customerCount} 位客人 · 含小费 {currency}{result.tips}{result.repBonusPct > 0 ? ` · 口碑加成 +${result.repBonusPct}%` : ''}</div>
             </div>
+            {/* 缺货流失提示 */}
+            {!!result.lostSales && result.lostSales > 0 && (
+                <div className="px-5 py-2.5 flex items-center gap-2 text-[12px] font-bold" style={{ background: '#FFF3E0', color: '#E67E22' }}>
+                    <span>⚠️</span>
+                    <span>{result.lostSales} 位客人没买到就走了 —— 货不够卖，记得去「经营」进货</span>
+                </div>
+            )}
             {/* 逐单 */}
             <div className="px-5 py-4 max-h-[44vh] overflow-y-auto no-scrollbar" style={{ color: '#5D4037' }}>
                 <div className="text-[11px] font-bold text-[#A1887F] uppercase tracking-wider mb-2">卖出的商品</div>
