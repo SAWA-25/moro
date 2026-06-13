@@ -602,23 +602,25 @@ export const parsePersonaMarkdown = (rawPersona: string) => {
     const sections: {title: string, content: string[], icon: string}[] = [];
     let currentSection: {title: string, content: string[], icon: string} | null = null;
 
-    lines.forEach(line => {
+    // 用 for...of 而非 forEach：闭包会打断 TS 对外层 currentSection 的控制流收窄，
+    // 导致循环后 currentSection 被误判为 null（.content 落在 never 上）。
+    for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed) return;
-        
-        const headerMatch = trimmed.match(/^###\s*(.+)/) || 
+        if (!trimmed) continue;
+
+        const headerMatch = trimmed.match(/^###\s*(.+)/) ||
                            trimmed.match(/^\*\*([^*]+)\*\*\s*[:：]\s*(.*)/) ||
                            trimmed.match(/^([^-•\d][^:：]{1,15})[:：]\s*(.*)/);
-        
+
         if (headerMatch) {
             if (currentSection && currentSection.content.length > 0) {
                 sections.push(currentSection);
             }
             const title = (headerMatch[1] || '').replace(/\*\*/g, '').trim();
-            currentSection = { 
+            currentSection = {
                 title: title,
                 icon: getIcon(title),
-                content: [] 
+                content: []
             };
             const afterColon = headerMatch[2]?.trim();
             if (afterColon) {
@@ -630,7 +632,7 @@ export const parsePersonaMarkdown = (rawPersona: string) => {
                 currentSection.content.push(cleanLine);
             }
         }
-    });
+    }
     
     if (currentSection && currentSection.content.length > 0) {
         sections.push(currentSection);

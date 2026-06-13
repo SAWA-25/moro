@@ -70,31 +70,21 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
         rewrite: () => '/v1/t2a_v2',
-        // Route to 国服 / 海外 based on X-MiniMax-Region header sent by the client.
-        router: (req) => {
-          const region = String(req.headers['x-minimax-region'] || '').toLowerCase();
-          return region === 'overseas' ? 'https://api.minimax.io' : 'https://api.minimaxi.com';
-        },
+        // 注：Vite dev proxy（基于 node http-proxy）不支持 `router` 动态选 target，
+        // 之前这里写的 router 回调实际从未生效（被静默忽略）。开发期统一走国服；
+        // 海外区域路由在生产环境（Netlify / Cloudflare 函数）里按请求头处理。
       },
       '/api/minimax/get-voice': {
         target: 'https://api.minimaxi.com',
         changeOrigin: true,
         secure: true,
         rewrite: () => '/v1/get_voice',
-        router: (req) => {
-          const region = String(req.headers['x-minimax-region'] || '').toLowerCase();
-          return region === 'overseas' ? 'https://api.minimax.io' : 'https://api.minimaxi.com';
-        },
       },
       '/api/minimax/music': {
         target: 'https://api.minimaxi.com',
         changeOrigin: true,
         secure: true,
         rewrite: () => '/v1/music_generation',
-        router: (req) => {
-          const region = String(req.headers['x-minimax-region'] || '').toLowerCase();
-          return region === 'overseas' ? 'https://api.minimax.io' : 'https://api.minimaxi.com';
-        },
       },
     }
   },

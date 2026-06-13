@@ -17,5 +17,9 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules"]
+  // worker/proactive-push 是独立打包、部署到 Cloudflare 的 Worker（无 package.json，
+  // 已有 worker.bundle.js），运行时是 Workers 环境而非浏览器 DOM。用本应用的
+  // tsconfig（DOM lib）去检查它会因缺少 Cloudflare 全局类型（D1Database 等）和
+  // WebCrypto 的 BufferSource 收紧而误报，故从应用类型检查中排除，由其自身部署链路负责。
+  "exclude": ["node_modules", "worker/proactive-push"]
 }
