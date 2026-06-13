@@ -5,7 +5,6 @@ import {
   IdentificationCard,
   ChatTeardrop,
   UsersThree,
-  GearSix,
   Images,
   PaintBrush,
   Palette,
@@ -39,7 +38,8 @@ import {
   Wrench,
   Stamp,
   UserSwitch,
-  BracketsCurly,
+  Bandaids,
+  PencilRuler,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -48,7 +48,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   User: ({ className }) => <IdentificationCard className={className} weight="bold" />,
   Chat: ({ className }) => <ChatTeardrop className={className} weight="bold" />,
   GroupChat: ({ className }) => <UsersThree className={className} weight="bold" />,
-  Settings: ({ className }) => <GearSix className={className} weight="bold" />,
+  Settings: ({ className }) => <PencilRuler className={className} weight="bold" />,
   Gallery: ({ className }) => <Images className={className} weight="bold" />,
   ThemeMaker: ({ className }) => <PaintBrush className={className} weight="bold" />,
   Appearance: ({ className }) => <Palette className={className} weight="bold" />,
@@ -83,11 +83,11 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
   Presets: ({ className }) => <Stamp className={className} weight="bold" />,
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
-  Regex: ({ className }) => <BracketsCurly className={className} weight="bold" />,
+  Regex: ({ className }) => <Bandaids className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
-// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（剪影集 / 剪报夹 / 活字盘 / 正则 / 主题），
+// 第一页放日常高频 App（相册 / 音乐 / 热点）+ 角色扮演工具链（剪影集 / 剪报夹 / 活字盘 / 补丁铺 / 主题），
 // 其余按使用频率排在后续页。
 export const INSTALLED_APPS: AppConfig[] = [
   // 神经链接（角色档案）已并入「剪影集」App：封面页 → 选「登场人物」或「扮相手账」
@@ -101,7 +101,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Personas, name: '剪影集', icon: 'Personas', color: 'violet' },
   { id: AppID.Worldbook, name: '剪报夹', icon: 'Worldbook', color: 'indigo' },
   { id: AppID.Presets, name: '活字盘', icon: 'Presets', color: 'sky' },
-  { id: AppID.Regex, name: '正则', icon: 'Regex', color: 'teal' },
+  { id: AppID.Regex, name: '补丁铺', icon: 'Regex', color: 'teal' },
   { id: AppID.Appearance, name: '主题', icon: 'Appearance', color: 'slate' },
   // ── 后续页 ──
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
@@ -126,7 +126,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
-  { id: AppID.Settings, name: '设置', icon: 'Settings', color: 'slate' },
+  { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
   { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
   { id: AppID.SpecialMoments, name: '特别时光', icon: 'SpecialMoments', color: 'pink' },
@@ -134,5 +134,5 @@ export const INSTALLED_APPS: AppConfig[] = [
   // { id: AppID.QQBridge, name: 'QQ 桥', icon: 'QQBridge', color: 'sky' }, // Hidden temporarily
 ];
 
-// Dock 四枚：聊天 / 电话 / 小红书 / 设置（参考设计的四图标底栏）
+// Dock 四枚：聊天 / 电话 / 小红书 / 文具盒（参考设计的四图标底栏）
 export const DOCK_APPS = [AppID.GroupChat, AppID.Phone, AppID.Social, AppID.Settings];

@@ -211,7 +211,7 @@ const QQBridge: React.FC = () => {
       return;
     }
     if (!apiConfig.baseUrl) {
-      log('请先在「设置」配置 LLM API（baseUrl / model）', 'error');
+      log('请先在「文具盒」配置 LLM API（baseUrl / model）', 'error');
       setEnabled(false);
       return;
     }

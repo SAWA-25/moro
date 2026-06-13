@@ -1216,7 +1216,7 @@ export default function MemoryPalaceApp() {
         if (!char || digesting) return;
         const lightApi = memoryPalaceConfig.lightLLM;
         if (!lightApi?.baseUrl) {
-            setDigestResult('[err]请先在设置中配置副 API');
+            setDigestResult('[err]请先在「文具盒」里配置副 API');
             return;
         }
 

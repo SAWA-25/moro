@@ -25,7 +25,7 @@ export async function generateImage(
     model?: string,
 ): Promise<string> {
     const baseUrl = normalizeBaseUrl(apiConfig.baseUrl);
-    if (!baseUrl || !apiConfig.apiKey) throw new Error('请先在设置中配置 API');
+    if (!baseUrl || !apiConfig.apiKey) throw new Error('请先在「文具盒」里配置 API');
     const useModel = (model || '').trim() || DEFAULT_IMAGE_GEN_MODEL;
 
     const resp = await fetch(`${baseUrl}/images/generations`, {

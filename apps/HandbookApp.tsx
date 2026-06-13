@@ -124,7 +124,7 @@ const HandbookApp: React.FC = () => {
     const runGenerate = async () => {
         setShowCharPicker(false);
         if (!apiConfig.apiKey || !apiConfig.baseUrl) {
-            addToast('请先在设置里配置主 API', 'error');
+            addToast('请先在「文具盒」里配置主 API', 'error');
             return;
         }
         setGenerating(true);

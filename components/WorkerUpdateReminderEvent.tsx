@@ -120,7 +120,7 @@ export const WorkerUpdateReminderPopup: React.FC<WorkerUpdateReminderPopupProps>
               <li>全选粘贴覆盖，点 Deploy</li>
             </ol>
             <p className="text-[11px] text-slate-500 leading-relaxed pt-1">
-              如果不方便现在处理，新代码也已经同步到「设置 → Instant 消息设置」里，
+              如果不方便现在处理，新代码也已经同步到「文具盒 → 即时飞鸽（Instant Push）」里，
               随时按提示操作即可。
             </p>
             {copyStatus === 'error' && (

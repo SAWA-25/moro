@@ -195,7 +195,7 @@ export async function generatePromptViaLLM(
   outputLanguage: 'en' | 'zh' = 'en',
 ): Promise<string> {
   if (!apiConfig.baseUrl || !apiConfig.apiKey || !apiConfig.model) {
-    throw new Error('请先在「设置」里配置 LLM API（baseUrl + key + model）');
+    throw new Error('请先在「文具盒」里配置 LLM API（baseUrl + key + model）');
   }
   const trimmed = guidance.trim();
 
@@ -495,7 +495,7 @@ export async function synthesizeSong(
 ): Promise<SynthesizeResult> {
   const { signal, onStatus } = options;
   const apiKey = (apiConfig.aceStepApiKey || '').trim();
-  if (!apiKey) throw new Error('请先在「设置」里填 Replicate API Token (r8_xxx)');
+  if (!apiKey) throw new Error('请先在「文具盒」里填 Replicate API Token (r8_xxx)');
   if (!input.tags && !input.lyrics) {
     throw new Error('歌词和风格至少需要一个');
   }

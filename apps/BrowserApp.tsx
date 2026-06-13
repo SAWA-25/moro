@@ -219,7 +219,7 @@ const BrowserApp: React.FC = () => {
 
     const loadPageContent = async (url: string) => {
         if (!apiConfig.apiKey) {
-            addToast('请先在设置中配置 API Key', 'error');
+            addToast('请先在「文具盒」里配置 API Key', 'error');
             return;
         }
 

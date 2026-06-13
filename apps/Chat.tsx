@@ -923,7 +923,7 @@ const Chat: React.FC = () => {
         if (!customContent && type === 'text' && text === MCD_ACTIVATE_TRIGGER) {
             setInput(''); localStorage.removeItem(draftKey);
             if (!isMcdConfigured()) {
-                addToast('请先到设置 → 麦当劳 启用并填入 MCP Token', 'info');
+                addToast('请先到 文具盒 → 麦当劳 启用并填入 MCP Token', 'info');
                 return;
             }
             setMcdAppOpen(true);
@@ -1183,7 +1183,7 @@ const Chat: React.FC = () => {
             addToast(char.charBlock?.active ? '你已被对方拉黑，无法拨打' : '你已将对方拉黑，无法拨打', 'error');
             return;
         }
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setShowPanel('none');
         voiceCallCancelRef.current = false;
         setVoiceCallPhase('dialing');
@@ -1310,7 +1310,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'emotion': setModalType('schedule'); break; // 情绪已并入日程，打开同一 modal
             case 'schedule': setModalType('schedule'); break;
             case 'mcd-not-configured':
-                addToast('请先到设置 → 麦当劳 启用并填入 MCP Token', 'info');
+                addToast('请先到 文具盒 → 麦当劳 启用并填入 MCP Token', 'info');
                 break;
             case 'mcd-request':
                 setMcdAppOpen(true);
@@ -1402,7 +1402,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
     };
     const generateInnerVoice = async () => {
         if (!char || innerVoiceLoading) return;
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setInnerVoiceLoading(true);
         try {
             try {

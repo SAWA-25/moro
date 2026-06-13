@@ -2,7 +2,7 @@
  * 正则脚本存取与聊天管线挂载点。
  *
  * 存储分两层（同 ST 的 GLOBAL / SCOPED）：
- * - 全局脚本：localStorage `moro_global_regex_scripts`（正则 App「全局」标签管理）
+ * - 全局脚本：localStorage `moro_global_regex_scripts`（补丁铺「满铺通用」标签管理）
  * - 角色局部脚本：char.regexScripts（随角色存 IndexedDB、随备份/角色卡走）
  *
  * 执行顺序：全局在前、局部在后（与 ST SCRIPT_TYPES 优先级一致）。
@@ -19,7 +19,7 @@ import { getRegexedString, getScriptFindRegex, normalizeRegexScript, regex_place
 
 const LS_KEY = 'moro_global_regex_scripts';
 
-/** 全局脚本变更广播（正则 App 保存后发出，聊天页可监听刷新） */
+/** 全局脚本变更广播（补丁铺保存后发出，聊天页可监听刷新） */
 export const REGEX_SCRIPTS_UPDATED_EVENT = 'moro-regex-scripts-updated';
 
 let globalCache: RegexScriptData[] | null = null;

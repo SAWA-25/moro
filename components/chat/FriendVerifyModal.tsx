@@ -88,7 +88,7 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
     const handleSend = async () => {
         const verifyText = text.trim();
         if (!verifyText) { addToast('先写一句验证消息吧', 'info'); return; }
-        if (!apiConfig?.baseUrl) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setPhase('sending');
         try {
             const userName = userProfile?.name || '用户';

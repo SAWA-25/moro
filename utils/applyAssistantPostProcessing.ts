@@ -425,7 +425,7 @@ export async function applyAssistantPostProcessing(
     aiContent = normalizeAiContent(aiContent);
 
     // ─── Step 1.4: 正则脚本（AI 输出，改写消息原文）───
-    // 正则 App 的全局脚本 + char.regexScripts 局部脚本（ST 语义：markdownOnly /
+    // 补丁铺（正则 App）的全局脚本 + char.regexScripts 局部脚本（ST 语义：markdownOnly /
     // promptOnly 都不勾的脚本在这里直接改写 AI 原文，落库前生效）。
     aiContent = applyRegexToText(aiContent, regex_placement.AI_OUTPUT, {
         char,

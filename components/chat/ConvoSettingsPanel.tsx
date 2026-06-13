@@ -234,7 +234,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const loadVoices = async () => {
         if (voices || voicesLoading) return;
         const key = resolveMiniMaxApiKey(apiConfig);
-        if (!key) { addToast('先去全局设置里填好 MiniMax API Key 哦', 'error'); return; }
+        if (!key) { addToast('先去「文具盒」里填好 MiniMax API Key 哦', 'error'); return; }
         setVoicesLoading(true);
         try {
             const r = await fetchMiniMaxVoices(key, 'all');
@@ -675,7 +675,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                     <Entry
                         mark="☘" title="出门前看一眼世界"
-                        note="TA 主动发消息前会先瞄一眼当下的时间、天气和热点，再自然地揉进话题（要先在全局设置里打开实时信息源）。"
+                        note="TA 主动发消息前会先瞄一眼当下的时间、天气和热点，再自然地揉进话题（要先在「文具盒」里打开实时信息源）。"
                         side={<CandyToggle on={!!cs.proactiveLookup} onToggle={() => updateConvo({ proactiveLookup: !cs.proactiveLookup })} />}
                     />
 

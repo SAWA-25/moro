@@ -149,7 +149,7 @@ const ensureGlobalReady = async (): Promise<ActiveMsg2GlobalConfig> => {
 
 const ensureTenantReady = async () => {
   const config = await ensureGlobalReady();
-  if (!config.tenantToken) throw new Error('请先在系统设置里完成“主动消息 2.0”的租户初始化。');
+  if (!config.tenantToken) throw new Error('请先在「文具盒」里完成“主动消息 2.0”的租户初始化。');
   return config;
 };
 

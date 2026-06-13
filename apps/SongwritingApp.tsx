@@ -805,12 +805,12 @@ const SongwritingApp: React.FC = () => {
         // Provider-specific key check
         if (providerArg === 'ace-step') {
             if (!apiConfig.aceStepApiKey?.trim()) {
-                addToast('请先在「设置」里填 Replicate API Token', 'error');
+                addToast('请先在「文具盒」里填 Replicate API Token', 'error');
                 return;
             }
         } else {
             if (!apiConfig.minimaxApiKey && !apiConfig.apiKey) {
-                addToast('请先在「设置」里填 MiniMax API Key', 'error');
+                addToast('请先在「文具盒」里填 MiniMax API Key', 'error');
                 return;
             }
         }
@@ -1040,7 +1040,7 @@ const SongwritingApp: React.FC = () => {
     const handleAiWritePrompt = async () => {
         if (!activeSong) return;
         if (!apiConfig.baseUrl || !apiConfig.apiKey) {
-            addToast('请先在「设置」里配置 LLM API', 'error');
+            addToast('请先在「文具盒」里配置 LLM API', 'error');
             return;
         }
         setIsAiWritingPrompt(true);

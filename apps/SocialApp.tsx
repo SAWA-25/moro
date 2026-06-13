@@ -99,7 +99,7 @@ const SocialApp: React.FC = () => {
 
     const refreshFeed = async () => {
         if (generating) return;
-        if (!apiReady) { addToast('请先在设置里配置 API（模型 / 地址）', 'error'); return; }
+        if (!apiReady) { addToast('请先在「文具盒」里配置 API（模型 / 地址）', 'error'); return; }
         setGenerating(true);
         try {
             const stock = await DB.getXhsStockImages().catch(() => []);
@@ -366,10 +366,10 @@ const SocialApp: React.FC = () => {
                         {!keyword && (
                             <>
                                 <div className="text-[12px] text-slate-400 leading-relaxed mb-4">
-                                    点「刷新」生成一批帖子：你的角色们会按人设发帖，还有各路虚构小红薯。{!apiReady && '需要先在设置里配置 API。'}
+                                    点「刷新」生成一批帖子：你的角色们会按人设发帖，还有各路虚构小红薯。{!apiReady && '需要先在「文具盒」里配置 API。'}
                                 </div>
                                 <button onClick={() => apiReady ? void refreshFeed() : openApp(AppID.Settings)} className="px-5 py-2.5 rounded-full bg-red-500 text-white text-[12px] font-bold active:scale-95 transition-transform">
-                                    {apiReady ? '生成帖子' : '去设置'}
+                                    {apiReady ? '生成帖子' : '去文具盒'}
                                 </button>
                             </>
                         )}
