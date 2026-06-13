@@ -1623,6 +1623,22 @@ export interface CharLifeEvent {
   source: 'proactive' | 'catchup';
 }
 
+/**
+ * 角色真实城市配置（见 utils/charCity.ts）。
+ * real：现实世界角色直接选真实城市；virtual：架空角色可选原型城市 + 虚拟程度。
+ */
+export interface CharCityConfig {
+  mode: 'real' | 'virtual';
+  /** mode==='real'：真实城市名（如「上海」） */
+  realCity?: string;
+  /** mode==='virtual'：架空城市显示名（如「A 市」） */
+  virtualName?: string;
+  /** mode==='virtual'：原型真实城市（如「上海」） */
+  prototypeCity?: string;
+  /** mode==='virtual'：虚拟程度 0~100（0 几乎贴现实可直接挪用，100 完全架空只留神韵） */
+  fictionLevel?: number;
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -1689,6 +1705,9 @@ export interface CharacterProfile {
       bio?: string;
       region?: string; // 地区（角色主页展示，如「安徽 亳州」）
   };
+
+  /** 真实城市系统：真实/架空城市选择 + 实时信息接地（见 utils/charCity.ts） */
+  cityConfig?: CharCityConfig;
 
   /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
   starredFriend?: boolean;

@@ -6,6 +6,7 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { buildPhoneCityHint } from '../utils/charCity';
 import { User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut } from '@phosphor-icons/react';
 
 const TwemojiImg: React.FC<{ code: string; alt?: string; className?: string }> = ({ code, alt, className = 'w-4 h-4 inline-block' }) => (
@@ -247,11 +248,11 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
     格式JSON数组: [{ "title": "联系人名称", "value": "呼入 (5分钟) / 未接 / 呼出 (30秒)", "detail": "关于下周聚会的事..." }, ...]`;
                     logPrefix = "通话记录";
                 } else if (type === 'order') {
-                    promptInstruction = `生成 3 条该角色最近的购物订单。
+                    promptInstruction = `生成 3 条该角色最近的购物订单。${buildPhoneCityHint(targetChar)}
     格式JSON数组: [{ "title": "商品名", "detail": "状态" }, ...]`;
                     logPrefix = "购物APP";
                 } else if (type === 'delivery') {
-                    promptInstruction = `生成 3 条该角色最近的外卖记录。
+                    promptInstruction = `生成 3 条该角色最近的外卖记录。${buildPhoneCityHint(targetChar)}
     格式JSON数组: [{ "title": "店名", "detail": "菜品" }, ...]`;
                     logPrefix = "外卖APP";
                 } else if (type === 'social') {

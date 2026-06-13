@@ -68,6 +68,7 @@ import { expandAndFormat } from './formatter';
 import {
     loadWorkingMemory, saveWorkingMemory, buildWorkingMemory,
     applyContinuityBoost, formatWorkingMemory, formatCognitions,
+    getCognitionNodes, applyCognitionBoost,
 } from './cognition';
 import { runConsolidation } from './consolidation';
 import { rerankDocuments } from './rerank';
@@ -781,6 +782,10 @@ export async function retrieveMemories(
         const prevWorkingMemory = loadWorkingMemory(charId);
         applyContinuityBoost(results, prevWorkingMemory);
 
+        // 4.6 认知引导召回：让稳定认知影响"想起什么"——与认知同语义的记忆召回分上浮
+        const cognitionNodes = await tRetrieve('getCognitionNodes', 'IDB', getCognitionNodes(charId));
+        applyCognitionBoost(results, cognitionNodes);
+
         // 重新排序
         results.sort((a, b) => b.finalScore - a.finalScore);
 
@@ -889,7 +894,10 @@ export async function retrieveMemories(
         // 10.5 认知网络注入：长期认知（置顶，不占常规名额）+ 本轮工作记忆快照
         //   - 认知块放最顶：让角色「越聊越懂 TA」的稳定理解持续生效；
         //   - 工作记忆「此刻的思绪」放认知之后、记忆宫殿正文之前，串住联想线。
-        const cognitionBlock = await tRetrieve('formatCognitions', 'IDB', formatCognitions(charId, userName));
+        // 认知参与召回：用本轮混合检索里认知节点拿到的分数排序置顶，最相关的认知优先注入
+        const cogRelevance = new Map<string, number>();
+        for (const r of results) if (r.node.origin === 'cognition') cogRelevance.set(r.node.id, r.finalScore);
+        const cognitionBlock = await tRetrieve('formatCognitions', 'IDB', formatCognitions(charId, userName, cogRelevance));
         const newSnapshot = buildWorkingMemory(charId, results, currentMood);
         if (newSnapshot) saveWorkingMemory(newSnapshot);
         const workingBlock = formatWorkingMemory(newSnapshot);
