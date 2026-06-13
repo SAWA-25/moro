@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import BankShopScene from '../components/bank/BankShopScene';
@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -889,6 +889,63 @@ ${previousGuestbook}
         addToast('心愿已添加', 'success');
     };
 
+    // --- AI 后台润色评价：把模板评价改写得更多样、有个性，并据点评情绪微调星级（影响口碑）。
+    //     非阻塞、失败兜底（保留模板）。营业时若配了 API Key 才调用。 ---
+    const enrichReviewsWithAI = async (batch: ShopReview[], soldProductNames: string[], shopLevel: number) => {
+        try {
+            const cur = stateRef.current;
+            const shopName = cur.shop.shopName || '咖啡馆';
+            const rv = cur.shop.reviews || [];
+            const avg = rv.length ? (rv.reduce((s, r) => s + r.rating, 0) / rv.length).toFixed(1) : '—';
+            const charNote = (name: string) => {
+                const c = characters.find(ch => ch.name === name);
+                return c ? `（熟人，人设：${(c.description || '').replace(/\s+/g, ' ').slice(0, 60)}）` : '（普通顾客）';
+            };
+            const list = batch.map(r => ({ id: r.id, 顾客: r.authorName + (r.isNpc ? '' : charNote(r.authorName)), 点的: r.productName || '咖啡', 初评分: r.rating }));
+            const prompt = `你在为一家叫「${shopName}」的虚拟咖啡馆生成顾客点评。店铺等级 Lv.${shopLevel}，当前口碑均分 ${avg}。本轮卖出：${soldProductNames.join('、') || '咖啡'}。
+请为下面每位顾客写一条**真实、多样、口语化**的点评（中文，约 20~40 字，可用网络梗 / 吐槽 / 夸赞 / 中肯等不同口吻，切忌雷同套话）。熟人顾客要贴合其人设口吻。
+同时给出 1~5 的星级：以「初评分」为基准，按你写的点评情绪适度上下浮动（最多差 1 星），不要全给五星。
+
+顾客列表：
+${JSON.stringify(list, null, 2)}
+
+只输出 JSON 数组，每项 {"id":"原样照抄","text":"点评","rating":1到5整数}：`;
+
+            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] }),
+            });
+            if (!response.ok) return;
+            const data = await safeResponseJson(response);
+            const jsonStr = (data.choices?.[0]?.message?.content || '').replace(/```json/g, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(jsonStr);
+            if (!Array.isArray(parsed)) return;
+
+            const byId = new Map<string, { text?: string; rating?: number }>();
+            for (const item of parsed) {
+                if (item && typeof item.id === 'string') {
+                    byId.set(item.id, { text: typeof item.text === 'string' ? item.text.trim() : undefined, rating: Number(item.rating) });
+                }
+            }
+            const apply = (r: ShopReview): ShopReview => {
+                const u = byId.get(r.id);
+                if (!u) return r;
+                const rating = Number.isFinite(u.rating) ? Math.max(1, Math.min(5, Math.round(u.rating as number))) : r.rating;
+                return { ...r, text: u.text || r.text, rating };
+            };
+            const ids = new Set(batch.map(b => b.id));
+            await persistStateUpdate(prev => ({
+                ...prev,
+                shop: { ...prev.shop, reviews: (prev.shop.reviews || []).map(r => ids.has(r.id) ? apply(r) : r) },
+            }));
+            // 结算弹窗若仍在展示这批，原地刷新文案 / 星级
+            setBusinessResult(prev => prev && prev.reviews.some(r => ids.has(r.id)) ? { ...prev, reviews: prev.reviews.map(apply) } : prev);
+        } catch (e) {
+            console.warn('AI review enrich failed', e); // 失败保留模板，不打扰用户
+        }
+    };
+
     // --- 营业：模拟一波顾客逐单消费，结算收入进钱包 + 产生评价（与记账无关） ---
     const handleOperate = async () => {
         const cur = stateRef.current;
@@ -933,45 +990,85 @@ ${previousGuestbook}
             Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1 + shopLevelExtraCustomers(level)));
 
         const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
-        let base = 0, tips = 0, lostSales = 0;
+        let base = 0, tips = 0, lostSales = 0, regularVisits = 0;
         const newReviews: ShopReview[] = [];
         const usedNpc = new Set<string>();
+        const regulars: Record<string, ShopRegular> = { ...(cur.shop.regulars || {}) };
+        const loyaltyEvents: { name: string; tier: 'regular' | 'vip' }[] = [];
+
+        // 选一位顾客身份：已有常客有概率「回头」光顾（按到访次数加权，VIP 最常来）；否则来个新客
+        const pickCustomer = (): { id: string; name: string; avatar: string; isNpc: boolean } => {
+            const pool = Object.values(regulars);
+            if (pool.length > 0 && Math.random() < 0.5) {
+                const weighted: ShopRegular[] = [];
+                pool.forEach(r => { const w = Math.min(6, 1 + Math.floor(r.visits / 2)); for (let k = 0; k < w; k++) weighted.push(r); });
+                const r = weighted[Math.floor(Math.random() * weighted.length)];
+                return { id: r.id, name: r.name, avatar: r.avatar, isNpc: r.isNpc };
+            }
+            if (characters.length > 0 && Math.random() < 0.25) {
+                const c = characters[Math.floor(Math.random() * characters.length)];
+                return { id: `char:${c.id}`, name: c.name, avatar: c.avatar, isNpc: false };
+            }
+            let npc = NPC_CUSTOMERS[0], tries = 0;
+            do { npc = NPC_CUSTOMERS[Math.floor(Math.random() * NPC_CUSTOMERS.length)]; tries++; } while (usedNpc.has(npc.name) && tries < 5);
+            usedNpc.add(npc.name);
+            return { id: `npc:${npc.name}`, name: npc.name, avatar: npc.avatar, isNpc: true };
+        };
 
         for (let i = 0; i < customerCount; i++) {
-            // 只卖还有库存的商品；若全部售罄，这位客人空手而归（缺货流失，不计收入也不留评）
+            // 只卖还有库存的商品；若全部售罄，这位客人空手而归（缺货流失，不计收入也不留评，也不算到访）
             const inStock = products.filter(p => (stockLeft[p.id] || 0) > 0);
             if (inStock.length === 0) { lostSales++; continue; }
+
+            const who = pickCustomer();
+            const priorVisits = regulars[who.id]?.visits || 0;
+            const isVip = priorVisits >= VIP_VISITS;
+            const isRegular = priorVisits >= REGULAR_VISITS;
+            if (isRegular) regularVisits++;
+
             const p = inStock[Math.floor(Math.random() * inStock.length)];
             stockLeft[p.id] = (stockLeft[p.id] || 0) - 1;
             const price = recipePrice(p);
             base += price;
-            if (Math.random() < 0.45) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2)));
+
+            // 小费：常客/VIP 给得更勤更多
+            const tipChance = isVip ? 1 : isRegular ? 0.7 : 0.45;
+            const tipMult = isVip ? 1.6 : isRegular ? 1.3 : 1;
+            if (Math.random() < tipChance) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2) * tipMult));
+
             const ex = itemMap.get(p.id);
             if (ex) { ex.qty++; ex.subtotal += price; } else itemMap.set(p.id, { name: p.name, icon: p.icon, qty: 1, subtotal: price });
 
-            // 约 35% 顾客留评
-            if (Math.random() < 0.35) {
-                let authorName: string, avatar: string, isNpc: boolean;
-                if (characters.length > 0 && Math.random() < 0.25) {
-                    const c = characters[Math.floor(Math.random() * characters.length)];
-                    authorName = c.name; avatar = c.avatar; isNpc = false;
-                } else {
-                    let npc = NPC_CUSTOMERS[0], tries = 0;
-                    do { npc = NPC_CUSTOMERS[Math.floor(Math.random() * NPC_CUSTOMERS.length)]; tries++; } while (usedNpc.has(npc.name) && tries < 5);
-                    usedNpc.add(npc.name); authorName = npc.name; avatar = npc.avatar; isNpc = true;
-                }
+            // 留评：常客更爱留评，且评分更高更稳
+            const reviewChance = isRegular ? 0.5 : 0.35;
+            if (Math.random() < reviewChance) {
                 let rating = 4 + (Math.random() < 0.5 ? 1 : 0);
                 if (energetic === 0) rating -= 2;
                 else if (avgRep < 3.5 && Math.random() < 0.4) rating -= 1;
                 if (Math.random() < 0.08) rating -= 2; // 偶发差评
+                if (isVip) rating = Math.max(rating, 4) + (Math.random() < 0.5 ? 1 : 0);
+                else if (isRegular) rating = Math.max(rating, 4);
                 rating = Math.max(1, Math.min(5, rating));
                 newReviews.push({
                     id: `rev-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
-                    authorName, avatar, rating, text: buildReviewText(rating, p.name),
-                    productName: p.name, ts: Date.now(), isNpc,
+                    authorName: who.name, avatar: who.avatar, rating, text: buildReviewText(rating, p.name),
+                    productName: p.name, ts: Date.now(), isNpc: who.isNpc,
                 });
             }
+
+            // 累计到访 + 晋升检测（常客 / VIP）
+            const nextVisits = priorVisits + 1;
+            regulars[who.id] = { id: who.id, name: who.name, avatar: who.avatar, isNpc: who.isNpc, visits: nextVisits };
+            if (priorVisits < REGULAR_VISITS && nextVisits >= REGULAR_VISITS) loyaltyEvents.push({ name: who.name, tier: 'regular' });
+            if (priorVisits < VIP_VISITS && nextVisits >= VIP_VISITS) loyaltyEvents.push({ name: who.name, tier: 'vip' });
         }
+
+        // 常客表按到访次数保留 Top N，防止无限膨胀
+        const prunedRegulars: Record<string, ShopRegular> = {};
+        Object.values(regulars)
+            .sort((a, b) => b.visits - a.visits)
+            .slice(0, MAX_REGULARS)
+            .forEach(r => { prunedRegulars[r.id] = r; });
 
         const total = Math.max(1, Math.round((base + tips) * (1 + (repBonusPct + levelBonusPct) / 100)));
         const updatedStaff = staff.map(s => ({ ...s, fatigue: Math.min(s.maxFatigue, s.fatigue + 18) }));
@@ -985,12 +1082,17 @@ ${previousGuestbook}
                 totalRevenue: (cur.shop.totalRevenue || 0) + total,
                 reviews: mergedReviews,
                 stock: stockLeft,
+                regulars: prunedRegulars,
             },
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         adjustUserBalance(total);
+
+        for (const ev of loyaltyEvents.filter(e => e.tier === 'vip')) {
+            addToast(`👑 ${ev.name} 成了你店里的 VIP！`, 'success');
+        }
 
         setBusinessResult({
             total, base, tips, customerCount,
@@ -1000,7 +1102,15 @@ ${previousGuestbook}
             levelBonusPct,
             shopLevel: level,
             lostSales,
+            loyaltyEvents,
+            regularVisits,
         });
+
+        // 客户评价交给 AI 后台润色：把模板评价改写得更多样、有个性，并据此微调星级（影响口碑）。
+        // 非阻塞——营业已即时出结果；没配 Key 或失败就保留模板。
+        if (apiConfig.apiKey && newReviews.length > 0) {
+            void enrichReviewsWithAI(newReviews, Array.from(itemMap.values()).map(it => it.name), level);
+        }
     };
 
     // 库存告急：有在售商品快卖光（≤3 份）时，给「经营」书签贴个小红点，点进去就能进货
@@ -1485,7 +1595,7 @@ ${previousGuestbook}
                     {[
                         { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出有货的商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。在「经营」里花钱包给店铺升级，客流和收入档次都更高。', bg: '#dfeccd' },
                         { emoji: '📦', t: '进货与库存', d: '每件商品都有库存，营业卖一份扣一份；见底就去「经营·商品」花钱包的钱进货。进货价只有售价四成，卖出去就是赚的——货架空了客人会空手而归。', bg: '#e3d2bd' },
-                        { emoji: '🧾', t: '商品与口碑', d: '去「经营」花 AP 解锁更多商品；客人会点单、留下 1~5 星评价，口碑越好营业收入越高，点店铺里「⭐口碑」可翻看。', bg: '#f6ddc9' },
+                        { emoji: '🧾', t: '口碑与熟客', d: '客人会点单、留 1~5 星评价（配了 API 会由 AI 写得更鲜活多样）；常来的成为常客 / VIP——小费更高、评分更稳、还爱回头。口碑越好营业收入越高，点店铺「⭐口碑」可翻看。', bg: '#f6ddc9' },
                         { emoji: '📖', t: '记账是另一本账', d: '「账本」记的是你现实的钱（进账/支出），和店铺的钱各算各的；记完角色会点评，角色也会记自己的账等你回应。', bg: '#cfe3e0' },
                         { emoji: '⚡', t: '行动点 AP', d: '每天登录领 AP，用来解锁商品、雇店员、装修房间。店员忙累了要歇会儿才能再营业。', bg: '#e7dcc4' },
                     ].map((c, i) => (
