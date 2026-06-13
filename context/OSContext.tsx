@@ -2917,7 +2917,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               characterActiveRefinePromptId: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('character_active_refine_prompt_id') || undefined) : undefined,
 
               // UI / 偏好
-              scheduleAppTheme: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('schedule_app_theme') || undefined) : undefined,
+              scheduleAppTheme: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('almanac_promise_theme') || undefined) : undefined,
               handbookLifestreamDepth: (mode === 'text_only' || mode === 'full') ? (localStorage.getItem('handbook_lifestream_depth') || undefined) : undefined,
               groupchatContextLimit: (mode === 'text_only' || mode === 'full') ? (() => { const v = localStorage.getItem('groupchat_context_limit'); const n = v ? parseInt(v, 10) : NaN; return Number.isFinite(n) ? n : undefined; })() : undefined,
               browserConfig: (mode === 'text_only' || mode === 'full') ? (() => {
@@ -3536,7 +3536,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           if (typeof data.characterActiveRefinePromptId === 'string') localStorage.setItem('character_active_refine_prompt_id', data.characterActiveRefinePromptId);
 
           // Restore UI / 偏好
-          if (typeof data.scheduleAppTheme === 'string') localStorage.setItem('schedule_app_theme', data.scheduleAppTheme);
+          if (typeof data.scheduleAppTheme === 'string') localStorage.setItem('almanac_promise_theme', data.scheduleAppTheme);
           if (typeof data.handbookLifestreamDepth === 'string') localStorage.setItem('handbook_lifestream_depth', data.handbookLifestreamDepth);
           if (typeof data.groupchatContextLimit === 'number') localStorage.setItem('groupchat_context_limit', String(data.groupchatContextLimit));
           if (data.browserConfig && typeof data.browserConfig === 'object') {

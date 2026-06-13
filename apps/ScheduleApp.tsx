@@ -1,76 +1,58 @@
-
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { Task, Anniversary, CharacterProfile } from '../types';
-import Modal from '../components/os/Modal';
+import { Task, Anniversary } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
 
-const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
-const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
+/**
+ * 岁时记 ·「时光契约」（拼贴手账风）
+ * ------------------------------------------------------------
+ * 要做的事钉成约定（角色当监督人，完成后 AI 给一句验收点评），
+ * 在意的日子贴上纪念日并倒数（AI 按人设写一句感想，24h 缓存）。
+ * 玩法、数据、AI 链路全部沿用原版，只把界面 / 文案 / 主题 / 弹窗换成手账。
+ * 三套手账主题（牛皮纸 / 方格本 / 便利贴）可一键翻面，记忆在 localStorage。
+ */
 
-type ThemeMode = 'cyber' | 'soft' | 'minimal';
+type ThemeId = 'kraft' | 'grid' | 'sticky';
 
-// Theme Configuration Definitions
-const THEMES: Record<ThemeMode, any> = {
-    cyber: {
-        id: 'cyber',
-        bg: 'bg-[#0f172a]',
-        text: 'text-slate-200',
-        textSub: 'text-slate-500',
-        accent: 'text-cyan-400',
-        border: 'border-cyan-900/30',
-        card: 'bg-slate-900/50 backdrop-blur-md border border-slate-700/50',
-        buttonPrimary: 'bg-cyan-600 hover:bg-cyan-500 text-white rounded-none skew-x-[-10deg]',
-        font: 'font-mono',
-        iconDone: 'text-green-500',
-        decoLine: 'bg-slate-800',
-        modalBg: 'bg-[#0f172a] border border-cyan-500',
-        input: 'bg-slate-800 text-white border-none rounded-none',
-        label: 'QUEST LOG',
-        eventLabel: 'SERVER EVENTS'
+interface HbTheme {
+    id: ThemeId;
+    paper: 'kraft' | 'grid' | 'sticky';
+    name: string;
+    ink: string;       // 主文字
+    inkSoft: string;   // 次要文字
+    accent: string;    // 强调（印章 / 今日 / 主按钮）
+    noteBg: string;    // 纸片底
+    tape: string;      // 胶带色（rgba）
+    tabTodo: string;   // 左 Tab 文案
+    tabDays: string;   // 右 Tab 文案
+    switchEmoji: string;
+}
+
+const THEMES: Record<ThemeId, HbTheme> = {
+    kraft: {
+        id: 'kraft', paper: 'kraft', name: '牛皮纸',
+        ink: '#5b4636', inkSoft: '#9a8262', accent: '#b1543f',
+        noteBg: '#fffdf7', tape: 'rgba(231,163,156,0.66)',
+        tabTodo: '要做的事', tabDays: '数着的日子', switchEmoji: '📜',
     },
-    soft: {
-        id: 'soft',
-        bg: 'bg-[#fff0f5]', // Lavender Blush
-        text: 'text-slate-700',
-        textSub: 'text-slate-400',
-        accent: 'text-pink-500',
-        border: 'border-pink-100',
-        card: 'bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-sm border border-white',
-        buttonPrimary: 'bg-pink-400 hover:bg-pink-500 text-white rounded-2xl shadow-lg shadow-pink-200',
-        font: 'font-sans',
-        iconDone: 'text-pink-400',
-        decoLine: 'bg-pink-200',
-        modalBg: 'bg-white/90 rounded-[2.5rem]',
-        input: 'bg-pink-50 text-slate-700 border border-pink-100 rounded-xl',
-        label: '心愿单',
-        eventLabel: '纪念日'
+    grid: {
+        id: 'grid', paper: 'grid', name: '方格本',
+        ink: '#34503f', inkSoft: '#6f8a76', accent: '#3f8a6b',
+        noteBg: '#fbfdf8', tape: 'rgba(158,201,163,0.66)',
+        tabTodo: '清单', tabDays: '倒数日', switchEmoji: '🟩',
     },
-    minimal: {
-        id: 'minimal',
-        bg: 'bg-[#eef2f6]', // Classic Neumorphism base
-        text: 'text-slate-600',
-        textSub: 'text-slate-400',
-        accent: 'text-indigo-500',
-        border: 'border-transparent',
-        // Neumorphism Outer Shadow
-        card: 'bg-[#eef2f6] rounded-2xl shadow-[6px_6px_12px_#d1d9e6,-6px_-6px_12px_#ffffff]',
-        // Neumorphism Pressed State simulation for buttons usually, but here flat prompt
-        buttonPrimary: 'bg-[#eef2f6] text-slate-600 font-bold rounded-xl shadow-[6px_6px_12px_#d1d9e6,-6px_-6px_12px_#ffffff] active:shadow-[inset_4px_4px_8px_#d1d9e6,inset_-4px_-4px_8px_#ffffff]',
-        font: 'font-sans',
-        iconDone: 'text-slate-400',
-        decoLine: 'bg-slate-300',
-        modalBg: 'bg-[#eef2f6] rounded-2xl shadow-2xl',
-        input: 'bg-[#eef2f6] text-slate-700 rounded-xl shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]',
-        label: 'Focus',
-        eventLabel: 'Timeline'
-    }
+    sticky: {
+        id: 'sticky', paper: 'sticky', name: '便利贴',
+        ink: '#6b4a2e', inkSoft: '#b08a5a', accent: '#d9694e',
+        noteBg: '#fff8df', tape: 'rgba(231,196,120,0.7)',
+        tabTodo: '便签事', tabDays: '惦记日', switchEmoji: '🟨',
+    },
 };
+const THEME_ORDER: ThemeId[] = ['kraft', 'grid', 'sticky'];
 
 /** onExit：当本 App 嵌在「岁时记」壳里时，顶层返回回到岁时记封面页而非直接关到桌面。未传则回桌面。 */
 const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
@@ -79,13 +61,13 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
     const [activeTab, setActiveTab] = useState<'quest' | 'server_events'>('quest');
-    
+
     // Processing State for feedback
     const [processingTaskIds, setProcessingTaskIds] = useState<Set<string>>(new Set());
 
     // Theme State
-    const [currentThemeMode, setCurrentThemeMode] = useState<ThemeMode>('cyber');
-    const theme = THEMES[currentThemeMode];
+    const [themeId, setThemeId] = useState<ThemeId>('kraft');
+    const theme = THEMES[themeId];
 
     // Add Modal States
     const [showTaskModal, setShowTaskModal] = useState(false);
@@ -94,26 +76,25 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     // Forms
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newTaskSupervisor, setNewTaskSupervisor] = useState<string>(activeCharacterId || '');
-    
+
     const [newAnniTitle, setNewAnniTitle] = useState('');
     const [newAnniDate, setNewAnniDate] = useState('');
     const [newAnniChar, setNewAnniChar] = useState<string>(activeCharacterId || '');
 
     useEffect(() => {
         loadData();
-        // Load theme from local storage if needed, defaulting to cyber
-        const saved = localStorage.getItem('schedule_app_theme');
-        if (saved && THEMES[saved as ThemeMode]) {
-            setCurrentThemeMode(saved as ThemeMode);
+        const saved = localStorage.getItem('almanac_promise_theme');
+        if (saved && THEMES[saved as ThemeId]) {
+            setThemeId(saved as ThemeId);
         }
     }, []);
 
     const toggleTheme = () => {
-        const modes: ThemeMode[] = ['cyber', 'soft', 'minimal'];
-        const nextIndex = (modes.indexOf(currentThemeMode) + 1) % modes.length;
-        const nextMode = modes[nextIndex];
-        setCurrentThemeMode(nextMode);
-        localStorage.setItem('schedule_app_theme', nextMode);
+        const nextIndex = (THEME_ORDER.indexOf(themeId) + 1) % THEME_ORDER.length;
+        const nextMode = THEME_ORDER[nextIndex];
+        setThemeId(nextMode);
+        localStorage.setItem('almanac_promise_theme', nextMode);
+        addToast(`翻到「${THEMES[nextMode].name}」`, 'info');
     };
 
     const loadData = async () => {
@@ -122,7 +103,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         setAnniversaries(a.sort((a, b) => a.date.localeCompare(b.date)));
     };
 
-    // --- AI Logic ---
+    // --- AI Logic（沿用原版，未改动行为） ---
 
     const generateTaskReward = async (task: Task) => {
         const supervisor = characters.find(c => c.id === task.supervisorId);
@@ -131,13 +112,9 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             return;
         }
 
-        // FEEDBACK: Show loading state immediately
-        // Note: The caller handles setting processingTaskIds, but we can also add a toast
         addToast(`${supervisor.name} 正在确认你的成果...`, 'info');
 
         try {
-            // 1. Build Persona Context
-            // RESTORED: Full context
             await injectMemoryPalace(supervisor, undefined, task.title);
             const baseContext = ContextBuilder.buildCoreContext(supervisor, userProfile);
 
@@ -158,7 +135,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 - **必须使用用户常用语言**。
 - 不要有引号。`;
 
-            // 2. Separate System and User roles
             const messages = [
                 { role: "system", content: baseContext },
                 { role: "user", content: userPrompt }
@@ -170,8 +146,8 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 body: JSON.stringify({
                     model: apiConfig.model,
                     messages: messages,
-                    temperature: 0.9, 
-                    max_tokens: 8000 
+                    temperature: 0.9,
+                    max_tokens: 8000
                 })
             });
 
@@ -181,18 +157,15 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             }
 
             const data = await safeResponseJson(response);
-            
-            // Extract content, handling potential reasoning_content or empty standard content
+
             let text = data.choices?.[0]?.message?.content?.trim();
             if (!text && data.choices?.[0]?.message?.reasoning_content) {
-                // If standard content is empty but model "thought" about it, try to use thought or fallback
                 console.warn("AI returned empty content but has reasoning.");
             }
-            
+
             if (text) {
                 text = text.replace(/^["']|["']$/g, '');
                 addToast(`${supervisor.name}: ${text}`, 'success');
-                // Inject into Chat Memory (Localized & Personalized)
                 await DB.saveMessage({
                     charId: supervisor.id,
                     role: 'system',
@@ -219,7 +192,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             return;
         }
 
-        // FEEDBACK: Show loading state if explicit call
         if (Date.now() - (anni.lastThoughtGeneratedAt || 0) > 10000) {
              addToast(`${char.name} 正在查阅日历...`, 'info');
         }
@@ -227,7 +199,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const daysDiff = Math.ceil((new Date(anni.date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
         const dayText = daysDiff > 0 ? `还有 ${daysDiff} 天` : (daysDiff === 0 ? '就是今天!' : `已经过去 ${Math.abs(daysDiff)} 天了`);
 
-        // RESTORED: Full context
         await injectMemoryPalace(char, undefined, anni.title);
         const baseContext = ContextBuilder.buildCoreContext(char, userProfile);
 
@@ -266,7 +237,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
             const data = await safeResponseJson(response);
             const text = data.choices?.[0]?.message?.content?.trim().replace(/^["']|["']$/g, '');
-            
+
             if (text) {
                 const updatedAnni = { ...anni, aiThought: text, lastThoughtGeneratedAt: Date.now() };
                 await DB.saveAnniversary(updatedAnni);
@@ -274,9 +245,8 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             } else {
                 console.warn("AI returned empty thought", data);
             }
-        } catch (e: any) { 
+        } catch (e: any) {
             console.error("Anniversary Thought Error:", e);
-            // No toast for background update failure to avoid annoyance
         }
     };
 
@@ -288,7 +258,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             id: `task-${Date.now()}`,
             title: newTaskTitle,
             supervisorId: newTaskSupervisor || characters[0]?.id,
-            tone: 'gentle', // Deprecated but kept for type compatibility
+            tone: 'gentle',
             isCompleted: false,
             createdAt: Date.now()
         };
@@ -302,14 +272,12 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const updated = { ...task, isCompleted: !task.isCompleted, completedAt: !task.isCompleted ? Date.now() : undefined };
         await DB.saveTask(updated);
         setTasks(prev => prev.map(t => t.id === task.id ? updated : t));
-        
+
         if (updated.isCompleted) {
-            // Start Visual Loading State on the Item
             setProcessingTaskIds(prev => new Set(prev).add(task.id));
             try {
                 await generateTaskReward(updated);
             } finally {
-                // End Visual Loading State
                 setProcessingTaskIds(prev => {
                     const next = new Set(prev);
                     next.delete(task.id);
@@ -337,8 +305,6 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         setShowAnniModal(false);
         setNewAnniTitle('');
         setNewAnniDate('');
-        
-        // Remove immediate trigger to avoid double calls (useEffect will handle if it's upcoming)
     };
 
     const handleDeleteAnni = async (id: string) => {
@@ -361,235 +327,260 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         return anniversaries.filter(a => getDaysUntil(a.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
     }, [anniversaries]);
 
-    // Trigger thoughts for upcoming anniversary on load
     useEffect(() => {
         if (upcomingAnni) {
             generateAnniversaryThought(upcomingAnni);
         }
     }, [upcomingAnni]);
 
-    return (
-        <div className={`h-full w-full flex flex-col ${theme.font} ${theme.bg} ${theme.text} relative overflow-hidden transition-colors duration-500`}>
-             
-             {/* Tech Background Grid (Only for Cyber) */}
-             {currentThemeMode === 'cyber' && (
-                 <div className="absolute inset-0 pointer-events-none opacity-20" 
-                      style={{ 
-                          backgroundImage: 'linear-gradient(rgba(56, 189, 248, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.1) 1px, transparent 1px)', 
-                          backgroundSize: '40px 40px' 
-                      }}>
-                 </div>
-             )}
-             
-             {/* Soft Background Pattern (Only for Soft) */}
-             {currentThemeMode === 'soft' && (
-                 <div className="absolute inset-0 pointer-events-none opacity-30" 
-                      style={{ 
-                          backgroundImage: 'radial-gradient(#fbcfe8 2px, transparent 2px)', 
-                          backgroundSize: '20px 20px' 
-                      }}>
-                 </div>
-             )}
+    const openTasks = tasks.filter(t => !t.isCompleted);
+    const doneTasks = tasks.filter(t => t.isCompleted);
 
-             {/* Header */}
-             <div className={`pt-12 pb-4 px-6 border-b ${theme.border} backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between shrink-0 h-24 box-border relative transition-colors duration-300`}>
-                <button onClick={exitApp} className={`p-2 -ml-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-black/5'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-6 h-6 ${theme.accent}`}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                </button>
-                
-                {/* Tabs */}
-                <div className={`flex gap-1 p-1 rounded-lg ${currentThemeMode === 'cyber' ? 'bg-black/40 border border-cyan-900/50' : (currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'bg-white/50')}`}>
-                    <button onClick={() => setActiveTab('quest')} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'quest' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.label}</button>
-                    <button onClick={() => setActiveTab('server_events')} className={`px-4 py-1.5 rounded text-xs font-bold transition-all ${activeTab === 'server_events' ? `${theme.accent} ${currentThemeMode === 'cyber' ? 'bg-cyan-900/50 shadow-sm' : (currentThemeMode === 'minimal' ? 'shadow-[2px_2px_5px_#d1d9e6,-2px_-2px_5px_#ffffff] bg-[#eef2f6]' : 'bg-white shadow-sm')}` : `${theme.textSub}`}`}>{theme.eventLabel}</button>
-                </div>
-
-                {/* Right Actions */}
-                <div className="flex gap-2">
-                    {/* Theme Switcher */}
-                    <button onClick={toggleTheme} className={`p-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'bg-white/10 hover:bg-white/20'}`}>
-                        {currentThemeMode === 'cyber' && <img src={twemojiUrl('1f47e')} alt="alien" className="w-5 h-5" />}
-                        {currentThemeMode === 'soft' && <img src={twemojiUrl('1f338')} alt="blossom" className="w-5 h-5" />}
-                        {currentThemeMode === 'minimal' && <img src={twemojiUrl('26aa')} alt="circle" className="w-5 h-5" />}
+    // 选人小列表（任务监督人 / 纪念日关联对象共用）
+    const CharPicker = ({ value, onPick }: { value: string; onPick: (id: string) => void }) => (
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {characters.length === 0 && <span className="text-[12px]" style={{ color: theme.inkSoft }}>还没有角色</span>}
+            {characters.map(c => {
+                const on = value === c.id;
+                return (
+                    <button key={c.id} onClick={() => onPick(c.id)} className="flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform">
+                        {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:')
+                            ? <img src={c.avatar} className="w-12 h-12 rounded-full object-cover" style={{ border: on ? `2.5px solid ${theme.accent}` : '2.5px solid transparent', opacity: on ? 1 : 0.55 }} />
+                            : <span className="w-12 h-12 rounded-full flex items-center justify-center text-xl" style={{ background: '#f3ead7', border: on ? `2.5px solid ${theme.accent}` : '2.5px solid transparent', opacity: on ? 1 : 0.55 }}>{c.avatar || '🌸'}</span>}
+                        <span className="text-[10px] font-bold whitespace-nowrap" style={{ color: on ? theme.ink : theme.inkSoft }}>{c.name}</span>
                     </button>
-                    
-                    {/* Add Button */}
-                    <button onClick={() => activeTab === 'quest' ? setShowTaskModal(true) : setShowAnniModal(true)} className={`p-2 rounded-full active:scale-90 transition-transform ${theme.accent} ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-white/10'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                    </button>
-                </div>
-                
-                {/* Decoration Line */}
-                {currentThemeMode === 'cyber' && <div className="absolute bottom-0 left-0 h-[1px] w-full bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent"></div>}
-            </div>
-
-            <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-8 z-10">
-                
-                {/* Hero Anniversary Card */}
-                {upcomingAnni && (
-                    <div className={`w-full rounded-2xl p-5 relative overflow-hidden group transition-all duration-300 ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[inset_5px_5px_10px_#d1d9e6,inset_-5px_-5px_10px_#ffffff]' : (currentThemeMode === 'soft' ? 'bg-gradient-to-r from-pink-300 to-purple-300 text-white shadow-lg shadow-pink-200' : 'bg-gradient-to-r from-slate-900 to-slate-800 border border-purple-500/30')}`}>
-                        <div className="relative z-10">
-                            <div className="flex justify-between items-start mb-2">
-                                <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${currentThemeMode === 'minimal' ? 'text-slate-400' : 'text-white/80 bg-white/20'}`}>即将到来</div>
-                                <div className="text-3xl font-bold tracking-tighter">{getDaysUntil(upcomingAnni.date)} <span className="text-xs opacity-60 font-normal">天后</span></div>
-                            </div>
-                            <div className="text-xl font-bold mb-4">{upcomingAnni.title}</div>
-                            
-                            {/* AI Thought Bubble */}
-                            <div className={`flex items-start gap-3 p-3 rounded-xl ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[5px_5px_10px_#d1d9e6,-5px_-5px_10px_#ffffff]' : 'bg-white/20 backdrop-blur-md'}`}>
-                                <img src={characters.find(c => c.id === upcomingAnni.charId)?.avatar} className="w-8 h-8 rounded-full object-cover" />
-                                <div className={`text-xs font-medium leading-relaxed italic ${currentThemeMode === 'minimal' ? 'text-slate-500' : 'text-white/90'}`}>
-                                    "{upcomingAnni.aiThought || "加载中..."}"
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'quest' && (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 mb-2 px-1">
-                            <div className={`w-2 h-2 rounded-full animate-pulse ${currentThemeMode === 'cyber' ? 'bg-cyan-500' : (currentThemeMode === 'soft' ? 'bg-pink-400' : 'bg-slate-400')}`}></div>
-                            <h3 className={`text-xs font-bold uppercase tracking-[0.2em] ${theme.accent}`}>进行中任务</h3>
-                        </div>
-                        
-                        {tasks.filter(t => !t.isCompleted).length === 0 && (
-                            <div className={`text-center py-12 border-2 border-dashed rounded-xl ${currentThemeMode === 'cyber' ? 'border-slate-800' : 'border-slate-200'}`}>
-                                <div className={theme.textSub}>暂无任务</div>
-                            </div>
-                        )}
-
-                        {tasks.filter(t => !t.isCompleted).map(task => {
-                            const supervisor = characters.find(c => c.id === task.supervisorId);
-                            const isProcessing = processingTaskIds.has(task.id);
-                            
-                            return (
-                                <div key={task.id} className={`${theme.card} p-4 flex items-center gap-4 group relative overflow-hidden transition-all duration-300`}>
-                                    {/* Supervisor Icon */}
-                                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 relative border border-white/10">
-                                        {supervisor ? <img src={supervisor.avatar} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" /> : <span className="text-xs">?</span>}
-                                        <div className={`absolute -bottom-0 -right-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${currentThemeMode === 'soft' ? 'bg-white text-pink-500' : 'bg-black text-cyan-500'}`}>!</div>
-                                    </div>
-                                    
-                                    <div className="flex-1">
-                                        <div className={`${theme.text} font-bold text-sm tracking-wide`}>{task.title}</div>
-                                        <div className={`text-[10px] ${theme.textSub} mt-1 font-mono uppercase`}>
-                                            监督人: {supervisor?.name || 'Unknown'}
-                                        </div>
-                                    </div>
-
-                                    {/* Action Button Area */}
-                                    {isProcessing ? (
-                                        <div className="flex items-center gap-2 px-2 py-2">
-                                            <div className={`w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin ${theme.accent}`}></div>
-                                            <span className={`text-[10px] font-bold animate-pulse ${theme.accent}`}>验收中...</span>
-                                        </div>
-                                    ) : (
-                                        <button 
-                                            onClick={() => handleToggleTask(task)}
-                                            className={`px-4 py-2 text-[10px] font-bold uppercase tracking-wider rounded transition-all active:scale-95 ${currentThemeMode === 'minimal' ? 'shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff] text-slate-500 active:shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : (currentThemeMode === 'soft' ? 'bg-pink-100 text-pink-500' : 'bg-cyan-900/30 text-cyan-400 border border-cyan-800')}`}
-                                        >
-                                            完成
-                                        </button>
-                                    )}
-                                    
-                                    <button onClick={() => handleDeleteTask(task.id)} className="absolute top-2 right-2 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">×</button>
-                                </div>
-                            );
-                        })}
-
-                        {tasks.filter(t => t.isCompleted).length > 0 && (
-                            <div className="pt-8 opacity-50">
-                                <h3 className={`text-xs font-bold uppercase tracking-[0.2em] px-1 mb-4 ${theme.textSub}`}>已完成</h3>
-                                {tasks.filter(t => t.isCompleted).map(task => (
-                                    <div key={task.id} className={`flex items-center gap-3 py-2 px-2 border-b ${currentThemeMode === 'cyber' ? 'border-slate-800/50' : 'border-slate-100'}`}>
-                                        <div className={`${theme.iconDone} text-xs font-mono`}>[DONE]</div>
-                                        <span className={`text-sm line-through ${theme.textSub}`}>{task.title}</span>
-                                        <button onClick={() => handleDeleteTask(task.id)} className="ml-auto text-slate-400 hover:text-red-500 text-xs">DEL</button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {activeTab === 'server_events' && (
-                    <div className={`relative pl-6 space-y-8 before:absolute before:left-2 before:top-2 before:bottom-0 before:w-[1px] ${theme.decoLine}`}>
-                        {/* Anniversaries List */}
-                        <div>
-                             <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 ${theme.textSub}`}>时间线事件</h3>
-                             <div className="space-y-4">
-                                 {anniversaries.map(a => (
-                                     <div key={a.id} className="relative group">
-                                         <div className={`absolute -left-[20px] top-4 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-purple-500' : 'bg-pink-400'}`}></div>
-                                         <div className={`${theme.card} p-4 flex justify-between items-center transition-colors`}>
-                                             <div>
-                                                 <div className={`text-sm font-bold ${theme.text}`}>{a.title}</div>
-                                                 <div className={`text-[10px] ${theme.textSub} font-mono mt-1`}>{a.date} · {characters.find(c => c.id === a.charId)?.name}</div>
-                                             </div>
-                                             <button onClick={() => handleDeleteAnni(a.id)} className="text-slate-400 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
-                                         </div>
-                                     </div>
-                                 ))}
-                             </div>
-                        </div>
-
-                        {/* Completed Tasks History Log */}
-                         <div>
-                             <h3 className={`text-xs font-bold uppercase tracking-widest mb-6 -ml-6 pl-6 pt-4 ${theme.textSub}`}>完成履历</h3>
-                             <div className="space-y-4">
-                                 {tasks.filter(t => t.isCompleted).sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0)).map(t => (
-                                     <div key={t.id} className="relative">
-                                         <div className={`absolute -left-[20px] top-2 w-2 h-2 rounded-full z-10 ${currentThemeMode === 'cyber' ? 'bg-black border border-green-600' : 'bg-slate-300'}`}></div>
-                                         <div className={`text-xs ${theme.textSub} font-mono`}>[{new Date(t.completedAt || 0).toLocaleDateString()}] 任务完成</div>
-                                         <div className={`text-sm ${theme.text} font-bold mt-1 pl-1 border-l-2 ${theme.decoLine}`}>{t.title}</div>
-                                     </div>
-                                 ))}
-                             </div>
-                         </div>
-                    </div>
-                )}
-
-            </div>
-
-            {/* Task Modal */}
-            <Modal isOpen={showTaskModal} title={currentThemeMode === 'cyber' ? "INITIALIZE QUEST" : "新建任务"} onClose={() => setShowTaskModal(false)} footer={<button onClick={handleAddTask} className={`w-full py-3 font-bold transition-all ${theme.buttonPrimary}`}>确认添加</button>}>
-                <div className={`space-y-6 ${currentThemeMode === 'minimal' ? 'p-2' : ''}`}>
-                    <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="任务目标 (例如: 背单词)" className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
-                    
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">选择监督人</label>
-                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                            {characters.map(c => (
-                                <button key={c.id} onClick={() => setNewTaskSupervisor(c.id)} className={`flex flex-col items-center gap-2 p-2 rounded-lg border transition-all min-w-[60px] ${newTaskSupervisor === c.id ? `${currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'border-current'}` : 'border-transparent opacity-50'}`}>
-                                    <img src={c.avatar} className="w-10 h-10 rounded-md object-cover" />
-                                    <span className={`text-[10px] font-bold whitespace-nowrap ${theme.text}`}>{c.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </Modal>
-
-            {/* Anniversary Modal */}
-            <Modal isOpen={showAnniModal} title={currentThemeMode === 'cyber' ? "REGISTER EVENT" : "添加纪念日"} onClose={() => setShowAnniModal(false)} footer={<button onClick={handleAddAnni} className={`w-full py-3 font-bold transition-all ${theme.buttonPrimary}`}>保存记录</button>}>
-                <div className={`space-y-4 ${currentThemeMode === 'minimal' ? 'p-2' : ''}`}>
-                    <input value={newAnniTitle} onChange={e => setNewAnniTitle(e.target.value)} placeholder="事件名称 (例如: 第一次见面)" className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
-                    <input type="date" value={newAnniDate} onChange={e => setNewAnniDate(e.target.value)} className={`w-full px-4 py-3 text-sm focus:outline-none ${theme.input}`} />
-                    
-                    <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block tracking-widest">关联对象</label>
-                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                            {characters.map(c => (
-                                <button key={c.id} onClick={() => setNewAnniChar(c.id)} className={`flex flex-col items-center gap-2 p-2 rounded-lg border transition-all min-w-[60px] ${newAnniChar === c.id ? `${currentThemeMode === 'minimal' ? 'shadow-[inset_2px_2px_5px_#d1d9e6,inset_-2px_-2px_5px_#ffffff]' : 'border-current'}` : 'border-transparent opacity-50'}`}>
-                                    <img src={c.avatar} className="w-10 h-10 rounded-md object-cover" />
-                                    <span className={`text-[10px] font-bold whitespace-nowrap ${theme.text}`}>{c.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </Modal>
+                );
+            })}
         </div>
+    );
+
+    return (
+        <PaperPage kind={theme.paper}>
+            <div className="h-full flex flex-col" style={{ color: theme.ink }}>
+                {/* 顶栏 */}
+                <div className="relative flex items-center justify-between px-4 pt-12 pb-3 shrink-0 z-20">
+                    <button onClick={exitApp} className="px-3 py-1.5 text-[12px] font-bold active:scale-95 transition-transform" style={{ background: theme.noteBg, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-1.5deg)', color: theme.inkSoft }}>
+                        ← 回封面
+                    </button>
+
+                    {/* Tab：两枚票签 */}
+                    <div className="flex gap-1.5">
+                        <button onClick={() => setActiveTab('quest')} className="active:scale-95 transition-transform" style={{ opacity: activeTab === 'quest' ? 1 : 0.5 }}>
+                            <TapeLabel color={activeTab === 'quest' ? theme.accent : '#e3d6bf'} textColor={activeTab === 'quest' ? '#fff7ef' : theme.inkSoft} rotate={-2}>{theme.tabTodo}</TapeLabel>
+                        </button>
+                        <button onClick={() => setActiveTab('server_events')} className="active:scale-95 transition-transform" style={{ opacity: activeTab === 'server_events' ? 1 : 0.5 }}>
+                            <TapeLabel color={activeTab === 'server_events' ? theme.accent : '#e3d6bf'} textColor={activeTab === 'server_events' ? '#fff7ef' : theme.inkSoft} rotate={2}>{theme.tabDays}</TapeLabel>
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                        <button onClick={toggleTheme} className="w-9 h-9 rounded-full flex items-center justify-center text-lg active:scale-90 transition-transform" style={{ background: theme.noteBg, boxShadow: '0 2px 6px rgba(96,66,40,0.18)' }} title="翻面换纸">
+                            {theme.switchEmoji}
+                        </button>
+                        <button onClick={() => activeTab === 'quest' ? setShowTaskModal(true) : setShowAnniModal(true)} className="w-9 h-9 rounded-full flex items-center justify-center text-xl font-black active:scale-90 transition-transform" style={{ background: theme.accent, color: '#fff7ef', boxShadow: '0 2px 6px rgba(96,66,40,0.22)' }} title="贴一张新的">
+                            ＋
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 z-10">
+                    {/* 即将到来的日子 —— Hero */}
+                    {upcomingAnni && (
+                        <PaperNote className="mt-2 mb-6 px-5 py-5" rotate={-1} bg={theme.noteBg}>
+                            <WashiTape className="-top-2 right-8" color={theme.tape} rotate={12} width={82} />
+                            <PaperClip className="-top-3 left-7" color="#b6a78c" />
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <TapeLabel color={theme.accent} textColor="#fff7ef">最近就到</TapeLabel>
+                                    <div className="text-[20px] font-black mt-2" style={{ fontFamily: HAND_FONT, color: theme.ink }}>{upcomingAnni.title}</div>
+                                </div>
+                                <div className="text-right shrink-0 pl-2" style={{ fontFamily: HAND_FONT }}>
+                                    <div className="text-[40px] leading-none font-black" style={{ color: theme.accent }}>{getDaysUntil(upcomingAnni.date)}</div>
+                                    <div className="text-[11px]" style={{ color: theme.inkSoft }}>天以后</div>
+                                </div>
+                            </div>
+                            {/* 角色感想 */}
+                            <div className="mt-4 flex items-start gap-2.5 px-3 py-2.5" style={{ background: '#fff', borderRadius: 12, boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.12)' }}>
+                                {(() => {
+                                    const ch = characters.find(c => c.id === upcomingAnni.charId);
+                                    return ch?.avatar?.startsWith('http') || ch?.avatar?.startsWith('data:')
+                                        ? <img src={ch!.avatar} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                                        : <span className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0" style={{ background: '#f3ead7' }}>{ch?.avatar || '🌸'}</span>;
+                                })()}
+                                <div className="text-[13px] leading-relaxed" style={{ color: theme.ink, fontFamily: HAND_FONT }}>
+                                    「{upcomingAnni.aiThought || '让 ta 翻翻日历……'}」
+                                </div>
+                            </div>
+                        </PaperNote>
+                    )}
+
+                    {/* 要做的事 Tab */}
+                    {activeTab === 'quest' && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-3 pl-1">
+                                <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: theme.accent }} />
+                                <h3 className="text-[14px] font-black" style={{ fontFamily: HAND_FONT, color: theme.ink }}>正钉着的约定</h3>
+                            </div>
+
+                            {openTasks.length === 0 && (
+                                <div className="text-center py-12" style={{ border: `2px dashed ${theme.inkSoft}55`, borderRadius: 16 }}>
+                                    <div className="text-[28px] mb-1">🧷</div>
+                                    <div className="text-[12px]" style={{ color: theme.inkSoft }}>还没钉上任何约定</div>
+                                </div>
+                            )}
+
+                            <div className="space-y-4">
+                                {openTasks.map(task => {
+                                    const supervisor = characters.find(c => c.id === task.supervisorId);
+                                    const isProcessing = processingTaskIds.has(task.id);
+                                    return (
+                                        <PaperNote key={task.id} className="px-4 py-4" rotate={tinyRotate(task.id)} bg={theme.noteBg}>
+                                            <WashiTape className="-top-2 left-6" color={theme.tape} rotate={-10} width={56} />
+                                            <div className="flex items-center gap-3">
+                                                <div className="relative shrink-0">
+                                                    {supervisor?.avatar?.startsWith('http') || supervisor?.avatar?.startsWith('data:')
+                                                        ? <img src={supervisor!.avatar} className="w-12 h-12 rounded-full object-cover" style={{ border: '2px solid #fff' }} />
+                                                        : <span className="w-12 h-12 rounded-full flex items-center justify-center text-xl" style={{ background: '#f3ead7' }}>{supervisor?.avatar || '👤'}</span>}
+                                                    <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black" style={{ background: theme.accent, color: '#fff7ef' }}>盯</span>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-[15px] font-bold leading-snug" style={{ fontFamily: HAND_FONT, color: theme.ink }}>{task.title}</div>
+                                                    <div className="text-[10px] mt-0.5" style={{ color: theme.inkSoft }}>监督人 · {supervisor?.name || '未指定'}</div>
+                                                </div>
+                                                {isProcessing ? (
+                                                    <div className="flex items-center gap-1.5 px-2 shrink-0">
+                                                        <span className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: `${theme.accent}`, borderTopColor: 'transparent' }} />
+                                                        <span className="text-[10px] font-bold animate-pulse" style={{ color: theme.accent }}>验收中</span>
+                                                    </div>
+                                                ) : (
+                                                    <button onClick={() => handleToggleTask(task)} className="shrink-0 active:scale-90 transition-transform" title="盖个完成章">
+                                                        <Postmark size={46} color={theme.accent} rotate={-8}>办妥</Postmark>
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <button onClick={() => handleDeleteTask(task.id)} className="absolute top-1.5 right-2.5 text-[14px] active:scale-90" style={{ color: theme.inkSoft }}>✕</button>
+                                        </PaperNote>
+                                    );
+                                })}
+                            </div>
+
+                            {doneTasks.length > 0 && (
+                                <div className="mt-8">
+                                    <h3 className="text-[12px] font-bold mb-3 pl-1" style={{ color: theme.inkSoft }}>—— 已经办妥 ——</h3>
+                                    <div className="space-y-1.5">
+                                        {doneTasks.map(task => (
+                                            <div key={task.id} className="flex items-center gap-2 py-1.5 px-2" style={{ borderBottom: `1px dashed ${theme.inkSoft}44` }}>
+                                                <span className="text-[11px] font-black" style={{ color: theme.accent }}>✓</span>
+                                                <span className="text-[13px] flex-1" style={{ color: theme.inkSoft, textDecoration: 'line-through', fontFamily: HAND_FONT }}>{task.title}</span>
+                                                <button onClick={() => handleDeleteTask(task.id)} className="text-[11px] active:scale-90" style={{ color: theme.inkSoft }}>撕掉</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 数着的日子 Tab */}
+                    {activeTab === 'server_events' && (
+                        <div className="relative pl-5" style={{ borderLeft: `2px dashed ${theme.inkSoft}55`, marginLeft: 6 }}>
+                            <h3 className="text-[14px] font-black mb-5 -ml-5 pl-5" style={{ fontFamily: HAND_FONT, color: theme.ink }}>一页页贴着的日子</h3>
+                            <div className="space-y-4 mb-8">
+                                {anniversaries.length === 0 && (
+                                    <div className="text-[12px] -ml-2" style={{ color: theme.inkSoft }}>还没贴上任何日子，点右上角 ＋ 来一张</div>
+                                )}
+                                {anniversaries.map(a => {
+                                    const ch = characters.find(c => c.id === a.charId);
+                                    const days = getDaysUntil(a.date);
+                                    return (
+                                        <div key={a.id} className="relative">
+                                            <span className="absolute -left-[26px] top-4 w-3 h-3 rounded-full" style={{ background: theme.accent, boxShadow: '0 0 0 3px rgba(255,255,255,0.8)' }} />
+                                            <PaperNote className="px-4 py-3" rotate={tinyRotate(a.id)} bg={theme.noteBg}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="min-w-0">
+                                                        <div className="text-[15px] font-bold" style={{ fontFamily: HAND_FONT, color: theme.ink }}>{a.title}</div>
+                                                        <div className="text-[10px] mt-0.5" style={{ color: theme.inkSoft }}>{a.date} · {ch?.name || '—'}</div>
+                                                    </div>
+                                                    <div className="text-right shrink-0" style={{ fontFamily: HAND_FONT }}>
+                                                        <div className="text-[18px] font-black leading-none" style={{ color: theme.accent }}>{days > 0 ? `还有${days}` : (days === 0 ? '今天' : `过了${-days}`)}</div>
+                                                        <div className="text-[9px]" style={{ color: theme.inkSoft }}>{days > 0 ? '天' : (days === 0 ? '就是今天' : '天')}</div>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => handleDeleteAnni(a.id)} className="absolute top-1 right-2 text-[13px] active:scale-90" style={{ color: theme.inkSoft }}>✕</button>
+                                            </PaperNote>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {doneTasks.length > 0 && (
+                                <div>
+                                    <h3 className="text-[13px] font-black mb-4 -ml-5 pl-5" style={{ fontFamily: HAND_FONT, color: theme.inkSoft }}>办妥的事 · 存档</h3>
+                                    <div className="space-y-3">
+                                        {doneTasks.sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).map(t => (
+                                            <div key={t.id} className="relative">
+                                                <span className="absolute -left-[26px] top-2 w-3 h-3 rounded-full" style={{ background: theme.inkSoft, boxShadow: '0 0 0 3px rgba(255,255,255,0.8)' }} />
+                                                <div className="text-[10px]" style={{ color: theme.inkSoft }}>{new Date(t.completedAt || 0).toLocaleDateString()} · 盖了完成章</div>
+                                                <div className="text-[14px] font-bold pl-2 mt-0.5" style={{ fontFamily: HAND_FONT, color: theme.ink, borderLeft: `3px solid ${theme.accent}` }}>{t.title}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* 新建约定 弹窗 */}
+            {showTaskModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={() => setShowTaskModal(false)}>
+                    <div className="absolute inset-0 bg-black/45 animate-fade-in" />
+                    <div className="relative w-full max-w-sm animate-slide-up" style={{ background: theme.noteBg, borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(-0.6deg)' }} onClick={e => e.stopPropagation()}>
+                        <WashiTape className="-top-2 left-10" color={theme.tape} rotate={-12} width={80} />
+                        <WashiTape className="-top-2 right-10" color={theme.tape} rotate={10} width={80} />
+                        <div className="p-6">
+                            <div className="text-[22px] font-black mb-1" style={{ fontFamily: HAND_FONT, color: theme.ink }}>钉一条新约定</div>
+                            <div className="text-[11px] mb-4" style={{ color: theme.inkSoft }}>写下要做的事，挑一位角色来盯着你</div>
+                            <input autoFocus value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} placeholder="比如：今晚背完 20 个单词" className="w-full px-4 py-3 text-[14px] focus:outline-none" style={{ background: '#fff', borderRadius: 12, color: theme.ink, fontFamily: HAND_FONT, boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.18)' }} />
+                            <div className="mt-5">
+                                <TapeLabel color="#e8c8a0" className="mb-3">谁来当监督人</TapeLabel>
+                                <div className="mt-3"><CharPicker value={newTaskSupervisor} onPick={setNewTaskSupervisor} /></div>
+                            </div>
+                            <div className="flex gap-2 mt-6">
+                                <button onClick={() => setShowTaskModal(false)} className="px-4 py-3 text-[13px] font-bold active:scale-95 transition-transform" style={{ background: '#f0e9da', color: theme.inkSoft, borderRadius: 12 }}>先不了</button>
+                                <button onClick={handleAddTask} disabled={!newTaskTitle.trim()} className="flex-1 py-3 text-[15px] font-black active:scale-95 transition-transform disabled:opacity-40" style={{ background: theme.accent, color: '#fff7ef', borderRadius: 12, fontFamily: HAND_FONT, letterSpacing: 1 }}>钉上去</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 添加日子 弹窗 */}
+            {showAnniModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={() => setShowAnniModal(false)}>
+                    <div className="absolute inset-0 bg-black/45 animate-fade-in" />
+                    <div className="relative w-full max-w-sm animate-slide-up" style={{ background: theme.noteBg, borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: 'rotate(0.6deg)' }} onClick={e => e.stopPropagation()}>
+                        <WashiTape className="-top-2 left-10" color={theme.tape} rotate={-10} width={80} />
+                        <WashiTape className="-top-2 right-10" color={theme.tape} rotate={12} width={80} />
+                        <div className="p-6">
+                            <div className="text-[22px] font-black mb-1" style={{ fontFamily: HAND_FONT, color: theme.ink }}>贴一个要数的日子</div>
+                            <div className="text-[11px] mb-4" style={{ color: theme.inkSoft }}>取个名、定个日期，再关联一位角色</div>
+                            <input value={newAnniTitle} onChange={e => setNewAnniTitle(e.target.value)} placeholder="比如：第一次见面" className="w-full px-4 py-3 text-[14px] focus:outline-none mb-3" style={{ background: '#fff', borderRadius: 12, color: theme.ink, fontFamily: HAND_FONT, boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.18)' }} />
+                            <input type="date" value={newAnniDate} onChange={e => setNewAnniDate(e.target.value)} className="w-full px-4 py-3 text-[14px] focus:outline-none" style={{ background: '#fff', borderRadius: 12, color: theme.ink, boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.18)' }} />
+                            <div className="mt-5">
+                                <TapeLabel color="#e8c8a0" className="mb-3">和谁有关</TapeLabel>
+                                <div className="mt-3"><CharPicker value={newAnniChar} onPick={setNewAnniChar} /></div>
+                            </div>
+                            <div className="flex gap-2 mt-6">
+                                <button onClick={() => setShowAnniModal(false)} className="px-4 py-3 text-[13px] font-bold active:scale-95 transition-transform" style={{ background: '#f0e9da', color: theme.inkSoft, borderRadius: 12 }}>先不了</button>
+                                <button onClick={handleAddAnni} disabled={!newAnniTitle.trim() || !newAnniDate} className="flex-1 py-3 text-[15px] font-black active:scale-95 transition-transform disabled:opacity-40" style={{ background: theme.accent, color: '#fff7ef', borderRadius: 12, fontFamily: HAND_FONT, letterSpacing: 1 }}>贴上去</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </PaperPage>
     );
 };
 
