@@ -98,11 +98,11 @@ const Postmark: React.FC<{ children: React.ReactNode; className?: string }> = ({
     </span>
 );
 
-/** 方形老照片头像（黑白 + 照片角 + 微旋转）。无图时落角色名首字。 */
+/** 方形老照片头像（照片角 + 微旋转）。无图时落角色名首字。 */
 const Avatar: React.FC<{ name: string; src?: string; sizeClass?: string; tilt?: string }> = ({ name, src, sizeClass = 'w-12 h-12 text-base', tilt = '-rotate-2' }) => (
     <div className={`relative shrink-0 ${tilt}`}>
         {src
-            ? <img src={src} alt={name} className={`${sizeClass} object-cover border-2 border-black grayscale`} style={{ boxShadow: '2px 2px 0 #000' }} />
+            ? <img src={src} alt={name} className={`${sizeClass} object-cover border-2 border-black`} style={{ boxShadow: '2px 2px 0 #000' }} />
             : <div className={`${sizeClass} border-2 border-black bg-white flex items-center justify-center font-serif font-bold text-black`} style={{ boxShadow: '2px 2px 0 #000' }}>{name[0] || '某'}</div>}
         {/* 左上照片角 */}
         <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-black" />

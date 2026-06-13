@@ -28,6 +28,7 @@ const importers: Partial<Record<AppID, () => Promise<unknown>>> = {
   [AppID.XhsFreeRoam]: () => import('../../apps/XhsFreeRoamApp'),
   [AppID.Browser]: () => import('../../apps/BrowserApp'),
   [AppID.Songwriting]: () => import('../../apps/SongwritingApp'),
+  [AppID.Creative]: () => import('../../apps/CreativeStudioApp'),
   [AppID.Music]: () => import('../../apps/MusicApp'),
   [AppID.Call]: () => import('../../apps/CallApp'),
   [AppID.Phone]: () => import('../../apps/PhoneApp'),

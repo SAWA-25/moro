@@ -75,8 +75,10 @@ function mkPendingItem(l: SongLine): TimelineItem { return { kind: 'pending', da
 
 // --- Main App ---
 
-const SongwritingApp: React.FC = () => {
+/** onExit：嵌在「创作社」壳里时，顶层返回回到创作社首页而非直接关到桌面。未传则回桌面。 */
+const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, openApp, songs, addSong, updateSong, deleteSong, characters, apiConfig, addToast, userProfile } = useOS();
+    const exitApp = onExit ?? closeApp;
     const { addLocalSong, removeLocalSong, localAlbumSongs, playSong, current: currentMusicSong, markRegenerating } = useMusic();
 
     // Navigation
@@ -1265,7 +1267,7 @@ const SongwritingApp: React.FC = () => {
                 {/* Header */}
                 <div className="h-24 flex items-end pb-4 px-6 shrink-0 z-10 relative">
                     <div className="flex justify-between items-center w-full">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-white/60 active:scale-95 transition-transform" style={{ color: MusicC.primary }}>
+                        <button onClick={exitApp} className="p-2 -ml-2 rounded-full hover:bg-white/60 active:scale-95 transition-transform" style={{ color: MusicC.primary }}>
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
                         <div className="text-center flex flex-col items-center">
