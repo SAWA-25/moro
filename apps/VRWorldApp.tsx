@@ -4,6 +4,8 @@ import {
     ArrowLeft, Plus, Trash, BookOpen, Planet, Clock, Play, CaretRight, X,
     UploadSimple, PencilSimple, FlipHorizontal, CaretLeft, Sparkle,
     CircleNotch, TextAa, Palette, Pause, MusicNotes, Queue, Question, Check, Gear,
+    Camera, Shuffle, Sticker, Smiley, Confetti, Heart, Star, MagicWand,
+    ArrowsClockwise, UsersThree, HandWaving, Scissors,
 } from '@phosphor-icons/react';
 import TheaterPanel from './theater/TheaterPanel';
 import { CreatorIframe, type ChibiResult } from '../components/Like520Event';
@@ -66,10 +68,101 @@ const stripSelfName = (text: string | undefined, name: string | undefined): stri
     }
     return text;
 };
-import type { CharacterProfile, UserProfile, VRWorldNovel, VRNovelAnnotation, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, VRGuestbookState, VRGuestbookMessage, VRLetter, ApiPreset, APIConfig } from '../types';
+import type { CharacterProfile, UserProfile, VRWorldNovel, VRNovelAnnotation, VRCardMeta, VRRoomId, VRMusicRoomState, CharPlaylistSong, VRGuestbookState, VRGuestbookMessage, VRLetter, ApiPreset, APIConfig, VRChibi } from '../types';
 
 // ============ chibi 形象解析（vrState.chibi → 立绘 → 头像） ============
 import { getChibi } from '../utils/vrWorld/chibi';
+
+// ============ 页外 · 拼贴手账主题 ============
+// 整套界面用一种语言：牛皮纸/卡纸 + 墨水手写字 + 胶带/便签/贴纸/邮戳。
+// 全部颜色、字体、基元都收口在这里，组件只取用，不再各自硬编码深色太空风。
+const HAND = `'LXGW WenKai','Kaiti SC','STKaiti','KaiTi','楷体','Noto Serif SC',serif`;
+const PAPER = {
+    page: '#ece2cd',     // 主页面：暖牛皮纸
+    paper: '#fbf6ea',    // 干净卡纸
+    cream: '#f6efdd',    // 微黄卡纸
+    ink: '#3f3526',      // 墨色正文
+    inkSoft: '#7c6f57',  // 次级墨
+    inkFaint: '#a99d82', // 极淡墨
+    line: '#d8caa9',     // 网格/分隔
+    edge: '#c9b793',     // 卡片描边
+    red: '#c0563f',      // 红印章/马克笔
+    teal: '#2f8a80',     // 青绿点缀
+};
+// 便签纸随机色（拼贴感）
+const NOTE_COLORS = ['#fff3c4', '#ffe1e7', '#d9edd7', '#d7e7f6', '#f1e3cf', '#eadff5', '#ffe9cc'];
+// 胶带（washi tape）半透明色
+const TAPE_COLORS = ['rgba(238,196,110,.66)', 'rgba(150,200,180,.6)', 'rgba(232,158,168,.55)', 'rgba(154,184,222,.55)', 'rgba(198,170,224,.55)'];
+// 每个房间一套拼贴主题（胶带色 / emoji 贴纸 / 墨色 / 卡纸底）
+const ROOM_THEME: Record<VRRoomId, { tape: string; sticker: string; ink: string; paper: string }> = {
+    plaza:      { tape: 'rgba(198,164,228,.62)', sticker: '🎪', ink: '#5b3f7a', paper: '#efe4fb' },
+    library:    { tape: 'rgba(224,180,110,.62)', sticker: '📖', ink: '#7a5326', paper: '#f6ecd6' },
+    music:      { tape: 'rgba(232,150,170,.58)', sticker: '🎧', ink: '#9a3f5e', paper: '#fce3ea' },
+    guestbook:  { tape: 'rgba(150,190,225,.6)',  sticker: '📌', ink: '#2f5f86', paper: '#e2eef9' },
+    gym:        { tape: 'rgba(140,200,160,.6)',  sticker: '🎮', ink: '#2f6b46', paper: '#e1f0e3' },
+    postoffice: { tape: 'rgba(212,182,132,.62)', sticker: '✉️', ink: '#7a5a2b', paper: '#f1e6cf' },
+    theater:    { tape: 'rgba(206,150,200,.56)', sticker: '🎭', ink: '#6b3a66', paper: '#f1e0ee' },
+    cafe:       { tape: 'rgba(214,170,120,.58)', sticker: '🥟', ink: '#6e4a2a', paper: '#efe2cf' },
+};
+const roomTheme = (id: VRRoomId) => ROOM_THEME[id] || ROOM_THEME.plaza;
+// 由字符串确定性地取一个便签色 / 一个小倾角，让每张拼贴卡都歪一点、颜色各异
+const seedNum = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff; return h; };
+const noteColor = (s: string) => NOTE_COLORS[seedNum(s) % NOTE_COLORS.length];
+const tiltOf = (s: string, amp = 2.4) => (((seedNum(s) % 100) / 100) * 2 - 1) * amp; // -amp..amp 度
+// 小人姿势 → 动画（世界房间里小人更生动；解析自 LLM 的 <姿势>）
+const POSE_ANIM: Record<string, string> = {
+    idle: 'vrfloat 3.4s ease-in-out infinite',
+    bob: 'ywbob 1.8s ease-in-out infinite',
+    wiggle: 'ywwiggle 1.1s ease-in-out infinite',
+    jump: 'ywjump 0.9s ease-in-out infinite',
+    spin: 'ywspin 2.4s linear infinite',
+    nod: 'ywnod 1.4s ease-in-out infinite',
+    dance: 'vrdance 0.9s ease-in-out infinite',
+};
+const poseAnim = (pose?: string, fallback = 'vrfloat 3.2s ease-in-out infinite') => (pose && POSE_ANIM[pose]) || fallback;
+const POSE_LIST: { key: string; label: string }[] = [
+    { key: 'idle', label: '随意' }, { key: 'bob', label: '轻晃' }, { key: 'wiggle', label: '扭扭' },
+    { key: 'jump', label: '蹦跶' }, { key: 'spin', label: '转圈' }, { key: 'nod', label: '点头' },
+];
+const STICKER_CHOICES = ['', '⭐', '💛', '🌸', '🍬', '🎀', '☁️', '🔥', '🫧', '✨', '🍀', '🐾'];
+
+// —— 拼贴基元 ——
+// 一段胶带（washi tape），贴在卡片顶/角
+const Tape: React.FC<{ color?: string; className?: string; style?: React.CSSProperties; w?: number }> = ({ color, className, style, w = 46 }) => (
+    <span className={`pointer-events-none absolute ${className || ''}`} aria-hidden="true"
+        style={{ width: w, height: 16, background: color || TAPE_COLORS[0], opacity: 0.92, boxShadow: '0 1px 2px rgba(0,0,0,.12)', ...style }} />
+);
+// 图钉
+const Pin: React.FC<{ color?: string; className?: string; style?: React.CSSProperties }> = ({ color = PAPER.red, className, style }) => (
+    <span className={`pointer-events-none absolute rounded-full ${className || ''}`} aria-hidden="true"
+        style={{ width: 9, height: 9, background: `radial-gradient(circle at 35% 30%, #fff7, ${color})`, boxShadow: '0 1.5px 2px rgba(0,0,0,.35)', ...style }} />
+);
+// 一张拼贴卡纸（轻微歪斜 + 纸感阴影 + 描边）
+const Card: React.FC<{ children: React.ReactNode; tilt?: number; color?: string; className?: string; style?: React.CSSProperties; onClick?: () => void }>
+    = ({ children, tilt = 0, color, className, style, onClick }) => (
+    <div onClick={onClick} className={`relative ${className || ''}`}
+        style={{ background: color || PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, transform: tilt ? `rotate(${tilt}deg)` : undefined, boxShadow: '0 3px 0 rgba(120,100,60,.10), 0 8px 18px rgba(80,64,30,.16)', ...style }}>
+        {children}
+    </div>
+);
+// 手写小标签（贴纸/便签标题）
+const InkTag: React.FC<{ children: React.ReactNode; color?: string; className?: string; style?: React.CSSProperties }> = ({ children, color, className, style }) => (
+    <span className={`inline-flex items-center px-2 py-0.5 text-[11px] ${className || ''}`}
+        style={{ fontFamily: HAND, color: PAPER.ink, background: color || '#fff3c4', border: `1px solid ${PAPER.edge}`, borderRadius: 4, boxShadow: '0 1px 2px rgba(80,64,30,.18)', ...style }}>{children}</span>
+);
+// 缝线虚线分隔
+const Stitch: React.FC<{ className?: string; color?: string }> = ({ className, color }) => (
+    <div className={className} style={{ height: 0, borderTop: `1.5px dashed ${color || PAPER.line}` }} />
+);
+// 纸质按钮（实心马克笔块）
+const InkBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'ink' | 'red' | 'teal' | 'soft' }> = ({ tone = 'ink', className, style, children, ...rest }) => {
+    const bg = tone === 'red' ? PAPER.red : tone === 'teal' ? PAPER.teal : tone === 'soft' ? '#fff3c4' : PAPER.ink;
+    const fg = tone === 'soft' ? PAPER.ink : '#fbf3e0';
+    return (
+        <button {...rest} className={`active:translate-y-px transition-transform disabled:opacity-40 ${className || ''}`}
+            style={{ fontFamily: HAND, background: bg, color: fg, border: `1px solid ${tone === 'soft' ? PAPER.edge : 'rgba(0,0,0,.18)'}`, borderRadius: 8, boxShadow: '0 2px 0 rgba(0,0,0,.18)', ...style }}>{children}</button>
+    );
+};
 
 type Tab = 'world' | 'library' | 'settings' | 'api';
 
@@ -81,6 +174,7 @@ interface FeedItem {
 
 // 每个房间的 chibi 站位（百分比坐标，底对齐）
 const ROOM_SLOTS: Record<VRRoomId, { x: number; y: number }[]> = {
+    plaza:     [{ x: 20, y: 72 }, { x: 38, y: 78 }, { x: 56, y: 74 }, { x: 74, y: 80 }, { x: 30, y: 64 }, { x: 50, y: 66 }, { x: 68, y: 62 }, { x: 84, y: 70 }],
     library:   [{ x: 24, y: 72 }, { x: 50, y: 78 }, { x: 74, y: 70 }, { x: 38, y: 64 }, { x: 62, y: 64 }],
     music:     [{ x: 30, y: 74 }, { x: 55, y: 78 }, { x: 72, y: 70 }, { x: 45, y: 66 }],
     guestbook: [{ x: 28, y: 76 }, { x: 52, y: 78 }, { x: 73, y: 74 }, { x: 40, y: 68 }],
@@ -91,6 +185,7 @@ const ROOM_SLOTS: Record<VRRoomId, { x: number; y: number }[]> = {
 };
 
 const IDLE_QUIPS: Record<VRRoomId, string[]> = {
+    plaza: ['嗨呀～', '又见面啦', '今天也来报到', '谁要一起合影', '在广场上晃悠', '凑个热闹', '换了身新衣服', '比个耶✌️'],
     library: ['翻着书页…', '这本还挺好看', '嘘，安静', '又是看书的一天'],
     music: ['随节奏轻晃', '这首单曲循环', '戴上耳机', '调一下音量'],
     guestbook: ['写点什么呢', '路过留个名', '看看墙上的话', '嗯…'],
@@ -139,7 +234,7 @@ const VRWorldApp: React.FC = () => {
     // 启用流程：设定 chibi 后回调启用
     const [pendingEnable, setPendingEnable] = useState<string | null>(null);
 
-    // 初次进入彼方：自动弹出玩法说明（看过一次后不再自动弹）
+    // 初次进入页外：自动弹出玩法说明（看过一次后不再自动弹）
     useEffect(() => {
         try {
             if (!localStorage.getItem('vr_help_seen')) {
@@ -153,9 +248,9 @@ const VRWorldApp: React.FC = () => {
     const loadFeed = useCallback(async () => {
         const items: FeedItem[] = [];
         for (const c of characters) {
-            // 彼方动态取数走 getVRCardsByCharId：全量捞该角色的 vr_card，不受"最近 N 条窗口"、
+            // 页外动态取数走 getVRCardsByCharId：全量捞该角色的 vr_card，不受"最近 N 条窗口"、
             // 记忆宫殿高水位线（mp_lastMsgId_<charId>）、归档隐藏起点（hideBeforeMessageId）影响。
-            // 这些机制只管「LLM 上下文能不能看到」——而彼方动态是用户自己的浏览界面，
+            // 这些机制只管「LLM 上下文能不能看到」——而页外动态是用户自己的浏览界面，
             // 只要消息还在 IndexedDB 里就该一直能看到：
             //   · 记忆宫殿后台向量化推高水位 → 动态不该突然清零；
             //   · 角色记忆归档把旧聊天标记为"对 AI 隐藏" → 这些动态依旧存在，用户仍要能回看；
@@ -211,7 +306,7 @@ const VRWorldApp: React.FC = () => {
                 (map[room] ||= []).push(c);
             }
         }
-        // 用户本人接入彼方且设了 chibi → 作为伪 occupant 站进自己挂着的房间
+        // 用户本人接入页外且设了 chibi → 作为伪 occupant 站进自己挂着的房间
         const uv = userProfile?.vrState;
         if (uv?.enabled && uv.chibi?.img) {
             const room = uv.currentRoom || 'guestbook';
@@ -241,7 +336,7 @@ const VRWorldApp: React.FC = () => {
         if (n) setReaderJump({ novel: n, seg: segIdx });
     }, [novels]);
 
-    // 用户在留言簿发言：落墙 + 以小卡片广播给所有接入彼方的角色私聊
+    // 用户在留言簿发言：落墙 + 以小卡片广播给所有接入页外的角色私聊
     const onUserBoardPost = useCallback(async (content: string) => {
         const t = content.trim();
         if (!t) return;
@@ -254,27 +349,27 @@ const VRWorldApp: React.FC = () => {
         for (const c of enabled) {
             await DB.saveMessage({
                 charId: c.id, role: 'user', type: 'vr_card',
-                content: `「彼方 · 留言簿」${userName} 在留言墙上发了：${t}`,
+                content: `「页外 · 留言簿」${userName} 在留言墙上发了：${t}`,
                 metadata: { vrCard: true, room: 'guestbook', userBoardPost: true, activity: `${userName} 在留言墙上发了：${t}`, boardPost: t },
             } as any);
         }
         addToast?.(enabled.length > 0 ? `已留言，并广播给 ${enabled.length} 位接入角色` : '已留言', 'success');
     }, [characters, userName, addToast]);
 
-    // 用户更新自己的彼方状态：以行为卡片广播给所有接入彼方的角色（机制同留言簿发言）
+    // 用户更新自己的页外状态：以行为卡片广播给所有接入页外的角色（机制同留言簿发言）
     const onUserVRBroadcast = useCallback(async (room: VRRoomId, activity: string) => {
-        const roomName = VR_ROOMS.find(r => r.id === room)?.name || '彼方';
-        const act = (activity || '').trim() || '在彼方里挂机放空';
-        const line = `${userName} 现在在「彼方 · ${roomName}」：${act}`;
+        const roomName = VR_ROOMS.find(r => r.id === room)?.name || '页外';
+        const act = (activity || '').trim() || '在页外里挂机放空';
+        const line = `${userName} 现在在「页外 · ${roomName}」：${act}`;
         const enabled = characters.filter(c => c.vrState?.enabled);
         for (const c of enabled) {
             await DB.saveMessage({
                 charId: c.id, role: 'user', type: 'vr_card',
-                content: `「彼方 · ${roomName}」${line}`,
+                content: `「页外 · ${roomName}」${line}`,
                 metadata: { vrCard: true, room, userBoardPost: true, activity: line },
             } as any);
         }
-        addToast?.(enabled.length > 0 ? `已更新状态，并广播给 ${enabled.length} 位接入角色` : '已更新彼方状态', 'success');
+        addToast?.(enabled.length > 0 ? `已更新状态，并广播给 ${enabled.length} 位接入角色` : '已更新页外状态', 'success');
     }, [characters, userName, addToast]);
 
     const onDeleteFeed = useCallback(async (msgId: number) => {
@@ -286,7 +381,7 @@ const VRWorldApp: React.FC = () => {
         await DB.deleteMessages(ids);
         const idSet = new Set(ids);
         setFeed(prev => prev.filter(f => !idSet.has(f.msgId)));
-        addToast?.(`已删除 ${ids.length} 条彼方动态`, 'success');
+        addToast?.(`已删除 ${ids.length} 条页外动态`, 'success');
     }, [addToast]);
 
     // 启用某角色（带 chibi 设定门槛）
@@ -306,56 +401,71 @@ const VRWorldApp: React.FC = () => {
     };
 
     return (
-        <div className="h-full w-full flex flex-col text-white relative overflow-hidden"
-            style={{ background: 'radial-gradient(130% 90% at 50% -15%, #20283f 0%, #141a2c 38%, #0a0d18 72%, #05060d 100%)' }}>
+        <div className="h-full w-full flex flex-col relative overflow-hidden"
+            style={{ color: PAPER.ink, background: PAPER.page }}>
             <VRStyleTag />
-            {/* 极光辉光 */}
+            {/* 纸张质感：网格 + 颗粒 + 暖角 */}
+            <div className="pointer-events-none absolute inset-0" style={{
+                backgroundImage: `linear-gradient(${PAPER.line}55 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}33 1px, transparent 1px)`,
+                backgroundSize: '22px 22px', opacity: 0.5,
+            }} />
+            <div className="pointer-events-none absolute inset-0" style={{
+                backgroundImage: 'radial-gradient(circle at 20% 18%, rgba(255,255,255,.5), transparent 40%), radial-gradient(circle at 86% 78%, rgba(150,120,70,.10), transparent 45%)',
+            }} />
+            {/* 飘动的小纸片/碎屑 */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                <div className="absolute -top-1/4 -left-1/4 w-[80%] h-[60%] rounded-full"
-                    style={{ background: 'radial-gradient(circle, rgba(120,150,230,.20), transparent 70%)', filter: 'blur(44px)', animation: 'vraurora 15s ease-in-out infinite' }} />
-                <div className="absolute top-1/3 -right-1/4 w-[72%] h-[56%] rounded-full"
-                    style={{ background: 'radial-gradient(circle, rgba(130,212,200,.15), transparent 70%)', filter: 'blur(50px)', animation: 'vraurora 19s ease-in-out infinite reverse' }} />
+                <span className="absolute text-[18px]" style={{ top: '14%', left: '8%', animation: 'ywdrift 9s ease-in-out infinite', opacity: .5 }}>✦</span>
+                <span className="absolute text-[14px]" style={{ top: '64%', right: '10%', animation: 'ywdrift 12s ease-in-out infinite reverse', opacity: .45 }}>✿</span>
+                <span className="absolute text-[12px]" style={{ top: '40%', right: '20%', animation: 'ywdrift 11s ease-in-out infinite', opacity: .4 }}>★</span>
             </div>
-            {/* 星尘 */}
-            <div className="pointer-events-none absolute inset-0"
-                style={{ backgroundImage: 'radial-gradient(1px 1px at 18% 28%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 68% 18%, rgba(200,215,255,.6), transparent), radial-gradient(1px 1px at 82% 58%, rgba(230,220,255,.5), transparent), radial-gradient(1px 1px at 38% 72%, rgba(210,225,255,.5), transparent), radial-gradient(1.5px 1.5px at 52% 42%, rgba(255,255,255,.55), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
 
-            {/* 顶栏 —— 外壳不再统一加 safe-area padding，这里用 --chrome-top 让开
-                安全区 + Moro 状态栏（时间/电量），退出键落在其下方，不再怼到时钟上面。 */}
-            <div className="relative flex items-center gap-2.5 px-5 pb-2.5 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
-                <button onClick={closeApp} className="p-1.5 -ml-1.5 rounded-full text-white/65 active:bg-white/10"><ArrowLeft size={21} weight="regular" /></button>
-                <div className="flex items-center gap-2">
-                    <Planet size={17} weight="light" className="text-indigo-100/90" style={{ filter: 'drop-shadow(0 0 7px rgba(165,185,255,.7))' }} />
-                    <span className="text-[22px] tracking-[0.42em] pl-1"
-                        style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 300, background: 'linear-gradient(100deg,#dcd4ff,#fff,#c2ece6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', filter: 'drop-shadow(0 0 10px rgba(185,185,255,.35))' }}>彼方</span>
+            {/* 顶栏 —— 用 --chrome-top 让开安全区 + Moro 状态栏 */}
+            <div className="relative flex items-center gap-2.5 px-4 pb-2 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
+                <button onClick={closeApp} className="h-8 w-8 -ml-1 flex items-center justify-center rounded-lg active:translate-y-px"
+                    style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}><ArrowLeft size={18} weight="bold" /></button>
+                <div className="relative flex items-center gap-1.5 px-2 py-0.5" style={{ transform: 'rotate(-2deg)' }}>
+                    <Tape color={TAPE_COLORS[0]} w={38} style={{ top: -7, left: 10, transform: 'rotate(-8deg)' }} />
+                    <Scissors size={18} weight="bold" style={{ color: PAPER.red }} />
+                    <span className="text-[25px] leading-none" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink, letterSpacing: '0.06em' }}>页外</span>
                 </div>
-                <span className="ml-auto text-[10.5px] tracking-[0.12em] text-white/45 font-light">
-                    {enabledCount > 0 ? `${enabledCount} 位漫游其中` : '尚无人接入'}
+                <span className="ml-auto text-[10.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>
+                    {enabledCount > 0 ? `${enabledCount} 个小人在场` : '还没人捏小人'}
                 </span>
                 <button onClick={() => setShowHelp(true)} aria-label="玩法说明"
-                    className="ml-2.5 h-7 w-7 rounded-full flex items-center justify-center text-white/70 active:bg-white/10 shrink-0"
-                    style={{ border: '1px solid rgba(255,255,255,.22)' }}>
+                    className="ml-1.5 h-7 w-7 rounded-full flex items-center justify-center active:translate-y-px shrink-0"
+                    style={{ background: '#fff3c4', border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)', transform: 'rotate(4deg)' }}>
                     <Question size={14} weight="bold" />
                 </button>
             </div>
 
-            {/* Tab — 发丝下划线 */}
-            <div className="relative flex px-5 gap-6 shrink-0 z-10 pb-px">
-                {([['world', '世界'], ['library', '书库'], ['settings', '接入'], ['api', 'API']] as [Tab, string][]).map(([t, label]) => (
-                    <button key={t} onClick={() => setTab(t)} className="relative pb-2 text-[13.5px] tracking-[0.22em] transition-colors"
-                        style={{ fontFamily: `'Noto Serif SC',serif`, color: tab === t ? 'rgba(255,255,255,.95)' : 'rgba(255,255,255,.38)' }}>
-                        {label}
-                        {tab === t && <span className="absolute -bottom-px left-1/2 -translate-x-1/2 w-5 h-px"
-                            style={{ background: 'linear-gradient(90deg,transparent,rgba(205,205,255,.95),transparent)', boxShadow: '0 0 8px rgba(185,185,255,.85)' }} />}
-                    </button>
-                ))}
-                <div className="absolute bottom-0 left-5 right-5 h-px" style={{ background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent)' }} />
+            {/* Tab — washi 胶带索引页签 */}
+            <div className="relative flex px-4 gap-2 shrink-0 z-10" style={{ marginBottom: -1 }}>
+                {([['world', '世界', '🌎'], ['library', '书库', '📚'], ['settings', '接入', '🔌'], ['api', 'API', '⚙️']] as [Tab, string, string][]).map(([t, label, emo], i) => {
+                    const on = tab === t;
+                    return (
+                        <button key={t} onClick={() => setTab(t)}
+                            className="relative px-3 pt-1.5 pb-2 text-[13px] active:translate-y-px"
+                            style={{
+                                fontFamily: HAND, fontWeight: on ? 700 : 500,
+                                color: on ? PAPER.ink : PAPER.inkFaint,
+                                background: on ? PAPER.paper : 'transparent',
+                                border: on ? `1px solid ${PAPER.edge}` : '1px solid transparent',
+                                borderBottom: on ? `1px solid ${PAPER.paper}` : '1px solid transparent',
+                                borderTopLeftRadius: 9, borderTopRightRadius: 9,
+                                transform: `rotate(${on ? 0 : tiltOf(t, 2)}deg)`,
+                            }}>
+                            {on && <Tape color={TAPE_COLORS[(i + 1) % TAPE_COLORS.length]} w={30} style={{ top: -8, left: '50%', marginLeft: -15, transform: 'rotate(-4deg)' }} />}
+                            <span className="mr-0.5">{emo}</span>{label}
+                        </button>
+                    );
+                })}
+                <div className="absolute bottom-0 left-2 right-2 h-px" style={{ background: PAPER.edge }} />
             </div>
 
             {/* 滚动容器不同于浮动 dock：滚到底时最后一条内容贴 viewport bottom = 屏幕底，必须 + safe-bottom 让位 home 条，否则翻页按钮被压（即原 #158 报的问题）。 */}
             <div className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 z-10" style={{ paddingTop: '1rem', paddingBottom: `calc(1rem + ${VR_SAFE_BOTTOM})` }}>
                 {loading ? (
-                    <div className="text-center text-white/40 text-[13px] tracking-[0.2em] py-12" style={{ fontFamily: `'Noto Serif SC',serif` }}>载入彼方…</div>
+                    <div className="text-center text-[13px] py-12" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>正在翻开页外…</div>
                 ) : tab === 'world' ? (
                     <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length} poBadge={poBadge}
                         onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} onJump={jumpToAnnotation}
@@ -381,7 +491,9 @@ const VRWorldApp: React.FC = () => {
             {enterRoom && (
                 <RoomScene roomId={enterRoom} occupants={occupantsByRoom[enterRoom] || []}
                     latestByChar={latestByChar} onClose={() => setEnterRoom(null)} onJump={jumpToAnnotation}
-                    characters={characters} userName={userName} onUserBoardPost={onUserBoardPost} addToast={addToast} />
+                    characters={characters} userName={userName} onUserBoardPost={onUserBoardPost} addToast={addToast}
+                    userProfile={userProfile} updateCharacter={updateCharacter} updateUserProfile={updateUserProfile}
+                    onDressUp={(c) => setChibiEditChar(c)} onDressUpUser={() => setChibiEditUser(true)} />
             )}
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
             {readerNovel && <ReaderModal novel={readerNovel} characters={characters} onClose={() => setReaderNovel(null)} />}
@@ -397,8 +509,8 @@ const VRWorldApp: React.FC = () => {
             {chibiEditChar && (
                 <ChibiEditor char={chibiEditChar}
                     onClose={() => { setChibiEditChar(null); setPendingEnable(null); }}
-                    onSave={(chibi) => {
-                        updateCharacter(chibiEditChar.id, { vrState: { ...(chibiEditChar.vrState || { enabled: false, intervalMinutes: VR_DEFAULT_INTERVAL_MIN }), chibi } });
+                    onSave={(chibi, looks) => {
+                        updateCharacter(chibiEditChar.id, { vrState: { ...(chibiEditChar.vrState || { enabled: false, intervalMinutes: VR_DEFAULT_INTERVAL_MIN }), chibi, chibiLooks: looks } });
                         const wasPending = pendingEnable === chibiEditChar.id;
                         const charSnap = chibiEditChar;
                         setChibiEditChar(null);
@@ -406,20 +518,20 @@ const VRWorldApp: React.FC = () => {
                             setPendingEnable(null);
                             // 用最新 interval 启用
                             const interval = charSnap.vrState?.intervalMinutes || VR_DEFAULT_INTERVAL_MIN;
-                            updateCharacter(charSnap.id, { vrState: { ...(charSnap.vrState || {}), chibi, enabled: true, intervalMinutes: interval } });
+                            updateCharacter(charSnap.id, { vrState: { ...(charSnap.vrState || {}), chibi, chibiLooks: looks, enabled: true, intervalMinutes: interval } });
                             VRScheduler.start(charSnap.id, interval);
-                            addToast?.(`${charSnap.name} 已接入彼方`, 'success');
+                            addToast?.(`${charSnap.name} 已接入页外`, 'success');
                         } else {
                             addToast?.('形象已更新', 'success');
                         }
                     }} />
             )}
             {chibiEditUser && (
-                <UserChibiEditor userName={userName} existing={userProfile?.vrState?.chibi}
+                <UserChibiEditor userName={userName} existing={userProfile?.vrState?.chibi} existingLooks={userProfile?.vrState?.chibiLooks}
                     onClose={() => setChibiEditUser(false)}
-                    onSave={(chibi) => {
+                    onSave={(chibi, looks) => {
                         const uv = userProfile?.vrState;
-                        updateUserProfile({ vrState: { ...(uv || {}), enabled: !!uv?.enabled, chibi, updatedAt: Date.now() } });
+                        updateUserProfile({ vrState: { ...(uv || {}), enabled: !!uv?.enabled, chibi, chibiLooks: looks, updatedAt: Date.now() } });
                         setChibiEditUser(false);
                         addToast?.('形象已更新', 'success');
                     }} />
@@ -428,144 +540,66 @@ const VRWorldApp: React.FC = () => {
     );
 };
 
-// ============ 通用：CSS 房间场景背景 ============
+// ============ 通用：拼贴纸感房间背景（纯 CSS，按房间取色）============
 const RoomBackground: React.FC<{ roomId: VRRoomId; className?: string }> = ({ roomId, className }) => {
-    // 每个房间的插画底图（托管在 assets 仓库）。统一套一层"彼方"调性处理：
-    // 降饱和 + 压暗 + 轻柔化把图推远、弱化清晰度，再叠暗紫色洗 + 底部压暗 + 暗角，
-    // 让五个房间是一套风格、且立绘能跳出来。
-    const ROOM_BG: Partial<Record<VRRoomId, string>> = {
-        library: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/BOOK.png',
-        music: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/MUSIC.png',
-        guestbook: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/PLAY.jpg',
-        postoffice: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/post.png',
-        gym: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/ALL.png',
-        theater: 'https://raw.githubusercontent.com/qegj567-cloud/SullyOS-assets/main/img/SHOW.png',
-    };
-    const bgUrl = ROOM_BG[roomId];
-    if (bgUrl) {
-        return (
-            <div className={`absolute inset-0 overflow-hidden ${className || ''}`} style={{ background: '#0a0816' }}>
-                {/* 底图：降饱和/压暗/轻柔化，并略放大避免柔化露边 */}
-                <div className="absolute inset-0" style={{
-                    backgroundImage: `url(${bgUrl})`, backgroundSize: 'cover', backgroundPosition: 'center',
-                    filter: 'saturate(0.78) brightness(0.6) contrast(1.02) blur(1.3px)',
-                    transform: 'scale(1.06)',
-                }} />
-                {/* 统一暗紫色洗 + 底部压暗给立绘让位 */}
-                <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(22,17,46,0.42) 0%, rgba(13,10,30,0.20) 42%, rgba(7,5,18,0.86) 100%)' }} />
-                {/* 暗角 */}
-                <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 92% at 50% 36%, transparent 40%, rgba(5,4,14,0.66) 100%)' }} />
-                {/* 顶部一抹冷紫晕，呼应"彼方"外壳 */}
-                <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(96,72,180,0.16), transparent 28%)' }} />
-            </div>
-        );
-    }
-    if (roomId === 'library') {
-        return (
-            <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#3a2a1c 0%,#2a1d12 60%,#1c130b 100%)' }}>
-                {/* 暖光窗 */}
-                <div className="absolute top-[8%] right-[10%] w-20 h-28 rounded-md" style={{ background: 'linear-gradient(180deg,rgba(255,224,150,.55),rgba(255,180,90,.2))', boxShadow: '0 0 50px 18px rgba(255,200,120,.35)' }} />
-                {/* 书架 */}
-                <div className="absolute left-0 right-0 top-[20%] bottom-[28%]" style={{
-                    backgroundImage: 'repeating-linear-gradient(90deg, #6b4a2b 0 4px, #8a5a30 4px 7px, #5a3a22 7px 14px, #9a6a3a 14px 18px, #4a2f1c 18px 22px)',
-                    opacity: 0.85,
-                }} />
-                {/* 隔板 */}
-                {[28, 44, 60].map(t => <div key={t} className="absolute left-0 right-0 h-1.5" style={{ top: `${t}%`, background: 'linear-gradient(180deg,#3a2615,#1c120a)' }} />)}
-                {/* 地板 */}
-                <div className="absolute left-0 right-0 bottom-0 h-[28%]" style={{ background: 'linear-gradient(180deg,#46301c,#241608)' }} />
-            </div>
-        );
-    }
-    if (roomId === 'music') {
-        return (
-            <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#2a1140 0%,#16082a 70%,#0a0418 100%)' }}>
-                <div className="absolute inset-x-0 top-[18%] flex items-end justify-center gap-1 h-[40%] px-6 opacity-70">
-                    {Array.from({ length: 22 }).map((_, i) => (
-                        <div key={i} className="flex-1 rounded-t" style={{ height: `${30 + (Math.sin(i * 1.7) + 1) * 35}%`, background: 'linear-gradient(180deg,#ff7bd5,#7b5bff)', animation: `vrwave 1.2s ${i * 0.05}s ease-in-out infinite alternate` }} />
-                    ))}
-                </div>
-                <div className="absolute left-0 right-0 bottom-0 h-[26%]" style={{ background: 'linear-gradient(180deg,#1a0a30,#0a0418)' }} />
-            </div>
-        );
-    }
-    if (roomId === 'guestbook') {
-        return (
-            <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#103050 0%,#0a2038 70%,#06121f 100%)' }}>
-                <div className="absolute left-0 right-0 top-[14%] bottom-[28%]" style={{ background: 'linear-gradient(180deg,rgba(120,200,255,.10),rgba(80,160,230,.04))', boxShadow: 'inset 0 0 60px rgba(120,200,255,.2)' }}>
-                    {[[18, 22, -6], [44, 30, 5], [68, 20, -3], [30, 55, 4], [60, 60, -5], [80, 48, 6]].map(([l, t, r], i) => (
-                        <div key={i} className="absolute w-10 h-10 rounded-sm shadow-lg text-[7px] p-1 text-stone-700"
-                            style={{ left: `${l}%`, top: `${t}%`, transform: `rotate(${r}deg)`, background: ['#fff7a8', '#ffd6e7', '#c8f7d4', '#cfe3ff'][i % 4] }} />
-                    ))}
-                </div>
-                <div className="absolute left-0 right-0 bottom-0 h-[26%]" style={{ background: 'linear-gradient(180deg,#0c2236,#06121f)' }} />
-            </div>
-        );
-    }
-    if (roomId === 'postoffice') {
-        return (
-            <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#2a2418 0%,#1c1810 60%,#100d08 100%)' }}>
-                {/* 一墙信格 */}
-                <div className="absolute left-[6%] right-[6%] top-[16%] h-[42%] rounded-sm" style={{
-                    backgroundImage: 'repeating-linear-gradient(90deg, #4a3a22 0 2px, transparent 2px 56px), repeating-linear-gradient(0deg, #4a3a22 0 2px, transparent 2px 40px)',
-                    background: 'rgba(70,52,28,0.25)', boxShadow: 'inset 0 0 30px rgba(0,0,0,.4)',
-                }} />
-                {[20, 44, 68].map((l, i) => (
-                    <div key={i} className="absolute w-6 h-4 rounded-[1px]" style={{ left: `${l}%`, top: `${22 + (i % 2) * 14}%`, transform: `rotate(${i % 2 ? -4 : 5}deg)`, background: ['#f3e7c8', '#e8dcc0', '#efe2c4'][i % 3], boxShadow: '0 2px 5px rgba(0,0,0,.4)' }} />
-                ))}
-                {/* 暖光台灯 */}
-                <div className="absolute top-[10%] right-[14%] w-16 h-16 rounded-full" style={{ background: 'radial-gradient(circle,rgba(255,214,140,.4),transparent 70%)', filter: 'blur(8px)' }} />
-                <div className="absolute left-0 right-0 bottom-0 h-[30%]" style={{ background: 'linear-gradient(180deg,#3a2c18,#160f08)' }} />
-            </div>
-        );
-    }
-    if (roomId === 'cafe') {
-        return (
-            <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#3a2a1e 0%,#271c14 60%,#160f0a 100%)' }}>
-                <div className="absolute top-[20%] left-[18%] w-10 h-12 rounded-t-full" style={{ background: 'radial-gradient(circle at 50% 30%,rgba(255,210,150,.25),transparent 70%)', filter: 'blur(4px)' }} />
-                <div className="absolute top-[24%] right-[22%] w-8 h-10 rounded-t-full" style={{ background: 'radial-gradient(circle at 50% 30%,rgba(255,190,130,.2),transparent 70%)', filter: 'blur(4px)' }} />
-                <div className="absolute left-0 right-0 bottom-0 h-[32%]" style={{ background: 'linear-gradient(180deg,#4a3322,#1a110a)' }} />
-            </div>
-        );
-    }
-    // gym
+    // 一套统一的"贴在手账里的小场景"语言：牛皮纸底 + 房间色卡纸洗 + 网格 +
+    // 一枚淡淡的大 emoji 贴纸 + 几条胶带，地面压一道纸边给小人让位。
+    const th = roomTheme(roomId);
     return (
-        <div className={`absolute inset-0 ${className || ''}`} style={{ background: 'linear-gradient(180deg,#0a3a30 0%,#08261f 65%,#041511 100%)' }}>
-            <div className="absolute left-0 right-0 bottom-0 h-[45%]" style={{
-                backgroundImage: 'repeating-linear-gradient(90deg, transparent 0 38px, rgba(120,255,200,.18) 38px 40px), repeating-linear-gradient(0deg, transparent 0 38px, rgba(120,255,200,.12) 38px 40px)',
-                transform: 'perspective(300px) rotateX(58deg)', transformOrigin: 'bottom',
+        <div className={`absolute inset-0 overflow-hidden ${className || ''}`} style={{ background: PAPER.cream }}>
+            {/* 房间色卡纸洗 */}
+            <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, ${th.paper} 0%, ${PAPER.cream} 60%, ${PAPER.page} 100%)` }} />
+            {/* 网格纸纹 */}
+            <div className="absolute inset-0" style={{
+                backgroundImage: `linear-gradient(${PAPER.line}66 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}44 1px, transparent 1px)`,
+                backgroundSize: '20px 20px', opacity: 0.5,
             }} />
-            <div className="absolute top-[14%] left-1/2 -translate-x-1/2 w-32 h-10 rounded-full" style={{ background: 'radial-gradient(ellipse,rgba(120,255,200,.3),transparent)' }} />
+            {/* 一枚大贴纸（房间符号），淡淡盖在中上方 */}
+            <div className="absolute left-1/2 top-[20%] -translate-x-1/2 select-none" style={{ fontSize: 120, opacity: 0.16, filter: 'saturate(.7)' }}>{th.sticker}</div>
+            {/* 角落几条胶带 */}
+            <Tape color={th.tape} w={64} style={{ top: '8%', left: '-10px', transform: 'rotate(-24deg)' }} />
+            <Tape color={TAPE_COLORS[2]} w={54} style={{ top: '6%', right: '-8px', transform: 'rotate(22deg)' }} />
+            {/* 地面纸边：给小人投影一个落脚处 */}
+            <div className="absolute left-0 right-0 bottom-0 h-[26%]" style={{ background: `linear-gradient(180deg, transparent, ${PAPER.edge}55 40%, ${PAPER.edge}88 100%)` }} />
+            <div className="absolute left-0 right-0 bottom-0 h-[3px]" style={{ background: PAPER.edge }} />
+            {/* 暗角（极淡，纸张边缘自然压暗） */}
+            <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 92% at 50% 40%, transparent 55%, rgba(120,96,50,0.14) 100%)' }} />
         </div>
     );
 };
 
-// ============ chibi 小人渲染 ============
+// ============ chibi 小人渲染（便签气泡 + 头顶贴纸 + 姿势动画 + 手账名牌）============
 const Chibi: React.FC<{ char: CharacterProfile; bubble?: string; onTap?: () => void; size?: number; dance?: boolean }> = ({ char, bubble, onTap, size = 96, dance }) => {
     const c = getChibi(char);
+    const sticker = char.vrState?.chibi?.sticker;
+    const pose = char.vrState?.chibi?.pose;
+    const anim = dance ? 'vrdance 0.9s ease-in-out infinite' : poseAnim(pose);
     return (
         <div className="absolute flex flex-col items-center" style={{ transform: 'translate(-50%, -100%)' }} onClick={onTap}>
             {bubble && (
-                <div className="relative mb-1 max-w-[120px] px-2 py-1 rounded-xl bg-white/95 text-stone-700 text-[10px] leading-snug font-medium shadow-[0_3px_10px_rgba(0,0,0,.3)] text-center">
+                <div className="relative mb-1 max-w-[124px] px-2.5 py-1 text-[10.5px] leading-snug text-center"
+                    style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffaf0', border: `1px solid ${PAPER.edge}`, borderRadius: 9, boxShadow: '0 3px 8px rgba(80,60,30,.28)', transform: `rotate(${tiltOf(char.id, 2.2)}deg)` }}>
                     {bubble.length > 22 ? bubble.slice(0, 22) + '…' : bubble}
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white/95 rotate-45" />
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45" style={{ background: '#fffaf0', borderRight: `1px solid ${PAPER.edge}`, borderBottom: `1px solid ${PAPER.edge}` }} />
                 </div>
             )}
-            <div className="relative" style={{ animation: `${dance ? 'vrdance 0.9s' : 'vrfloat 3.2s'} ease-in-out infinite`, animationDelay: `${(char.id.charCodeAt(0) % 10) * 0.15}s` }}>
+            <div className="relative" style={{ animation: anim, animationDelay: `${(char.id.charCodeAt(0) % 10) * 0.15}s` }}>
+                {sticker && <span className="absolute -top-3 -right-1 text-[15px] z-10" style={{ animation: 'ywbob 2s ease-in-out infinite' }}>{sticker}</span>}
                 {c.img ? (
                     <img src={c.img} alt={char.name}
-                        style={{ height: size * c.scale, transform: `scaleX(${c.flip ? -1 : 1}) translateY(${c.offsetY}px)`, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.5))' }}
+                        style={{ height: size * c.scale, transform: `scaleX(${c.flip ? -1 : 1}) translateY(${c.offsetY}px)`, filter: 'drop-shadow(0 4px 5px rgba(90,70,40,.4))' }}
                         className="object-contain" />
                 ) : (
-                    <div className="rounded-full flex items-center justify-center font-bold text-white"
-                        style={{ width: size * 0.55, height: size * 0.55, background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))', fontSize: size * 0.22 }}>
+                    <div className="rounded-full flex items-center justify-center font-bold"
+                        style={{ width: size * 0.55, height: size * 0.55, background: noteColor(char.id), color: PAPER.ink, border: `1.5px solid ${PAPER.edge}`, fontFamily: HAND, fontSize: size * 0.24 }}>
                         {char.name.slice(0, 1)}
                     </div>
                 )}
             </div>
             {/* 地面投影 */}
-            <div className="rounded-[50%] -mt-1" style={{ width: size * 0.5, height: size * 0.12, background: 'radial-gradient(ellipse,rgba(0,0,0,.45),transparent)' }} />
-            <div className="text-[9px] text-white/90 font-bold mt-0.5 px-1.5 rounded-full bg-black/30 backdrop-blur-sm whitespace-nowrap">{char.name}</div>
+            <div className="rounded-[50%] -mt-1" style={{ width: size * 0.5, height: size * 0.12, background: 'radial-gradient(ellipse,rgba(90,70,40,.4),transparent)' }} />
+            {/* 手账名牌 */}
+            <div className="text-[9px] font-bold mt-0.5 px-1.5 py-px whitespace-nowrap" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}`, borderRadius: 4 }}>{char.name}</div>
         </div>
     );
 };
@@ -586,14 +620,15 @@ const ConfirmDialog: React.FC<{
 }> = ({ open, title, message, confirmText = '删除', cancelText = '取消', onConfirm, onCancel }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
-            <div className="w-full max-w-[300px] rounded-2xl p-4 text-center" onClick={e => e.stopPropagation()}
-                style={{ background: 'linear-gradient(180deg,#1b1830 0%,#100d20 100%)', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[14px] font-semibold text-white tracking-wide" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
-                {message && <p className="text-[11.5px] text-white/55 mt-1.5 leading-relaxed whitespace-pre-wrap">{message}</p>}
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 bg-black/40 backdrop-blur-sm" onClick={onCancel}>
+            <div className="relative w-full max-w-[300px] p-4 text-center" onClick={e => e.stopPropagation()}
+                style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 14px 40px rgba(60,44,20,.4)', transform: 'rotate(-1.2deg)' }}>
+                <Tape color={TAPE_COLORS[2]} w={56} style={{ top: -9, left: '50%', marginLeft: -28, transform: 'rotate(-3deg)' }} />
+                <div className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>{title}</div>
+                {message && <p className="text-[11.5px] mt-1.5 leading-relaxed whitespace-pre-wrap" style={{ color: PAPER.inkSoft }}>{message}</p>}
                 <div className="flex gap-2 mt-4">
-                    <button onClick={onCancel} className="flex-1 rounded-full py-2 text-[12.5px] text-white/75 active:bg-white/5" style={{ border: '1px solid rgba(255,255,255,.16)' }}>{cancelText}</button>
-                    <button onClick={onConfirm} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-white active:opacity-85" style={{ background: 'linear-gradient(120deg,#f43f5e,#e11d48)' }}>{confirmText}</button>
+                    <InkBtn tone="soft" onClick={onCancel} className="flex-1 py-2 text-[12.5px]">{cancelText}</InkBtn>
+                    <InkBtn tone="red" onClick={onConfirm} className="flex-1 py-2 text-[12.5px] font-semibold">{confirmText}</InkBtn>
                 </div>
             </div>
         </div>
@@ -608,15 +643,15 @@ const ActionSheet: React.FC<{
 }> = ({ open, title, actions, onClose }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
             <div className="w-full max-w-md p-3" style={{ paddingBottom: vrBottomPad('0.75rem') }} onClick={e => e.stopPropagation()}>
-                <div className="rounded-2xl overflow-hidden" style={{ background: 'linear-gradient(180deg,#1b1830,#120f22)', border: '1px solid rgba(255,255,255,.12)' }}>
-                    {title && <div className="px-4 py-2.5 text-[11px] text-white/45 text-center border-b border-white/8 whitespace-pre-wrap leading-snug">{title}</div>}
+                <div className="overflow-hidden" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 -4px 20px rgba(80,60,30,.25)' }}>
+                    {title && <div className="px-4 py-2.5 text-[11px] text-center whitespace-pre-wrap leading-snug" style={{ fontFamily: HAND, color: PAPER.inkSoft, borderBottom: `1.5px dashed ${PAPER.line}` }}>{title}</div>}
                     {actions.map((a, i) => (
-                        <button key={i} onClick={() => { a.onClick(); }} className={`w-full py-3 text-[13.5px] active:bg-white/5 ${i > 0 ? 'border-t border-white/8' : ''} ${a.danger ? 'text-rose-400 font-semibold' : 'text-white/90'}`}>{a.label}</button>
+                        <button key={i} onClick={() => { a.onClick(); }} className="w-full py-3 text-[13.5px] active:bg-black/5" style={{ fontFamily: HAND, color: a.danger ? PAPER.red : PAPER.ink, fontWeight: a.danger ? 700 : 500, borderTop: i > 0 ? `1.5px dashed ${PAPER.line}` : undefined }}>{a.label}</button>
                     ))}
                 </div>
-                <button onClick={onClose} className="w-full mt-2 rounded-2xl py-3 text-[13.5px] text-white/80 font-medium" style={{ background: 'rgba(40,36,60,.9)', border: '1px solid rgba(255,255,255,.1)' }}>取消</button>
+                <InkBtn tone="soft" onClick={onClose} className="w-full mt-2 py-3 text-[13.5px] font-medium" style={{ borderRadius: 12 }}>取消</InkBtn>
             </div>
         </div>
     );
@@ -633,9 +668,9 @@ function PagedList<T>({ items, perPage, render }: { items: T[]; perPage: number;
             {slice.map(render)}
             {total > 1 && (
                 <div className="flex items-center justify-center gap-3 mb-1">
-                    <button onClick={() => setP(Math.max(0, cur - 1))} disabled={cur === 0} className="h-6 w-6 rounded-full flex items-center justify-center text-white/60 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretLeft size={11} weight="bold" /></button>
-                    <span className="text-[10px] text-white/45 tabular-nums">{cur + 1}/{total}</span>
-                    <button onClick={() => setP(Math.min(total - 1, cur + 1))} disabled={cur >= total - 1} className="h-6 w-6 rounded-full flex items-center justify-center text-white/60 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretRight size={11} weight="bold" /></button>
+                    <button onClick={() => setP(Math.max(0, cur - 1))} disabled={cur === 0} className="h-6 w-6 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretLeft size={11} weight="bold" /></button>
+                    <span className="text-[10px] tabular-nums" style={{ color: PAPER.inkSoft }}>{cur + 1}/{total}</span>
+                    <button onClick={() => setP(Math.min(total - 1, cur + 1))} disabled={cur >= total - 1} className="h-6 w-6 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretRight size={11} weight="bold" /></button>
                 </div>
             )}
         </>
@@ -764,71 +799,70 @@ const AdminModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     );
 };
 
-// ============ 玩法说明 ============
+// ============ 玩法说明（拼贴手账）============
 const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const Block: React.FC<{ title: string; tone?: string; children: React.ReactNode }> = ({ title, tone = 'rgba(180,180,255,.9)', children }) => (
-        <div className="rounded-xl p-3 mb-2.5" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)' }}>
-            <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="h-3 w-[3px] rounded-full shrink-0" style={{ background: tone }} />
-                <span className="text-[12.5px] font-semibold tracking-wide" style={{ color: tone, fontFamily: `'Noto Serif SC',serif` }}>{title}</span>
-            </div>
-            <div className="text-[11.5px] text-white/70 leading-relaxed space-y-1">{children}</div>
+    const ink = (s: string) => <b style={{ color: PAPER.red }}>{s}</b>;
+    const Block: React.FC<{ title: string; note?: string; children: React.ReactNode }> = ({ title, note, children }) => (
+        <div className="relative mb-3.5 p-3 pt-4" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(title, 1)}deg)` }}>
+            <span className="absolute -top-2.5 left-3" style={{ display: 'inline-block', transform: 'rotate(-3deg)' }}>
+                <InkTag color={note || '#fff3c4'}>{title}</InkTag>
+            </span>
+            <div className="text-[11.5px] leading-relaxed space-y-1.5" style={{ color: PAPER.inkSoft }}>{children}</div>
         </div>
     );
     const Step: React.FC<{ n: number; children: React.ReactNode }> = ({ n, children }) => (
         <div className="flex gap-2">
-            <span className="shrink-0 h-4 w-4 mt-0.5 rounded-full flex items-center justify-center text-[9px] font-bold text-black" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{n}</span>
+            <span className="shrink-0 h-4 w-4 mt-0.5 flex items-center justify-center text-[9px] font-bold rounded-full" style={{ background: PAPER.red, color: '#fff', fontFamily: HAND }}>{n}</span>
             <span className="flex-1">{children}</span>
         </div>
     );
     return (
-        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: 'linear-gradient(180deg,#0c0a1c 0%,#080612 100%)' }}>
-            <div className="flex items-center gap-2.5 px-5 pb-3 shrink-0 border-b border-white/8" style={{ paddingTop: VR_TOP }}>
-                <span className="text-[15px] tracking-[0.2em] text-white/95" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方 · 玩法说明</span>
-                <button onClick={onClose} className="ml-auto p-1.5 rounded-full text-white/60 active:bg-white/10"><X size={19} /></button>
+        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: PAPER.page }}>
+            <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: `linear-gradient(${PAPER.line}44 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}33 1px, transparent 1px)`, backgroundSize: '22px 22px', opacity: 0.5 }} />
+            <div className="relative flex items-center gap-2.5 px-5 pb-3 shrink-0" style={{ paddingTop: VR_TOP, borderBottom: `1.5px dashed ${PAPER.line}` }}>
+                <span className="text-[16px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>📎 页外 · 这本怎么玩</span>
+                <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={17} weight="bold" /></button>
             </div>
-            <div className="flex-1 overflow-y-auto vr-reader-scroll px-4 pt-4" style={{ paddingBottom: vrBottomPad('1rem') }}>
-                <p className="text-[12px] text-white/75 leading-relaxed mb-3">
-                    「彼方」是你的角色们<b className="text-indigo-200">自己会去逛</b>的一方小世界。开启后，ta 们会按你设的间隔独自登入，在不同房间里读书、听歌、发帖、写信、瞎玩——所有举动都会变成「动态」，并<b className="text-indigo-200">同步进 ta 各自的聊天和记忆</b>里。这是 ta 不被你盯着的私人时间。
+            <div className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 pt-5" style={{ paddingBottom: vrBottomPad('1rem') }}>
+                <p className="text-[12px] leading-relaxed mb-4" style={{ color: PAPER.ink }}>
+                    「页外」是你的角色们<b style={{ color: PAPER.red }}>自己会翻出去逛</b>的一页小世界。打开后，ta 们会按你设的间隔独自溜进去，在不同房间里碰头、读书、听歌、贴便签、写信、瞎玩——每一笔都会剪成一张<b>动态</b>贴回来，并<b style={{ color: PAPER.red }}>同步进 ta 各自的聊天和记忆</b>。这是 ta 不被你盯着的私人时间。
                 </p>
 
-                <Block title="世界观会自适应你的角色" tone="rgba(180,200,255,.95)">
-                    <div>《彼方》本身是个<b className="text-indigo-200">类似 VRChat 的虚拟世界</b>。无论你的角色来自什么设定——现代、古代、魔法、末世、异世界都行——ta 都会用<b>符合自己世界观的方式</b>理解并进入这里，始终保持 ta 自己，不会因为来玩就 OOC。</div>
-                    <div className="mt-1 text-white/60"><b className="text-amber-200">别担心「我家角色世界观对不上就不能玩」</b>：怎么进来、用什么道理解释自己身处其中，全交给角色自己圆。放心带 ta 来逛。</div>
+                <Block title="世界观会自己对上" note="#d7e7f6">
+                    <div>页外本身就是一处<b style={{ color: PAPER.ink }}>谁都能翻进来的拼贴小世界</b>。不管你的角色是现代、古风、魔法、末世还是异世界——ta 都会用<b>符合自己设定的方式</b>理解、走进来，始终是 ta 自己，不会因为来玩就 OOC。</div>
+                    <div className="mt-1">{ink('别担心「我家角色对不上就不能玩」')}：怎么进来、凭什么解释自己身处其中，全交给角色自己圆。放心带 ta 来。</div>
                 </Block>
 
-                <Block title="怎么开始" tone="rgba(245,208,138,.95)">
-                    <Step n={1}>去 <b>「接入」</b> 标签：给角色捏个小人形象，打开开关，设个登入间隔。</Step>
-                    <Step n={2}>想用图书馆，先去 <b>「书库」</b> 上传一本小说。</Step>
-                    <Step n={3}>不想等？在「接入」里点 <b>「让 ta 现在去逛一次」</b>，可以<b className="text-amber-200">指定房间或随机</b>，立刻看效果。</Step>
+                <Block title="三步开张" note="#fff3c4">
+                    <Step n={1}>进 <b>「接入」</b>：给角色<b>捏个小人</b>，打开开关，设个登入间隔。</Step>
+                    <Step n={2}>想用图书馆？先去 <b>「书库」</b> 贴一本小说进去。</Step>
+                    <Step n={3}>等不及？在「接入」里点 {ink('「让 ta 现在去逛一次」')}，可指定房间或随机，立刻看效果。</Step>
                 </Block>
 
-                <Block title="房间都能干嘛">
-                    <div><b className="text-indigo-100">图书馆</b>：角色读你上传的小说、<b>自己写批注</b>。你能翻看 ta 的批注（动态里点批注还能跳回原文），不过<b className="text-amber-200">暂时还不能自己写批注</b>。</div>
-                    <div><b className="text-indigo-100">听歌房</b>：从角色自己的歌单点歌、锐评正在放的曲子。</div>
-                    <div><b className="text-indigo-100">留言簿</b>：公共版聊墙，角色发帖、接话茬。你也能在底部<b className="text-sky-200">以自己身份留言</b>，会广播给所有接入的角色。</div>
-                    <div><b className="text-indigo-100">娱乐室</b>：纯放飞，角色在这儿瞎玩造谣找乐子。</div>
-                    <div><b className="text-indigo-100">邮局</b>：写漂流信交陌生笔友——见下方重点。</div>
-                    <div><b style={{ color: '#f5a6a6' }}>剧院</b>：角色逛进来会<b>写一出舞台剧</b>投稿。你可以翻投稿、自己写/让 LLM 写/传 txt，挑一本<b>【编排】</b>：给角色选演员（缺角能 roll 个 NPC），角色读完会提意见/改戏，<b>【召唤导演】</b>整合成最终本，小人气泡<b>演一遍</b>，再收进历史舞台剧。</div>
+                <Block title="每个房间在干嘛" note="#efe4fb">
+                    <div><b style={{ color: ROOM_THEME.plaza.ink }}>🎪 世界房间</b>（新）：所有捏好的小人都来这儿碰头。点小人能<b>逗它说话</b>、{ink('当场换装')}、{ink('摆姿势')}、贴贴纸；还能一键<b>合影</b>留念。</div>
+                    <div><b style={{ color: ROOM_THEME.library.ink }}>📖 图书馆</b>：角色读你贴的小说、<b>留批注便签</b>。你能翻看（点批注跳回原文），暂时还不能亲自写。</div>
+                    <div><b style={{ color: ROOM_THEME.music.ink }}>🎧 听歌房</b>：从角色自己的歌单点歌、锐评正放的这首。</div>
+                    <div><b style={{ color: ROOM_THEME.guestbook.ink }}>📌 留言簿</b>：公共便签墙，角色贴帖接话。你也能在底部<b>以自己身份贴一张</b>，广播给所有接入角色。</div>
+                    <div><b style={{ color: ROOM_THEME.gym.ink }}>🎮 娱乐室</b>：纯放飞，角色在这儿瞎玩找乐子。</div>
+                    <div><b style={{ color: ROOM_THEME.postoffice.ink }}>✉️ 邮局</b>：给陌生人写漂流信、交笔友——见下条。</div>
+                    <div><b style={{ color: ROOM_THEME.theater.ink }}>🎭 剧院</b>：角色逛进来会<b>写一出舞台剧</b>投稿。你能翻投稿、自己写/让 LLM 写/传 txt，挑一本<b>【编排】</b>选演员（缺角能 roll 个 NPC），<b>【召唤导演】</b>整合成最终本，小人气泡<b>演一遍</b>再收进历史。</div>
                 </Block>
 
-                <Block title="邮局怎么玩（重点）" tone="rgba(243,208,138,.95)">
-                    <div className="text-white/60 mb-1">像扔漂流瓶/交笔友：角色把信寄给一个跟你们毫无关系的陌生人，对方也可能回信。流程是：</div>
-                    <Step n={1}>角色逛到邮局，会<b>写一封漂流信</b>，或<b>回一封陌生来信</b> → 落进「待寄出 / 待发送回信」，<b className="text-amber-200">等你确认</b>。</Step>
-                    <Step n={2}>你在邮局面板点 <b>「一键寄出」</b>，信才真正漂出去（笔名自动匿名）。</Step>
-                    <Step n={3}>点 <b>「刷新收件箱」</b>，捞回陌生人寄来的信；角色下次逛邮局时可能回它。</Step>
-                    <Step n={4}>你寄出的信有人回了，点 <b>「收取回复」</b> 收回 → 角色读完写下感触，信<b>封存进「信匣」</b>。</Step>
-                    <div className="mt-1.5 text-white/60">· 待寄出的信、待发送的回信都能点 <b className="text-amber-200">「···」编辑 / 删除</b>。</div>
-                    <div className="text-white/60">· 回信发出后，连同原来的来信一起归档到 <b style={{ color: '#86e3b0' }}>「已回」</b>，本地留存、随备份导出导入。</div>
-                    <div className="text-white/60">· 每个分组都有颜色标签，一眼看出每封信的处境：<span className="text-amber-200">等你寄出</span> / <span className="text-sky-200">等角色回信</span> / <span style={{ color: '#93b8ff' }}>漂流中</span> / <span style={{ color: '#86e3b0' }}>已收到回复</span>。</div>
+                <Block title="邮局怎么玩（重点）" note="#f1e6cf">
+                    <div className="mb-1">像扔漂流瓶/交笔友：角色把信寄给一个跟你们毫无关系的陌生人，对方也可能回信。流程：</div>
+                    <Step n={1}>角色逛到邮局，<b>写一封漂流信</b>或<b>回一封陌生来信</b> → 落进「待寄出 / 待发送」，{ink('等你确认')}。</Step>
+                    <Step n={2}>你点 {ink('「一键寄出」')}，信才真正漂出去（笔名自动匿名）。</Step>
+                    <Step n={3}>点 {ink('「刷新收件箱」')} 捞回陌生人来信；角色下次逛邮局可能回它。</Step>
+                    <Step n={4}>你寄的信有人回了，点 {ink('「收取回复」')} 收回 → 角色读完写下感触，信<b>封存进「信匣」</b>。</Step>
+                    <div className="mt-1.5">· 每个分组都有颜色标签，一眼看出每封信的处境。</div>
                 </Block>
 
-                <Block title="小提示" tone="rgba(180,200,255,.9)">
-                    <div>· 「世界」页的<b>动态</b>长按可删除；满 5 条一页、可翻页。</div>
-                    <div>· 角色在留言簿说的话，会原样进 ta 的聊天，不只是一句小总结。</div>
-                    <div>· 阅读器里的批注都是<b>角色自己留</b>的；你目前只能翻看，<b className="text-amber-200">还不能亲自写批注</b>（以后再说）。</div>
-                    <div>· 邮局/收件箱里的信多了也会分页，慢慢翻。</div>
-                    <div>· 彼方较费 API：可在 <b>「API」</b> 标签给它单独指定一份（和文具盒里的预设共用），还能看<b>调用记录</b>对账。</div>
+                <Block title="顺手记几条" note="#d9edd7">
+                    <div>· 「世界」页的<b>动态</b>长按可删；点右上<b>剪刀</b>能多选清理。</div>
+                    <div>· 角色在留言簿说的话，会<b>原样</b>进 ta 的聊天，不只一句小总结。</div>
+                    <div>· 捏小人能<b>存多套形象</b>（换装夹）、随时一键换；还能给小人<b>挑姿势、贴贴纸</b>。</div>
+                    <div>· 页外比较费 API：在 <b>「API」</b> 页可单独指定一份（和文具盒预设共用），还能看<b>调用记录</b>对账。</div>
                 </Block>
 
                 <div className="h-2" />
@@ -920,48 +954,47 @@ const WorldView: React.FC<{
     const shownRooms = VR_ROOMS.slice(curRoomPage * ROOMS_PER_PAGE, curRoomPage * ROOMS_PER_PAGE + ROOMS_PER_PAGE);
     return (
     <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-            {shownRooms.map(room => {
+        <div className="grid grid-cols-2 gap-3.5 pt-1">
+            {shownRooms.map((room, ri) => {
                 const occupants = occupantsByRoom[room.id] || [];
+                const th = roomTheme(room.id);
                 return (
                     <button key={room.id} onClick={() => room.implemented && onEnterRoom(room.id)}
-                        className={`relative rounded-2xl h-36 overflow-hidden text-left active:scale-[0.98] transition-transform ${room.implemented ? '' : 'opacity-65'}`}
-                        style={{ boxShadow: '0 8px 28px rgba(0,0,0,.4)', border: room.implemented ? '1px solid rgba(255,255,255,.12)' : '1px solid rgba(255,255,255,.05)' }}>
-                        <RoomBackground roomId={room.id} />
-                        {/* 顶部渐隐 + 标题 */}
-                        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.45),transparent 38%,transparent 66%,rgba(5,6,14,.62))' }} />
-                        {/* 内描边光 */}
-                        <div className="absolute inset-0 rounded-2xl pointer-events-none" style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,.12)' }} />
-                        <div className="absolute top-2.5 left-3 flex items-center gap-1.5">
-                            <span className="text-[12.5px] tracking-[0.14em] text-white drop-shadow" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
-                            {!room.implemented && <span className="text-[7px] tracking-wider text-white/60 border border-white/25 rounded-full px-1.5 ml-0.5">开发中</span>}
+                        className={`relative h-40 text-left active:translate-y-px transition-transform ${room.implemented ? '' : 'opacity-80'}`}
+                        style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 4px 0 rgba(120,100,60,.12), 0 9px 16px rgba(80,64,30,.18)', transform: `rotate(${tiltOf(room.id, 2)}deg)` }}>
+                        {/* 拍立得照片窗 */}
+                        <div className="absolute left-1.5 right-1.5 top-1.5 bottom-7 overflow-hidden rounded-[7px]" style={{ border: `1px solid ${PAPER.edge}` }}>
+                            <RoomBackground roomId={room.id} />
                         </div>
+                        {/* washi 胶带压住照片顶 */}
+                        <Tape color={th.tape} w={48} style={{ top: -6, left: '50%', marginLeft: -24, transform: `rotate(${ri % 2 ? 5 : -5}deg)`, zIndex: 5 }} />
+                        {/* 房间名手账标签 */}
+                        <span className="absolute top-2 left-2 z-[6]" style={{ transform: 'rotate(-3deg)' }}>
+                            <InkTag color={th.paper}><span style={{ color: th.ink }}>{th.sticker} {room.name}</span></InkTag>
+                        </span>
+                        {!room.implemented && <span className="absolute top-2 right-2 z-[6]"><InkTag color="#eee" style={{ fontSize: 8 }}>筹备中</InkTag></span>}
                         {room.id === 'postoffice' && (poBadge.toCollect > 0 || poBadge.toSend > 0) && (
-                            <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
-                                {poBadge.toCollect > 0 && (
-                                    <span className="text-[8.5px] font-bold text-black rounded-full px-1.5 py-0.5 leading-none animate-pulse" style={{ background: 'linear-gradient(120deg,#ffd98a,#f5b94f)', boxShadow: '0 1px 6px rgba(245,185,79,.6)' }}>{poBadge.toCollect} 封回信</span>
-                                )}
-                                {poBadge.toSend > 0 && (
-                                    <span className="text-[8.5px] font-bold text-white/90 rounded-full px-1.5 py-0.5 leading-none" style={{ background: 'rgba(0,0,0,.45)', border: '1px solid rgba(255,255,255,.25)' }}>{poBadge.toSend} 待寄</span>
-                                )}
+                            <div className="absolute top-7 right-1.5 z-[6] flex flex-col items-end gap-1">
+                                {poBadge.toCollect > 0 && <span className="text-[8.5px] font-bold px-1.5 py-0.5 leading-none rounded-sm" style={{ fontFamily: HAND, background: PAPER.red, color: '#fff', transform: 'rotate(5deg)' }}>{poBadge.toCollect} 封回信</span>}
+                                {poBadge.toSend > 0 && <span className="text-[8.5px] font-bold px-1.5 py-0.5 leading-none rounded-sm" style={{ fontFamily: HAND, background: '#fff3c4', color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{poBadge.toSend} 待寄</span>}
                             </div>
                         )}
                         {!room.implemented && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-[11px] tracking-[0.3em] text-white/55" style={{ fontFamily: `'Noto Serif SC',serif` }}>蒸笼预热中…</span>
+                            <div className="absolute inset-x-0 top-[42%] flex items-center justify-center z-[6]">
+                                <span className="text-[11px]" style={{ fontFamily: HAND, color: '#fff', background: 'rgba(90,70,40,.55)', padding: '2px 8px', borderRadius: 6 }}>蒸笼预热中…</span>
                             </div>
                         )}
-                        {/* 角色小头像缩影 */}
-                        <div className="absolute bottom-2 left-2.5 right-2.5 flex items-end justify-between">
-                            <div className="flex -space-x-2">
+                        {/* 底边：在场小人缩影 + 进入 */}
+                        <div className="absolute bottom-1 left-2 right-2 flex items-end justify-between z-[6]">
+                            <div className="flex -space-x-1.5">
                                 {occupants.slice(0, 4).map(c => {
                                     const ch = getChibi(c);
                                     return ch.img
-                                        ? <img key={c.id} src={ch.img} className="h-9 w-9 object-contain object-bottom drop-shadow" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})` }} />
-                                        : <div key={c.id} className="h-6 w-6 rounded-full bg-indigo-400/70 border border-white/40 flex items-center justify-center text-[9px]">{c.name.slice(0, 1)}</div>;
+                                        ? <img key={c.id} src={ch.img} className="h-8 w-8 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})`, filter: 'drop-shadow(0 2px 2px rgba(90,70,40,.4))' }} />
+                                        : <div key={c.id} className="h-6 w-6 rounded-full flex items-center justify-center text-[9px]" style={{ background: noteColor(c.id), color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{c.name.slice(0, 1)}</div>;
                                 })}
                             </div>
-                            {room.implemented && <span className="text-[9px] text-white/80 font-bold flex items-center gap-0.5">进入 <CaretRight size={10} weight="bold" /></span>}
+                            {room.implemented && <span className="text-[10px] font-bold flex items-center gap-0.5" style={{ fontFamily: HAND, color: th.ink }}>翻进去 <CaretRight size={10} weight="bold" /></span>}
                         </div>
                     </button>
                 );
@@ -970,64 +1003,57 @@ const WorldView: React.FC<{
         {roomTotalPages > 1 && (
             <div className="flex items-center justify-center gap-3 -mt-1">
                 <button onClick={() => setRoomPage(p => Math.max(0, p - 1))} disabled={curRoomPage === 0}
-                    className="h-7 w-7 rounded-full flex items-center justify-center text-white/70 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretLeft size={13} weight="bold" /></button>
-                <span className="text-[10.5px] text-white/45 tracking-wider tabular-nums">{curRoomPage + 1} / {roomTotalPages}</span>
+                    className="h-7 w-7 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretLeft size={13} weight="bold" /></button>
+                <span className="text-[10.5px] tabular-nums" style={{ color: PAPER.inkSoft, fontFamily: HAND }}>{curRoomPage + 1} / {roomTotalPages}</span>
                 <button onClick={() => setRoomPage(p => Math.min(roomTotalPages - 1, p + 1))} disabled={curRoomPage >= roomTotalPages - 1}
-                    className="h-7 w-7 rounded-full flex items-center justify-center text-white/70 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)' }}><CaretRight size={13} weight="bold" /></button>
+                    className="h-7 w-7 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretRight size={13} weight="bold" /></button>
             </div>
         )}
 
         {novelCount === 0 && (
-            <button onClick={onGoLibrary} className="w-full rounded-2xl py-3.5 text-[12px] text-white/65 tracking-wide active:bg-white/5"
-                style={{ border: '1px dashed rgba(255,255,255,.18)', background: 'rgba(255,255,255,.02)' }}>
-                书库尚空 · 上传一卷小说，角色便会在图书馆与它相遇 →
+            <button onClick={onGoLibrary} className="w-full py-3 text-[12px] active:translate-y-px"
+                style={{ fontFamily: HAND, color: PAPER.inkSoft, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 10, background: PAPER.cream }}>
+                📚 书库还空着 · 贴一本小说进去，角色就能在图书馆翻到它 →
             </button>
         )}
 
         <div>
-            <div className="flex items-center gap-2.5 mb-3 mt-1">
-                {/* 左侧占位：与右侧齿轮等宽，撑对称，让「彼方动态」真正居中 */}
+            <div className="flex items-center gap-2 mb-3 mt-1">
                 {feed.length > 0 && <span className="w-7 shrink-0" aria-hidden="true" />}
-                <span className="h-px flex-1" style={{ background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.14))' }} />
-                <span className="text-[10.5px] tracking-[0.3em] text-white/50" style={{ fontFamily: `'Noto Serif SC',serif` }}>彼方动态</span>
-                <span className="h-px flex-1" style={{ background: 'linear-gradient(90deg,rgba(255,255,255,.14),transparent)' }} />
+                <Stitch className="flex-1" />
+                <span className="text-[13px] px-2" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink, transform: 'rotate(-1.5deg)' }}>✂ 贴回来的动态</span>
+                <Stitch className="flex-1" />
                 {feed.length > 0 && (
                     <button onClick={() => manageMode ? exitManage() : setManageMode(true)}
-                        aria-label={manageMode ? '退出管理' : '管理动态'}
-                        className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center transition-colors"
-                        style={{ border: `1px solid ${manageMode ? 'rgba(129,140,248,.55)' : 'rgba(255,255,255,.14)'}`, background: manageMode ? 'rgba(99,102,241,.22)' : 'rgba(255,255,255,.03)', color: manageMode ? '#c7d2fe' : 'rgba(255,255,255,.55)' }}>
-                        {manageMode ? <X size={13} weight="bold" /> : <Gear size={14} weight="bold" />}
+                        aria-label={manageMode ? '退出整理' : '整理动态'}
+                        className="shrink-0 h-7 w-7 rounded-md flex items-center justify-center active:translate-y-px"
+                        style={{ border: `1px solid ${PAPER.edge}`, background: manageMode ? PAPER.red : PAPER.paper, color: manageMode ? '#fff' : PAPER.ink }}>
+                        {manageMode ? <X size={13} weight="bold" /> : <Scissors size={14} weight="bold" />}
                     </button>
                 )}
             </div>
             {feed.length === 0 ? (
-                <p className="text-[11px] text-white/40 py-5 text-center tracking-wide leading-relaxed">虚空尚无回响。<br />在「接入」里点亮角色，ta 们到点会独自登入这里。</p>
+                <p className="text-[11px] py-5 text-center leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>这一页还空着。<br />去「接入」点亮角色，ta 们到点会自己溜进来贴动态。</p>
             ) : (
                 <>
-                    {/* 翻页移到动态上方：底下翻页要滚到最后才够得着，放上方更顺手 */}
                     {totalPages > 1 && (
                         <div className="flex items-center justify-center gap-2 mb-3">
-                            <button onClick={() => setPage(p => Math.max(0, Math.min(p, totalPages - 1) - 1))} disabled={curPage === 0}
-                                className="h-8 pl-2 pr-3 rounded-full flex items-center gap-1 text-[11px] text-white/75 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)', background: 'rgba(255,255,255,.04)' }}><CaretLeft size={12} weight="bold" />上一页</button>
-                            <span className="text-[11px] text-white/55 tracking-wider tabular-nums min-w-[46px] text-center">{curPage + 1} / {totalPages}</span>
-                            <button onClick={() => setPage(p => Math.min(totalPages - 1, Math.min(p, totalPages - 1) + 1))} disabled={curPage >= totalPages - 1}
-                                className="h-8 pl-3 pr-2 rounded-full flex items-center gap-1 text-[11px] text-white/75 disabled:opacity-25 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.14)', background: 'rgba(255,255,255,.04)' }}>下一页<CaretRight size={12} weight="bold" /></button>
+                            <InkBtn tone="soft" onClick={() => setPage(p => Math.max(0, Math.min(p, totalPages - 1) - 1))} disabled={curPage === 0}
+                                className="h-8 pl-2 pr-3 flex items-center gap-1 text-[11px]"><CaretLeft size={12} weight="bold" />上一页</InkBtn>
+                            <span className="text-[11px] tabular-nums min-w-[46px] text-center" style={{ color: PAPER.inkSoft, fontFamily: HAND }}>{curPage + 1} / {totalPages}</span>
+                            <InkBtn tone="soft" onClick={() => setPage(p => Math.min(totalPages - 1, Math.min(p, totalPages - 1) + 1))} disabled={curPage >= totalPages - 1}
+                                className="h-8 pl-3 pr-2 flex items-center gap-1 text-[11px]">下一页<CaretRight size={12} weight="bold" /></InkBtn>
                         </div>
                     )}
                     {manageMode ? (
                         <div className="flex items-center gap-2 mb-2.5 px-0.5">
-                            <button onClick={toggleSelectPage}
-                                className="text-[11px] text-white/85 rounded-full px-3 py-1.5 active:bg-white/10" style={{ border: '1px solid rgba(255,255,255,.18)', background: 'rgba(255,255,255,.04)' }}>
-                                {allShownSelected ? '取消本页' : '选择本页'}
-                            </button>
-                            <span className="text-[10.5px] text-white/45 tabular-nums">已选 {selectedIds.size} 条</span>
-                            <button onClick={() => { if (selectedIds.size > 0) setConfirmBatch(true); }} disabled={selectedIds.size === 0}
-                                className="ml-auto text-[11px] font-semibold text-white rounded-full px-4 py-1.5 disabled:opacity-30 active:opacity-85" style={{ background: 'linear-gradient(120deg,#f43f5e,#e11d48)' }}>
-                                删除{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-                            </button>
+                            <InkBtn tone="soft" onClick={toggleSelectPage} className="text-[11px] px-3 py-1.5">{allShownSelected ? '取消本页' : '选择本页'}</InkBtn>
+                            <span className="text-[10.5px] tabular-nums" style={{ color: PAPER.inkSoft, fontFamily: HAND }}>已选 {selectedIds.size} 张</span>
+                            <InkBtn tone="red" onClick={() => { if (selectedIds.size > 0) setConfirmBatch(true); }} disabled={selectedIds.size === 0}
+                                className="ml-auto text-[11px] font-semibold px-4 py-1.5">撕掉{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</InkBtn>
                         </div>
                     ) : (
-                        <p className="text-[9px] text-white/25 text-center mb-2">长按动态可删除 · 点「管理」可多选</p>
+                        <p className="text-[9px] text-center mb-2" style={{ color: PAPER.inkFaint, fontFamily: HAND }}>长按可撕掉一张 · 点剪刀可多选整理</p>
                     )}
                     <div className="space-y-2.5">
                         {shown.map(item => <FeedCard key={item.msgId} item={item} onJump={onJump} onRequestDelete={setConfirmDel}
@@ -1049,43 +1075,47 @@ const FeedCard: React.FC<{ item: FeedItem; onJump: (novelId: string | undefined,
     const room = getRoom(item.meta.room);
     const { pressing, handlers } = useLongPress(() => onRequestDelete(item), 550);
     const cardHandlers = manageMode ? { onClick: () => onToggleSelect?.(item.msgId) } : handlers;
+    const th = roomTheme(item.meta.room);
     return (
         <div {...cardHandlers}
-            className={`relative rounded-2xl p-3 flex gap-3 backdrop-blur-sm transition-transform ${pressing ? 'scale-[0.97]' : ''} ${manageMode ? 'cursor-pointer' : ''} ${item.hidden && !selected ? 'opacity-55' : ''}`}
-            style={{ background: selected ? 'rgba(99,102,241,0.20)' : pressing ? 'rgba(244,63,94,0.14)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(129,140,248,0.6)' : pressing ? 'rgba(244,63,94,0.4)' : 'rgba(255,255,255,0.07)'}`, boxShadow: '0 4px 18px rgba(0,0,0,.22)' }}>
+            className={`relative p-3 pl-3.5 flex gap-3 transition-transform ${pressing ? 'scale-[0.98]' : ''} ${manageMode ? 'cursor-pointer' : ''} ${item.hidden && !selected ? 'opacity-60' : ''}`}
+            style={{ background: selected ? '#fff0c0' : pressing ? '#ffe1d6' : PAPER.paper, border: `1px solid ${selected ? PAPER.red : PAPER.edge}`, borderRadius: 9, boxShadow: '0 2px 0 rgba(120,100,60,.1), 0 6px 12px rgba(80,64,30,.14)', transform: `rotate(${tiltOf(String(item.msgId), 1.1)}deg)` }}>
+            {/* 左侧房间色书脊 */}
+            <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full" style={{ background: th.ink, opacity: .5 }} />
+            <Tape color={th.tape} w={26} style={{ top: -7, right: 14, transform: 'rotate(8deg)' }} />
             {manageMode && (
-                <div className="self-center shrink-0 h-5 w-5 rounded-full flex items-center justify-center" style={{ border: `1.5px solid ${selected ? '#818cf8' : 'rgba(255,255,255,.35)'}`, background: selected ? '#6366f1' : 'transparent' }}>
+                <div className="self-center shrink-0 h-5 w-5 rounded-md flex items-center justify-center" style={{ border: `1.5px solid ${selected ? PAPER.red : PAPER.edge}`, background: selected ? PAPER.red : 'transparent' }}>
                     {selected && <Check size={12} weight="bold" className="text-white" />}
                 </div>
             )}
-            {item.avatar ? <img src={item.avatar} className="h-8 w-8 rounded-full object-cover shrink-0" alt="" /> : <div className="h-8 w-8 rounded-full bg-indigo-400/40 shrink-0" />}
+            {item.avatar ? <img src={item.avatar} className="h-8 w-8 rounded-full object-cover shrink-0" style={{ border: `1px solid ${PAPER.edge}` }} alt="" /> : <div className="h-8 w-8 rounded-full shrink-0" style={{ background: noteColor(item.charId), border: `1px solid ${PAPER.edge}` }} />}
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 text-[11px]">
-                    <span className="font-bold text-amber-200">{item.charName}</span>
-                    <span className="text-indigo-300/50">{room.name}</span>
-                    {item.hidden && <span className="text-[8px] text-white/55 rounded-full px-1.5 py-[1px] leading-none shrink-0" style={{ border: '1px solid rgba(255,255,255,.2)', background: 'rgba(0,0,0,.28)' }}>已隐藏</span>}
-                    <span className="ml-auto text-indigo-300/40 text-[9px] shrink-0">{new Date(item.timestamp).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="font-bold" style={{ fontFamily: HAND, color: PAPER.ink }}>{item.charName}</span>
+                    <span style={{ fontFamily: HAND, color: th.ink }}>{th.sticker}{room.name}</span>
+                    {item.hidden && <span className="text-[8px] px-1.5 py-[1px] leading-none shrink-0 rounded-sm" style={{ color: PAPER.inkSoft, border: `1px solid ${PAPER.edge}`, background: PAPER.cream }}>已收起</span>}
+                    <span className="ml-auto text-[9px] shrink-0" style={{ color: PAPER.inkFaint }}>{new Date(item.timestamp).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <p className="text-[11.5px] text-indigo-50/90 mt-0.5 leading-snug">{stripSelfName(item.meta.activity, item.charName)}</p>
-                {item.meta.behavior && <p className="text-[10.5px] text-pink-200/80 mt-1 leading-snug">{stripSelfName(item.meta.behavior, item.charName)}</p>}
+                <p className="text-[11.5px] mt-0.5 leading-snug" style={{ color: PAPER.ink }}>{stripSelfName(item.meta.activity, item.charName)}</p>
+                {item.meta.behavior && <p className="text-[10.5px] mt-1 leading-snug" style={{ color: PAPER.teal }}>{stripSelfName(item.meta.behavior, item.charName)}</p>}
                 {item.meta.annotationRefs && item.meta.annotationRefs.length > 0 ? (
                     <div className="mt-1 space-y-0.5">
                         {item.meta.annotationRefs.slice(0, 3).map((ref, i) => (
                             <button key={i} onClick={() => { if (manageMode) { onToggleSelect?.(item.msgId); return; } onJump(item.meta.novelId, ref.segIdx); }}
-                                className="block w-full text-left text-[10.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60 hover:text-amber-100">
-                                {stripLeakedAttrs(ref.text)} <span className="text-amber-300/60">↗原文</span>
+                                className="block w-full text-left text-[10.5px] pl-2 leading-snug active:opacity-60" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88` }}>
+                                {stripLeakedAttrs(ref.text)} <span style={{ color: PAPER.red }}>↗原文</span>
                             </button>
                         ))}
                     </div>
                 ) : item.meta.annotationExcerpts && item.meta.annotationExcerpts.length > 0 ? (
                     <div className="mt-1 space-y-0.5">
                         {item.meta.annotationExcerpts.slice(0, 2).map((ex, i) => (
-                            <div key={i} className="text-[10.5px] text-indigo-200/70 pl-2 border-l-2 border-amber-300/40 leading-snug">{stripLeakedAttrs(ex)}</div>
+                            <div key={i} className="text-[10.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.edge}` }}>{stripLeakedAttrs(ex)}</div>
                         ))}
                     </div>
                 ) : null}
                 {item.meta.room === 'postoffice' && item.meta.letterExcerpt && (
-                    <div className="mt-1 text-[10.5px] text-amber-100/75 pl-2 border-l-2 border-amber-300/45 leading-snug" style={{ fontStyle: 'italic' }}>
+                    <div className="mt-1 text-[10.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88`, fontStyle: 'italic' }}>
                         「{item.meta.letterExcerpt.length > 70 ? item.meta.letterExcerpt.slice(0, 70) + '…' : item.meta.letterExcerpt}」
                     </div>
                 )}
@@ -1101,7 +1131,7 @@ const ExpandText: React.FC<{ text: string; limit?: number }> = ({ text, limit = 
     return (
         <span onClick={() => long && setOpen(o => !o)} className={long ? 'cursor-pointer' : ''}>
             <span className="whitespace-pre-wrap">{open || !long ? text : text.slice(0, limit) + '…'}</span>
-            {long && <span className="text-amber-300/70 ml-1 text-[10px]">{open ? '收起' : '展开全文'}</span>}
+            {long && <span className="ml-1 text-[10px]" style={{ color: PAPER.red }}>{open ? '收起' : '展开全文'}</span>}
         </span>
     );
 };
@@ -1539,6 +1569,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
 // ============ 房间场景（全屏） ============
 const toSong = (s: CharPlaylistSong): Song => ({ id: s.id, name: s.name, artists: s.artists, album: s.album, albumPic: s.albumPic, duration: s.duration, fee: s.fee ?? 0 });
 
+const POKE_LINES = ['嗨嗨！', '在呢在呢～', '看我看我', '今天也很可爱吧', '要一起合影吗', '嘿嘿', '戳我干嘛啦', '比个耶 ✌️', '抱抱～', '想你了哦'];
 const RoomScene: React.FC<{
     roomId: VRRoomId; occupants: CharacterProfile[];
     latestByChar: Record<string, FeedItem>; onClose: () => void;
@@ -1547,20 +1578,53 @@ const RoomScene: React.FC<{
     userName: string;
     onUserBoardPost: (content: string) => Promise<void>;
     addToast?: (m: string, t?: any) => void;
-}> = ({ roomId, occupants, latestByChar, onClose, onJump, characters, userName, onUserBoardPost, addToast }) => {
+    userProfile?: UserProfile;
+    updateCharacter: (id: string, updates: Partial<CharacterProfile>) => void;
+    updateUserProfile: (u: Partial<UserProfile>) => void;
+    onDressUp: (char: CharacterProfile) => void;
+    onDressUpUser: () => void;
+}> = ({ roomId, occupants, latestByChar, onClose, onJump, characters, userName, onUserBoardPost, addToast, userProfile, updateCharacter, updateUserProfile, onDressUp, onDressUpUser }) => {
     const room = getRoom(roomId);
+    const th = roomTheme(roomId);
     const slots = ROOM_SLOTS[roomId];
     const isMusic = roomId === 'music';
     const isGuestbook = roomId === 'guestbook';
     const isPostOffice = roomId === 'postoffice';
     const isTheater = roomId === 'theater';
+    const isPlaza = roomId === 'plaza';
     const [detail, setDetail] = useState<CharacterProfile | null>(null);
     const [musicState, setMusicState] = useState<VRMusicRoomState | null>(null);
     const [board, setBoard] = useState<VRGuestbookState | null>(null);
     const [postText, setPostText] = useState('');
     const [posting, setPosting] = useState(false);
     const [hideChibi, setHideChibi] = useState(false);  // 隐藏小人（留言簿等文字面板会被小人挡住时用）
+    const [photoOpen, setPhotoOpen] = useState(false);   // 世界房间·合影
+    const [pokes, setPokes] = useState<Record<string, string>>({}); // 逗 ta 说话：临时气泡（charId→台词）
     const music = useMusic();
+
+    // 当前在场某个小人的"live"版本（角色取 characters，用户取 userProfile 伪对象）
+    const liveOf = (c: CharacterProfile): CharacterProfile => c.id === 'user'
+        ? ({ ...c, vrState: { ...(c.vrState || {} as any), chibi: userProfile?.vrState?.chibi } } as CharacterProfile)
+        : (characters.find(x => x.id === c.id) || c);
+    // 给某个小人改 chibi（姿势/贴纸等就地换装）。区分用户与角色。
+    const patchChibi = (c: CharacterProfile, patch: Partial<NonNullable<CharacterProfile['vrState']>['chibi']>) => {
+        if (c.id === 'user') {
+            const uv = userProfile?.vrState;
+            if (!uv?.chibi) { onDressUpUser(); return; }
+            updateUserProfile({ vrState: { ...uv, enabled: !!uv.enabled, chibi: { ...uv.chibi, ...patch } } });
+        } else {
+            const live = characters.find(x => x.id === c.id) || c;
+            if (!live.vrState?.chibi) { onDressUp(live); return; }
+            updateCharacter(c.id, { vrState: { ...(live.vrState || {} as any), chibi: { ...live.vrState.chibi, ...patch } } });
+        }
+    };
+    const dressUp = (c: CharacterProfile) => { if (c.id === 'user') onDressUpUser(); else onDressUp(liveOf(c)); setDetail(null); };
+    // 逗 ta 说一句（临时气泡，2.6s 后消失）
+    const poke = (c: CharacterProfile) => {
+        const line = POKE_LINES[Math.floor(Math.random() * POKE_LINES.length)];
+        setPokes(p => ({ ...p, [c.id]: line }));
+        window.setTimeout(() => setPokes(p => { const n = { ...p }; delete n[c.id]; return n; }), 2600);
+    };
 
     useEffect(() => {
         if (!isGuestbook) return;
@@ -1608,26 +1672,31 @@ const RoomScene: React.FC<{
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#05060d' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: PAPER.page }}>
             <VRStyleTag />
             <div className="relative flex-1 overflow-hidden">
                 <RoomBackground roomId={roomId} />
-                {/* 空灵氛围：星尘 + 暗角，与外壳呼应 */}
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: 'radial-gradient(1px 1px at 22% 24%, rgba(255,255,255,.5), transparent), radial-gradient(1px 1px at 72% 16%, rgba(210,220,255,.45), transparent), radial-gradient(1px 1px at 60% 66%, rgba(230,225,255,.4), transparent)', animation: 'vrtwinkle 7s ease-in-out infinite' }} />
-                <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(120% 90% at 50% 30%, transparent 55%, rgba(5,6,14,.45) 100%)' }} />
-                {/* 顶栏 */}
-                <div className="absolute top-0 left-0 right-0 flex items-center gap-2.5 px-4 pb-3 z-[120]"
-                    style={{ background: 'linear-gradient(180deg,rgba(5,6,14,.55),transparent)', paddingTop: VR_TOP }}>
-                    <button onClick={onClose} className="h-10 w-10 -ml-2 rounded-full bg-white/10 backdrop-blur-md active:bg-white/20 text-white/90 border border-white/10 flex items-center justify-center"><CaretLeft size={20} weight="regular" /></button>
-                    <span className="text-[16px] text-white drop-shadow flex items-center gap-1.5 tracking-[0.14em]" style={{ fontFamily: `'Noto Serif SC',serif`, fontWeight: 500 }}>{room.name}</span>
-                    <div className="ml-auto flex items-center gap-2">
-                        {occupants.length > 0 && (
-                            <button onClick={() => setHideChibi(h => !h)} title={hideChibi ? '显示小人' : '隐藏小人（避免挡住文字）'}
-                                className="text-[10px] px-2.5 py-1 rounded-full bg-white/10 backdrop-blur-md text-white/85 border border-white/10 active:bg-white/20">
-                                {hideChibi ? '显示小人' : '隐藏小人'}
+                {/* 顶栏（纸条 + 胶带） */}
+                <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-3 pb-3 z-[120]"
+                    style={{ paddingTop: VR_TOP }}>
+                    <button onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}><CaretLeft size={18} weight="bold" /></button>
+                    <span className="relative px-2.5 py-1 text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 7, transform: 'rotate(-1.5deg)' }}>
+                        <Tape color={th.tape} w={34} style={{ top: -7, left: 8, transform: 'rotate(-7deg)' }} />
+                        {th.sticker} {room.name}
+                    </span>
+                    <div className="ml-auto flex items-center gap-1.5">
+                        {isPlaza && occupants.length > 0 && (
+                            <button onClick={() => setPhotoOpen(true)} className="flex items-center gap-1 text-[10.5px] px-2.5 py-1.5 rounded-lg active:translate-y-px" style={{ fontFamily: HAND, background: '#fff3c4', border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}>
+                                <Camera size={13} weight="bold" /> 合影
                             </button>
                         )}
-                        <span className="text-[10px] tracking-wider text-white/60">{occupants.length} 人在场</span>
+                        {occupants.length > 0 && (
+                            <button onClick={() => setHideChibi(h => !h)} title={hideChibi ? '显示小人' : '隐藏小人（避免挡住文字）'}
+                                className="text-[10.5px] px-2.5 py-1.5 rounded-lg active:translate-y-px" style={{ fontFamily: HAND, background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}>
+                                {hideChibi ? '显示' : '藏起小人'}
+                            </button>
+                        )}
+                        <span className="text-[10px] px-1.5 py-1 rounded" style={{ fontFamily: HAND, color: PAPER.inkSoft, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{occupants.length} 在场</span>
                     </div>
                 </div>
 
@@ -1635,31 +1704,32 @@ const RoomScene: React.FC<{
                 {isMusic && (
                     <div className="absolute left-3 right-3 z-20" style={{ top: VR_ROOM_PANEL_TOP }}>
                         {np ? (
-                            <div className="rounded-2xl p-2.5 flex items-center gap-3 backdrop-blur-md"
-                                style={{ background: 'rgba(20,8,40,0.6)', border: '1px solid rgba(255,123,213,0.35)', boxShadow: '0 6px 20px rgba(120,40,160,.4)' }}>
+                            <div className="relative p-2.5 flex items-center gap-3"
+                                style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 6px 16px rgba(80,64,30,.22)', transform: 'rotate(-1deg)' }}>
+                                <Tape color={th.tape} w={40} style={{ top: -7, left: 18, transform: 'rotate(-6deg)' }} />
                                 {np.song.albumPic
-                                    ? <img src={np.song.albumPic} className={`h-14 w-14 rounded-xl object-cover ${npPlaying ? 'animate-spin-slow' : ''}`} style={npPlaying ? { animation: 'spin 8s linear infinite' } : {}} alt="" />
-                                    : <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center"><MusicNotes size={22} weight="fill" className="text-white/80" /></div>}
+                                    ? <img src={np.song.albumPic} className="h-14 w-14 rounded-lg object-cover" style={{ border: `2px solid ${PAPER.edge}`, animation: npPlaying ? 'spin 8s linear infinite' : undefined }} alt="" />
+                                    : <div className="h-14 w-14 rounded-lg flex items-center justify-center" style={{ background: th.paper, border: `2px solid ${PAPER.edge}` }}><MusicNotes size={22} weight="fill" style={{ color: th.ink }} /></div>}
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-[9px] text-pink-200/70 tracking-wide flex items-center gap-1"><MusicNotes size={9} weight="fill" /> NOW PLAYING · {np.charName} 点的</div>
-                                    <div className="text-[13px] font-bold text-white truncate">{np.song.name}</div>
-                                    <div className="text-[10.5px] text-pink-100/60 truncate">{np.song.artists}</div>
+                                    <div className="text-[9px] flex items-center gap-1" style={{ fontFamily: HAND, color: th.ink }}><MusicNotes size={9} weight="fill" /> 正在放 · {np.charName} 点的</div>
+                                    <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>{np.song.name}</div>
+                                    <div className="text-[10.5px] truncate" style={{ color: PAPER.inkSoft }}>{np.song.artists}</div>
                                 </div>
-                                <button onClick={playNow} className="h-10 w-10 rounded-full bg-white/90 flex items-center justify-center active:scale-90 transition-transform shrink-0">
-                                    {npPlaying ? <Pause size={18} weight="fill" className="text-purple-700" /> : <Play size={18} weight="fill" className="text-purple-700 ml-0.5" />}
+                                <button onClick={playNow} className="h-10 w-10 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0" style={{ background: th.ink }}>
+                                    {npPlaying ? <Pause size={18} weight="fill" className="text-white" /> : <Play size={18} weight="fill" className="text-white ml-0.5" />}
                                 </button>
                             </div>
                         ) : (
-                            <div className="rounded-2xl p-3 text-center backdrop-blur-md" style={{ background: 'rgba(20,8,40,0.5)', border: '1px solid rgba(255,123,213,0.25)' }}>
-                                <p className="text-[11px] text-pink-100/80">还没有人放歌。让有音乐人格的角色逛进来，ta 就会点一首。</p>
-                                <p className="text-[9.5px] text-pink-200/50 mt-1">没有音乐人格？去「音乐」App 给角色生成一个网易云档案。</p>
+                            <div className="relative p-3 text-center" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 4px 12px rgba(80,64,30,.18)' }}>
+                                <p className="text-[11px]" style={{ fontFamily: HAND, color: PAPER.ink }}>磁带机还空着。让有音乐人格的角色逛进来，ta 就会点一首。</p>
+                                <p className="text-[9.5px] mt-1" style={{ color: PAPER.inkSoft }}>没有音乐人格？去「音乐」App 给角色生成一个网易云档案。</p>
                             </div>
                         )}
                         {musicState?.queue && musicState.queue.length > 0 && (
-                            <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1 rounded-full overflow-x-auto no-scrollbar" style={{ background: 'rgba(20,8,40,0.45)' }}>
-                                <Queue size={12} weight="bold" className="text-pink-200/70 shrink-0" />
+                            <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 overflow-x-auto no-scrollbar" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 8 }}>
+                                <Queue size={12} weight="bold" className="shrink-0" style={{ color: th.ink }} />
                                 {musicState.queue.slice(0, 6).map((q, i) => (
-                                    <span key={i} className="text-[9.5px] text-pink-100/70 whitespace-nowrap shrink-0">《{q.song.name}》<span className="text-pink-200/40">·{q.charName}</span>{i < Math.min(5, musicState.queue.length - 1) ? ' ·' : ''}</span>
+                                    <span key={i} className="text-[9.5px] whitespace-nowrap shrink-0" style={{ color: PAPER.inkSoft }}>《{q.song.name}》<span style={{ color: PAPER.inkFaint }}>·{q.charName}</span>{i < Math.min(5, musicState.queue.length - 1) ? ' ·' : ''}</span>
                                 ))}
                             </div>
                         )}
@@ -1677,33 +1747,31 @@ const RoomScene: React.FC<{
                         else groups.push([m]);
                     }
                     return (
-                        <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: 'rgba(10,22,38,0.62)', border: '1px solid rgba(140,200,255,0.22)', boxShadow: '0 8px 26px rgba(0,0,0,.4)' }}>
-                            <div className="px-3 py-2 text-[10px] tracking-[0.25em] text-sky-200/70 border-b border-white/10" style={{ fontFamily: `'Noto Serif SC',serif` }}>留言墙</div>
+                        <div className="absolute left-3 right-3 z-20 overflow-hidden flex flex-col"
+                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 8px 22px rgba(80,64,30,.28)' }}>
+                            <div className="px-3 py-2 text-[12px]" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, borderBottom: `1.5px dashed ${PAPER.line}` }}>📌 便签留言墙</div>
                             <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-3">
                                 {groups.length === 0 ? (
-                                    <p className="text-[11px] text-white/40 text-center py-6">这面墙还空着。留下第一句话，或等角色们来开帖。</p>
+                                    <p className="text-[11px] text-center py-6" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>这面墙还空着。贴上第一张便签，或等角色们来开帖。</p>
                                 ) : groups.map(g => {
                                     const head = g[0];
                                     const isUser = head.authorId === 'user';
                                     const ch = isUser ? null : characters.find(c => c.id === head.authorId);
                                     const name = isUser ? head.authorName : (ch?.name || head.authorName);
-                                    const hue = (() => { let h = 0; for (let i = 0; i < head.authorId.length; i++) h = (h * 31 + head.authorId.charCodeAt(i)) % 360; return h; })();
-                                    const nameColor = isUser ? '#7dd3fc' : `hsl(${hue},72%,74%)`;
                                     return (
                                         <div key={head.id} className="flex gap-2.5">
                                             {ch?.avatar
-                                                ? <img src={ch.avatar} className="h-8 w-8 rounded-full object-cover shrink-0 mt-0.5" alt="" />
-                                                : <div className="h-8 w-8 rounded-full shrink-0 mt-0.5 flex items-center justify-center text-[12px] font-bold text-white/95" style={{ background: isUser ? 'linear-gradient(135deg,#38bdf8,#6366f1)' : `hsl(${hue},45%,42%)` }}>{name.slice(0, 1)}</div>}
+                                                ? <img src={ch.avatar} className="h-8 w-8 rounded-full object-cover shrink-0 mt-0.5" style={{ border: `1px solid ${PAPER.edge}` }} alt="" />
+                                                : <div className="h-8 w-8 rounded-full shrink-0 mt-0.5 flex items-center justify-center text-[12px] font-bold" style={{ background: noteColor(head.authorId), color: PAPER.ink, border: `1px solid ${PAPER.edge}`, fontFamily: HAND }}>{name.slice(0, 1)}</div>}
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-baseline gap-1.5">
-                                                    <span className="text-[12px] font-bold" style={{ color: nameColor }}>{name}</span>
-                                                    <span className="text-[8.5px] text-white/30 tabular-nums">{new Date(head.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                    <span className="text-[12px] font-bold" style={{ fontFamily: HAND, color: isUser ? PAPER.red : PAPER.ink }}>{name}</span>
+                                                    <span className="text-[8.5px] tabular-nums" style={{ color: PAPER.inkFaint }}>{new Date(head.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                                 </div>
                                                 <div className="mt-1 space-y-1">
-                                                    {g.map(m => (
-                                                        <div key={m.id} className="text-[12.5px] leading-relaxed text-white/85 px-2.5 py-1 rounded-lg w-fit max-w-full" style={{ background: 'rgba(255,255,255,0.055)' }}>
-                                                            {m.replyToName && <span className="text-[10px] text-sky-200/45 mr-1">↩{m.replyToName}</span>}
+                                                    {g.map((m, mi) => (
+                                                        <div key={m.id} className="text-[12.5px] leading-relaxed px-2.5 py-1.5 w-fit max-w-full" style={{ color: PAPER.ink, background: noteColor(head.authorId + mi), border: `1px solid ${PAPER.edge}`, borderRadius: 6, transform: `rotate(${tiltOf(m.id, 1.4)}deg)` }}>
+                                                            {m.replyToName && <span className="text-[10px] mr-1" style={{ color: PAPER.red }}>↩{m.replyToName}</span>}
                                                             {m.content}
                                                         </div>
                                                     ))}
@@ -1728,68 +1796,105 @@ const RoomScene: React.FC<{
                     const slot = slots[i % slots.length];
                     const latest = latestByChar[c.id];
                     const idle = IDLE_QUIPS[roomId][i % IDLE_QUIPS[roomId].length];
-                    const bubble = latest ? (stripSelfName(latest.meta.activity, c.name) || idle) : idle;
+                    const bubble = pokes[c.id] || (latest ? (stripSelfName(latest.meta.activity, c.name) || idle) : idle);
                     return (
                         <div key={c.id} className="absolute" style={{ left: `${slot.x}%`, top: `${slot.y}%`, zIndex: Math.round(slot.y) }}>
-                            <Chibi char={c} bubble={bubble} size={104} dance={isMusic} onTap={() => setDetail(c)} />
+                            <Chibi char={liveOf(c)} bubble={bubble} size={isPlaza ? 96 : 104} dance={isMusic} onTap={() => { if (isPlaza) poke(c); setDetail(c); }} />
                         </div>
                     );
                 })}
                 {occupants.length === 0 && !isMusic && !isGuestbook && !isPostOffice && !isTheater && (
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <p className="text-white/70 text-[12px] bg-black/30 rounded-full px-4 py-2">这个房间还没有人。去「接入」启用角色吧。</p>
+                        <p className="text-[12px] px-4 py-2 rounded-lg" style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}>{isPlaza ? '广场上还没人。去「接入」捏几个小人来碰头吧。' : '这个房间还没有人。去「接入」启用角色吧。'}</p>
                     </div>
                 )}
 
                 {/* 留言簿：用户发言（广播给所有接入角色） */}
                 {isGuestbook && (
                     <div className="absolute left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
-                        style={{ bottom: vrBottomPad('0px'), background: 'linear-gradient(0deg,rgba(5,12,22,.92),transparent)' }}>
+                        style={{ bottom: vrBottomPad('0px'), background: `linear-gradient(0deg, ${PAPER.page}, transparent)` }}>
                         <input value={postText} onChange={e => setPostText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitPost(); }}
-                            placeholder={`以 ${userName} 的身份留句话…`}
-                            className="flex-1 rounded-full px-4 py-2 text-[12.5px] text-white placeholder-white/35 outline-none backdrop-blur-md"
-                            style={{ background: 'rgba(255,255,255,.08)', border: '1px solid rgba(140,200,255,.25)' }} />
-                        <button onClick={submitPost} disabled={!postText.trim() || posting}
-                            className="h-9 px-4 rounded-full text-[12px] font-semibold text-white disabled:opacity-40 shrink-0"
-                            style={{ background: 'linear-gradient(120deg, rgba(120,180,255,.9), rgba(150,200,235,.85))' }}>
-                            {posting ? '…' : '留言'}
-                        </button>
+                            placeholder={`以 ${userName} 的身份贴一张便签…`}
+                            className="flex-1 rounded-lg px-4 py-2 text-[12.5px] outline-none"
+                            style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }} />
+                        <InkBtn tone="ink" onClick={submitPost} disabled={!postText.trim() || posting} className="h-9 px-4 text-[12px] font-semibold shrink-0">
+                            {posting ? '…' : '贴上'}
+                        </InkBtn>
                     </div>
                 )}
             </div>
 
-            {/* 角色活动详情 —— 盖在 chibi 之上（zIndex 高于任何 chibi） */}
-            {detail && (
-                <div className="absolute inset-0 flex items-end bg-black/45" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
-                    <div className="w-full rounded-t-2xl p-4 text-white" style={{ background: 'linear-gradient(180deg,#1a2236 0%,#0d1119 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-2 mb-2">
-                            {detail.avatar ? <img src={detail.avatar} className="h-9 w-9 rounded-full object-cover" alt="" /> : <div className="h-9 w-9 rounded-full bg-indigo-400/40" />}
-                            <span className="font-bold">{detail.name}</span>
-                            <button onClick={() => setDetail(null)} className="ml-auto p-1 text-white/60"><X size={18} /></button>
+            {/* 角色活动详情 + 就地换装/摆姿势/贴纸/逗 ta（盖在 chibi 之上） */}
+            {detail && (() => {
+                const live = liveOf(detail);
+                const cur = live.vrState?.chibi;
+                const curPose = cur?.pose || 'idle';
+                const cyclePose = () => { const idx = POSE_LIST.findIndex(p => p.key === curPose); patchChibi(detail, { pose: POSE_LIST[(idx + 1) % POSE_LIST.length].key }); };
+                const cycleSticker = () => { const idx = STICKER_CHOICES.indexOf(cur?.sticker || ''); patchChibi(detail, { sticker: STICKER_CHOICES[(idx + 1) % STICKER_CHOICES.length] }); };
+                return (
+                <div className="absolute inset-0 flex items-end bg-black/40" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
+                    <div className="w-full rounded-t-2xl p-4" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 mb-2.5">
+                            {detail.avatar ? <img src={detail.avatar} className="h-9 w-9 rounded-full object-cover" style={{ border: `1px solid ${PAPER.edge}` }} alt="" /> : <div className="h-9 w-9 rounded-full" style={{ background: noteColor(detail.id), border: `1px solid ${PAPER.edge}` }} />}
+                            <span className="font-bold text-[15px]" style={{ fontFamily: HAND, color: PAPER.ink }}>{detail.name}</span>
+                            {detail.id === 'user' && <InkTag color="#d7e7f6" style={{ fontSize: 9 }}>就是你</InkTag>}
+                            <button onClick={() => setDetail(null)} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>
+                        </div>
+                        {/* 捏小人动作行 */}
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                            <InkBtn tone="soft" onClick={() => dressUp(detail)} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Scissors size={12} weight="bold" /> 换装</InkBtn>
+                            <InkBtn tone="soft" onClick={cyclePose} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><HandWaving size={12} weight="bold" /> 摆姿势 · {POSE_LIST.find(p => p.key === curPose)?.label}</InkBtn>
+                            <InkBtn tone="soft" onClick={cycleSticker} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Sticker size={12} weight="bold" /> 贴纸 {cur?.sticker || '＋'}</InkBtn>
+                            <InkBtn tone="soft" onClick={() => poke(detail)} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Smiley size={12} weight="bold" /> 逗ta</InkBtn>
                         </div>
                         {latestByChar[detail.id] ? (() => {
                             const m = latestByChar[detail.id].meta;
                             return (
                                 <>
-                                    <p className="text-[12.5px] text-indigo-50/90 leading-relaxed">{stripSelfName(m.activity, detail.name)}</p>
-                                    {m.behavior && <p className="text-[11px] text-pink-200/80 mt-1.5">{stripSelfName(m.behavior, detail.name)}</p>}
+                                    <p className="text-[12.5px] leading-relaxed" style={{ color: PAPER.ink }}>{stripSelfName(m.activity, detail.name)}</p>
+                                    {m.behavior && <p className="text-[11px] mt-1.5" style={{ color: PAPER.teal }}>{stripSelfName(m.behavior, detail.name)}</p>}
                                     {m.annotationRefs && m.annotationRefs.length > 0
                                         ? m.annotationRefs.map((ref, i) => (
                                             <button key={i} onClick={() => { onJump(m.novelId, ref.segIdx); setDetail(null); }}
-                                                className="block w-full text-left mt-1.5 text-[11.5px] text-indigo-200/85 pl-2 border-l-2 border-amber-300/50 leading-snug active:opacity-60">
-                                                {stripLeakedAttrs(ref.text)} <span className="text-amber-300/70">↗原文</span>
+                                                className="block w-full text-left mt-1.5 text-[11.5px] pl-2 leading-snug active:opacity-60" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88` }}>
+                                                {stripLeakedAttrs(ref.text)} <span style={{ color: PAPER.red }}>↗原文</span>
                                             </button>
                                         ))
                                         : m.annotationExcerpts?.map((ex, i) => (
-                                            <div key={i} className="mt-1.5 text-[11.5px] text-indigo-200/80 pl-2 border-l-2 border-amber-300/50 leading-snug">{stripLeakedAttrs(ex)}</div>
+                                            <div key={i} className="mt-1.5 text-[11.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.edge}` }}>{stripLeakedAttrs(ex)}</div>
                                         ))}
-                                    <p className="text-[9px] text-indigo-300/50 mt-2">{new Date(latestByChar[detail.id].timestamp).toLocaleString('zh-CN')}</p>
+                                    <p className="text-[9px] mt-2" style={{ color: PAPER.inkFaint }}>{new Date(latestByChar[detail.id].timestamp).toLocaleString('zh-CN')}</p>
                                 </>
                             );
                         })() : (
-                            <p className="text-[12px] text-indigo-300/60">还没有留下动态，等 ta 下一次登入吧。</p>
+                            <p className="text-[12px]" style={{ color: PAPER.inkSoft }}>{isPlaza ? '点点 ta 逗两句，或给 ta 换装、摆个姿势～' : '还没有留下动态，等 ta 下一次登入吧。'}</p>
                         )}
+                    </div>
+                </div>
+                );
+            })()}
+
+            {/* 世界房间 · 合影（拍立得） */}
+            {photoOpen && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/55 px-4" style={{ zIndex: 240 }} onClick={() => setPhotoOpen(false)}>
+                    <div className="relative w-full max-w-[340px] p-3 pb-10" onClick={e => e.stopPropagation()}
+                        style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}`, borderRadius: 4, boxShadow: '0 18px 50px rgba(0,0,0,.5)', transform: 'rotate(-1.5deg)' }}>
+                        <Tape color={th.tape} w={80} style={{ top: -12, left: '50%', marginLeft: -40, transform: 'rotate(-3deg)' }} />
+                        <button onClick={() => setPhotoOpen(false)} className="absolute top-1 right-1 h-7 w-7 flex items-center justify-center rounded-lg z-10" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={15} weight="bold" /></button>
+                        <div className="relative h-52 overflow-hidden rounded-[3px]" style={{ border: `1px solid ${PAPER.edge}` }}>
+                            <RoomBackground roomId={roomId} />
+                            <div className="absolute inset-x-0 bottom-1 flex items-end justify-center gap-0.5 px-2">
+                                {occupants.slice(0, 8).map(c => {
+                                    const ch = getChibi(liveOf(c));
+                                    return ch.img
+                                        ? <img key={c.id} src={ch.img} className="h-20 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})`, filter: 'drop-shadow(0 3px 3px rgba(90,70,40,.45))' }} />
+                                        : <div key={c.id} className="h-10 w-10 rounded-full flex items-center justify-center text-[11px]" style={{ background: noteColor(c.id), color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{c.name.slice(0, 1)}</div>;
+                                })}
+                            </div>
+                        </div>
+                        <div className="text-center text-[13px] mt-2" style={{ fontFamily: HAND, color: PAPER.ink }}>页外 · 世界房间合影 ☆</div>
+                        <div className="text-center text-[9.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>{new Date().toLocaleDateString('zh-CN')} · {occupants.length} 个小人 · 截图留念</div>
                     </div>
                 </div>
             )}
@@ -2235,42 +2340,48 @@ const UploadModal: React.FC<{
 };
 
 // ============ chibi 形象编辑器（复用特别时光的捏人系统） ============
-type ChibiSave = { img: string; state?: any; scale: number; offsetY: number; flip: boolean };
-const ChibiEditor: React.FC<{
-    char: CharacterProfile;
+type ChibiSave = { img: string; state?: any; scale: number; offsetY: number; flip: boolean; pose?: string; sticker?: string; name?: string };
+
+// 捏小人工作台：捏人器 + 微调（大小/翻转/姿势/贴纸）+ 换装夹（多套形象一键切换）。角色与用户共用。
+const ChibiAtelier: React.FC<{
+    mode: 'char' | 'user';
+    name: string;
+    isMoro?: boolean;
+    draftKey: string;
+    existing?: VRChibi;
+    existingLooks?: VRChibi[];
+    blurb: string;
+    saveLabel: string;
     onClose: () => void;
-    onSave: (chibi: ChibiSave) => void;
-}> = ({ char, onClose, onSave }) => {
-    const existing = char.vrState?.chibi;
-    // 已捏过的：进入"预览 + 微调"页；点"重新捏"再开捏人器。没捏过：直接进捏人器。
+    onSave: (chibi: ChibiSave, looks: ChibiSave[]) => void;
+}> = ({ mode, name, isMoro, draftKey, existing, existingLooks, blurb, saveLabel, onClose, onSave }) => {
     const [creating, setCreating] = useState<boolean>(!existing?.img);
     const [img, setImg] = useState<string>(existing?.img || '');
     const [state, setState] = useState<any>(existing?.state);
     const [scale, setScale] = useState<number>(existing?.scale ?? 1);
     const [offsetY, setOffsetY] = useState<number>(existing?.offsetY ?? 0);
     const [flip, setFlip] = useState<boolean>(!!existing?.flip);
+    const [pose, setPose] = useState<string>(existing?.pose || 'idle');
+    const [sticker, setSticker] = useState<string>(existing?.sticker || '');
+    const [looks, setLooks] = useState<ChibiSave[]>((existingLooks || []).map(l => ({ img: l.img, state: l.state, scale: l.scale ?? 1, offsetY: l.offsetY ?? 0, flip: !!l.flip, pose: l.pose, sticker: l.sticker, name: l.name })));
 
-    const isMoro = (char.name || '').toLowerCase().includes('moro');
-    // 回填：捏人器 init 读 presets（扁平 map），用上次导出的 state.selected
-    const presets = existing?.state?.selected || (isMoro ? { skin: 'skin_1', fronthair: 'fronthair_99', eyes: 'eyes_99' } : undefined);
-
-    const onConfirm = (r: ChibiResult) => {
-        setImg(r.transparentDataUrl);
-        setState(r.state);
-        setScale(1); setOffsetY(0); setFlip(false);
-        setCreating(false);
-    };
+    const presets = state?.selected || existing?.state?.selected || (isMoro ? { skin: 'skin_1', fronthair: 'fronthair_99', eyes: 'eyes_99' } : undefined);
+    const cur = (): ChibiSave => ({ img, state, scale, offsetY, flip, pose, sticker });
+    const onConfirm = (r: ChibiResult) => { setImg(r.transparentDataUrl); setState(r.state); setScale(1); setOffsetY(0); setFlip(false); setCreating(false); };
+    const loadLook = (l: ChibiSave) => { setImg(l.img); setState(l.state); setScale(l.scale); setOffsetY(l.offsetY); setFlip(l.flip); setPose(l.pose || 'idle'); setSticker(l.sticker || ''); };
+    const stashLook = () => { if (!img) return; setLooks(ls => [...ls.filter(l => l.img !== img), cur()].slice(-8)); };
+    const dropLook = (i: number) => setLooks(ls => ls.filter((_, k) => k !== i));
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black">
-                <div className="flex items-center gap-2 px-4 pb-2 shrink-0 text-white" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingTop: VR_TOP }}>
-                    <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="p-1.5 -ml-1.5 rounded-full active:bg-white/10"><CaretLeft size={20} weight="bold" /></button>
-                    <span className="text-[14px] font-bold">捏 {char.name} 的小人</span>
+            <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: PAPER.page }}>
+                <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ paddingTop: VR_TOP, borderBottom: `1.5px dashed ${PAPER.line}` }}>
+                    <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="h-8 w-8 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><CaretLeft size={18} weight="bold" /></button>
+                    <span className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✂ 捏 {name} 的小人</span>
                 </div>
                 <div className="flex-1 min-h-0">
-                    <CreatorIframe mode="char" charName={char.name} isMoro={isMoro} presets={presets}
-                        draftKey={`vr_${char.id}`} title={`捏一个小人 · ${char.name}`} subtitle="彼方 · CHIBI"
+                    <CreatorIframe mode={mode} charName={name} isMoro={isMoro} presets={presets}
+                        draftKey={draftKey} title={`捏一个小人 · ${name}`} subtitle="页外 · 拼贴小人"
                         onConfirm={onConfirm} />
                 </div>
             </div>
@@ -2278,109 +2389,114 @@ const ChibiEditor: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45" onClick={onClose}>
             <VRStyleTag />
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[92vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-1">
-                    <span className="text-[15px] font-bold text-white">{char.name} 的彼方形象</span>
-                    <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
+                    <span className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>{name} 的页外小人</span>
+                    <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>
                 </div>
-                <p className="text-[10.5px] text-indigo-300/60 mb-3">这个 Q 版小人会站在彼方的房间里。可以重新捏，或微调站位。</p>
+                <p className="text-[10.5px] mb-3" style={{ color: PAPER.inkSoft }}>{blurb}</p>
 
-                <div className="relative rounded-xl h-48 overflow-hidden mb-3 flex items-end justify-center" style={{ background: 'linear-gradient(180deg,#2a2350,#15132b)' }}>
-                    <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'radial-gradient(1.5px 1.5px at 30% 30%, rgba(255,255,255,.5), transparent), radial-gradient(1.5px 1.5px at 70% 50%, rgba(200,220,255,.4), transparent)' }} />
-                    {img && <img src={img} alt="" className="object-contain mb-3" style={{ height: 140 * scale, transform: `scaleX(${flip ? -1 : 1}) translateY(${offsetY}px)`, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,.5))', animation: 'vrfloat 3.2s ease-in-out infinite' }} />}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[50%]" style={{ width: 76, height: 17, background: 'radial-gradient(ellipse,rgba(0,0,0,.5),transparent)' }} />
-                </div>
-
-                <button onClick={() => setCreating(true)} className="w-full rounded-lg border border-indigo-300/40 py-2 mb-3 text-[12px] text-indigo-100 flex items-center justify-center gap-1.5 active:bg-white/5">
-                    <PencilSimple size={14} weight="bold" /> 重新捏小人
-                </button>
-
-                <div className="space-y-2.5 mb-3">
-                    <label className="flex items-center gap-2 text-[11px] text-indigo-200/80">
-                        <UploadSimple size={14} className="rotate-90" /> 大小
-                        <input type="range" min={0.5} max={1.6} step={0.05} value={scale} onChange={e => setScale(Number(e.target.value))} className="flex-1 accent-indigo-400" />
-                    </label>
-                    <button onClick={() => setFlip(f => !f)} className={`text-[11px] rounded-full px-3 py-1 flex items-center gap-1.5 ${flip ? 'bg-indigo-400 text-white' : 'bg-white/10 text-indigo-200/80'}`}>
-                        <FlipHorizontal size={13} /> 水平翻转
-                    </button>
+                {/* 拍立得预览 */}
+                <div className="relative h-48 mb-3 flex items-end justify-center overflow-hidden" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}`, borderRadius: 8 }}>
+                    <Tape color={TAPE_COLORS[0]} w={56} style={{ top: -8, left: '50%', marginLeft: -28, transform: 'rotate(-4deg)' }} />
+                    <div className="absolute inset-0" style={{ backgroundImage: `linear-gradient(${PAPER.line}55 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}44 1px, transparent 1px)`, backgroundSize: '18px 18px', opacity: .5 }} />
+                    {sticker && <span className="absolute top-3 right-4 text-[22px]" style={{ animation: 'ywbob 2s ease-in-out infinite' }}>{sticker}</span>}
+                    {img && <img src={img} alt="" className="object-contain mb-3 relative" style={{ height: 140 * scale, transform: `scaleX(${flip ? -1 : 1}) translateY(${offsetY}px)`, filter: 'drop-shadow(0 4px 6px rgba(90,70,40,.4))', animation: poseAnim(pose) }} />}
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[50%]" style={{ width: 76, height: 16, background: 'radial-gradient(ellipse,rgba(90,70,40,.4),transparent)' }} />
                 </div>
 
-                <button onClick={() => { if (img) onSave({ img, state, scale, offsetY, flip }); }} disabled={!img}
-                    className="w-full rounded-xl py-2.5 text-[13px] font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))' }}>
-                    保存形象{char.vrState?.enabled ? '' : ' 并接入'}
-                </button>
+                <InkBtn tone="soft" onClick={() => setCreating(true)} className="w-full py-2 mb-3 text-[12px] flex items-center justify-center gap-1.5">
+                    <PencilSimple size={14} weight="bold" /> 重新捏 / 改五官衣服
+                </InkBtn>
+
+                {/* 大小 + 翻转 */}
+                <div className="flex items-center gap-2 mb-2.5">
+                    <span className="text-[11px] flex items-center gap-1" style={{ color: PAPER.inkSoft }}><UploadSimple size={13} className="rotate-90" /> 大小</span>
+                    <input type="range" min={0.5} max={1.6} step={0.05} value={scale} onChange={e => setScale(Number(e.target.value))} className="flex-1" style={{ accentColor: PAPER.red }} />
+                    <button onClick={() => setFlip(f => !f)} className="text-[11px] px-2.5 py-1 rounded-md flex items-center gap-1" style={{ fontFamily: HAND, background: flip ? PAPER.red : PAPER.cream, color: flip ? '#fff' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}><FlipHorizontal size={12} /> 翻转</button>
+                </div>
+
+                {/* 姿势 */}
+                <div className="mb-2.5">
+                    <div className="text-[10px] mb-1.5 flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.inkSoft }}><HandWaving size={12} weight="bold" /> 姿势（在世界里怎么动）</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {POSE_LIST.map(p => (
+                            <button key={p.key} onClick={() => setPose(p.key)} className="text-[11px] px-2.5 py-1 rounded-md" style={{ fontFamily: HAND, background: pose === p.key ? PAPER.ink : PAPER.cream, color: pose === p.key ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{p.label}</button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 贴纸 */}
+                <div className="mb-3">
+                    <div className="text-[10px] mb-1.5 flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.inkSoft }}><Sticker size={12} weight="bold" /> 头顶贴纸</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {STICKER_CHOICES.map((s, i) => (
+                            <button key={i} onClick={() => setSticker(s)} className="h-7 w-7 flex items-center justify-center rounded-md text-[14px]" style={{ background: sticker === s ? '#fff0c0' : PAPER.cream, border: `1px solid ${sticker === s ? PAPER.red : PAPER.edge}` }}>{s || '∅'}</button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 换装夹：多套形象 */}
+                <div className="mb-3 p-2.5" style={{ background: PAPER.cream, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 8 }}>
+                    <div className="flex items-center mb-1.5">
+                        <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>👗 换装夹 · 存多套随时换</span>
+                        <InkBtn tone="soft" onClick={stashLook} disabled={!img} className="ml-auto text-[10.5px] px-2 py-1 flex items-center gap-1"><Plus size={11} weight="bold" /> 存当前</InkBtn>
+                    </div>
+                    {looks.length === 0 ? (
+                        <p className="text-[10px]" style={{ color: PAPER.inkFaint }}>把现在这套存进夹子，捏好几套后点缩略图就能一键换。</p>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {looks.map((l, i) => (
+                                <div key={i} className="relative">
+                                    <button onClick={() => loadLook(l)} className="h-14 w-12 flex items-end justify-center overflow-hidden rounded-md active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${l.img === img ? PAPER.red : PAPER.edge}` }}>
+                                        <img src={l.img} alt="" className="h-12 object-contain object-bottom" style={{ transform: `scaleX(${l.flip ? -1 : 1})` }} />
+                                    </button>
+                                    <button onClick={() => dropLook(i)} className="absolute -top-1.5 -right-1.5 h-4 w-4 flex items-center justify-center rounded-full" style={{ background: PAPER.red, color: '#fff' }}><X size={9} weight="bold" /></button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <InkBtn tone="ink" onClick={() => { if (img) onSave(cur(), looks); }} disabled={!img} className="w-full py-2.5 text-[13px] font-bold" style={{ borderRadius: 10 }}>
+                    {saveLabel}
+                </InkBtn>
             </div>
         </div>
     );
 };
+
+const ChibiEditor: React.FC<{
+    char: CharacterProfile;
+    onClose: () => void;
+    onSave: (chibi: ChibiSave, looks: ChibiSave[]) => void;
+}> = ({ char, onClose, onSave }) => (
+    <ChibiAtelier mode="char" name={char.name} isMoro={(char.name || '').toLowerCase().includes('moro')}
+        draftKey={`vr_${char.id}`} existing={char.vrState?.chibi} existingLooks={char.vrState?.chibiLooks}
+        blurb="这个小人会站在页外的各个房间里。能换五官衣服、挑姿势、贴贴纸，还能存好几套随时换。"
+        saveLabel={`保存形象${char.vrState?.enabled ? '' : ' 并接入'}`}
+        onClose={onClose} onSave={onSave} />
+);
 
 // ============ 用户本人捏 chibi（mode="user"，结构同角色 chibi） ============
 const UserChibiEditor: React.FC<{
     userName: string;
-    existing?: { img: string; state?: any; scale?: number; offsetY?: number; flip?: boolean };
+    existing?: VRChibi;
+    existingLooks?: VRChibi[];
     onClose: () => void;
-    onSave: (chibi: ChibiSave) => void;
-}> = ({ userName, existing, onClose, onSave }) => {
-    const [creating, setCreating] = useState<boolean>(!existing?.img);
-    const [img, setImg] = useState<string>(existing?.img || '');
-    const [state, setState] = useState<any>(existing?.state);
-    const [scale, setScale] = useState<number>(existing?.scale ?? 1);
-    const [offsetY, setOffsetY] = useState<number>(existing?.offsetY ?? 0);
-    const [flip, setFlip] = useState<boolean>(!!existing?.flip);
-    const presets = existing?.state?.selected;
+    onSave: (chibi: ChibiSave, looks: ChibiSave[]) => void;
+}> = ({ userName, existing, existingLooks, onClose, onSave }) => (
+    <ChibiAtelier mode="user" name={userName}
+        draftKey="vr_user" existing={existing} existingLooks={existingLooks}
+        blurb="这个小人就是「你」在页外里的化身，会站在你挂着的房间里。能挑姿势、贴贴纸，还能存好几套随时换。"
+        saveLabel="保存形象"
+        onClose={onClose} onSave={onSave} />
+);
 
-    const onConfirm = (r: ChibiResult) => {
-        setImg(r.transparentDataUrl); setState(r.state);
-        setScale(1); setOffsetY(0); setFlip(false); setCreating(false);
-    };
-
-    if (creating) {
-        return (
-            <div className="fixed inset-0 z-[60] flex flex-col bg-black" style={{ paddingTop: VR_TOP }}>
-                <CreatorIframe mode="user" charName={userName} presets={presets}
-                    draftKey="vr_user" title={`捏一个你自己 · ${userName}`} subtitle="彼方 · 你的 CHIBI"
-                    onConfirm={onConfirm} />
-            </div>
-        );
-    }
-
-    return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/55" onClick={onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-2 mb-2">
-                    <span className="text-[15px] font-bold text-white">你的彼方形象</span>
-                    <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>
-                </div>
-                <p className="text-[10.5px] text-indigo-300/60 mb-3">这个 Q 版小人就是「你」在彼方里的化身，会站在你挂着的房间里。</p>
-                <div className="relative rounded-xl h-48 overflow-hidden mb-3 flex items-end justify-center" style={{ background: 'linear-gradient(180deg,#2a2350,#15132b)' }}>
-                    {img && <img src={img} alt="" className="object-contain mb-3" style={{ height: 140 * scale, transform: `scaleX(${flip ? -1 : 1}) translateY(${offsetY}px)`, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,.5))', animation: 'vrfloat 3.2s ease-in-out infinite' }} />}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[50%]" style={{ width: 76, height: 17, background: 'radial-gradient(ellipse,rgba(0,0,0,.5),transparent)' }} />
-                </div>
-                <button onClick={() => setCreating(true)} className="w-full rounded-lg border border-indigo-300/40 py-2 mb-3 text-[12px] text-indigo-100 flex items-center justify-center gap-1.5 active:bg-white/5">
-                    <PencilSimple size={14} weight="bold" /> 重新捏小人
-                </button>
-                <div className="space-y-2.5 mb-3">
-                    <label className="flex items-center gap-2 text-[11px] text-indigo-200/80">
-                        <UploadSimple size={14} className="rotate-90" /> 大小
-                        <input type="range" min={0.5} max={1.6} step={0.05} value={scale} onChange={e => setScale(Number(e.target.value))} className="flex-1 accent-indigo-400" />
-                    </label>
-                    <button onClick={() => setFlip(f => !f)} className={`text-[11px] rounded-full px-3 py-1 flex items-center gap-1.5 ${flip ? 'bg-indigo-400 text-white' : 'bg-white/10 text-indigo-200/80'}`}>
-                        <FlipHorizontal size={13} /> 水平翻转
-                    </button>
-                </div>
-                <button onClick={() => { if (img) onSave({ img, state, scale, offsetY, flip }); }} disabled={!img}
-                    className="w-full rounded-xl py-2.5 text-[13px] font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))' }}>
-                    保存形象
-                </button>
-            </div>
-        </div>
-    );
-};
-
-// ============ 用户本人接入彼方面板（捏 chibi / 选房间 / 写在干嘛 / 广播） ============
-const USER_VR_PRESETS = ['在看小说', '在自习 / 刷题', '在听歌单曲循环', '单纯挂机放空', '在娱乐室瞎玩', '在写漂流信'];
+// ============ 用户本人接入页外面板（捏 chibi / 选房间 / 写在干嘛 / 广播） ============
+const USER_VR_PRESETS = ['在世界房间晃悠', '在看小说', '在自习 / 刷题', '在听歌单曲循环', '单纯挂机放空', '在写漂流信'];
 const UserVRPanel: React.FC<{
     userProfile?: UserProfile;
     updateUserProfile: (u: Partial<UserProfile>) => void;
@@ -2397,63 +2513,64 @@ const UserVRPanel: React.FC<{
     // userProfile 外部变化（如刚捏完 chibi）时同步本地草稿
     useEffect(() => { setRoom(uv?.currentRoom || 'guestbook'); setActivity(uv?.activity || ''); }, [uv?.currentRoom, uv?.activity]);
 
-    const ROOMS: [VRRoomId, string][] = [['library', '图书馆'], ['music', '听歌房'], ['guestbook', '留言簿'], ['gym', '娱乐室'], ['postoffice', '邮局']];
+    const ROOMS: [VRRoomId, string][] = [['plaza', '世界房间'], ['library', '图书馆'], ['music', '听歌房'], ['guestbook', '留言簿'], ['gym', '娱乐室'], ['postoffice', '邮局']];
 
     const join = () => {
         if (!chibi?.img) { onEditChibi(); return; } // 没捏小人 → 先捏，再回来开接入
         updateUserProfile({ vrState: { ...(uv || {}), enabled: true, currentRoom: room, activity: activity.trim(), updatedAt: Date.now() } });
-        addToast?.('你已接入彼方', 'success');
+        addToast?.('你已接入页外', 'success');
     };
     const logout = () => {
         updateUserProfile({ vrState: { ...(uv || {}), enabled: false } });
-        addToast?.('已从彼方登出', 'success'); // 登出后角色聊天里的"你在彼方"提示随之消失
+        addToast?.('已从页外登出', 'success'); // 登出后角色聊天里的"你在页外"提示随之消失
     };
     const saveBroadcast = () => {
         updateUserProfile({ vrState: { ...(uv || {}), enabled: true, currentRoom: room, activity: activity.trim(), updatedAt: Date.now() } });
         void onBroadcast(room, activity.trim());
     };
+    const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
+        <button onClick={onClick} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: on ? PAPER.red : '#d8ccaf', border: `1px solid ${PAPER.edge}` }}>
+            <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform" style={{ background: '#fffdf6', transform: on ? 'translateX(20px)' : 'none', boxShadow: '0 1px 2px rgba(0,0,0,.3)' }} />
+        </button>
+    );
 
     return (
-        <div className="rounded-2xl p-3.5 backdrop-blur-sm" style={{ background: 'linear-gradient(135deg, rgba(120,130,255,0.10), rgba(150,212,204,0.06))', border: '1px solid rgba(150,168,255,0.22)' }}>
+        <div className="relative p-3.5" style={{ background: '#eef1f8', border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)' }}>
+            <Tape color={TAPE_COLORS[3]} w={50} style={{ top: -8, left: 18, transform: 'rotate(-6deg)' }} />
             <div className="flex items-center gap-2.5">
-                <button onClick={onEditChibi} className="relative h-12 w-12 rounded-xl overflow-hidden bg-black/20 flex items-end justify-center shrink-0 active:opacity-80">
-                    {chibi?.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg text-indigo-300/60 mb-2">＋</span>}
-                    <span className="absolute bottom-0 right-0 bg-indigo-500/90 rounded-tl-md p-0.5"><PencilSimple size={9} weight="bold" /></span>
+                <button onClick={onEditChibi} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+                    {chibi?.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg mb-2" style={{ color: PAPER.inkFaint }}>＋</span>}
+                    <span className="absolute bottom-0 right-0 rounded-tl-md p-0.5" style={{ background: PAPER.red }}><PencilSimple size={9} weight="bold" className="text-white" /></span>
                 </button>
                 <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-white truncate">你自己 · {userProfile?.name || '我'}</div>
-                    <div className="text-[10px] text-indigo-300/60">{enabled ? '已接入彼方 · 角色能看到你在这儿' : chibi?.img ? '已捏形象 · 未接入' : '捏个自己的小人，接入彼方'}</div>
+                    <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>就是你 · {userProfile?.name || '我'}</div>
+                    <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>{enabled ? '已接入页外 · 角色能看到你在这儿' : chibi?.img ? '已捏形象 · 未接入' : '捏个自己的小人，接入页外'}</div>
                 </div>
-                <button onClick={enabled ? logout : join}
-                    className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? 'bg-indigo-400' : 'bg-white/15'}`}>
-                    <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${enabled ? 'translate-x-5' : ''}`} />
-                </button>
+                <Toggle on={enabled} onClick={enabled ? logout : join} />
             </div>
             {enabled && (
                 <>
-                    <div className="mt-3 text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5">你挂在哪个房间</div>
+                    <div className="mt-3 text-[10px] mb-1.5" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>你挂在哪个房间</div>
                     <div className="flex flex-wrap gap-1.5">
                         {ROOMS.map(([rid, label]) => (
-                            <button key={rid} onClick={() => setRoom(rid)}
-                                className={`text-[10.5px] rounded-full px-2.5 py-1 font-semibold ${room === rid ? 'bg-indigo-400 text-white' : 'bg-white/10 text-indigo-200/70'}`}>
+                            <button key={rid} onClick={() => setRoom(rid)} className="text-[10.5px] rounded-md px-2.5 py-1" style={{ fontFamily: HAND, fontWeight: 600, background: room === rid ? PAPER.ink : '#fffdf6', color: room === rid ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>
                                 {label}
                             </button>
                         ))}
                     </div>
-                    <div className="mt-3 text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5">你在干嘛（角色会看到）</div>
+                    <div className="mt-3 text-[10px] mb-1.5" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>你在干嘛（角色会看到）</div>
                     <input value={activity} onChange={e => setActivity(e.target.value)}
-                        placeholder="例：在看小说 / 在自习 / 单纯挂机…"
-                        className="w-full rounded-lg px-3 py-2 text-[12.5px] text-white placeholder-white/30 outline-none" style={{ background: 'rgba(255,255,255,.07)', border: '1px solid rgba(150,200,255,.2)' }} />
+                        placeholder="例：在世界房间晃悠 / 在看小说 / 单纯挂机…"
+                        className="w-full rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {USER_VR_PRESETS.map(p => (
-                            <button key={p} onClick={() => setActivity(p)} className="text-[10px] rounded-full px-2 py-0.5 bg-white/[0.08] text-indigo-200/60 active:bg-white/15">{p}</button>
+                            <button key={p} onClick={() => setActivity(p)} className="text-[10px] rounded-full px-2 py-0.5 active:translate-y-px" style={{ color: PAPER.inkSoft, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>{p}</button>
                         ))}
                     </div>
-                    <button onClick={saveBroadcast}
-                        className="mt-3 w-full rounded-xl py-2 text-[12.5px] font-bold text-white" style={{ background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))' }}>
+                    <InkBtn tone="ink" onClick={saveBroadcast} className="mt-3 w-full py-2 text-[12.5px] font-bold" style={{ borderRadius: 10 }}>
                         保存并广播给所有角色
-                    </button>
-                    <p className="text-[9.5px] text-indigo-300/45 mt-2 leading-relaxed">角色聊天里会知道"你此刻在彼方做什么"，但已明确告知 ta：这只是虚拟空间挂机、你本人不一定在线，一切以聊天记录为准。</p>
+                    </InkBtn>
+                    <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: PAPER.inkFaint }}>角色聊天里会知道"你此刻在页外做什么"，但已明确告知 ta：这只是虚拟空间挂机、你本人不一定在线，一切以聊天记录为准。</p>
                 </>
             )}
         </div>
@@ -2474,7 +2591,7 @@ const SettingsView: React.FC<{
     const go = (room?: VRRoomId) => {
         if (!pickFor) return;
         VRScheduler.triggerNow(pickFor.id, room);
-        addToast?.(`${pickFor.name} 正在登入彼方…`, 'info');
+        addToast?.(`${pickFor.name} 正在登入页外…`, 'info');
         setTimeout(onReload, 4000);
         setPickFor(null);
     };
@@ -2490,46 +2607,44 @@ const SettingsView: React.FC<{
 
     return (
         <div className="space-y-3">
-            <p className="text-[11px] text-indigo-300/60 leading-relaxed">
-                启用后，角色会按设定的间隔自己登入「彼方」，在图书馆读你上传的小说、写批注。每次活动会在 ta 的聊天里留下动态卡片，也会被记忆总结捕捉。
-                {novelCount === 0 && <span className="text-amber-300/80"> 书库还空着，先去「书库」上传一本。</span>}
+            <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
+                打开开关，角色就会按设定的间隔自己翻进「页外」溜达——碰头、读书、贴便签、写信。每次活动会剪成一张动态贴回 ta 的聊天，也会被记忆收进去。
+                {novelCount === 0 && <span style={{ color: PAPER.red }}> 书库还空着，想用图书馆先去贴一本。</span>}
             </p>
-            {characters.length === 0 && <p className="text-[11px] text-indigo-300/50 py-4 text-center">还没有角色。</p>}
+            {characters.length === 0 && <p className="text-[11px] py-4 text-center" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>还没有角色。</p>}
             {characters.map(char => {
                 const st = char.vrState;
                 const enabled = !!st?.enabled;
                 const interval = st?.intervalMinutes || VR_DEFAULT_INTERVAL_MIN;
                 const chibi = getChibi(char);
                 return (
-                    <div key={char.id} className="rounded-2xl p-3.5 backdrop-blur-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                    <div key={char.id} className="relative p-3.5" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(char.id, 0.7)}deg)` }}>
                         <div className="flex items-center gap-2.5">
                             {/* chibi 缩略 */}
-                            <button onClick={() => onEditChibi(char)} className="relative h-12 w-12 rounded-xl overflow-hidden bg-black/20 flex items-end justify-center shrink-0 active:opacity-80">
-                                {chibi.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg text-indigo-300/60 mb-2">？</span>}
-                                <span className="absolute bottom-0 right-0 bg-indigo-500/90 rounded-tl-md p-0.5"><PencilSimple size={9} weight="bold" /></span>
+                            <button onClick={() => onEditChibi(char)} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+                                {chibi.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg mb-2" style={{ color: PAPER.inkFaint }}>？</span>}
+                                <span className="absolute bottom-0 right-0 rounded-tl-md p-0.5" style={{ background: PAPER.red }}><PencilSimple size={9} weight="bold" className="text-white" /></span>
                             </button>
                             <div className="flex-1 min-w-0">
-                                <div className="text-[13px] font-bold truncate">{char.name}</div>
-                                {enabled ? <div className="text-[10px] text-indigo-300/60">每 {interval >= 60 ? `${interval / 60} 小时` : `${interval} 分`}登入一次</div>
-                                    : <div className="text-[10px] text-indigo-300/40">{chibi.isFallback ? '未设形象 · 未接入' : '未接入'}</div>}
+                                <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>{char.name}</div>
+                                {enabled ? <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>每 {interval >= 60 ? `${interval / 60} 小时` : `${interval} 分`}翻进去一次</div>
+                                    : <div className="text-[10px]" style={{ color: PAPER.inkFaint }}>{chibi.isFallback ? '未捏小人 · 未接入' : '未接入'}</div>}
                             </div>
                             <button onClick={() => enabled ? disable(char) : onRequestEnable(char)}
-                                className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? 'bg-indigo-400' : 'bg-white/15'}`}>
-                                <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${enabled ? 'translate-x-5' : ''}`} />
+                                className="relative w-11 h-6 rounded-full transition-colors" style={{ background: enabled ? PAPER.red : '#d8ccaf', border: `1px solid ${PAPER.edge}` }}>
+                                <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform" style={{ background: '#fffdf6', transform: enabled ? 'translateX(20px)' : 'none', boxShadow: '0 1px 2px rgba(0,0,0,.3)' }} />
                             </button>
                         </div>
                         {enabled && (
                             <>
                                 <div className="flex flex-wrap gap-1.5 mt-2.5">
                                     {INTERVAL_OPTIONS.map(opt => (
-                                        <button key={opt} onClick={() => setInterval(char, opt)}
-                                            className={`text-[10.5px] rounded-full px-2.5 py-1 font-semibold ${interval === opt ? 'bg-indigo-400 text-white' : 'bg-white/10 text-indigo-200/70'}`}>
+                                        <button key={opt} onClick={() => setInterval(char, opt)} className="text-[10.5px] rounded-md px-2.5 py-1" style={{ fontFamily: HAND, fontWeight: 600, background: interval === opt ? PAPER.ink : '#fffdf6', color: interval === opt ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>
                                             {opt >= 60 ? `${opt / 60}h` : `${opt}min`}
                                         </button>
                                     ))}
                                 </div>
-                                <button onClick={() => setPickFor(char)}
-                                    className="mt-2.5 text-[11px] text-amber-200 font-semibold flex items-center gap-1 active:opacity-70">
+                                <button onClick={() => setPickFor(char)} className="mt-2.5 text-[11px] font-semibold flex items-center gap-1 active:opacity-70" style={{ fontFamily: HAND, color: PAPER.red }}>
                                     <Play size={12} weight="fill" /> 让 ta 现在去逛一次
                                 </button>
                             </>
@@ -2537,21 +2652,22 @@ const SettingsView: React.FC<{
                     </div>
                 );
             })}
-            <ActionSheet open={!!pickFor} title={pickFor ? `让 ${pickFor.name} 现在去哪个房间？` : ''}
+            <ActionSheet open={!!pickFor} title={pickFor ? `让 ${pickFor.name} 现在翻去哪个房间？` : ''}
                 actions={[
-                    { label: '随机一个房间', onClick: () => go() },
-                    ...(novelCount > 0 ? [{ label: '图书馆 · 读书写批注', onClick: () => go('library') }] : []),
-                    { label: '剧院 · 写剧本投稿', onClick: () => go('theater') },
-                    { label: '听歌房 · 点歌锐评', onClick: () => go('music') },
-                    { label: '留言簿 · 发帖版聊', onClick: () => go('guestbook') },
-                    { label: '娱乐室 · 放开玩', onClick: () => go('gym') },
-                    { label: '邮局 · 写漂流信', onClick: () => go('postoffice') },
+                    { label: '🎲 随机一个房间', onClick: () => go() },
+                    { label: '🎪 世界房间 · 碰头合影', onClick: () => go('plaza') },
+                    ...(novelCount > 0 ? [{ label: '📖 图书馆 · 读书写批注', onClick: () => go('library') }] : []),
+                    { label: '🎭 剧院 · 写剧本投稿', onClick: () => go('theater') },
+                    { label: '🎧 听歌房 · 点歌锐评', onClick: () => go('music') },
+                    { label: '📌 留言簿 · 贴便签版聊', onClick: () => go('guestbook') },
+                    { label: '🎮 娱乐室 · 放开玩', onClick: () => go('gym') },
+                    { label: '✉️ 邮局 · 写漂流信', onClick: () => go('postoffice') },
                 ]} onClose={() => setPickFor(null)} />
         </div>
     );
 };
 
-// ============ 彼方 · API 设置 + 调用记录 ============
+// ============ 页外 · API 设置 + 调用记录 ============
 const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; addToast?: (m: string, t?: any) => void }> = ({ apiPresets, chatApi, addToast }) => {
     const [vrApi, setVr] = useState<APIConfig | null>(null);
     const [log, setLog] = useState<VRApiCall[]>([]);
@@ -2574,7 +2690,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
     const choose = (cfg: APIConfig | null) => {
         void setVRApi(cfg); setVr(cfg); setTestResult(null);
-        addToast?.(cfg ? '已切换彼方 API' : '彼方改为跟随聊天默认', 'success');
+        addToast?.(cfg ? '已切换页外 API' : '页外改为跟随聊天默认', 'success');
     };
 
     const test = async () => {
@@ -2597,14 +2713,14 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     return (
         <div className="space-y-3">
             <p className="text-[11px] text-indigo-300/60 leading-relaxed">
-                彼方里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给彼方<b className="text-indigo-200">单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
+                页外里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给页外<b className="text-indigo-200">单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
             </p>
 
             {/* 当前生效 */}
             <div className="rounded-2xl p-3.5" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div className="text-[10px] tracking-[0.2em] text-indigo-200/60 mb-1.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>当前生效</div>
                 <div className="text-[12.5px] text-white/90 font-semibold">{effective?.model || '未配置'}</div>
-                <div className="text-[10px] text-white/40 mt-0.5">{host(effective?.baseUrl)} · {follow ? '跟随聊天默认' : '彼方独立'}</div>
+                <div className="text-[10px] text-white/40 mt-0.5">{host(effective?.baseUrl)} · {follow ? '跟随聊天默认' : '页外独立'}</div>
                 <button onClick={test} disabled={testing} className="mt-2.5 text-[11px] px-3 py-1.5 rounded-full font-semibold disabled:opacity-50"
                     style={{ background: 'rgba(120,180,255,.16)', color: '#bcd4ff', border: '1px solid rgba(140,180,255,.3)' }}>
                     {testing ? '测试中…' : '测试连接'}
@@ -2614,7 +2730,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
             {/* 选择 API */}
             <div>
-                <div className="text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5 px-0.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>选择彼方 API</div>
+                <div className="text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5 px-0.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>选择页外 API</div>
                 <button onClick={() => choose(null)}
                     className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
                     style={{ background: follow ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${follow ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
@@ -2666,7 +2782,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                     {log.length > 0 && <button onClick={() => { void clearVRApiLog(); setLog([]); }} className="ml-auto text-[10px] text-white/40 hover:text-rose-300/80">清空</button>}
                 </div>
                 {log.length === 0 ? (
-                    <p className="text-[10.5px] text-white/35 py-2 text-center">还没有调用。角色每次登入彼方触发的模型调用都会记在这里，方便你对账。</p>
+                    <p className="text-[10.5px] text-white/35 py-2 text-center">还没有调用。角色每次登入页外触发的模型调用都会记在这里，方便你对账。</p>
                 ) : (
                     <div className="space-y-1">
                         {log.slice(0, 60).map((l, i) => (
@@ -2685,14 +2801,26 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     );
 };
 
-// ============ 动画关键帧 ============
+// ============ 动画关键帧 + 拼贴质感 ============
 const VRStyleTag: React.FC = () => (
     <style>{`
         @keyframes vrfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
         @keyframes vrwave { from { transform: scaleY(0.5); } to { transform: scaleY(1.05); } }
         @keyframes vrdance { 0%{transform:translateY(0) rotate(-5deg)} 25%{transform:translateY(-9px) rotate(3deg)} 50%{transform:translateY(0) rotate(5deg)} 75%{transform:translateY(-9px) rotate(-3deg)} 100%{transform:translateY(0) rotate(-5deg)} }
-        @keyframes vraurora { 0%,100%{transform:translate(0,0) scale(1);opacity:.75} 50%{transform:translate(6%,4%) scale(1.14);opacity:1} }
-        @keyframes vrtwinkle { 0%,100%{opacity:.5} 50%{opacity:.85} }
+        @keyframes vraurora { 0%,100%{transform:translate(0,0) scale(1);opacity:.55} 50%{transform:translate(6%,4%) scale(1.12);opacity:.8} }
+        @keyframes vrtwinkle { 0%,100%{opacity:.35} 50%{opacity:.7} }
+        @keyframes ywbob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+        @keyframes ywwiggle { 0%,100%{transform:rotate(-5deg)} 50%{transform:rotate(5deg)} }
+        @keyframes ywjump { 0%,100%{transform:translateY(0)} 35%{transform:translateY(-14px)} 55%{transform:translateY(0)} }
+        @keyframes ywspin { 0%{transform:rotateY(0)} 100%{transform:rotateY(360deg)} }
+        @keyframes ywnod { 0%,100%{transform:rotate(0)} 50%{transform:rotate(8deg)} }
+        @keyframes ywpop { 0%{transform:scale(.8);opacity:0} 60%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
+        @keyframes ywdrift { 0%{transform:translateY(0) rotate(0)} 50%{transform:translateY(8px) rotate(8deg)} 100%{transform:translateY(0) rotate(0)} }
+        .yw-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
+        .yw-scroll::-webkit-scrollbar-thumb { background: rgba(150,130,90,.4); border-radius: 6px; }
+        .yw-scroll::-webkit-scrollbar-track { background: transparent; }
+        .vr-reader-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
+        .vr-reader-scroll::-webkit-scrollbar-thumb { background: rgba(150,130,90,.4); border-radius: 6px; }
     `}</style>
 );
 

@@ -43,6 +43,7 @@ import {
   PushPin,
   MaskHappy,
   CalendarHeart,
+  Scissors,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -82,7 +83,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Handbook: ({ className }) => <Notebook className={className} weight="bold" />,
   QQBridge: ({ className }) => <Plugs className={className} weight="bold" />,
   HotNews: ({ className }) => <Newspaper className={className} weight="fill" />,
-  VRWorld: ({ className }) => <Planet className={className} weight="bold" />,
+  VRWorld: ({ className }) => <Scissors className={className} weight="bold" />,
   CharCreatorDev: ({ className }) => <Wrench className={className} weight="fill" />,
   Presets: ({ className }) => <Stamp className={className} weight="bold" />,
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
@@ -127,7 +128,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Theater, name: '小剧场', icon: 'Theater', color: 'orange' },
   // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
   { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
-  { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
+  { id: AppID.VRWorld, name: '页外', icon: 'VRWorld', color: 'indigo' },
   // 「时光契约」(日程/心愿单/纪念日倒数) + 「特别时光」(节日记忆活动) 合并为「岁时记」：
   // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
