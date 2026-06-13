@@ -203,6 +203,8 @@ interface OSContextType {
   activeApp: AppID;
   openApp: (appId: AppID) => void;
   closeApp: () => void;
+  /** 返回上一个打开的 App（无历史时回桌面）。子 App 从别的 App 进入时用它替代 closeApp，避免直接退回桌面。 */
+  goBack: () => void;
   theme: OSTheme;
   updateTheme: (updates: Partial<OSTheme>) => void;
   virtualTime: VirtualTime;
@@ -628,6 +630,8 @@ const OSContext = createContext<OSContextType | undefined>(undefined);
 export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // ... (State declarations same as before) ...
   const [activeApp, setActiveApp] = useState<AppID>(AppID.Launcher);
+  // App 导航历史：openApp 时压入来源 App，goBack 时弹出回到上一个；用于子 App（如拾光图库/自由活动）按来源返回而非直接回桌面
+  const appHistoryRef = useRef<AppID[]>([]);
   const [theme, setTheme] = useState<OSTheme>(defaultTheme);
   const [apiConfig, setApiConfig] = useState<APIConfig>(defaultApiConfig);
   const [isLocked, setIsLocked] = useState(true);
@@ -3629,8 +3633,15 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const resetSystem = async () => { try { await DB.deleteDB(); localStorage.clear(); window.location.reload(); } catch (e) { console.error(e); addToast('重置失败，请手动清除浏览器数据', 'error'); } };
-  const openApp = (appId: AppID) => setActiveApp(appId);
-  const closeApp = () => setActiveApp(AppID.Launcher);
+  const openApp = (appId: AppID) => {
+      if (activeApp !== appId) appHistoryRef.current.push(activeApp);
+      setActiveApp(appId);
+  };
+  const closeApp = () => { appHistoryRef.current = []; setActiveApp(AppID.Launcher); };
+  const goBack = () => {
+      const target = appHistoryRef.current.pop() ?? AppID.Launcher;
+      setActiveApp(target);
+  };
   const unlock = () => setIsLocked(false);
   // 一键锁屏：仅切换 UI 到锁屏，不动任何调度——主动消息 / Web Push / 通知照常送达锁屏通知卡
   const lock = () => { setActiveApp(AppID.Launcher); setIsLocked(true); };
@@ -3671,6 +3682,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     activeApp,
     openApp,
     closeApp,
+    goBack,
     theme,
     updateTheme,
     virtualTime,

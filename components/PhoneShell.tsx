@@ -94,6 +94,7 @@ const PresetApp = lazyApp(() => import('../apps/PresetApp'));
 const PersonaHubApp = lazyApp(() => import('../apps/PersonaHubApp'));
 const RegexApp = lazyApp(() => import('../apps/RegexApp'));
 const CreativeStudioApp = lazyApp(() => import('../apps/CreativeStudioApp'));
+const TheaterApp = lazyApp(() => import('../apps/TheaterApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
@@ -102,7 +103,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaHubApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
-  SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp,
+  SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp,
 ];
 
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
@@ -122,7 +123,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Handbook]: HandbookApp, [AppID.QQBridge]: QQBridge, [AppID.HotNews]: HotNewsApp,
   [AppID.VRWorld]: VRWorldApp, [AppID.CharCreatorDev]: CharCreatorDevApp, [AppID.SpecialMoments]: SpecialMomentsApp,
   [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
-  [AppID.Creative]: CreativeStudioApp,
+  [AppID.Creative]: CreativeStudioApp, [AppID.Theater]: TheaterApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -605,6 +606,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Personas: return <PersonaHubApp />;
       case AppID.Regex: return <RegexApp />;
       case AppID.Creative: return <CreativeStudioApp />;
+      case AppID.Theater: return <TheaterApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;

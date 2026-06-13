@@ -587,8 +587,10 @@ const SessionCard: React.FC<{
 };
 
 // ===== MAIN APP =====
-const GuidebookApp: React.FC = () => {
+/** onExit：当本 App 嵌在「小剧场」壳里时，顶层返回回到小剧场封面页而非直接关到桌面。未传则回桌面。 */
+const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter } = useOS();
+    const exitApp = onExit ?? closeApp;
 
     // View State
     const [view, setView] = useState<'lobby' | 'setup' | 'opening' | 'playing' | 'replay'>('lobby');
@@ -1068,7 +1070,7 @@ const GuidebookApp: React.FC = () => {
                 <div className="shrink-0 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(30,20,40,0.85) 0%, rgba(60,30,50,0.7) 50%, rgba(40,20,50,0.85) 100%)' }}>
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px)' }} />
                     <div className="flex items-center gap-3 px-4 py-3 relative z-10">
-                        <button onClick={closeApp} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs active:scale-90 transition-transform backdrop-blur-sm border border-white/10">
+                        <button onClick={exitApp} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs active:scale-90 transition-transform backdrop-blur-sm border border-white/10">
                             <ArrowLeft size={14} />
                         </button>
                         <div className="flex-1">
