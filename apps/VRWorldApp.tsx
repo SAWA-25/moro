@@ -683,11 +683,11 @@ const PendingLetterRow: React.FC<{ l: VRLetter; onMenu: (l: VRLetter) => void }>
     const len = charLen(l.content);
     const over = len > MAX_LETTER_CHARS;
     return (
-        <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11.5px] text-amber-50/90 transition-transform ${pressing ? 'scale-[0.97]' : ''}`}
-            style={{ background: pressing ? 'rgba(244,180,90,0.16)' : 'rgba(255,255,255,.05)', border: `1px solid ${over ? 'rgba(244,120,90,0.5)' : pressing ? 'rgba(244,180,90,0.4)' : 'transparent'}` }}>
+        <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11.5px] transition-transform ${pressing ? 'scale-[0.98]' : ''}`}
+            style={{ color: PAPER.ink, background: pressing ? '#ffe9cc' : '#fffdf6', border: `1px solid ${over ? PAPER.red : PAPER.edge}` }}>
             <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-amber-200/90 font-bold text-[10.5px]">{l.pen}</span>
-                <span className={`ml-auto text-[9px] ${over ? 'text-red-300 font-semibold' : 'text-white/25'}`}>{over ? `${len}/${MAX_LETTER_CHARS} 超长·需精简` : '长按编辑/删除'}</span>
+                <span className="font-bold text-[10.5px]" style={{ fontFamily: HAND, color: ROOM_THEME.postoffice.ink }}>{l.pen}</span>
+                <span className="ml-auto text-[9px]" style={{ color: over ? PAPER.red : PAPER.inkFaint, fontWeight: over ? 700 : 400 }}>{over ? `${len}/${MAX_LETTER_CHARS} 超长·需精简` : '长按编辑/删除'}</span>
             </div>
             <p className="leading-snug whitespace-pre-wrap">{l.content}</p>
         </div>
@@ -700,15 +700,15 @@ const LetterEditModal: React.FC<{ letter: VRLetter; onSave: (pen: string, conten
     const [content, setContent] = useState(letter.content);
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[13px] font-semibold text-amber-100 mb-2.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
-                <label className="text-[10px] text-amber-200/60">笔名</label>
-                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg bg-black/25 px-3 py-2 text-[12.5px] text-amber-50 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
-                <label className="text-[10px] text-amber-200/60 flex items-center">正文<span className={`ml-auto ${charLen(content) > MAX_LETTER_CHARS ? 'text-red-300 font-semibold' : 'text-amber-200/50'}`}>{charLen(content)}/{MAX_LETTER_CHARS}</span></label>
-                <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="写给陌生人的话——碎碎念、日记、困惑、执念都行…" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[12.5px] text-amber-50 placeholder-white/25 outline-none resize-none vr-reader-scroll" style={{ border: `1px solid ${charLen(content) > MAX_LETTER_CHARS ? 'rgba(244,120,90,.5)' : 'rgba(220,190,120,.2)'}` }} />
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+                <div className="text-[14px] mb-2.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✉️ {title}</div>
+                <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>笔名</label>
+                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                <label className="text-[10px] flex items-center" style={{ color: PAPER.inkSoft }}>正文<span className="ml-auto" style={{ color: charLen(content) > MAX_LETTER_CHARS ? PAPER.red : PAPER.inkFaint, fontWeight: charLen(content) > MAX_LETTER_CHARS ? 700 : 400 }}>{charLen(content)}/{MAX_LETTER_CHARS}</span></label>
+                <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="写给陌生人的话——碎碎念、日记、困惑、执念都行…" className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${charLen(content) > MAX_LETTER_CHARS ? PAPER.red : PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
-                    <button onClick={onCancel} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>取消</button>
-                    <button onClick={() => onSave(pen, content)} disabled={!content.trim() || charLen(content) > MAX_LETTER_CHARS} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>保存</button>
+                    <InkBtn tone="soft" onClick={onCancel} className="flex-1 py-2 text-[12.5px]">取消</InkBtn>
+                    <InkBtn tone="ink" onClick={() => onSave(pen, content)} disabled={!content.trim() || charLen(content) > MAX_LETTER_CHARS} className="flex-1 py-2 text-[12.5px] font-semibold">保存</InkBtn>
                 </div>
             </div>
         </div>
@@ -726,19 +726,19 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
     };
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[13px] font-semibold text-amber-100 mb-1" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局身份</div>
-                <p className="text-[10px] text-white/45 leading-snug mb-2.5">这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
-                <label className="text-[10px] text-amber-200/60">我的身份码</label>
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+                <div className="text-[14px] mb-1" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🪪 邮局身份</div>
+                <p className="text-[10px] leading-snug mb-2.5" style={{ color: PAPER.inkSoft }}>这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
+                <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>我的身份码</label>
                 <div className="flex gap-1.5 mt-1 mb-3">
-                    <div className="flex-1 rounded-lg bg-black/30 px-2.5 py-2 text-[10.5px] text-amber-50/80 break-all leading-snug" style={{ border: '1px solid rgba(220,190,120,.2)' }}>{code}</div>
-                    <button onClick={copy} className="shrink-0 self-stretch px-3 rounded-lg text-[11px] font-semibold text-black" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{copied ? '已复制' : '复制'}</button>
+                    <div className="flex-1 rounded-lg px-2.5 py-2 text-[10.5px] break-all leading-snug" style={{ color: PAPER.ink, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{code}</div>
+                    <InkBtn tone="ink" onClick={copy} className="shrink-0 self-stretch px-3 text-[11px] font-semibold">{copied ? '已复制' : '复制'}</InkBtn>
                 </div>
-                <label className="text-[10px] text-amber-200/60">导入身份码（换回旧身份）</label>
-                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 moropo.… 身份码" className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
+                <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>导入身份码（换回旧身份）</label>
+                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 moropo.… 身份码" className="w-full mt-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
-                    <button onClick={onClose} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>关闭</button>
-                    <button onClick={() => onImport(input)} disabled={!input.trim()} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>导入</button>
+                    <InkBtn tone="soft" onClick={onClose} className="flex-1 py-2 text-[12.5px]">关闭</InkBtn>
+                    <InkBtn tone="ink" onClick={() => onImport(input)} disabled={!input.trim()} className="flex-1 py-2 text-[12.5px] font-semibold">导入</InkBtn>
                 </div>
             </div>
         </div>
@@ -765,35 +765,35 @@ const AdminModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     };
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-[400px] max-h-[82vh] flex flex-col rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[13px] font-semibold text-amber-100 mb-1 shrink-0" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局后台</div>
-                <p className="text-[10px] text-white/45 leading-snug mb-2.5 shrink-0">用 worker 的 <b className="text-amber-200/70">ADMIN_TOKEN</b> 查看后端全部信件（按踩数、时间倒序，最多 200 条），可逐条删除。token 只存在本机。</p>
+            <div className="w-full max-w-[400px] max-h-[82vh] flex flex-col rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+                <div className="text-[14px] mb-1 shrink-0" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🗄️ 邮局后台</div>
+                <p className="text-[10px] leading-snug mb-2.5 shrink-0" style={{ color: PAPER.inkSoft }}>用 worker 的 <b style={{ color: PAPER.red }}>ADMIN_TOKEN</b> 查看后端全部信件（按踩数、时间倒序，最多 200 条），可逐条删除。token 只存在本机。</p>
                 <div className="flex gap-1.5 mb-3 shrink-0">
-                    <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="ADMIN_TOKEN" className="flex-1 rounded-lg bg-black/25 px-3 py-2 text-[11.5px] text-amber-50 placeholder-white/25 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
-                    <button onClick={load} disabled={loading} className="shrink-0 px-3.5 rounded-lg text-[11px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{loading ? '…' : (letters ? '刷新' : '拉取')}</button>
+                    <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="ADMIN_TOKEN" className="flex-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                    <InkBtn tone="ink" onClick={load} disabled={loading} className="shrink-0 px-3.5 text-[11px] font-semibold">{loading ? '…' : (letters ? '刷新' : '拉取')}</InkBtn>
                 </div>
-                {err && <div className="text-[10.5px] text-red-300/80 mb-2 shrink-0">{err}</div>}
+                {err && <div className="text-[10.5px] mb-2 shrink-0" style={{ color: PAPER.red }}>{err}</div>}
                 <div className="flex-1 overflow-y-auto vr-reader-scroll -mx-1 px-1 min-h-0">
-                    {letters && letters.length === 0 && <p className="text-[10.5px] text-white/35">后端目前没有信件。</p>}
+                    {letters && letters.length === 0 && <p className="text-[10.5px]" style={{ color: PAPER.inkSoft }}>后端目前没有信件。</p>}
                     {(letters || []).map(l => (
-                        <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: 'rgba(255,255,255,.05)' }}>
+                        <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>
                             <div className="flex items-center gap-1.5 mb-1">
-                                <span className="text-amber-200/70 text-[9.5px]">{l.pen || '匿名'}</span>
-                                {l.dislikes > 0 && <span className="text-[8.5px] text-red-300/80 border border-red-400/30 rounded-full px-1.5 leading-tight">踩 {l.dislikes}</span>}
-                                <span className="ml-auto text-[8.5px] text-white/30">{new Date(l.created_at).toLocaleDateString()}</span>
+                                <span className="text-[9.5px]" style={{ color: ROOM_THEME.postoffice.ink }}>{l.pen || '匿名'}</span>
+                                {l.dislikes > 0 && <span className="text-[8.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.red, border: `1px solid ${PAPER.red}66` }}>踩 {l.dislikes}</span>}
+                                <span className="ml-auto text-[8.5px]" style={{ color: PAPER.inkFaint }}>{new Date(l.created_at).toLocaleDateString()}</span>
                             </div>
-                            <div className="text-white/75 leading-snug whitespace-pre-wrap mb-1">{l.content}</div>
-                            <div className="flex items-center gap-2 text-[8.5px] text-white/35">
+                            <div className="leading-snug whitespace-pre-wrap mb-1" style={{ color: PAPER.ink }}>{l.content}</div>
+                            <div className="flex items-center gap-2 text-[8.5px]" style={{ color: PAPER.inkFaint }}>
                                 <span>赞{l.likes}</span><span>踩{l.dislikes}</span><span>读{l.views}</span><span>回{l.reply_count}</span>
                                 {confirmId === l.id
-                                    ? <button onClick={() => del(l.id)} className="ml-auto text-red-300 font-bold">确定删除</button>
-                                    : <button onClick={() => setConfirmId(l.id)} className="ml-auto text-white/45 active:text-red-300">删除</button>}
+                                    ? <button onClick={() => del(l.id)} className="ml-auto font-bold" style={{ color: PAPER.red }}>确定删除</button>
+                                    : <button onClick={() => setConfirmId(l.id)} className="ml-auto" style={{ color: PAPER.inkSoft }}>删除</button>}
                             </div>
                         </div>
                     ))}
-                    {!letters && !loading && <p className="text-[10.5px] text-white/30">填入 token 后点「拉取」。</p>}
+                    {!letters && !loading && <p className="text-[10.5px]" style={{ color: PAPER.inkFaint }}>填入 token 后点「拉取」。</p>}
                 </div>
-                <button onClick={onClose} className="mt-3 rounded-full py-2 text-[12.5px] text-white/70 shrink-0" style={{ border: '1px solid rgba(255,255,255,.16)' }}>关闭</button>
+                <InkBtn tone="soft" onClick={onClose} className="mt-3 py-2 text-[12.5px] shrink-0">关闭</InkBtn>
             </div>
         </div>
     );
@@ -876,15 +876,15 @@ const InboxLetterRow: React.FC<{ l: VRLetter; onMenu: (l: VRLetter) => void; onL
     const { pressing, handlers } = useLongPress(() => onMenu(l), 500);
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
-        <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11px] text-white/80 leading-snug transition-transform ${pressing ? 'scale-[0.97]' : ''}`}
-            style={{ background: pressing ? 'rgba(125,211,252,0.16)' : 'rgba(255,255,255,.04)', border: `1px solid ${pressing ? 'rgba(125,211,252,0.4)' : 'transparent'}` }}>
-            <div className="flex items-center gap-1.5 mb-0.5"><span className="text-sky-200/80 font-bold text-[10.5px]">{l.pen}</span></div>
+        <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11px] leading-snug transition-transform ${pressing ? 'scale-[0.98]' : ''}`}
+            style={{ color: PAPER.ink, background: pressing ? '#e2eef9' : '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+            <div className="flex items-center gap-1.5 mb-0.5"><span className="font-bold text-[10.5px]" style={{ fontFamily: HAND, color: ROOM_THEME.guestbook.ink }}>{l.pen}</span></div>
             <ExpandText text={l.content} limit={90} />
             <div className="flex items-center gap-3 mt-1.5 text-[10px]">
-                <span className="text-white/30">阅 {l.views ?? 0}</span>
-                <button onPointerDown={stop} onClick={e => { stop(e); onLike(l); }} className={`transition-colors ${l.myVote === 1 ? 'text-amber-300 font-semibold' : 'text-white/40'}`}>赞 {l.likes ?? 0}</button>
-                <button onPointerDown={stop} onClick={e => { stop(e); onDislike(l); }} className={`transition-colors ${l.myVote === -1 ? 'text-red-300 font-semibold' : 'text-white/40'}`} title="踩即举报">踩 {l.dislikes ?? 0}</button>
-                <span className="ml-auto text-white/25 text-[9px]">长按回信</span>
+                <span style={{ color: PAPER.inkFaint }}>阅 {l.views ?? 0}</span>
+                <button onPointerDown={stop} onClick={e => { stop(e); onLike(l); }} style={{ color: l.myVote === 1 ? PAPER.red : PAPER.inkSoft, fontWeight: l.myVote === 1 ? 700 : 400 }}>赞 {l.likes ?? 0}</button>
+                <button onPointerDown={stop} onClick={e => { stop(e); onDislike(l); }} style={{ color: l.myVote === -1 ? PAPER.red : PAPER.inkSoft, fontWeight: l.myVote === -1 ? 700 : 400 }} title="踩即举报">踩 {l.dislikes ?? 0}</button>
+                <span className="ml-auto text-[9px]" style={{ color: PAPER.inkFaint }}>长按回信</span>
             </div>
         </div>
     );
@@ -896,19 +896,19 @@ const ReplyComposeModal: React.FC<{ letter: VRLetter; defaultPen: string; initia
     const [content, setContent] = useState(initialContent);
     return (
         <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: 'linear-gradient(180deg,#221b12,#15100a)', border: '1px solid rgba(220,190,120,.28)', boxShadow: '0 16px 50px rgba(0,0,0,.6)' }}>
-                <div className="text-[13px] font-semibold text-amber-100 mb-2" style={{ fontFamily: `'Noto Serif SC',serif` }}>{title}</div>
-                <div className="rounded-lg bg-black/25 px-3 py-2 mb-3 text-[10.5px] text-white/55 leading-snug max-h-24 overflow-y-auto vr-reader-scroll" style={{ border: '1px solid rgba(255,255,255,.08)' }}>
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+                <div className="text-[14px] mb-2" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✍️ {title}</div>
+                <div className="rounded-lg px-3 py-2 mb-3 text-[10.5px] leading-snug max-h-24 overflow-y-auto vr-reader-scroll" style={{ color: PAPER.inkSoft, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>
                     原信（{letter.pen}）：{letter.content}
                 </div>
-                <label className="text-[10px] text-amber-200/60">你的笔名（寄出时匿名）</label>
-                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg bg-black/25 px-3 py-2 text-[12.5px] text-amber-50 outline-none" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
-                <label className="text-[10px] text-amber-200/60">回信正文</label>
+                <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>你的笔名（寄出时匿名）</label>
+                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>回信正文</label>
                 <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} autoFocus placeholder="写下你想对这位陌生人说的话…"
-                    className="w-full mt-1 rounded-lg bg-black/25 px-3 py-2 text-[12.5px] text-amber-50 placeholder-white/25 outline-none resize-none vr-reader-scroll" style={{ border: '1px solid rgba(220,190,120,.2)' }} />
+                    className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
-                    <button onClick={onCancel} className="flex-1 rounded-full py-2 text-[12.5px] text-white/70" style={{ border: '1px solid rgba(255,255,255,.16)' }}>取消</button>
-                    <button onClick={() => onSave(pen, content)} disabled={!content.trim()} className="flex-1 rounded-full py-2 text-[12.5px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{cta}</button>
+                    <InkBtn tone="soft" onClick={onCancel} className="flex-1 py-2 text-[12.5px]">取消</InkBtn>
+                    <InkBtn tone="ink" onClick={() => onSave(pen, content)} disabled={!content.trim()} className="flex-1 py-2 text-[12.5px] font-semibold">{cta}</InkBtn>
                 </div>
             </div>
         </div>
@@ -1350,41 +1350,41 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
     const statLine = (remoteId?: string) => {
         const s = remoteId ? myStats[remoteId] : undefined;
         if (!s) return null;
-        return <div className="text-[9.5px] text-white/35 mt-1">赞 {s.likes}　踩 {s.dislikes}　阅 {s.views}　回 {s.reply_count}</div>;
+        return <div className="text-[9.5px] text-[#a99d82] mt-1">赞 {s.likes}　踩 {s.dislikes}　阅 {s.views}　回 {s.reply_count}</div>;
     };
 
     return (
-        <div className="absolute left-3 right-3 z-20 rounded-2xl overflow-hidden flex flex-col backdrop-blur-md"
-            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: 'rgba(30,24,14,0.66)', border: '1px solid rgba(220,190,120,0.25)', boxShadow: '0 8px 26px rgba(0,0,0,.45)' }}>
+        <div className="absolute left-3 right-3 z-20 overflow-hidden flex flex-col"
+            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 8px 22px rgba(80,64,30,.3)' }}>
             {/* 动作行 */}
-            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/10 shrink-0">
-                <span className="text-[11px] tracking-[0.2em] text-amber-100/80 mr-auto" style={{ fontFamily: `'Noto Serif SC',serif` }}>邮局</span>
-                <button onClick={refreshInbox} disabled={!!busy} className="text-[10.5px] px-2.5 py-1 rounded-full bg-white/8 text-amber-100/90 disabled:opacity-40">{busy === 'inbox' ? '…' : '刷新收件箱'}</button>
-                <button onClick={collectReplies} disabled={!!busy} className="text-[10.5px] px-2.5 py-1 rounded-full bg-white/8 text-amber-100/90 disabled:opacity-40">{busy === 'collect' ? '…' : '收取回复'}</button>
-                <button onClick={() => setIdentityOpen(true)} title="邮局身份导出/导入" className="text-[10.5px] px-2.5 py-1 rounded-full bg-white/8 text-amber-100/90">身份</button>
+            <div className="flex items-center gap-1.5 px-3 py-2 shrink-0" style={{ borderBottom: `1.5px dashed ${PAPER.line}` }}>
+                <span className="text-[12px] mr-auto" style={{ fontFamily: HAND, fontWeight: 700, color: ROOM_THEME.postoffice.ink }}>✉️ 邮局</span>
+                <InkBtn tone="soft" onClick={refreshInbox} disabled={!!busy} className="text-[10.5px] px-2.5 py-1">{busy === 'inbox' ? '…' : '刷新收件箱'}</InkBtn>
+                <InkBtn tone="soft" onClick={collectReplies} disabled={!!busy} className="text-[10.5px] px-2.5 py-1">{busy === 'collect' ? '…' : '收取回复'}</InkBtn>
+                <InkBtn tone="soft" onClick={() => setIdentityOpen(true)} title="邮局身份导出/导入" className="text-[10.5px] px-2.5 py-1">身份</InkBtn>
                 {/* 后台入口只在本地开发（vite dev）下出现；部署到网页后普通用户看不到。仍需 ADMIN_TOKEN 才能拉数据。 */}
-                {import.meta.env.DEV && <button onClick={() => setAdminOpen(true)} title="后台：看后端全部信件（需 ADMIN_TOKEN，仅本地可见）" className="text-[10.5px] px-2.5 py-1 rounded-full bg-white/8 text-amber-100/90">后台</button>}
+                {import.meta.env.DEV && <InkBtn tone="soft" onClick={() => setAdminOpen(true)} title="后台：看后端全部信件（需 ADMIN_TOKEN，仅本地可见）" className="text-[10.5px] px-2.5 py-1">后台</InkBtn>}
             </div>
 
             <div className="flex-1 flex min-h-0">
                 {/* 左侧分类栏 */}
-                <div className="w-[76px] shrink-0 overflow-y-auto vr-reader-scroll border-r border-white/10 py-2 px-1.5 space-y-1">
+                <div className="w-[76px] shrink-0 overflow-y-auto vr-reader-scroll py-2 px-1.5 space-y-1" style={{ borderRight: `1.5px dashed ${PAPER.line}` }}>
                     {([
-                        { key: 'outbox', label: '待寄出', count: outQueued.length, tone: '#e8b75e' },
-                        { key: 'reply', label: '待发送', count: replyQueued.length, tone: '#e8b75e' },
-                        { key: 'replied', label: '已回', count: repliedSent.length, tone: '#86e3b0' },
-                        { key: 'inbox', label: '收件箱', count: inboxWaiting.length, tone: '#7dd3fc' },
-                        { key: 'drift', label: '漂流中', count: sentAwaiting.length, tone: '#93b8ff' },
-                        { key: 'box', label: '信匣', count: archived.length, tone: '#86e3b0' },
+                        { key: 'outbox', label: '待寄出', count: outQueued.length, tone: ROOM_THEME.postoffice.ink },
+                        { key: 'reply', label: '待发送', count: replyQueued.length, tone: ROOM_THEME.postoffice.ink },
+                        { key: 'replied', label: '已回', count: repliedSent.length, tone: PAPER.teal },
+                        { key: 'inbox', label: '收件箱', count: inboxWaiting.length, tone: ROOM_THEME.guestbook.ink },
+                        { key: 'drift', label: '漂流中', count: sentAwaiting.length, tone: ROOM_THEME.guestbook.ink },
+                        { key: 'box', label: '信匣', count: archived.length, tone: PAPER.teal },
                     ] as const).map(t => {
                         const active = tab === t.key;
                         return (
                             <button key={t.key} onClick={() => setTab(t.key)}
-                                className="w-full rounded-lg px-1.5 py-2 text-left transition-colors"
-                                style={{ background: active ? 'rgba(255,255,255,.09)' : 'transparent', border: `1px solid ${active ? 'rgba(255,255,255,.14)' : 'transparent'}` }}>
+                                className="w-full rounded-md px-1.5 py-2 text-left transition-colors"
+                                style={{ background: active ? '#fff0c0' : 'transparent', border: `1px solid ${active ? PAPER.edge : 'transparent'}` }}>
                                 <div className="flex items-center gap-1">
                                     <span className="h-2.5 w-[3px] rounded-full shrink-0" style={{ background: active ? t.tone : 'transparent' }} />
-                                    <span className={`text-[11px] ${active ? 'text-white font-semibold' : 'text-white/55'}`} style={{ fontFamily: `'Noto Serif SC',serif` }}>{t.label}</span>
+                                    <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: active ? 700 : 500, color: active ? PAPER.ink : PAPER.inkSoft }}>{t.label}</span>
                                 </div>
                                 {t.count > 0 && <div className="text-[9px] mt-0.5 pl-2" style={{ color: t.tone }}>{t.count}</div>}
                             </button>
@@ -1400,17 +1400,17 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         return (
                             <>
                                 {/* 寄信额度：5 封/5 小时（与后端一致），常驻显示 */}
-                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,.04)' }}>
-                                    <span className="text-white/55">已寄 <b className={full ? 'text-red-300' : 'text-amber-200/90'}>{q.count}</b><span className="text-white/35"> / {PO_SEND_QUOTA.limit}（每 {PO_SEND_QUOTA.windowMs / 3600_000} 小时）</span></span>
-                                    {q.count > 0 && <span className="text-white/35">约 {quotaResetHours(q.windowStart, PO_SEND_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
+                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: '#f6efdd' }}>
+                                    <span className="text-[#7c6f57]">已寄 <b className={full ? 'text-[#c0563f]' : 'text-[#7a5a2b]'}>{q.count}</b><span className="text-[#a99d82]"> / {PO_SEND_QUOTA.limit}（每 {PO_SEND_QUOTA.windowMs / 3600_000} 小时）</span></span>
+                                    {q.count > 0 && <span className="text-[#a99d82]">约 {quotaResetHours(q.windowStart, PO_SEND_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
                                 </div>
-                                {outQueued.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">角色在邮局写的漂流信会排在这里，你确认后一键寄出。也可以自己写一封。寄出时笔名会自动匿名。</p> : (
+                                {outQueued.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">角色在邮局写的漂流信会排在这里，你确认后一键寄出。也可以自己写一封。寄出时笔名会自动匿名。</p> : (
                                     <>
                                         <PagedList items={outQueued} perPage={6} render={l => <PendingLetterRow key={l.id} l={l} onMenu={setMenuFor} />} />
-                                        <button onClick={sendOutbox} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{busy === 'send' ? '寄出中…' : full ? `寄信已到上限（${PO_SEND_QUOTA.limit} 封/${PO_SEND_QUOTA.windowMs / 3600_000}h）` : `一键寄出（${outQueued.length}）`}</button>
+                                        <button onClick={sendOutbox} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fbf3e0] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'send' ? '寄出中…' : full ? `寄信已到上限（${PO_SEND_QUOTA.limit} 封/${PO_SEND_QUOTA.windowMs / 3600_000}h）` : `一键寄出（${outQueued.length}）`}</button>
                                     </>
                                 )}
-                                <button onClick={startCompose} className="w-full mt-1.5 rounded-full py-1.5 text-[11px] text-amber-100/90" style={{ border: '1px solid rgba(220,190,120,.3)' }}>自己写一封新漂流信</button>
+                                <button onClick={startCompose} className="w-full mt-1.5 rounded-full py-1.5 text-[11px] text-[#3f3526]" style={{ border: '1px solid #c9b793' }}>自己写一封新漂流信</button>
                             </>
                         );
                     })()}
@@ -1421,24 +1421,24 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         return (
                             <>
                                 {/* 回信日额度：常驻显示，用完锁发送 */}
-                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: 'rgba(255,255,255,.04)' }}>
-                                    <span className="text-white/55">今日已回 <b className={full ? 'text-red-300' : 'text-amber-200/90'}>{rq.count}</b><span className="text-white/35"> / {PO_REPLY_QUOTA.limit}</span></span>
-                                    {rq.count > 0 && <span className="text-white/35">约 {quotaResetHours(rq.windowStart, PO_REPLY_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
+                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: '#f6efdd' }}>
+                                    <span className="text-[#7c6f57]">今日已回 <b className={full ? 'text-[#c0563f]' : 'text-[#7a5a2b]'}>{rq.count}</b><span className="text-[#a99d82]"> / {PO_REPLY_QUOTA.limit}</span></span>
+                                    {rq.count > 0 && <span className="text-[#a99d82]">约 {quotaResetHours(rq.windowStart, PO_REPLY_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
                                 </div>
-                                {replyQueued.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">你亲自写好、还没发出的回信会排在这里。</p> : (
+                                {replyQueued.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">你亲自写好、还没发出的回信会排在这里。</p> : (
                                     <>
                                         <PagedList items={replyQueued} perPage={6} render={l => (
-                                            <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: 'rgba(255,255,255,.05)' }}>
+                                            <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: '#f6efdd' }}>
                                                 <div className="flex items-start gap-1.5 mb-1">
-                                                    <p className="flex-1 min-w-0 text-[10.5px] text-white/55 leading-snug">原信（{l.pen}）：<ExpandText text={l.content} limit={80} /></p>
-                                                    <button onClick={() => setReplyMenu(l)} className="shrink-0 text-white/35 text-[14px] leading-none px-1 -mt-0.5 active:text-white/70">···</button>
+                                                    <p className="flex-1 min-w-0 text-[10.5px] text-[#7c6f57] leading-snug">原信（{l.pen}）：<ExpandText text={l.content} limit={80} /></p>
+                                                    <button onClick={() => setReplyMenu(l)} className="shrink-0 text-[#a99d82] text-[14px] leading-none px-1 -mt-0.5 active:text-[#3f3526]">···</button>
                                                 </div>
-                                                <p className="text-[11.5px] text-amber-50/90 leading-snug whitespace-pre-wrap">回信（{l.reply!.pen}）：{l.reply!.content}</p>
+                                                <p className="text-[11.5px] text-[#3f3526] leading-snug whitespace-pre-wrap">回信（{l.reply!.pen}）：{l.reply!.content}</p>
                                                 <input value={l.reply!.userNote || ''} onChange={e => setUserNote(l, e.target.value)} placeholder="想补充几句一起回？（选填）"
-                                                    className="w-full mt-1.5 rounded-md bg-black/20 px-2 py-1 text-[11px] text-white placeholder-white/30 outline-none" />
+                                                    className="w-full mt-1.5 rounded-md bg-[#fffdf6] px-2 py-1 text-[11px] text-[#3f3526] placeholder-[#a99d82] outline-none" />
                                             </div>
                                         )} />
-                                        <button onClick={sendReplies} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-black disabled:opacity-40" style={{ background: 'linear-gradient(120deg,#f3d08a,#e8b75e)' }}>{busy === 'reply' ? '发送中…' : full ? `今日已回满 ${PO_REPLY_QUOTA.limit} 封` : `一键发送回信（${replyQueued.length}）`}</button>
+                                        <button onClick={sendReplies} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fbf3e0] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'reply' ? '发送中…' : full ? `今日已回满 ${PO_REPLY_QUOTA.limit} 封` : `一键发送回信（${replyQueued.length}）`}</button>
                                     </>
                                 )}
                             </>
@@ -1446,38 +1446,38 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                     })()}
 
                     {tab === 'replied' && (
-                        repliedSent.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">已经发出去的回信会归档在这里（连同原来的陌生来信）。本地留存，可随设备备份导出/导入。</p> : (
+                        repliedSent.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">已经发出去的回信会归档在这里（连同原来的陌生来信）。本地留存，可随设备备份导出/导入。</p> : (
                             <PagedList items={repliedSent} perPage={6} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: 'rgba(255,255,255,.05)' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: '#f6efdd' }}>
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <span className="text-sky-200/70 text-[9.5px]">来自 {l.pen}</span>
-                                        <span className="text-[8px] text-emerald-200/70 border border-emerald-300/30 rounded-full px-1.5 leading-tight">已发出</span>
+                                        <span className="text-[#2f5f86] text-[9.5px]">来自 {l.pen}</span>
+                                        <span className="text-[8px] text-[#2f8a80] border border-emerald-300/30 rounded-full px-1.5 leading-tight">已发出</span>
                                     </div>
-                                    <p className="text-[10.5px] text-white/55 leading-snug mb-1">原信：<ExpandText text={l.content} limit={80} /></p>
-                                    <p className="text-[11.5px] text-amber-50/90 leading-snug whitespace-pre-wrap pl-2 border-l-2 border-amber-300/40">回信（{l.reply!.pen}）：{l.reply!.content}{l.reply!.userNote ? `\n——\n${l.reply!.userNote}` : ''}</p>
+                                    <p className="text-[10.5px] text-[#7c6f57] leading-snug mb-1">原信：<ExpandText text={l.content} limit={80} /></p>
+                                    <p className="text-[11.5px] text-[#3f3526] leading-snug whitespace-pre-wrap pl-2 border-l-2 border-amber-300/40">回信（{l.reply!.pen}）：{l.reply!.content}{l.reply!.userNote ? `\n——\n${l.reply!.userNote}` : ''}</p>
                                 </div>
                             )} />
                         )
                     )}
 
                     {tab === 'inbox' && (
-                        inboxWaiting.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">点上方「刷新收件箱」捞陌生人寄来的信。收到后长按某封，指定角色去回、或你亲自回。</p> : (
+                        inboxWaiting.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">点上方「刷新收件箱」捞陌生人寄来的信。收到后长按某封，指定角色去回、或你亲自回。</p> : (
                             <>
-                                <p className="text-[9.5px] text-white/35 mb-1.5 leading-snug">陌生人寄来的信。等角色逛到邮局会自己回，也可以<b className="text-sky-200/80">长按某封信</b>，指定角色去回、或你亲自回。</p>
+                                <p className="text-[9.5px] text-[#a99d82] mb-1.5 leading-snug">陌生人寄来的信。等角色逛到邮局会自己回，也可以<b className="text-[#2f5f86]">长按某封信</b>，指定角色去回、或你亲自回。</p>
                                 <PagedList items={inboxWaiting} perPage={7} render={l => <InboxLetterRow key={l.id} l={l} onMenu={setInboxMenu} onLike={onLike} onDislike={onDislike} />} />
                             </>
                         )
                     )}
 
                     {tab === 'drift' && (
-                        sentAwaiting.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">已寄出、还在等陌生人回信的漂流信会显示在这里。</p> : (
+                        sentAwaiting.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">已寄出、还在等陌生人回信的漂流信会显示在这里。</p> : (
                             <PagedList items={sentAwaiting} perPage={7} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: 'rgba(255,255,255,.04)' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: '#f6efdd' }}>
                                     <div className="flex items-start gap-1.5">
-                                        <div className="flex-1 min-w-0 text-white/70 leading-snug"><ExpandText text={l.content} limit={70} /></div>
-                                        <button onClick={() => setSentMenu(l)} className="shrink-0 text-white/35 text-[14px] leading-none px-1 -mt-0.5 active:text-white/70">···</button>
+                                        <div className="flex-1 min-w-0 text-[#3f3526] leading-snug"><ExpandText text={l.content} limit={70} /></div>
+                                        <button onClick={() => setSentMenu(l)} className="shrink-0 text-[#a99d82] text-[14px] leading-none px-1 -mt-0.5 active:text-[#3f3526]">···</button>
                                     </div>
-                                    {l.released && <span className="inline-block mt-1 text-[8px] text-white/45 border border-white/15 rounded-full px-1.5 leading-tight">已停止传播</span>}
+                                    {l.released && <span className="inline-block mt-1 text-[8px] text-[#a99d82] border border-[#c9b793] rounded-full px-1.5 leading-tight">已停止传播</span>}
                                     {statLine(l.remoteId)}
                                 </div>
                             )} />
@@ -1485,22 +1485,22 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                     )}
 
                     {tab === 'box' && (
-                        archived.length === 0 ? <p className="text-[10.5px] text-white/35 leading-relaxed">收到陌生人回信、被角色读过封存的信会留档在这里。</p> : (
+                        archived.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">收到陌生人回信、被角色读过封存的信会留档在这里。</p> : (
                             <PagedList items={archived} perPage={5} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: 'rgba(255,255,255,.05)' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: '#f6efdd' }}>
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <span className="text-amber-200/70 text-[9.5px]">{l.pen}的信</span>
-                                        {l.status === 'sealed' && <span className="text-[8px] text-amber-200/60 border border-amber-300/30 rounded-full px-1.5 leading-tight">已封存</span>}
-                                        {l.released && <span className="text-[8px] text-white/45 border border-white/15 rounded-full px-1.5 leading-tight">已停止传播</span>}
-                                        <button onClick={() => setSentMenu(l)} className="ml-auto shrink-0 text-white/35 text-[14px] leading-none px-1 active:text-white/70">···</button>
+                                        <span className="text-[#7a5a2b] text-[9.5px]">{l.pen}的信</span>
+                                        {l.status === 'sealed' && <span className="text-[8px] text-[#7c6f57] border border-amber-300/30 rounded-full px-1.5 leading-tight">已封存</span>}
+                                        {l.released && <span className="text-[8px] text-[#a99d82] border border-[#c9b793] rounded-full px-1.5 leading-tight">已停止传播</span>}
+                                        <button onClick={() => setSentMenu(l)} className="ml-auto shrink-0 text-[#a99d82] text-[14px] leading-none px-1 active:text-[#3f3526]">···</button>
                                     </div>
-                                    <div className="text-amber-50/80 leading-snug mb-1"><ExpandText text={l.content} limit={70} /></div>
+                                    <div className="text-[#3f3526] leading-snug mb-1"><ExpandText text={l.content} limit={70} /></div>
                                     {statLine(l.remoteId)}
                                     {(l.repliesReceived || []).map((r, i) => (
-                                        <div key={i} className="text-[11px] text-amber-100/85 pl-2 border-l-2 border-amber-300/40 leading-snug mt-1"><span className="font-bold">{r.pen}</span> 回：<ExpandText text={r.content} limit={120} /></div>
+                                        <div key={i} className="text-[11px] text-[#3f3526] pl-2 border-l-2 border-amber-300/40 leading-snug mt-1"><span className="font-bold">{r.pen}</span> 回：<ExpandText text={r.content} limit={120} /></div>
                                     ))}
                                     {l.reaction?.content && (
-                                        <div className="text-[10.5px] text-pink-200/80 mt-1.5 pl-2 border-l-2 border-pink-300/40 leading-snug">读后：{l.reaction.content}</div>
+                                        <div className="text-[10.5px] text-[#2f8a80] mt-1.5 pl-2 border-l-2 border-pink-300/40 leading-snug">读后：{l.reaction.content}</div>
                                     )}
                                 </div>
                             )} />
@@ -1908,35 +1908,36 @@ const LibraryView: React.FC<{
     onOpen: (n: VRWorldNovel) => void; onAdd: () => void; onDelete: (id: string) => void;
 }> = ({ novels, characters, onOpen, onAdd, onDelete }) => (
     <div className="space-y-3">
-        <button onClick={onAdd} className="w-full rounded-xl py-2.5 text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform shadow-[0_4px_14px_rgba(120,100,255,0.4)]"
-            style={{ background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))' }}>
-            <Plus size={16} weight="bold" /> 上传小说（支持 .txt）
-        </button>
+        <InkBtn tone="ink" onClick={onAdd} className="w-full py-2.5 text-[13px] font-bold flex items-center justify-center gap-1.5" style={{ borderRadius: 10 }}>
+            <Plus size={16} weight="bold" /> 贴一本小说进来（.txt）
+        </InkBtn>
         {novels.length === 0 ? (
-            <p className="text-[11px] text-indigo-300/50 py-6 text-center">书库空空如也。上传的小说是所有角色共享的读物，每个角色各自留批注、各自记书签。</p>
+            <p className="text-[11px] py-6 text-center leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>书架还空着。贴进来的小说是所有角色共享的读物，每个角色各自留批注、各自记书签。</p>
         ) : novels.map(novel => {
             const readers = characters.filter(c => getBookmark(c.vrState?.novelBookmarks, novel.id) > 0);
             return (
-                <div key={novel.id} className="rounded-2xl p-3.5 backdrop-blur-sm" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div key={novel.id} className="relative p-3.5 pl-4" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(novel.id, 0.8)}deg)` }}>
+                    <span className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: ROOM_THEME.library.ink, opacity: .55 }} />
+                    <Tape color={ROOM_THEME.library.tape} w={30} style={{ top: -7, right: 18, transform: 'rotate(7deg)' }} />
                     <div className="flex items-start gap-2">
-                        <BookOpen size={18} weight="fill" className="text-amber-200 mt-0.5 shrink-0" />
+                        <BookOpen size={18} weight="fill" className="mt-0.5 shrink-0" style={{ color: ROOM_THEME.library.ink }} />
                         <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-bold truncate">{novel.title}</div>
-                            {novel.author && <div className="text-[10px] text-indigo-300/60">{novel.author}</div>}
-                            <div className="text-[10px] text-indigo-300/50 mt-0.5">{novel.segments.length} 段 · {novel.totalChars.toLocaleString()} 字</div>
+                            <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>{novel.title}</div>
+                            {novel.author && <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>{novel.author}</div>}
+                            <div className="text-[10px] mt-0.5" style={{ color: PAPER.inkFaint }}>{novel.segments.length} 段 · {novel.totalChars.toLocaleString()} 字</div>
                         </div>
-                        <button onClick={() => onDelete(novel.id)} className="p-1.5 rounded-full active:bg-white/10 text-indigo-300/50"><Trash size={15} /></button>
+                        <button onClick={() => onDelete(novel.id)} className="p-1.5 rounded-md active:translate-y-px" style={{ color: PAPER.inkSoft }}><Trash size={15} /></button>
                     </div>
                     {readers.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                             {readers.map(c => {
                                 const bm = getBookmark(c.vrState?.novelBookmarks, novel.id);
                                 const pct = Math.round((bm / Math.max(1, novel.segments.length)) * 100);
-                                return <span key={c.id} className="text-[9.5px] bg-white/10 rounded-full px-2 py-0.5 text-indigo-100/80">{c.name} {pct}%</span>;
+                                return <span key={c.id} className="text-[9.5px] rounded-full px-2 py-0.5" style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{c.name} {pct}%</span>;
                             })}
                         </div>
                     )}
-                    <button onClick={() => onOpen(novel)} className="mt-2 text-[11px] text-indigo-300 font-semibold flex items-center gap-0.5 active:opacity-70">翻开阅读 / 看批注 <CaretRight size={12} weight="bold" /></button>
+                    <button onClick={() => onOpen(novel)} className="mt-2 text-[11px] font-semibold flex items-center gap-0.5 active:opacity-70" style={{ fontFamily: HAND, color: ROOM_THEME.library.ink }}>翻开读 / 看批注 <CaretRight size={12} weight="bold" /></button>
                 </div>
             );
         })}
@@ -2262,34 +2263,35 @@ const UploadModal: React.FC<{
         }
     };
 
+    const inkInput = { fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` } as React.CSSProperties;
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={busy ? undefined : onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: 'linear-gradient(180deg,#161c2e 0%,#0c1019 100%)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45" onClick={busy ? undefined : onClose}>
+            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-3">
-                    <span className="text-[15px] font-bold text-white">上传小说</span>
-                    {!busy && <button onClick={onClose} className="ml-auto p-1 text-indigo-300/60"><X size={18} /></button>}
+                    <span className="text-[15px] font-bold" style={{ fontFamily: HAND, color: PAPER.ink }}>📚 贴一本小说进来</span>
+                    {!busy && <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>}
                 </div>
 
                 <input ref={fileRef} type="file" accept=".txt,text/plain" className="hidden" onChange={e => onFile(e.target.files?.[0])} />
                 {reading ? (
-                    <div className="w-full rounded-xl border border-indigo-300/30 py-5 mb-3 flex items-center justify-center gap-2 text-indigo-100/90">
+                    <div className="w-full py-5 mb-3 flex items-center justify-center gap-2" style={{ fontFamily: HAND, color: PAPER.ink, border: `1px dashed ${PAPER.edge}`, borderRadius: 10 }}>
                         <CircleNotch size={18} weight="bold" className="animate-spin" /> 读取并识别编码中…
                     </div>
                 ) : fileInfo ? (
-                    <div className="rounded-xl border border-indigo-300/30 p-3 mb-3 bg-white/5">
+                    <div className="p-3 mb-3" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 10 }}>
                         <div className="flex items-center gap-2">
-                            <BookOpen size={16} weight="fill" className="text-amber-200 shrink-0" />
-                            <span className="text-[12.5px] text-white font-semibold truncate flex-1">{fileInfo.name}</span>
-                            <span className="text-[8.5px] text-indigo-300/60 border border-indigo-300/30 rounded px-1 uppercase">{fileInfo.encoding}</span>
-                            {!busy && <button onClick={clearFile} className="text-indigo-300/60 p-1"><X size={14} /></button>}
+                            <BookOpen size={16} weight="fill" className="shrink-0" style={{ color: ROOM_THEME.library.ink }} />
+                            <span className="text-[12.5px] font-semibold truncate flex-1" style={{ color: PAPER.ink }}>{fileInfo.name}</span>
+                            <span className="text-[8.5px] rounded px-1 uppercase" style={{ color: PAPER.inkSoft, border: `1px solid ${PAPER.edge}` }}>{fileInfo.encoding}</span>
+                            {!busy && <button onClick={clearFile} className="p-1" style={{ color: PAPER.inkSoft }}><X size={14} /></button>}
                         </div>
-                        <div className="text-[10px] text-indigo-300/60 mt-1">{fileInfo.chars.toLocaleString()} 字 · 预计 ~{Math.ceil(fileInfo.chars / 400).toLocaleString()} 段</div>
-                        <p className="text-[10.5px] text-indigo-200/50 mt-1.5 leading-snug line-clamp-2">{fileInfo.preview}…</p>
+                        <div className="text-[10px] mt-1" style={{ color: PAPER.inkSoft }}>{fileInfo.chars.toLocaleString()} 字 · 预计 ~{Math.ceil(fileInfo.chars / 400).toLocaleString()} 段</div>
+                        <p className="text-[10.5px] mt-1.5 leading-snug line-clamp-2" style={{ color: PAPER.inkSoft }}>{fileInfo.preview}…</p>
                         {!busy && (
                             <div className="flex items-center gap-1.5 mt-2">
-                                <span className="text-[9.5px] text-indigo-300/55 shrink-0">乱码？换编码</span>
+                                <span className="text-[9.5px] shrink-0" style={{ color: PAPER.inkSoft }}>乱码？换编码</span>
                                 <select value={chosenEncoding} onChange={e => redecode(e.target.value)}
-                                    className="flex-1 text-[10px] bg-[#1b2236] text-indigo-100 border border-indigo-300/25 rounded px-1.5 py-1 outline-none">
+                                    className="flex-1 text-[10px] rounded px-1.5 py-1 outline-none" style={{ color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
                                     <option value="auto">自动识别</option>
                                     <option value="utf-8">UTF-8</option>
                                     <option value="gb18030">简体中文 · GB18030 / GBK</option>
@@ -2302,37 +2304,36 @@ const UploadModal: React.FC<{
                     </div>
                 ) : (
                     <button onClick={() => fileRef.current?.click()}
-                        className="w-full rounded-xl border border-dashed border-indigo-300/40 py-3 mb-3 text-[12.5px] text-indigo-100/90 flex items-center justify-center gap-2 active:bg-white/5">
-                        <UploadSimple size={16} weight="bold" /> 选择 .txt 文件（大文件也 OK）
+                        className="w-full py-3 mb-3 text-[12.5px] flex items-center justify-center gap-2 active:translate-y-px" style={{ fontFamily: HAND, color: PAPER.ink, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 10, background: PAPER.cream }}>
+                        <UploadSimple size={16} weight="bold" /> 选个 .txt 文件（大文件也 OK）
                     </button>
                 )}
 
                 <div className="space-y-2.5">
-                    <input value={title} onChange={e => setTitle(e.target.value)} placeholder="书名（必填）" className="w-full rounded-lg bg-white/8 px-3 py-2 text-[13px] text-white placeholder-indigo-300/40 outline-none" />
-                    <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="作者（选填）" className="w-full rounded-lg bg-white/8 px-3 py-2 text-[13px] text-white placeholder-indigo-300/40 outline-none" />
-                    <input value={summary} onChange={e => setSummary(e.target.value)} placeholder="一句话简介（选填，喂给角色当背景）" className="w-full rounded-lg bg-white/8 px-3 py-2 text-[13px] text-white placeholder-indigo-300/40 outline-none" />
+                    <input value={title} onChange={e => setTitle(e.target.value)} placeholder="书名（必填）" className="w-full rounded-lg px-3 py-2 text-[13px] outline-none" style={inkInput} />
+                    <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="作者（选填）" className="w-full rounded-lg px-3 py-2 text-[13px] outline-none" style={inkInput} />
+                    <input value={summary} onChange={e => setSummary(e.target.value)} placeholder="一句话简介（选填，喂给角色当背景）" className="w-full rounded-lg px-3 py-2 text-[13px] outline-none" style={inkInput} />
                     {!fileInfo && (
                         <>
-                            <div className="text-[10px] text-indigo-300/50">或直接粘贴正文（小段文本用；大文件请走上面的文件选择）↓</div>
+                            <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>或直接粘贴正文（小段文本用；大文件请走上面的文件选择）↓</div>
                             <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="粘贴正文…" rows={6}
-                                className="w-full rounded-lg bg-white/8 px-3 py-2 text-[12.5px] text-white placeholder-indigo-300/40 outline-none leading-relaxed" />
+                                className="w-full rounded-lg px-3 py-2 text-[12.5px] outline-none leading-relaxed" style={inkInput} />
                         </>
                     )}
-                    <div className="text-[10px] text-indigo-300/50">{totalChars.toLocaleString()} 字</div>
+                    <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>{totalChars.toLocaleString()} 字</div>
                 </div>
 
                 {busy ? (
                     <div className="mt-3">
-                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#8b7bf0,#b06ad6)' }} />
+                        <div className="h-2 rounded-full overflow-hidden" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>
+                            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: PAPER.red }} />
                         </div>
-                        <div className="text-[11px] text-indigo-200/70 text-center mt-1.5">处理中… {progress}%（大文件需要点时间）</div>
+                        <div className="text-[11px] text-center mt-1.5" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>处理中… {progress}%（大文件需要点时间）</div>
                     </div>
                 ) : (
-                    <button onClick={handleSave} disabled={!canSave}
-                        className="w-full mt-3 rounded-xl py-2.5 text-[13px] font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(120deg, rgba(150,168,255,.92), rgba(188,168,255,.85) 55%, rgba(150,212,204,.9))' }}>
-                        上架到书库
-                    </button>
+                    <InkBtn tone="ink" onClick={handleSave} disabled={!canSave} className="w-full mt-3 py-2.5 text-[13px] font-bold" style={{ borderRadius: 10 }}>
+                        贴上书架
+                    </InkBtn>
                 )}
             </div>
         </div>
@@ -2712,60 +2713,60 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
     return (
         <div className="space-y-3">
-            <p className="text-[11px] text-indigo-300/60 leading-relaxed">
-                页外里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给页外<b className="text-indigo-200">单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
+            <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
+                页外里的角色会自主、按间隔翻进去触发模型调用，比较费 API。你可以在这里给页外<b style={{ color: PAPER.red }}>单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
             </p>
 
             {/* 当前生效 */}
-            <div className="rounded-2xl p-3.5" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="text-[10px] tracking-[0.2em] text-indigo-200/60 mb-1.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>当前生效</div>
-                <div className="text-[12.5px] text-white/90 font-semibold">{effective?.model || '未配置'}</div>
-                <div className="text-[10px] text-white/40 mt-0.5">{host(effective?.baseUrl)} · {follow ? '跟随聊天默认' : '页外独立'}</div>
-                <button onClick={test} disabled={testing} className="mt-2.5 text-[11px] px-3 py-1.5 rounded-full font-semibold disabled:opacity-50"
-                    style={{ background: 'rgba(120,180,255,.16)', color: '#bcd4ff', border: '1px solid rgba(140,180,255,.3)' }}>
+            <div className="relative p-3.5" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)' }}>
+                <Tape color={TAPE_COLORS[1]} w={44} style={{ top: -8, left: 16, transform: 'rotate(-5deg)' }} />
+                <div className="text-[11px] mb-1.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>📍 当前生效</div>
+                <div className="text-[12.5px] font-semibold" style={{ color: PAPER.ink }}>{effective?.model || '未配置'}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: PAPER.inkSoft }}>{host(effective?.baseUrl)} · {follow ? '跟随聊天默认' : '页外独立'}</div>
+                <InkBtn tone="soft" onClick={test} disabled={testing} className="mt-2.5 text-[11px] px-3 py-1.5 font-semibold">
                     {testing ? '测试中…' : '测试连接'}
-                </button>
-                {testResult && <div className={`mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug ${testResult.startsWith('连接成功') ? 'text-emerald-300' : 'text-rose-300'}`} style={{ background: 'rgba(0,0,0,.25)' }}>{testResult}</div>}
+                </InkBtn>
+                {testResult && <div className="mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug" style={{ color: testResult.startsWith('连接成功') ? PAPER.teal : PAPER.red, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{testResult}</div>}
             </div>
 
             {/* 选择 API */}
             <div>
-                <div className="text-[10px] tracking-[0.2em] text-indigo-200/55 mb-1.5 px-0.5" style={{ fontFamily: `'Noto Serif SC',serif` }}>选择页外 API</div>
+                <div className="text-[11px] mb-1.5 px-0.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>选择页外 API</div>
                 <button onClick={() => choose(null)}
-                    className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
-                    style={{ background: follow ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${follow ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
+                    className="w-full flex items-center gap-2 p-3 mb-1.5 text-left active:translate-y-px"
+                    style={{ background: follow ? '#fff0c0' : PAPER.paper, border: `1px solid ${follow ? PAPER.red : PAPER.edge}`, borderRadius: 10 }}>
                     <div className="flex-1 min-w-0">
-                        <div className="text-[12px] text-white/90 font-semibold">跟随聊天默认</div>
-                        <div className="text-[10px] text-white/40 truncate">{chatApi?.model || '未配置'} · {host(chatApi?.baseUrl)}</div>
+                        <div className="text-[12px] font-semibold" style={{ color: PAPER.ink }}>跟随聊天默认</div>
+                        <div className="text-[10px] truncate" style={{ color: PAPER.inkSoft }}>{chatApi?.model || '未配置'} · {host(chatApi?.baseUrl)}</div>
                     </div>
-                    {follow && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
+                    {follow && <span className="text-[10px] font-bold shrink-0" style={{ color: PAPER.red }}>✓ 使用中</span>}
                 </button>
                 {apiPresets.length === 0 ? (
-                    <p className="text-[10.5px] text-white/35 px-1 py-1.5">「文具盒」里还没有保存的 API 预设。去文具盒里保存几个模型，这里就能选。</p>
+                    <p className="text-[10.5px] px-1 py-1.5" style={{ color: PAPER.inkSoft }}>「文具盒」里还没有保存的 API 预设。去文具盒里保存几个模型，这里就能选。</p>
                 ) : (() => {
                     const activePreset = apiPresets.find(p => sameAs(p.config));
                     const shown = presetsOpen ? apiPresets : (activePreset ? [activePreset] : []);
                     return (
                         <>
                             <button onClick={() => setPresetsOpen(o => !o)}
-                                className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 mb-1.5 text-left active:bg-white/5"
-                                style={{ border: '1px solid rgba(255,255,255,.07)' }}>
-                                <span className="text-[10.5px] text-white/55">保存的预设</span>
-                                <span className="text-[9.5px] text-white/35 rounded-full px-1.5 leading-tight" style={{ background: 'rgba(255,255,255,.08)' }}>{apiPresets.length}</span>
-                                {!presetsOpen && activePreset && <span className="text-[9.5px] text-sky-300/70 truncate">当前 · {activePreset.name}</span>}
-                                <span className="ml-auto text-[10px] text-white/40">{presetsOpen ? '收起' : '展开'}</span>
+                                className="w-full flex items-center gap-2 px-2.5 py-1.5 mb-1.5 text-left active:translate-y-px"
+                                style={{ border: `1px solid ${PAPER.edge}`, borderRadius: 8, background: PAPER.cream }}>
+                                <span className="text-[10.5px]" style={{ color: PAPER.inkSoft }}>保存的预设</span>
+                                <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}` }}>{apiPresets.length}</span>
+                                {!presetsOpen && activePreset && <span className="text-[9.5px] truncate" style={{ color: PAPER.red }}>当前 · {activePreset.name}</span>}
+                                <span className="ml-auto text-[10px]" style={{ color: PAPER.inkSoft }}>{presetsOpen ? '收起' : '展开'}</span>
                             </button>
                             {shown.map(p => {
                                 const on = sameAs(p.config);
                                 return (
                                     <button key={p.id} onClick={() => choose(p.config)}
-                                        className="w-full flex items-center gap-2 rounded-xl p-3 mb-1.5 text-left active:scale-[0.99] transition-transform"
-                                        style={{ background: on ? 'rgba(120,180,255,.12)' : 'rgba(255,255,255,.04)', border: `1px solid ${on ? 'rgba(140,180,255,.4)' : 'rgba(255,255,255,.07)'}` }}>
+                                        className="w-full flex items-center gap-2 p-3 mb-1.5 text-left active:translate-y-px"
+                                        style={{ background: on ? '#fff0c0' : PAPER.paper, border: `1px solid ${on ? PAPER.red : PAPER.edge}`, borderRadius: 10 }}>
                                         <div className="flex-1 min-w-0">
-                                            <div className="text-[12px] text-white/90 font-semibold truncate">{p.name}</div>
-                                            <div className="text-[10px] text-white/40 truncate">{p.config.model} · {host(p.config.baseUrl)}</div>
+                                            <div className="text-[12px] font-semibold truncate" style={{ color: PAPER.ink }}>{p.name}</div>
+                                            <div className="text-[10px] truncate" style={{ color: PAPER.inkSoft }}>{p.config.model} · {host(p.config.baseUrl)}</div>
                                         </div>
-                                        {on && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
+                                        {on && <span className="text-[10px] font-bold shrink-0" style={{ color: PAPER.red }}>✓ 使用中</span>}
                                     </button>
                                 );
                             })}
@@ -2775,23 +2776,23 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
             </div>
 
             {/* 调用记录 */}
-            <div className="rounded-2xl p-3" style={{ background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div className="p-3" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 12 }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                    <span className="text-[10px] tracking-[0.2em] text-indigo-200/60" style={{ fontFamily: `'Noto Serif SC',serif` }}>调用记录</span>
-                    <span className="text-[9.5px] text-white/40 rounded-full px-1.5 leading-tight" style={{ background: 'rgba(255,255,255,.08)' }}>{log.length}{log.length ? ` · 成功${okCount}` : ''}</span>
-                    {log.length > 0 && <button onClick={() => { void clearVRApiLog(); setLog([]); }} className="ml-auto text-[10px] text-white/40 hover:text-rose-300/80">清空</button>}
+                    <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🧾 调用记录</span>
+                    <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}` }}>{log.length}{log.length ? ` · 成功${okCount}` : ''}</span>
+                    {log.length > 0 && <button onClick={() => { void clearVRApiLog(); setLog([]); }} className="ml-auto text-[10px]" style={{ color: PAPER.red }}>清空</button>}
                 </div>
                 {log.length === 0 ? (
-                    <p className="text-[10.5px] text-white/35 py-2 text-center">还没有调用。角色每次登入页外触发的模型调用都会记在这里，方便你对账。</p>
+                    <p className="text-[10.5px] py-2 text-center" style={{ color: PAPER.inkSoft }}>还没有调用。角色每次翻进页外触发的模型调用都会记在这里，方便你对账。</p>
                 ) : (
                     <div className="space-y-1">
                         {log.slice(0, 60).map((l, i) => (
-                            <div key={i} className="flex items-center gap-2 text-[10.5px] py-1 border-b border-white/5 last:border-0">
-                                <span className={`shrink-0 ${l.ok ? 'text-emerald-400/80' : 'text-rose-400/80'}`}>{l.ok ? '●' : '○'}</span>
-                                <span className="text-white/75 truncate">{l.charName || '—'}</span>
-                                <span className="text-indigo-300/40 shrink-0">{l.room ? getRoom(l.room as VRRoomId).name : ''}</span>
-                                <span className="ml-auto text-white/30 shrink-0 tabular-nums">{(l.ms / 1000).toFixed(1)}s</span>
-                                <span className="text-white/35 shrink-0 tabular-nums w-[68px] text-right">{new Date(l.ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            <div key={i} className="flex items-center gap-2 text-[10.5px] py-1" style={{ borderBottom: i < Math.min(59, log.length - 1) ? `1px dashed ${PAPER.line}` : 'none' }}>
+                                <span className="shrink-0" style={{ color: l.ok ? PAPER.teal : PAPER.red }}>{l.ok ? '●' : '○'}</span>
+                                <span className="truncate" style={{ color: PAPER.ink }}>{l.charName || '—'}</span>
+                                <span className="shrink-0" style={{ color: PAPER.inkFaint }}>{l.room ? getRoom(l.room as VRRoomId).name : ''}</span>
+                                <span className="ml-auto shrink-0 tabular-nums" style={{ color: PAPER.inkFaint }}>{(l.ms / 1000).toFixed(1)}s</span>
+                                <span className="shrink-0 tabular-nums w-[68px] text-right" style={{ color: PAPER.inkFaint }}>{new Date(l.ts).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                         ))}
                     </div>
