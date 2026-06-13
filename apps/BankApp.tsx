@@ -974,6 +974,12 @@ ${previousGuestbook}
         });
     };
 
+    // 库存告急：有在售商品快卖光（≤3 份）时，给「经营」书签贴个小红点，点进去就能进货
+    const LOW_STOCK_THRESHOLD = 3;
+    const lowStockCount = state.shop.unlockedRecipes.reduce(
+        (n, id) => n + ((state.shop.stock?.[id] ?? 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
+    const hasLowStock = lowStockCount > 0;
+
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={paperTexture('kraft')}>
             <div aria-hidden className="pointer-events-none absolute inset-0 z-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
@@ -1293,7 +1299,7 @@ ${previousGuestbook}
                             <button
                                 key={tab.key}
                                 onClick={() => setActiveTab(tab.key as any)}
-                                className="flex-1 flex flex-col items-center justify-center py-2 active:scale-95 transition-transform"
+                                className="relative flex-1 flex flex-col items-center justify-center py-2 active:scale-95 transition-transform"
                                 style={{
                                     background: on ? '#fffdf7' : 'transparent',
                                     boxShadow: on ? '0 4px 12px rgba(96,66,40,0.2)' : 'none',
@@ -1301,6 +1307,9 @@ ${previousGuestbook}
                                     borderRadius: '8px 10px 7px 11px',
                                 }}
                             >
+                                {tab.key === 'manage' && hasLowStock && (
+                                    <span aria-hidden className="absolute w-2 h-2 rounded-full animate-pulse" style={{ top: 5, left: 'calc(50% + 8px)', background: '#e5484d', boxShadow: '0 0 0 2px #fffdf7' }} />
+                                )}
                                 <span className="text-[19px] leading-none mb-0.5" style={{ filter: on ? 'none' : 'grayscale(0.4) opacity(0.7)' }}>{tab.emoji}</span>
                                 <span className="text-[13px] font-black leading-none" style={{ fontFamily: HAND_FONT, color: on ? '#5b4636' : '#a98e6f' }}>{tab.label}</span>
                                 {on && <span className="text-[8px] mt-0.5" style={{ color: '#b1543f' }}>· {tab.tip} ·</span>}
