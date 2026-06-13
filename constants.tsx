@@ -42,6 +42,7 @@ import {
   PencilRuler,
   PushPin,
   MaskHappy,
+  CalendarHeart,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -88,6 +89,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Regex: ({ className }) => <Bandaids className={className} weight="bold" />,
   Creative: ({ className }) => <Feather className={className} weight="bold" />,
   Theater: ({ className }) => <MaskHappy className={className} weight="bold" />,
+  Almanac: ({ className }) => <CalendarHeart className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -126,14 +128,15 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
   { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
-  { id: AppID.Schedule, name: '时光契约', icon: 'Schedule', color: 'cyan' },
+  // 「时光契约」(日程/心愿单/纪念日倒数) + 「特别时光」(节日记忆活动) 合并为「岁时记」：
+  // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
+  { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
   { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
   { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
-  { id: AppID.SpecialMoments, name: '特别时光', icon: 'SpecialMoments', color: 'pink' },
   { id: AppID.CharCreatorDev, name: '捏脸·开发', icon: 'CharCreatorDev', color: 'amber' }, // 仅开发模式显示（Launcher 过滤）
   // { id: AppID.QQBridge, name: 'QQ 桥', icon: 'QQBridge', color: 'sky' }, // Hidden temporarily
 ];

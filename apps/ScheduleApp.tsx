@@ -72,8 +72,10 @@ const THEMES: Record<ThemeMode, any> = {
     }
 };
 
-const ScheduleApp: React.FC = () => {
+/** onExit：当本 App 嵌在「岁时记」壳里时，顶层返回回到岁时记封面页而非直接关到桌面。未传则回桌面。 */
+const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile } = useOS();
+    const exitApp = onExit ?? closeApp;
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
     const [activeTab, setActiveTab] = useState<'quest' | 'server_events'>('quest');
@@ -391,7 +393,7 @@ const ScheduleApp: React.FC = () => {
 
              {/* Header */}
              <div className={`pt-12 pb-4 px-6 border-b ${theme.border} backdrop-blur-sm sticky top-0 z-20 flex items-center justify-between shrink-0 h-24 box-border relative transition-colors duration-300`}>
-                <button onClick={closeApp} className={`p-2 -ml-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-black/5'}`}>
+                <button onClick={exitApp} className={`p-2 -ml-2 rounded-full active:scale-90 transition-transform ${currentThemeMode === 'minimal' ? 'bg-[#eef2f6] shadow-[4px_4px_8px_#d1d9e6,-4px_-4px_8px_#ffffff]' : 'hover:bg-black/5'}`}>
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-6 h-6 ${theme.accent}`}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                 </button>
                 

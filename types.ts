@@ -43,6 +43,7 @@ export enum AppID {
   Regex = 'regex', // 正则 — SillyTavern 式正则脚本（全局/角色局部，作用于用户输入/AI 输出/提示词/显示，可导入酒馆正则 JSON）
   Creative = 'creative', // 创作社 — 「笔友会」（共创小说）与「写歌」（共创歌曲）合并入口，首页选模式后进入对应创作台
   Theater = 'theater', // 小剧场 — 「攻略本」(galgame 恋爱攻略) 与「TRPG」(跑团冒险) 合并入口，封面页选模式后进入对应剧目（Guidebook/Game 子 App 保留路由兼容）
+  Almanac = 'almanac', // 岁时记 — 「时光契约」(日程/心愿单/纪念日倒数) 与「特别时光」(节日记忆活动) 合并入口，封面页选模式后进入对应页（Schedule/SpecialMoments 子 App 保留路由兼容）
 }
 
 // =====================================================================
