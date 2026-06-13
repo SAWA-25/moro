@@ -22,6 +22,8 @@ export interface BusinessResult {
     levelBonusPct?: number;  // 店铺档次溢价（百分比，仅展示）
     shopLevel?: number;      // 当前店铺等级（仅展示）
     lostSales?: number;      // 因缺货空手而归的客人数（提示去进货）
+    loyaltyEvents?: { name: string; tier: 'regular' | 'vip' }[]; // 本轮晋升的常客 / VIP
+    regularVisits?: number;  // 本轮回头光顾的常客人次
 }
 
 const isUrl = (v?: string) => !!v && (v.startsWith('http') || v.startsWith('data:'));
@@ -70,6 +72,22 @@ export const BusinessResultModal: React.FC<{
                     <span>{result.lostSales} 位客人没买到就走了 —— 货不够卖，记得去「经营」进货</span>
                 </div>
             )}
+            {/* 回头客 / VIP */}
+            {(result.loyaltyEvents && result.loyaltyEvents.length > 0) ? (
+                <div className="px-5 py-2.5 text-[12px] font-bold space-y-0.5" style={{ background: '#F1ECFB', color: '#7E57C2' }}>
+                    {result.loyaltyEvents.map((e, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                            <span>{e.tier === 'vip' ? '👑' : '🎉'}</span>
+                            <span>{e.name} {e.tier === 'vip' ? '成了你店里的 VIP！' : '光顾够勤，成了常客～'}</span>
+                        </div>
+                    ))}
+                </div>
+            ) : (!!result.regularVisits && result.regularVisits > 0 && (
+                <div className="px-5 py-2.5 flex items-center gap-2 text-[12px] font-bold" style={{ background: '#F1ECFB', color: '#7E57C2' }}>
+                    <span>👑</span>
+                    <span>今天有 {result.regularVisits} 人次常客回头光顾</span>
+                </div>
+            ))}
             {/* 逐单 */}
             <div className="px-5 py-4 max-h-[44vh] overflow-y-auto no-scrollbar" style={{ color: '#5D4037' }}>
                 <div className="text-[11px] font-bold text-[#A1887F] uppercase tracking-wider mb-2">卖出的商品</div>

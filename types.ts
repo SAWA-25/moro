@@ -1394,6 +1394,16 @@ export interface ShopReview {
     productName?: string; // 点的什么
     ts: number;
     isNpc?: boolean;
+    aiPending?: boolean;  // 已提交 AI 润色、等待返回（UI 可显示「客人正在写…」）
+}
+
+/** 回头客 / VIP：累计到访（成功消费）越多，越忠诚——常客小费更高、评分更稳。 */
+export interface ShopRegular {
+    id: string;        // 'npc:名字' 或 'char:角色id'
+    name: string;
+    avatar: string;    // emoji 或 URL
+    isNpc: boolean;
+    visits: number;    // 累计成功消费次数
 }
 
 export interface BankConfig {
@@ -1486,6 +1496,8 @@ export interface BankShopState {
     reviews?: ShopReview[];
     /** 各商品库存（recipeId → 剩余份数）。营业卖出扣减，进货花钱补充。 */
     stock?: Record<string, number>;
+    /** 回头客 / VIP（identity id → 记录）。营业时累计到访，常客会回头光顾。 */
+    regulars?: Record<string, ShopRegular>;
 }
 
 export interface BankFullState {

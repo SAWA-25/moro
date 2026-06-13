@@ -61,6 +61,16 @@ export const shopLevelExtraCustomers = (level: number): number => Math.max(0, le
 /** 过夜营业额的等级倍率 */
 export const shopLevelPassiveMult = (level: number): number => 1 + Math.max(0, level - 1) * 0.15;
 
+// --- 回头客 / VIP（经营深度）-------------------------------------------------
+// 顾客成功消费会被记住；到访够多就成「常客」，再多成「VIP」。
+// 常客/VIP 小费更勤更高、评分更稳，且有更高概率「回头」光顾，让营业越做越熟客。
+export const REGULAR_VISITS = 3;  // 到访达到此值 → 常客
+export const VIP_VISITS = 8;      // 到访达到此值 → VIP
+export const MAX_REGULARS = 60;   // 常客表上限（按到访次数保留 Top N，防止无限膨胀）
+/** 根据到访次数判定忠诚档位 */
+export const regularTier = (visits: number): 'new' | 'regular' | 'vip' =>
+    visits >= VIP_VISITS ? 'vip' : visits >= REGULAR_VISITS ? 'regular' : 'new';
+
 // 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
 export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
     { name: '上班族小林', avatar: '🧑‍💼' },
