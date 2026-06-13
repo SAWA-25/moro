@@ -65,6 +65,10 @@ import { isRemoteSearchBroken } from './vectorSearch';
 import { spreadActivation } from './activation';
 import { applyPriming, checkRumination } from './priming';
 import { expandAndFormat } from './formatter';
+import {
+    loadWorkingMemory, saveWorkingMemory, buildWorkingMemory,
+    applyContinuityBoost, formatWorkingMemory, formatCognitions,
+} from './cognition';
 import { runConsolidation } from './consolidation';
 import { rerankDocuments } from './rerank';
 // 认知消化由用户在记忆宫殿 App 手动触发，不在聊天管线中自动运行
@@ -773,6 +777,10 @@ export async function retrieveMemories(
             console.log(`🏰 [Retrieve] 启动效应（mood=${currentMood}）已应用`);
         }
 
+        // 4.5 连续性加权：用上一轮工作记忆快照，给同语义的记忆小幅上浮，联想不断线
+        const prevWorkingMemory = loadWorkingMemory(charId);
+        applyContinuityBoost(results, prevWorkingMemory);
+
         // 重新排序
         results.sort((a, b) => b.finalScore - a.finalScore);
 
@@ -878,6 +886,15 @@ export async function retrieveMemories(
         // 10. 格式化
         const formatted = await tRetrieve('expandAndFormat', 'IDB', expandAndFormat(results, charId, anticipations, userName, formatterCap));
 
+        // 10.5 认知网络注入：长期认知（置顶，不占常规名额）+ 本轮工作记忆快照
+        //   - 认知块放最顶：让角色「越聊越懂 TA」的稳定理解持续生效；
+        //   - 工作记忆「此刻的思绪」放认知之后、记忆宫殿正文之前，串住联想线。
+        const cognitionBlock = await tRetrieve('formatCognitions', 'IDB', formatCognitions(charId, userName));
+        const newSnapshot = buildWorkingMemory(charId, results, currentMood);
+        if (newSnapshot) saveWorkingMemory(newSnapshot);
+        const workingBlock = formatWorkingMemory(newSnapshot);
+        const combined = [cognitionBlock, workingBlock, formatted].filter(Boolean).join('\n\n');
+
         // ── 汇总打印 ──
         const perfTotal = Math.round(performance.now() - perfRetrieveT0);
         const byKind: Record<'NET' | 'IDB' | 'CPU', number> = { NET: 0, IDB: 0, CPU: 0 };
@@ -888,7 +905,7 @@ export async function retrieveMemories(
             .join(' ');
         console.log(`⏱ [retrieveMemories] total=${perfTotal}ms | NET=${byKind.NET}ms IDB=${byKind.IDB}ms CPU=${byKind.CPU}ms | ${detail}`);
 
-        return formatted;
+        return combined;
 
     } catch (err: any) {
         console.error(`❌ [Retrieve] 检索记忆失败:`, err.message);

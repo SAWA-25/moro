@@ -1964,7 +1964,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                           }
                       }
                   } else {
-                      const responseParts = ChatParser.splitResponse(aiContent);
+                      // 传入已知表情名 → 文本里指向表情名的片段也识别成贴纸弹出（与本地路径一致）
+                      const responseParts = ChatParser.splitResponse(aiContent, emojis.map(e => e.name));
 
                       for (const part of responseParts) {
                           if (part.type === 'emoji') {

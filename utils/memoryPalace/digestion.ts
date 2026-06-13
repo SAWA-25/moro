@@ -15,6 +15,7 @@ import type { MemoryNode, Anticipation, PersonalityStyle, EmbeddingConfig, Remot
 import type { LightLLMConfig } from './pipeline';
 import { MemoryNodeDB, AnticipationDB } from './db';
 import { fulfillAnticipation, disappointAnticipation } from './anticipation';
+import { formCognitions } from './cognition';
 import { vectorizeAndStore } from './vectorStore';
 import { safeFetchJson } from '../safeApi';
 import { safeParseJsonArray } from './jsonUtils';
@@ -665,12 +666,14 @@ export async function runCognitiveDigestion(
     // 收集材料
     const material = await gatherDigestMaterial(charId);
 
-    // 如果没有任何待消化的东西，仍然做一次孤儿节点向量化（历史遗留的 embedded:false 补齐）
+    // 如果没有任何待消化的东西，仍然做一次孤儿节点向量化（历史遗留的 embedded:false 补齐）。
+    // 认知形成依赖共激活簇、与消化材料无关：即使无材料也尝试一次（高访问角色照样能长出认知）。
     if (material.atticNodes.length === 0 &&
         material.anticipations.length === 0 &&
         material.studyNodes.length === 0 &&
         material.userRoomNodes.length === 0 &&
         material.selfRoomNodes.length === 0) {
+        try { await formCognitions(charId, charName, charPersona, llmConfig, userName); } catch { /* 不影响 */ }
         if (embeddingConfig) await vectorizeOrphanedNodes(charId, embeddingConfig);
         markDigested(charId);
         return { resolved: [], deepened: [], faded: [], fulfilled: [], disappointed: [], internalized: [], synthesizedUser: [], selfInsights: [], selfConfused: [] };
@@ -683,6 +686,15 @@ export async function runCognitiveDigestion(
 
     // 执行动作
     const result = await executeActions(actions, charId, material);
+
+    // 长期认知：把反复强共激活的记忆簇提炼成稳定「认知」（self_room, origin='cognition'）。
+    // 放在向量化之前，让新认知节点在同一轮被 vectorizeOrphanedNodes 一并向量化。
+    try {
+        const formed = await formCognitions(charId, charName, charPersona, llmConfig, userName);
+        if (formed > 0) console.log(`🧩 [Digest] 形成 ${formed} 条长期认知`);
+    } catch (e: any) {
+        console.warn('🧩 [Digest] formCognitions 失败（不影响消化结果）:', e?.message || e);
+    }
 
     // 向量化本次新建的节点 + 任何历史遗留的孤儿节点
     if (embeddingConfig) await vectorizeOrphanedNodes(charId, embeddingConfig);

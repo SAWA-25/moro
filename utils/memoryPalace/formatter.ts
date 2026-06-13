@@ -71,6 +71,7 @@ export async function expandAndFormat(
     for (const r of results) {
         if (pinnedIds.has(r.node.id)) continue; // 已置顶不再下沉到列表里
         if (r.node.archived) continue;          // 防御：理论上 archived 不会到这里
+        if (r.node.origin === 'cognition') continue; // 长期认知由 pipeline 顶部专段注入，这里不重复
 
         const ebId = r.node.eventBoxId;
         if (ebId) {

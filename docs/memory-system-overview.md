@@ -171,6 +171,29 @@ active(新建) → anchor(7天+，心理锚点) → fulfilled / disappointed
 
 多条记忆被同时检索时，它们之间的链接强度 +0.05（最大1.0），模拟记忆网络强化。
 
+### 五、认知网络（联想增强 + 长期认知）
+
+在扩散激活 / 共激活之上再补两层，让角色「越聊越合得来」（见 `cognition.ts`）：
+
+#### 短期 · 工作记忆快照（WorkingMemorySnapshot）
+
+- 每轮检索后，把命中记忆聚成一个语义快照：主导 tags（词频 Top-4）+ 主导情绪 + 主题行 + 簇成员 id，存 localStorage（`mp_working_memory_<charId>`，只留最近一条）。
+- **下一轮**用上一轮快照做**连续性加权**：与上轮同 tag 的记忆 ×1.08、同簇成员 ×1.05 —— 联想顺着同一条线延续，不会每轮乱跳（"聚集关联语意"）。
+- 检索输出顶部插一行 `🧠 此刻的思绪`，提示模型顺着当前思绪接话。
+
+#### 长期 · 认知节点（origin==='cognition'）
+
+- 反复「一起被想起」（link strength ≥ 0.65 且簇内 accessCount 之和 ≥ 8）的记忆簇，说明它们在角色脑里已长在一起 → 用并查集聚团检出。
+- 认知消化（digestion）收尾时，对这样的簇用 LLM 提炼成**一句稳定的「认知」**（对用户/关系/自我的理解，≤40字，第一人称），落 `self_room`、`origin='cognition'`、`tags:['认知','长期']`。每次消化最多新形成 `MAX_NEW_PER_RUN=2` 条（控成本 + 防刷屏），簇签名记 localStorage 防重复提炼。
+- 检索时认知**置顶注入**（`### 你对TA的认知`），不占常规 15 名额；formatter 跳过 `origin==='cognition'` 防重复。越聊，认知越多越准 → 角色越来越「懂你」。
+
+| 文件 | 职责 |
+|------|------|
+| `cognition.ts` | 工作记忆快照（load/save/build/continuityBoost/format）+ 认知簇检测 + LLM 提炼 + 认知注入 |
+| `pipeline.ts` | 检索末尾接连续性加权、保存快照、拼接认知/工作记忆注入块 |
+| `digestion.ts` | `runCognitiveDigestion` 收尾调用 `formCognitions` |
+| `formatter.ts` | 跳过 `origin==='cognition'`（由 pipeline 顶部专段注入） |
+
 ---
 
 ## 系统对比

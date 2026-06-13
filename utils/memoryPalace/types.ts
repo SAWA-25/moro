@@ -73,7 +73,9 @@ export interface MemoryNode {
     accessCount: number;
     pinnedUntil?: number | null; // 便利贴置顶截止时间（timestamp ms），null/undefined = 不置顶
     sourceId?: string | null;   // 消化衍生记忆的源记忆 ID，null = 非衍生记忆
-    origin?: 'extraction' | 'digestion' | 'system'; // 记忆来源：extraction=聊天提取, digestion=认知消化衍生, system=系统生成
+    // 记忆来源：extraction=聊天提取, digestion=认知消化衍生, system=系统生成,
+    // cognition=长期认知（由反复强共激活的记忆簇提炼的稳定理解，落 self_room、检索时置顶注入，见 cognition.ts）
+    origin?: 'extraction' | 'digestion' | 'system' | 'cognition';
 
     // ─── EventBox 绑定（新） ─────────────────
     eventBoxId?: string | null;  // 所属事件盒 ID，null/undefined = 独立记忆（"地上的球"）
