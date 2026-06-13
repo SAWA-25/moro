@@ -2,18 +2,21 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { NovelBook, NovelProtagonist, CharacterProfile } from '../types';
-import Modal from '../components/os/Modal';
-import ConfirmDialog from '../components/os/ConfirmDialog';
 import { processImage } from '../utils/file';
 import { NOVEL_THEMES, analyzeWriterPersonaSimple } from '../utils/novelUtils';
 import NovelWriter from '../components/novel/NovelWriter';
-import { Robot, MaskHappy, PenNib, Books, FolderOpen } from '@phosphor-icons/react';
+import { PenNib, Books, FolderOpen, Robot, MaskHappy, Plus, Trash, Image as ImageIcon, Stack, Quotes } from '@phosphor-icons/react';
+import {
+    PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, LINES_BG, BARCODE_BG, paperField,
+    Tape, Cut, Stitch, Kicker, SectionTitle, BackSticker,
+    IconStamp, InkButton, Chip, TopBar, CollageModal, CollageConfirm,
+} from './creative/collage';
 
 /** onExit：当本 App 嵌在「创作社」壳里时，顶层返回回到创作社首页而非直接关到桌面。未传则回桌面。 */
 const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, novels, addNovel, updateNovel, deleteNovel, characters, updateCharacter, apiConfig, addToast, userProfile, worldbooks } = useOS();
     const exitApp = onExit ?? closeApp;
-    
+
     // Navigation State
     const [view, setView] = useState<'shelf' | 'create' | 'write' | 'settings' | 'library'>('shelf');
     const [activeBook, setActiveBook] = useState<NovelBook | null>(null);
@@ -26,16 +29,16 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const [tempWorld, setTempWorld] = useState('');
     const [selectedCollaborators, setSelectedCollaborators] = useState<Set<string>>(new Set());
     const [tempProtagonists, setTempProtagonists] = useState<NovelProtagonist[]>([]);
-    
+
     // Cover Image State
     const [coverInputUrl, setCoverInputUrl] = useState('');
     const [tempCoverImage, setTempCoverImage] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    
+
     // Protagonist Modal State
     const [editingProtagonist, setEditingProtagonist] = useState<NovelProtagonist | null>(null);
     const [isProtagonistModalOpen, setIsProtagonistModalOpen] = useState(false);
-    
+
     // Protagonist Import State
     const [isProtoImportOpen, setIsProtoImportOpen] = useState(false);
     const [importTab, setImportTab] = useState<'system' | 'history'>('system');
@@ -88,7 +91,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     // --- CRUD ---
 
     const handleCreateBook = () => {
-        if (!tempTitle.trim()) { addToast('请输入标题', 'error'); return; }
+        if (!tempTitle.trim()) { addToast('给稿子起个名字吧', 'error'); return; }
         const newBook: NovelBook = {
             id: `novel-${Date.now()}`,
             title: tempTitle, subtitle: tempSubtitle, summary: tempSummary,
@@ -127,7 +130,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         await updateNovel(activeBook.id, updated);
         setActiveBook(updated);
         setView('write');
-        addToast('设定已更新，内容完好', 'success');
+        addToast('设定收好了，正文一字没动', 'success');
     };
 
     const resetTempState = () => {
@@ -136,8 +139,8 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const handleDeleteBook = async (id: string) => {
         setConfirmDialog({
-            isOpen: true, title: '删除作品', message: '确定要删除这本小说吗？此操作无法撤销。', variant: 'danger',
-            onConfirm: () => { deleteNovel(id); if (activeBook?.id === id) setView('shelf'); addToast('已删除', 'success'); setConfirmDialog(null); }
+            isOpen: true, title: '撕掉这本？', message: '整本稿子会从抽屉里消失，撕了就捡不回来了。', variant: 'danger', confirmText: '撕掉',
+            onConfirm: () => { deleteNovel(id); if (activeBook?.id === id) setView('shelf'); addToast('稿子已撕掉', 'success'); setConfirmDialog(null); }
         });
     };
 
@@ -148,7 +151,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             try {
                 const base64 = await processImage(file, { maxWidth: 800, quality: 0.8 });
                 setTempCoverImage(base64);
-            } catch (e) { addToast('图片处理失败', 'error'); }
+            } catch (e) { addToast('这张图贴不上去', 'error'); }
         }
     };
 
@@ -161,7 +164,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     };
 
     const saveProtagonist = () => {
-        if (!editingProtagonist || !editingProtagonist.name.trim()) { addToast('角色名不能为空', 'error'); return; }
+        if (!editingProtagonist || !editingProtagonist.name.trim()) { addToast('总得有个名字', 'error'); return; }
         setTempProtagonists(prev => {
             const exists = prev.find(p => p.id === editingProtagonist.id);
             return exists ? prev.map(p => p.id === editingProtagonist.id ? editingProtagonist : p) : [...prev, editingProtagonist];
@@ -174,156 +177,291 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const newP: NovelProtagonist = { id: `proto-${Date.now()}-${Math.random()}`, name: p.name, role: p.role || '主角', description: p.description || '' };
         setTempProtagonists(prev => [...prev, newP]);
         setIsProtoImportOpen(false);
-        addToast(`已导入角色: ${p.name}`, 'success');
+        addToast(`${p.name} 入册了`, 'success');
     };
 
     const importWorldbook = (wb: any) => {
         const textToAppend = `\n\n【${wb.title}】\n${wb.content}`;
         setTempWorld(prev => (prev + textToAppend).trim());
         setIsWorldbookModalOpen(false);
-        addToast(`已导入设定: ${wb.title}`, 'success');
+        addToast(`贴入设定：${wb.title}`, 'success');
     };
 
+    // 剧中人卡片（拼贴：钉在纸上的人物卡）
     const ProtagonistCard = ({ p, onDelete, onClick }: { p: NovelProtagonist, onDelete?: () => void, onClick?: () => void }) => (
-        <div onClick={onClick} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm relative group cursor-pointer hover:border-slate-400 transition-colors">
-            <div className="font-bold text-slate-800 text-sm flex justify-between"><span>{p.name}</span><span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500 font-normal">{p.role}</span></div>
-            <div className="text-xs text-slate-500 mt-1 line-clamp-2">{p.description || "暂无描述"}</div>
-            {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute top-1 right-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">×</button>}
+        <div onClick={onClick} className="relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-3 cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all group">
+            <span aria-hidden className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-[#1c1b1a]" />
+            <div className="flex items-center justify-between gap-2">
+                <span className="font-black text-sm text-[#1c1b1a] truncate" style={BRUSH}>{p.name}</span>
+                <span className="shrink-0 label-mono text-[7px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/70">{p.role}</span>
+            </div>
+            <div className="text-xs text-[#1c1b1a]/55 mt-1 line-clamp-2 leading-relaxed" style={HAND}>{p.description || '（这个人还没写设定）'}</div>
+            {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="absolute -top-2 -right-2 w-5 h-5 bg-white border-2 border-[#1c1b1a] text-[#1c1b1a] text-xs leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">✕</button>}
         </div>
     );
 
-    // --- Renderers ---
-
-    // 4. Character Library View
+    // ============================ 4. 角色名册 ============================
     if (view === 'library') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans">
-                <div className="h-20 bg-white/80 backdrop-blur-md flex items-end pb-3 px-6 border-b border-slate-200 shrink-0 sticky top-0 z-20">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={() => setView('shelf')} className="p-2 -ml-2 rounded-full hover:bg-slate-100 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <span className="font-bold text-slate-800 text-lg tracking-wide">角色库</span>
-                        <div className="w-8"></div>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...DOT_BG }}>
+                <TopBar
+                    left={<BackSticker onClick={() => setView('shelf')} label="回抽屉" />}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">CAST &amp; CREW</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">角 色 名 册</div></>}
+                />
+                <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-12 pt-2 space-y-7">
+                    {/* 系统角色 / AI 共创者 */}
                     <section>
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><Robot size={14} /> 系统角色 (AI Collaborators)</h3>
+                        <div className="flex items-center gap-2 mb-3">
+                            <Robot size={16} weight="bold" />
+                            <SectionTitle en="AI COLLABORATORS" cn="能搭笔的人" />
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
-                            {characters.map(c => (
-                                <div key={c.id} onClick={() => { setLibraryPersonaChar(c); setShowPersonaModal(true); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center gap-3 cursor-pointer hover:shadow-md transition-all active:scale-95">
-                                    <img src={c.avatar} className="w-16 h-16 rounded-full object-cover border-2 border-slate-50" />
-                                    <div className="text-center"><div className="font-bold text-slate-700 text-sm">{c.name}</div><div className="text-[10px] text-slate-400 mt-1 px-2 py-0.5 bg-slate-50 rounded-full">共创者</div></div>
-                                </div>
+                            {characters.map((c, i) => (
+                                <button key={c.id} onClick={() => { setLibraryPersonaChar(c); setShowPersonaModal(true); }} className="relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-3 flex flex-col items-center gap-2 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" style={{ transform: `rotate(${i % 2 ? 0.8 : -0.8}deg)` }}>
+                                    <div className="relative">
+                                        <Tape className="-top-3 left-1/2 -translate-x-1/2 rotate-[-4deg] w-10 h-3" />
+                                        <img src={c.avatar} className="w-16 h-16 object-cover border-2 border-[#1c1b1a]" />
+                                    </div>
+                                    <div className="font-black text-sm text-center text-[#1c1b1a]" style={BRUSH}>{c.name}</div>
+                                    <span className="label-mono text-[7px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/70">共创者</span>
+                                </button>
                             ))}
                         </div>
                     </section>
+                    <Cut label="ARCHIVE" />
+                    {/* 历史剧中人 */}
                     <section>
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2"><MaskHappy size={14} /> 历史剧中人 (From History)</h3>
-                        {historyProtagonists.length === 0 ? <div className="text-center py-8 text-slate-400 text-xs">暂无历史角色数据</div> : <div className="grid grid-cols-1 gap-3">{historyProtagonists.map((p, idx) => (<div key={idx} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><div className="flex justify-between items-start mb-2"><span className="font-bold text-slate-800">{p.name}</span><span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded border border-indigo-100">{p.role}</span></div><p className="text-xs text-slate-500 leading-relaxed line-clamp-3">{p.description || "暂无描述"}</p></div>))}</div>}
+                        <div className="flex items-center gap-2 mb-3">
+                            <MaskHappy size={16} weight="bold" />
+                            <SectionTitle en="FROM PAST STORIES" cn="写过的角色" />
+                        </div>
+                        {historyProtagonists.length === 0
+                            ? <div className="text-center py-10 text-[#1c1b1a]/40 text-sm" style={HAND}>名册还空着，写本书就有人了</div>
+                            : <div className="space-y-3">{historyProtagonists.map((p, idx) => (
+                                <div key={idx} className="relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-4">
+                                    <div className="flex justify-between items-start mb-1.5">
+                                        <span className="font-black text-[#1c1b1a]" style={BRUSH}>{p.name}</span>
+                                        <span className="label-mono text-[7px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/70">{p.role}</span>
+                                    </div>
+                                    <p className="text-xs text-[#1c1b1a]/60 leading-relaxed line-clamp-3" style={HAND}>{p.description || '（没留下设定）'}</p>
+                                </div>
+                            ))}</div>}
                     </section>
                 </div>
 
-                <Modal isOpen={showPersonaModal} title={libraryPersonaChar?.name || '角色风格'} onClose={() => setShowPersonaModal(false)}>
-                    <div className="max-h-[60vh] overflow-y-auto space-y-4 p-1">
-                        {libraryPersonaChar ? <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{libraryPersonaChar.writerPersona || analyzeWriterPersonaSimple(libraryPersonaChar)}</div> : null}
-                    </div>
-                </Modal>
+                <CollageModal isOpen={showPersonaModal} title={libraryPersonaChar?.name || '笔法'} kicker="WRITING STYLE" onClose={() => setShowPersonaModal(false)}>
+                    {libraryPersonaChar && (
+                        <div className="relative bg-white border-2 border-[#1c1b1a] p-4 text-sm leading-relaxed text-[#1c1b1a]/80 whitespace-pre-wrap" style={{ ...LINES_BG }}>
+                            <Quotes size={18} weight="fill" className="text-[#1c1b1a]/25 mb-1" />
+                            {libraryPersonaChar.writerPersona || analyzeWriterPersonaSimple(libraryPersonaChar)}
+                        </div>
+                    )}
+                </CollageModal>
             </div>
         );
     }
 
-    // 1. Shelf View
+    // ============================ 1. 稿子抽屉（书架） ============================
     if (view === 'shelf') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative">
-                <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || (confirmDialog?.onConfirm ? '确认' : 'OK')} onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
-                <div className="h-24 flex items-end justify-between px-6 pb-6 bg-white/80 backdrop-blur-md z-20 shrink-0 border-b border-slate-100">
-                    <button onClick={exitApp} className="p-3 -ml-3 rounded-full hover:bg-slate-100 active:scale-95 transition-all"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
-                    <span className="font-black text-2xl text-slate-800 tracking-tight">我的手稿</span>
-                    <div className="flex gap-2">
-                        <button onClick={() => setView('library')} className="w-10 h-10 bg-white text-slate-600 border border-slate-200 rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-transform hover:bg-slate-50"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg></button>
-                        <button onClick={() => { setView('create'); resetTempState(); }} className="w-10 h-10 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform hover:bg-black"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg></button>
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...DOT_BG }}>
+                <CollageConfirm isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || '确认'} cancelText="算了" onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
+                <TopBar
+                    left={<BackSticker onClick={exitApp} label="返回" />}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">PROSE · 笔友会</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">稿 子 抽 屉</div></>}
+                    right={<>
+                        <IconStamp onClick={() => setView('library')} title="角色名册"><Stack size={18} weight="bold" /></IconStamp>
+                        <IconStamp tone="ink" onClick={() => { setView('create'); resetTempState(); }} title="开新稿"><Plus size={18} weight="bold" /></IconStamp>
+                    </>}
+                />
+                <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-2 pb-16">
+                    <div className="grid grid-cols-2 gap-5">
+                        {novels.map((book, idx) => {
+                            const style = getTheme(book.coverStyle);
+                            const wordCount = book.segments.reduce((acc, seg) => acc + (seg.type === 'story' ? seg.content.length : 0), 0);
+                            const bookCollaborators = characters.filter(c => book.collaboratorIds.includes(c.id));
+                            return (
+                                <button key={book.id} onClick={() => { setActiveBook(book); setView('write'); }} className="group relative text-left active:translate-x-[2px] active:translate-y-[2px] transition-transform" style={{ transform: `rotate(${idx % 2 ? 0.7 : -0.7}deg)` }}>
+                                    <div className="relative border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] overflow-hidden" style={{ background: PAPER_CARD }}>
+                                        <Tape className={`-top-2 ${idx % 2 ? 'right-4 rotate-[5deg]' : 'left-4 rotate-[-5deg]'} w-12 h-4`} />
+                                        {/* 封面带：贴图 or 主题色纸条 */}
+                                        <div className={`h-20 relative ${book.coverImage ? '' : style.bg}`} style={book.coverImage ? { backgroundImage: `url(${book.coverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
+                                            {book.coverImage && <div className="absolute inset-0 bg-[#1c1b1a]/15" />}
+                                            <div className="absolute top-1.5 left-2 label-mono text-[7px] text-[#1c1b1a]/50">NO.{String(idx + 1).padStart(2, '0')}</div>
+                                            <div aria-hidden className="absolute bottom-1.5 right-2 w-10 h-3 opacity-50" style={BARCODE_BG} />
+                                        </div>
+                                        <div className="border-t-2 border-[#1c1b1a] p-3">
+                                            <h3 className="font-black text-base leading-tight line-clamp-2 text-[#1c1b1a]" style={BRUSH}>{book.title}</h3>
+                                            {book.subtitle && <div className="label-mono text-[7px] text-[#1c1b1a]/45 mt-0.5 truncate">{book.subtitle}</div>}
+                                            <p className="text-xs text-[#1c1b1a]/55 line-clamp-3 leading-relaxed mt-1.5 min-h-[2.5rem]" style={HAND}>{book.summary || '（还没写简介）'}</p>
+                                            <Stitch className="my-2" />
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex -space-x-1.5">{bookCollaborators.slice(0, 3).map(c => (<img key={c.id} src={c.avatar} className="w-5 h-5 border border-[#1c1b1a] object-cover bg-white" />))}{bookCollaborators.length === 0 && <span className="text-[9px] text-[#1c1b1a]/35" style={HAND}>独自写</span>}</div>
+                                                <span className="label-mono text-[7px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/65">{(wordCount / 1000).toFixed(1)}k 字</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className="absolute -top-2 -right-2 w-6 h-6 bg-white border-2 border-[#1c1b1a] text-[#1c1b1a] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"><Trash size={12} weight="bold" /></button>
+                                </button>
+                            );
+                        })}
                     </div>
-                </div>
-                <div className="p-6 grid grid-cols-2 gap-5 overflow-y-auto pb-24">
-                    {novels.map(book => {
-                        const style = getTheme(book.coverStyle);
-                        const wordCount = book.segments.reduce((acc, seg) => acc + (seg.type === 'story' ? seg.content.length : 0), 0);
-                        const bgStyle = book.coverImage ? { backgroundImage: `url(${book.coverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {};
-                        return (
-                            <div key={book.id} onClick={() => { setActiveBook(book); setView('write'); }} className="group relative aspect-auto min-h-[14rem] bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden border border-slate-100 cursor-pointer flex flex-col">
-                                <div className={`h-28 shrink-0 ${style.bg} relative p-4 flex flex-col justify-end`} style={bgStyle}>
-                                    <div className={`absolute inset-0 ${book.coverImage ? 'bg-black/30' : ''}`}></div>
-                                    <div className="relative z-10"><h3 className={`font-bold text-lg leading-tight line-clamp-2 ${book.coverImage ? 'text-white drop-shadow-md' : style.text}`}>{book.title}</h3>{book.subtitle && <p className={`text-[10px] font-bold opacity-80 uppercase tracking-wide truncate ${book.coverImage ? 'text-white' : style.text}`}>{book.subtitle}</p>}</div>
-                                </div>
-                                <div className="p-4 flex-1 flex flex-col justify-between">
-                                    <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed mb-3">{book.summary || '暂无简介...'}</p>
-                                    <div className="flex items-center justify-between pt-3 border-t border-slate-50"><div className="flex -space-x-2">{characters.filter(c => book.collaboratorIds.includes(c.id)).map(c => (<img key={c.id} src={c.avatar} className="w-6 h-6 rounded-full border-2 border-white object-cover" />))}</div><span className="text-[10px] text-slate-400 font-mono bg-slate-50 px-2 py-0.5 rounded-full">{(wordCount/1000).toFixed(1)}k 字</span></div>
-                                </div>
-                                <button onClick={(e) => { e.stopPropagation(); handleDeleteBook(book.id); }} className="absolute top-2 right-2 text-slate-400/50 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/20 backdrop-blur rounded-full">×</button>
+                    {novels.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-72 gap-4 text-[#1c1b1a]/45">
+                            <div className="relative">
+                                <Tape className="-top-3 left-1/2 -translate-x-1/2 rotate-[-6deg] w-14" />
+                                <div className="w-24 h-32 bg-white border-2 border-dashed border-[#1c1b1a]/40 flex items-center justify-center rotate-[-3deg]"><PenNib size={40} weight="light" /></div>
                             </div>
-                        );
-                    })}
-                    {novels.length === 0 && <div className="col-span-2 flex flex-col items-center justify-center h-64 text-slate-300 gap-3"><PenNib size={48} className="opacity-50" /><span className="text-sm font-sans">点击右上角，开始创作</span></div>}
+                            <div className="text-center" style={HAND}>
+                                <div className="text-lg text-[#1c1b1a]/70">抽屉空空</div>
+                                <div className="text-sm">点右上角 ＋ 开张第一本</div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         );
     }
 
-    // 2. Create / Settings View
+    // ============================ 2. 开新稿 / 稿子设定 ============================
     if (view === 'create' || view === 'settings') {
+        const isCreate = view === 'create';
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-sans relative">
-                <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || (confirmDialog?.onConfirm ? '确认' : 'OK')} onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
-                <div className="h-16 flex items-center justify-between px-4 bg-white border-b border-slate-200 shrink-0 sticky top-0 z-20">
-                    <button onClick={() => setView(view === 'create' ? 'shelf' : 'write')} className="text-slate-500 text-sm">取消</button>
-                    <span className="font-bold text-slate-800">{view === 'create' ? '新建书稿' : '小说设定'}</span>
-                    <button onClick={view === 'create' ? handleCreateBook : handleSaveSettings} className="bg-slate-800 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-md active:scale-95 transition-transform">保存</button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-20">
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...DOT_BG }}>
+                <CollageConfirm isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText || '确认'} cancelText="算了" onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
+                <TopBar
+                    left={<button onClick={() => setView(isCreate ? 'shelf' : 'write')} className="px-3 py-2 text-[10px] font-black border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all rotate-[-2deg]">不写了</button>}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">{isCreate ? 'NEW MANUSCRIPT' : 'EDIT SETUP'}</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">{isCreate ? '开 新 稿' : '稿 子 设 定'}</div></>}
+                    right={<IconStamp tone="ink" onClick={isCreate ? handleCreateBook : handleSaveSettings} title="收好" className="w-auto px-3 text-[10px] font-black tracking-widest">收好</IconStamp>}
+                />
+                <div className="flex-1 overflow-y-auto no-scrollbar px-4 pt-2 pb-20 space-y-6">
+                    {/* 扉页：书名 / 副标 / 简介 */}
+                    <section className="relative bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-5 space-y-4 rotate-[-0.4deg]">
+                        <Tape className="-top-2.5 left-8 rotate-[3deg] w-16" />
+                        <Kicker>TITLE PAGE · 扉页</Kicker>
+                        <input value={tempTitle} onChange={e => setTempTitle(e.target.value)} placeholder="书名" className="w-full text-3xl bg-transparent border-b-2 border-[#1c1b1a]/30 py-1 outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25" style={BRUSH} />
+                        <input value={tempSubtitle} onChange={e => setTempSubtitle(e.target.value)} placeholder="副标题 / 卷名（可留空）" className="w-full text-sm bg-transparent border-b border-dashed border-[#1c1b1a]/30 py-1.5 outline-none focus:border-[#1c1b1a] text-[#1c1b1a]/70 placeholder:text-[#1c1b1a]/30" />
+                        <textarea value={tempSummary} onChange={e => setTempSummary(e.target.value)} placeholder="一句话，这是个关于……的故事" className="w-full h-20 bg-[#fbfaf6] border-2 border-[#1c1b1a] p-3 text-sm resize-none outline-none focus:shadow-[2px_2px_0_#1c1b1a] transition-shadow" style={HAND} />
+                    </section>
+
+                    {/* 纸张风格 + 贴照片 */}
                     <section className="space-y-4">
-                        <input value={tempTitle} onChange={e => setTempTitle(e.target.value)} placeholder="书名" className="w-full text-2xl font-bold bg-transparent border-b border-slate-200 py-2 outline-none focus:border-slate-800 font-serif" />
-                        <input value={tempSubtitle} onChange={e => setTempSubtitle(e.target.value)} placeholder="卷名/副标题" className="w-full text-sm font-bold bg-transparent border-b border-slate-200 py-2 outline-none focus:border-slate-800 text-slate-600" />
-                        <textarea value={tempSummary} onChange={e => setTempSummary(e.target.value)} placeholder="一句话简介..." className="w-full h-20 bg-slate-100 rounded-xl p-3 text-sm resize-none outline-none" />
+                        <SectionTitle en="PAPER & COVER" cn="纸张 · 封面" />
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">内页风格</label>
-                            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{NOVEL_THEMES.map(t => (<button key={t.id} onClick={() => setActiveTheme(t)} className={`w-12 h-16 rounded-md shadow-sm border-2 shrink-0 ${t.bg} ${activeTheme.id === t.id ? 'border-slate-800 scale-105' : 'border-transparent'}`}></button>))}</div>
+                            <Kicker className="mb-2">内页纸张</Kicker>
+                            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{NOVEL_THEMES.map(t => (
+                                <button key={t.id} onClick={() => setActiveTheme(t)} className={`shrink-0 flex flex-col items-center gap-1 ${activeTheme.id === t.id ? '' : 'opacity-70'}`}>
+                                    <div className={`w-12 h-16 border-2 border-[#1c1b1a] ${t.paper} ${activeTheme.id === t.id ? 'shadow-[2px_2px_0_#1c1b1a] -translate-y-0.5' : ''} flex items-end justify-center pb-1`}>{activeTheme.id === t.id && <span className="w-2 h-2 rounded-full bg-[#1c1b1a]" />}</div>
+                                    <span className="label-mono text-[7px] text-[#1c1b1a]/60">{t.name.split(' ')[0]}</span>
+                                </button>
+                            ))}</div>
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">自定义封面</label>
-                            <div className="flex gap-3 items-center">
-                                <div onClick={() => fileInputRef.current?.click()} className="w-16 h-24 bg-slate-100 rounded-md border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:border-slate-500 relative overflow-hidden">{tempCoverImage ? <img src={tempCoverImage} className="w-full h-full object-cover" /> : <span className="text-xs text-slate-400">+</span>}<input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} /></div>
-                                <div className="flex-1 space-y-2"><input value={coverInputUrl} onChange={e => setCoverInputUrl(e.target.value)} onBlur={handleCoverUrlBlur} placeholder="粘贴图片链接..." className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-slate-400" />{tempCoverImage && <button onClick={() => { setTempCoverImage(''); setCoverInputUrl(''); }} className="text-xs text-red-400 underline">清除封面</button>}</div>
+                            <Kicker className="mb-2">贴张封面照（可选）</Kicker>
+                            <div className="flex gap-3 items-start">
+                                <div onClick={() => fileInputRef.current?.click()} className="relative w-16 h-24 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] flex items-center justify-center cursor-pointer overflow-hidden shrink-0">
+                                    <Tape className="-top-2 left-1/2 -translate-x-1/2 rotate-[-3deg] w-10 h-3" />
+                                    {tempCoverImage ? <img src={tempCoverImage} className="w-full h-full object-cover" /> : <ImageIcon size={20} weight="light" className="text-[#1c1b1a]/40" />}
+                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleCoverUpload} />
+                                </div>
+                                <div className="flex-1 space-y-2">
+                                    <input value={coverInputUrl} onChange={e => setCoverInputUrl(e.target.value)} onBlur={handleCoverUrlBlur} placeholder="或贴一个图片链接…" className={paperField} />
+                                    {tempCoverImage && <button onClick={() => { setTempCoverImage(''); setCoverInputUrl(''); }} className="text-xs text-[#1c1b1a]/55 underline decoration-dashed" style={HAND}>撕掉这张照片</button>}
+                                </div>
                             </div>
                         </div>
                     </section>
-                    <section className="space-y-4">
-                        <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-400 uppercase block">世界观设定</label><button onClick={() => setIsWorldbookModalOpen(true)} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 flex items-center gap-1"><Books size={12} /> 导入世界书</button></div>
-                        <textarea value={tempWorld} onChange={e => setTempWorld(e.target.value)} placeholder="世界观设定..." className="w-full h-32 bg-white border border-slate-200 rounded-xl p-3 text-sm resize-none outline-none focus:border-slate-400" />
+
+                    {/* 世界观 */}
+                    <section className="space-y-3">
+                        <div className="flex justify-between items-end">
+                            <SectionTitle en="WORLD SETTING" cn="世界观" />
+                            <button onClick={() => setIsWorldbookModalOpen(true)} className="inline-flex items-center gap-1 label-mono text-[8px] px-2 py-1 border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"><Books size={12} weight="bold" /> 贴入世界书</button>
+                        </div>
+                        <textarea value={tempWorld} onChange={e => setTempWorld(e.target.value)} placeholder="时代、地点、规则、禁忌……世界长什么样？" className="w-full h-32 bg-white border-2 border-[#1c1b1a] p-3 text-sm resize-none outline-none focus:shadow-[2px_2px_0_#1c1b1a] transition-shadow leading-relaxed" style={{ ...LINES_BG }} />
                     </section>
-                    <section className="space-y-4">
-                        <label className="text-xs font-bold text-slate-400 uppercase block">共创者</label>
-                        <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{characters.map(c => (<div key={c.id} onClick={() => { const s = new Set(selectedCollaborators); if(s.has(c.id)) s.delete(c.id); else s.add(c.id); setSelectedCollaborators(s); }} className={`flex flex-col items-center gap-2 cursor-pointer transition-opacity ${selectedCollaborators.has(c.id) ? 'opacity-100' : 'opacity-50 grayscale'}`}><img src={c.avatar} className="w-12 h-12 rounded-full object-cover shadow-sm" /><span className="text-[10px] font-bold text-slate-600">{c.name}</span></div>))}</div>
+
+                    {/* 共创者 */}
+                    <section className="space-y-3">
+                        <SectionTitle en="CO-WRITERS" cn="找谁一起写" />
+                        <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">{characters.map(c => { const on = selectedCollaborators.has(c.id); return (
+                            <button key={c.id} onClick={() => { const s = new Set(selectedCollaborators); if (s.has(c.id)) s.delete(c.id); else s.add(c.id); setSelectedCollaborators(s); }} className="shrink-0 flex flex-col items-center gap-1.5">
+                                <div className={`relative ${on ? '' : 'opacity-45 grayscale'}`}>
+                                    <img src={c.avatar} className={`w-12 h-12 object-cover border-2 border-[#1c1b1a] ${on ? 'shadow-[2px_2px_0_#1c1b1a]' : ''}`} />
+                                    {on && <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[#1c1b1a] text-[#f2f0e9] text-[9px] flex items-center justify-center">✓</span>}
+                                </div>
+                                <span className={`text-[10px] font-bold ${on ? 'text-[#1c1b1a]' : 'text-[#1c1b1a]/45'}`}>{c.name}</span>
+                            </button>
+                        ); })}</div>
                     </section>
-                    <section className="space-y-4">
-                        <div className="flex justify-between items-center"><label className="text-xs font-bold text-slate-400 uppercase">剧中人</label><div className="flex gap-2"><button onClick={() => setIsProtoImportOpen(true)} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 border border-indigo-100 flex items-center gap-1"><FolderOpen size={12} /> 导入</button><button onClick={() => openProtagonistEdit()} className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-600 hover:bg-slate-200 transition-colors">+ 添加</button></div></div>
-                        <div className="grid grid-cols-2 gap-3">{tempProtagonists.map((p, idx) => (<ProtagonistCard key={p.id} p={p} onClick={() => openProtagonistEdit(p)} onDelete={() => setTempProtagonists(tempProtagonists.filter((_, i) => i !== idx))} />))}</div>
+
+                    {/* 剧中人 */}
+                    <section className="space-y-3">
+                        <div className="flex justify-between items-end">
+                            <SectionTitle en="CHARACTERS" cn="剧中人" />
+                            <div className="flex gap-2">
+                                <button onClick={() => setIsProtoImportOpen(true)} className="inline-flex items-center gap-1 label-mono text-[8px] px-2 py-1 border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"><FolderOpen size={12} weight="bold" /> 调取</button>
+                                <button onClick={() => openProtagonistEdit()} className="inline-flex items-center gap-1 label-mono text-[8px] px-2 py-1 border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"><Plus size={12} weight="bold" /> 新增</button>
+                            </div>
+                        </div>
+                        {tempProtagonists.length === 0
+                            ? <div className="text-center py-6 text-sm text-[#1c1b1a]/40" style={HAND}>还没排人物，从这里加</div>
+                            : <div className="grid grid-cols-2 gap-3">{tempProtagonists.map((p, idx) => (<ProtagonistCard key={p.id} p={p} onClick={() => openProtagonistEdit(p)} onDelete={() => setTempProtagonists(tempProtagonists.filter((_, i) => i !== idx))} />))}</div>}
                     </section>
                 </div>
-                <Modal isOpen={isProtagonistModalOpen} title="编辑角色" onClose={() => setIsProtagonistModalOpen(false)} footer={<button onClick={saveProtagonist} className="w-full py-3 bg-slate-800 text-white font-bold rounded-2xl">保存</button>}>{editingProtagonist && (<div className="space-y-4"><div><label className="text-xs font-bold text-slate-400 uppercase block mb-1">姓名</label><input value={editingProtagonist.name} onChange={e => setEditingProtagonist({...editingProtagonist, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold" /></div><div><label className="text-xs font-bold text-slate-400 uppercase block mb-1">定位</label><input value={editingProtagonist.role} onChange={e => setEditingProtagonist({...editingProtagonist, role: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm" placeholder="主角 / 反派" /></div><div><label className="text-xs font-bold text-slate-400 uppercase block mb-1">设定</label><textarea value={editingProtagonist.description} onChange={e => setEditingProtagonist({...editingProtagonist, description: e.target.value})} className="w-full h-32 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm resize-none leading-relaxed" /></div></div>)}</Modal>
-                <Modal isOpen={isProtoImportOpen} title="导入角色" onClose={() => setIsProtoImportOpen(false)}><div className="flex p-1 bg-slate-100 rounded-xl mb-3"><button onClick={() => setImportTab('system')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${importTab === 'system' ? 'bg-white shadow text-indigo-600' : 'text-slate-400'}`}>系统角色 (AI)</button><button onClick={() => setImportTab('history')} className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${importTab === 'history' ? 'bg-white shadow text-indigo-600' : 'text-slate-400'}`}>历史角色</button></div><div className="max-h-[50vh] overflow-y-auto no-scrollbar space-y-3 p-1">{importTab === 'system' && characters.map(c => (<button key={c.id} onClick={() => handleImportProtagonist({name: c.name, role: '客串', description: c.description})} className="w-full flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 shadow-sm active:scale-95 transition-all text-left"><img src={c.avatar} className="w-8 h-8 rounded-full object-cover" /><div className="flex-1 min-w-0"><div className="font-bold text-sm text-slate-700">{c.name}</div><div className="text-[10px] text-slate-400 truncate">{c.description}</div></div></button>))}{importTab === 'history' && historyProtagonists.map((p, idx) => (<button key={`hist-${idx}`} onClick={() => handleImportProtagonist(p)} className="w-full flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-indigo-200 shadow-sm active:scale-95 transition-all text-left"><div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 border border-slate-200">{p.name[0]}</div><div className="flex-1 min-w-0"><div className="font-bold text-sm text-slate-700">{p.name}</div><div className="text-[10px] text-slate-400 truncate">{p.role} - {p.description || "无描述"}</div></div></button>))}</div></Modal>
-                <Modal isOpen={isWorldbookModalOpen} title="导入世界书设定" onClose={() => setIsWorldbookModalOpen(false)}><div className="max-h-[50vh] overflow-y-auto no-scrollbar space-y-2 p-1">{worldbooks.map(wb => (<button key={wb.id} onClick={() => importWorldbook(wb)} className="w-full text-left p-3 rounded-xl border border-slate-100 hover:border-indigo-300 bg-white shadow-sm active:scale-95 transition-all"><div className="font-bold text-slate-700 text-sm">{wb.title}</div><div className="text-[10px] text-slate-400 mt-1">{wb.category || '未分类'}</div></button>))}</div></Modal>
+
+                {/* 编辑剧中人 */}
+                <CollageModal isOpen={isProtagonistModalOpen} title="人物卡" kicker="CHARACTER CARD" onClose={() => setIsProtagonistModalOpen(false)} footer={<InkButton tone="ink" onClick={saveProtagonist} className="w-full text-sm tracking-[0.3em]">钉 上</InkButton>}>
+                    {editingProtagonist && (
+                        <div className="space-y-4">
+                            <div><Kicker className="mb-1">名字</Kicker><input value={editingProtagonist.name} onChange={e => setEditingProtagonist({ ...editingProtagonist, name: e.target.value })} className={paperField + ' text-base font-bold'} /></div>
+                            <div><Kicker className="mb-1">定位</Kicker><input value={editingProtagonist.role} onChange={e => setEditingProtagonist({ ...editingProtagonist, role: e.target.value })} className={paperField} placeholder="主角 / 反派 / 配角…" /></div>
+                            <div><Kicker className="mb-1">设定</Kicker><textarea value={editingProtagonist.description} onChange={e => setEditingProtagonist({ ...editingProtagonist, description: e.target.value })} className="w-full h-32 bg-white border-2 border-[#1c1b1a] p-3 text-sm resize-none outline-none focus:shadow-[2px_2px_0_#1c1b1a] transition-shadow leading-relaxed" style={HAND} /></div>
+                        </div>
+                    )}
+                </CollageModal>
+
+                {/* 调取角色 */}
+                <CollageModal isOpen={isProtoImportOpen} title="调取角色" kicker="IMPORT CAST" onClose={() => setIsProtoImportOpen(false)}>
+                    <div className="flex gap-2 mb-3">
+                        <Chip active={importTab === 'system'} onClick={() => setImportTab('system')} className="flex-1">AI 共创者</Chip>
+                        <Chip active={importTab === 'history'} onClick={() => setImportTab('history')} className="flex-1">写过的角色</Chip>
+                    </div>
+                    <div className="space-y-2.5">
+                        {importTab === 'system' && characters.map(c => (
+                            <button key={c.id} onClick={() => handleImportProtagonist({ name: c.name, role: '客串', description: c.description })} className="w-full flex items-center gap-3 p-2.5 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
+                                <img src={c.avatar} className="w-9 h-9 object-cover border border-[#1c1b1a]" />
+                                <div className="flex-1 min-w-0"><div className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{c.name}</div><div className="text-[10px] text-[#1c1b1a]/50 truncate" style={HAND}>{c.description}</div></div>
+                            </button>
+                        ))}
+                        {importTab === 'history' && (historyProtagonists.length === 0
+                            ? <div className="text-center py-6 text-sm text-[#1c1b1a]/40" style={HAND}>还没写过角色</div>
+                            : historyProtagonists.map((p, idx) => (
+                                <button key={`hist-${idx}`} onClick={() => handleImportProtagonist(p)} className="w-full flex items-center gap-3 p-2.5 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
+                                    <div className="w-9 h-9 bg-[#f2f0e9] border border-[#1c1b1a] flex items-center justify-center text-sm font-black" style={BRUSH}>{p.name[0]}</div>
+                                    <div className="flex-1 min-w-0"><div className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{p.name}</div><div className="text-[10px] text-[#1c1b1a]/50 truncate" style={HAND}>{p.role} · {p.description || '无描述'}</div></div>
+                                </button>
+                            )))}
+                    </div>
+                </CollageModal>
+
+                {/* 贴入世界书 */}
+                <CollageModal isOpen={isWorldbookModalOpen} title="贴入世界书" kicker="WORLDBOOK" onClose={() => setIsWorldbookModalOpen(false)}>
+                    <div className="space-y-2.5">{worldbooks.map(wb => (
+                        <button key={wb.id} onClick={() => importWorldbook(wb)} className="w-full text-left p-3 border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
+                            <div className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{wb.title}</div>
+                            <div className="label-mono text-[7px] text-[#1c1b1a]/45 mt-1">{wb.category || '未分类'}</div>
+                        </button>
+                    ))}{worldbooks.length === 0 && <div className="text-center py-6 text-sm text-[#1c1b1a]/40" style={HAND}>还没有世界书</div>}</div>
+                </CollageModal>
             </div>
         );
     }
 
-    // 3. Writing View (Delegated)
+    // ============================ 3. 写作台（交给 NovelWriter） ============================
     if (view === 'write' && activeBook) {
         return (
-            <NovelWriter 
+            <NovelWriter
                 activeBook={activeBook}
                 updateNovel={updateNovel}
                 characters={characters}

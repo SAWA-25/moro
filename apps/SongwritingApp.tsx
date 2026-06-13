@@ -25,15 +25,17 @@ import {
     loadMinimaxMusicBlob,
     type MinimaxMusicInput,
 } from '../utils/minimaxMusic';
-import { C as MusicC, Sparkle, CrossStar, GlassProgress, MetaChip } from './music/MusicUI';
-import Modal from '../components/os/Modal';
-import ConfirmDialog from '../components/os/ConfirmDialog';
 import {
     Check, PencilSimple,
     Sparkle as SparkleP, Butterfly, Feather, Lightning, MicrophoneStage,
     MusicNotes, Wind, Cookie, UsersThree, Heart, Diamond, MusicNoteSimple,
-    HeartStraight,
+    HeartStraight, Plus, Trash, ShareNetwork, CaretRight, ArrowsClockwise, MagicWand, ListChecks, PaperPlaneRight,
 } from '@phosphor-icons/react';
+import {
+    PAPER, PAPER_CARD, HAND, BRUSH, DOT_BG, GRID_BG, LINES_BG, BARCODE_BG,
+    Tape, Cut, Stitch, Kicker, SectionTitle, BackSticker, TopBar, IconStamp, InkButton, Chip, TypingDots,
+    CollageModal, CollageConfirm,
+} from './creative/collage';
 import { useMusic, type Song as MusicSong } from '../context/MusicContext';
 
 // --- Helper Components ---
@@ -59,9 +61,9 @@ const PROVIDER_ICONS: Record<string, React.ComponentType<any>> = {
 };
 
 const SectionBadge: React.FC<{ section: string; small?: boolean }> = ({ section, small }) => {
-    const info = SECTION_LABELS[section] || { label: section, color: 'bg-stone-200/60 text-stone-600' };
+    const info = SECTION_LABELS[section] || { label: section, color: '' };
     return (
-        <span className={`${info.color} ${small ? 'text-[8px] px-1.5 py-0.5 tracking-wider' : 'text-[9px] px-2 py-0.5 tracking-wider'} rounded font-medium uppercase`}>
+        <span className={`inline-block border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] font-bold leading-none ${small ? 'text-[8px] px-1.5 py-0.5' : 'text-[9px] px-2 py-1'}`}>
             {info.label}
         </span>
     );
@@ -1253,362 +1255,181 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const drafts = songs.filter(s => s.status === 'draft');
         const completed = songs.filter(s => s.status === 'completed');
 
-        return (
-            <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
-                style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 60%, ${MusicC.bgTint} 100%)` }}
-            >
-                {/* 装饰星星 */}
-                <Sparkle size={9} color={MusicC.glow}    delay={0}   className="absolute top-20 left-6"   />
-                <Sparkle size={7} color={MusicC.sakura}  delay={1.0} className="absolute top-44 right-8"  />
-                <Sparkle size={6} color={MusicC.lavender} delay={0.6} className="absolute bottom-32 left-10" />
-                <CrossStar size={8} color={MusicC.glow} delay={0.4} className="absolute bottom-20 right-7" solid={false} />
-
-                {/* Header */}
-                <div className="h-24 flex items-end pb-4 px-6 shrink-0 z-10 relative">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={exitApp} className="p-2 -ml-2 rounded-full hover:bg-white/60 active:scale-95 transition-transform" style={{ color: MusicC.primary }}>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <div className="text-center flex flex-col items-center">
-                            <div className="flex items-center gap-2">
-                                <Sparkle size={7} color={MusicC.glow} delay={0} />
-                                <h1 className="text-[10px] tracking-[0.4em] uppercase" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>Lyric</h1>
-                                <Sparkle size={7} color={MusicC.sakura} delay={0.7} />
-                            </div>
-                            <p className="text-lg font-bold mt-0.5" style={{ color: MusicC.primary, fontFamily: 'Georgia, "Noto Serif SC", serif' }}>歌词手帖</p>
+        const SongCard = ({ song, done }: { song: SongSheet; done: boolean }) => {
+            const style = getCoverVisual(song.coverStyle);
+            const char = characters.find(c => c.id === song.collaboratorId);
+            const genreInfo = SONG_GENRES.find(g => g.id === song.genre);
+            const moodInfo = SONG_MOODS.find(m => m.id === song.mood);
+            return (
+                <div className="relative group">
+                    <button
+                        onClick={() => { setActiveSong(song); setView(done ? 'preview' : 'write'); }}
+                        className="w-full flex items-stretch text-left border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] overflow-hidden active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                        style={{ background: PAPER_CARD }}
+                    >
+                        {/* 封面书脊（主题色点缀） */}
+                        <div className={`w-16 shrink-0 border-r-2 border-[#1c1b1a] flex items-center justify-center ${style.className}`} style={style.style}>
+                            <span className={`text-2xl ${style.textClass}`}>{genreInfo?.icon || '♪'}</span>
                         </div>
-                        <button
-                            onClick={() => setView('create')}
-                            className="p-2.5 rounded-full active:scale-95 transition-all"
-                            style={{
-                                background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})`,
-                                color: 'white',
-                                boxShadow: `0 3px 14px ${MusicC.sakura}55`,
-                            }}
-                            title="新建歌词本"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        </button>
-                    </div>
+                        <div className="flex-1 p-3 min-w-0">
+                            <h3 className="font-black text-sm text-[#1c1b1a] truncate" style={BRUSH}>{song.title}</h3>
+                            {!done && song.subtitle && <div className="label-mono text-[7px] text-[#1c1b1a]/45 truncate mt-0.5">{song.subtitle}</div>}
+                            <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 mt-1.5 text-[10px] text-[#1c1b1a]/55">
+                                <span className="label-mono text-[7px] px-1 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/70">{genreInfo?.label}</span>
+                                {done
+                                    ? <span style={HAND}>{moodInfo?.icon} {moodInfo?.label}</span>
+                                    : <><span style={HAND}>{song.lines.filter(l => !l.isDraft).length} 行</span>{song.lines.some(l => l.isDraft) && <span className="text-[#1c1b1a]/35" style={HAND}>· {song.lines.filter(l => l.isDraft).length} 草稿</span>}</>}
+                                {char && <span className="inline-flex items-center gap-1" style={HAND}>· <img src={char.avatar} className="w-3.5 h-3.5 object-cover border border-[#1c1b1a]" /> {char.name}</span>}
+                            </div>
+                        </div>
+                        {done && (
+                            <span onClick={(e) => { e.stopPropagation(); setActiveSong(song); setShowShareModal(true); }} className="self-center mr-2 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white shadow-[1px_1px_0_#1c1b1a] active:translate-y-[1px] transition-all" title="分享乐谱">
+                                <ShareNetwork size={15} weight="bold" className="text-[#1c1b1a]" />
+                            </span>
+                        )}
+                    </button>
+                    {done && <span aria-hidden className="absolute -top-2 left-3 label-mono text-[7px] px-1.5 py-0.5 border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] rotate-[-5deg] pointer-events-none">完 成</span>}
+                    <button onClick={(e) => { e.stopPropagation(); handleDeleteSong(song.id); }} className="absolute -top-2 -right-2 w-6 h-6 bg-white border-2 border-[#1c1b1a] text-[#1c1b1a] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"><Trash size={12} weight="bold" /></button>
                 </div>
+            );
+        };
 
-                <div className="flex-1 overflow-y-auto px-5 pt-5 pb-8 space-y-7 no-scrollbar z-10">
+        const ShelfHeading = ({ label, en, count }: { label: string; en: string; count: number }) => (
+            <div className="flex items-center gap-2 mb-3">
+                <span className="w-2 h-2 rounded-full bg-[#1c1b1a]" />
+                <div className="label-mono text-[9px] text-[#1c1b1a]/55">{en} · {label}</div>
+                <div className="flex-1 border-t-2 border-dashed border-[#1c1b1a]/25" />
+                <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/65">{count}</span>
+            </div>
+        );
+
+        return (
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...DOT_BG }}>
+                <TopBar
+                    left={<BackSticker onClick={exitApp} label="返回" />}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">LYRIC · 写歌</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">歌 词 本</div></>}
+                    right={<IconStamp tone="ink" onClick={() => setView('create')} title="起个新本子"><Plus size={18} weight="bold" /></IconStamp>}
+                />
+
+                <div className="flex-1 overflow-y-auto px-4 pt-2 pb-10 space-y-7 no-scrollbar">
                     {songs.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-20 text-center px-8">
-                            <div className="w-20 h-[2px] bg-stone-300/60 mb-8" />
-                            <p className="text-base text-stone-500 leading-8" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>
-                                还没有写过歌
-                            </p>
-                            <p className="text-xs text-stone-400 mt-3 leading-6">
-                                点击右上角的 +，开始第一本歌词手帖
-                            </p>
-                            <div className="w-20 h-[2px] bg-stone-300/60 mt-8" />
-                            <button onClick={() => setView('create')} className="mt-8 px-6 py-2.5 border border-stone-300 rounded text-sm text-stone-600 hover:bg-stone-100 active:scale-[0.98] transition-all">
-                                开始写歌
-                            </button>
+                        <div className="flex flex-col items-center justify-center h-72 gap-4 text-[#1c1b1a]/45">
+                            <div className="relative">
+                                <Tape className="-top-3 left-1/2 -translate-x-1/2 rotate-[-6deg] w-14" />
+                                <div className="w-24 h-32 bg-white border-2 border-dashed border-[#1c1b1a]/40 flex items-center justify-center rotate-[2deg]"><MusicNotes size={40} weight="light" /></div>
+                            </div>
+                            <div className="text-center" style={HAND}>
+                                <div className="text-lg text-[#1c1b1a]/70">本子还空着</div>
+                                <div className="text-sm">点右上角 ＋ 起个头</div>
+                            </div>
                         </div>
                     )}
 
-                    {/* Drafts */}
                     {drafts.length > 0 && (
                         <div>
-                            <div className="flex items-center gap-3 mb-4 px-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                <h2 className="text-[10px] font-medium text-stone-400 uppercase tracking-[0.2em]">草稿</h2>
-                                <div className="flex-1 h-[1px] bg-stone-200/80" />
-                            </div>
-                            <div className="space-y-3">
-                                {drafts.sort((a, b) => b.lastActiveAt - a.lastActiveAt).map(song => {
-                                    const style = getCoverVisual(song.coverStyle);
-                                    const char = characters.find(c => c.id === song.collaboratorId);
-                                    const genreInfo = SONG_GENRES.find(g => g.id === song.genre);
-                                    return (
-                                        <div key={song.id} className="relative group">
-                                            <div
-                                                onClick={() => { setActiveSong(song); setView('write'); }}
-                                                className="flex items-stretch cursor-pointer active:scale-[0.99] transition-transform rounded-lg overflow-hidden border border-stone-200/80 bg-white shadow-sm"
-                                            >
-                                                {/* Mini cover spine */}
-                                                <div className={`w-16 shrink-0 ${style.className} flex items-center justify-center`} style={style.style}>
-                                                    <span className={`text-lg ${style.textClass}`}>{genreInfo?.icon || '♪'}</span>
-                                                </div>
-                                                <div className="flex-1 p-3.5 min-w-0">
-                                                    <h3 className="font-semibold text-sm text-stone-700 truncate" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{song.title}</h3>
-                                                    {song.subtitle && <p className="text-[11px] text-stone-400 truncate mt-0.5 italic">{song.subtitle}</p>}
-                                                    <div className="flex items-center gap-2 mt-2">
-                                                        <span className="text-[10px] text-stone-400">{genreInfo?.label}</span>
-                                                        <span className="text-stone-300">·</span>
-                                                        <span className="text-[10px] text-stone-400">{song.lines.filter(l => !l.isDraft).length} 行</span>
-                                                        {song.lines.some(l => l.isDraft) && (
-                                                            <span className="text-[10px] text-stone-300">{song.lines.filter(l => l.isDraft).length} 草稿</span>
-                                                        )}
-                                                        {char && (
-                                                            <>
-                                                                <span className="text-stone-300">·</span>
-                                                                <span className="text-[10px] text-stone-400">与 {char.name}</span>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteSong(song.id); }} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-stone-100 text-stone-400 w-6 h-6 rounded-full flex items-center justify-center text-xs transition-opacity hover:bg-red-50 hover:text-red-400">×</button>
-                                        </div>
-                                    );
-                                })}
+                            <ShelfHeading en="DRAFTS" label="写到一半" count={drafts.length} />
+                            <div className="space-y-4">
+                                {drafts.sort((a, b) => b.lastActiveAt - a.lastActiveAt).map(song => <SongCard key={song.id} song={song} done={false} />)}
                             </div>
                         </div>
                     )}
 
-                    {/* Completed */}
                     {completed.length > 0 && (
                         <div>
-                            <div className="flex items-center gap-3 mb-4 px-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-stone-400" />
-                                <h2 className="text-[10px] font-medium text-stone-400 uppercase tracking-[0.2em]">已完成</h2>
-                                <div className="flex-1 h-[1px] bg-stone-200/80" />
-                            </div>
-                            <div className="space-y-3">
-                                {completed.sort((a, b) => (b.completedAt || b.lastActiveAt) - (a.completedAt || a.lastActiveAt)).map(song => {
-                                    const style = getCoverVisual(song.coverStyle);
-                                    const char = characters.find(c => c.id === song.collaboratorId);
-                                    const genreInfo = SONG_GENRES.find(g => g.id === song.genre);
-                                    const moodInfo = SONG_MOODS.find(m => m.id === song.mood);
-                                    return (
-                                        <div key={song.id} className="relative group">
-                                            <div
-                                                onClick={() => { setActiveSong(song); setView('preview'); }}
-                                                className="flex items-stretch cursor-pointer active:scale-[0.99] transition-transform rounded-lg overflow-hidden border border-stone-200/80 bg-white shadow-sm"
-                                            >
-                                                <div className={`w-16 shrink-0 ${style.className} flex items-center justify-center`} style={style.style}>
-                                                    <span className={`text-lg ${style.textClass}`}>{genreInfo?.icon || '♪'}</span>
-                                                </div>
-                                                <div className="flex-1 p-3.5 min-w-0">
-                                                    <h3 className="font-semibold text-sm text-stone-700 truncate" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{song.title}</h3>
-                                                    <div className="flex items-center gap-2 mt-1.5">
-                                                        <span className="text-[10px] text-stone-400">{genreInfo?.label}</span>
-                                                        <span className="text-stone-300">·</span>
-                                                        <span className="text-[10px] text-stone-400">{moodInfo?.icon} {moodInfo?.label}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        {char && <img src={char.avatar} className="w-4 h-4 rounded-full object-cover" />}
-                                                        <span className="text-[10px] text-stone-400">与 {char?.name} 创作</span>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setActiveSong(song); setShowShareModal(true); }}
-                                                    className="p-3 text-stone-400 hover:text-stone-600 self-center transition-colors"
-                                                    title="分享"
-                                                >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
-                                                </button>
-                                            </div>
-                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteSong(song.id); }} className="absolute top-2 right-12 opacity-0 group-hover:opacity-100 bg-stone-100 text-stone-400 w-6 h-6 rounded-full flex items-center justify-center text-xs transition-opacity hover:bg-red-50 hover:text-red-400">×</button>
-                                        </div>
-                                    );
-                                })}
+                            <ShelfHeading en="FINISHED" label="收工了" count={completed.length} />
+                            <div className="space-y-4">
+                                {completed.sort((a, b) => (b.completedAt || b.lastActiveAt) - (a.completedAt || a.lastActiveAt)).map(song => <SongCard key={song.id} song={song} done={true} />)}
                             </div>
                         </div>
                     )}
                 </div>
 
-                {/* Share Modal */}
-                <Modal isOpen={showShareModal} title="分享乐谱" onClose={() => setShowShareModal(false)}>
-                    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                        <p className="text-xs text-stone-500 mb-3">选择一个角色，以卡片形式把乐谱分享到聊天</p>
+                <CollageModal isOpen={showShareModal} title="寄一张乐谱" kicker="SHARE SCORE" onClose={() => setShowShareModal(false)}>
+                    <p className="text-sm text-[#1c1b1a]/55 mb-3" style={HAND}>挑个人，把这张乐谱卡片塞进 TA 的聊天</p>
+                    <div className="space-y-2.5">
                         {characters.map(c => (
-                            <button key={c.id} onClick={() => handleShareToChat(c.id)} className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-stone-50 border border-stone-100 transition-colors">
-                                <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
-                                <span className="font-medium text-sm text-stone-700">{c.name}</span>
+                            <button key={c.id} onClick={() => handleShareToChat(c.id)} className="w-full flex items-center gap-3 p-2.5 border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
+                                <img src={c.avatar} className="w-9 h-9 object-cover border border-[#1c1b1a]" />
+                                <span className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{c.name}</span>
                             </button>
                         ))}
                     </div>
-                </Modal>
+                </CollageModal>
 
-                <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText} onConfirm={confirmDialog?.onConfirm || (() => {})} onCancel={() => setConfirmDialog(null)} />
+                <CollageConfirm isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText} cancelText="算了" onConfirm={confirmDialog?.onConfirm || (() => {})} onCancel={() => setConfirmDialog(null)} />
             </div>
         );
     }
 
     // --- Create View ---
     if (view === 'create') {
+        const StepHead = ({ no, cn, en }: { no: string; cn: string; en: string }) => (
+            <div className="flex items-baseline gap-2 mb-2">
+                <span className="font-display-italic text-3xl leading-none text-[#1c1b1a]">{no}</span>
+                <span className="text-base font-black text-[#1c1b1a]" style={BRUSH}>{cn}</span>
+                <span className="label-mono text-[8px] text-[#1c1b1a]/40">{en}</span>
+            </div>
+        );
         return (
-            <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
-                style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 55%, ${MusicC.bgTint} 100%)` }}
-            >
-                {/* Floating background sparkles — purely decorative */}
-                <Sparkle size={9} color={MusicC.glow}    delay={0}   className="absolute top-16 left-6"   />
-                <Sparkle size={7} color={MusicC.sakura}  delay={1.2} className="absolute top-32 right-8"  />
-                <Sparkle size={6} color={MusicC.lavender} delay={0.6} className="absolute top-52 left-12"  />
-                <Sparkle size={8} color={MusicC.glow}    delay={1.8} className="absolute bottom-40 right-5" />
-                <CrossStar size={9} color={MusicC.lavender} delay={0.4} className="absolute bottom-56 left-8" solid={false} />
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...GRID_BG }}>
+                <TopBar
+                    left={<BackSticker onClick={() => setView('shelf')} label="回本子" />}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">NEW SCORE</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">起 个 头</div></>}
+                />
 
-                {/* Header — back + decorative title */}
-                <div className="h-16 flex items-center justify-between px-4 shrink-0 z-10 relative">
-                    <button onClick={() => setView('shelf')} className="p-2 -ml-2 rounded-full hover:bg-white/60 active:scale-95 transition-transform" style={{ color: MusicC.primary }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                    </button>
-                    <div className="flex flex-col items-center">
-                        <div className="flex items-center gap-2">
-                            <Sparkle size={8} color={MusicC.glow} delay={0} />
-                            <h2 className="text-sm font-bold tracking-[0.18em]" style={{ color: MusicC.primary, fontFamily: 'Georgia, "Noto Serif SC", serif' }}>新建手帖</h2>
-                            <Sparkle size={8} color={MusicC.sakura} delay={0.8} />
-                        </div>
-                        <div className="text-[8.5px] tracking-[0.4em] mt-0.5" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>— NEW PROJECT —</div>
+                <div className="flex-1 overflow-y-auto px-4 pt-2 pb-28 space-y-6 no-scrollbar">
+                    {/* 01 歌名 */}
+                    <div className="relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-4 rotate-[-0.4deg]">
+                        <Tape className="-top-2.5 right-6 rotate-[4deg] w-14" />
+                        <StepHead no="01" cn="歌名" en="TITLE" />
+                        <input value={tempTitle} onChange={e => setTempTitle(e.target.value)} placeholder="先给它起个名字" className="w-full text-2xl bg-transparent border-b-2 border-[#1c1b1a]/30 py-1 outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25" style={BRUSH} />
                     </div>
-                    <div className="w-9" />
-                </div>
 
-                <div className="flex-1 overflow-y-auto px-5 pb-32 space-y-6 no-scrollbar relative z-10">
-                    {/* 01 — 歌名 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 18, letterSpacing: '0.05em' }}>01</span>
-                            <CrossStar size={7} color={MusicC.glow} delay={0} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>歌名</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>SONG TITLE</span>
-                        </div>
-                        <div className="relative">
-                            <input
-                                value={tempTitle}
-                                onChange={e => setTempTitle(e.target.value)}
-                                placeholder="给本首歌取个名字吧～"
-                                className="w-full rounded-2xl px-4 py-3 text-[13px] focus:outline-none transition-colors shizuku-glass"
-                                style={{ color: MusicC.text, border: `1px solid ${MusicC.faint}40`, fontFamily: `'Noto Serif SC', Georgia, serif` }}
-                            />
-                            <PencilSimple size={14} weight="duotone" className="absolute right-4 top-1/2 -translate-y-1/2" style={{ color: MusicC.accent }} />
+                    {/* 02 副标题 */}
+                    <div className="bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-4 rotate-[0.3deg]">
+                        <StepHead no="02" cn="副标题" en="SUBTITLE" />
+                        <input value={tempSubtitle} onChange={e => setTempSubtitle(e.target.value)} placeholder="一句话，它想说什么？" className="w-full text-sm bg-transparent border-b border-dashed border-[#1c1b1a]/30 py-1.5 outline-none focus:border-[#1c1b1a] text-[#1c1b1a]/75 placeholder:text-[#1c1b1a]/30" style={HAND} />
+                    </div>
+
+                    {/* 03 风格 */}
+                    <div>
+                        <StepHead no="03" cn="风格" en="GENRE" />
+                        <div className="flex flex-wrap gap-2">
+                            {SONG_GENRES.map(g => (
+                                <Chip key={g.id} active={tempGenre === g.id} onClick={() => setTempGenre(g.id)}>{g.label}</Chip>
+                            ))}
                         </div>
                     </div>
 
-                    {/* 02 — 副标题 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 18, letterSpacing: '0.05em' }}>02</span>
-                            <CrossStar size={7} color={MusicC.sakura} delay={0.4} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>副标题</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>SUBTITLE</span>
-                        </div>
-                        <input
-                            value={tempSubtitle}
-                            onChange={e => setTempSubtitle(e.target.value)}
-                            placeholder="这首歌想说什么呢？"
-                            className="w-full rounded-2xl px-4 py-3 text-[13px] focus:outline-none transition-colors italic shizuku-glass"
-                            style={{ color: MusicC.text, border: `1px solid ${MusicC.faint}40`, fontFamily: `'Noto Serif SC', Georgia, serif` }}
-                        />
-                    </div>
-
-                    {/* 03 — 风格 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 18, letterSpacing: '0.05em' }}>03</span>
-                            <CrossStar size={7} color={MusicC.lavender} delay={0.7} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>风格</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>GENRE</span>
-                        </div>
-                        <div className="grid grid-cols-4 gap-1.5">
-                            {SONG_GENRES.map(g => {
-                                const active = tempGenre === g.id;
-                                return (
-                                    <button
-                                        key={g.id}
-                                        onClick={() => setTempGenre(g.id)}
-                                        className="px-2 py-2 rounded-xl text-[11px] transition-all active:scale-95 flex items-center justify-center"
-                                        style={active ? {
-                                            background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                            color: 'white',
-                                            boxShadow: `0 3px 12px ${MusicC.glow}50`,
-                                            border: '1px solid transparent',
-                                            fontFamily: `'Noto Serif SC', Georgia, serif`,
-                                        } : {
-                                            background: 'rgba(255,255,255,0.7)',
-                                            color: MusicC.primary,
-                                            border: `1px solid ${MusicC.faint}50`,
-                                            fontFamily: `'Noto Serif SC', Georgia, serif`,
-                                        }}
-                                    >
-                                        <span className="font-medium tracking-wider">{g.label}</span>
-                                    </button>
-                                );
-                            })}
+                    {/* 04 情绪 */}
+                    <div>
+                        <StepHead no="04" cn="情绪" en="MOOD" />
+                        <div className="grid grid-cols-4 gap-2">
+                            {SONG_MOODS.map(m => { const on = tempMood === m.id; return (
+                                <button key={m.id} onClick={() => setTempMood(m.id)} className={`flex flex-col items-center gap-1 py-2 border-2 border-[#1c1b1a] transition-all ${on ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
+                                    <span className="text-lg leading-none">{m.icon}</span>
+                                    <span className="text-[10px] font-bold">{m.label}</span>
+                                </button>
+                            ); })}
                         </div>
                     </div>
 
-                    {/* 04 — 情绪 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 18, letterSpacing: '0.05em' }}>04</span>
-                            <CrossStar size={7} color={MusicC.glow} delay={0.3} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>情绪</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>MOOD</span>
-                        </div>
-                        <div className="grid grid-cols-4 gap-1.5">
-                            {SONG_MOODS.map(m => {
-                                const active = tempMood === m.id;
-                                return (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => setTempMood(m.id)}
-                                        className="px-2 py-2 rounded-xl text-[11px] transition-all active:scale-95 flex items-center justify-center"
-                                        style={active ? {
-                                            background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})`,
-                                            color: 'white',
-                                            boxShadow: `0 3px 12px ${MusicC.sakura}50`,
-                                            border: '1px solid transparent',
-                                            fontFamily: `'Noto Serif SC', Georgia, serif`,
-                                        } : {
-                                            background: 'rgba(255,255,255,0.7)',
-                                            color: MusicC.primary,
-                                            border: `1px solid ${MusicC.faint}50`,
-                                            fontFamily: `'Noto Serif SC', Georgia, serif`,
-                                        }}
-                                    >
-                                        <span className="font-medium tracking-wider">{m.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* 05 — 歌词结构 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 18, letterSpacing: '0.05em' }}>05</span>
-                            <CrossStar size={7} color={MusicC.sakura} delay={0.9} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>歌词结构</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>LYRIC STRUCTURE</span>
-                        </div>
-                        <p className="text-[10px] pl-1" style={{ color: MusicC.muted }}>选一个结构作为歌词骨架，之后可自由调整</p>
-                        <div className="grid grid-cols-2 gap-2">
+                    {/* 05 歌词结构 */}
+                    <div>
+                        <StepHead no="05" cn="骨架" en="STRUCTURE" />
+                        <p className="text-xs text-[#1c1b1a]/50 mb-2.5 -mt-1" style={HAND}>挑个结构当骨架，之后随便改</p>
+                        <div className="grid grid-cols-2 gap-3">
                             {LYRIC_TEMPLATES.map(t => {
                                 const active = tempTemplate === t.id;
                                 const totalLines = t.structure.reduce((sum, s) => sum + s.lines, 0);
                                 return (
-                                    <button
-                                        key={t.id}
-                                        onClick={() => setTempTemplate(t.id)}
-                                        className="text-left p-3 rounded-2xl transition-all active:scale-[0.98] relative overflow-hidden"
-                                        style={active ? {
-                                            background: `linear-gradient(135deg, ${MusicC.glow}25, ${MusicC.sakura}15)`,
-                                            border: `1.5px solid ${MusicC.accent}80`,
-                                            boxShadow: `0 3px 14px ${MusicC.glow}30`,
-                                        } : {
-                                            background: 'rgba(255,255,255,0.7)',
-                                            border: `1px solid ${MusicC.faint}40`,
-                                        }}
-                                    >
+                                    <button key={t.id} onClick={() => setTempTemplate(t.id)} className={`relative text-left p-3 border-2 border-[#1c1b1a] transition-all ${active ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
                                         <div className="flex items-center gap-1.5 mb-1">
-                                            <span className="text-[14px] leading-none" style={{ color: active ? MusicC.accent : MusicC.primary, fontFamily: 'Georgia, serif' }}>{t.icon}</span>
-                                            <span className="text-[12px] font-bold" style={{ color: MusicC.primary }}>{t.label}</span>
-                                            {totalLines > 0 && (
-                                                <span className="text-[9px] ml-auto" style={{ color: MusicC.muted }}>
-                                                    {totalLines} 句
-                                                </span>
-                                            )}
+                                            <span className="text-base leading-none">{t.icon}</span>
+                                            <span className="text-sm font-black" style={BRUSH}>{t.label}</span>
+                                            {totalLines > 0 && <span className={`label-mono text-[7px] ml-auto ${active ? 'text-[#f2f0e9]/70' : 'text-[#1c1b1a]/45'}`}>{totalLines} 句</span>}
                                         </div>
-                                        <div className="text-[10px] leading-snug" style={{ color: MusicC.muted }}>
-                                            {t.desc}
-                                        </div>
+                                        <div className={`text-[10px] leading-snug ${active ? 'text-[#f2f0e9]/75' : 'text-[#1c1b1a]/55'}`} style={HAND}>{t.desc}</div>
                                     </button>
                                 );
                             })}
@@ -1616,42 +1437,11 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </div>
                 </div>
 
-                {/* "下一步" 大粉色游戏风按钮 */}
-                <div
-                    className="absolute bottom-0 w-full px-5 pt-4 pb-6 z-20"
-                    style={{
-                        background: `linear-gradient(to top, ${MusicC.bg}f5 60%, ${MusicC.bg}cc 90%, ${MusicC.bg}00 100%)`,
-                    }}
-                >
-                    <button
-                        onClick={handleGoPartner}
-                        className="relative w-full rounded-[28px] py-4 font-bold tracking-[0.15em] text-white active:scale-[0.98] transition-transform overflow-hidden"
-                        style={{
-                            background: `linear-gradient(135deg, ${MusicC.sakura} 0%, ${MusicC.lavender} 100%)`,
-                            boxShadow: `0 8px 28px ${MusicC.sakura}55, 0 0 60px ${MusicC.sakura}25, inset 0 1px 0 rgba(255,255,255,0.4)`,
-                            fontFamily: 'Georgia, "Noto Serif SC", serif',
-                        }}
-                    >
-                        {/* 装饰星星 */}
-                        <Sparkle size={8}  color="#fff" delay={0}   className="absolute top-2 left-6  opacity-80" />
-                        <Sparkle size={6}  color="#fff" delay={0.7} className="absolute bottom-3 left-12 opacity-70" />
-                        <Sparkle size={7}  color="#fff" delay={1.4} className="absolute top-3 right-14 opacity-80" />
-                        <CrossStar size={9} color="#fff" delay={0.5} className="absolute bottom-2 right-6" solid={false} />
-                        {/* 移动高光 */}
-                        <span className="absolute inset-0 pointer-events-none"
-                            style={{
-                                background: `linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%)`,
-                                backgroundSize: '200% 100%',
-                                animation: 'shizuku-shimmer 4s ease-in-out infinite',
-                            }} />
-                        <span className="relative inline-flex flex-col items-center justify-center gap-0.5">
-                            <span className="inline-flex items-center gap-2 text-[14px]">
-                                下一步，选择你的创作伙伴
-                                <MusicNotes size={16} weight="fill" />
-                            </span>
-                            <span className="text-[9px] tracking-[0.5em] opacity-80" style={{ fontFamily: 'Georgia, serif' }}>— NEXT STEP —</span>
-                        </span>
-                    </button>
+                {/* 下一步：去找搭子 */}
+                <div className="absolute bottom-0 w-full px-4 pt-5 pb-6 pb-safe" style={{ background: `linear-gradient(to top, ${PAPER} 70%, ${PAPER}00 100%)` }}>
+                    <InkButton tone="ink" onClick={handleGoPartner} className="w-full py-4 text-base">
+                        下一步 · 去找搭子 <CaretRight size={18} weight="bold" />
+                    </InkButton>
                 </div>
             </div>
         );
@@ -1660,147 +1450,62 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     // --- Partner View (Step 2 of create flow) ---
     if (view === 'partner') {
         return (
-            <div
-                className="h-full w-full flex flex-col font-sans relative overflow-hidden"
-                style={{ background: `linear-gradient(180deg, ${MusicC.bg} 0%, ${MusicC.bgDeep} 55%, ${MusicC.bgTint} 100%)` }}
-            >
-                {/* 装饰 */}
-                <Sparkle size={9} color={MusicC.glow}    delay={0}   className="absolute top-14 right-6"  />
-                <Sparkle size={7} color={MusicC.sakura}  delay={1.0} className="absolute top-36 left-7"   />
-                <Sparkle size={6} color={MusicC.lavender} delay={0.5} className="absolute top-60 right-10" />
-                <CrossStar size={8} color={MusicC.glow} delay={1.6} className="absolute bottom-48 left-6" solid={false} />
-                <Sparkle size={8} color={MusicC.sakura}  delay={0.3} className="absolute bottom-32 right-12" />
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] animate-fade-in" style={{ background: PAPER, ...DOT_BG }}>
+                <TopBar
+                    left={<BackSticker onClick={() => setView('create')} label="上一步" />}
+                    center={<><div className="label-mono text-[9px] text-[#1c1b1a]/45">PARTNER</div><div className="text-[11px] tracking-[0.3em] text-[#1c1b1a]/45 mt-0.5">找 搭 子</div></>}
+                />
+                <p className="text-center pb-3 px-6 text-sm text-[#1c1b1a]/55" style={HAND}>挑个角色，陪你把这首歌凑出来</p>
 
-                {/* Header */}
-                <div className="h-16 flex items-center justify-between px-4 shrink-0 z-10 relative">
-                    <button onClick={() => setView('create')} className="p-2 -ml-2 rounded-full hover:bg-white/60 active:scale-95 transition-transform" style={{ color: MusicC.primary }}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                    </button>
-                    <div className="flex flex-col items-center">
-                        <div className="flex items-center gap-2">
-                            <Sparkle size={8} color={MusicC.glow} delay={0} />
-                            <h2 className="text-sm font-bold tracking-[0.18em]" style={{ color: MusicC.primary, fontFamily: 'Georgia, "Noto Serif SC", serif' }}>创作伙伴</h2>
-                            <Sparkle size={8} color={MusicC.sakura} delay={0.8} />
-                        </div>
-                        <div className="text-[8.5px] tracking-[0.4em] mt-0.5" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>— PARTNER —</div>
-                    </div>
-                    <div className="w-9" />
-                </div>
-
-                <p className="text-[11px] text-center pb-3 px-6 z-10 relative" style={{ color: MusicC.muted }}>选一个伙伴，陪你一起创作吧</p>
-
-                <div className="flex-1 overflow-y-auto px-5 pb-32 space-y-5 no-scrollbar relative z-10">
-                    {/* Collaborator list */}
-                    <div className="space-y-2">
-                        {characters.map(c => {
-                            const active = tempCollaboratorId === c.id;
-                            return (
-                                <button
-                                    key={c.id}
-                                    onClick={() => setTempCollaboratorId(c.id)}
-                                    className="w-full flex items-center gap-3 p-3 rounded-2xl transition-all active:scale-[0.99] relative overflow-hidden"
-                                    style={active ? {
-                                        background: `linear-gradient(135deg, ${MusicC.glow}28, ${MusicC.sakura}15)`,
-                                        border: `1.5px solid ${MusicC.accent}90`,
-                                        boxShadow: `0 4px 16px ${MusicC.glow}35`,
-                                    } : {
-                                        background: 'rgba(255,255,255,0.75)',
-                                        border: `1px solid ${MusicC.faint}40`,
-                                    }}
-                                >
-                                    <div className="relative shrink-0">
-                                        <img src={c.avatar} className="w-12 h-12 rounded-2xl object-cover" />
-                                        {active && <Sparkle size={9} color={MusicC.sakura} delay={0} className="absolute -top-1 -right-1" />}
-                                    </div>
-                                    <div className="text-left flex-1 min-w-0">
-                                        <div className="font-bold text-[13px]" style={{ color: MusicC.primary }}>{c.name}</div>
-                                        <div className="text-[10px] truncate leading-snug mt-0.5" style={{ color: MusicC.muted }}>{c.description || '将作为你的音乐导师'}</div>
-                                    </div>
-                                    {active && (
-                                        <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                                            style={{ background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`, color: 'white', boxShadow: `0 2px 8px ${MusicC.glow}60` }}>
-                                            <Check size={11} weight="bold" />
-                                        </div>
-                                    )}
-                                </button>
-                            );
-                        })}
+                <div className="flex-1 overflow-y-auto px-4 pb-28 space-y-6 no-scrollbar">
+                    {/* 搭子名单 */}
+                    <div className="space-y-2.5">
+                        {characters.map(c => { const active = tempCollaboratorId === c.id; return (
+                            <button key={c.id} onClick={() => setTempCollaboratorId(c.id)} className={`w-full flex items-center gap-3 p-3 border-2 border-[#1c1b1a] text-left transition-all ${active ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
+                                <img src={c.avatar} className="w-12 h-12 object-cover border-2 border-current shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="font-black text-sm" style={BRUSH}>{c.name}</div>
+                                    <div className={`text-[10px] truncate leading-snug mt-0.5 ${active ? 'text-[#f2f0e9]/70' : 'text-[#1c1b1a]/55'}`} style={HAND}>{c.description || '当你的音乐搭子'}</div>
+                                </div>
+                                {active && <span className="w-6 h-6 rounded-full bg-[#f2f0e9] text-[#1c1b1a] flex items-center justify-center shrink-0"><Check size={12} weight="bold" /></span>}
+                            </button>
+                        ); })}
                         {characters.length === 0 && (
-                            <div className="rounded-2xl p-5 text-center" style={{ background: 'rgba(255,255,255,0.6)', border: `1px dashed ${MusicC.faint}80` }}>
-                                <p className="text-[12px]" style={{ color: MusicC.muted }}>还没有可选角色 — 先去创建一个</p>
-                            </div>
+                            <div className="p-5 text-center border-2 border-dashed border-[#1c1b1a]/40 text-sm text-[#1c1b1a]/45" style={HAND}>还没有可选角色 — 先去捏一个</div>
                         )}
                     </div>
 
                     {/* 纸张色调 */}
-                    <div className="space-y-2 pt-1">
-                        <div className="flex items-center gap-2 pl-1">
-                            <CrossStar size={7} color={MusicC.glow} delay={0} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>纸张色调</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>PAPER TONE</span>
-                        </div>
-                        <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
-                            {COVER_STYLES.map(s => {
-                                const active = tempCoverStyle === s.id;
-                                return (
-                                    <div key={s.id} className="flex flex-col items-center gap-1 shrink-0">
-                                        <button
-                                            onClick={() => setTempCoverStyle(s.id)}
-                                            className={`w-12 h-12 rounded-xl bg-gradient-to-br ${s.gradient} shrink-0 transition-all active:scale-95`}
-                                            style={active ? {
-                                                boxShadow: `0 0 0 2px ${MusicC.accent}, 0 4px 14px ${MusicC.glow}40`,
-                                            } : {
-                                                border: `1px solid ${MusicC.faint}60`,
-                                                opacity: 0.85,
-                                            }}
-                                            title={s.label}
-                                        />
-                                        <span className="text-[8.5px]" style={{ color: active ? MusicC.primary : MusicC.muted }}>{s.label}</span>
-                                    </div>
-                                );
-                            })}
-                            <div className="flex flex-col items-center gap-1 shrink-0">
-                                <button
-                                    onClick={() => setTempCoverStyle(buildCustomCoverStyleId())}
-                                    className="w-12 h-12 rounded-xl shrink-0 transition-all active:scale-95"
-                                    style={isCustomCoverStyle(tempCoverStyle) ? {
-                                        backgroundImage: `linear-gradient(135deg, ${customCoverFrom} 0%, ${customCoverVia} 50%, ${customCoverTo} 100%)`,
-                                        boxShadow: `0 0 0 2px ${MusicC.accent}, 0 4px 14px ${MusicC.glow}40`,
-                                    } : {
-                                        backgroundImage: `linear-gradient(135deg, ${customCoverFrom} 0%, ${customCoverVia} 50%, ${customCoverTo} 100%)`,
-                                        border: `1px solid ${MusicC.faint}60`,
-                                        opacity: 0.85,
-                                    }}
-                                    title="自定义"
-                                />
-                                <span className="text-[8.5px]" style={{ color: isCustomCoverStyle(tempCoverStyle) ? MusicC.primary : MusicC.muted }}>自定义</span>
-                            </div>
+                    <div>
+                        <SectionTitle en="PAPER TONE" cn="纸张色调" className="mb-2.5" />
+                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                            {COVER_STYLES.map(s => { const active = tempCoverStyle === s.id; return (
+                                <button key={s.id} onClick={() => setTempCoverStyle(s.id)} className="shrink-0 flex flex-col items-center gap-1" title={s.label}>
+                                    <div className={`w-12 h-14 border-2 border-[#1c1b1a] bg-gradient-to-br ${s.gradient} ${active ? 'shadow-[2px_2px_0_#1c1b1a] -translate-y-0.5' : 'opacity-80'} flex items-end justify-center pb-1`}>{active && <span className="w-2 h-2 rounded-full bg-[#1c1b1a]" />}</div>
+                                    <span className={`label-mono text-[7px] ${active ? 'text-[#1c1b1a]' : 'text-[#1c1b1a]/45'}`}>{s.label}</span>
+                                </button>
+                            ); })}
+                            <button onClick={() => setTempCoverStyle(buildCustomCoverStyleId())} className="shrink-0 flex flex-col items-center gap-1" title="自定义">
+                                <div className={`w-12 h-14 border-2 border-[#1c1b1a] ${isCustomCoverStyle(tempCoverStyle) ? 'shadow-[2px_2px_0_#1c1b1a] -translate-y-0.5' : 'opacity-80'} flex items-end justify-center pb-1`} style={{ backgroundImage: `linear-gradient(135deg, ${customCoverFrom} 0%, ${customCoverVia} 50%, ${customCoverTo} 100%)` }}>{isCustomCoverStyle(tempCoverStyle) && <span className="w-2 h-2 rounded-full bg-white" />}</div>
+                                <span className={`label-mono text-[7px] ${isCustomCoverStyle(tempCoverStyle) ? 'text-[#1c1b1a]' : 'text-[#1c1b1a]/45'}`}>自调</span>
+                            </button>
                         </div>
                     </div>
 
-                    {/* 自定义色调 */}
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-2 pl-1">
-                            <CrossStar size={7} color={MusicC.sakura} delay={0.3} />
-                            <label className="text-[11px] font-bold" style={{ color: MusicC.primary }}>自定义色调</label>
-                            <span className="text-[9px] tracking-[0.3em]" style={{ color: MusicC.faint, fontFamily: 'Georgia, serif' }}>CUSTOM COLOR</span>
-                        </div>
-                        <div className="rounded-2xl p-4 shizuku-glass" style={{ border: `1px solid ${MusicC.faint}40` }}>
+                    {/* 自己调色 */}
+                    <div>
+                        <SectionTitle en="MIX YOUR OWN" cn="自己调色" className="mb-2.5" />
+                        <div className="bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-4">
                             <div className="grid grid-cols-3 gap-3">
                                 {[
-                                    { label: '起点色', color: customCoverFrom, position: 'from' as const },
-                                    { label: '中间色', color: customCoverVia, position: 'via' as const },
-                                    { label: '终点色', color: customCoverTo,  position: 'to' as const }
+                                    { label: '起手', color: customCoverFrom, position: 'from' as const },
+                                    { label: '过渡', color: customCoverVia, position: 'via' as const },
+                                    { label: '收尾', color: customCoverTo,  position: 'to' as const }
                                 ].map(item => (
                                     <label key={item.label} className="space-y-1.5">
-                                        <span className="block text-[10px]" style={{ color: MusicC.muted }}>{item.label}</span>
-                                        <div className="rounded-lg overflow-hidden" style={{ height: 28, background: item.color, border: `1px solid ${MusicC.faint}40`, boxShadow: `inset 0 1px 0 rgba(255,255,255,0.2)` }}>
-                                            <input
-                                                type="color"
-                                                value={item.color}
-                                                onChange={(e) => updateCustomCoverColor(item.position, e.target.value)}
-                                                className="w-full h-full opacity-0 cursor-pointer"
-                                            />
+                                        <span className="label-mono text-[8px] text-[#1c1b1a]/55 block">{item.label}</span>
+                                        <div className="overflow-hidden border-2 border-[#1c1b1a]" style={{ height: 32, background: item.color }}>
+                                            <input type="color" value={item.color} onChange={(e) => updateCustomCoverColor(item.position, e.target.value)} className="w-full h-full opacity-0 cursor-pointer" />
                                         </div>
                                     </label>
                                 ))}
@@ -1809,41 +1514,11 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </div>
                 </div>
 
-                {/* "翻开新的第一页" 大紫色游戏风按钮 */}
-                <div
-                    className="absolute bottom-0 w-full px-5 pt-4 pb-6 z-20"
-                    style={{
-                        background: `linear-gradient(to top, ${MusicC.bg}f5 60%, ${MusicC.bg}cc 90%, ${MusicC.bg}00 100%)`,
-                    }}
-                >
-                    <button
-                        onClick={handleCreate}
-                        disabled={!tempCollaboratorId}
-                        className="relative w-full rounded-[28px] py-4 font-bold tracking-[0.15em] text-white active:scale-[0.98] transition-transform overflow-hidden disabled:opacity-50"
-                        style={{
-                            background: `linear-gradient(135deg, ${MusicC.primary} 0%, ${MusicC.accent} 55%, ${MusicC.lavender} 100%)`,
-                            boxShadow: `0 8px 28px ${MusicC.glow}70, 0 0 70px ${MusicC.lavender}30, inset 0 1px 0 rgba(255,255,255,0.4)`,
-                            fontFamily: 'Georgia, "Noto Serif SC", serif',
-                        }}
-                    >
-                        <Sparkle size={8}  color="#fff" delay={0}   className="absolute top-2 left-7  opacity-80" />
-                        <Sparkle size={6}  color="#fff" delay={0.7} className="absolute bottom-3 left-14 opacity-70" />
-                        <CrossStar size={9} color="#fff" delay={0.4} className="absolute top-2 right-7" solid={false} />
-                        <Sparkle size={7}  color="#fff" delay={1.4} className="absolute bottom-2 right-12 opacity-80" />
-                        <span className="absolute inset-0 pointer-events-none"
-                            style={{
-                                background: `linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%)`,
-                                backgroundSize: '200% 100%',
-                                animation: 'shizuku-shimmer 4s ease-in-out infinite',
-                            }} />
-                        <span className="relative inline-flex flex-col items-center justify-center gap-0.5">
-                            <span className="inline-flex items-center gap-2 text-[14px]">
-                                <Feather size={16} weight="fill" />
-                                翻开新的第一页
-                            </span>
-                            <span className="text-[9px] tracking-[0.5em] opacity-80" style={{ fontFamily: 'Georgia, serif' }}>— LET'S BEGIN —</span>
-                        </span>
-                    </button>
+                {/* 翻开第一页 */}
+                <div className="absolute bottom-0 w-full px-4 pt-5 pb-6 pb-safe" style={{ background: `linear-gradient(to top, ${PAPER} 70%, ${PAPER}00 100%)` }}>
+                    <InkButton tone="ink" onClick={handleCreate} disabled={!tempCollaboratorId} className="w-full py-4 text-base">
+                        <Feather size={18} weight="fill" /> 翻开第一页 · 开写
+                    </InkButton>
                 </div>
             </div>
         );
@@ -1854,74 +1529,60 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const style = getCoverVisual(activeSong.coverStyle);
         const genreInfo = SONG_GENRES.find(g => g.id === activeSong.genre);
         const moodInfo = SONG_MOODS.find(m => m.id === activeSong.mood);
+        const LYRIC: React.CSSProperties = { fontFamily: "'Shippori Mincho','Noto Serif SC',serif" };
 
         let currentSec = '';
         return (
-            <div className="h-full w-full bg-[#F5F0E8] flex flex-col font-sans relative overflow-hidden">
-                {/* Cover / Title Page */}
-                <div className={`${style.className} ${style.textClass} relative shrink-0`} style={{ ...style.style, minHeight: '220px' }}>
-                    <button onClick={() => { setView('shelf'); setActiveSong(null); }} className="absolute top-4 left-4 p-2 rounded-full bg-black/10 hover:bg-black/20 transition-colors z-10">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] overflow-hidden" style={{ background: PAPER }}>
+                {/* 封面 / 扉页 —— 主题色横幅 + 钉上去的标题纸 */}
+                <div className={`relative shrink-0 border-b-2 border-[#1c1b1a] ${style.className} ${style.textClass}`} style={{ ...style.style, minHeight: '212px' }}>
+                    <button onClick={() => { setView('shelf'); setActiveSong(null); }} className="absolute left-4 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" style={{ top: 'calc(var(--safe-top) + 0.75rem)' }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
                     </button>
-                    <button onClick={() => { setShowShareModal(true); }} className="absolute top-4 right-4 p-2 rounded-full bg-black/10 hover:bg-black/20 transition-colors z-10">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" /></svg>
+                    <button onClick={() => { setShowShareModal(true); }} className="absolute right-4 z-10 w-9 h-9 flex items-center justify-center border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all" style={{ top: 'calc(var(--safe-top) + 0.75rem)' }}>
+                        <ShareNetwork size={16} weight="bold" />
                     </button>
-                    {/* Album-style title layout */}
-                    <div className="flex flex-col items-center justify-end h-full px-8 pb-8 pt-16">
-                        <div className="w-12 h-[1px] bg-current opacity-20 mb-5" />
-                        <h1 className="text-2xl font-semibold text-center leading-tight" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{activeSong.title}</h1>
-                        {activeSong.subtitle && <p className="text-sm opacity-60 mt-2 italic text-center">{activeSong.subtitle}</p>}
-                        <div className="flex items-center gap-3 mt-4 text-[11px] opacity-50">
-                            <span>{genreInfo?.label}</span>
-                            <span>·</span>
-                            <span>{moodInfo?.label}</span>
+                    {/* 钉在封面上的标题纸（任意底色都看得清） */}
+                    <div className="flex flex-col items-center justify-end h-full px-8 pb-7" style={{ paddingTop: 'calc(var(--safe-top) + 3.5rem)' }}>
+                        <div className="relative bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] px-6 py-5 text-center rotate-[-1deg] max-w-[85%]">
+                            <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg] w-20" />
+                            <div className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5">{genreInfo?.label} · {moodInfo?.icon} {moodInfo?.label}</div>
+                            <h1 className="text-2xl font-black text-[#1c1b1a] leading-tight" style={BRUSH}>{activeSong.title}</h1>
+                            {activeSong.subtitle && <p className="text-sm text-[#1c1b1a]/60 mt-1" style={HAND}>{activeSong.subtitle}</p>}
+                            {collaborator && (
+                                <div className="flex items-center justify-center gap-1.5 mt-2.5 pt-2 border-t-2 border-dashed border-[#1c1b1a]/20">
+                                    <img src={collaborator.avatar} className="w-4 h-4 object-cover border border-[#1c1b1a]" />
+                                    <span className="label-mono text-[7px] text-[#1c1b1a]/55">与 {collaborator.name} 合写</span>
+                                </div>
+                            )}
                         </div>
-                        {collaborator && (
-                            <div className="flex items-center gap-2 mt-3 opacity-50">
-                                <img src={collaborator.avatar} className="w-5 h-5 rounded-full object-cover" />
-                                <span className="text-[11px]">与 {collaborator.name} 创作</span>
-                            </div>
-                        )}
-                        <div className="w-12 h-[1px] bg-current opacity-20 mt-5" />
                     </div>
                 </div>
 
-                {/* Lyrics body — like a booklet page (draft lines excluded) */}
-                <div className="flex-1 overflow-y-auto px-8 py-8 no-scrollbar relative z-10 pb-32">
+                {/* 歌词内页 —— 横线纸 */}
+                <div className="flex-1 overflow-y-auto px-6 py-7 no-scrollbar relative z-10 pb-44" style={{ background: PAPER, ...LINES_BG }}>
                     {activeSong.lines.filter(l => !l.isDraft).map(line => {
                         const showSection = line.section !== currentSec;
                         if (showSection) currentSec = line.section;
                         return (
                             <div key={line.id}>
                                 {showSection && (
-                                    <div className="mt-8 mb-4 first:mt-0 flex items-center gap-3">
-                                        <div className="w-6 h-[1px] bg-stone-300" />
-                                        <span className="text-[9px] text-stone-400 uppercase tracking-[0.2em] font-medium">{SECTION_LABELS[line.section]?.label || line.section}</span>
-                                        <div className="flex-1 h-[1px] bg-stone-200/60" />
+                                    <div className="mt-7 mb-3 first:mt-0 flex items-center gap-2">
+                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border-2 border-[#1c1b1a] bg-white text-[#1c1b1a]">{SECTION_LABELS[line.section]?.label || line.section}</span>
+                                        <div className="flex-1 border-t-2 border-dashed border-[#1c1b1a]/25" />
                                     </div>
                                 )}
-                                <p className="text-[15px] text-stone-600 leading-[2.2] py-0" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{line.content}</p>
+                                <p className="text-[16px] text-[#1c1b1a]/85 leading-[2.05]" style={LYRIC}>{line.content}</p>
                             </div>
                         );
                     })}
-                    {/* End mark */}
-                    <div className="flex justify-center mt-10 mb-4">
-                        <div className="w-8 h-[1px] bg-stone-300" />
-                    </div>
+                    {/* 收尾 */}
+                    <div className="flex justify-center mt-9 text-[#1c1b1a]/35 text-sm tracking-[0.3em]" style={HAND}>— 完 —</div>
                 </div>
 
-                {/* ─── Shizuku-themed AI 出歌 / Audio Dock ─── */}
-                <div
-                    className="absolute bottom-0 left-0 right-0 z-20 pb-safe"
-                    style={{
-                        background: `linear-gradient(to top, ${MusicC.bg}f8 60%, ${MusicC.bg}cc 90%, ${MusicC.bg}00 100%)`,
-                        backdropFilter: 'blur(18px)',
-                        WebkitBackdropFilter: 'blur(18px)',
-                        borderTop: `1px solid ${MusicC.glow}25`,
-                        boxShadow: `0 -8px 32px ${MusicC.glow}10`,
-                    }}
-                >
-                    {/* Hidden audio element drives our custom shizuku player */}
+                {/* ─── AI 出歌 / 播放坞 ─── */}
+                <div className="absolute bottom-0 left-0 right-0 z-20 border-t-2 border-[#1c1b1a] pb-safe" style={{ background: PAPER_CARD }}>
+                    {/* 隐藏 audio 元素，驱动自定义播放器 */}
                     {audioUrl && (
                         <audio
                             ref={audioElRef}
@@ -1936,67 +1597,27 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         />
                     )}
 
-                    <div className="relative px-4 py-3.5">
-                        {/* Floating sparkle decorations — pointer-none */}
-                        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                            <Sparkle size={9} className="absolute top-2 right-6" color={MusicC.glow} delay={0} />
-                            <Sparkle size={7} className="absolute top-4 left-8" color={MusicC.sakura} delay={1.2} />
-                            <Sparkle size={5} className="absolute bottom-3 right-1/3" color={MusicC.lavender} delay={0.6} />
-                        </div>
-
+                    <div className="relative px-4 py-3">
                         {audioUrl ? (
-                            // ── State A: audio ready — shizuku mini player ──
-                            <div className="relative flex items-center gap-3">
-                                <div
-                                    className="relative w-12 h-12 rounded-full shrink-0 flex items-center justify-center overflow-hidden"
-                                    style={{
-                                        background: `radial-gradient(circle at 35% 35%, ${MusicC.accent}, ${MusicC.primary})`,
-                                        boxShadow: `0 4px 18px ${MusicC.glow}40, inset 0 1px 0 rgba(255,255,255,0.3)`,
-                                        animation: isPlaying ? 'shizuku-vinyl 6s linear infinite' : 'none',
-                                    }}
-                                >
-                                    <div
-                                        className="absolute inset-1 rounded-full pointer-events-none"
-                                        style={{ background: `repeating-radial-gradient(circle at center, transparent 0px, transparent 2px, rgba(255,255,255,0.08) 3px, transparent 4px)` }}
-                                    />
-                                    <div
-                                        className="w-4 h-4 rounded-full"
-                                        style={{
-                                            background: `radial-gradient(circle at 30% 30%, white, ${MusicC.soft})`,
-                                            boxShadow: `inset 0 1px 2px rgba(0,0,0,0.15)`,
-                                        }}
-                                    />
+                            // ── 状态 A：已出歌 —— 黑胶迷你播放器 ──
+                            <div className="flex items-center gap-3">
+                                <div className="relative w-12 h-12 rounded-full shrink-0 flex items-center justify-center border-2 border-[#1c1b1a] bg-[#1c1b1a]" style={{ animation: isPlaying ? 'shizuku-vinyl 6s linear infinite' : 'none' }}>
+                                    <div className="absolute inset-1.5 rounded-full border border-[#f2f0e9]/25" />
+                                    <div className="w-3.5 h-3.5 rounded-full bg-[#f2f0e9] border border-[#1c1b1a]" />
                                 </div>
-
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5 mb-1">
-                                        <MetaChip>
-                                            {activeSong.audio?.provider === 'ace-step'
-                                                ? 'ACE-Step'
-                                                : activeSong.audio?.provider === 'minimax-paid'
-                                                    ? 'MiniMax'
-                                                    : 'MiniMax · 免费'}
-                                        </MetaChip>
+                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                        <span className="label-mono text-[7px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/70">
+                                            {activeSong.audio?.provider === 'ace-step' ? 'ACE-Step' : activeSong.audio?.provider === 'minimax-paid' ? 'MiniMax' : 'MiniMax 免费'}
+                                        </span>
                                         {activeSong.audio?.generatedAt && (
-                                            <span className="text-[9px]" style={{ color: MusicC.faint, fontFamily: 'monospace' }}>
-                                                {new Date(activeSong.audio.generatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                            </span>
+                                            <span className="label-mono text-[7px] text-[#1c1b1a]/45">{new Date(activeSong.audio.generatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                                         )}
                                         <div className="flex-1" />
-                                        {/* ❤︎ 喜欢 → 同步到音乐 App「一起写的歌」 */}
                                         <button
                                             onClick={handleSendToMusicApp}
-                                            className="w-7 h-7 rounded-full transition-all active:scale-90 flex items-center justify-center shrink-0"
-                                            style={isLikedToMusic ? {
-                                                color: 'white',
-                                                background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})`,
-                                                boxShadow: `0 2px 10px ${MusicC.sakura}50`,
-                                            } : {
-                                                color: MusicC.sakura,
-                                                background: `${MusicC.sakura}18`,
-                                                border: `1px solid ${MusicC.sakura}40`,
-                                            }}
-                                            title={isLikedToMusic ? '已加入「一起写的歌」专辑' : '加入音乐 App'}
+                                            className={`w-7 h-7 flex items-center justify-center border-2 border-[#1c1b1a] transition-all active:translate-y-[1px] shrink-0 ${isLikedToMusic ? 'bg-[#1c1b1a] text-[#f2f0e9]' : 'bg-white text-[#1c1b1a]'}`}
+                                            title={isLikedToMusic ? '已收进「一起写的歌」' : '收进音乐 App'}
                                             aria-label={isLikedToMusic ? '已喜欢' : '喜欢'}
                                         >
                                             <HeartStraight size={12} weight={isLikedToMusic ? 'fill' : 'regular'} />
@@ -2004,219 +1625,98 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                         <button
                                             onClick={openCustomPromptModal}
                                             disabled={cooldownSecsLeft > 0}
-                                            className="text-[10px] px-2 py-0.5 rounded-full transition-all active:scale-95 disabled:opacity-40"
-                                            style={{
-                                                color: MusicC.primary,
-                                                background: `${MusicC.glow}15`,
-                                                border: `1px solid ${MusicC.glow}30`,
-                                            }}
-                                            title={cooldownSecsLeft > 0 ? `冷却中 ${cooldownSecsLeft}s` : '换个版本'}
+                                            className="inline-flex items-center gap-1 label-mono text-[8px] px-2 py-1 border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[1px_1px_0_#1c1b1a] active:translate-y-[1px] transition-all disabled:opacity-40"
+                                            title={cooldownSecsLeft > 0 ? `缓一下 ${cooldownSecsLeft}s` : '重录一版'}
                                         >
-                                            ↻ 重录{cooldownSecsLeft > 0 ? ` ${cooldownSecsLeft}s` : ''}
+                                            <ArrowsClockwise size={10} weight="bold" /> 重录{cooldownSecsLeft > 0 ? ` ${cooldownSecsLeft}s` : ''}
                                         </button>
                                     </div>
-                                    <GlassProgress
-                                        progress={playProgress}
-                                        duration={playDuration}
-                                        fmtTime={fmtTime}
-                                        onSeek={handleSeek}
-                                    />
+                                    {/* 拼贴进度条（可点击拖动） */}
+                                    <div className="cursor-pointer" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); handleSeek((e.clientX - r.left) / r.width); }}>
+                                        <div className="relative h-2.5 border-2 border-[#1c1b1a] bg-white overflow-hidden">
+                                            <div className="absolute inset-y-0 left-0 bg-[#1c1b1a]" style={{ width: `${playDuration ? Math.min(100, (playProgress / playDuration) * 100) : 0}%` }} />
+                                        </div>
+                                        <div className="flex justify-between mt-0.5 label-mono text-[7px] text-[#1c1b1a]/55"><span>{fmtTime(playProgress)}</span><span>{fmtTime(playDuration)}</span></div>
+                                    </div>
                                 </div>
-
-                                <button
-                                    onClick={handleTogglePlay}
-                                    className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-transform relative"
-                                    style={{
-                                        background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                        boxShadow: `0 4px 18px ${MusicC.glow}40, 0 0 40px ${MusicC.glow}15`,
-                                        animation: isPlaying ? 'shizuku-glow 3s ease-in-out infinite' : 'none',
-                                    }}
-                                >
-                                    {isPlaying ? (
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" /></svg>
-                                    ) : (
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7L8 5z" /></svg>
-                                    )}
-                                    <div
-                                        className="absolute inset-[-3px] rounded-full pointer-events-none"
-                                        style={{ border: `1px solid rgba(255,255,255,0.25)` }}
-                                    />
+                                <button onClick={handleTogglePlay} className="w-11 h-11 shrink-0 flex items-center justify-center border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
+                                    {isPlaying
+                                        ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" /></svg>
+                                        : <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z" /></svg>}
                                 </button>
                             </div>
                         ) : isGeneratingAudio ? (
-                            // ── State B: recording — multi-ring vinyl with deep glow ──
-                            <div className="relative flex items-center gap-3.5 py-1.5">
-                                {/* 三层叠唱片 — 外圈 conic 旋转 + 中层静止描边 + 内圈 emoji */}
-                                <div className="relative w-14 h-14 shrink-0">
-                                    {/* 外圈光晕 */}
-                                    <div className="absolute pointer-events-none rounded-full"
-                                        style={{
-                                            inset: -6,
-                                            background: `radial-gradient(circle, ${MusicC.glow}40, ${MusicC.sakura}20 50%, transparent 75%)`,
-                                            filter: 'blur(8px)',
-                                            animation: 'shizuku-glow 2.5s ease-in-out infinite',
-                                        }}
-                                    />
-                                    {/* 旋转外环 */}
-                                    <div className="absolute inset-0 rounded-full"
-                                        style={{
-                                            background: `conic-gradient(from 0deg, ${MusicC.primary}, ${MusicC.accent}, ${MusicC.sakura}, ${MusicC.lavender}, ${MusicC.primary})`,
-                                            animation: 'shizuku-vinyl 2s linear infinite',
-                                            boxShadow: `0 0 18px ${MusicC.glow}50`,
-                                        }}
-                                    />
-                                    {/* 内核 */}
-                                    <div className="absolute inset-[5px] rounded-full flex items-center justify-center"
-                                        style={{
-                                            background: `radial-gradient(circle at 35% 35%, white, ${MusicC.bg} 70%)`,
-                                            border: `1px solid ${MusicC.glow}50`,
-                                            boxShadow: `inset 0 2px 6px ${MusicC.glow}25, 0 1px 4px ${MusicC.primary}20`,
-                                        }}
-                                    >
-                                        <span className="text-base" style={{ filter: `drop-shadow(0 1px 2px ${MusicC.primary}20)` }}>🎤</span>
-                                    </div>
-                                    {/* 浮游星芒 */}
-                                    <CrossStar size={9} className="absolute -top-1 -right-1" color={MusicC.sakura} delay={0} />
-                                    <Sparkle size={7} className="absolute -bottom-0.5 -left-1" color={MusicC.lavender} delay={0.7} />
+                            // ── 状态 B：录制中 ──
+                            <div className="flex items-center gap-3 py-1">
+                                <div className="relative w-12 h-12 shrink-0">
+                                    <div className="absolute inset-0 rounded-full border-2 border-[#1c1b1a] border-t-transparent animate-spin" />
+                                    <div className="absolute inset-[6px] rounded-full bg-[#1c1b1a] flex items-center justify-center"><MicrophoneStage size={15} weight="fill" className="text-[#f2f0e9]" /></div>
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="text-[14px] font-semibold tracking-wider" style={{ color: MusicC.primary, fontFamily: 'Georgia, "Noto Serif SC", serif' }}>
-                                            正在录制
-                                        </div>
-                                        {/* 三个跳动的小点 */}
-                                        <span className="flex gap-0.5">
-                                            <span className="w-1 h-1 rounded-full" style={{ background: MusicC.accent, animation: 'shizuku-twinkle 1.2s ease-in-out infinite' }} />
-                                            <span className="w-1 h-1 rounded-full" style={{ background: MusicC.accent, animation: 'shizuku-twinkle 1.2s ease-in-out 0.3s infinite' }} />
-                                            <span className="w-1 h-1 rounded-full" style={{ background: MusicC.accent, animation: 'shizuku-twinkle 1.2s ease-in-out 0.6s infinite' }} />
-                                        </span>
-                                    </div>
-                                    <div className="text-[10px] truncate mt-1 tracking-[0.2em]" style={{ color: MusicC.muted, fontFamily: `'Space Grotesk', monospace` }}>
-                                        {audioGenStatus || '处理中'}
-                                    </div>
+                                    <div className="flex items-center gap-2"><span className="text-base font-black text-[#1c1b1a]" style={BRUSH}>正在录制</span><TypingDots /></div>
+                                    <div className="label-mono text-[8px] text-[#1c1b1a]/55 mt-1 truncate">{audioGenStatus || '处理中'}</div>
                                 </div>
-                                <button
-                                    onClick={handleCancelGenerate}
-                                    className="text-[11px] px-3.5 py-2 rounded-full transition-all active:scale-95 shrink-0 shizuku-glass"
-                                    style={{
-                                        color: MusicC.muted,
-                                        border: `1px solid ${MusicC.faint}40`,
-                                    }}
-                                >
-                                    取消
-                                </button>
+                                <button onClick={handleCancelGenerate} className="px-3 py-2 text-xs font-bold border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all shrink-0">喊停</button>
                             </div>
                         ) : (
-                            // ── State C: idle — single big shizuku button ──
-                            <div className="relative flex flex-col items-center gap-1.5">
-                                <button
-                                    onClick={openCustomPromptModal}
-                                    disabled={cooldownSecsLeft > 0}
-                                    className="relative w-full py-3.5 rounded-2xl font-medium text-sm active:scale-[0.98] transition-all overflow-hidden disabled:cursor-not-allowed"
-                                    style={{
-                                        background: cooldownSecsLeft > 0
-                                            ? `linear-gradient(135deg, ${MusicC.faint}80, ${MusicC.muted}50)`
-                                            : `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                        color: 'white',
-                                        boxShadow: cooldownSecsLeft > 0
-                                            ? 'none'
-                                            : `0 4px 24px ${MusicC.glow}50, 0 0 60px ${MusicC.glow}20`,
-                                        animation: cooldownSecsLeft > 0 ? 'none' : 'shizuku-glow 3.5s ease-in-out infinite',
-                                    }}
-                                >
-                                    {cooldownSecsLeft === 0 && (
-                                        <div
-                                            className="absolute inset-0 pointer-events-none"
-                                            style={{
-                                                background: `linear-gradient(90deg, transparent 30%, rgba(255,255,255,0.25) 50%, transparent 70%)`,
-                                                backgroundSize: '200% 100%',
-                                                animation: 'shizuku-shimmer 3.5s ease-in-out infinite',
-                                            }}
-                                        />
-                                    )}
-                                    <span className="relative flex items-center justify-center gap-2.5 tracking-[0.15em]" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>
-                                        {cooldownSecsLeft > 0 ? (
-                                            <>
-                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-.75 5.25a.75.75 0 0 1 1.5 0v4.59l3.22 3.22a.75.75 0 1 1-1.06 1.06l-3.44-3.44a.75.75 0 0 1-.22-.53V7.5Z" clipRule="evenodd" /></svg>
-                                                COOLING DOWN · {cooldownSecsLeft}s
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span style={{ fontSize: 13 }}>✦</span>
-                                                AI 出歌 · 让它唱出来
-                                                <span style={{ fontSize: 13 }}>✦</span>
-                                            </>
-                                        )}
-                                    </span>
-                                </button>
-
+                            // ── 状态 C：空闲 —— 大按钮 ──
+                            <div className="flex flex-col items-center gap-2">
+                                <InkButton tone="ink" onClick={openCustomPromptModal} disabled={cooldownSecsLeft > 0} className="w-full py-3.5 text-sm tracking-[0.18em]">
+                                    {cooldownSecsLeft > 0 ? `缓一下 · ${cooldownSecsLeft}s` : '✦ AI 出歌 · 让它唱出来 ✦'}
+                                </InkButton>
                                 {audioError ? (
-                                    <div className="text-[10.5px] leading-relaxed text-center px-2 max-w-full" style={{ color: MusicC.danger }}>
-                                        <span className="font-semibold">出错：</span>{audioError}
-                                    </div>
+                                    <div className="text-[10.5px] leading-relaxed text-center px-2 text-[#1c1b1a]"><span className="font-black">没成：</span>{audioError}</div>
                                 ) : (
-                                    <div className="text-[9.5px] tracking-[0.18em] text-center" style={{ color: MusicC.muted, fontFamily: 'monospace' }}>
-                                        点击配置声线/风格 · 30-60s 出一首
-                                    </div>
+                                    <div className="label-mono text-[8px] text-[#1c1b1a]/45 text-center">点开调声线 / 风格 · 半分钟出一首</div>
                                 )}
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Share Modal */}
-                <Modal isOpen={showShareModal} title="分享乐谱" onClose={() => setShowShareModal(false)}>
-                    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                        <p className="text-xs text-stone-500 mb-3">选择一个角色，把乐谱卡片发送到聊天</p>
+                {/* 寄乐谱 */}
+                <CollageModal isOpen={showShareModal} title="寄一张乐谱" kicker="SHARE SCORE" onClose={() => setShowShareModal(false)}>
+                    <p className="text-sm text-[#1c1b1a]/55 mb-3" style={HAND}>挑个人，把这张乐谱卡片寄进 TA 的聊天</p>
+                    <div className="space-y-2.5">
                         {characters.map(c => (
-                            <button key={c.id} onClick={() => handleShareToChat(c.id)} className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-stone-50 border border-stone-100 transition-colors">
-                                <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
-                                <span className="font-medium text-sm text-stone-700">{c.name}</span>
+                            <button key={c.id} onClick={() => handleShareToChat(c.id)} className="w-full flex items-center gap-3 p-2.5 border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
+                                <img src={c.avatar} className="w-9 h-9 object-cover border border-[#1c1b1a]" />
+                                <span className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{c.name}</span>
                             </button>
                         ))}
                     </div>
-                </Modal>
+                </CollageModal>
 
-                {/* ─── 封面确认 Modal — 喜欢按钮 → 跳转音乐 App 之间的中间步骤 ─── */}
-                <Modal isOpen={showCoverConfirm} title="给这首歌选个封面" onClose={() => setShowCoverConfirm(false)}>
+                {/* ─── 封面确认 —— 喜欢 → 跳音乐 App 的中间步骤 ─── */}
+                <CollageModal
+                    isOpen={showCoverConfirm}
+                    title="配张封面"
+                    kicker="ALBUM COVER"
+                    onClose={() => setShowCoverConfirm(false)}
+                    footer={<>
+                        <button onClick={() => setShowCoverConfirm(false)} className="flex-1 py-3 text-xs font-bold border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">取消</button>
+                        {isLikedToMusic && <button onClick={handleRemoveFromAlbum} className="flex-1 py-3 text-xs font-bold border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">撤下</button>}
+                        <button onClick={handleConfirmAddToAlbum} disabled={isBuildingDual && coverMode === 'dual'} className="flex-[2] py-3 text-xs font-black border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50">❤ {isLikedToMusic ? '存好 · 去听' : '加入 · 去听'}</button>
+                    </>}
+                >
                     <div className="space-y-4">
-                        {/* 封面大预览 */}
+                        {/* 大预览 */}
                         <div className="flex items-center justify-center">
-                            <div
-                                className="relative w-44 h-44 rounded-2xl overflow-hidden"
-                                style={{
-                                    boxShadow: `0 8px 32px ${MusicC.glow}50, inset 0 1px 0 rgba(255,255,255,0.5)`,
-                                    border: `1px solid ${MusicC.glow}40`,
-                                }}
-                            >
-                                {coverMode === 'char' && collaborator?.avatar && (
-                                    <img src={collaborator.avatar} alt="" className="w-full h-full object-cover" />
-                                )}
-                                {coverMode === 'user' && userProfile?.avatar && (
-                                    <img src={userProfile.avatar} alt="" className="w-full h-full object-cover" />
-                                )}
+                            <div className="relative w-40 h-40 border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] overflow-hidden bg-[#f2f0e9]">
+                                <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-4deg] w-16" />
+                                {coverMode === 'char' && collaborator?.avatar && <img src={collaborator.avatar} alt="" className="w-full h-full object-cover" />}
+                                {coverMode === 'user' && userProfile?.avatar && <img src={userProfile.avatar} alt="" className="w-full h-full object-cover" />}
                                 {coverMode === 'dual' && (
-                                    isBuildingDual ? (
-                                        <div className="w-full h-full flex items-center justify-center"
-                                            style={{ background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender}, ${MusicC.glow})` }}>
-                                            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        </div>
-                                    ) : dualCoverUrl ? (
-                                        <img src={dualCoverUrl} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-white text-xs"
-                                            style={{ background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})` }}>
-                                            合影封面
-                                        </div>
-                                    )
+                                    isBuildingDual
+                                        ? <div className="w-full h-full flex items-center justify-center"><div className="w-7 h-7 border-2 border-[#1c1b1a] border-t-transparent rounded-full animate-spin" /></div>
+                                        : dualCoverUrl
+                                            ? <img src={dualCoverUrl} alt="" className="w-full h-full object-cover" />
+                                            : <div className="w-full h-full flex items-center justify-center label-mono text-[8px] text-[#1c1b1a]/55">合影封面</div>
                                 )}
-                                {/* 黑胶反光 */}
-                                <div className="absolute inset-0 pointer-events-none"
-                                    style={{ background: 'linear-gradient(45deg, transparent 40%, rgba(255,255,255,0.18) 50%, transparent 60%)' }} />
                             </div>
                         </div>
 
-                        {/* 三个候选缩略图 */}
+                        {/* 三个候选 */}
                         <div className="grid grid-cols-3 gap-2">
                             {([
                                 { id: 'char' as CoverMode, label: collaborator?.name || '搭档', src: collaborator?.avatar || '' },
@@ -2225,361 +1725,123 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             ]).map(opt => {
                                 const active = opt.id === coverMode;
                                 return (
-                                    <button
-                                        key={opt.id}
-                                        onClick={() => setCoverMode(opt.id)}
-                                        className="rounded-xl p-2 border transition-all active:scale-95 flex flex-col items-center gap-1"
-                                        style={active ? {
-                                            background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                            color: 'white',
-                                            borderColor: 'transparent',
-                                            boxShadow: `0 3px 14px ${MusicC.glow}50`,
-                                        } : {
-                                            background: 'rgba(255,255,255,0.7)',
-                                            color: MusicC.text,
-                                            borderColor: `${MusicC.faint}50`,
-                                        }}
-                                    >
-                                        <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0"
-                                            style={{
-                                                border: `1.5px solid ${active ? 'rgba(255,255,255,0.6)' : `${MusicC.faint}50`}`,
-                                            }}>
-                                            {opt.src ? (
-                                                <img src={opt.src} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center"
-                                                    style={{ background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})` }}>
-                                                    {opt.id === 'dual' && (isBuildingDual ? (
-                                                        <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                                                    ) : (
-                                                        <SparkleP size={14} weight="fill" color="white" />
-                                                    ))}
-                                                </div>
-                                            )}
+                                    <button key={opt.id} onClick={() => setCoverMode(opt.id)} className={`p-2 border-2 border-[#1c1b1a] flex flex-col items-center gap-1 transition-all ${active ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
+                                        <div className="w-12 h-12 overflow-hidden border-2 border-current bg-[#f2f0e9]">
+                                            {opt.src
+                                                ? <img src={opt.src} alt="" className="w-full h-full object-cover" />
+                                                : <div className="w-full h-full flex items-center justify-center">{opt.id === 'dual' && (isBuildingDual ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" /> : <MusicNotes size={14} weight="bold" />)}</div>}
                                         </div>
-                                        <span className="text-[10px] font-medium leading-tight">{opt.label}</span>
+                                        <span className="label-mono text-[7px] leading-tight">{opt.label}</span>
                                     </button>
                                 );
                             })}
                         </div>
 
-                        {/* 元信息 */}
-                        <div className="rounded-xl px-3 py-2 text-[11px] leading-relaxed"
-                            style={{
-                                background: `linear-gradient(135deg, ${MusicC.glow}15, ${MusicC.sakura}10)`,
-                                border: `1px solid ${MusicC.glow}25`,
-                                color: MusicC.muted,
-                            }}>
-                            <div><span style={{ color: MusicC.primary }}>♪ </span>《{activeSong.title}》</div>
-                            <div className="mt-0.5">作者：{userProfile?.name || '我'} & {collaborator?.name || 'AI'}</div>
-                            <div className="mt-0.5">专辑：一起写的歌</div>
-                        </div>
-
-                        {/* 按钮 */}
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setShowCoverConfirm(false)}
-                                className="flex-1 py-3 rounded-xl text-[11px] font-medium tracking-wider transition-all active:scale-[0.98]"
-                                style={{
-                                    background: 'rgba(255,255,255,0.7)',
-                                    color: MusicC.muted,
-                                    border: `1px solid ${MusicC.faint}50`,
-                                }}
-                            >
-                                取消
-                            </button>
-                            {isLikedToMusic && (
-                                <button
-                                    onClick={handleRemoveFromAlbum}
-                                    className="flex-1 py-3 rounded-xl text-[11px] font-medium tracking-wider transition-all active:scale-[0.98]"
-                                    style={{
-                                        background: 'rgba(255,255,255,0.7)',
-                                        color: MusicC.danger,
-                                        border: `1px solid ${MusicC.danger}40`,
-                                    }}
-                                >
-                                    移除
-                                </button>
-                            )}
-                            <button
-                                onClick={handleConfirmAddToAlbum}
-                                disabled={isBuildingDual && coverMode === 'dual'}
-                                className="flex-[2] py-3 rounded-xl text-[12px] font-bold tracking-[0.18em] transition-all active:scale-[0.98] disabled:opacity-50 relative overflow-hidden"
-                                style={{
-                                    background: `linear-gradient(135deg, ${MusicC.sakura}, ${MusicC.lavender})`,
-                                    color: 'white',
-                                    boxShadow: `0 4px 18px ${MusicC.sakura}60, 0 0 50px ${MusicC.sakura}25`,
-                                    fontFamily: 'Georgia, serif',
-                                }}
-                            >
-                                ❤︎ {isLikedToMusic ? '保存并去听' : '加入并去听'}
-                            </button>
+                        {/* 备注便签 */}
+                        <div className="border-2 border-dashed border-[#1c1b1a]/40 p-3 text-[12px] leading-relaxed text-[#1c1b1a]/75" style={HAND}>
+                            <div><span className="font-bold">♪</span> 《{activeSong.title}》</div>
+                            <div className="mt-0.5">词曲：{userProfile?.name || '我'} & {collaborator?.name || 'AI'}</div>
+                            <div className="mt-0.5">收进：一起写的歌</div>
                         </div>
                     </div>
-                </Modal>
+                </CollageModal>
 
-                {/* ─── Unified AI 出歌引导 Modal — shizuku theme ─── */}
-                <Modal
+                {/* ─── 让 AI 唱出来 引导弹窗 ─── */}
+                <CollageModal
                     isOpen={showCustomPrompt}
-                    title="✦ 让 AI 把它唱出来"
+                    title="让 AI 唱出来"
+                    kicker="MAKE IT SING"
                     onClose={() => setShowCustomPrompt(false)}
-                    footer={
-                        <>
-                            <button
-                                onClick={() => setShowCustomPrompt(false)}
-                                className="flex-1 py-3 rounded-xl text-[12px] font-medium tracking-wider transition-all active:scale-[0.98]"
-                                style={{
-                                    background: 'rgba(255,255,255,0.7)',
-                                    color: MusicC.muted,
-                                    border: `1px solid ${MusicC.faint}50`,
-                                }}
-                            >
-                                取消
-                            </button>
-                            <button
-                                onClick={handleConfirmAndGenerate}
-                                disabled={cooldownSecsLeft > 0 || !promptDraft.trim()}
-                                className="flex-[2] py-3.5 rounded-xl text-[12px] font-bold tracking-[0.25em] transition-all active:scale-[0.98] disabled:opacity-50 relative overflow-hidden"
-                                style={{
-                                    background: cooldownSecsLeft > 0
-                                        ? `linear-gradient(135deg, ${MusicC.faint}, ${MusicC.muted})`
-                                        : `linear-gradient(135deg, ${MusicC.primary} 0%, ${MusicC.accent} 60%, ${MusicC.lavender} 100%)`,
-                                    color: 'white',
-                                    boxShadow: cooldownSecsLeft > 0
-                                        ? 'none'
-                                        : `0 6px 22px ${MusicC.glow}70, 0 0 60px ${MusicC.lavender}30, inset 0 1px 0 rgba(255,255,255,0.35)`,
-                                    fontFamily: 'Georgia, "Noto Serif SC", serif',
-                                }}
-                            >
-                                {/* Moving sheen */}
-                                {cooldownSecsLeft === 0 && (
-                                    <span className="absolute inset-0 pointer-events-none"
-                                        style={{
-                                            background: `linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.28) 50%, transparent 70%)`,
-                                            backgroundSize: '200% 100%',
-                                            animation: 'shizuku-shimmer 4s ease-in-out infinite',
-                                        }} />
-                                )}
-                                <span className="relative inline-flex items-center justify-center gap-2">
-                                    {cooldownSecsLeft > 0 ? (
-                                        `冷却中 ${cooldownSecsLeft}s`
-                                    ) : (
-                                        <>
-                                            <CrossStar size={11} color="white" delay={0} solid />
-                                            开始录制
-                                            <CrossStar size={11} color="white" delay={0.5} solid />
-                                        </>
-                                    )}
-                                </span>
-                            </button>
-                        </>
-                    }
+                    footer={<>
+                        <button onClick={() => setShowCustomPrompt(false)} className="flex-1 py-3 text-xs font-bold border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">收起</button>
+                        <button onClick={handleConfirmAndGenerate} disabled={cooldownSecsLeft > 0 || !promptDraft.trim()} className="flex-[2] py-3 text-xs font-black tracking-[0.2em] border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50">
+                            {cooldownSecsLeft > 0 ? `缓一下 ${cooldownSecsLeft}s` : '✦ 开录 ✦'}
+                        </button>
+                    </>}
                 >
-                    <div className="space-y-4">
-                        {/* ── Provider picker — segmented ── */}
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2 pl-1">
-                                <Sparkle size={8} color={MusicC.accent} delay={0.2} />
-                                <label className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: MusicC.primary }}>选生成器</label>
-                            </div>
+                    <div className="space-y-5">
+                        {/* 选生成器 */}
+                        <div>
+                            <div className="label-mono text-[9px] text-[#1c1b1a]/55 mb-2">CHOOSE ENGINE · 选生成器</div>
                             {(() => {
                                 const opts: { id: MusicProvider; title: string; sub: string; available: boolean; needs: string }[] = [
-                                    { id: 'minimax-free', title: 'MiniMax 免费版', sub: '不花钱 · 完整长歌', available: hasMiniMaxKey, needs: 'MiniMax Key' },
-                                    { id: 'minimax-paid', title: 'MiniMax 付费版', sub: 'Token Plan · 完整长歌', available: hasMiniMaxKey, needs: 'MiniMax Key' },
-                                    { id: 'ace-step',     title: 'ACE-Step',       sub: '~$0.015 · 完整长歌', available: hasReplicateKey, needs: 'Replicate Token' },
+                                    { id: 'minimax-free', title: 'MiniMax 免费', sub: '不花钱 · 完整长歌', available: hasMiniMaxKey, needs: 'MiniMax Key' },
+                                    { id: 'minimax-paid', title: 'MiniMax 付费', sub: 'Token · 完整长歌', available: hasMiniMaxKey, needs: 'MiniMax Key' },
+                                    { id: 'ace-step',     title: 'ACE-Step',     sub: '~$0.015 · 长歌', available: hasReplicateKey, needs: 'Replicate Token' },
                                 ];
                                 return (
-                                    <div className="grid grid-cols-3 gap-1.5">
+                                    <div className="grid grid-cols-3 gap-2">
                                         {opts.map(opt => {
                                             const isActive = opt.id === provider;
                                             const Ico = PROVIDER_ICONS[opt.id] || Heart;
                                             return (
-                                                <button
-                                                    key={opt.id}
-                                                    onClick={() => setProvider(opt.id)}
-                                                    disabled={!opt.available}
-                                                    className="relative text-left p-2 rounded-xl border transition-all active:scale-95 disabled:cursor-not-allowed"
-                                                    style={isActive ? {
-                                                        background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                                        color: 'white',
-                                                        borderColor: 'transparent',
-                                                        boxShadow: `0 3px 14px ${MusicC.glow}50`,
-                                                    } : opt.available ? {
-                                                        background: 'rgba(255,255,255,0.7)',
-                                                        color: MusicC.text,
-                                                        borderColor: `${MusicC.faint}50`,
-                                                    } : {
-                                                        background: 'rgba(0,0,0,0.03)',
-                                                        color: MusicC.faint,
-                                                        borderColor: `${MusicC.faint}30`,
-                                                        opacity: 0.55,
-                                                    }}
-                                                >
-                                                    <div className="flex items-center gap-1.5 mb-0.5">
-                                                        <Ico size={14} weight={isActive ? 'fill' : 'duotone'} />
-                                                        <span className="text-[10.5px] font-bold leading-none">{opt.title}</span>
-                                                    </div>
-                                                    <div className="text-[9px] opacity-80 leading-tight">{opt.sub}</div>
-                                                    {!opt.available && (
-                                                        <div className="text-[8.5px] mt-0.5 leading-tight" style={{ color: MusicC.danger }}>需填 {opt.needs}</div>
-                                                    )}
+                                                <button key={opt.id} onClick={() => setProvider(opt.id)} disabled={!opt.available} className={`relative text-left p-2 border-2 border-[#1c1b1a] transition-all disabled:opacity-40 disabled:cursor-not-allowed ${isActive ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
+                                                    <div className="flex items-center gap-1 mb-0.5"><Ico size={13} weight={isActive ? 'fill' : 'bold'} /><span className="text-[10px] font-black leading-none">{opt.title}</span></div>
+                                                    <div className={`text-[8px] leading-tight ${isActive ? 'text-[#f2f0e9]/75' : 'text-[#1c1b1a]/55'}`}>{opt.sub}</div>
+                                                    {!opt.available && <div className="label-mono text-[7px] mt-0.5 leading-tight">缺 {opt.needs}</div>}
                                                 </button>
                                             );
                                         })}
                                     </div>
                                 );
                             })()}
-                            <p className="text-[10px] leading-relaxed pl-1" style={{ color: MusicC.muted }}>
+                            <p className="text-[11px] leading-relaxed mt-2 text-[#1c1b1a]/55" style={HAND}>
                                 {provider === 'ace-step'
                                     ? '完整长歌（最长 4 分钟）— 自费走 Replicate，约 ¥0.1-0.3/首'
                                     : provider === 'minimax-paid'
                                         ? '完整长歌（最长 4-6 分钟）— Token Plan，RPM 高'
-                                        : '完整长歌（最长 4-6 分钟）— 完全免费 · 用你已填的 MiniMax Key'}
+                                        : '完整长歌（最长 4-6 分钟）— 完全免费，用你已填的 MiniMax Key'}
                             </p>
                         </div>
 
-                        {/* Section I — Quick voice preset chips */}
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2 pl-1">
-                                <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 15, letterSpacing: '0.05em' }}>I</span>
-                                <CrossStar size={7} color={MusicC.glow} delay={0} />
-                                <label className="text-[10px] font-bold uppercase tracking-[0.25em]" style={{ color: MusicC.primary }}>快速选声线</label>
-                                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${MusicC.glow}55, transparent)` }} />
-                            </div>
-                            <div className="grid grid-cols-3 gap-1.5">
+                        {/* I 快速选声线 */}
+                        <div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="font-display-italic text-xl text-[#1c1b1a]">I</span><span className="text-sm font-black text-[#1c1b1a]" style={BRUSH}>挑个声线</span><div className="flex-1 border-t-2 border-dashed border-[#1c1b1a]/25" /></div>
+                            <div className="grid grid-cols-3 gap-2">
                                 {VOICE_PRESETS.map(preset => {
                                     const isActive = preset.id === voicePresetId;
                                     const Ico = VOICE_ICONS[preset.id] || SparkleP;
                                     return (
-                                        <button
-                                            key={preset.id}
-                                            onClick={() => applyVoicePreset(preset.id)}
-                                            className="text-[11px] py-2.5 rounded-xl border transition-all active:scale-95 flex flex-col items-center justify-center gap-1 relative overflow-hidden"
-                                            style={isActive ? {
-                                                background: `linear-gradient(135deg, ${MusicC.primary}, ${MusicC.accent})`,
-                                                color: 'white',
-                                                borderColor: 'transparent',
-                                                boxShadow: `0 3px 14px ${MusicC.glow}50`,
-                                            } : {
-                                                background: 'rgba(255,255,255,0.7)',
-                                                color: MusicC.primary,
-                                                borderColor: `${MusicC.faint}50`,
-                                            }}
-                                        >
-                                            <Ico size={18} weight={isActive ? 'fill' : 'duotone'} />
-                                            <span className="font-medium leading-tight">{preset.label}</span>
+                                        <button key={preset.id} onClick={() => applyVoicePreset(preset.id)} className={`py-2.5 border-2 border-[#1c1b1a] flex flex-col items-center justify-center gap-1 transition-all ${isActive ? 'bg-[#1c1b1a] text-[#f2f0e9] translate-x-[1px] translate-y-[1px] shadow-none' : 'bg-white text-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none'}`}>
+                                            <Ico size={18} weight={isActive ? 'fill' : 'bold'} />
+                                            <span className="text-[11px] font-bold leading-tight">{preset.label}</span>
                                         </button>
                                     );
                                 })}
                             </div>
                         </div>
 
-                        {/* Section II — Natural language guidance */}
-                        <div className="space-y-2">
-                            <div className="flex items-center gap-2 pl-1">
-                                <span className="font-bold italic" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 15, letterSpacing: '0.05em' }}>II</span>
-                                <CrossStar size={7} color={MusicC.sakura} delay={0.4} />
-                                <label className="text-[10px] font-bold uppercase tracking-[0.25em]" style={{ color: MusicC.primary }}>或描述更细的风格</label>
-                                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${MusicC.sakura}55, transparent)` }} />
-                            </div>
-                            <textarea
-                                value={promptGuidance}
-                                onChange={(e) => setPromptGuidance(e.target.value)}
-                                placeholder="慵懒的爵士女声，钢琴和萨克斯为主，60bpm，雨夜的感觉…"
-                                rows={3}
-                                className="w-full rounded-xl px-3 py-2 text-[13px] focus:outline-none transition-colors resize-none shizuku-glass"
-                                style={{
-                                    color: MusicC.text,
-                                    border: `1px solid ${MusicC.faint}50`,
-                                    fontFamily: `'Noto Serif SC', Georgia, serif`,
-                                }}
-                            />
-                            <button
-                                onClick={handleAiWritePrompt}
-                                disabled={isAiWritingPrompt}
-                                className="w-full py-2.5 rounded-xl text-[12px] font-medium tracking-[0.15em] transition-all active:scale-[0.98] disabled:opacity-40 flex items-center justify-center gap-2 relative overflow-hidden"
-                                style={{
-                                    background: `linear-gradient(135deg, ${MusicC.lavender}, ${MusicC.sakura})`,
-                                    color: 'white',
-                                    boxShadow: `0 3px 14px ${MusicC.sakura}40`,
-                                    fontFamily: 'Georgia, serif',
-                                }}
-                            >
-                                {isAiWritingPrompt ? (
-                                    <>
-                                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        AI 思考中…
-                                    </>
-                                ) : (
-                                    <>
-                                        <SparkleP size={14} weight="fill" />
-                                        {promptGuidance.trim()
-                                            ? `让 AI 结合${collaborator?.name || '角色'}的气质改`
-                                            : `让 AI 凭${collaborator?.name || '角色'}的气质写一段`}
-                                    </>
-                                )}
+                        {/* II 描述风格 */}
+                        <div>
+                            <div className="flex items-baseline gap-2 mb-2"><span className="font-display-italic text-xl text-[#1c1b1a]">II</span><span className="text-sm font-black text-[#1c1b1a]" style={BRUSH}>说说想要的味道</span><div className="flex-1 border-t-2 border-dashed border-[#1c1b1a]/25" /></div>
+                            <textarea value={promptGuidance} onChange={(e) => setPromptGuidance(e.target.value)} placeholder="慵懒的爵士女声，钢琴和萨克斯为主，60bpm，雨夜的感觉…" rows={3} className="w-full bg-white border-2 border-[#1c1b1a] px-3 py-2 text-sm resize-none outline-none focus:shadow-[2px_2px_0_#1c1b1a] transition-shadow" style={HAND} />
+                            <button onClick={handleAiWritePrompt} disabled={isAiWritingPrompt} className="w-full mt-2 py-2.5 border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9] text-xs font-black flex items-center justify-center gap-2 active:translate-y-[2px] transition-all disabled:opacity-40">
+                                {isAiWritingPrompt ? <><span className="w-3 h-3 border-2 border-[#f2f0e9] border-t-transparent rounded-full animate-spin" /> AI 琢磨中…</> : <><MagicWand size={14} weight="bold" />{promptGuidance.trim() ? `让 AI 照${collaborator?.name || '角色'}的脾性改` : `让 AI 凭${collaborator?.name || '角色'}的脾性写`}</>}
                             </button>
-                            <p className="text-[10px] leading-relaxed pl-1" style={{ color: MusicC.muted }}>
-                                AI 会读{collaborator ? `「${collaborator.name}」` : '这首歌'}的人设，**自己拿主意**——你不用懂音乐。
-                            </p>
+                            <p className="text-[11px] leading-relaxed mt-2 text-[#1c1b1a]/55" style={HAND}>AI 会读{collaborator ? `「${collaborator.name}」` : '这首歌'}的人设，自己拿主意——你不用懂音乐。</p>
                         </div>
 
-                        {/* Section III — Final editable tag string */}
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between pl-1 gap-2">
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <span className="font-bold italic shrink-0" style={{ fontFamily: 'Georgia, serif', color: MusicC.accent, fontSize: 15, letterSpacing: '0.05em' }}>III</span>
-                                    <CrossStar size={7} color={MusicC.lavender} delay={0.8} />
-                                    <label className="text-[10px] font-bold uppercase tracking-[0.25em] truncate" style={{ color: MusicC.primary }}>最终 prompt（喂给{provider === 'ace-step' ? ' ACE-Step' : ' MiniMax'}）</label>
-                                </div>
-                                <button
-                                    onClick={handleResetCustomPrompt}
-                                    className="text-[10px] underline transition-colors"
-                                    style={{ color: MusicC.muted }}
-                                >
-                                    重置默认
-                                </button>
+                        {/* III 最终 prompt */}
+                        <div>
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                                <div className="flex items-baseline gap-2 min-w-0 flex-1"><span className="font-display-italic text-xl text-[#1c1b1a] shrink-0">III</span><span className="text-sm font-black text-[#1c1b1a] truncate" style={BRUSH}>最终配方 · 喂给{provider === 'ace-step' ? ' ACE-Step' : ' MiniMax'}</span></div>
+                                <button onClick={handleResetCustomPrompt} className="label-mono text-[8px] text-[#1c1b1a]/55 underline decoration-dashed shrink-0">复位</button>
                             </div>
-                            <textarea
-                                value={promptDraft}
-                                onChange={(e) => setPromptDraft(e.target.value)}
-                                placeholder={provider === 'ace-step'
-                                    ? 'female vocal, breathy, dreamy pop, soft piano, 75 bpm, c minor'
-                                    : '女声, 气声, 梦幻流行, 钢琴轻柔, 黑胶噪点, 75bpm, c 小调'}
-                                rows={3}
-                                className="w-full rounded-xl px-3 py-2 text-[12px] font-mono focus:outline-none transition-colors resize-none"
-                                style={{
-                                    background: '#0d1418',
-                                    color: '#9bcbf8',
-                                    border: `1px solid ${MusicC.primary}40`,
-                                }}
-                            />
-                            <p className="text-[10px] leading-relaxed pl-1" style={{ color: MusicC.muted }}>
+                            <textarea value={promptDraft} onChange={(e) => setPromptDraft(e.target.value)} placeholder={provider === 'ace-step' ? 'female vocal, breathy, dreamy pop, soft piano, 75 bpm, c minor' : '女声, 气声, 梦幻流行, 钢琴轻柔, 黑胶噪点, 75bpm, c 小调'} rows={3} className="w-full px-3 py-2 text-[12px] font-mono resize-none outline-none border-2 border-[#1c1b1a]" style={{ background: '#1c1b1a', color: '#f2f0e9' }} />
+                            <p className="text-[11px] leading-relaxed mt-2 text-[#1c1b1a]/55" style={HAND}>
                                 {provider === 'ace-step'
-                                    ? '逗号分隔的英文 tag。常用 vocal 类：female/male vocal、breathy/husky/sweet；风格：pop/rock/jazz/lo-fi；情绪：dreamy/upbeat/melancholy。'
-                                    : '逗号分隔的中文描述（MiniMax 中文模型，自然中文最好用）。例：女声 / 气声 / 慵懒哼唱 / 爵士 / 钢琴 / 黑胶噪点 / 60bpm / e 小调。'}
+                                    ? '逗号分隔的英文 tag。vocal：female/male vocal、breathy/husky/sweet；风格：pop/rock/jazz/lo-fi；情绪：dreamy/upbeat/melancholy。'
+                                    : '逗号分隔的中文描述（MiniMax 中文模型最好用）。例：女声 / 气声 / 慵懒哼唱 / 爵士 / 钢琴 / 黑胶噪点 / 60bpm / e 小调。'}
                             </p>
                         </div>
 
-                        {/* Hint strip — content depends on provider */}
-                        <div
-                            className="rounded-xl px-3 py-2 flex items-center gap-2 text-[10.5px] leading-relaxed"
-                            style={{
-                                background: `linear-gradient(135deg, ${MusicC.glow}15, ${MusicC.sakura}10)`,
-                                border: `1px solid ${MusicC.glow}25`,
-                                color: MusicC.muted,
-                            }}
-                        >
-                            <Sparkle size={9} color={MusicC.accent} delay={0} />
-                            <span>
-                                {provider === 'ace-step'
-                                    ? '约 30-60s 出歌 · ~¥0.1-0.3/首'
-                                    : '约 30-60s 出歌 · 免费完整长歌'}
-                            </span>
+                        {/* 提示条 */}
+                        <div className="border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2 flex items-center gap-2 text-[12px] text-[#1c1b1a]/65" style={HAND}>
+                            <span className="text-base">✦</span>
+                            <span>{provider === 'ace-step' ? '约 30-60s 出歌 · ~¥0.1-0.3/首' : '约 30-60s 出歌 · 免费完整长歌'}</span>
                         </div>
-
                     </div>
-                </Modal>
+                </CollageModal>
             </div>
         );
     }
@@ -2595,42 +1857,31 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const timeline = [...lineItems, ...fbItems, ...pendingItems].sort((a, b) => a.data.timestamp - b.data.timestamp);
 
         return (
-            <div className="h-full w-full bg-[#F5F0E8] flex flex-col font-sans relative overflow-hidden">
-                <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText} onConfirm={confirmDialog?.onConfirm || (() => {})} onCancel={() => setConfirmDialog(null)} />
+            <div className="absolute inset-0 flex flex-col text-[#1c1b1a] overflow-hidden" style={{ background: PAPER, ...DOT_BG }}>
+                <CollageConfirm isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText={confirmDialog?.confirmText} cancelText="算了" onConfirm={confirmDialog?.onConfirm || (() => {})} onCancel={() => setConfirmDialog(null)} />
 
-                {/* Header */}
-                <div className="border-b border-stone-200/80 shrink-0 z-20 bg-[#F5F0E8]">
-                    <div className="h-12 flex items-center justify-between px-4">
-                        <button onClick={handlePause} className="p-2 -ml-2 rounded-full hover:bg-stone-200/50 text-stone-500 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <div className="text-center">
-                            <div className="font-medium text-sm text-stone-700 truncate max-w-[160px]" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{activeSong.title}</div>
-                            <div className="text-[10px] text-stone-400 flex items-center justify-center gap-1">
-                                {genreInfo?.label}
-                                {lastTokenUsage && <span className="ml-1 opacity-50">· {lastTokenUsage}t</span>}
-                            </div>
+                {/* 顶栏 */}
+                <div className="shrink-0 z-20 border-b-2 border-[#1c1b1a]" style={{ background: PAPER }}>
+                    <div className="relative flex items-center gap-2 px-4 pb-2" style={{ paddingTop: 'calc(var(--safe-top) + 0.6rem)' }}>
+                        <BackSticker onClick={handlePause} label="暂存" />
+                        <div className="flex-1 min-w-0 text-center">
+                            <div className="font-black text-base text-[#1c1b1a] truncate" style={BRUSH}>{activeSong.title}</div>
+                            <div className="label-mono text-[8px] text-[#1c1b1a]/55 mt-0.5">{genreInfo?.label}{lastTokenUsage ? ` · ${lastTokenUsage}t` : ''}</div>
                         </div>
-                        <div className="flex gap-1">
-                            <button onClick={() => setShowStructureGuide(!showStructureGuide)} className={`p-2 rounded-full transition-colors ${showStructureGuide ? 'bg-stone-200 text-stone-600' : 'text-stone-400 hover:bg-stone-200/50'}`} title="结构指南">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>
-                            </button>
-                            <button onClick={handleComplete} className="p-2 rounded-full text-stone-500 hover:bg-stone-200/50 transition-colors" title="完成">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
-                            </button>
+                        <div className="flex items-center gap-1.5">
+                            <IconStamp tone={showStructureGuide ? 'ink' : 'paper'} onClick={() => setShowStructureGuide(!showStructureGuide)} title="骨架表"><ListChecks size={18} weight="bold" /></IconStamp>
+                            <IconStamp tone="ink" onClick={handleComplete} title="收工"><Check size={18} weight="bold" /></IconStamp>
                         </div>
                     </div>
-
-                    {/* Collaborator bar */}
                     {collaborator && (
                         <div className="px-4 pb-2 flex items-center gap-2">
-                            <img src={collaborator.avatar} className="w-6 h-6 rounded-full object-cover" />
-                            <span className="text-[11px] text-stone-400">{collaborator.name} 共写中</span>
+                            <img src={collaborator.avatar} className="w-5 h-5 object-cover border border-[#1c1b1a]" />
+                            <span className="label-mono text-[8px] text-[#1c1b1a]/55">{collaborator.name} · 一起写</span>
                         </div>
                     )}
                 </div>
 
-                {/* Structure Guide (collapsible) — 先优先显示当前 song 的歌词模板 */}
+                {/* 骨架表（可折叠）—— 优先显示当前 song 的歌词模板 */}
                 {showStructureGuide && (() => {
                     const tpl = getLyricTemplate(activeSong.lyricTemplate);
                     const writtenBySection = activeSong.lines.filter(l => !l.isDraft).reduce<Record<string, number>>((acc, l) => {
@@ -2638,17 +1889,17 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         return acc;
                     }, {});
                     return (
-                        <div className="bg-white border-b border-stone-200/80 p-4 z-10">
+                        <div className="shrink-0 z-10 border-b-2 border-[#1c1b1a] p-4" style={{ background: PAPER_CARD, ...GRID_BG }}>
                             {tpl.id !== 'free' && tpl.structure.length > 0 ? (
                                 <>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="text-[14px] leading-none" style={{ fontFamily: 'Georgia, serif' }}>{tpl.icon}</span>
-                                            <h3 className="text-[10px] font-medium text-stone-500 uppercase tracking-[0.2em]">{tpl.label} · 推荐结构</h3>
+                                            <span className="text-base leading-none">{tpl.icon}</span>
+                                            <h3 className="text-sm font-black text-[#1c1b1a]" style={BRUSH}>{tpl.label} · 骨架</h3>
                                         </div>
-                                        <span className="text-[9px] text-stone-400">已写 {activeSong.lines.filter(l => !l.isDraft).length} 句</span>
+                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a]/65">已写 {activeSong.lines.filter(l => !l.isDraft).length} 句</span>
                                     </div>
-                                    <p className="text-[10px] text-stone-400 mb-3 italic">{tpl.desc}</p>
+                                    <p className="text-[11px] text-[#1c1b1a]/50 mb-3" style={HAND}>{tpl.desc}</p>
                                     <div className="space-y-1.5">
                                         {tpl.structure.map((sec, i) => {
                                             const written = writtenBySection[sec.section] || 0;
@@ -2659,34 +1910,34 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                             const fullyWritten = writtenForSlot >= sec.lines;
                                             return (
                                                 <div key={i} className="flex items-center gap-2 py-0.5">
-                                                    <span className="text-[9px] tabular-nums w-4 text-stone-300">{i + 1}.</span>
+                                                    <span className="label-mono text-[8px] tabular-nums w-4 text-[#1c1b1a]/35">{i + 1}</span>
                                                     <SectionBadge section={sec.section} small />
-                                                    <span className="text-[10px] text-stone-500">{sec.lines} 句 · {sec.chars} 字</span>
-                                                    <div className="flex-1" />
-                                                    <span className={`text-[9px] tabular-nums ${fullyWritten ? 'text-emerald-500 font-semibold' : 'text-stone-400'}`}>
+                                                    <span className="text-[10px] text-[#1c1b1a]/55" style={HAND}>{sec.lines} 句 · {sec.chars} 字</span>
+                                                    <div className="flex-1 border-t border-dashed border-[#1c1b1a]/20" />
+                                                    <span className={`label-mono text-[8px] tabular-nums ${fullyWritten ? 'text-[#1c1b1a] font-black' : 'text-[#1c1b1a]/40'}`}>
                                                         {writtenForSlot}/{sec.lines}{fullyWritten && ' ✓'}
                                                     </span>
                                                 </div>
                                             );
                                         })}
                                     </div>
-                                    <p className="text-[10px] text-stone-400 mt-3 border-t border-stone-100 pt-2">
-                                        提示：点底部「段落」按钮切换章节，跟着模板填就行。AI 也会按这个结构提建议。
+                                    <p className="text-[11px] text-[#1c1b1a]/50 mt-3 border-t-2 border-dashed border-[#1c1b1a]/20 pt-2" style={HAND}>
+                                        底部「段落」切章节，照着填就行——AI 也会按这骨架给建议。
                                     </p>
                                 </>
                             ) : (
                                 <>
-                                    <h3 className="text-[10px] font-medium text-stone-400 uppercase tracking-[0.15em] mb-2">歌曲结构</h3>
+                                    <h3 className="label-mono text-[9px] text-[#1c1b1a]/55 mb-2">SONG STRUCTURE · 歌曲结构</h3>
                                     <div className="space-y-1.5">
                                         {Object.entries(SECTION_LABELS).map(([key, info]) => (
                                             <div key={key} className="flex items-center gap-2">
                                                 <SectionBadge section={key} small />
-                                                <span className="text-[10px] text-stone-400">{info.desc}</span>
+                                                <span className="text-[10px] text-[#1c1b1a]/55" style={HAND}>{info.desc}</span>
                                             </div>
                                         ))}
                                     </div>
-                                    <p className="text-[10px] text-stone-400 mt-2 border-t border-stone-100 pt-2">
-                                        常见结构：主歌 → 导歌 → 副歌 → 主歌 → 导歌 → 副歌 → 桥段 → 副歌
+                                    <p className="text-[11px] text-[#1c1b1a]/50 mt-2 border-t-2 border-dashed border-[#1c1b1a]/20 pt-2" style={HAND}>
+                                        常见走向：主歌 → 导歌 → 副歌 → 主歌 → 导歌 → 副歌 → 桥段 → 副歌
                                     </p>
                                 </>
                             )}
@@ -2694,14 +1945,16 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     );
                 })()}
 
-                {/* Timeline Content */}
-                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 no-scrollbar pb-48 relative z-10" ref={scrollRef} onClick={() => longPressLineId && setLongPressLineId(null)}>
+                {/* 时间线 */}
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 no-scrollbar pb-48 relative z-10" ref={scrollRef} onClick={() => longPressLineId && setLongPressLineId(null)}>
                     {timeline.length === 0 && (
-                        <div className="text-center py-20">
-                            <div className="w-12 h-[1px] bg-stone-300 mx-auto mb-6" />
-                            <p className="text-sm text-stone-500" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>写下第一句</p>
-                            <p className="text-xs text-stone-400 mt-2">像在纸上慢慢落笔</p>
-                            <div className="w-12 h-[1px] bg-stone-300 mx-auto mt-6" />
+                        <div className="flex flex-col items-center justify-center py-20 text-center text-[#1c1b1a]/45">
+                            <div className="relative mb-4">
+                                <Tape className="-top-3 left-1/2 -translate-x-1/2 rotate-[-6deg] w-12" />
+                                <div className="w-20 h-24 bg-white border-2 border-dashed border-[#1c1b1a]/40 flex items-center justify-center rotate-[-2deg]"><MusicNotes size={32} weight="light" /></div>
+                            </div>
+                            <p className="text-lg text-[#1c1b1a]/70" style={HAND}>写下第一句</p>
+                            <p className="text-sm mt-1" style={HAND}>像在纸上慢慢落笔</p>
                         </div>
                     )}
 
@@ -2711,35 +1964,21 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             const isUser = line.authorId === 'user';
                             const author = isUser ? null : characters.find(c => c.id === line.authorId);
 
-                            // --- Draft line rendering ---
+                            // --- 草稿行 ---
                             if (line.isDraft) {
                                 return (
-                                    <div key={line.id} className="group relative opacity-60 hover:opacity-80 transition-opacity">
-                                        <div className="p-3 rounded-lg bg-stone-100/60 border border-stone-200 border-dashed">
+                                    <div key={line.id} className="group relative">
+                                        <div className="p-3 border-2 border-dashed border-[#1c1b1a]/40 bg-white/60">
                                             <div className="flex items-center gap-2 mb-1.5">
                                                 <SectionBadge section={line.section} small />
-                                                <span className="text-[9px] text-stone-400 tracking-wider">
-                                                    {isUser ? '我' : author?.name}
-                                                </span>
-                                                <span className="text-[9px] bg-stone-200 text-stone-500 px-1.5 rounded">草稿</span>
-                                                {line.annotation && (
-                                                    <span className="text-[9px] bg-stone-100 text-stone-400 px-1.5 rounded">{line.annotation}</span>
-                                                )}
+                                                <span className="label-mono text-[7px] text-[#1c1b1a]/55">{isUser ? '我' : author?.name}</span>
+                                                <span className="label-mono text-[7px] px-1 border border-[#1c1b1a]/50 text-[#1c1b1a]/55">草稿</span>
+                                                {line.annotation && <span className="label-mono text-[7px] px-1 border border-[#1c1b1a]/40 text-[#1c1b1a]/45">{line.annotation}</span>}
                                             </div>
-                                            <p className="text-sm text-stone-400 leading-relaxed" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{line.content}</p>
-                                            <div className="flex gap-2 mt-2 pt-1.5 border-t border-stone-200/60">
-                                                <button
-                                                    onClick={() => handleRestoreDraft(line.id)}
-                                                    className="flex-1 py-1 text-[10px] text-stone-600 bg-white border border-stone-200 rounded hover:bg-stone-50 active:scale-[0.98] transition-all"
-                                                >
-                                                    恢复为歌词
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteLine(line.id)}
-                                                    className="px-3 py-1 text-[10px] text-stone-400 hover:text-red-400 transition-colors"
-                                                >
-                                                    删除
-                                                </button>
+                                            <p className="text-sm text-[#1c1b1a]/45 leading-relaxed" style={{ fontFamily: "'Shippori Mincho','Noto Serif SC',serif" }}>{line.content}</p>
+                                            <div className="flex gap-2 mt-2 pt-1.5 border-t-2 border-dashed border-[#1c1b1a]/20">
+                                                <button onClick={() => handleRestoreDraft(line.id)} className="flex-1 py-1 text-[10px] font-bold text-[#1c1b1a] bg-white border-2 border-[#1c1b1a] active:translate-y-[1px] transition-all">捡回来</button>
+                                                <button onClick={() => handleDeleteLine(line.id)} className="px-3 py-1 text-[10px] text-[#1c1b1a]/50 hover:text-[#1c1b1a] transition-colors">扔掉</button>
                                             </div>
                                         </div>
                                     </div>
@@ -2748,15 +1987,15 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                             if (editingLineId === line.id) {
                                 return (
-                                    <div key={line.id} className="bg-white p-3 rounded-lg border border-stone-300">
+                                    <div key={line.id} className="bg-white p-3 border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a]">
                                         <div className="flex items-center gap-2 mb-2">
                                             <SectionBadge section={line.section} small />
-                                            <span className="text-[10px] text-stone-400">编辑中</span>
+                                            <span className="label-mono text-[7px] text-[#1c1b1a]/55">改写中</span>
                                         </div>
-                                        <textarea value={editLineContent} onChange={e => setEditLineContent(e.target.value)} className="w-full bg-stone-50 rounded p-2 text-sm resize-none focus:outline-none text-stone-700 border border-stone-200" rows={2} style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }} />
+                                        <textarea value={editLineContent} onChange={e => setEditLineContent(e.target.value)} className="w-full bg-white border-2 border-[#1c1b1a] p-2 text-sm resize-none focus:outline-none text-[#1c1b1a]" rows={2} style={{ fontFamily: "'Shippori Mincho','Noto Serif SC',serif" }} />
                                         <div className="flex gap-2 mt-2">
-                                            <button onClick={saveEditLine} className="px-3 py-1 bg-stone-700 text-stone-50 text-xs rounded font-medium">保存</button>
-                                            <button onClick={() => setEditingLineId(null)} className="px-3 py-1 bg-stone-100 text-stone-500 text-xs rounded">取消</button>
+                                            <button onClick={saveEditLine} className="px-3 py-1 bg-[#1c1b1a] text-[#f2f0e9] text-xs font-black border-2 border-[#1c1b1a] active:translate-y-[1px]">改好</button>
+                                            <button onClick={() => setEditingLineId(null)} className="px-3 py-1 bg-white text-[#1c1b1a] text-xs font-bold border-2 border-[#1c1b1a] active:translate-y-[1px]">不改了</button>
                                         </div>
                                     </div>
                                 );
@@ -2769,35 +2008,31 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     onTouchEnd={handleLineTouchEnd}
                                     onContextMenu={(e) => { e.preventDefault(); setLongPressLineId(line.id); }}
                                 >
-                                    <div className={`p-3 rounded-lg ${isUser ? 'bg-white border border-stone-200' : 'bg-amber-50/50 border border-amber-100/80'}`}>
+                                    <div className={`p-3 border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] ${isUser ? 'bg-white' : 'bg-[#fdf6b2]/55'}`}>
                                         <div className="flex items-center gap-2 mb-1.5">
                                             <SectionBadge section={line.section} small />
-                                            <span className="text-[9px] text-stone-400 tracking-wider">
-                                                {isUser ? '我' : author?.name}
-                                            </span>
-                                            {line.annotation && (
-                                                <span className="text-[9px] bg-stone-100 text-stone-500 px-1.5 rounded">{line.annotation}</span>
-                                            )}
+                                            <span className="label-mono text-[7px] text-[#1c1b1a]/55">{isUser ? '我' : author?.name}</span>
+                                            {line.annotation && <span className="label-mono text-[7px] px-1 border border-[#1c1b1a]/40 text-[#1c1b1a]/55">{line.annotation}</span>}
                                         </div>
-                                        <p className="text-sm text-stone-600 leading-relaxed" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{line.content}</p>
+                                        <p className="text-[15px] text-[#1c1b1a]/85 leading-relaxed" style={{ fontFamily: "'Shippori Mincho','Noto Serif SC',serif" }}>{line.content}</p>
                                     </div>
-                                    {/* Hover actions (desktop) */}
-                                    <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
-                                        <button onClick={() => startEditLine(line)} className="p-1 bg-white rounded text-stone-400 hover:text-stone-600 border border-stone-200"><PencilSimple size={12} /></button>
-                                        <button onClick={() => handleDeleteLine(line.id)} className="p-1 bg-white rounded text-stone-400 hover:text-red-400 text-[10px] border border-stone-200">×</button>
+                                    {/* 悬浮操作（桌面） */}
+                                    <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                        <button onClick={() => startEditLine(line)} className="w-6 h-6 bg-white border-2 border-[#1c1b1a] flex items-center justify-center text-[#1c1b1a] active:translate-y-[1px]"><PencilSimple size={11} weight="bold" /></button>
+                                        <button onClick={() => handleDeleteLine(line.id)} className="w-6 h-6 bg-white border-2 border-[#1c1b1a] flex items-center justify-center text-[#1c1b1a] active:translate-y-[1px]"><Trash size={11} weight="bold" /></button>
                                     </div>
-                                    {/* Long press context menu (mobile) */}
+                                    {/* 长按菜单（移动端） */}
                                     {longPressLineId === line.id && (
-                                        <div className="absolute top-0 right-0 z-20 bg-white rounded-lg shadow-lg border border-stone-200 py-1 min-w-[100px]">
-                                            <button onClick={() => { startEditLine(line); setLongPressLineId(null); }} className="w-full text-left px-3 py-2 text-xs text-stone-600 hover:bg-stone-50 active:bg-stone-100">编辑</button>
-                                            <button onClick={() => { handleDeleteLine(line.id); setLongPressLineId(null); }} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 active:bg-red-100">删除</button>
+                                        <div className="absolute top-0 right-0 z-20 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] py-1 min-w-[96px]">
+                                            <button onClick={() => { startEditLine(line); setLongPressLineId(null); }} className="w-full text-left px-3 py-2 text-xs font-bold text-[#1c1b1a] hover:bg-[#f2f0e9]">改写</button>
+                                            <button onClick={() => { handleDeleteLine(line.id); setLongPressLineId(null); }} className="w-full text-left px-3 py-2 text-xs font-bold text-[#1c1b1a] hover:bg-[#f2f0e9] border-t-2 border-dashed border-[#1c1b1a]/25">删掉</button>
                                         </div>
                                     )}
                                 </div>
                             );
                         }
 
-                        // Pending candidate line
+                        // 候选行
                         if (item.kind === 'pending') {
                             const line = item.data;
                             const isUser = line.authorId === 'user';
@@ -2805,37 +2040,23 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                             return (
                                 <div key={line.id} className="relative">
-                                    <div className={`p-3 rounded-lg border-2 border-dashed ${isUser ? 'border-amber-300 bg-amber-50/30' : 'border-violet-300 bg-violet-50/30'}`}>
+                                    <div className="p-3 border-2 border-dashed border-[#1c1b1a] bg-white/70">
                                         <div className="flex items-center gap-2 mb-1.5">
                                             <SectionBadge section={line.section} small />
-                                            <span className="text-[9px] text-stone-400 tracking-wider">
-                                                {isUser ? '我' : author?.name}
-                                            </span>
-                                            <span className={`text-[9px] px-1.5 rounded ${isUser ? 'bg-amber-100 text-amber-600' : 'bg-violet-100 text-violet-600'}`}>
-                                                {isUser ? '待确认' : '示范参考'}
-                                            </span>
+                                            <span className="label-mono text-[7px] text-[#1c1b1a]/55">{isUser ? '我' : author?.name}</span>
+                                            <span className="label-mono text-[7px] px-1 border-2 border-[#1c1b1a] bg-[#1c1b1a] text-[#f2f0e9]">{isUser ? '待点头' : '示范参考'}</span>
                                         </div>
-                                        <p className="text-sm text-stone-600 leading-relaxed" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>{line.content}</p>
-                                        <div className="flex gap-2 mt-2.5 pt-2 border-t border-stone-200/60">
-                                            <button
-                                                onClick={() => handleAcceptPending(line.id)}
-                                                className="flex-1 py-1.5 bg-stone-700 text-stone-50 text-xs rounded font-medium active:scale-[0.98] transition-transform"
-                                            >
-                                                收录
-                                            </button>
-                                            <button
-                                                onClick={() => handleDismissPending(line.id)}
-                                                className="flex-1 py-1.5 bg-stone-100 text-stone-500 text-xs rounded active:scale-[0.98] transition-transform"
-                                            >
-                                                不要
-                                            </button>
+                                        <p className="text-[15px] text-[#1c1b1a]/85 leading-relaxed" style={{ fontFamily: "'Shippori Mincho','Noto Serif SC',serif" }}>{line.content}</p>
+                                        <div className="flex gap-2 mt-2.5 pt-2 border-t-2 border-dashed border-[#1c1b1a]/25">
+                                            <button onClick={() => handleAcceptPending(line.id)} className="flex-1 py-1.5 bg-[#1c1b1a] text-[#f2f0e9] text-xs font-black border-2 border-[#1c1b1a] active:translate-y-[1px] transition-all">收下</button>
+                                            <button onClick={() => handleDismissPending(line.id)} className="flex-1 py-1.5 bg-white text-[#1c1b1a] text-xs font-bold border-2 border-[#1c1b1a] active:translate-y-[1px] transition-all">不要</button>
                                         </div>
                                     </div>
                                 </div>
                             );
                         }
 
-                        // Feedback Card
+                        // 反馈卡
                         const feedback = item.data as { id: string; timestamp: number; reaction?: SongComment; details: SongComment[] };
                         const lead = feedback.reaction || feedback.details[0];
                         const commentAuthor = characters.find(c => c.id === lead?.authorId);
@@ -2848,34 +2069,29 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         };
 
                         return (
-                            <div key={feedback.id} className="mx-2 group/fb relative">
-                                <div className="rounded-lg bg-white border border-stone-200 p-3.5">
+                            <div key={feedback.id} className="group/fb relative">
+                                <div className="bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] p-3.5">
                                     <div className="flex items-start gap-2.5">
-                                        {commentAuthor && <img src={commentAuthor.avatar} className="w-7 h-7 rounded-full object-cover shrink-0" />}
+                                        {commentAuthor && <img src={commentAuthor.avatar} className="w-7 h-7 object-cover border-2 border-[#1c1b1a] shrink-0" />}
                                         <div className="flex-1">
-                                            <p className="text-[10px] text-stone-400 mb-1">{commentAuthor?.name || '搭档'} 说</p>
-                                            <p className="text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">{lead?.content || '我在这里，陪你一起把下一句写出来。'}</p>
+                                            <p className="label-mono text-[7px] text-[#1c1b1a]/50 mb-1">{commentAuthor?.name || '搭档'} 说</p>
+                                            <p className="text-sm text-[#1c1b1a]/75 leading-relaxed whitespace-pre-wrap" style={HAND}>{lead?.content || '我在这儿，陪你把下一句写出来。'}</p>
                                         </div>
                                     </div>
-                                    {/* Delete feedback button */}
-                                    <button
-                                        onClick={() => handleDeleteFeedback(feedback.id)}
-                                        className="absolute top-2 right-2 opacity-0 group-hover/fb:opacity-100 p-1 bg-white rounded text-stone-400 hover:text-red-400 text-[10px] border border-stone-200 transition-opacity"
-                                        title="删除这条反馈"
-                                    >×</button>
+                                    <button onClick={() => handleDeleteFeedback(feedback.id)} className="absolute -top-2 -right-2 w-5 h-5 bg-white border-2 border-[#1c1b1a] text-[#1c1b1a] text-xs leading-none flex items-center justify-center opacity-0 group-hover/fb:opacity-100 transition-opacity" title="撕掉这条">✕</button>
                                     {feedback.details.length > 0 && (
                                         <div className="mt-3">
-                                            <button onClick={() => toggleFeedback(feedback.id)} className="text-[10px] text-stone-400 border border-stone-200 px-2.5 py-0.5 rounded hover:bg-stone-50 transition-colors">
-                                                {isExpanded ? '收起' : '展开细节'}
+                                            <button onClick={() => toggleFeedback(feedback.id)} className="label-mono text-[8px] px-2 py-1 border-2 border-[#1c1b1a] bg-white text-[#1c1b1a] active:translate-y-[1px] transition-all">
+                                                {isExpanded ? '收起' : '看细节'}
                                             </button>
                                             {isExpanded && (
-                                                <div className="mt-3 space-y-2 border-t border-stone-100 pt-3">
+                                                <div className="mt-3 space-y-2 border-t-2 border-dashed border-[#1c1b1a]/25 pt-3">
                                                     {feedback.details.map(detail => {
                                                         const meta = detailMeta[detail.type] || { label: '补充' };
                                                         return (
-                                                            <div key={detail.id} className="bg-stone-50 rounded p-2.5">
-                                                                <p className="text-[9px] text-stone-400 mb-1 uppercase tracking-wider">{meta.label}</p>
-                                                                <p className="text-xs text-stone-500 leading-6 whitespace-pre-wrap">{detail.content}</p>
+                                                            <div key={detail.id} className="border-l-4 border-[#1c1b1a] bg-[#f2f0e9] pl-3 py-2 pr-2">
+                                                                <p className="label-mono text-[7px] text-[#1c1b1a]/50 mb-1">{meta.label}</p>
+                                                                <p className="text-xs text-[#1c1b1a]/70 leading-6 whitespace-pre-wrap" style={HAND}>{detail.content}</p>
                                                             </div>
                                                         );
                                                     })}
@@ -2890,54 +2106,46 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                     {isTyping && (
                         <div className="flex gap-2 items-center">
-                            {collaborator && <img src={collaborator.avatar} className="w-6 h-6 rounded-full object-cover" />}
-                            <div className="flex gap-1.5 py-2.5 px-4 bg-white rounded-lg border border-stone-200">
-                                <div className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" />
-                                <div className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '75ms' }} />
-                                <div className="w-1.5 h-1.5 bg-stone-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                            </div>
+                            {collaborator && <img src={collaborator.avatar} className="w-6 h-6 object-cover border-2 border-[#1c1b1a]" />}
+                            <div className="px-3 py-2.5 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a]"><TypingDots /></div>
                         </div>
                     )}
                 </div>
 
-                {/* Input Area */}
-                <div className="absolute bottom-0 w-full bg-[#F5F0E8]/95 backdrop-blur-sm border-t border-stone-200/80 z-30 pb-safe">
-                    {/* Section Selector */}
-                    <div className="flex gap-1.5 px-4 py-2 overflow-x-auto no-scrollbar border-b border-stone-200/60">
+                {/* 输入区 */}
+                <div className="absolute bottom-0 w-full border-t-2 border-[#1c1b1a] z-30 pb-safe" style={{ background: PAPER_CARD }}>
+                    {/* 段落选择 */}
+                    <div className="flex gap-1.5 px-4 py-2 overflow-x-auto no-scrollbar border-b-2 border-dashed border-[#1c1b1a]/25">
                         {Object.entries(SECTION_LABELS).map(([key, info]) => (
-                            <button key={key} onClick={() => setCurrentSection(key)} className={`px-2.5 py-1 rounded text-[10px] whitespace-nowrap transition-all ${currentSection === key ? 'bg-stone-700 text-stone-50 font-medium' : 'text-stone-400 hover:bg-stone-200/50'}`}>
+                            <button key={key} onClick={() => setCurrentSection(key)} className={`px-2.5 py-1 text-[10px] font-bold whitespace-nowrap border-2 border-[#1c1b1a] transition-all ${currentSection === key ? 'bg-[#1c1b1a] text-[#f2f0e9]' : 'bg-white text-[#1c1b1a] active:translate-y-[1px]'}`}>
                                 {info.label}
                             </button>
                         ))}
                     </div>
 
-                    {/* Quick Actions */}
-                    <div className="flex gap-2 px-4 py-1.5 border-b border-stone-200/60 items-center">
-                        <button onClick={handleAskForHelp} disabled={isTyping} className="px-2.5 py-1 rounded text-[10px] text-stone-500 hover:bg-stone-200/50 disabled:opacity-40 transition-colors">
-                            求灵感
-                        </button>
+                    {/* 快捷动作 */}
+                    <div className="flex gap-2 px-4 py-1.5 border-b-2 border-dashed border-[#1c1b1a]/25 items-center">
+                        <button onClick={handleAskForHelp} disabled={isTyping} className="px-2.5 py-1 text-[10px] font-bold text-[#1c1b1a] border-2 border-[#1c1b1a] bg-white active:translate-y-[1px] disabled:opacity-40 transition-all">讨灵感</button>
                         <button
                             onClick={handleDiscuss}
                             disabled={isTyping}
-                            className={`px-2.5 py-1 rounded text-[10px] disabled:opacity-40 transition-all ${inputText.trim() ? 'text-blue-600 bg-blue-50 hover:bg-blue-100 font-medium' : 'text-stone-500 hover:bg-stone-200/50'}`}
-                            title={inputText.trim() ? '把输入框的内容作为讨论发送（不计入歌词）' : '开始讨论创作方向'}
+                            className={`px-2.5 py-1 text-[10px] font-bold border-2 border-[#1c1b1a] disabled:opacity-40 transition-all active:translate-y-[1px] ${inputText.trim() ? 'bg-[#1c1b1a] text-[#f2f0e9]' : 'bg-white text-[#1c1b1a]'}`}
+                            title={inputText.trim() ? '把输入框的内容当作讨论发出（不计入歌词）' : '聊聊创作方向'}
                         >
-                            {inputText.trim() ? '仅聊聊' : '聊聊'}
+                            {inputText.trim() ? '只是聊聊' : '聊两句'}
                         </button>
-                        {inputText.trim() && (
-                            <span className="text-[9px] text-stone-400 ml-auto pr-1">发送→歌词 · 仅聊聊→讨论</span>
-                        )}
+                        {inputText.trim() && <span className="label-mono text-[7px] text-[#1c1b1a]/45 ml-auto pr-1">发送→入词 · 只是聊聊→讨论</span>}
                     </div>
 
-                    {/* Text Input */}
+                    {/* 文本输入 */}
                     <div className="p-3 flex gap-2 items-end">
                         <textarea
                             value={inputText}
                             onChange={e => setInputText(e.target.value)}
-                            placeholder="写下一句词，或直接点「聊聊」聊创作……"
-                            className="flex-1 bg-white border border-stone-200 rounded-lg px-4 py-3 text-sm text-stone-700 outline-none resize-none max-h-32 placeholder:text-stone-300 focus:border-stone-400 transition-colors"
+                            placeholder="写一句词，或点「聊两句」聊聊创作……"
+                            className="flex-1 bg-white border-2 border-[#1c1b1a] px-3 py-2.5 text-sm text-[#1c1b1a] outline-none resize-none max-h-32 placeholder:text-[#1c1b1a]/35 focus:shadow-[2px_2px_0_#1c1b1a] transition-shadow"
                             rows={1}
-                            style={{ minHeight: '44px', fontFamily: 'Georgia, "Noto Serif SC", serif' }}
+                            style={{ minHeight: '46px', fontFamily: "'Shippori Mincho','Noto Serif SC',serif" }}
                             onKeyDown={e => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
@@ -2948,31 +2156,24 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         <button
                             onClick={handleSend}
                             disabled={isTyping || !inputText.trim()}
-                            className={`w-10 h-10 rounded-lg flex items-center justify-center active:scale-95 transition-all shrink-0 ${inputText.trim() ? 'bg-stone-700 text-stone-50' : 'bg-stone-200 text-stone-400'}`}
-                            title="发送为歌词"
+                            className={`w-11 h-11 flex items-center justify-center border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all shrink-0 disabled:opacity-40 ${inputText.trim() ? 'bg-[#1c1b1a] text-[#f2f0e9]' : 'bg-white text-[#1c1b1a]'}`}
+                            title="入词"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" /></svg>
+                            <PaperPlaneRight size={17} weight="bold" />
                         </button>
                     </div>
                 </div>
 
-                {/* Completion Preview Modal */}
-                <Modal isOpen={showPreviewModal} title="完成创作" onClose={() => setShowPreviewModal(false)}>
+                {/* 收工弹窗 */}
+                <CollageModal isOpen={showPreviewModal} title="收工啦" kicker="WRAP IT UP" onClose={() => setShowPreviewModal(false)} footer={isCompleting ? <div className="w-full py-3 border-2 border-dashed border-[#1c1b1a]/40 text-[#1c1b1a]/55 font-black text-center text-sm flex items-center justify-center gap-2"><TypingDots /> 搭档琢磨中</div> : <InkButton tone="ink" onClick={confirmComplete} className="w-full text-sm tracking-[0.2em]">收工 · 存成乐谱</InkButton>}>
                     <div className="space-y-4">
-                        <div className="bg-stone-50 border border-stone-200 p-4 rounded-lg">
-                            <h3 className="text-sm font-medium text-stone-600 mb-2">搭档评语</h3>
-                            <p className="text-sm text-stone-500 leading-relaxed whitespace-pre-wrap" style={{ fontFamily: 'Georgia, "Noto Serif SC", serif' }}>
-                                {isCompleting ? '正在思考……' : completionReview}
-                            </p>
+                        <div className="relative bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] p-4">
+                            <span className="label-mono text-[8px] text-[#1c1b1a]/50">搭档评语</span>
+                            <p className="text-sm text-[#1c1b1a]/75 leading-relaxed whitespace-pre-wrap mt-1.5" style={HAND}>{isCompleting ? '正在琢磨……' : completionReview}</p>
                         </div>
-                        <p className="text-[11px] text-stone-400 leading-5">完成后歌曲将存为乐谱，同时在聊天中发送通知。你也可以随时把乐谱分享给其他角色。</p>
-                        {!isCompleting && (
-                            <button onClick={confirmComplete} className="w-full py-3 bg-stone-700 text-stone-50 font-medium rounded-lg text-sm">
-                                完成并收录
-                            </button>
-                        )}
+                        <p className="text-[12px] text-[#1c1b1a]/55 leading-5" style={HAND}>收工后这首歌会存成乐谱，并在聊天里通知搭档。乐谱随时能寄给别的角色。</p>
                     </div>
-                </Modal>
+                </CollageModal>
             </div>
         );
     }
