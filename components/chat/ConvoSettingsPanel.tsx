@@ -685,7 +685,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         side={<CandyToggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
                     />
 
-                    <Entry mark="☘" title="TA 发朋友圈的勤快度" note="TA 自己更新朋友圈的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">
+                    <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">
                         <div className="flex flex-wrap gap-2 items-center">
                             <StickerChip seed="mp-off" active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'off' })}>不发</StickerChip>
                             <StickerChip seed="mp-rnd" active={cs.momentsAutoPost === 'random'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'random' })}>看心情</StickerChip>
