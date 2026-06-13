@@ -115,7 +115,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
-  { id: AppID.Social, name: '拾光集', icon: 'Social', color: 'red' },
+  { id: AppID.Social, name: '拾光墙', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
   { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },
