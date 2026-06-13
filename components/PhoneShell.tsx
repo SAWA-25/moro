@@ -62,7 +62,7 @@ const ThemeMaker = lazyApp(() => import('../apps/ThemeMaker'));
 const Appearance = lazyApp(() => import('../apps/Appearance'));
 const Gallery = lazyApp(() => import('../apps/Gallery'));
 const DateApp = lazyApp(() => import('../apps/DateApp'));
-const JournalApp = lazyApp(() => import('../apps/JournalApp'));
+const DiaryApp = lazyApp(() => import('../apps/DiaryApp'));
 const ScheduleApp = lazyApp(() => import('../apps/ScheduleApp'));
 const RoomApp = lazyApp(() => import('../apps/RoomApp'));
 const CheckPhone = lazyApp(() => import('../apps/CheckPhone'));
@@ -80,7 +80,6 @@ const SongwritingApp = lazyApp(() => import('../apps/SongwritingApp'));
 const MusicApp = lazyApp(() => import('../apps/MusicApp'));
 const CallApp = lazyApp(() => import('../apps/CallApp'));
 const PhoneApp = lazyApp(() => import('../apps/PhoneApp'));
-const ExchangeDiaryApp = lazyApp(() => import('../apps/ExchangeDiaryApp'));
 const VoiceDesignerApp = lazyApp(() => import('../apps/VoiceDesignerApp'));
 const GuidebookApp = lazyApp(() => import('../apps/GuidebookApp'));
 const LifeSimApp = lazyApp(() => import('../apps/LifeSimApp'));
@@ -98,7 +97,7 @@ const RegexApp = lazyApp(() => import('../apps/RegexApp'));
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   Chat, Character, ChatHub, SocialApp, RoomApp, Settings, Appearance,
-  CheckPhone, JournalApp, ScheduleApp, MusicApp, CallApp, PhoneApp, ExchangeDiaryApp, Gallery, DateApp,
+  CheckPhone, DiaryApp, ScheduleApp, MusicApp, CallApp, PhoneApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaHubApp, MemoryPalaceApp, HandbookApp,
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
@@ -111,13 +110,13 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Settings]: Settings, [AppID.Character]: Character, [AppID.Chat]: Chat,
   [AppID.GroupChat]: ChatHub, [AppID.ThemeMaker]: ThemeMaker, [AppID.Appearance]: Appearance,
   [AppID.Gallery]: Gallery, [AppID.Date]: DateApp,
-  [AppID.Journal]: JournalApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
+  [AppID.Journal]: DiaryApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
   [AppID.FAQ]: FAQApp, [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
   [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp, [AppID.XhsStock]: XhsStockApp,
   [AppID.XhsFreeRoam]: XhsFreeRoamApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
   [AppID.Music]: MusicApp, [AppID.Call]: CallApp, [AppID.Phone]: PhoneApp,
-  [AppID.ExchangeDiary]: ExchangeDiaryApp, [AppID.VoiceDesigner]: VoiceDesignerApp,
+  [AppID.VoiceDesigner]: VoiceDesignerApp,
   [AppID.Guidebook]: GuidebookApp, [AppID.LifeSim]: LifeSimApp, [AppID.MemoryPalace]: MemoryPalaceApp,
   [AppID.Handbook]: HandbookApp, [AppID.QQBridge]: QQBridge, [AppID.HotNews]: HotNewsApp,
   [AppID.VRWorld]: VRWorldApp, [AppID.CharCreatorDev]: CharCreatorDevApp, [AppID.SpecialMoments]: SpecialMomentsApp,
@@ -591,7 +590,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Appearance: return <Appearance />;
       case AppID.Gallery: return <Gallery />;
       case AppID.Date: return <DateApp />; 
-      case AppID.Journal: return <JournalApp />; 
+      case AppID.Journal: return <DiaryApp />;
       case AppID.Schedule: return <ScheduleApp />;
       case AppID.Room: return <RoomApp />; 
       case AppID.CheckPhone: return <CheckPhone />;
@@ -612,7 +611,6 @@ const PhoneShell: React.FC = () => {
       case AppID.Music: return <MusicApp />;
       case AppID.Call: return <CallApp />;
       case AppID.Phone: return <PhoneApp />;
-      case AppID.ExchangeDiary: return <ExchangeDiaryApp />;
       case AppID.VoiceDesigner: return <VoiceDesignerApp />;
       case AppID.Guidebook: return <GuidebookApp />;
       case AppID.LifeSim: return <LifeSimApp />;

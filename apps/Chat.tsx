@@ -54,7 +54,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, removeCustomTheme, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -79,7 +79,7 @@ const Chat: React.FC = () => {
     const [showEntry, setShowEntry] = useState(false);
     const WINDOW_RADIUS = 25;
     const [input, setInput] = useState('');
-    const [showPanel, setShowPanel] = useState<'none' | 'actions' | 'emojis' | 'chars'>('none');
+    const [showPanel, setShowPanel] = useState<'none' | 'actions' | 'emojis'>('none');
     
     // Emoji State
     const [emojis, setEmojis] = useState<Emoji[]>([]);
@@ -2475,7 +2475,6 @@ ${recent || '（你们还没怎么聊过）'}
 
     // Memoize ChatInputArea callbacks
     const handleSendCallback = useCallback(() => handleSendText(), [char, input, replyTarget]);
-    const handleCharSelectCallback = useCallback((id: string) => { setActiveCharacterId(id); setShowPanel('none'); }, []);
 
     // ── 会话设置（聊天设置面板）派生值：备注名 / 头像覆盖 / 时间戳等 ──
     const convo = char?.convoSettings;
@@ -3099,8 +3098,7 @@ ${recent || '（你们还没怎么聊过）'}
                 lastTokenUsage={lastTokenUsage}
                 tokenBreakdown={tokenBreakdown}
                 onClose={() => openApp(AppID.GroupChat)}
-                onShowCharsPanel={() => setShowPanel('chars')}
-                // 左上角头像 = 心声面板（心声 / 好感值 / 当前心情）；原头像入口功能已移除
+                // 左上角头像 = 心声面板（心声 / 好感值 / 当前心情）；点角色名的「切换角色 / 信纸花样」弹窗已移除
                 onAvatarClick={tryOpenInnerVoice}
                 // 聊天设置移入右上角 ··· 内
                 onOpenSettings={() => setModalType('chat-settings')}
@@ -3566,10 +3564,6 @@ ${recent || '（你们还没怎么聊过）'}
                     selectedCount={selectedMsgIds.size + Array.from(selectedThinkingMsgIds).filter(id => !selectedMsgIds.has(id)).length}
                     emojis={filteredEmojis}
                     allEmojis={allVisibleEmojis}
-                    characters={characters} activeCharacterId={activeCharacterId}
-                    onCharSelect={handleCharSelectCallback}
-                    customThemes={customThemes} onUpdateTheme={(id) => updateCharacter(char.id, { bubbleStyle: id })}
-                    onRemoveTheme={removeCustomTheme} activeThemeId={currentThemeId}
                     onPanelAction={handlePanelAction}
                     onImageSelect={handleImageSelect}
                     onSendVoice={handleSendVoice}

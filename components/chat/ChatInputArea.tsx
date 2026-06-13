@@ -1,7 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ArrowBendUpRight, BookBookmark, CalendarCheck, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, X } from '@phosphor-icons/react';
-import { CharacterProfile, ChatTheme, EmojiCategory, Emoji } from '../../types';
-import { PRESET_THEMES } from './ChatConstants';
+import { EmojiCategory, Emoji } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 
 interface ChatInputAreaProps {
@@ -9,8 +8,8 @@ interface ChatInputAreaProps {
     setInput: (v: string) => void;
     isTyping: boolean;
     selectionMode: boolean;
-    showPanel: 'none' | 'actions' | 'emojis' | 'chars';
-    setShowPanel: (v: 'none' | 'actions' | 'emojis' | 'chars') => void;
+    showPanel: 'none' | 'actions' | 'emojis';
+    setShowPanel: (v: 'none' | 'actions' | 'emojis') => void;
     onSend: () => void;
     onDeleteSelected: () => void;
     onForwardSelected?: () => void;
@@ -18,13 +17,6 @@ interface ChatInputAreaProps {
     emojis: Emoji[];
     /** 全量可见表情（不按当前分类过滤），表情面板搜索时跨分类匹配名字/描述。不传则只搜当前分类。 */
     allEmojis?: Emoji[];
-    characters: CharacterProfile[];
-    activeCharacterId: string;
-    onCharSelect: (id: string) => void;
-    customThemes: ChatTheme[];
-    onUpdateTheme: (id: string) => void;
-    onRemoveTheme: (id: string) => void;
-    activeThemeId: string;
     onPanelAction: (type: string, payload?: any) => void;
     onImageSelect: (file: File) => void;
     /** 用户录音语音消息：audio 是 data URI（webm/opus），transcript 来自录音时的实时语音识别（可能为空） */
@@ -88,8 +80,7 @@ const DrawerTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     input, setInput, isTyping, selectionMode,
     showPanel, setShowPanel, onSend, onDeleteSelected, onForwardSelected, selectedCount,
-    emojis, allEmojis, characters, activeCharacterId, onCharSelect,
-    customThemes, onUpdateTheme, onRemoveTheme, activeThemeId,
+    emojis, allEmojis,
     onPanelAction, onImageSelect, onSendVoice, isSummarizing,
     categories = [], activeCategory = 'default',
     onReroll, canReroll,
@@ -823,37 +814,6 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                           </div>
                         </div>
                      )}
-                     {showPanel === 'chars' && (
-                        <div className="p-5 space-y-6 overflow-y-auto no-scrollbar">
-                            <div>
-                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">信纸花样（气泡主题）</h3>
-                                <div className="flex gap-3 px-1 overflow-x-auto no-scrollbar pb-2">
-                                    {Object.values(PRESET_THEMES).map(t => (
-                                        <button key={t.id} onClick={() => onUpdateTheme(t.id)} className={`px-6 py-3 rounded-2xl text-xs font-bold border shrink-0 transition-all ${activeThemeId === t.id ? 'bg-primary text-white border-primary' : 'bg-white border-slate-200 text-slate-600'}`}>{t.name}</button>
-                                    ))}
-                                    {customThemes.map(t => (
-                                        <div key={t.id} className="relative group shrink-0">
-                                            <button onClick={() => onUpdateTheme(t.id)} className={`px-6 py-3 rounded-2xl text-xs font-bold border transition-all ${activeThemeId === t.id ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
-                                                {t.name} (DIY)
-                                            </button>
-                                            <button onClick={(e) => { e.stopPropagation(); onRemoveTheme(t.id); }} className="absolute -top-2 -right-2 bg-red-400 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md opacity-0 group-hover:opacity-100 transition-opacity">×</button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div>
-                                <h3 className="text-xs font-bold text-slate-400 px-1 tracking-wider uppercase mb-3">换个人聊</h3>
-                                <div className="space-y-3">
-                                    {characters.map(c => (
-                                        <div key={c.id} onClick={() => onCharSelect(c.id)} className={`flex items-center gap-4 p-3 rounded-[20px] border cursor-pointer ${c.id === activeCharacterId ? 'bg-white border-primary/30 shadow-md' : 'bg-white/50 border-transparent'}`}>
-                                            <img src={c.avatar} className="w-12 h-12 rounded-2xl object-cover" />
-                                            <div className="flex-1"><div className="font-bold text-sm text-slate-700">{c.name}</div><div className="text-xs text-slate-400 truncate">{c.description}</div></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             )}
         </div>

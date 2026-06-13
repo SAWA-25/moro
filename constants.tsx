@@ -111,8 +111,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 见面已并入聊天 App：聊天界面底部 + 号面板 →「见面」（用户主动发起线下模式）
   // { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
   { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
-  { id: AppID.Journal, name: '交换日记', icon: 'Journal', color: 'amber' },
-  { id: AppID.ExchangeDiary, name: '日记社', icon: 'ExchangeDiary', color: 'orange' },
+  { id: AppID.Journal, name: '日记', icon: 'Journal', color: 'amber' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
   { id: AppID.Social, name: '见闻簿', icon: 'Social', color: 'red' },

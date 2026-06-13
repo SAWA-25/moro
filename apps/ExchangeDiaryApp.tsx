@@ -4,8 +4,8 @@ import { DB } from '../utils/db';
 import { CharacterProfile, ExchangeDiaryBook, ExchangeDiaryEntry } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
-import { safeResponseJson } from '../utils/safeApi';
 import { formatMessageForPrompt } from '../utils/messageFormat';
+import { getDiaryDateStr as getLocalDateStr, parseJsonLoose, callDiaryLLM } from './diaryShared';
 
 // ============ 常量 ============
 
@@ -62,34 +62,19 @@ const WRITING_PROMPTS = [
 const moodOf = (key?: string) => MOODS.find(m => m.key === key);
 const sealOf = (key: string) => SEALS.find(s => s.key === key);
 
-// 本地日期 YYYY-MM-DD（别用 toISOString，会偏到 UTC）
-const getLocalDateStr = (d = new Date()) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-};
-
 const randomPrompt = (exclude?: string) => {
     const pool = WRITING_PROMPTS.filter(p => p !== exclude);
     return pool[Math.floor(Math.random() * pool.length)];
 };
 
-// 宽容地从 LLM 输出里抠 JSON：剥代码围栏 → 直接 parse → 截取首个 {...} 再 parse
-const parseJsonLoose = (raw: string): any | null => {
-    const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-    try { return JSON.parse(cleaned); } catch { /* fallthrough */ }
-    const start = cleaned.indexOf('{');
-    const end = cleaned.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-        try { return JSON.parse(cleaned.slice(start, end + 1)); } catch { /* fallthrough */ }
-    }
-    return null;
-};
-
 // ============ 组件 ============
 
-const ExchangeDiaryApp: React.FC = () => {
+interface ExchangeDiaryAppProps {
+    // 由合并后的「日记」App 注入的模式切换器，渲染在书架（根）页头部。
+    tabSwitcher?: React.ReactNode;
+}
+
+const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
     const { closeApp, characters, apiConfig, userProfile, addToast } = useOS();
 
     // --- 全局状态 ---
@@ -228,15 +213,7 @@ const ExchangeDiaryApp: React.FC = () => {
         messages: { role: 'system' | 'user'; content: string }[],
         temperature = 0.85,
     ): Promise<string> => {
-        if (!apiConfig.apiKey) throw new Error('请先在「文具盒」里配置 API');
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-            body: JSON.stringify({ model: apiConfig.model, messages, temperature }),
-        });
-        if (!response.ok) throw new Error(`API 请求失败 (${response.status})`);
-        const data = await safeResponseJson(response);
-        const content = (data.choices?.[0]?.message?.content || '').trim();
+        const content = await callDiaryLLM(apiConfig, messages, { temperature });
         if (!content) throw new Error('AI 返回为空');
         return content;
     };
@@ -748,7 +725,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
                     <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-amber-100/50 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-amber-900"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-bold text-amber-900 text-lg tracking-wide">日记社</span>
+                    {tabSwitcher || <span className="font-bold text-amber-900 text-lg tracking-wide">日记社</span>}
                     <button onClick={openCreateForm} className="p-2 -mr-2 rounded-full hover:bg-amber-100/50 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-amber-900"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     </button>
