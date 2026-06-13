@@ -536,6 +536,20 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
               />
               允许 {char.name} 翻阅你的网易云数据（最近在听 / 歌单）
             </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={profile?.listenTogetherEnabled ?? true}
+                onChange={e => {
+                  if (!profile) return;
+                  updateCharacter(char.id, {
+                    musicProfile: { ...profile, listenTogetherEnabled: e.target.checked, updatedAt: Date.now() },
+                  });
+                }}
+                className="w-3 h-3"
+              />
+              允许和 {char.name} 在线一起听（你听歌时 TA 能加入一起听）
+            </label>
             <div>
               <button
                 onClick={doRegenerate}
