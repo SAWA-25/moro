@@ -71,6 +71,17 @@ export const MAX_REGULARS = 60;   // 常客表上限（按到访次数保留 Top
 export const regularTier = (visits: number): 'new' | 'regular' | 'vip' =>
     visits >= VIP_VISITS ? 'vip' : visits >= REGULAR_VISITS ? 'regular' : 'new';
 
+// --- 挂机营业额（idle 收益）-------------------------------------------------
+// 离店期间店铺持续累计「挂机营业额」，回来点金币收进钱包。攒满约 IDLE_CAP_HOURS
+// 小时就停（idle 游戏的存储上限，催你常回来看看），需有店员才产出。
+export const IDLE_CAP_HOURS = 8;
+/** 每小时挂机营业额（随人气与店铺等级提升） */
+export const idleRatePerHour = (appeal: number, level: number): number =>
+    Math.max(1, Math.floor(appeal * 0.18 * shopLevelPassiveMult(level)));
+/** 挂机营业额上限（满了就停止累计） */
+export const idleCap = (appeal: number, level: number): number =>
+    idleRatePerHour(appeal, level) * IDLE_CAP_HOURS;
+
 // 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
 export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
     { name: '上班族小林', avatar: '🧑‍💼' },
