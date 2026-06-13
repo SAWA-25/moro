@@ -6,11 +6,11 @@ import { CharacterProfile, DiaryEntry, StickerData, DiaryPage, MemoryFragment } 
 import { ContextBuilder } from '../utils/context';
 import { processImage } from '../utils/file';
 import Modal from '../components/os/Modal';
-import { safeResponseJson } from '../utils/safeApi';
 import { normalizeMessageContent } from '../utils/messageFormat';
 import { injectMemoryPalace, ingestDiaryToPalace, type DiaryIngestResult } from '../utils/memoryPalace/pipeline';
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { Sparkle, Archive } from '@phosphor-icons/react';
+import { getDiaryDateStr, callDiaryLLM } from './diaryShared';
 
 const INTRO_SEEN_KEY = 'journal_app_intro_seen_v4';
 
@@ -35,16 +35,15 @@ const DEFAULT_STICKERS = [
     twemojiUrl('1f48c'), twemojiUrl('1f4a4'), twemojiUrl('1f97a'), twemojiUrl('1f621'), twemojiUrl('1f62d'),
 ];
 
-// HELPER: Get local date string YYYY-MM-DD
-const getLocalDateStr = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-};
+// HELPER: Get local date string YYYY-MM-DD（沿用公共实现，避免两套日记重复定义）
+const getLocalDateStr = () => getDiaryDateStr();
 
-const JournalApp: React.FC = () => {
+interface JournalAppProps {
+    // 由合并后的「日记」App 注入的模式切换器，渲染在选择日记本（根）页头部。
+    tabSwitcher?: React.ReactNode;
+}
+
+const JournalApp: React.FC<JournalAppProps> = ({ tabSwitcher }) => {
     const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, memoryPalaceConfig } = useOS();
 
     const [mode, setMode] = useState<'select' | 'calendar' | 'write'>('select');
@@ -93,7 +92,9 @@ const JournalApp: React.FC = () => {
     // --- Data Loading ---
 
     useEffect(() => {
-        if (characters.length > 0 && activeCharacterId) {
+        // 合并后的「日记」App 里，本模式作为一个 Tab 嵌入：根页（选择日记本）要承载模式切换器，
+        // 所以嵌入时不自动跳进某个角色的日历，停在选择页让用户能切到「日记社」。
+        if (!tabSwitcher && characters.length > 0 && activeCharacterId) {
             const initial = characters.find(c => c.id === activeCharacterId);
             if (initial) {
                 setSelectedChar(initial);
@@ -451,22 +452,10 @@ Structure:
   "stickers": ["sticker1", "http://custom-sticker-url..."] (从默认列表或 Custom Stickers 中选0-3个)
 }`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: `Users Diary:\n${currentEntry.userPage.text}` }
-                    ],
-                    temperature: 0.85
-                })
-            });
-
-            if (!response.ok) throw new Error('API Error');
-            const data = await safeResponseJson(response);
-            let content = data.choices[0].message.content.trim();
+            let content = await callDiaryLLM(apiConfig, [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Users Diary:\n${currentEntry.userPage.text}` },
+            ], { temperature: 0.85 });
             content = content.replace(/```json/g, '').replace(/```/g, '').trim();
             
             let parsed;
@@ -558,19 +547,10 @@ ${charPart}
 3. **细节胜过抽象**: 多说具体的事 (人名、地点、物件、当时的情绪),少用"我们度过了美好的一天"这种空话。
 4. **篇幅**: 150~300 字之间的一段中文叙述,不要分段,不要列表,不要任何前缀和标题,直接出叙述。
 `;
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({
-                    model: apiConfig.model,
-                    messages: [{ role: 'user', content: prompt }],
-                    temperature: 0.4,
-                    max_tokens: 1200,
-                }),
+            let s = await callDiaryLLM(apiConfig, [{ role: 'user', content: prompt }], {
+                temperature: 0.4,
+                maxTokens: 1200,
             });
-            if (!response.ok) throw new Error(`主 API 失败 (${response.status})`);
-            const data = await safeResponseJson(response);
-            let s = (data.choices?.[0]?.message?.content || '').trim();
             s = s.replace(/^["'「『]|["'」』]$/g, '').trim();
             if (!s) throw new Error('归档总结为空');
             return s;
@@ -883,7 +863,7 @@ ${charPart}
                     <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-amber-100/50 active:scale-90 transition-transform">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-amber-900"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-bold text-amber-900 text-lg tracking-wide">选择日记本</span>
+                    {tabSwitcher || <span className="font-bold text-amber-900 text-lg tracking-wide">选择日记本</span>}
                     <div className="w-8"></div>
                 </div>
                 

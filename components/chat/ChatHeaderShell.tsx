@@ -27,7 +27,8 @@ interface ChatHeaderShellProps {
     onClose: () => void;
     /** 右上角"聊天设置"入口（齿轮按钮，原 + 面板里的「设置」迁移至此）。传了才渲染。 */
     onOpenChatSettings?: () => void;
-    onShowCharsPanel: () => void;
+    /** 点角色名/信息区的回调。不传则角色名不可点（「切换角色 / 信纸花样」弹窗已移除）。 */
+    onShowCharsPanel?: () => void;
     /** 左上角角色头像点击：打开「心声」面板（心声 / 好感值 / 当前心情）。 */
     onAvatarClick?: () => void;
     /** 右上角"角色设置"入口（⋮ 按钮）。传了才渲染。 */
@@ -411,7 +412,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
                     <div
                         onClick={onShowCharsPanel}
-                        className="flex w-[calc(100%-7rem)] max-w-[420px] cursor-pointer items-end justify-center"
+                        className={`flex w-[calc(100%-7rem)] max-w-[420px] items-end justify-center ${onShowCharsPanel ? 'cursor-pointer' : ''}`}
                     >
                         {renderCenteredInfo()}
                     </div>
@@ -433,7 +434,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                         <CaretLeft className="w-5 h-5" weight="bold" />
                     </button>
 
-                    <div onClick={onShowCharsPanel} className="flex-1 min-w-0 flex items-center gap-3 cursor-pointer">
+                    <div onClick={onShowCharsPanel} className={`flex-1 min-w-0 flex items-center gap-3 ${onShowCharsPanel ? 'cursor-pointer' : ''}`}>
                         {renderStandardInfo()}
                     </div>
 
