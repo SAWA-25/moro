@@ -21,14 +21,51 @@ export const BANK_ASSETS = {
 };
 
 export const SHOP_RECIPES: ShopRecipe[] = [
-    { id: 'recipe-coffee-001', name: '手冲咖啡', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2615.png', cost: 0, appeal: 10, isUnlocked: true },
-    { id: 'recipe-cake-001', name: '草莓蛋糕', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f370.png', cost: 50, appeal: 20, isUnlocked: false },
-    { id: 'recipe-tea-001', name: '伯爵红茶', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f375.png', cost: 80, appeal: 25, isUnlocked: false },
-    { id: 'recipe-donut-001', name: '甜甜圈', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f369.png', cost: 120, appeal: 30, isUnlocked: false },
-    { id: 'recipe-icecream-001', name: '抹茶冰淇淋', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f366.png', cost: 200, appeal: 40, isUnlocked: false },
-    { id: 'recipe-pudding-001', name: '焦糖布丁', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f36e.png', cost: 300, appeal: 50, isUnlocked: false },
-    { id: 'recipe-cocktail-001', name: '特调气泡水', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f379.png', cost: 500, appeal: 80, isUnlocked: false },
+    { id: 'recipe-coffee-001', name: '手冲咖啡', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2615.png', cost: 0, appeal: 10, isUnlocked: true, price: 18 },
+    { id: 'recipe-cake-001', name: '草莓蛋糕', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f370.png', cost: 50, appeal: 20, isUnlocked: false, price: 32 },
+    { id: 'recipe-tea-001', name: '伯爵红茶', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f375.png', cost: 80, appeal: 25, isUnlocked: false, price: 22 },
+    { id: 'recipe-donut-001', name: '甜甜圈', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f369.png', cost: 120, appeal: 30, isUnlocked: false, price: 16 },
+    { id: 'recipe-icecream-001', name: '抹茶冰淇淋', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f366.png', cost: 200, appeal: 40, isUnlocked: false, price: 28 },
+    { id: 'recipe-pudding-001', name: '焦糖布丁', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f36e.png', cost: 300, appeal: 50, isUnlocked: false, price: 26 },
+    { id: 'recipe-cocktail-001', name: '特调气泡水', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f379.png', cost: 500, appeal: 80, isUnlocked: false, price: 38 },
 ];
+
+// 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
+export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
+    { name: '上班族小林', avatar: '🧑‍💼' },
+    { name: '画画的姑娘', avatar: '👩‍🎨' },
+    { name: '遛狗的大叔', avatar: '🧔' },
+    { name: '放学的学生', avatar: '🎒' },
+    { name: '赶稿的编辑', avatar: '🤓' },
+    { name: '健身教练', avatar: '💪' },
+    { name: '隔壁的奶奶', avatar: '👵' },
+    { name: '快递小哥', avatar: '📦' },
+    { name: '背包客', avatar: '🧗' },
+    { name: '猫咖常客', avatar: '🐱' },
+    { name: '附近的程序员', avatar: '💻' },
+    { name: '咖啡发烧友', avatar: '☕' },
+    { name: '约会的情侣', avatar: '💑' },
+    { name: '加班的白领', avatar: '🌙' },
+    { name: '带娃的妈妈', avatar: '🤱' },
+    { name: '路过的游客', avatar: '📷' },
+];
+
+// 评价文案模板（{p}=点的商品）。按星级取不同口吻。
+const REVIEW_BY_STAR: Record<number, string[]> = {
+    5: ['{p}绝了，下次还来！', '环境太舒服，{p}也好喝，必须五星⭐', '店员超亲切，{p}份量很足～', '一进门就被治愈了，{p}好评！', '本店之光{p}，已安利给同事'],
+    4: ['{p}不错，就是稍微等了一下', '味道在线，会再来的', '{p}挺好喝，位子要是再多就好了', '整体满意，{p}加点料更棒'],
+    3: ['{p}一般般，普普通通', '还行吧，没太多惊喜', '{p}中规中矩，价格还行', '凑合，下次试试别的'],
+    2: ['等太久了，{p}都不热乎了', '今天店员好像很累，体验打折', '{p}有点敷衍，希望改进'],
+    1: ['生意太忙顾不过来，{p}上错了', '排队排到怀疑人生，{p}也一般', '体验不太好，下次再看看'],
+};
+
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+/** 按星级与商品名生成一条评价文案 */
+export const buildReviewText = (rating: number, productName: string): string => {
+    const pool = REVIEW_BY_STAR[Math.max(1, Math.min(5, rating))] || REVIEW_BY_STAR[3];
+    return pick(pool).replace('{p}', productName);
+};
 
 export const AVAILABLE_STAFF: Omit<ShopStaff, 'hireDate' | 'fatigue'>[] = [
     { id: 'staff-dog-01', name: '柴犬服务生', avatar: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f436.png', role: 'waiter', maxFatigue: 120 },

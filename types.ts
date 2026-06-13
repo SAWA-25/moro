@@ -1380,6 +1380,20 @@ export interface ShopRecipe {
     cost: number; // AP cost to unlock
     appeal: number; // Contribution to shop appeal
     isUnlocked: boolean;
+    /** 售价：营业时每卖出一份的收入（进钱包）。未设则用 appeal 估算。 */
+    price?: number;
+}
+
+/** 一条顾客评价（营业时由 NPC / 角色顾客留下，影响店铺口碑） */
+export interface ShopReview {
+    id: string;
+    authorName: string;
+    avatar: string;       // emoji 或 URL
+    rating: number;       // 1~5 星
+    text: string;
+    productName?: string; // 点的什么
+    ts: number;
+    isNpc?: boolean;
 }
 
 export interface BankConfig {
@@ -1468,6 +1482,8 @@ export interface BankShopState {
     lastBusinessAt?: number;
     /** 店铺累计营业额（进过钱包的总收入，仅作展示统计） */
     totalRevenue?: number;
+    /** 顾客评价（最近若干条，营业时产生，决定口碑评分） */
+    reviews?: ShopReview[];
 }
 
 export interface BankFullState {

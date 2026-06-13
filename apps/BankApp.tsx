@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import Modal from '../components/os/Modal';
@@ -11,7 +11,8 @@ import BankDollhouse from '../components/bank/BankDollhouse';
 import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE } from '../components/bank/BankGameConstants';
+import { BusinessResultModal, ReviewsOverlay, BusinessResult } from '../components/bank/BankBusiness';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -83,6 +84,9 @@ const BankApp: React.FC = () => {
     
     // Guestbook Fullscreen State (Changed from Modal)
     const [showGuestbook, setShowGuestbook] = useState(false);
+    // 营业结算 & 口碑评价
+    const [businessResult, setBusinessResult] = useState<BusinessResult | null>(null);
+    const [showReviews, setShowReviews] = useState(false);
     
     // Forms
     const [txAmount, setTxAmount] = useState('');
@@ -459,7 +463,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        addToast('新甜品解锁！店铺人气上升', 'success');
+        addToast('新商品上架！店铺人气上升，营业时就能卖了', 'success');
     };
 
     // --- Fire / Rehire / Delete Staff ---
@@ -786,7 +790,7 @@ ${previousGuestbook}
         addToast('心愿已添加', 'success');
     };
 
-    // --- 营业：经营店铺赚钱（进钱包），与记账无关 ---
+    // --- 营业：模拟一波顾客逐单消费，结算收入进钱包 + 产生评价（与记账无关） ---
     const handleOperate = async () => {
         const cur = stateRef.current;
         const last = cur.shop.lastBusinessAt || 0;
@@ -802,27 +806,82 @@ ${previousGuestbook}
             addToast('先去「经营」雇个店员，才能开门营业', 'info');
             return;
         }
-        const appeal = cur.shop.appeal || calculateAppeal(staff.length, cur.shop.unlockedRecipes);
-        const recipeCount = cur.shop.unlockedRecipes.length;
-        const energetic = staff.filter(s => s.fatigue < 90).length || 1;
-        const rand = 0.8 + Math.random() * 0.5; // 0.8 ~ 1.3
-        const revenue = Math.max(5, Math.round((appeal * 0.5 + recipeCount * 12 + energetic * 18) * rand));
+        const products = SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id));
+        if (products.length === 0) {
+            addToast('菜单空空，先去「经营」解锁可卖的商品', 'info');
+            return;
+        }
 
+        const appeal = cur.shop.appeal || calculateAppeal(staff.length, cur.shop.unlockedRecipes);
+        const reviews = cur.shop.reviews || [];
+        const avgRep = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 4.2;
+        const repBonusPct = Math.round((avgRep - 4) * 10); // 4★→0；5★→+10%；3★→-10%
+        const energetic = staff.filter(s => s.fatigue < 90).length;
+        const tiredFactor = energetic === 0 ? 0.5 : 1; // 全员疲惫，客流减半
+
+        const customerCount = Math.max(2, Math.min(9, Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1));
+
+        const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
+        let base = 0, tips = 0;
+        const newReviews: ShopReview[] = [];
+        const usedNpc = new Set<string>();
+
+        for (let i = 0; i < customerCount; i++) {
+            const p = products[Math.floor(Math.random() * products.length)];
+            const price = p.price ?? Math.max(10, Math.round(p.appeal * 0.8));
+            base += price;
+            if (Math.random() < 0.45) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2)));
+            const ex = itemMap.get(p.id);
+            if (ex) { ex.qty++; ex.subtotal += price; } else itemMap.set(p.id, { name: p.name, icon: p.icon, qty: 1, subtotal: price });
+
+            // 约 35% 顾客留评
+            if (Math.random() < 0.35) {
+                let authorName: string, avatar: string, isNpc: boolean;
+                if (characters.length > 0 && Math.random() < 0.25) {
+                    const c = characters[Math.floor(Math.random() * characters.length)];
+                    authorName = c.name; avatar = c.avatar; isNpc = false;
+                } else {
+                    let npc = NPC_CUSTOMERS[0], tries = 0;
+                    do { npc = NPC_CUSTOMERS[Math.floor(Math.random() * NPC_CUSTOMERS.length)]; tries++; } while (usedNpc.has(npc.name) && tries < 5);
+                    usedNpc.add(npc.name); authorName = npc.name; avatar = npc.avatar; isNpc = true;
+                }
+                let rating = 4 + (Math.random() < 0.5 ? 1 : 0);
+                if (energetic === 0) rating -= 2;
+                else if (avgRep < 3.5 && Math.random() < 0.4) rating -= 1;
+                if (Math.random() < 0.08) rating -= 2; // 偶发差评
+                rating = Math.max(1, Math.min(5, rating));
+                newReviews.push({
+                    id: `rev-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+                    authorName, avatar, rating, text: buildReviewText(rating, p.name),
+                    productName: p.name, ts: Date.now(), isNpc,
+                });
+            }
+        }
+
+        const total = Math.max(1, Math.round((base + tips) * (1 + repBonusPct / 100)));
         const updatedStaff = staff.map(s => ({ ...s, fatigue: Math.min(s.maxFatigue, s.fatigue + 18) }));
+        const mergedReviews = [...newReviews, ...reviews].slice(0, 40);
         const newState: BankFullState = {
             ...cur,
             shop: {
                 ...cur.shop,
                 staff: updatedStaff,
                 lastBusinessAt: Date.now(),
-                totalRevenue: (cur.shop.totalRevenue || 0) + revenue,
+                totalRevenue: (cur.shop.totalRevenue || 0) + total,
+                reviews: mergedReviews,
             },
         };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(revenue);
-        addToast(`营业结束！本轮赚得 ¥${revenue} 已进钱包 💰`, 'success');
+        adjustUserBalance(total);
+
+        setBusinessResult({
+            total, base, tips, customerCount,
+            items: Array.from(itemMap.values()).sort((a, b) => b.subtotal - a.subtotal),
+            reviews: newReviews,
+            repBonusPct,
+        });
     };
 
     return (
@@ -883,7 +942,8 @@ ${previousGuestbook}
                 
                 {/* 1. Game View (Dollhouse) */}
                 {activeTab === 'game' && (
-                    isBankDataLoaded ? (
+                    <>
+                    {isBankDataLoaded ? (
                     <BankDollhouse
                         shopState={state.shop}
                         dollhouseState={dollhouseState}
@@ -902,7 +962,20 @@ ${previousGuestbook}
                     />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-sm text-[#8A5A3D]">加载咖啡店中...</div>
-                    )
+                    )}
+                    {/* 口碑入口 */}
+                    {(() => {
+                        const rv = state.shop.reviews || [];
+                        const avg = rv.length ? Math.round((rv.reduce((s, r) => s + r.rating, 0) / rv.length) * 10) / 10 : 0;
+                        return (
+                            <button onClick={() => setShowReviews(true)} className="absolute left-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }}>
+                                <span className="text-sm">⭐</span>
+                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{avg || '口碑'}</span>
+                                <span className="text-[10px]" style={{ color: '#A1887F' }}>{rv.length ? `${rv.length} 评价` : '看看'}</span>
+                            </button>
+                        );
+                    })()}
+                    </>
                 )}
 
                 {/* 2. Management Menu */}
@@ -912,7 +985,7 @@ ${previousGuestbook}
                         <div className="bg-[#fdf6e3] p-4 rounded-xl border-2 border-[#d3cbb8] mb-4 flex justify-between items-center shadow-sm">
                             <div>
                                 <h3 className="text-sm font-bold text-[#586e75]">每日预算设定</h3>
-                                <p className="text-[10px] text-[#93a1a1]">省下的钱 = 明天的 AP</p>
+                                <p className="text-[10px] text-[#93a1a1]">记账支出超过它会提醒你（现实预算）</p>
                             </div>
                             <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-slate-200">
                                 <span className="text-xs text-slate-400">{state.config.currencySymbol}</span>
@@ -1293,6 +1366,21 @@ ${previousGuestbook}
                     </div>
                 </div>
             </Modal>
+
+            {/* 营业结算 */}
+            {businessResult && (
+                <BusinessResultModal
+                    result={businessResult}
+                    currency={state.config.currencySymbol}
+                    onClose={() => setBusinessResult(null)}
+                    onViewReviews={() => { setBusinessResult(null); setShowReviews(true); }}
+                />
+            )}
+
+            {/* 口碑墙 */}
+            {showReviews && (
+                <ReviewsOverlay reviews={state.shop.reviews || []} onClose={() => setShowReviews(false)} />
+            )}
 
         </div>
     );
