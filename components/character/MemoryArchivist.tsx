@@ -1,8 +1,65 @@
-
+/**
+ * 往事柜 —— 角色记忆档案（登场人物「往事」页主体），黑白拼贴手账风界面。
+ * 词汇对照：日账 = 每日记忆碎片（MemoryFragment）、月签 = 月度核心记忆
+ * （refinedMemories）、摊开细账 = activeMemoryMonths（该月详细回忆进上下文）。
+ * 功能与旧版完全一致：年/月/日三级浏览、月度精炼（含口吻模板）、日账编辑/
+ * 批量删除、月签长按编辑/删除、按天强制重总结（含模板弹窗）。
+ */
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { MemoryFragment } from '../../types';
-import Modal from '../../components/os/Modal';
+import { FolderSimple, Eye, X } from '@phosphor-icons/react';
 import { DEFAULT_REFINE_PROMPTS } from '../../components/chat/ChatConstants';
+
+// ── 黑白手账设计 token（与剪影集全家同一套语言） ───────────
+const INK = '#1c1b1a';
+const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+const INK_BTN = 'bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
+const DOT_BG: React.CSSProperties = {
+    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
+    backgroundSize: '16px 16px',
+};
+
+const Tape: React.FC<{ className?: string }> = ({ className }) => (
+    <div
+        aria-hidden
+        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
+    />
+);
+
+/** 拼贴弹层：撕边纸卡 + 顶部胶带 */
+const PaperSheet: React.FC<{
+    open: boolean;
+    tag: string;
+    title: string;
+    onClose: () => void;
+    children: React.ReactNode;
+    footer?: React.ReactNode;
+}> = ({ open, tag, title, onClose, children, footer }) => {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
+            <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={onClose} />
+            <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
+                <button
+                    onClick={onClose}
+                    className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rotate-[4deg] ${STICKER}`}
+                    aria-label="合上"
+                >
+                    <X size={14} weight="bold" color={INK} />
+                </button>
+                <div className="px-5 pt-6 pb-2">
+                    <div className="label-mono text-[9px] text-[#1c1b1a]/45">{tag}</div>
+                    <h3 className="text-lg font-black text-[#1c1b1a] tracking-wide mt-0.5">{title}</h3>
+                    <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
+                </div>
+                <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
+                {footer && <div className="px-5 pb-5 pt-2 flex gap-3">{footer}</div>}
+            </div>
+        </div>
+    );
+};
 
 interface MemoryArchivistProps {
     memories: MemoryFragment[];
@@ -154,8 +211,6 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
         setSelectedIds(next);
     };
 
-
-
     const toggleMemoryExpanded = (id: string) => {
         setExpandedMemoryIds(prev => {
             const next = new Set(prev);
@@ -199,17 +254,39 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
         }
     };
 
-    if (!memories || memories.length === 0) return <div className="flex flex-col items-center justify-center h-48 text-slate-400"><p className="text-xs">暂无记忆档案</p></div>;
+    if (!memories || memories.length === 0) return (
+        <div className="flex flex-col items-center justify-center h-48 text-[#1c1b1a]/40 gap-2">
+            <FolderSimple size={32} weight="bold" />
+            <p className="text-sm" style={HAND_CN}>往事栏还空着，先去聊出点故事吧。</p>
+        </div>
+    );
+
+    /** 返回上一层的小贴纸 */
+    const BackChip = () => (
+        <button onClick={handleBack} className={`px-2 py-1.5 rotate-[-2deg] ${STICKER}`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+        </button>
+    );
 
     const renderYears = () => (
         <div className="grid grid-cols-2 gap-3 animate-fade-in">
-            {Object.keys(tree).map(year => (
-                <div key={year} onClick={() => handleYearClick(year)} className="bg-white/60 backdrop-blur-sm p-4 rounded-2xl border border-white/50 shadow-sm active:scale-95 transition-all flex flex-col justify-between h-28 group cursor-pointer hover:bg-white/80">
+            {Object.keys(tree).map((year, i) => (
+                <div
+                    key={year}
+                    onClick={() => handleYearClick(year)}
+                    className={`relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-4 flex flex-col justify-between h-28 cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all ${i % 2 === 0 ? 'rotate-[-0.6deg]' : 'rotate-[0.6deg]'}`}
+                >
+                    <Tape className="-top-2.5 left-5 rotate-[-4deg] w-12" />
                     <div className="flex justify-between items-start">
-                         <div className="p-2 bg-amber-100/50 rounded-lg text-amber-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg></div>
-                         <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-full text-slate-500 font-mono">{Object.values(tree[year]).reduce((acc, curr: any) => acc + curr.length, 0)}项</span>
+                        <FolderSimple size={24} weight="bold" color={INK} className="opacity-60" />
+                        <span className="label-mono text-[8px] border border-[#1c1b1a]/50 px-1.5 py-0.5">{Object.values(tree[year]).reduce((acc, curr: any) => acc + curr.length, 0)} 条</span>
                     </div>
-                    <div><h3 className="text-xl font-light text-slate-800 tracking-tight">{year}</h3><p className="text-[10px] text-slate-400">年度档案归档</p></div>
+                    <div>
+                        <h3 className="text-xl font-black tracking-tight">{year}</h3>
+                        <p className="text-[12px] text-[#1c1b1a]/50" style={HAND_CN}>这一年的卷宗</p>
+                    </div>
                 </div>
             ))}
         </div>
@@ -217,19 +294,30 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
 
     const renderMonths = () => viewState.selectedYear && tree[viewState.selectedYear] && (
         <div className="grid grid-cols-3 gap-3 animate-fade-in">
-            {Object.keys(tree[viewState.selectedYear]).map(month => {
+            {Object.keys(tree[viewState.selectedYear]).map((month, i) => {
                 const monthKey = `${viewState.selectedYear}-${month}`;
                 const isActive = activeMemoryMonths.includes(monthKey);
                 return (
-                    <div key={month} className="relative group">
-                         <div onClick={() => handleMonthClick(month)} className="bg-white/50 backdrop-blur-sm p-3 rounded-2xl border border-white/40 shadow-sm active:scale-95 transition-all flex flex-col justify-center items-center gap-2 aspect-square cursor-pointer hover:bg-white/70 relative overflow-hidden">
-                            {refinedMemories?.[monthKey] && <div className="absolute top-0 right-0 w-3 h-3 bg-indigo-500 rounded-bl-lg shadow-sm"></div>}
-                            <span className="text-2xl font-light text-slate-700">{parseInt(month)}<span className="text-xs ml-0.5 text-slate-400">月</span></span>
-                            <div className="h-0.5 w-4 bg-primary/30 rounded-full"></div>
-                            <span className="text-[10px] text-slate-400">{tree[viewState.selectedYear!][month].length} 条记忆</span>
+                    <div key={month} className="relative">
+                        <div
+                            onClick={() => handleMonthClick(month)}
+                            className={`bg-white border-2 border-[#1c1b1a]/60 p-3 flex flex-col justify-center items-center gap-1.5 aspect-square cursor-pointer hover:border-[#1c1b1a] transition-all active:scale-95 relative overflow-hidden ${i % 3 === 1 ? 'rotate-[0.8deg]' : 'rotate-[-0.5deg]'}`}
+                        >
+                            {/* 已有月签：右上角折角墨标 */}
+                            {refinedMemories?.[monthKey] && (
+                                <div aria-hidden className="absolute top-0 right-0 w-0 h-0 border-t-[16px] border-t-[#1c1b1a] border-l-[16px] border-l-transparent" title="已有月签" />
+                            )}
+                            <span className="text-2xl font-black">{parseInt(month)}<span className="text-xs ml-0.5 text-[#1c1b1a]/45 font-bold">月</span></span>
+                            <div className="h-[2px] w-5 bg-[#1c1b1a]/40" />
+                            <span className="label-mono text-[8px] text-[#1c1b1a]/45">{tree[viewState.selectedYear!][month].length} 条日账</span>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); onToggleActiveMonth(viewState.selectedYear!, month); }} className={`absolute -top-2 -right-2 p-1.5 rounded-full shadow-md z-10 transition-colors ${isActive ? 'bg-primary text-white' : 'bg-white text-slate-300 border border-slate-100'}`}>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /><path fillRule="evenodd" d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113ZM17.25 12a5.25 5.25 0 1 1-10.5 0 5.25 5.25 0 0 1 10.5 0Z" clipRule="evenodd" /></svg>
+                        {/* 摊开细账（详细回忆进上下文）开关 */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onToggleActiveMonth(viewState.selectedYear!, month); }}
+                            title={isActive ? '细账已摊开（详细回忆会带进聊天）' : '只带月签（点一下摊开细账）'}
+                            className={`absolute -top-2 -right-2 p-1.5 z-10 border-2 border-[#1c1b1a] transition-all active:scale-90 rotate-[4deg] ${isActive ? 'bg-[#1c1b1a] text-[#f7f5ef]' : 'bg-white text-[#1c1b1a]/40'}`}
+                        >
+                            <Eye size={12} weight="bold" />
                         </button>
                     </div>
                 );
@@ -247,105 +335,124 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
         const groupedByDay: Record<string, MemoryFragment[]> = {};
         rawMemories.forEach(m => { if (!groupedByDay[m.date]) groupedByDay[m.date] = []; groupedByDay[m.date].push(m); });
 
-        if (rawMemories.length === 0) return <div className="flex flex-col items-center justify-center h-32 text-slate-300"><p className="text-xs">本月记忆已清空</p></div>;
+        if (rawMemories.length === 0) return <div className="flex flex-col items-center justify-center h-32 text-[#1c1b1a]/40"><p className="text-sm" style={HAND_CN}>这个月的日账撕光了。</p></div>;
 
         return (
             <div className="space-y-6 animate-fade-in pb-8">
-                <div className="bg-indigo-50/50 rounded-2xl p-4 border border-indigo-100 relative group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2 text-indigo-700"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .914-.143Z" clipRule="evenodd" /></svg><h4 className="text-xs font-bold tracking-wide uppercase">核心记忆 (AI Context)</h4></div>
-                        <div className="flex gap-2">
-                             <button onClick={() => onToggleActiveMonth(viewState.selectedYear!, viewState.selectedMonth!)} className={`text-[10px] px-3 py-1 rounded-full border shadow-sm transition-colors flex items-center gap-1 ${isActive ? 'bg-primary text-white border-primary' : 'bg-white text-slate-500 border-slate-200'}`}>{isActive ? '详细回忆已激活 (Active)' : '仅使用核心记忆 (Default)'}</button>
-                             <button onClick={() => setShowPromptPanel(!showPromptPanel)} className="text-[10px] bg-white text-slate-500 px-2 py-1 rounded-full border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors">
-                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
+                {/* 月签（喂给 AI 的核心记忆） */}
+                <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4">
+                    <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
+                    <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
+                        <h4 className="label-mono text-[8px] text-[#1c1b1a]/45 pt-1">本月月签（喂给 AI 的核心记忆）</h4>
+                        <div className="flex gap-1.5 flex-wrap">
+                             <button
+                                 onClick={() => onToggleActiveMonth(viewState.selectedYear!, viewState.selectedMonth!)}
+                                 className={`px-2.5 py-1 text-[9px] font-black flex items-center gap-1 border-2 border-[#1c1b1a] transition-all ${isActive ? 'bg-[#1c1b1a] text-[#f7f5ef]' : 'bg-white text-[#1c1b1a]/60'}`}
+                             >
+                                 <Eye size={10} weight="bold" />{isActive ? '细账已摊开' : '只带月签'}
                              </button>
-                             <button onClick={triggerRefine} disabled={isRefining} className="text-[10px] bg-white text-indigo-600 px-3 py-1 rounded-full border border-indigo-200 shadow-sm hover:bg-indigo-500 hover:text-white transition-colors flex items-center gap-1">{isRefining ? '...' : (refinedContent ? '重新精炼' : '生成')}</button>
+                             <button onClick={() => setShowPromptPanel(!showPromptPanel)} className={`px-2.5 py-1 text-[9px] font-black ${STICKER}`}>
+                                 换口吻
+                             </button>
+                             <button onClick={triggerRefine} disabled={isRefining} className={`px-2.5 py-1 text-[9px] font-black disabled:opacity-50 ${INK_BTN}`}>
+                                 {isRefining ? '凝缩中…' : (refinedContent ? '重凝月签' : '凝出月签')}
+                             </button>
                         </div>
                     </div>
                     {/* Prompt Selection Panel */}
                     {showPromptPanel && (
-                        <div className="mb-3 bg-white/70 p-3 rounded-xl border border-indigo-100 animate-fade-in">
-                            <label className="text-[9px] font-bold text-indigo-400 uppercase mb-2 block">选择总结提示词</label>
+                        <div className="mb-3 border-2 border-dashed border-[#1c1b1a]/40 p-3 animate-fade-in">
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-2 block">挑一种凝缩口吻</label>
                             <div className="flex flex-col gap-1.5">
                                 {archivePrompts.map(p => (
-                                    <div key={p.id} onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('character_active_refine_prompt_id', p.id); }} className={`px-3 py-2 rounded-lg border cursor-pointer text-xs font-bold transition-all ${selectedPromptId === p.id ? 'bg-indigo-50 border-indigo-400 text-indigo-700 shadow-sm' : 'bg-white/50 border-indigo-100 text-slate-500 hover:bg-white'}`}>
-                                        {p.name}
+                                    <div key={p.id} onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('character_active_refine_prompt_id', p.id); }} className={`px-3 py-2 border-2 cursor-pointer text-xs font-black transition-all ${selectedPromptId === p.id ? 'border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a]' : 'border-[#1c1b1a]/30 bg-white/60 text-[#1c1b1a]/60'}`}>
+                                        {selectedPromptId === p.id ? '◉ ' : '○ '}{p.name}
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-[8px] text-indigo-300 mt-2 leading-tight">角色月度精炼专用提示词，与聊天归档独立。</p>
+                            <p className="text-[11px] text-[#1c1b1a]/45 mt-2" style={HAND_CN}>月签专用口吻，和聊天归档互不打扰。</p>
                         </div>
                     )}
                     {/* Display Refined Memory Content if exists */}
                     {refinedContent && (
-                        <div 
-                            className="text-sm text-indigo-900 leading-relaxed bg-white/60 p-3 rounded-xl border border-indigo-50 cursor-pointer active:scale-[0.99] transition-transform select-none"
+                        <div
+                            className="text-sm leading-relaxed bg-white border border-[#1c1b1a]/30 p-3 cursor-pointer active:scale-[0.99] transition-transform select-none"
                             onTouchStart={() => handleCoreTouchStart(refinedContent)}
                             onTouchEnd={handleCoreTouchEnd}
                             onMouseDown={() => handleCoreTouchStart(refinedContent)}
                             onMouseUp={handleCoreTouchEnd}
                             onMouseLeave={handleCoreTouchEnd}
                             onContextMenu={(e) => { e.preventDefault(); setEditingCore({year: viewState.selectedYear!, month: viewState.selectedMonth!, content: refinedContent}); }}
-                            title="长按编辑/删除"
+                            title="长按修改 / 撕掉"
                         >
                             {refinedContent}
                         </div>
                     )}
                 </div>
-                
+
+                {/* 日账 */}
                 <div className="flex items-center justify-between px-1">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Time Logs</h4>
+                    <h4 className="label-mono text-[8px] text-[#1c1b1a]/45">日账 / DAY LOG</h4>
                     <div className="flex gap-2">
-                        {isManageMode && selectedIds.size > 0 && <button onClick={(e) => { e.stopPropagation(); requestDelete(); }} className="text-[10px] bg-red-500 text-white px-3 py-1 rounded-full font-bold shadow-sm active:scale-95 transition-transform">删除 ({selectedIds.size})</button>}
-                        <button onClick={() => { setIsManageMode(!isManageMode); setSelectedIds(new Set()); }} className={`text-[10px] px-3 py-1 rounded-full border transition-colors ${isManageMode ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>{isManageMode ? '完成' : '管理'}</button>
+                        {isManageMode && selectedIds.size > 0 && (
+                            <button onClick={(e) => { e.stopPropagation(); requestDelete(); }} className={`px-3 py-1 text-[10px] font-black line-through decoration-2 ${INK_BTN}`}>撕掉 ({selectedIds.size})</button>
+                        )}
+                        <button
+                            onClick={() => { setIsManageMode(!isManageMode); setSelectedIds(new Set()); }}
+                            className={`px-3 py-1 text-[10px] font-black border-2 border-[#1c1b1a] transition-all ${isManageMode ? 'bg-[#1c1b1a] text-[#f7f5ef]' : 'bg-white'}`}
+                        >{isManageMode ? '收工' : '整理'}</button>
                     </div>
                 </div>
 
                 <div className="mt-2 pl-2">
                     {Object.entries(groupedByDay).map(([date, dayMemories]) => (
-                        <div key={date} className="relative pl-8 pb-8 last:pb-0 border-l-[2px] border-slate-100 last:border-l-0 last:border-image-source-none">
-                            <div className="absolute left-[-2px] top-0 bottom-0 w-[2px] bg-slate-100"></div>
-                            <div className="absolute left-[-7px] top-0 w-3.5 h-3.5 bg-slate-300 rounded-full border-4 border-slate-50 z-10"></div>
-                            <div className="mb-3 -mt-1.5 flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-500 font-mono tracking-tight">{date}</span>
-                                {dayMemories.length > 1 && <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 rounded-md text-slate-400 font-normal">{dayMemories.length} 记录</span>}
+                        <div key={date} className="relative pl-7 pb-7 last:pb-0 border-l-2 border-dashed border-[#1c1b1a]/30">
+                            {/* 装订点 */}
+                            <div className="absolute left-[-6px] top-0 w-2.5 h-2.5 bg-[#1c1b1a] rotate-45 z-10"></div>
+                            <div className="mb-3 -mt-1 flex items-center gap-2">
+                                <span className="label-mono text-[10px] font-bold">{date}</span>
+                                {dayMemories.length > 1 && <span className="label-mono text-[8px] border border-[#1c1b1a]/40 px-1.5 py-0.5 text-[#1c1b1a]/55">{dayMemories.length} 笔</span>}
                                 {onForceArchiveDate && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); openForcePicker(date); }}
                                         disabled={forcingDate === date}
-                                        title={`从原始聊天重新总结 ${date}（忽略已隐藏状态）`}
-                                        className="ml-auto text-[10px] font-normal text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md px-2 py-0.5 transition-colors disabled:opacity-50"
+                                        title={`从原始聊天重誊 ${date} 这一天（忽略已隐藏状态）`}
+                                        className={`ml-auto px-2 py-0.5 text-[9px] font-black disabled:opacity-50 ${STICKER}`}
                                     >
-                                        {forcingDate === date ? '总结中…' : '重新总结'}
+                                        {forcingDate === date ? '誊写中…' : '重誊这天'}
                                     </button>
                                 )}
                             </div>
                             <div className="space-y-3">
-                                {dayMemories.map((mem) => (
-                                    <div 
-                                        key={mem.id} 
-                                        className={`relative group transition-all duration-300 ${isManageMode ? 'cursor-pointer' : ''}`} 
+                                {dayMemories.map((mem, mi) => (
+                                    <div
+                                        key={mem.id}
+                                        className={`relative transition-all duration-300 ${isManageMode ? 'cursor-pointer' : ''}`}
                                         onClick={() => { if (isManageMode) toggleSelection(mem.id); }}
                                     >
-                                        {isManageMode && <div className={`absolute -left-[38px] top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors z-20 ${selectedIds.has(mem.id) ? 'bg-primary border-primary' : 'bg-white border-slate-300'}`}>{selectedIds.has(mem.id) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}</div>}
-                                        <div className={`bg-white p-4 rounded-xl rounded-tl-none border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all relative ${isManageMode && selectedIds.has(mem.id) ? 'ring-2 ring-primary ring-offset-2' : ''}`} onClick={(e) => { if (!isManageMode) { e.stopPropagation(); toggleMemoryExpanded(mem.id); } }}>
-                                            
-                                            {/* Explicit Edit Button - Visible always on desktop, touchable on mobile */}
+                                        {isManageMode && (
+                                            <div className={`absolute -left-[34px] top-1/2 -translate-y-1/2 w-5 h-5 border-2 border-[#1c1b1a] flex items-center justify-center z-20 transition-colors ${selectedIds.has(mem.id) ? 'bg-[#1c1b1a]' : 'bg-white'}`}>
+                                                {selectedIds.has(mem.id) && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="#f7f5ef" strokeWidth={3.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                                            </div>
+                                        )}
+                                        <div
+                                            className={`bg-white p-3.5 border-2 relative transition-all ${mi % 2 === 0 ? 'rotate-[-0.25deg]' : 'rotate-[0.25deg]'} ${isManageMode && selectedIds.has(mem.id) ? 'border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a]' : 'border-[#1c1b1a]/40 shadow-sm hover:border-[#1c1b1a]'}`}
+                                            onClick={(e) => { if (!isManageMode) { e.stopPropagation(); toggleMemoryExpanded(mem.id); } }}
+                                        >
+                                            {/* 修一笔：常驻贴纸（手机也摸得到） */}
                                             {!isManageMode && (
-                                                <button 
+                                                <button
                                                     onClick={(e) => { e.stopPropagation(); setEditMemory(mem); }}
-                                                    className="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-primary bg-transparent hover:bg-slate-50 rounded-full transition-colors z-10"
-                                                    title="编辑"
+                                                    className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[9px] font-black rotate-[3deg] z-10 border-2 border-[#1c1b1a]/40 bg-white text-[#1c1b1a]/50 hover:border-[#1c1b1a] hover:text-[#1c1b1a] transition-colors"
+                                                    title="修这一笔"
                                                 >
-                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                    </svg>
+                                                    修
                                                 </button>
                                             )}
 
-                                            {mem.mood && <div className="mb-1 pr-6"><span className="text-[10px] px-1.5 py-0.5 bg-primary/5 text-primary rounded-md font-medium">#{mem.mood}</span></div>}
-                                            <p className="text-sm text-slate-700 leading-relaxed text-justify whitespace-pre-wrap">{expandedMemoryIds.has(mem.id) ? mem.summary : (mem.summary.length > 120 ? `${mem.summary.slice(0, 120)}...` : mem.summary)}</p>
-                                            {!isManageMode && mem.summary.length > 120 && <div className="mt-2 text-[10px] text-slate-400">{expandedMemoryIds.has(mem.id) ? '点击收起' : '点击展开'}</div>}
+                                            {mem.mood && <div className="mb-1 pr-6"><span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/60">#{mem.mood}</span></div>}
+                                            <p className="text-sm text-[#1c1b1a]/80 leading-relaxed text-justify whitespace-pre-wrap">{expandedMemoryIds.has(mem.id) ? mem.summary : (mem.summary.length > 120 ? `${mem.summary.slice(0, 120)}...` : mem.summary)}</p>
+                                            {!isManageMode && mem.summary.length > 120 && <div className="mt-2 text-[11px] text-[#1c1b1a]/45" style={HAND_CN}>{expandedMemoryIds.has(mem.id) ? '▴ 折起来' : '▾ 摊开看全文'}</div>}
                                         </div>
                                     </div>
                                 ))}
@@ -359,91 +466,124 @@ const MemoryArchivist: React.FC<MemoryArchivistProps> = ({ memories, refinedMemo
 
     return (
         <div className="flex flex-col h-full relative">
-            <div className="flex justify-between items-center mb-6 px-1">
+            {/* 柜门：统计 + 面包屑 */}
+            <div className="flex justify-between items-center mb-5 px-1 flex-wrap gap-2">
                 <div className="flex gap-4">
-                    <div><span className="block text-[10px] text-slate-400 uppercase tracking-widest">总字数</span><span className="text-lg font-medium text-slate-700 font-mono">{stats.totalChars.toLocaleString()}</span></div>
-                    <div><span className="block text-[10px] text-slate-400 uppercase tracking-widest">总条目</span><span className="text-lg font-medium text-slate-700 font-mono">{stats.count}</span></div>
+                    <div><span className="label-mono text-[8px] text-[#1c1b1a]/45 block">墨迹</span><span className="text-base font-black font-mono">{stats.totalChars.toLocaleString()} 字</span></div>
+                    <div><span className="label-mono text-[8px] text-[#1c1b1a]/45 block">日账</span><span className="text-base font-black font-mono">{stats.count} 条</span></div>
                 </div>
-                <div className="flex items-center gap-1 text-xs font-medium text-slate-500 bg-white/50 px-3 py-1.5 rounded-full border border-white/50 shadow-sm">
-                    {viewState.level === 'root' ? <span>档案室</span> : (
+                <div className="flex items-center gap-1 text-xs font-black border-2 border-[#1c1b1a]/50 bg-white px-3 py-1.5 rotate-[0.5deg]">
+                    {viewState.level === 'root' ? <span>往事柜</span> : (
                         <>
-                            <button onClick={() => setViewState({level: 'root', selectedYear: null, selectedMonth: null})} className="hover:text-primary">档案</button><span className="text-slate-300">/</span>
-                            {viewState.level === 'year' ? <span className="text-slate-800">{viewState.selectedYear}</span> : (<><button onClick={() => setViewState(prev => ({...prev, level: 'year', selectedMonth: null}))} className="hover:text-primary">{viewState.selectedYear}</button><span className="text-slate-300">/</span><span className="text-slate-800">{parseInt(viewState.selectedMonth!)}月</span></>)}
+                            <button onClick={() => setViewState({level: 'root', selectedYear: null, selectedMonth: null})} className="underline decoration-dashed underline-offset-2">往事柜</button><span className="text-[#1c1b1a]/30">/</span>
+                            {viewState.level === 'year' ? <span>{viewState.selectedYear}</span> : (<><button onClick={() => setViewState(prev => ({...prev, level: 'year', selectedMonth: null}))} className="underline decoration-dashed underline-offset-2">{viewState.selectedYear}</button><span className="text-[#1c1b1a]/30">/</span><span>{parseInt(viewState.selectedMonth!)}月</span></>)}
                         </>
                     )}
                 </div>
             </div>
             {viewState.level === 'root' && renderYears()}
-            {viewState.level === 'year' && <><div className="mb-4 flex items-center gap-2"><button onClick={handleBack} className="p-1.5 bg-white rounded-full text-slate-400 hover:text-slate-600 shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" /></svg></button><h3 className="text-sm font-medium text-slate-600">选择月份</h3></div>{renderMonths()}</>}
-            {viewState.level === 'month' && <><div className="mb-4 flex items-center gap-2"><button onClick={handleBack} className="p-1.5 bg-white rounded-full text-slate-400 hover:text-slate-600 shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" /></svg></button><h3 className="text-sm font-medium text-slate-600">本月记忆 (点击眼睛图标激活详细回忆)</h3></div>{renderMemories()}</>}
+            {viewState.level === 'year' && <><div className="mb-4 flex items-center gap-2"><BackChip /><h3 className="text-sm text-[#1c1b1a]/60" style={HAND_CN}>翻到哪个月？</h3></div>{renderMonths()}</>}
+            {viewState.level === 'month' && <><div className="mb-4 flex items-center gap-2"><BackChip /><h3 className="text-sm text-[#1c1b1a]/60" style={HAND_CN}>这个月的日账（点角上的眼睛把细账摊给 AI）</h3></div>{renderMemories()}</>}
 
-            <Modal isOpen={!!editMemory} title="编辑记忆" onClose={() => setEditMemory(null)} footer={<button onClick={() => { if(editMemory) onUpdateMemory(editMemory.id, editMemory.summary); setEditMemory(null); }} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存修改</button>}>
-                {editMemory && <div className="space-y-3"><div className="text-xs text-slate-400">日期: {editMemory.date}</div><textarea value={editMemory.summary} onChange={e => setEditMemory({...editMemory, summary: e.target.value})} className="w-full h-40 bg-slate-100 rounded-xl p-3 text-sm resize-none focus:outline-primary"/></div>}
-            </Modal>
-            
-            <Modal isOpen={showDeleteConfirm} title="确认删除" onClose={() => setShowDeleteConfirm(false)} footer={<div className="flex gap-2 w-full"><button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button><button onClick={performDelete} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button></div>}>
-                <p className="text-sm text-slate-600 text-center py-4">确定删除选中的 {selectedIds.size} 条记忆吗？<br/><span className="text-xs text-red-400 mt-1 block">此操作不可恢复。</span></p>
-            </Modal>
+            {/* ── 修日账 ── */}
+            <PaperSheet
+                open={!!editMemory}
+                tag="DAY LOG / 日账"
+                title="修这一笔"
+                onClose={() => setEditMemory(null)}
+                footer={<button onClick={() => { if(editMemory) onUpdateMemory(editMemory.id, editMemory.summary); setEditMemory(null); }} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>就这样记</button>}
+            >
+                {editMemory && (
+                    <div className="space-y-3">
+                        <div className="label-mono text-[9px] text-[#1c1b1a]/45">记于 {editMemory.date}</div>
+                        <textarea value={editMemory.summary} onChange={e => setEditMemory({...editMemory, summary: e.target.value})} className="w-full h-40 bg-white border-2 border-[#1c1b1a]/60 p-3 text-sm resize-none outline-none focus:border-[#1c1b1a]" />
+                    </div>
+                )}
+            </PaperSheet>
 
-            {/* Core Memory Edit Modal */}
-            <Modal 
-                isOpen={!!editingCore} 
-                title="编辑核心记忆" 
+            {/* ── 撕日账确认 ── */}
+            <PaperSheet
+                open={showDeleteConfirm}
+                tag="TEAR OFF / 不可复原"
+                title={`撕掉这 ${selectedIds.size} 条？`}
+                onClose={() => setShowDeleteConfirm(false)}
+                footer={<div className="flex gap-2 w-full">
+                    <button onClick={() => setShowDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
+                    <button onClick={performDelete} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>撕！</button>
+                </div>}
+            >
+                <p className="text-sm text-[#1c1b1a]/70 text-center py-2">选中的 {selectedIds.size} 条日账撕下去就拼不回来了。</p>
+            </PaperSheet>
+
+            {/* ── 修月签 ── */}
+            <PaperSheet
+                open={!!editingCore}
+                tag="MONTH SEAL / 月签"
+                title="修这枚月签"
                 onClose={() => setEditingCore(null)}
                 footer={
                     <div className="flex gap-2 w-full">
-                        <button onClick={() => setShowCoreDeleteConfirm(true)} className="flex-1 py-3 bg-red-50 text-red-500 font-bold rounded-2xl">删除</button>
-                        <button onClick={saveCoreEdit} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl shadow-lg">保存</button>
+                        <button onClick={() => setShowCoreDeleteConfirm(true)} className={`flex-1 py-2.5 text-xs font-black line-through decoration-2 ${STICKER}`}>撕掉</button>
+                        <button onClick={saveCoreEdit} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>就这样记</button>
                     </div>
                 }
             >
                 {editingCore && (
                     <div className="space-y-2">
-                        <div className="text-xs text-slate-400">{editingCore.year}年{editingCore.month}月</div>
-                        <textarea 
-                            value={editingCore.content} 
-                            onChange={e => setEditingCore({...editingCore, content: e.target.value})} 
-                            className="w-full h-48 bg-slate-100 rounded-xl p-3 text-sm resize-none focus:outline-primary leading-relaxed"
+                        <div className="label-mono text-[9px] text-[#1c1b1a]/45">{editingCore.year} 年 {editingCore.month} 月</div>
+                        <textarea
+                            value={editingCore.content}
+                            onChange={e => setEditingCore({...editingCore, content: e.target.value})}
+                            className="w-full h-48 bg-white border-2 border-[#1c1b1a]/60 p-3 text-sm resize-none outline-none focus:border-[#1c1b1a] leading-relaxed"
                         />
                     </div>
                 )}
-            </Modal>
+            </PaperSheet>
 
-            {/* Core Memory Delete Confirm */}
-            <Modal isOpen={showCoreDeleteConfirm} title="删除确认" onClose={() => setShowCoreDeleteConfirm(false)} footer={<div className="flex gap-2 w-full"><button onClick={() => setShowCoreDeleteConfirm(false)} className="flex-1 py-3 bg-slate-100 font-bold rounded-2xl">取消</button><button onClick={confirmCoreDelete} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">确认删除</button></div>}>
-                <p className="text-center text-sm text-slate-600 py-4">确定要删除该月的核心记忆吗？<br/><span className="text-xs text-red-400">删除后将丢失该月的 AI 上下文摘要。</span></p>
-            </Modal>
+            {/* ── 撕月签确认 ── */}
+            <PaperSheet
+                open={showCoreDeleteConfirm}
+                tag="TEAR OFF / 不可复原"
+                title="撕掉这枚月签？"
+                onClose={() => setShowCoreDeleteConfirm(false)}
+                footer={<div className="flex gap-2 w-full">
+                    <button onClick={() => setShowCoreDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
+                    <button onClick={confirmCoreDelete} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>撕！</button>
+                </div>}
+            >
+                <p className="text-center text-sm text-[#1c1b1a]/70 py-2">撕掉后，这个月喂给 AI 的上下文摘要就没了。</p>
+            </PaperSheet>
 
-            {/* 重新总结 —— 模板选择弹窗 */}
-            <Modal
-                isOpen={!!forcePickerDate}
-                title="重新总结"
+            {/* ── 重誊这一天：口吻选择 ── */}
+            <PaperSheet
+                open={!!forcePickerDate}
+                tag="REWRITE / 重誊"
+                title="重誊这一天"
                 onClose={() => setForcePickerDate(null)}
                 footer={<div className="flex gap-2 w-full">
-                    <button onClick={() => setForcePickerDate(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
-                    <button onClick={confirmForcePicker} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">开始总结</button>
+                    <button onClick={() => setForcePickerDate(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>先不誊</button>
+                    <button onClick={confirmForcePicker} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>开誊</button>
                 </div>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-500 leading-relaxed">
-                        即将从原始聊天重新总结 <b className="text-slate-700">{forcePickerDate}</b> 这一天。
-                        此操作忽略隐藏起点，直接读当天全部原始消息。选择你想用的提示词风格：
+                    <p className="text-[13px] text-[#1c1b1a]/60 leading-relaxed" style={HAND_CN}>
+                        要把 <b className="text-[#1c1b1a]">{forcePickerDate}</b> 这一天从原始聊天重誊一遍——不管藏没藏，当天全部原话都会重新读。挑一种誊写口吻：
                     </p>
                     <div className="space-y-1.5 max-h-[40vh] overflow-y-auto">
                         {(forceArchiveTemplates || []).map(p => (
                             <div
                                 key={p.id}
                                 onClick={() => setForcePickerPromptId(p.id)}
-                                className={`p-3 rounded-xl border cursor-pointer transition-colors ${forcePickerPromptId === p.id ? 'bg-primary/5 border-primary ring-1 ring-primary/30' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+                                className={`p-3 border-2 cursor-pointer transition-colors ${forcePickerPromptId === p.id ? 'border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a]' : 'border-[#1c1b1a]/30 bg-white/60'}`}
                             >
-                                <div className={`text-xs font-bold ${forcePickerPromptId === p.id ? 'text-primary' : 'text-slate-600'}`}>
-                                    {p.name}
+                                <div className="text-xs font-black">
+                                    {forcePickerPromptId === p.id ? '◉ ' : '○ '}{p.name}
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
-            </Modal>
+            </PaperSheet>
         </div>
     );
 };

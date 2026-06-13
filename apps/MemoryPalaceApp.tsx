@@ -1549,7 +1549,7 @@ export default function MemoryPalaceApp() {
                             position: 'relative', zIndex: 1,
                         }}
                     >
-                        还没有角色——去神经链接创建一个吧
+                        还没有角色——去「剪影集 → 登场人物」添一位吧
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative', zIndex: 1 }}>

@@ -583,7 +583,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             return (
                                 <NoteStrip tone="warn">
                                     记忆宫殿开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
-                                    <b>不会</b>自动写进「本月日度总结」。想让它自动写：神经链接 → 角色 →
+                                    <b>不会</b>自动写进「本月日度总结」。想让它自动写：剪影集 → 登场人物 → 角色 →
                                     记忆宫殿开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
                                     按选中的<b>《{activeName}》</b>笔法手动装订一次。
                                 </NoteStrip>

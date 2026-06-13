@@ -356,7 +356,7 @@ const QQBridge: React.FC = () => {
           </div>
 
           {characters.length === 0 ? (
-            <div className="text-xs text-slate-500">还没有角色，请先去「神经链接」创建一个。</div>
+            <div className="text-xs text-slate-500">还没有角色，请先去「剪影集 → 登场人物」添一位。</div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {characters.map(c => {
