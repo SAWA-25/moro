@@ -105,7 +105,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Appearance, name: '拼贴册', icon: 'Appearance', color: 'slate' },
   // ── 后续页 ──
   { id: AppID.MemoryPalace, name: '回忆标本馆', icon: 'MemoryPalace', color: 'violet' },
-  { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
+  { id: AppID.Room, name: '栖居志', icon: 'Room', color: 'slate' },
   // 查手机已并入聊天 App：聊天界面底部 + 号面板 →「查手机」（不再是独立桌面 App）
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   // 见面已并入聊天 App：聊天界面底部 + 号面板 →「见面」（用户主动发起线下模式）
