@@ -102,7 +102,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Worldbook, name: '剪报夹', icon: 'Worldbook', color: 'indigo' },
   { id: AppID.Presets, name: '活字盘', icon: 'Presets', color: 'sky' },
   { id: AppID.Regex, name: '补丁铺', icon: 'Regex', color: 'teal' },
-  { id: AppID.Appearance, name: '主题', icon: 'Appearance', color: 'slate' },
+  { id: AppID.Appearance, name: '拼贴册', icon: 'Appearance', color: 'slate' },
   // ── 后续页 ──
   { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },

@@ -31,7 +31,7 @@ const DEFAULT_STYLE: BubbleStyle = {
 
 const DEFAULT_THEME: ChatTheme = {
     id: '',
-    name: 'New Theme',
+    name: '未命名贴页',
     type: 'custom',
     user: { ...DEFAULT_STYLE, textColor: '#ffffff', backgroundColor: '#6366f1' },
     ai: { ...DEFAULT_STYLE },
@@ -41,7 +41,7 @@ const DEFAULT_THEME: ChatTheme = {
 // --- CSS Examples ---
 const CSS_EXAMPLES = [
     {
-        name: '毛玻璃 (Glass)',
+        name: '磨砂玻璃',
         code: `/* Glassmorphism for bubbles */
 .moro-bubble-user, .moro-bubble-ai {
   backdrop-filter: blur(10px);
@@ -52,7 +52,7 @@ const CSS_EXAMPLES = [
 .moro-bubble-ai { background: rgba(255, 255, 255, 0.7) !important; }`
     },
     {
-        name: '霓虹 (Neon)',
+        name: '霓虹勾边',
         code: `/* Glowing Neon Borders */
 .moro-bubble-user {
   border: 2px solid #a855f7;
@@ -68,7 +68,7 @@ const CSS_EXAMPLES = [
 }`
     },
     {
-        name: '像素 (Pixel)',
+        name: '像素颗粒',
         code: `/* Pixel Art Style — Refined */
 .moro-bubble-user, .moro-bubble-ai {
   border-radius: 0px !important;
@@ -388,26 +388,26 @@ const runCssRenderabilityCheck = (css: string, validation: CssValidationResult) 
 const CSS_SCOPE_SNIPPETS: CssSnippet[] = [
     {
         id: 'scope-shadow',
-        name: '阴影',
-        description: '给两侧气泡添加柔和投影',
+        name: '落影',
+        description: '给两侧气泡压一层柔投影',
         code: `.moro-bubble-user, .moro-bubble-ai {\n  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);\n}`
     },
     {
         id: 'scope-stroke',
-        name: '描边',
-        description: '统一边框轮廓',
+        name: '勾线',
+        description: '统一描一圈轮廓边',
         code: `.moro-bubble-user, .moro-bubble-ai {\n  border: 1px solid rgba(148, 163, 184, 0.45);\n}`
     },
     {
         id: 'scope-gradient',
-        name: '渐变',
-        description: '区分用户与角色气泡层次',
+        name: '晕染',
+        description: '让你我气泡拉开层次',
         code: `.moro-bubble-user {\n  background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;\n}\n.moro-bubble-ai {\n  background: linear-gradient(135deg, #ffffff, #e2e8f0) !important;\n}`
     },
     {
         id: 'scope-glass',
-        name: '玻璃',
-        description: '毛玻璃 + 高光边框',
+        name: '磨砂',
+        description: '磨砂底 + 高光镶边',
         code: `.moro-bubble-user, .moro-bubble-ai {\n  backdrop-filter: blur(10px);\n  border: 1px solid rgba(255, 255, 255, 0.45);\n}\n.moro-bubble-user {\n  background: rgba(99, 102, 241, 0.62) !important;\n}\n.moro-bubble-ai {\n  background: rgba(255, 255, 255, 0.62) !important;\n}`
     }
 ];
@@ -415,8 +415,8 @@ const CSS_SCOPE_SNIPPETS: CssSnippet[] = [
 const STYLE_TEMPLATES: StyleTemplate[] = [
     {
         id: 'cream',
-        name: '奶油',
-        description: '温暖低饱和，柔和阴影',
+        name: '奶油页',
+        description: '低饱和暖调，落影柔和',
         user: { textColor: '#7c2d12', backgroundColor: 'rgba(254, 243, 199, 0.92)', borderRadius: 20, opacity: 1, backgroundImageOpacity: 0.45, decorationX: 88, decorationY: -12, avatarDecorationX: 52, avatarDecorationY: 50 },
         ai: { textColor: '#78350f', backgroundColor: 'rgba(255, 251, 235, 0.9)', borderRadius: 20, opacity: 1, backgroundImageOpacity: 0.4, decorationX: 12, decorationY: -10, avatarDecorationX: 48, avatarDecorationY: 50 },
         userShadow: '0 8px 24px rgba(217, 119, 6, 0.18)',
@@ -424,8 +424,8 @@ const STYLE_TEMPLATES: StyleTemplate[] = [
     },
     {
         id: 'glass',
-        name: '玻璃',
-        description: '半透明磨砂，轻薄边缘',
+        name: '磨砂页',
+        description: '半透磨砂，边缘轻薄',
         user: { textColor: '#0f172a', backgroundColor: 'rgba(191, 219, 254, 0.78)', borderRadius: 18, opacity: 0.98, backgroundImageOpacity: 0.6, decorationX: 90, decorationY: -14, avatarDecorationX: 50, avatarDecorationY: 48 },
         ai: { textColor: '#0f172a', backgroundColor: 'rgba(255, 255, 255, 0.72)', borderRadius: 18, opacity: 0.98, backgroundImageOpacity: 0.55, decorationX: 10, decorationY: -14, avatarDecorationX: 50, avatarDecorationY: 48 },
         userShadow: '0 10px 28px rgba(30, 41, 59, 0.16)',
@@ -433,8 +433,8 @@ const STYLE_TEMPLATES: StyleTemplate[] = [
     },
     {
         id: 'neon',
-        name: '霓虹',
-        description: '高对比荧光，发光轮廓',
+        name: '霓虹页',
+        description: '高反差荧光，发光勾边',
         user: { textColor: '#faf5ff', backgroundColor: 'rgba(88, 28, 135, 0.9)', borderRadius: 16, opacity: 1, backgroundImageOpacity: 0.32, decorationX: 94, decorationY: -8, avatarDecorationX: 50, avatarDecorationY: 46 },
         ai: { textColor: '#e0f2fe', backgroundColor: 'rgba(12, 74, 110, 0.9)', borderRadius: 16, opacity: 1, backgroundImageOpacity: 0.32, decorationX: 8, decorationY: -8, avatarDecorationX: 50, avatarDecorationY: 46 },
         userShadow: '0 0 18px rgba(217, 70, 239, 0.55)',
@@ -442,8 +442,8 @@ const STYLE_TEMPLATES: StyleTemplate[] = [
     },
     {
         id: 'paper',
-        name: '纸感',
-        description: '微黄纸张，细节颗粒感',
+        name: '纸页',
+        description: '微黄纸面，带颗粒手感',
         user: { textColor: '#3f3f46', backgroundColor: 'rgba(254, 249, 195, 0.93)', borderRadius: 14, opacity: 1, backgroundImageOpacity: 0.7, decorationX: 90, decorationY: -6, avatarDecorationX: 54, avatarDecorationY: 52 },
         ai: { textColor: '#44403c', backgroundColor: 'rgba(254, 252, 232, 0.93)', borderRadius: 14, opacity: 1, backgroundImageOpacity: 0.68, decorationX: 10, decorationY: -6, avatarDecorationX: 46, avatarDecorationY: 52 },
         userShadow: '2px 2px 0 rgba(120, 113, 108, 0.32)',
@@ -451,8 +451,8 @@ const STYLE_TEMPLATES: StyleTemplate[] = [
     },
     {
         id: 'minimal',
-        name: '极简',
-        description: '低阴影，清爽留白',
+        name: '留白页',
+        description: '弱投影，干净留白',
         user: { textColor: '#0f172a', backgroundColor: 'rgba(226, 232, 240, 0.86)', borderRadius: 20, opacity: 0.97, backgroundImageOpacity: 0.25, decorationX: 92, decorationY: -10, avatarDecorationX: 50, avatarDecorationY: 50 },
         ai: { textColor: '#1e293b', backgroundColor: 'rgba(248, 250, 252, 0.85)', borderRadius: 20, opacity: 0.97, backgroundImageOpacity: 0.22, decorationX: 8, decorationY: -10, avatarDecorationX: 50, avatarDecorationY: 50 },
         userShadow: '0 2px 8px rgba(15, 23, 42, 0.08)',
@@ -482,7 +482,7 @@ type PreviewScene = {
 const PREVIEW_SCENES: PreviewScene[] = [
     {
         id: 'daily',
-        name: '日常聊天',
+        name: '日常对话',
         messages: [
             { id: 'd1', role: 'ai', kind: 'text', content: '今天状态怎么样？要不要一起复盘一下计划。' },
             { id: 'd2', role: 'user', kind: 'text', content: '挺好！晚点一起把任务过一遍吧。' }
@@ -490,7 +490,7 @@ const PREVIEW_SCENES: PreviewScene[] = [
     },
     {
         id: 'long',
-        name: '长文',
+        name: '长段落',
         messages: [
             {
                 id: 'l1',
@@ -508,7 +508,7 @@ const PREVIEW_SCENES: PreviewScene[] = [
     },
     {
         id: 'reply',
-        name: '回复链',
+        name: '引用回复',
         messages: [
             { id: 'r1', role: 'ai', kind: 'text', content: '我把重点标出来了，看看这个版本。' },
             {
@@ -522,7 +522,7 @@ const PREVIEW_SCENES: PreviewScene[] = [
     },
     {
         id: 'mix',
-        name: '图片混排',
+        name: '图文混排',
         messages: [
             { id: 'm1', role: 'ai', kind: 'image', content: '预览图' },
             { id: 'm2', role: 'user', kind: 'emoji', content: '😆' },
@@ -531,7 +531,7 @@ const PREVIEW_SCENES: PreviewScene[] = [
     },
     {
         id: 'dark-wallpaper',
-        name: '深色壁纸',
+        name: '暗底壁纸',
         darkMode: true,
         wallpaper: 'linear-gradient(135deg,#020617 0%,#1e293b 35%,#0f172a 100%)',
         messages: [
@@ -669,7 +669,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
             if (type === 'bg') updateStyle('backgroundImage', result);
             else if (type === 'deco') updateStyle('decoration', result);
             else if (type === 'avatarDeco') updateStyle('avatarDecoration', result);
-            addToast('图片上传成功', 'success');
+            addToast('图片贴好了', 'success');
         } catch (e: any) {
             addToast(e.message, 'error');
         }
@@ -678,11 +678,11 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
     const handleUrlApply = (type: 'bg' | 'deco' | 'avatarDeco') => {
         const url = assetUrlDraft[type].trim();
         if (!url) {
-            addToast('请输入图床 URL', 'error');
+            addToast('先贴一条图床 URL 进来', 'error');
             return;
         }
         if (!isValidHttpImageUrl(url)) {
-            addToast('URL 无效，请填写 http(s) 图床地址', 'error');
+            addToast('这条 URL 不对，要 http(s) 开头的图床地址', 'error');
             return;
         }
 
@@ -691,7 +691,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
         else updateStyle('avatarDecoration', url);
 
         setAssetUrlDraft(prev => ({ ...prev, [type]: '' }));
-        addToast('已应用图床图片', 'success');
+        addToast('图床图片贴好了', 'success');
     };
 
     const doSaveTheme = (exitAfterSave: boolean) => {
@@ -699,7 +699,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
         setLastSavedTheme(cloneTheme(editingTheme));
         setIsDirty(false);
         setIsAppliedToPreview(true);
-        addToast('已保存并应用到当前聊天预览', 'success');
+        addToast('已贴好并应用到当前聊天', 'success');
         if (exitAfterSave) exitView();
     };
 
@@ -740,11 +740,11 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
 
     const restoreLastUsableCss = () => {
         if ((editingTheme.customCss || '') === lastUsableCss) {
-            addToast('当前已是上次可用 CSS', 'success');
+            addToast('已经是上次能用的那版了', 'success');
             return;
         }
         updateTheme(prev => ({ ...prev, customCss: lastUsableCss }));
-        addToast('已恢复到上次可用 CSS', 'success');
+        addToast('撕回上次能用的那版了', 'success');
     };
 
     const applyTemplate = (template: StyleTemplate) => {
@@ -754,7 +754,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
             ai: { ...prev.ai, ...template.ai },
             customCss: injectShadowCss(prev.customCss || '', template.userShadow, template.aiShadow)
         }));
-        addToast(`已应用 ${template.name} 模板`, 'success');
+        addToast(`贴上「${template.name}」样张`, 'success');
     };
 
     const randomizeMonochrome = () => {
@@ -784,7 +784,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                 backgroundImageOpacity: 0.35
             }
         }));
-        addToast('已生成同色系配色', 'success');
+        addToast('掷出一组同色系', 'success');
     };
 
     const mirrorToOtherBubble = () => {
@@ -798,7 +798,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                 ...prev[sourceKey]
             }
         }));
-        addToast('已镜像当前气泡参数', 'success');
+        addToast('拓到另一侧了', 'success');
     };
 
     const currentScene = useMemo(
@@ -843,7 +843,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                 backgroundImageOpacity: Math.min(prev[activeTab].backgroundImageOpacity ?? 0.5, 0.55)
             }
         }));
-        addToast('已自动优化文字对比度', 'success');
+        addToast('字色已自动调清', 'success');
     };
 
     useEffect(() => {
@@ -893,7 +893,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
             <div 
                 className={`relative w-full flex items-end transition-all duration-300 cursor-pointer opacity-100 scale-100 ${isUser ? 'justify-end' : 'justify-start'}`}
                 onClick={() => panel === 'A' && requestTabSwitch(role)}
-                title={panel === 'A' ? `点击编辑${isUser ? '用户' : '角色'}气泡` : '上次保存版本'}
+                title={panel === 'A' ? `点一下裁剪${isUser ? '我方' : '对方'}气泡` : '上一次贴好的版本'}
             >
                 {/* Avatar + decoration: align with MessageItem layering */}
                 <div className={`absolute bottom-0 ${isUser ? 'right-0' : 'left-0'} w-9 h-9 z-10`}>
@@ -929,7 +929,7 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                     )}
 
                     <div
-                        className={`relative px-5 py-3 shadow-sm border border-black/5 text-sm overflow-visible ${isUser ? 'moro-bubble-user' : 'moro-bubble-ai'} ${isActive ? 'ring-2 ring-primary/70' : ''}`}
+                        className={`relative px-5 py-3 shadow-sm border border-black/5 text-sm overflow-visible ${isUser ? 'moro-bubble-user' : 'moro-bubble-ai'} ${isActive ? 'ring-2 ring-[#2b2933]' : ''}`}
                         style={containerStyle}
                     >
                         {showPreviewBgImage && style.backgroundImage && (
@@ -962,8 +962,8 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                         )}
 
                         {isActive && (
-                            <div className="absolute -top-2.5 left-3 px-2 py-0.5 rounded-full bg-primary text-white text-[9px] font-bold tracking-wider z-20">
-                                正在编辑{isUser ? '用户' : '角色'}
+                            <div className="absolute -top-2.5 left-3 px-2 py-0.5 bg-[#2b2933] text-[#fbfaf7] text-[9px] font-bold tracking-wider z-20 label-mono -rotate-2 shadow-[2px_2px_0_rgba(43,41,51,0.35)]">
+                                正在裁 · {isUser ? '我方' : '对方'}
                             </div>
                         )}
                     </div>
@@ -975,26 +975,24 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
     const parsedBgColor = parseColorValue(activeStyle.backgroundColor);
 
     return (
-        <div className="h-full w-full bg-slate-50 flex flex-col font-light relative">
-            {/* Header */}
-            <div className="h-20 bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 shrink-0 z-20 justify-between">
-                <div className="flex items-center gap-2">
-                    <button onClick={requestClose} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-                        </svg>
+        <div className="h-full w-full bg-[#f4f2ed] flex flex-col font-light relative">
+            {/* Header —— 手账封面条：墨色横线收口 */}
+            <div className="h-20 bg-[#fbfaf7] flex items-end pb-3 px-4 border-b-2 border-[#2b2933] shrink-0 z-20 justify-between">
+                <div className="flex items-center gap-3">
+                    <button onClick={requestClose} className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] flex items-center justify-center active:translate-x-[1px] active:translate-y-[1px] transition-transform shadow-[2px_2px_0_#2b2933]">
+                        <span className="text-[#2b2933] text-lg leading-none -mt-0.5">‹</span>
                     </button>
                     <div className="flex flex-col">
-                        <h1 className="text-xl font-medium text-slate-700">气泡工坊</h1>
-                        <div className="text-[10px] flex items-center gap-1.5 text-slate-500">
-                            <span className={`inline-flex w-2 h-2 rounded-full ${isAppliedToPreview && !isDirty ? 'bg-emerald-500' : 'bg-amber-400'}`}></span>
-                            {isAppliedToPreview && !isDirty ? '已应用到当前聊天预览' : '预览未应用最新改动'}
+                        <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">气泡裁剪台</h1>
+                        <div className="text-[9px] flex items-center gap-1.5 text-[#8b8996] label-mono mt-1">
+                            <span className={`inline-flex w-2 h-2 ${isAppliedToPreview && !isDirty ? 'bg-[#2b2933]' : 'bg-transparent border border-[#2b2933]'}`}></span>
+                            {isAppliedToPreview && !isDirty ? '已贴入当前预览' : '草稿未贴入'}
                         </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={() => saveTheme({ exitAfterSave: false })} className="px-4 py-1.5 bg-primary text-white rounded-full text-xs font-bold shadow-lg shadow-primary/30 active:scale-95 transition-all">
-                        保存并应用
+                    <button onClick={() => saveTheme({ exitAfterSave: false })} className="px-4 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono shadow-[3px_3px_0_rgba(43,41,51,0.3)] active:translate-x-[1px] active:translate-y-[1px] transition-transform -rotate-1">
+                        贴好 · 应用
                     </button>
                 </div>
             </div>
@@ -1009,51 +1007,52 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                 {/* Live CSS Injection for Preview */}
                 {editingTheme.customCss && <style>{editingTheme.customCss}</style>}
 
-                <div className="w-full max-w-sm relative z-10 bg-white/70 dark:bg-black/20 backdrop-blur-sm rounded-2xl p-3 border border-white/30 shadow-sm">
-                    <div className={`absolute right-3 top-3 px-2.5 py-1 rounded-full text-[11px] font-bold shadow-sm ${overallContrastScore.grade === 'A' ? 'bg-emerald-100 text-emerald-700' : overallContrastScore.grade === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
-                        可读性 {overallContrastScore.grade}
+                <div className="w-full max-w-sm relative z-10 bg-[#fbfaf7] p-3 border-2 border-[#2b2933] shadow-[4px_4px_0_rgba(43,41,51,0.25)] rotate-[-0.4deg]">
+                    <div className={`absolute right-3 top-3 px-2.5 py-1 text-[10px] font-bold label-mono border-2 border-[#2b2933] ${overallContrastScore.grade === 'A' ? 'bg-[#2b2933] text-[#fbfaf7]' : overallContrastScore.grade === 'B' ? 'bg-[#fbfaf7] text-[#2b2933]' : 'bg-[#fbfaf7] text-[#2b2933] border-dashed'}`}>
+                        清晰度 {overallContrastScore.grade}
                     </div>
-                    <div className="flex flex-wrap gap-2 mb-3">
+                    <div className="text-[8px] label-mono text-[#8b8996] mb-2">取景框</div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
                         {PREVIEW_SCENES.map(scene => (
                             <button
                                 key={scene.id}
                                 onClick={() => setPreviewSceneId(scene.id)}
-                                className={`px-2.5 py-1 rounded-full text-[11px] transition-all ${previewSceneId === scene.id ? 'bg-primary text-white shadow' : 'bg-white/80 text-slate-500 hover:bg-white'}`}
+                                className={`px-2.5 py-1 text-[11px] border transition-all ${previewSceneId === scene.id ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30 hover:border-[#2b2933]'}`}
                             >
                                 {scene.name}
                             </button>
                         ))}
                     </div>
 
-                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-2">
+                    <div className="flex flex-wrap gap-3 text-[11px] text-[#6b6b6b] mb-2">
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={showPreviewBgImage} onChange={(e) => setShowPreviewBgImage(e.target.checked)} className="accent-primary" />
-                            显示背景图层
+                            <input type="checkbox" checked={showPreviewBgImage} onChange={(e) => setShowPreviewBgImage(e.target.checked)} className="accent-[#2b2933]" />
+                            显示底图层
                         </label>
                         <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input type="checkbox" checked={isPreviewDark} onChange={(e) => setIsPreviewDark(e.target.checked)} className="accent-primary" />
-                            深色聊天背景
+                            <input type="checkbox" checked={isPreviewDark} onChange={(e) => setIsPreviewDark(e.target.checked)} className="accent-[#2b2933]" />
+                            暗底背景
                         </label>
                     </div>
 
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end mb-2">
                         <button
                             onClick={() => setIsPreviewFullscreen(prev => !prev)}
-                            className="px-2.5 py-1 rounded-full text-[11px] bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                            className="px-2.5 py-1 text-[11px] border border-[#2b2933]/40 bg-[#fbfaf7] text-[#2b2933] hover:border-[#2b2933] transition-colors"
                         >
-                            {isPreviewFullscreen ? '退出全屏预览' : '全屏预览'}
+                            {isPreviewFullscreen ? '收起整页' : '摊开整页'}
                         </button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="text-slate-500">A/B 对比：</span>
-                        <button onClick={() => setPreviewCompareMode('single')} className={`px-2 py-1 rounded-full ${previewCompareMode === 'single' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}>单预览</button>
-                        <button onClick={() => setPreviewCompareMode('split')} className={`px-2 py-1 rounded-full ${previewCompareMode === 'split' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}>左右分屏</button>
-                        <button onClick={() => setPreviewCompareMode('toggle')} className={`px-2 py-1 rounded-full ${previewCompareMode === 'toggle' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}>一键切换</button>
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className="text-[#8b8996] label-mono text-[9px]">对照</span>
+                        <button onClick={() => setPreviewCompareMode('single')} className={`px-2 py-1 border ${previewCompareMode === 'single' ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>单张</button>
+                        <button onClick={() => setPreviewCompareMode('split')} className={`px-2 py-1 border ${previewCompareMode === 'split' ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>并排</button>
+                        <button onClick={() => setPreviewCompareMode('toggle')} className={`px-2 py-1 border ${previewCompareMode === 'toggle' ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>翻面</button>
                         {previewCompareMode === 'toggle' && (
                             <div className="flex items-center gap-1">
-                                <button onClick={() => setPreviewToggleTarget('A')} className={`px-2 py-1 rounded ${previewToggleTarget === 'A' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>A 当前编辑</button>
-                                <button onClick={() => setPreviewToggleTarget('B')} className={`px-2 py-1 rounded ${previewToggleTarget === 'B' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>B 上次保存</button>
+                                <button onClick={() => setPreviewToggleTarget('A')} className={`px-2 py-1 border ${previewToggleTarget === 'A' ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>A 草稿</button>
+                                <button onClick={() => setPreviewToggleTarget('B')} className={`px-2 py-1 border ${previewToggleTarget === 'B' ? 'bg-[#2b2933] text-[#fbfaf7] border-[#2b2933]' : 'bg-[#fbfaf7] text-[#6b6b6b] border-[#2b2933]/30'}`}>B 存档</button>
                             </div>
                         )}
                     </div>
@@ -1062,9 +1061,9 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                 {/* Simulated Chat Conversation */}
                 {previewCompareMode === 'split' ? (
                     <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-3 relative z-10">
-                        {[{ label: 'A 当前编辑', theme: editingTheme, panel: 'A' as const }, { label: 'B 上次保存', theme: lastSavedTheme, panel: 'B' as const }].map(item => (
-                            <div key={item.label} className={`space-y-4 p-4 rounded-2xl ${isPreviewDark ? 'bg-slate-950/60 border border-white/10' : 'bg-white/70 border border-white/60'}`}>
-                                <div className="text-[10px] text-slate-500">{item.label}</div>
+                        {[{ label: 'A 草稿', theme: editingTheme, panel: 'A' as const }, { label: 'B 存档', theme: lastSavedTheme, panel: 'B' as const }].map(item => (
+                            <div key={item.label} className={`space-y-4 p-4 border-2 ${isPreviewDark ? 'bg-slate-950/60 border-white/20' : 'bg-[#fbfaf7]/80 border-[#2b2933]'}`}>
+                                <div className="text-[9px] label-mono text-[#8b8996]">{item.label}</div>
                                 {currentScene.messages.map(msg => (
                                     <div key={`${item.panel}-${msg.id}`}>{renderPreviewBubble(msg, item.theme, item.panel)}</div>
                                 ))}
@@ -1072,39 +1071,39 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                         ))}
                     </div>
                 ) : (
-                    <div className={`w-full max-w-sm space-y-4 p-4 rounded-2xl relative z-10 ${isPreviewDark ? 'bg-slate-950/60 border border-white/10' : 'bg-white/70 border border-white/60'}`}>
+                    <div className={`w-full max-w-sm space-y-4 p-4 relative z-10 border-2 ${isPreviewDark ? 'bg-slate-950/60 border-white/20' : 'bg-[#fbfaf7]/80 border-[#2b2933]'}`}>
                         {currentScene.messages.map(msg => (
                             <div key={msg.id}>{renderPreviewBubble(msg, previewCompareMode === 'toggle' && previewToggleTarget === 'B' ? lastSavedTheme : editingTheme, previewCompareMode === 'toggle' && previewToggleTarget === 'B' ? 'B' : 'A')}</div>
                         ))}
                     </div>
                 )}
                 
-                <div className={`text-[10px] absolute bottom-2 ${isPreviewDark ? 'text-slate-400' : 'text-slate-500'}`}>A 为当前编辑，B 为上次保存版本</div>
+                <div className={`text-[9px] label-mono absolute bottom-2 ${isPreviewDark ? 'text-slate-400' : 'text-[#8b8996]'}`}>A=草稿 · B=上次贴好的存档</div>
             </div>
 
             {/* Editor Controls */}
             {!isPreviewFullscreen && (
-            <div className="bg-white rounded-t-[2.5rem] shadow-[0_-5px_30px_rgba(0,0,0,0.08)] z-30 flex flex-col h-[55%] ring-1 ring-slate-100">
-                {/* Main Tabs (User / AI / CSS) */}
-                <div className="flex px-8 pt-6 pb-2 gap-6 overflow-x-auto no-scrollbar">
-                    <button onClick={() => requestTabSwitch('user')} className={`text-sm font-bold transition-colors whitespace-nowrap ${activeTab === 'user' ? 'text-slate-800' : 'text-slate-300'}`}>用户气泡</button>
-                    <button onClick={() => requestTabSwitch('ai')} className={`text-sm font-bold transition-colors whitespace-nowrap ${activeTab === 'ai' ? 'text-slate-800' : 'text-slate-300'}`}>角色气泡</button>
-                    <button onClick={() => requestTabSwitch('css')} className={`text-sm font-bold transition-colors whitespace-nowrap flex items-center gap-1 ${activeTab === 'css' ? 'text-indigo-600' : 'text-slate-300'}`}>
-                        <span>⚡</span> 自定义CSS
+            <div className="bg-[#fbfaf7] rounded-t-[2rem] shadow-[0_-6px_0_#2b2933] border-t-2 border-x-2 border-[#2b2933] z-30 flex flex-col h-[55%]">
+                {/* Main Tabs (User / AI / CSS) —— 手账纸折页签 */}
+                <div className="flex px-8 pt-6 pb-2 gap-5 overflow-x-auto no-scrollbar">
+                    <button onClick={() => requestTabSwitch('user')} className={`text-base font-bold font-display-italic transition-colors whitespace-nowrap ${activeTab === 'user' ? 'text-[#2b2933] underline decoration-2 underline-offset-4' : 'text-[#c4c1b8]'}`}>我方气泡</button>
+                    <button onClick={() => requestTabSwitch('ai')} className={`text-base font-bold font-display-italic transition-colors whitespace-nowrap ${activeTab === 'ai' ? 'text-[#2b2933] underline decoration-2 underline-offset-4' : 'text-[#c4c1b8]'}`}>对方气泡</button>
+                    <button onClick={() => requestTabSwitch('css')} className={`text-base font-bold font-display-italic transition-colors whitespace-nowrap flex items-center gap-1 ${activeTab === 'css' ? 'text-[#2b2933] underline decoration-2 underline-offset-4' : 'text-[#c4c1b8]'}`}>
+                        <span>✎</span> 手写码
                     </button>
                 </div>
 
                 <div className="px-8 pb-2 flex items-center gap-2">
-                    <button onClick={handleUndo} disabled={undoStack.length === 0} className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 disabled:opacity-40">撤销</button>
-                    <button onClick={handleRedo} disabled={redoStack.length === 0} className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 disabled:opacity-40">重做</button>
+                    <button onClick={handleUndo} disabled={undoStack.length === 0} className="text-[11px] px-2.5 py-1 border border-[#2b2933]/40 bg-[#fbfaf7] text-[#2b2933] disabled:opacity-30">↶ 撤回</button>
+                    <button onClick={handleRedo} disabled={redoStack.length === 0} className="text-[11px] px-2.5 py-1 border border-[#2b2933]/40 bg-[#fbfaf7] text-[#2b2933] disabled:opacity-30">↷ 重来</button>
                 </div>
 
                 {/* Conditional Sub-Tool Tabs */}
                 {activeTab !== 'css' && (
-                    <div className="flex px-6 border-b border-slate-100 mb-2 overflow-x-auto no-scrollbar">
-                        <button onClick={() => requestToolSectionSwitch('base')} className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 ${toolSection === 'base' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>基础样式</button>
-                        <button onClick={() => requestToolSectionSwitch('sticker')} className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 ${toolSection === 'sticker' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>气泡贴纸</button>
-                        <button onClick={() => requestToolSectionSwitch('avatar')} className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all shrink-0 ${toolSection === 'avatar' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>头像挂件</button>
+                    <div className="flex px-6 border-b-2 border-[#2b2933] mb-2 overflow-x-auto no-scrollbar gap-1">
+                        <button onClick={() => requestToolSectionSwitch('base')} className={`px-4 py-2 text-[11px] font-bold label-mono transition-all shrink-0 -mb-[2px] border-2 ${toolSection === 'base' ? 'border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7] text-[#2b2933]' : 'border-transparent text-[#8b8996]'}`}>底样</button>
+                        <button onClick={() => requestToolSectionSwitch('sticker')} className={`px-4 py-2 text-[11px] font-bold label-mono transition-all shrink-0 -mb-[2px] border-2 ${toolSection === 'sticker' ? 'border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7] text-[#2b2933]' : 'border-transparent text-[#8b8996]'}`}>贴纸</button>
+                        <button onClick={() => requestToolSectionSwitch('avatar')} className={`px-4 py-2 text-[11px] font-bold label-mono transition-all shrink-0 -mb-[2px] border-2 ${toolSection === 'avatar' ? 'border-[#2b2933] border-b-[#fbfaf7] bg-[#fbfaf7] text-[#2b2933]' : 'border-transparent text-[#8b8996]'}`}>挂件</button>
                     </div>
                 )}
 
@@ -1113,43 +1112,43 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                     {/* --- CSS EDITOR --- */}
                     {activeTab === 'css' && (
                         <div className="space-y-6 animate-fade-in h-full flex flex-col">
-                            <div className="text-[10px] text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed space-y-2">
-                                <span className="font-bold block mb-1 text-slate-500">CSS 增强模式</span>
-                                可使用CSS类名 <code className="bg-slate-200 px-1 rounded">.moro-bubble-user</code> 和 <code className="bg-slate-200 px-1 rounded">.moro-bubble-ai</code> 来统一定制气泡样式。
-                                <br/>支持使用 <code className="text-red-400">!important</code> 覆盖可视化编辑器的设置。
-                                <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-2 text-[10px] text-indigo-700">
-                                    <div className="font-semibold">优先级说明：可视化参数 vs CSS 覆盖</div>
-                                    <div>1) 可视化滑杆/颜色面板先生成基础样式；2) 自定义 CSS 后应用；3) <code>!important</code> 仅对命中的属性强制生效，会压过同属性的可视化参数。</div>
+                            <div className="text-[10px] text-[#6b6b6b] bg-[#f4f2ed] p-3 border border-dashed border-[#2b2933]/40 leading-relaxed space-y-2">
+                                <span className="font-bold block mb-1 text-[#2b2933] label-mono">手写码 · 增强</span>
+                                贴上类名 <code className="bg-[#2b2933] text-[#fbfaf7] px-1">.moro-bubble-user</code> 与 <code className="bg-[#2b2933] text-[#fbfaf7] px-1">.moro-bubble-ai</code> 即可统一裱糊两侧气泡。
+                                <br/>加 <code className="text-[#2b2933] font-bold">!important</code> 可盖过上面可视面板的设置。
+                                <div className="border-2 border-[#2b2933] bg-[#fbfaf7] px-2.5 py-2 text-[10px] text-[#2b2933]">
+                                    <div className="font-bold label-mono">叠放次序：面板底样 vs 手写码</div>
+                                    <div>① 上方滑杆/取色先打底；② 手写码随后覆上；③ <code>!important</code> 只对命中的属性强行压住，盖过面板里的同名设置。</div>
                                 </div>
-                                <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2">
+                                <div className="flex items-center justify-between gap-2 border-2 border-[#2b2933] bg-[#fbfaf7] px-2.5 py-2">
                                     <div>
-                                        <div className={`text-[10px] font-semibold ${cssValidation.isValid ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            {cssValidation.isValid ? '语法检查通过' : '语法检查未通过'}
+                                        <div className={`text-[10px] font-bold label-mono ${cssValidation.isValid ? 'text-[#2b2933]' : 'text-[#2b2933]'}`}>
+                                            {cssValidation.isValid ? '✓ 语法通顺' : '✗ 语法卡壳'}
                                         </div>
-                                        <div className="text-[10px] text-slate-500">检测到 <code className="text-red-500">!important</code> {cssValidation.importantCount} 处</div>
+                                        <div className="text-[10px] text-[#6b6b6b]">数到 <code className="text-[#2b2933] font-bold">!important</code> {cssValidation.importantCount} 处</div>
                                     </div>
                                     <button
                                         onClick={restoreLastUsableCss}
                                         disabled={(editingTheme.customCss || '') === lastUsableCss}
-                                        className="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 disabled:opacity-50"
+                                        className="text-[10px] px-2.5 py-1 border border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] disabled:opacity-40"
                                     >
-                                        重置为上次可用 CSS
+                                        撕回上次能用的
                                     </button>
                                 </div>
                             </div>
 
-                            <textarea 
+                            <textarea
                                 ref={cssTextareaRef}
-                                value={editingTheme.customCss || ''} 
+                                value={editingTheme.customCss || ''}
                                 onChange={(e) => updateTheme(prev => ({ ...prev, customCss: e.target.value }))}
-                                placeholder="/* 在这里输入 CSS 代码 */"
-                                className="flex-1 w-full bg-slate-800 text-slate-300 font-mono text-xs p-4 rounded-xl resize-none shadow-inner focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
+                                placeholder="/* 在这张纸上手写 CSS */"
+                                className="flex-1 w-full bg-[#2b2933] text-[#f4f2ed] font-mono text-xs p-4 resize-none border-2 border-[#2b2933] focus:ring-2 focus:ring-[#2b2933] outline-none leading-relaxed"
                                 spellCheck={false}
                             />
 
                             {!cssValidation.isValid && (
-                                <div className="text-[11px] rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
-                                    <div className="font-semibold mb-1">CSS 错误提示（实时）</div>
+                                <div className="text-[11px] border-2 border-[#2b2933] border-dashed bg-[#f4f2ed] px-3 py-2 text-[#2b2933]">
+                                    <div className="font-bold mb-1 label-mono">卡壳处（实时标注）</div>
                                     <ul className="space-y-1 list-disc pl-4">
                                         {cssValidation.errors.map((error, idx) => (
                                             <li key={`${error}-${idx}`}>
@@ -1161,29 +1160,29 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                             )}
 
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">限定作用域插入器（仅 .moro-bubble-user/.moro-bubble-ai）</label>
+                                <label className="text-[10px] font-bold text-[#8b8996] label-mono block mb-2">限定贴片（只贴 .moro-bubble-user/.moro-bubble-ai）</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {CSS_SCOPE_SNIPPETS.map(snippet => (
                                         <button
                                             key={snippet.id}
                                             onClick={() => insertCssSnippet(snippet)}
-                                            className="text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50 transition-all"
+                                            className="text-left p-2.5 border-2 border-[#2b2933]/30 bg-[#fbfaf7] hover:border-[#2b2933] hover:shadow-[2px_2px_0_#2b2933] transition-all"
                                         >
-                                            <div className="text-xs font-semibold text-slate-700">{snippet.name}</div>
-                                            <div className="text-[10px] text-slate-500 mt-1">{snippet.description}</div>
+                                            <div className="text-xs font-bold text-[#2b2933]">{snippet.name}</div>
+                                            <div className="text-[10px] text-[#6b6b6b] mt-1">{snippet.description}</div>
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">快速模板 (Templates)</label>
+                                <label className="text-[10px] font-bold text-[#8b8996] label-mono block mb-2">整页样张</label>
                                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
                                     {CSS_EXAMPLES.map((ex, i) => (
-                                        <button 
+                                        <button
                                             key={i}
                                             onClick={() => updateTheme(prev => ({ ...prev, customCss: ex.code }))}
-                                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-mono text-slate-600 border border-slate-200 whitespace-nowrap transition-colors"
+                                            className="px-3 py-2 bg-[#fbfaf7] hover:bg-[#2b2933] hover:text-[#fbfaf7] text-xs font-mono text-[#2b2933] border border-[#2b2933] whitespace-nowrap transition-colors"
                                         >
                                             {ex.name}
                                         </button>
@@ -1195,61 +1194,61 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
 
                     {/* --- BASE STYLE TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'base' && (
-                        <div className="space-y-6 animate-fade-in"> 
+                        <div className="space-y-6 animate-fade-in">
                             {/* Name Input (Only on Base) */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">主题名称 (Theme Name)</label>
-                                <input value={editingTheme.name} onChange={(e) => updateTheme(prev => ({ ...prev, name: e.target.value }), { trackHistory: false })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:border-primary/50 transition-all outline-none" placeholder="我的个性主题" />
+                                <label className="text-[10px] font-bold text-[#8b8996] label-mono block mb-2">这页贴纸叫什么</label>
+                                <input value={editingTheme.name} onChange={(e) => updateTheme(prev => ({ ...prev, name: e.target.value }), { trackHistory: false })} className="w-full bg-[#fbfaf7] border-2 border-[#2b2933] px-3 py-2 text-sm focus:shadow-[2px_2px_0_#2b2933] transition-all outline-none" placeholder="给这页起个名" />
                             </div>
 
                             <div>
                                 <div className="flex items-center justify-between mb-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">风格模板卡片</label>
-                                    <button onClick={randomizeMonochrome} className="text-[10px] px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100">随机生成（同色系）</button>
+                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">现成样张</label>
+                                    <button onClick={randomizeMonochrome} className="text-[10px] px-2.5 py-1 border border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] hover:bg-[#2b2933] hover:text-[#fbfaf7]">掷骰 · 同色系</button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     {STYLE_TEMPLATES.map(template => (
                                         <button
                                             key={template.id}
                                             onClick={() => applyTemplate(template)}
-                                            className="text-left p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:border-primary/30 hover:bg-primary/5 transition-all"
+                                            className="text-left p-2.5 border-2 border-[#2b2933]/30 bg-[#fbfaf7] hover:border-[#2b2933] hover:shadow-[2px_2px_0_#2b2933] transition-all"
                                         >
-                                            <div className="text-xs font-semibold text-slate-700">{template.name}</div>
-                                            <div className="text-[10px] text-slate-500 mt-1">{template.description}</div>
+                                            <div className="text-xs font-bold text-[#2b2933]">{template.name}</div>
+                                            <div className="text-[10px] text-[#6b6b6b] mt-1">{template.description}</div>
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">快速联动</div>
+                            <div className="border-2 border-dashed border-[#2b2933]/40 bg-[#f4f2ed] p-3">
+                                <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-2">联动</div>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <label className="text-xs text-slate-600 flex items-center gap-2">
-                                        <input type="checkbox" checked={userFollowAi} onChange={(e) => setUserFollowAi(e.target.checked)} className="accent-primary" />
-                                        用户气泡跟随角色气泡
+                                    <label className="text-xs text-[#2b2933] flex items-center gap-2">
+                                        <input type="checkbox" checked={userFollowAi} onChange={(e) => setUserFollowAi(e.target.checked)} className="accent-[#2b2933]" />
+                                        我方跟着对方一起变
                                     </label>
-                                    <button onClick={mirrorToOtherBubble} className="text-[10px] px-2.5 py-1 rounded-full bg-white border border-slate-200 hover:border-primary/30">镜像参数到另一个气泡</button>
+                                    <button onClick={mirrorToOtherBubble} className="text-[10px] px-2.5 py-1 bg-[#fbfaf7] border border-[#2b2933] hover:bg-[#2b2933] hover:text-[#fbfaf7]">拓到另一侧</button>
                                 </div>
                             </div>
 
                             {activeTab !== 'css' && (
-                                <div className={`rounded-xl border p-3 ${showLowContrastWarning ? 'border-amber-200 bg-amber-50/80' : 'border-emerald-200 bg-emerald-50/70'}`}>
+                                <div className={`border-2 p-3 ${showLowContrastWarning ? 'border-[#2b2933] border-dashed bg-[#f4f2ed]' : 'border-[#2b2933] bg-[#fbfaf7]'}`}>
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div>
-                                            <div className="text-[11px] font-semibold text-slate-700">实时可读性评分：{activeContrastScore.grade}（{activeContrastScore.ratio.toFixed(2)}:1）</div>
-                                            <div className={`text-[10px] mt-1 ${showLowContrastWarning ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                                {showLowContrastWarning ? '文字可读性偏低，建议提升文字与背景对比。' : '当前文字与背景对比良好。'}
+                                            <div className="text-[11px] font-bold text-[#2b2933] label-mono">清晰度 {activeContrastScore.grade} · {activeContrastScore.ratio.toFixed(2)}:1</div>
+                                            <div className="text-[10px] mt-1 text-[#6b6b6b]">
+                                                {showLowContrastWarning ? '字和底太接近了，读起来费劲，建议拉开对比。' : '字和底对比舒服，读得清。'}
                                             </div>
                                         </div>
                                         {showLowContrastWarning && (
-                                            <button onClick={oneClickFixContrast} className="text-[10px] px-2.5 py-1 rounded-full bg-amber-500 text-white font-semibold hover:bg-amber-600 transition-colors">
-                                                一键修复
+                                            <button onClick={oneClickFixContrast} className="text-[10px] px-2.5 py-1 bg-[#2b2933] text-[#fbfaf7] font-bold label-mono hover:opacity-80 transition-opacity">
+                                                一键调清
                                             </button>
                                         )}
                                     </div>
                                     {showCombinedRisk && (
-                                        <div className="mt-2 text-[10px] text-rose-600 font-medium">
-                                            组合风险：背景图透明层较强 + 对比度不足，可能在复杂壁纸上难以阅读。
+                                        <div className="mt-2 text-[10px] text-[#2b2933] font-bold border-t border-dashed border-[#2b2933]/40 pt-2">
+                                            叠加风险：底图太显 + 对比不足，复杂壁纸上可能看不清。
                                         </div>
                                     )}
                                 </div>
@@ -1258,17 +1257,17 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                             {/* Colors & Opacity */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <div className="flex items-center justify-between mb-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">文字颜色</label><span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：自动对比</span></div>
-                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100"><input type="color" value={activeStyle.textColor} onChange={(e) => updateStyle('textColor', e.target.value)} className="w-8 h-8 rounded-lg border-none cursor-pointer bg-transparent" /></div>
+                                    <div className="flex items-center justify-between mb-2"><label className="text-[10px] font-bold text-[#8b8996] label-mono">字色</label><span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">自动配</span></div>
+                                    <div className="flex items-center gap-2 bg-[#fbfaf7] p-2 border-2 border-[#2b2933]"><input type="color" value={activeStyle.textColor} onChange={(e) => updateStyle('textColor', e.target.value)} className="w-8 h-8 border-none cursor-pointer bg-transparent" /></div>
                                 </div>
                                 <div>
-                                    <div className="flex items-center justify-between mb-2"><label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">气泡颜色 (Base)</label><span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：同色系</span></div>
-                                    <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                                        <input 
-                                            type="color" 
-                                            value={parsedBgColor.hex} 
-                                            onChange={(e) => updateColorWithAlpha(e.target.value, parsedBgColor.alpha)} 
-                                            className="w-8 h-8 rounded-lg border-none cursor-pointer bg-transparent" 
+                                    <div className="flex items-center justify-between mb-2"><label className="text-[10px] font-bold text-[#8b8996] label-mono">气泡底色</label><span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">同色系</span></div>
+                                    <div className="flex items-center gap-2 bg-[#fbfaf7] p-2 border-2 border-[#2b2933]">
+                                        <input
+                                            type="color"
+                                            value={parsedBgColor.hex}
+                                            onChange={(e) => updateColorWithAlpha(e.target.value, parsedBgColor.alpha)}
+                                            className="w-8 h-8 border-none cursor-pointer bg-transparent"
                                         />
                                     </div>
                                 </div>
@@ -1277,51 +1276,51 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                             {/* Background Alpha (Transparency) */}
                             <div>
                                 <div className="flex justify-between mb-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase">背景透明度 (Background Alpha)</label>
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：85%</span>
+                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">底色透明度</label>
+                                    <span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">约 85%</span>
                                 </div>
-                                <input 
-                                    type="range" min="0" max="1" step="0.05" 
-                                    value={parsedBgColor.alpha} 
-                                    onChange={(e) => updateColorWithAlpha(parsedBgColor.hex, parseFloat(e.target.value))} 
-                                    className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" 
+                                <input
+                                    type="range" min="0" max="1" step="0.05"
+                                    value={parsedBgColor.alpha}
+                                    onChange={(e) => updateColorWithAlpha(parsedBgColor.hex, parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
                                 />
                             </div>
 
                             {/* Padding (Compactness) */}
                             <div>
                                 <div className="flex justify-between mb-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase">气泡大小/紧凑度 (Size/Padding)</label>
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：12</span>
+                                    <label className="text-[10px] font-bold text-[#8b8996] label-mono">气泡留白</label>
+                                    <span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">约 12</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-400">紧凑</span>
-                                    <input 
-                                        type="range" min="4" max="24" step="1" 
-                                        value={paddingVal} 
-                                        onChange={(e) => updatePadding(parseInt(e.target.value))} 
-                                        className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" 
+                                    <span className="text-[10px] text-[#8b8996]">挤</span>
+                                    <input
+                                        type="range" min="4" max="24" step="1"
+                                        value={paddingVal}
+                                        onChange={(e) => updatePadding(parseInt(e.target.value))}
+                                        className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
                                     />
-                                    <span className="text-[10px] text-slate-400">宽敞</span>
+                                    <span className="text-[10px] text-[#8b8996]">松</span>
                                 </div>
                             </div>
 
                             {/* Border Radius */}
                             <div>
-                                <div className="flex justify-between mb-2"><label className="text-[10px] font-bold text-slate-400 uppercase">圆角大小</label><span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：16 / 20</span></div>
-                                <input type="range" min="0" max="30" value={activeStyle.borderRadius} onChange={(e) => updateStyle('borderRadius', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" />
+                                <div className="flex justify-between mb-2"><label className="text-[10px] font-bold text-[#8b8996] label-mono">圆角</label><span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">16 / 20</span></div>
+                                <input type="range" min="0" max="30" value={activeStyle.borderRadius} onChange={(e) => updateStyle('borderRadius', parseInt(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                             </div>
 
                             {/* Background Image Logic */}
-                            <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer group relative h-24 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 overflow-hidden hover:border-primary/50 hover:text-primary transition-all">
+                            <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer group relative h-24 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/50 flex flex-col items-center justify-center text-[#8b8996] overflow-hidden hover:border-[#2b2933] hover:text-[#2b2933] transition-all">
                                 {activeStyle.backgroundImage ? (
                                     <>
                                         <img src={activeStyle.backgroundImage} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                        <span className="relative z-10 text-[10px] bg-white/80 px-2 py-1 rounded shadow-sm font-bold">更换底纹</span>
+                                        <span className="relative z-10 text-[10px] bg-[#fbfaf7] border border-[#2b2933] px-2 py-1 font-bold label-mono">换底纹</span>
                                     </>
-                                ) : <span className="text-xs font-bold">+ 上传底纹图片 (Texture)</span>}
+                                ) : <span className="text-xs font-bold label-mono">＋ 贴一张底纹</span>}
                                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'bg')} />
-                                {activeStyle.backgroundImage && <button onClick={(e) => { e.stopPropagation(); updateStyle('backgroundImage', undefined); }} className="absolute top-2 right-2 text-[10px] bg-red-100 text-red-500 px-2 py-0.5 rounded-full z-20">移除</button>}
+                                {activeStyle.backgroundImage && <button onClick={(e) => { e.stopPropagation(); updateStyle('backgroundImage', undefined); }} className="absolute top-2 right-2 text-[10px] bg-[#2b2933] text-[#fbfaf7] px-2 py-0.5 z-20">撕掉</button>}
                             </div>
                             <div className="flex gap-2">
                                 <input
@@ -1329,64 +1328,64 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                                     value={assetUrlDraft.bg}
                                     onChange={(e) => setAssetUrlDraft(prev => ({ ...prev, bg: e.target.value }))}
                                     onClick={(e) => e.stopPropagation()}
-                                    placeholder="或粘贴图床 URL"
-                                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    placeholder="或贴一条图床 URL"
+                                    className="flex-1 border-2 border-[#2b2933] bg-[#fbfaf7] px-3 py-2 text-xs text-[#2b2933] focus:outline-none focus:shadow-[2px_2px_0_#2b2933]"
                                 />
-                                <button onClick={() => handleUrlApply('bg')} className="px-3 py-2 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200">应用</button>
+                                <button onClick={() => handleUrlApply('bg')} className="px-3 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono hover:opacity-80">贴上</button>
                             </div>
 
                             {/* Background Image Opacity */}
                             {activeStyle.backgroundImage && (
                                 <div>
-                                    <div className="flex justify-between mb-2"><label className="text-[10px] font-bold text-slate-400 uppercase">底纹透明度</label><span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">推荐：35%~55%</span></div>
-                                    <input type="range" min="0" max="1" step="0.05" value={activeStyle.backgroundImageOpacity ?? 0.5} onChange={(e) => updateStyle('backgroundImageOpacity', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none cursor-pointer accent-primary" />
+                                    <div className="flex justify-between mb-2"><label className="text-[10px] font-bold text-[#8b8996] label-mono">底纹透明度</label><span className="text-[9px] px-1.5 py-0.5 border border-[#2b2933] text-[#2b2933]">35%~55%</span></div>
+                                    <input type="range" min="0" max="1" step="0.05" value={activeStyle.backgroundImageOpacity ?? 0.5} onChange={(e) => updateStyle('backgroundImageOpacity', parseFloat(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]" />
                                 </div>
                             )}
                             {/* Voice Bar Style */}
-                            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <div className="bg-[#fbfaf7] p-4 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.2)]">
+                                <h3 className="text-[11px] font-bold text-[#2b2933] label-mono mb-3 flex items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" /><path d="M5.5 9.643a.75.75 0 0 0-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-1.5v-1.546A6.001 6.001 0 0 0 16 10v-.357a.75.75 0 0 0-1.5 0V10a4.5 4.5 0 0 1-9 0v-.357Z" /></svg>
-                                    语音条样式
+                                    语音条
                                 </h3>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="text-[10px] text-slate-400 block mb-1">背景色</label>
+                                        <label className="text-[10px] text-[#8b8996] block mb-1">底色</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="color" value={activeStyle.voiceBarBg || '#f1f5f9'} onChange={(e) => updateStyle('voiceBarBg', e.target.value)} className="w-7 h-7 rounded-lg border-0 cursor-pointer" />
-                                            <span className="text-[10px] text-slate-400 font-mono">{activeStyle.voiceBarBg || '默认'}</span>
-                                            {activeStyle.voiceBarBg && <button onClick={() => updateStyle('voiceBarBg', undefined)} className="text-[9px] text-red-400">重置</button>}
+                                            <input type="color" value={activeStyle.voiceBarBg || '#f1f5f9'} onChange={(e) => updateStyle('voiceBarBg', e.target.value)} className="w-7 h-7 border border-[#2b2933] cursor-pointer" />
+                                            <span className="text-[10px] text-[#8b8996] font-mono">{activeStyle.voiceBarBg || '默认'}</span>
+                                            {activeStyle.voiceBarBg && <button onClick={() => updateStyle('voiceBarBg', undefined)} className="text-[9px] text-[#2b2933] underline">还原</button>}
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-slate-400 block mb-1">播放时背景</label>
+                                        <label className="text-[10px] text-[#8b8996] block mb-1">播放时底色</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="color" value={activeStyle.voiceBarActiveBg || '#d1fae5'} onChange={(e) => updateStyle('voiceBarActiveBg', e.target.value)} className="w-7 h-7 rounded-lg border-0 cursor-pointer" />
-                                            <span className="text-[10px] text-slate-400 font-mono">{activeStyle.voiceBarActiveBg || '默认'}</span>
-                                            {activeStyle.voiceBarActiveBg && <button onClick={() => updateStyle('voiceBarActiveBg', undefined)} className="text-[9px] text-red-400">重置</button>}
+                                            <input type="color" value={activeStyle.voiceBarActiveBg || '#d1fae5'} onChange={(e) => updateStyle('voiceBarActiveBg', e.target.value)} className="w-7 h-7 border border-[#2b2933] cursor-pointer" />
+                                            <span className="text-[10px] text-[#8b8996] font-mono">{activeStyle.voiceBarActiveBg || '默认'}</span>
+                                            {activeStyle.voiceBarActiveBg && <button onClick={() => updateStyle('voiceBarActiveBg', undefined)} className="text-[9px] text-[#2b2933] underline">还原</button>}
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-slate-400 block mb-1">按钮颜色</label>
+                                        <label className="text-[10px] text-[#8b8996] block mb-1">按钮色</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="color" value={activeStyle.voiceBarBtnColor || '#10b981'} onChange={(e) => updateStyle('voiceBarBtnColor', e.target.value)} className="w-7 h-7 rounded-lg border-0 cursor-pointer" />
-                                            <span className="text-[10px] text-slate-400 font-mono">{activeStyle.voiceBarBtnColor || '默认'}</span>
-                                            {activeStyle.voiceBarBtnColor && <button onClick={() => updateStyle('voiceBarBtnColor', undefined)} className="text-[9px] text-red-400">重置</button>}
+                                            <input type="color" value={activeStyle.voiceBarBtnColor || '#10b981'} onChange={(e) => updateStyle('voiceBarBtnColor', e.target.value)} className="w-7 h-7 border border-[#2b2933] cursor-pointer" />
+                                            <span className="text-[10px] text-[#8b8996] font-mono">{activeStyle.voiceBarBtnColor || '默认'}</span>
+                                            {activeStyle.voiceBarBtnColor && <button onClick={() => updateStyle('voiceBarBtnColor', undefined)} className="text-[9px] text-[#2b2933] underline">还原</button>}
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] text-slate-400 block mb-1">波形颜色</label>
+                                        <label className="text-[10px] text-[#8b8996] block mb-1">波形色</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="color" value={activeStyle.voiceBarWaveColor || '#10b981'} onChange={(e) => updateStyle('voiceBarWaveColor', e.target.value)} className="w-7 h-7 rounded-lg border-0 cursor-pointer" />
-                                            <span className="text-[10px] text-slate-400 font-mono">{activeStyle.voiceBarWaveColor || '默认'}</span>
-                                            {activeStyle.voiceBarWaveColor && <button onClick={() => updateStyle('voiceBarWaveColor', undefined)} className="text-[9px] text-red-400">重置</button>}
+                                            <input type="color" value={activeStyle.voiceBarWaveColor || '#10b981'} onChange={(e) => updateStyle('voiceBarWaveColor', e.target.value)} className="w-7 h-7 border border-[#2b2933] cursor-pointer" />
+                                            <span className="text-[10px] text-[#8b8996] font-mono">{activeStyle.voiceBarWaveColor || '默认'}</span>
+                                            {activeStyle.voiceBarWaveColor && <button onClick={() => updateStyle('voiceBarWaveColor', undefined)} className="text-[9px] text-[#2b2933] underline">还原</button>}
                                         </div>
                                     </div>
                                     <div className="col-span-2">
-                                        <label className="text-[10px] text-slate-400 block mb-1">文字颜色</label>
+                                        <label className="text-[10px] text-[#8b8996] block mb-1">字色</label>
                                         <div className="flex items-center gap-2">
-                                            <input type="color" value={activeStyle.voiceBarTextColor || '#475569'} onChange={(e) => updateStyle('voiceBarTextColor', e.target.value)} className="w-7 h-7 rounded-lg border-0 cursor-pointer" />
-                                            <span className="text-[10px] text-slate-400 font-mono">{activeStyle.voiceBarTextColor || '默认'}</span>
-                                            {activeStyle.voiceBarTextColor && <button onClick={() => updateStyle('voiceBarTextColor', undefined)} className="text-[9px] text-red-400">重置</button>}
+                                            <input type="color" value={activeStyle.voiceBarTextColor || '#475569'} onChange={(e) => updateStyle('voiceBarTextColor', e.target.value)} className="w-7 h-7 border border-[#2b2933] cursor-pointer" />
+                                            <span className="text-[10px] text-[#8b8996] font-mono">{activeStyle.voiceBarTextColor || '默认'}</span>
+                                            {activeStyle.voiceBarTextColor && <button onClick={() => updateStyle('voiceBarTextColor', undefined)} className="text-[9px] text-[#2b2933] underline">还原</button>}
                                         </div>
                                     </div>
                                 </div>
@@ -1397,38 +1396,38 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                     {/* --- STICKER TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'sticker' && (
                         <div className="space-y-6 animate-fade-in">
-                            <div onClick={() => decorationInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-400 hover:border-primary/50 hover:text-primary transition-all">
-                                 {activeStyle.decoration ? <img src={activeStyle.decoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold">+ 上传气泡角标/贴纸</span>}
+                            <div onClick={() => decorationInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/50 flex items-center justify-center text-[#8b8996] hover:border-[#2b2933] hover:text-[#2b2933] transition-all">
+                                 {activeStyle.decoration ? <img src={activeStyle.decoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold label-mono">＋ 贴个角标 / 贴纸</span>}
                                  <input type="file" ref={decorationInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'deco')} />
-                                 {activeStyle.decoration && <button onClick={(e) => { e.stopPropagation(); updateStyle('decoration', undefined); }} className="absolute top-2 right-2 text-[10px] bg-red-100 text-red-500 px-2 py-0.5 rounded-full">移除</button>}
+                                 {activeStyle.decoration && <button onClick={(e) => { e.stopPropagation(); updateStyle('decoration', undefined); }} className="absolute top-2 right-2 text-[10px] bg-[#2b2933] text-[#fbfaf7] px-2 py-0.5">撕掉</button>}
                             </div>
                             <div className="flex gap-2 -mt-4">
                                 <input
                                     type="url"
                                     value={assetUrlDraft.deco}
                                     onChange={(e) => setAssetUrlDraft(prev => ({ ...prev, deco: e.target.value }))}
-                                    placeholder="或粘贴贴纸图床 URL"
-                                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    placeholder="或贴一条贴纸图床 URL"
+                                    className="flex-1 border-2 border-[#2b2933] bg-[#fbfaf7] px-3 py-2 text-xs text-[#2b2933] focus:outline-none focus:shadow-[2px_2px_0_#2b2933]"
                                 />
-                                <button onClick={() => handleUrlApply('deco')} className="px-3 py-2 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200">应用</button>
+                                <button onClick={() => handleUrlApply('deco')} className="px-3 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono hover:opacity-80">贴上</button>
                             </div>
 
                             {activeStyle.decoration && (
-                                <details className="rounded-xl border border-slate-200 bg-slate-50 p-3" open={showAdvancedSettings}>
-                                    <summary onClick={(e) => { e.preventDefault(); setShowAdvancedSettings(prev => !prev); }} className="text-xs font-semibold text-slate-600 cursor-pointer">高级设置 · 贴纸坐标与旋转</summary>
+                                <details className="border-2 border-[#2b2933]/30 bg-[#fbfaf7] p-3" open={showAdvancedSettings}>
+                                    <summary onClick={(e) => { e.preventDefault(); setShowAdvancedSettings(prev => !prev); }} className="text-xs font-bold text-[#2b2933] cursor-pointer label-mono">细调 · 贴纸位置与旋转</summary>
                                     {showAdvancedSettings && (
                                         <div className="grid grid-cols-2 gap-x-6 gap-y-6 pt-4">
-                                            <div className="col-span-2"><label className="text-[10px] text-slate-400 uppercase block mb-2">位置坐标 (X / Y)</label>
+                                            <div className="col-span-2"><label className="text-[10px] text-[#8b8996] label-mono block mb-2">挪位 (左右 / 上下)</label>
                                                 <div className="flex gap-3">
-                                                    <input type="range" min="-50" max="150" value={activeStyle.decorationX ?? 90} onChange={(e) => updateStyle('decorationX', parseInt(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-full accent-primary" />
-                                                    <input type="range" min="-50" max="150" value={activeStyle.decorationY ?? -10} onChange={(e) => updateStyle('decorationY', parseInt(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                                    <input type="range" min="-50" max="150" value={activeStyle.decorationX ?? 90} onChange={(e) => updateStyle('decorationX', parseInt(e.target.value))} className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
+                                                    <input type="range" min="-50" max="150" value={activeStyle.decorationY ?? -10} onChange={(e) => updateStyle('decorationY', parseInt(e.target.value))} className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                                 </div>
                                             </div>
-                                            <div><label className="text-[10px] text-slate-400 uppercase block mb-2">缩放 ({activeStyle.decorationScale ?? 1}x)</label>
-                                                <input type="range" min="0.2" max="3" step="0.1" value={activeStyle.decorationScale ?? 1} onChange={(e) => updateStyle('decorationScale', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                            <div><label className="text-[10px] text-[#8b8996] label-mono block mb-2">缩放 ({activeStyle.decorationScale ?? 1}x)</label>
+                                                <input type="range" min="0.2" max="3" step="0.1" value={activeStyle.decorationScale ?? 1} onChange={(e) => updateStyle('decorationScale', parseFloat(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                             </div>
-                                            <div><label className="text-[10px] text-slate-400 uppercase block mb-2">旋转 ({activeStyle.decorationRotate ?? 0}°)</label>
-                                                <input type="range" min="-180" max="180" value={activeStyle.decorationRotate ?? 0} onChange={(e) => updateStyle('decorationRotate', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                            <div><label className="text-[10px] text-[#8b8996] label-mono block mb-2">旋转 ({activeStyle.decorationRotate ?? 0}°)</label>
+                                                <input type="range" min="-180" max="180" value={activeStyle.decorationRotate ?? 0} onChange={(e) => updateStyle('decorationRotate', parseInt(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                             </div>
                                         </div>
                                     )}
@@ -1440,38 +1439,38 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
                     {/* --- AVATAR TOOLS --- */}
                     {activeTab !== 'css' && toolSection === 'avatar' && (
                         <div className="space-y-6 animate-fade-in">
-                            <div onClick={() => avatarDecoInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center text-slate-400 hover:border-primary/50 hover:text-primary transition-all">
-                                 {activeStyle.avatarDecoration ? <img src={activeStyle.avatarDecoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold">+ 上传头像框/挂件</span>}
+                            <div onClick={() => avatarDecoInputRef.current?.click()} className="cursor-pointer group relative h-20 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/50 flex items-center justify-center text-[#8b8996] hover:border-[#2b2933] hover:text-[#2b2933] transition-all">
+                                 {activeStyle.avatarDecoration ? <img src={activeStyle.avatarDecoration} className="h-10 w-10 object-contain" /> : <span className="text-xs font-bold label-mono">＋ 贴个头像框 / 挂件</span>}
                                  <input type="file" ref={avatarDecoInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0], 'avatarDeco')} />
-                                 {activeStyle.avatarDecoration && <button onClick={(e) => { e.stopPropagation(); updateStyle('avatarDecoration', undefined); }} className="absolute top-2 right-2 text-[10px] bg-red-100 text-red-500 px-2 py-0.5 rounded-full">移除</button>}
+                                 {activeStyle.avatarDecoration && <button onClick={(e) => { e.stopPropagation(); updateStyle('avatarDecoration', undefined); }} className="absolute top-2 right-2 text-[10px] bg-[#2b2933] text-[#fbfaf7] px-2 py-0.5">撕掉</button>}
                             </div>
                             <div className="flex gap-2 -mt-4">
                                 <input
                                     type="url"
                                     value={assetUrlDraft.avatarDeco}
                                     onChange={(e) => setAssetUrlDraft(prev => ({ ...prev, avatarDeco: e.target.value }))}
-                                    placeholder="或粘贴挂件图床 URL"
-                                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                    placeholder="或贴一条挂件图床 URL"
+                                    className="flex-1 border-2 border-[#2b2933] bg-[#fbfaf7] px-3 py-2 text-xs text-[#2b2933] focus:outline-none focus:shadow-[2px_2px_0_#2b2933]"
                                 />
-                                <button onClick={() => handleUrlApply('avatarDeco')} className="px-3 py-2 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 hover:bg-slate-200">应用</button>
+                                <button onClick={() => handleUrlApply('avatarDeco')} className="px-3 py-2 bg-[#2b2933] text-[#fbfaf7] text-xs font-bold label-mono hover:opacity-80">贴上</button>
                             </div>
 
                             {activeStyle.avatarDecoration && (
-                                <details className="rounded-xl border border-slate-200 bg-slate-50 p-3" open={showAdvancedSettings}>
-                                    <summary onClick={(e) => { e.preventDefault(); setShowAdvancedSettings(prev => !prev); }} className="text-xs font-semibold text-slate-600 cursor-pointer">高级设置 · 挂件偏移与旋转</summary>
+                                <details className="border-2 border-[#2b2933]/30 bg-[#fbfaf7] p-3" open={showAdvancedSettings}>
+                                    <summary onClick={(e) => { e.preventDefault(); setShowAdvancedSettings(prev => !prev); }} className="text-xs font-bold text-[#2b2933] cursor-pointer label-mono">细调 · 挂件偏移与旋转</summary>
                                     {showAdvancedSettings && (
                                         <div className="grid grid-cols-2 gap-x-6 gap-y-6 pt-4">
-                                            <div className="col-span-2"><label className="text-[10px] text-slate-400 uppercase block mb-2">中心偏移 (Offset X / Y)</label>
+                                            <div className="col-span-2"><label className="text-[10px] text-[#8b8996] label-mono block mb-2">围着头像挪 (左右 / 上下)</label>
                                                 <div className="flex gap-3">
-                                                    <input type="range" min="-50" max="150" value={activeStyle.avatarDecorationX ?? 50} onChange={(e) => updateStyle('avatarDecorationX', parseInt(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-full accent-primary" />
-                                                    <input type="range" min="-50" max="150" value={activeStyle.avatarDecorationY ?? 50} onChange={(e) => updateStyle('avatarDecorationY', parseInt(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                                    <input type="range" min="-50" max="150" value={activeStyle.avatarDecorationX ?? 50} onChange={(e) => updateStyle('avatarDecorationX', parseInt(e.target.value))} className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
+                                                    <input type="range" min="-50" max="150" value={activeStyle.avatarDecorationY ?? 50} onChange={(e) => updateStyle('avatarDecorationY', parseInt(e.target.value))} className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                                 </div>
                                             </div>
-                                            <div><label className="text-[10px] text-slate-400 uppercase block mb-2">缩放 ({activeStyle.avatarDecorationScale ?? 1}x)</label>
-                                                <input type="range" min="0.5" max="3" step="0.1" value={activeStyle.avatarDecorationScale ?? 1} onChange={(e) => updateStyle('avatarDecorationScale', parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                            <div><label className="text-[10px] text-[#8b8996] label-mono block mb-2">缩放 ({activeStyle.avatarDecorationScale ?? 1}x)</label>
+                                                <input type="range" min="0.5" max="3" step="0.1" value={activeStyle.avatarDecorationScale ?? 1} onChange={(e) => updateStyle('avatarDecorationScale', parseFloat(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                             </div>
-                                            <div><label className="text-[10px] text-slate-400 uppercase block mb-2">旋转 ({activeStyle.avatarDecorationRotate ?? 0}°)</label>
-                                                <input type="range" min="-180" max="180" value={activeStyle.avatarDecorationRotate ?? 0} onChange={(e) => updateStyle('avatarDecorationRotate', parseInt(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full accent-primary" />
+                                            <div><label className="text-[10px] text-[#8b8996] label-mono block mb-2">旋转 ({activeStyle.avatarDecorationRotate ?? 0}°)</label>
+                                                <input type="range" min="-180" max="180" value={activeStyle.avatarDecorationRotate ?? 0} onChange={(e) => updateStyle('avatarDecorationRotate', parseInt(e.target.value))} className="w-full h-1.5 bg-[#e3e0d6] rounded-full accent-[#2b2933]" />
                                             </div>
                                         </div>
                                     )}
@@ -1486,13 +1485,13 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
 
             {/* Discard unsaved changes confirm */}
             {pendingDiscardAction && (
-                <div className="absolute inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
-                        <div className="text-base font-bold text-slate-700">有未保存的改动</div>
-                        <p className="mt-2 text-sm text-slate-500">继续操作将丢失当前未保存的改动。</p>
+                <div className="absolute inset-0 z-[999] bg-[#2b2933]/40 backdrop-blur-sm flex items-center justify-center px-6">
+                    <div className="w-full max-w-sm bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[6px_6px_0_rgba(43,41,51,0.4)] -rotate-1">
+                        <div className="text-base font-bold text-[#2b2933] font-display-italic">这页还没贴好</div>
+                        <p className="mt-2 text-sm text-[#6b6b6b]">就这么走的话，刚才改的会全没。</p>
                         <div className="mt-5 flex gap-3">
-                            <button onClick={() => setPendingDiscardAction(null)} className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-600 font-bold">取消</button>
-                            <button onClick={() => { const action = pendingDiscardAction; setPendingDiscardAction(null); action(); }} className="flex-1 py-2.5 rounded-2xl bg-red-500 text-white font-bold">放弃改动</button>
+                            <button onClick={() => setPendingDiscardAction(null)} className="flex-1 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] font-bold label-mono">留下</button>
+                            <button onClick={() => { const action = pendingDiscardAction; setPendingDiscardAction(null); action(); }} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold label-mono">撕掉走人</button>
                         </div>
                     </div>
                 </div>
@@ -1500,13 +1499,13 @@ const ThemeMaker: React.FC<{ embedded?: boolean; onRequestClose?: () => void }> 
 
             {/* Low contrast confirm */}
             {showLowContrastConfirm && (
-                <div className="absolute inset-0 z-[999] bg-black/40 backdrop-blur-sm flex items-center justify-center px-6">
-                    <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl">
-                        <div className="text-base font-bold text-slate-700">可读性评分极低</div>
-                        <p className="mt-2 text-sm text-slate-500">当前文字与背景的对比度过低，可能导致聊天内容难以辨认。仍要保存此样式吗？</p>
+                <div className="absolute inset-0 z-[999] bg-[#2b2933]/40 backdrop-blur-sm flex items-center justify-center px-6">
+                    <div className="w-full max-w-sm bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[6px_6px_0_rgba(43,41,51,0.4)] rotate-1">
+                        <div className="text-base font-bold text-[#2b2933] font-display-italic">这页太糊了</div>
+                        <p className="mt-2 text-sm text-[#6b6b6b]">字和底贴得太近，聊天内容可能读不清。还是要贴上吗？</p>
                         <div className="mt-5 flex gap-3">
-                            <button onClick={() => setShowLowContrastConfirm(false)} className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-600 font-bold">再调整一下</button>
-                            <button onClick={() => { setShowLowContrastConfirm(false); doSaveTheme(pendingSaveExit); }} className="flex-1 py-2.5 rounded-2xl bg-amber-500 text-white font-bold">仍然保存</button>
+                            <button onClick={() => setShowLowContrastConfirm(false)} className="flex-1 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] font-bold label-mono">再调调</button>
+                            <button onClick={() => { setShowLowContrastConfirm(false); doSaveTheme(pendingSaveExit); }} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] font-bold label-mono">照样贴</button>
                         </div>
                     </div>
                 </div>
