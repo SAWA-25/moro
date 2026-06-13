@@ -54,7 +54,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -3006,6 +3006,7 @@ ${recent || '（你们还没怎么聊过）'}
                 transferAmt={transferAmt} setTransferAmt={setTransferAmt}
                 transferMode={transferMode} setTransferMode={setTransferMode}
                 transferNote={transferNote} setTransferNote={setTransferNote}
+                walletBalance={userProfile.balance || 0}
                 emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
                 settingsHideSysLogs={settingsHideSysLogs} setSettingsHideSysLogs={setSettingsHideSysLogs}
@@ -3024,13 +3025,21 @@ ${recent || '（你们还没怎么聊过）'}
                 selectedCategory={selectedCategory}
 
                 onTransfer={() => {
-                    if (transferAmt) {
-                        handleSendText(
-                            transferMode === 'redpacket' ? `[红包]` : `[转账]`,
-                            'transfer',
-                            { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined } : {}) }
-                        );
+                    const amt = parseFloat(transferAmt);
+                    if (!transferAmt || isNaN(amt) || amt <= 0) { setModalType('none'); setTransferNote(''); return; }
+                    // 与钱包绑定：从存钱罐营业赚来的余额里扣，不足则拦下（弹窗不关，方便改数目）
+                    const bal = userProfile.balance || 0;
+                    if (amt > bal) {
+                        addToast(`钱包只有 ¥${Math.round(bal)}，先去存钱罐营业赚点再寄吧`, 'error');
+                        return;
                     }
+                    adjustUserBalance(-amt);
+                    handleSendText(
+                        transferMode === 'redpacket' ? `[红包]` : `[转账]`,
+                        'transfer',
+                        { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined } : {}) }
+                    );
+                    addToast(transferMode === 'redpacket' ? `红包已寄出 · 钱包 -¥${Math.round(amt)}` : `零花钱已寄出 · 钱包 -¥${Math.round(amt)}`, 'success');
                     setModalType('none');
                     setTransferNote('');
                 }}

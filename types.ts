@@ -1438,6 +1438,10 @@ export interface BankShopState {
     };
     guestbook?: BankGuestbookItem[];
     dollhouse?: DollhouseState;
+    /** 上次「营业」结算的时间戳（用于营业冷却） */
+    lastBusinessAt?: number;
+    /** 店铺累计营业额（进过钱包的总收入，仅作展示统计） */
+    totalRevenue?: number;
 }
 
 export interface BankFullState {
@@ -1903,6 +1907,11 @@ export interface UserProfile {
     name: string;
     avatar: string;
     bio: string;
+    /**
+     * 钱包余额（可花的钱）。靠经营店铺「营业」赚取，用于「往来」里给角色转账 / 发红包，
+     * 收到角色红包领取后回到钱包。与「记账」（记录现实金钱的流水）相互独立、互不影响。
+     */
+    balance?: number;
     /**
      * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。

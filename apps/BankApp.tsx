@@ -56,8 +56,11 @@ const DEAD_IMG_HOSTS = ['sharkpan.xyz'];
 const isDeadImg = (u?: string | null): boolean =>
     typeof u === 'string' && DEAD_IMG_HOSTS.some(h => u.includes(h));
 
+// 营业冷却：每 3 小时可「营业」一轮赚一笔进钱包
+const BUSINESS_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+
 const BankApp: React.FC = () => {
-    const { closeApp, characters, addToast, apiConfig, userProfile } = useOS();
+    const { closeApp, characters, addToast, apiConfig, userProfile, adjustUserBalance } = useOS();
     const [state, setState] = useState<BankFullState>(INITIAL_STATE);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [dollhouseState, setDollhouseState] = useState<DollhouseState>(INITIAL_DOLLHOUSE);
@@ -276,27 +279,13 @@ const BankApp: React.FC = () => {
         const today = new Date().toISOString().split('T')[0];
 
         if (currentState.lastLoginDate !== today) {
-            // Find yesterday's expenses to calculate AP
-            const yesterdayDate = new Date();
-            yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-            const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
+            // 解耦：AP 不再来自「记账预算结余」（记账已独立为现实流水）。
+            // 改为店铺自身的每日补给：登录奖励 + 人气分红。
+            const appealNow = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
+            const dailyAP = 10 + Math.floor(appealNow / 25);
 
-            const yesterTx = txs.filter(t => t.dateStr === yesterdayStr);
-            let gainedAP = 0;
-
-            if (yesterTx.length > 0) {
-                const yesterSpent = yesterTx.reduce((sum, t) => sum + t.amount, 0);
-                // Core Mechanic: AP = Budget - Spent
-                gainedAP = Math.max(0, Math.floor(currentState.config.dailyBudget - yesterSpent));
-            } else {
-                // Punishment: If no record, minimal AP or zero?
-                // Let's implement logic: If no record, 0 AP from savings.
-                gainedAP = 0;
-            }
-
-            // Daily Login Bonus
-            const dailyBonus = 10;
-            const totalNewAP = gainedAP + dailyBonus;
+            // 店铺「过夜营业额」→ 进钱包（真实可花的钱），与记账完全无关。
+            const passiveRevenue = currentState.shop.staff.length > 0 ? Math.max(0, Math.floor(appealNow * 0.6)) : 0;
 
             // Recover Fatigue
             const updatedStaff = currentState.shop.staff.map(s => ({
@@ -310,14 +299,21 @@ const BankApp: React.FC = () => {
                 lastLoginDate: today,
                 shop: {
                     ...currentState.shop,
-                    actionPoints: (currentState.shop.actionPoints || 0) + totalNewAP,
+                    actionPoints: (currentState.shop.actionPoints || 0) + dailyAP,
                     staff: updatedStaff,
-                    activeVisitor: undefined
+                    activeVisitor: undefined,
+                    totalRevenue: (currentState.shop.totalRevenue || 0) + passiveRevenue,
                 }
             };
 
             await DB.saveBankState(currentState);
-            addToast(`新的一天！获得 ${totalNewAP} AP (预算结余: ${gainedAP})`, 'success');
+            if (passiveRevenue > 0) adjustUserBalance(passiveRevenue);
+            addToast(
+                passiveRevenue > 0
+                    ? `新的一天！店铺补给 +${dailyAP} AP，过夜营业额 +¥${passiveRevenue} 已进钱包`
+                    : `新的一天！店铺补给 +${dailyAP} AP（雇个店员就能赚营业额啦）`,
+                'success'
+            );
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
@@ -776,6 +772,45 @@ ${previousGuestbook}
         addToast('心愿已添加', 'success');
     };
 
+    // --- 营业：经营店铺赚钱（进钱包），与记账无关 ---
+    const handleOperate = async () => {
+        const cur = stateRef.current;
+        const last = cur.shop.lastBusinessAt || 0;
+        const elapsed = Date.now() - last;
+        if (elapsed < BUSINESS_COOLDOWN_MS) {
+            const mins = Math.ceil((BUSINESS_COOLDOWN_MS - elapsed) / 60000);
+            const txt = mins >= 60 ? `${Math.floor(mins / 60)} 小时 ${mins % 60} 分` : `${mins} 分钟`;
+            addToast(`店员们还在歇着，${txt}后再开门吧`, 'info');
+            return;
+        }
+        const staff = cur.shop.staff;
+        if (staff.length === 0) {
+            addToast('先去「经营」雇个店员，才能开门营业', 'info');
+            return;
+        }
+        const appeal = cur.shop.appeal || calculateAppeal(staff.length, cur.shop.unlockedRecipes);
+        const recipeCount = cur.shop.unlockedRecipes.length;
+        const energetic = staff.filter(s => s.fatigue < 90).length || 1;
+        const rand = 0.8 + Math.random() * 0.5; // 0.8 ~ 1.3
+        const revenue = Math.max(5, Math.round((appeal * 0.5 + recipeCount * 12 + energetic * 18) * rand));
+
+        const updatedStaff = staff.map(s => ({ ...s, fatigue: Math.min(s.maxFatigue, s.fatigue + 18) }));
+        const newState: BankFullState = {
+            ...cur,
+            shop: {
+                ...cur.shop,
+                staff: updatedStaff,
+                lastBusinessAt: Date.now(),
+                totalRevenue: (cur.shop.totalRevenue || 0) + revenue,
+            },
+        };
+        stateRef.current = newState;
+        setState(newState);
+        await DB.saveBankState(newState);
+        adjustUserBalance(revenue);
+        addToast(`营业结束！本轮赚得 ¥${revenue} 已进钱包 💰`, 'success');
+    };
+
     return (
         <div className="h-full w-full flex flex-col font-sans relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #FDF6E3 0%, #FFF8E1 100%)' }}>
 
@@ -795,6 +830,9 @@ ${previousGuestbook}
                             <div className="flex items-center gap-2">
                                 <span className="font-black text-lg text-[#FFE0B2] leading-none">{state.shop.actionPoints}</span>
                                 <span className="text-[10px] text-white/50 font-medium">AP</span>
+                                <span className="text-white/25">·</span>
+                                <span className="font-black text-lg text-[#A5D6A7] leading-none">¥{Math.round(userProfile.balance || 0)}</span>
+                                <span className="text-[10px] text-white/50 font-medium">钱包</span>
                             </div>
                         </div>
                     </div>
@@ -807,8 +845,16 @@ ${previousGuestbook}
                             ?
                         </button>
                         <button
+                            onClick={handleOperate}
+                            className="flex items-center gap-1.5 bg-gradient-to-r from-[#66BB6A] to-[#43A047] text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-lg active:scale-95 transition-all"
+                            style={{ boxShadow: '0 4px 14px rgba(67, 160, 71, 0.4)' }}
+                        >
+                            <span className="text-base">💰</span>
+                            <span>营业</span>
+                        </button>
+                        <button
                             onClick={() => setShowAddTxModal(true)}
-                            className="flex items-center gap-1.5 bg-gradient-to-r from-[#FF8A65] to-[#FF7043] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all"
+                            className="flex items-center gap-1.5 bg-gradient-to-r from-[#FF8A65] to-[#FF7043] text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all"
                             style={{ boxShadow: '0 4px 14px rgba(255, 112, 67, 0.4)' }}
                         >
                             <span className="text-base">+</span>
