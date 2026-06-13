@@ -62,6 +62,86 @@ interface Props {
     onOpenGuestbook: () => void;
 }
 
+// 咖啡店「默认布景」——纯展示层，只在主店铺、且用户没自定义「全屋贴图」时渲染。
+// 解决空房间问题（历史默认贴图是已失效的图床死链）。pointer-events-none，
+// 不写任何存档、不挡装修操作、层级在演员/贴纸之下，用户随时可在其上继续装饰。
+const CafeBackdrop: React.FC = () => (
+    <div className="absolute inset-0 z-[2] pointer-events-none select-none overflow-hidden" aria-hidden>
+        {/* 吊灯 */}
+        {[38, 62].map(x => (
+            <div key={x} className="absolute" style={{ left: `${x}%`, top: 0, transform: 'translateX(-50%)' }}>
+                <div style={{ width: 2, height: 24, margin: '0 auto', background: '#bda483' }} />
+                <div style={{ width: 22, height: 13, borderRadius: '0 0 13px 13px', background: 'linear-gradient(180deg,#f7cb80,#eaa64e)', boxShadow: '0 6px 16px rgba(240,180,90,0.5)' }} />
+            </div>
+        ))}
+
+        {/* 营业中吊牌 */}
+        <div className="absolute" style={{ left: '64%', top: '6%', transform: 'rotate(4deg)' }}>
+            <div style={{ width: 2, height: 11, margin: '0 auto', background: '#bda483' }} />
+            <div style={{ fontSize: 7, fontWeight: 900, color: '#fff', background: '#5a8a52', padding: '3px 6px', borderRadius: 6, letterSpacing: 1, boxShadow: '0 3px 6px rgba(0,0,0,0.15)' }}>营业中</div>
+        </div>
+
+        {/* 窗 + 遮阳棚 */}
+        <div className="absolute" style={{ left: '50%', top: '14%', transform: 'translateX(-50%)' }}>
+            <div style={{ position: 'absolute', left: -13, top: -14, width: 122, height: 17, borderRadius: '10px 10px 0 0', background: 'repeating-linear-gradient(90deg,#e8795f 0 12px,#fff3ec 12px 24px)', boxShadow: '0 3px 6px rgba(120,70,50,0.25)' }} />
+            <div style={{ position: 'relative', width: 96, height: 66, borderRadius: 10, background: 'linear-gradient(180deg,#cfeafd,#eaf6ff)', boxShadow: 'inset 0 0 0 5px #fff, 0 0 0 7px #bd9163' }}>
+                <div style={{ position: 'absolute', left: '50%', top: 6, bottom: 6, width: 3, background: '#bd9163', transform: 'translateX(-50%)' }} />
+                <div style={{ position: 'absolute', top: '50%', left: 6, right: 6, height: 3, background: '#bd9163', transform: 'translateY(-50%)' }} />
+                <div style={{ position: 'absolute', left: 13, top: 11, width: 22, height: 8, borderRadius: 8, background: 'rgba(255,255,255,0.85)' }} />
+            </div>
+        </div>
+
+        {/* 黑板菜单 */}
+        <div className="absolute" style={{ left: '11%', top: '20%', transform: 'rotate(-3deg)' }}>
+            <div style={{ width: 60, height: 76, borderRadius: 8, background: '#3b4a3f', boxShadow: '0 0 0 5px #8b5e43, 0 6px 12px rgba(0,0,0,0.18)', padding: 8 }}>
+                <div style={{ fontSize: 7, color: '#fff7e6', textAlign: 'center', fontWeight: 800, letterSpacing: 2, opacity: 0.9 }}>MENU</div>
+                {['☕ 18', '🍰 32', '🧋 22'].map((t, i) => (
+                    <div key={i} style={{ fontSize: 7.5, color: '#e7d9c4', marginTop: 5, opacity: 0.85 }}>{t}</div>
+                ))}
+            </div>
+        </div>
+
+        {/* 杯架 */}
+        <div className="absolute" style={{ left: '31%', top: '17%' }}>
+            <div style={{ width: 66, height: 7, background: '#9c6b43', borderRadius: 3, boxShadow: '0 3px 5px rgba(120,70,50,0.2)' }} />
+            <div style={{ display: 'flex', gap: 5, marginTop: 3, paddingLeft: 5 }}>
+                {['#f3ead7', '#f0d9c2', '#e8c6a8', '#f3ead7'].map((c, i) => (
+                    <div key={i} style={{ width: 11, height: 13, borderRadius: '3px 3px 5px 5px', background: c, boxShadow: 'inset -2px 0 0 rgba(0,0,0,0.06)' }} />
+                ))}
+            </div>
+        </div>
+
+        {/* 吧台（横跨墙底，演员站在其前） */}
+        <div className="absolute left-0 right-0" style={{ top: '60%', height: '16%' }}>
+            <div className="absolute left-[4%] right-[4%]" style={{ top: 10, bottom: 0, background: 'linear-gradient(180deg,#c79a6d,#b07f50)' }}>
+                <div className="absolute inset-0" style={{ opacity: 0.2, backgroundImage: 'repeating-linear-gradient(90deg,rgba(80,45,20,0.5) 0 1px,transparent 1px 16px)' }} />
+            </div>
+            <div className="absolute left-[4%] right-[4%]" style={{ top: 0, height: 12, borderRadius: 6, background: 'linear-gradient(180deg,#a9764f,#8a5e3d)', boxShadow: '0 4px 10px rgba(90,55,30,0.25)' }} />
+            {/* 咖啡机 */}
+            <div className="absolute" style={{ left: '28%', top: -22, transform: 'translateX(-50%)' }}>
+                <div style={{ position: 'relative', width: 28, height: 22, borderRadius: 5, background: 'linear-gradient(180deg,#e2e6e9,#aab2b8)', boxShadow: '0 3px 6px rgba(0,0,0,0.18)' }}>
+                    <div style={{ position: 'absolute', top: 3, left: 4, right: 4, height: 4, borderRadius: 2, background: '#828c93' }} />
+                    <div style={{ position: 'absolute', bottom: 2, left: 6, width: 6, height: 5, background: '#6b7178', borderRadius: '0 0 2px 2px' }} />
+                    <div style={{ position: 'absolute', bottom: 1, right: 6, width: 5, height: 6, background: '#3c4248', borderRadius: 1 }} />
+                </div>
+            </div>
+            {/* 玻璃糕点柜 */}
+            <div className="absolute" style={{ left: '50%', top: -14, transform: 'translateX(-50%)' }}>
+                <div style={{ width: 36, height: 14, borderRadius: 4, background: 'rgba(220,240,250,0.55)', boxShadow: 'inset 0 0 0 1.5px rgba(255,255,255,0.7), 0 3px 6px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, fontSize: 9 }}>🍰🥐</div>
+            </div>
+            {/* 收银机 */}
+            <div className="absolute" style={{ right: '24%', top: -15 }}>
+                <div style={{ width: 22, height: 17, borderRadius: 4, background: 'linear-gradient(180deg,#f0e2cc,#d9c2a3)', boxShadow: '0 3px 6px rgba(0,0,0,0.15)' }} />
+            </div>
+        </div>
+
+        {/* 落地盆栽 */}
+        {['7%', '91%'].map((x, i) => (
+            <div key={i} className="absolute" style={{ left: x, top: '79%', transform: 'translateX(-50%)', fontSize: 26, lineHeight: 1, filter: 'drop-shadow(0 4px 4px rgba(80,55,30,0.2))' }}>🪴</div>
+        ))}
+    </div>
+);
+
 const BankDollhouse: React.FC<Props> = ({
     shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook
 }) => {
@@ -858,6 +938,9 @@ const BankDollhouse: React.FC<Props> = ({
                             );
                         })}
                     </div>
+
+                    {/* 默认咖啡店布景：仅主店铺、且无自定义全屋贴图时显示（纯展示、不写存档） */}
+                    {!locked && room.id === MAIN_ROOM_ID && !roomTexture && <CafeBackdrop />}
 
                     {/* Room Texture Overlay - uses blob URL for stable rendering */}
                     {!locked && roomTexture && (
