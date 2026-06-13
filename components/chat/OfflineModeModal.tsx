@@ -3,9 +3,13 @@ import { CharacterProfile, UserProfile } from '../../types';
 import { WashiTape, MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import {
     OfflineEntry,
+    OfflinePov,
+    OfflinePovPerson,
     loadOfflineSession,
     saveOfflineSession,
     clearOfflineSession,
+    loadOfflinePov,
+    saveOfflinePov,
     generateOfflineOpening,
     generateOfflineTurn,
     commitOfflineSessionToContext,
@@ -32,6 +36,16 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
     const [ending, setEnding] = useState(false);
+    // 叙述人称：角色 / 用户各可选 第一/第二/第三人称，自由组合（存 localStorage，per-char）
+    const [pov, setPov] = useState<OfflinePov>(() => loadOfflinePov(char.id));
+
+    const setPovFor = (who: 'char' | 'user', person: OfflinePovPerson) => {
+        setPov(prev => {
+            const next = { ...prev, [who]: person };
+            saveOfflinePov(char.id, next);
+            return next;
+        });
+    };
     const scrollRef = useRef<HTMLDivElement>(null);
     const openingStartedRef = useRef(false);
 
@@ -51,7 +65,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         (async () => {
             setBusy(true);
             try {
-                const opening = await generateOfflineOpening(char, userProfile, apiConfig);
+                const opening = await generateOfflineOpening(char, userProfile, apiConfig, pov);
                 if (!cancelled && opening) pushEntries({ role: 'scene', text: opening, at: Date.now() });
             } catch (e: any) {
                 if (!cancelled) addToast(`线下开场生成失败：${e?.message || e}`, 'error');
@@ -73,7 +87,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
             const base = userInput
                 ? [...entries, { role: 'user' as const, text: userInput, at: Date.now() }]
                 : entries;
-            const reply = await generateOfflineTurn(char, userProfile, apiConfig, base, userInput);
+            const reply = await generateOfflineTurn(char, userProfile, apiConfig, base, userInput, pov);
             if (reply) pushEntries({ role: 'char', text: reply, at: Date.now() });
         } catch (e: any) {
             addToast(`线下情景生成失败：${e?.message || e}`, 'error');
@@ -138,6 +152,32 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     >
                         {ending ? '收尾中…' : '合上这一页'}
                     </button>
+                </div>
+
+                {/* 叙述人称选择：角色 / 用户各可选 第一(我)/第二(你)/第三(TA)人称，自由组合 */}
+                <div className="shrink-0 px-4 py-2 flex items-center gap-x-3 gap-y-1.5 flex-wrap border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.16)' }}>
+                    <span className="text-[10px] font-bold tracking-wider" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>人称</span>
+                    {([['char', char.name], ['user', userProfile.name || '你']] as const).map(([who, label]) => (
+                        <div key={who} className="flex items-center gap-1">
+                            <span className="text-[10px]" style={{ color: PAPER_TONES.inkSoft }}>{label}</span>
+                            {([['first', '我'], ['second', '你'], ['third', 'TA']] as const).map(([p, lbl]) => {
+                                const active = pov[who] === p;
+                                return (
+                                    <button
+                                        key={p}
+                                        type="button"
+                                        onClick={() => setPovFor(who, p)}
+                                        className="px-2 py-0.5 rounded-full text-[10.5px] font-bold transition active:scale-95"
+                                        style={active
+                                            ? { background: '#f6a7bb', color: '#5d2434', boxShadow: '0 1px 2px rgba(122,90,114,0.2)' }
+                                            : { background: 'rgba(255,255,255,0.55)', color: PAPER_TONES.inkSoft, border: '1px dashed #ddc9d3' }}
+                                    >
+                                        {lbl}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
                 </div>
 
                 {/* 情景流 */}

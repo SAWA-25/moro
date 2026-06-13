@@ -677,7 +677,8 @@ export async function applyAssistantPostProcessing(
             }
         } else {
             // ─── normal path (splitResponse → chunkText → per-chunk save) ───
-            const parts = ChatParser.splitResponse(content);
+            // 传入已知表情名 → 文本里「括号包裹/表情：前缀/整段就是表情名」也会识别成贴纸弹出
+            const parts = ChatParser.splitResponse(content, emojis.map(e => e.name));
             for (let partIndex = 0; partIndex < parts.length; partIndex++) {
                 const part = parts[partIndex];
 

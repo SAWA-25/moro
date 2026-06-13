@@ -43,6 +43,41 @@ export interface MusicActionHooks {
     ) => Promise<{ playlistTitle: string; created: boolean } | null>;
 }
 
+/**
+ * 文字→表情识别：把文本里「明确指向某个表情名」的片段转成 emoji part。
+ * 只认强信号，避免把「开心」「色」这类既是表情名又是常用词的裸词误转：
+ *   1. 括号包裹且内文恰好是已知表情名：【name】/「name」/[name]/［name］/〔name〕
+ *   2. 表情前缀：（表情：name）/（贴纸: name）/(emoji name) 等
+ *   3. 整段 trim 后正好就是一个已知表情名
+ * `names` 为已知表情名集合（调用方用当前角色可见表情构造）。
+ */
+const EMOJI_NAME_TOKEN_RE = /[【［\[「〔]\s*([^【［\[「〔】］\]」〕\n]{1,24}?)\s*[】］\]」〕]|[（(]\s*(?:表情|贴纸|emoji|sticker)\s*[:：]?\s*([^（()）\n]{1,24}?)\s*[）)]/gi;
+
+const expandTextEmojiNames = (
+    text: string,
+    names: Set<string>,
+): { type: 'text' | 'emoji'; content: string }[] => {
+    const whole = text.trim();
+    if (names.has(whole)) return [{ type: 'emoji', content: whole }];
+
+    const parts: { type: 'text' | 'emoji'; content: string }[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    EMOJI_NAME_TOKEN_RE.lastIndex = 0;
+    while ((m = EMOJI_NAME_TOKEN_RE.exec(text)) !== null) {
+        const name = (m[1] ?? m[2] ?? '').trim();
+        if (!name || !names.has(name)) continue; // 非已知表情名 → 原样留作文本
+        const before = text.slice(last, m.index).trim();
+        if (before) parts.push({ type: 'text', content: before });
+        parts.push({ type: 'emoji', content: name });
+        last = m.index + m[0].length;
+    }
+    if (parts.length === 0) return [{ type: 'text', content: text }];
+    const tail = text.slice(last).trim();
+    if (tail) parts.push({ type: 'text', content: tail });
+    return parts;
+};
+
 export const ChatParser = {
     // Return cleaned content and perform side effects
     parseAndExecuteActions: async (
@@ -270,8 +305,10 @@ export const ChatParser = {
         return stripped.length > 0;
     },
 
-    // Split text into bubbles (text and emojis)
-    splitResponse: (content: string): { type: 'text' | 'emoji', content: string }[] => {
+    // Split text into bubbles (text and emojis).
+    // knownNames（可选）：已知表情名集合。传入后，文本里「明确指向表情名」的片段
+    // （括号包裹 / 表情：前缀 / 整段就是表情名）也会被识别成 emoji 气泡弹出。
+    splitResponse: (content: string, knownNames?: Set<string> | string[]): { type: 'text' | 'emoji', content: string }[] => {
         const emojiPattern = /\[\[SEND_EMOJI:\s*(.*?)\]\]/g;
         const parts: {type: 'text' | 'emoji', content: string}[] = [];
         let lastIndex = 0;
@@ -292,7 +329,16 @@ export const ChatParser = {
         }
 
         if (parts.length === 0 && content.trim()) parts.push({ type: 'text', content: content.trim() });
-        return parts;
+
+        // 文字→表情识别（仅在提供了已知表情名时启用，保持旧调用行为不变）
+        const names = knownNames instanceof Set ? knownNames : (knownNames ? new Set(knownNames) : null);
+        if (!names || names.size === 0) return parts;
+        const expanded: { type: 'text' | 'emoji', content: string }[] = [];
+        for (const p of parts) {
+            if (p.type === 'text') expanded.push(...expandTextEmojiNames(p.content, names));
+            else expanded.push(p);
+        }
+        return expanded;
     },
 
     // Chunking text for typing effect - splits into separate chat bubbles

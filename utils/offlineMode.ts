@@ -70,6 +70,43 @@ export const clearOfflineSession = (charId: string): void => {
 
 export const hasOfflineSession = (charId: string): boolean => loadOfflineSession(charId).length > 0;
 
+// ── 线下叙述人称（POV）：角色 / 用户 各可选 第一/第二/第三人称，自由组合 ──
+
+export type OfflinePovPerson = 'first' | 'second' | 'third';
+export interface OfflinePov { char: OfflinePovPerson; user: OfflinePovPerson }
+
+/** 默认：双方都第三人称（沿用旧的「第三人称旁白」行为）。 */
+export const DEFAULT_OFFLINE_POV: OfflinePov = { char: 'third', user: 'third' };
+const povKey = (charId: string) => `moro_offline_pov_${charId}`;
+const isPerson = (v: any): v is OfflinePovPerson => v === 'first' || v === 'second' || v === 'third';
+
+export const loadOfflinePov = (charId: string): OfflinePov => {
+    try {
+        const raw = localStorage.getItem(povKey(charId));
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed && isPerson(parsed.char) && isPerson(parsed.user)) return parsed;
+    } catch { /* ignore */ }
+    return DEFAULT_OFFLINE_POV;
+};
+
+export const saveOfflinePov = (charId: string, pov: OfflinePov): void => {
+    try { localStorage.setItem(povKey(charId), JSON.stringify(pov)); } catch { /* ignore */ }
+};
+
+const refWord = (p: OfflinePovPerson, name: string): string => {
+    if (p === 'first') return `第一人称「我」`;
+    if (p === 'second') return `第二人称「你」`;
+    return `第三人称「${name}」（或 TA）`;
+};
+
+/** 生成「叙述人称」段，告诉模型如何指代角色与用户，全程保持一致。 */
+export const buildPovInstruction = (pov: OfflinePov, charName: string, userName: string): string =>
+    `### [叙述人称]
+这段线下情景请严格用以下人称叙述，全程保持一致：
+- 指代「${charName}」时，用${refWord(pov.char, charName)}；
+- 指代「${userName}」时，用${refWord(pov.user, userName)}。
+动作、神态、台词和场景旁白都遵循这个人称视角（例如角色用第一人称时，TA 的动作写成「我……」）。`;
+
 const formatEntries = (entries: OfflineEntry[], charName: string, userName: string): string =>
     entries.map(e => {
         if (e.role === 'scene') return `（旁白）${e.text}`;
@@ -112,27 +149,33 @@ ${recentLines || '（你们还没怎么聊过）'}
 
 /** 线下开场：生成见面的开场情景（旁白 + 角色的第一句话/动作） */
 export const generateOfflineOpening = async (
-    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi,
+    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
+    const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
     return callLLM(api, `${base}
+
+${povText}
 
 ### [任务]
 写出见面那一刻的开场（120-250字）：交代你们在哪里见面、现场的环境氛围（基于最近聊天里约定/暗示的地点，没有就合理推断一个），以及「${char.name}」见到 ${userProfile.name} 的第一反应——动作、神态、说的第一句话，必须完全贴合人设。
-用第三人称旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`);
+按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`);
 };
 
 /** 线下推进：根据用户的行动/发言（或无输入时角色自主行动）生成角色的下一段现场反应 */
 export const generateOfflineTurn = async (
     char: CharacterProfile, userProfile: UserProfile, api: OfflineApi,
-    entries: OfflineEntry[], userInput?: string,
+    entries: OfflineEntry[], userInput?: string, pov?: OfflinePov,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
+    const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
     const transcript = formatEntries(entries, char.name, userProfile.name);
     const tail = userInput
         ? `刚刚 ${userProfile.name} 的行动/发言：${userInput}`
         : `${userProfile.name} 暂时没有行动，由「${char.name}」主动推进现场（说点什么、做点什么、或带着对方做点什么）。`;
     return callLLM(api, `${base}
+
+${povText}
 
 ### [线下现场已发生的情景]
 ${transcript || '（刚见面）'}
@@ -140,7 +183,7 @@ ${transcript || '（刚见面）'}
 ${tail}
 
 ### [任务]
-以「${char.name}」的身份续写现场接下来的一小段（80-200字）：TA 的动作、神态、台词，可穿插简短场景旁白。节奏自然、贴合人设，不要替 ${userProfile.name} 说话或行动。直接输出正文，不要任何前缀或解释。`);
+以「${char.name}」的身份续写现场接下来的一小段（80-200字）：TA 的动作、神态、台词，可穿插简短场景旁白。按上面 [叙述人称] 的要求叙述，节奏自然、贴合人设，不要替 ${userProfile.name} 说话或行动。直接输出正文，不要任何前缀或解释。`);
 };
 
 /** 结束线下模式：把窗口内全部情景合成一条 system 消息落库（进入上下文） */
