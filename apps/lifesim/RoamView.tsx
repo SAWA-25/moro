@@ -1,7 +1,7 @@
 /**
- * RoamView — 都市人生 · 漫游系统
+ * RoamView — 街角手账 · 出门逛逛
  *
- * 进去就在一张城市地图上「闲逛」：点空白处移动、点 pin 和附近的人聊天、刷新换一批人，
+ * 进去就在一张手绘街区地图上「闲逛」：点空白处移动、点 pin 和附近的人聊天、刷新换一批人，
  * 路上会冒出店铺和街头事件（今日足迹）。可以挑一个角色陪你一起逛街。陌生人也会主动来搭话。
  *
  * 设计取向：核心体验（地图/移动/遇见/事件/图鉴）有内置内容池，没配 API 也能玩；
@@ -124,6 +124,12 @@ const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const rnd = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
 const fmtTime = (t: number) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
+// 拼贴手账配色
+const INK = '#2b2933';
+const PAPER = '#f4f2ed';
+const KNOWN = '#5b8fa8';
+const STRANGER = '#b03a34';
+
 function loadRoam(): RoamState | null {
     try { const raw = localStorage.getItem(ROAM_KEY); return raw ? JSON.parse(raw) as RoamState : null; } catch { return null; }
 }
@@ -179,7 +185,7 @@ async function roamChatAI(api: Api, system: string, history: RoamMsg[]): Promise
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
                 body: JSON.stringify({ model: api.model, messages, temperature: 0.9, max_tokens: 600, stream: false }),
             },
-            2, 30000, { appName: '都市人生·漫游', purpose: '街头对话' },
+            2, 30000, { appName: '街角手账·漫游', purpose: '街头对话' },
         );
         const txt = data?.choices?.[0]?.message?.content?.trim();
         return txt ? txt.replace(/^\[.*?\]\s*/, '').slice(0, 500) : null;
@@ -203,49 +209,59 @@ const EncounterChat: React.FC<{
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [thread.msgs.length, isReplying]);
     const submit = () => { const t = draft.trim(); if (!t) return; setDraft(''); onSend(t); };
     return (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#f6f3ec]">
-            <div className="flex items-center gap-2 px-3 py-2.5 border-b border-stone-200 bg-white/80 backdrop-blur-md shrink-0">
-                <button onClick={onBack} className="p-1.5 -ml-1 rounded-full active:bg-black/5"><X size={18} weight="bold" className="text-stone-500" /></button>
-                <div className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center text-lg overflow-hidden">
+        <div className="absolute inset-0 z-30 flex flex-col" style={{ background: PAPER }}>
+            <div className="flex items-center gap-2 px-3 py-2.5 shrink-0" style={{ borderBottom: '1px dashed rgba(167,162,151,0.5)', background: 'rgba(251,250,247,0.85)' }}>
+                <button onClick={onBack} className="scrap-btn-paper flex items-center justify-center" style={{ width: 32, height: 32 }}><X size={15} weight="bold" /></button>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-lg overflow-hidden" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>
                     {thread.avatar ? <img src={thread.avatar} className="w-full h-full object-cover" /> : <span>{thread.emoji}</span>}
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-stone-800 truncate">{thread.name}</div>
-                    <div className="text-[10px] text-stone-400">{thread.kind === 'stranger' ? '萍水相逢' : '熟人'}</div>
+                    <div className="font-hand truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{thread.name}</div>
+                    <div className="font-hand" style={{ fontSize: 11, color: '#a79c8e' }}>{thread.kind === 'stranger' ? '萍水相逢' : '熟人'}</div>
                 </div>
                 {thread.kind === 'stranger' && (
-                    <button onClick={onCollect} disabled={collected} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold ${collected ? 'bg-stone-100 text-stone-400' : 'bg-rose-50 text-rose-500 active:scale-95'}`}>
+                    <button onClick={onCollect} disabled={collected} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-hand"
+                        style={{
+                            fontSize: 12, fontWeight: 700,
+                            background: collected ? 'rgba(120,116,106,0.12)' : 'rgba(176,58,52,0.1)',
+                            color: collected ? '#a79c8e' : STRANGER,
+                            border: `1px dashed ${collected ? 'rgba(167,162,151,0.5)' : 'rgba(176,58,52,0.4)'}`,
+                        }}>
                         <BookOpen size={13} weight="bold" /> {collected ? '已收录' : '记入图鉴'}
                     </button>
                 )}
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-3">
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-3 scrap-panel">
                 {thread.msgs.length === 0 && (
-                    <div className="text-center text-[11px] text-stone-400 py-8">你们刚刚在街上相遇 · 说点什么吧</div>
+                    <div className="text-center font-hand py-8" style={{ fontSize: 13, color: '#a79c8e' }}>你们刚刚在街上相遇 · 说点什么吧 ✎</div>
                 )}
                 {thread.msgs.map(m => (
                     <div key={m.id} className={`flex items-end gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                        <div className="w-7 h-7 rounded-full bg-stone-100 flex items-center justify-center text-sm overflow-hidden shrink-0">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-sm overflow-hidden shrink-0" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>
                             {m.role === 'user'
                                 ? (userAvatar ? <img src={userAvatar} className="w-full h-full object-cover" /> : <span>🙂</span>)
                                 : (thread.avatar ? <img src={thread.avatar} className="w-full h-full object-cover" /> : <span>{thread.emoji}</span>)}
                         </div>
-                        <div className={`max-w-[72%] px-3 py-2 rounded-2xl text-[13px] leading-relaxed whitespace-pre-wrap ${m.role === 'user' ? 'bg-stone-800 text-white rounded-br-sm' : 'bg-white text-stone-800 rounded-bl-sm shadow-sm'}`}>
+                        <div className="max-w-[72%] px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
+                            style={m.role === 'user'
+                                ? { background: INK, color: '#fbfaf7', borderRadius: '16px 16px 4px 16px' }
+                                : { background: '#fff', color: INK, borderRadius: '16px 16px 16px 4px', border: '1px solid rgba(236,233,226,0.95)', boxShadow: '0 4px 10px -8px rgba(50,48,60,0.4)' }}>
                             {m.text}
                         </div>
                     </div>
                 ))}
-                {isReplying && <div className="flex items-center gap-1.5 pl-9 text-stone-400 text-xs animate-pulse"><span>对方正在回复</span><span className="tracking-widest">···</span></div>}
+                {isReplying && <div className="flex items-center gap-1.5 pl-9 font-hand animate-pulse" style={{ fontSize: 12, color: '#a79c8e' }}><span>对方正在回复</span><span className="tracking-widest">···</span></div>}
                 <div ref={endRef} />
             </div>
-            <div className="shrink-0 p-2.5 border-t border-stone-200 bg-white/80 backdrop-blur-md flex items-center gap-2" style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))' }}>
+            <div className="shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px dashed rgba(167,162,151,0.5)', background: 'rgba(251,250,247,0.85)', paddingBottom: 'max(10px, env(safe-area-inset-bottom, 10px))' }}>
                 <input
                     value={draft} onChange={e => setDraft(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') submit(); }}
                     placeholder={`和 ${thread.name} 说点什么…`}
-                    className="flex-1 px-3.5 py-2.5 rounded-full bg-stone-100 text-[13px] outline-none focus:bg-white focus:ring-1 focus:ring-stone-300"
+                    className="flex-1 px-3.5 py-2.5 text-[13px] outline-none font-hand"
+                    style={{ borderRadius: 999, background: '#fbfaf7', border: '1px solid rgba(236,233,226,0.95)', color: INK }}
                 />
-                <button onClick={submit} disabled={isReplying || !draft.trim()} className="w-10 h-10 rounded-full bg-stone-800 text-white flex items-center justify-center disabled:opacity-40 active:scale-95">
+                <button onClick={submit} disabled={isReplying || !draft.trim()} className="w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-95" style={{ background: INK, color: '#fbfaf7' }}>
                     <PaperPlaneRight size={17} weight="fill" />
                 </button>
             </div>
@@ -452,25 +468,34 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
     // ── 渲染 ──
     return (
-        <div className="absolute inset-0 z-20 flex flex-col bg-[#f4f1ea] text-stone-800" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <div className="absolute inset-0 z-20 flex flex-col" style={{ background: PAPER, color: INK, paddingTop: 'env(safe-area-inset-top, 0px)', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.05) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
+            <style>{`
+                .roam-fade { animation: fadeIn 0.25s ease; }
+                .roam-sheet { animation: slideUp 0.3s cubic-bezier(0.25,1,0.5,1); }
+            `}</style>
             {/* 顶栏 */}
-            <div className="flex items-center px-3 py-3 shrink-0">
-                <button onClick={onClose} className="p-1.5 rounded-full active:bg-black/5"><X size={22} weight="bold" className="text-stone-600" /></button>
-                <h1 className="flex-1 text-center text-lg font-bold tracking-widest">漫游</h1>
-                <button onClick={() => refresh(false)} className="p-1.5 rounded-full active:bg-black/5"><ArrowClockwise size={20} weight="bold" className="text-stone-600" /></button>
+            <div className="flex items-center px-3 py-3 shrink-0 relative">
+                <button onClick={onClose} className="scrap-btn-paper flex items-center justify-center" style={{ width: 38, height: 38 }}><X size={18} weight="bold" /></button>
+                <h1 className="flex-1 text-center font-hand" style={{ fontSize: 24, fontWeight: 700, color: INK }}>出门逛逛</h1>
+                <button onClick={() => refresh(false)} className="scrap-btn-paper flex items-center justify-center" style={{ width: 38, height: 38 }}><ArrowClockwise size={17} weight="bold" /></button>
+                <div className="lace-edge absolute left-0 right-0" style={{ bottom: -9 }} />
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-4">
-                {/* 地图卡片 */}
-                <div className="relative rounded-2xl overflow-hidden shadow-sm border border-stone-200" style={{ height: 300 }}>
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-4 pt-2">
+                {/* 地图：贴在手账里的手绘街区 */}
+                <div className="sj-roam-photo relative" style={{ background: '#fbfaf7', borderRadius: 8, padding: '9px 9px 9px', border: '1px solid rgba(236,233,226,0.95)', boxShadow: '0 12px 26px -16px rgba(50,48,60,0.4)' }}>
+                    {/* 角落和纸胶带 */}
+                    <span style={{ position: 'absolute', top: -9, left: 22, width: 60, height: 18, transform: 'rotate(-5deg)', background: 'rgba(120,180,210,0.4)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', zIndex: 4, pointerEvents: 'none' }} />
+                    <span style={{ position: 'absolute', top: -9, right: 22, width: 60, height: 18, transform: 'rotate(4deg)', background: 'rgba(205,150,95,0.4)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', zIndex: 4, pointerEvents: 'none' }} />
+                    <div className="relative overflow-hidden" style={{ height: 300, borderRadius: 4, border: '1px solid rgba(0,0,0,0.06)' }}>
                     <div
                         ref={mapRef}
                         onClick={onMapTap}
                         className="absolute inset-0 cursor-pointer"
                         style={{
-                            background: '#e9e3d6',
+                            background: '#ece5d6',
                             backgroundImage:
-                                'linear-gradient(rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(90deg, rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(rgba(180,170,150,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(180,170,150,0.18) 1px, transparent 1px)',
+                                'linear-gradient(rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(90deg, rgba(255,255,255,0.5) 2px, transparent 2px), linear-gradient(rgba(170,158,138,0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(170,158,138,0.2) 1px, transparent 1px)',
                             backgroundSize: '56px 56px, 56px 56px, 18px 18px, 18px 18px',
                         }}
                     >
@@ -484,11 +509,11 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             <button
                                 key={sh.id}
                                 onClick={e => { e.stopPropagation(); visitShop(sh); }}
-                                className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/90 shadow-sm border border-stone-200 active:scale-90 transition-transform"
-                                style={{ left: `${sh.x}%`, top: `${sh.y}%` }}
+                                className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 active:scale-90 transition-transform"
+                                style={{ left: `${sh.x}%`, top: `${sh.y}%`, background: 'rgba(255,255,255,0.95)', borderRadius: 999, border: '1px solid rgba(236,233,226,0.95)', boxShadow: '0 2px 6px -3px rgba(50,48,60,0.4)' }}
                             >
                                 <span className="text-[13px] leading-none">{sh.emoji}</span>
-                                <span className="text-[9px] font-bold text-stone-500 whitespace-nowrap">{sh.name}</span>
+                                <span className="font-hand whitespace-nowrap" style={{ fontSize: 10, fontWeight: 700, color: '#5c574f' }}>{sh.name}</span>
                             </button>
                         ))}
 
@@ -502,20 +527,20 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             >
                                 <div className="flex items-center gap-1">
                                     <span className="relative flex items-center justify-center" style={{ width: 22, height: 30 }}>
-                                        <span className="absolute inset-x-0 top-0 mx-auto rounded-full shadow" style={{ width: 22, height: 22, background: p.kind === 'known' ? '#3b82f6' : '#ef4444' }} />
-                                        <span className="absolute" style={{ bottom: 1, left: '50%', transform: 'translateX(-50%) rotate(45deg)', width: 8, height: 8, background: p.kind === 'known' ? '#3b82f6' : '#ef4444' }} />
+                                        <span className="absolute inset-x-0 top-0 mx-auto rounded-full shadow" style={{ width: 22, height: 22, background: p.kind === 'known' ? KNOWN : STRANGER }} />
+                                        <span className="absolute" style={{ bottom: 1, left: '50%', transform: 'translateX(-50%) rotate(45deg)', width: 8, height: 8, background: p.kind === 'known' ? KNOWN : STRANGER }} />
                                         <span className="absolute top-[3px] text-[11px] leading-none">{p.kind === 'known' && p.avatar ? '' : p.emoji}</span>
                                         {p.kind === 'known' && p.avatar && <img src={p.avatar} className="absolute top-[2px] rounded-full object-cover" style={{ width: 18, height: 18 }} />}
                                     </span>
-                                    <span className="px-1.5 py-0.5 rounded-full bg-white/95 shadow-sm text-[9px] font-bold text-stone-600 whitespace-nowrap">{p.name}</span>
+                                    <span className="font-hand whitespace-nowrap px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.96)', fontSize: 10, fontWeight: 700, color: '#5c574f', boxShadow: '0 2px 5px -3px rgba(50,48,60,0.4)' }}>{p.name}</span>
                                 </div>
                             </button>
                         ))}
 
                         {/* 用户 + 同伴 */}
                         <div className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: `${state.userX}%`, top: `${state.userY}%` }}>
-                            <span className="absolute -inset-3 rounded-full animate-ping" style={{ background: 'rgba(59,130,246,0.18)' }} />
-                            <span className="relative block w-4 h-4 rounded-full bg-blue-500 ring-2 ring-white shadow" />
+                            <span className="absolute -inset-3 rounded-full animate-ping" style={{ background: 'rgba(43,41,51,0.16)' }} />
+                            <span className="relative block w-4 h-4 rounded-full ring-2 ring-white shadow" style={{ background: INK }} />
                             {companion && (
                                 <img src={companion.avatar} className="absolute -right-5 -top-1 w-6 h-6 rounded-full object-cover ring-2 ring-white shadow" />
                             )}
@@ -524,69 +549,67 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
                     {/* 街名 pill */}
                     <div className="absolute top-2.5 left-2.5 right-12 flex">
-                        <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/95 shadow-sm">
-                            <MapPin size={13} weight="fill" className="text-red-500" />
-                            <span className="text-[13px] font-bold text-stone-700 truncate">{state.street}</span>
+                        <div className="flex items-center gap-1 px-3 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }}>
+                            <MapPin size={13} weight="fill" style={{ color: STRANGER }} />
+                            <span className="font-hand truncate" style={{ fontSize: 14, fontWeight: 700, color: '#5c574f' }}>{state.street}</span>
                         </div>
                     </div>
 
                     {/* 操作提示 */}
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-14 px-3 py-1 rounded-full bg-black/45 text-white text-[11px] font-medium whitespace-nowrap pointer-events-none">
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-14 px-3 py-1 rounded-full font-hand whitespace-nowrap pointer-events-none" style={{ background: 'rgba(43,41,51,0.5)', color: '#fbfaf7', fontSize: 12 }}>
                         点空白处移动 · 点 pin 聊天
                     </div>
                     {/* 随便走走 */}
-                    <button onClick={wander} className="absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 px-5 py-2.5 rounded-full bg-stone-900 text-white text-sm font-bold shadow-lg active:scale-95 transition-transform">
+                    <button onClick={wander} className="scrap-btn absolute left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 px-5 py-2.5 font-hand" style={{ fontSize: 14, fontWeight: 700 }}>
                         <Footprints size={17} weight="bold" /> 随便走走
                     </button>
                     {/* 同伴 / 定位 */}
-                    <button onClick={() => setShowCompanionPick(true)} className="absolute right-2.5 top-2.5 w-10 h-10 rounded-full bg-white/95 shadow flex items-center justify-center active:scale-90" title="一起逛街">
-                        {companion ? <img src={companion.avatar} className="w-7 h-7 rounded-full object-cover" /> : <UserPlus size={18} weight="bold" className="text-stone-500" />}
+                    <button onClick={() => setShowCompanionPick(true)} className="absolute right-2.5 top-2.5 w-10 h-10 rounded-full flex items-center justify-center active:scale-90" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }} title="一起逛街">
+                        {companion ? <img src={companion.avatar} className="w-7 h-7 rounded-full object-cover" /> : <UserPlus size={18} weight="bold" style={{ color: '#5c574f' }} />}
                     </button>
-                    <button onClick={() => setState(s => ({ ...s, userX: 46, userY: 52 }))} className="absolute right-2.5 bottom-3 w-10 h-10 rounded-full bg-white/95 shadow flex items-center justify-center active:scale-90" title="回到中心">
-                        <Crosshair size={18} weight="bold" className="text-stone-500" />
+                    <button onClick={() => setState(s => ({ ...s, userX: 46, userY: 52 }))} className="absolute right-2.5 bottom-3 w-10 h-10 rounded-full flex items-center justify-center active:scale-90" style={{ background: 'rgba(255,255,255,0.96)', boxShadow: '0 2px 8px -4px rgba(50,48,60,0.4)' }} title="回到中心">
+                        <Crosshair size={18} weight="bold" style={{ color: '#5c574f' }} />
                     </button>
+                    </div>
                 </div>
 
                 {/* Tab 条 */}
-                <div className="flex items-center gap-1 mt-3 bg-stone-200/60 rounded-2xl p-1">
-                    {TABS.map(({ id, label }) => (
-                        <button
-                            key={id}
-                            onClick={() => setTab(id)}
-                            className={`relative flex-1 py-2 rounded-xl text-[12px] font-bold transition-colors ${tab === id ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-500'}`}
-                        >
-                            {label}
-                            {id === 'msgs' && unreadCount > 0 && <span className="absolute top-1 right-2 w-1.5 h-1.5 rounded-full bg-red-500" />}
-                            {id === 'dex' && dexCount > 0 && <span className="ml-1 text-[9px] text-stone-400">{dexCount}</span>}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-1 mt-3 p-1 rounded-2xl" style={{ background: 'rgba(120,116,106,0.1)' }}>
+                    {TABS.map(({ id, label }) => {
+                        const active = tab === id;
+                        return (
+                            <button key={id} onClick={() => setTab(id)} className="relative flex-1 py-2 rounded-xl font-hand transition-colors"
+                                style={{ fontSize: 13, fontWeight: 700, color: active ? '#fbfaf7' : '#8b8996', background: active ? INK : 'transparent' }}>
+                                {label}
+                                {id === 'msgs' && unreadCount > 0 && <span className="absolute top-1 right-2 w-1.5 h-1.5 rounded-full" style={{ background: STRANGER }} />}
+                                {id === 'dex' && dexCount > 0 && <span className="ml-1 label-mono" style={{ fontSize: 8, color: active ? 'rgba(255,255,255,0.6)' : '#a79c8e' }}>{dexCount}</span>}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Tab 内容 */}
                 <div className="mt-3">
                     {tab === 'stroll' && (
                         <div>
-                            <div className="flex items-center justify-between mb-2 px-1">
-                                <span className="text-sm font-bold text-stone-700">今日足迹</span>
-                                <span className="text-[11px] text-stone-400">{state.footprints.length}</span>
-                            </div>
+                            <div className="drawer-tag mb-2.5"><span>今日足迹</span><span className="label-mono ml-1" style={{ fontSize: 9, color: '#a79c8e', letterSpacing: '0.1em' }}>{state.footprints.length}</span></div>
                             {state.footprints.length === 0 ? (
-                                <div className="text-center text-stone-400 text-xs py-10">还没有足迹 · 去街上走走、点点 pin 吧</div>
+                                <div className="text-center font-hand py-10" style={{ fontSize: 13, color: '#a79c8e' }}>还没有足迹 · 去街上走走、点点 pin 吧 ✎</div>
                             ) : (
-                                <div className="space-y-2.5">
+                                <div className="space-y-2.5 scrap-list">
                                     {state.footprints.slice().reverse().map(fp => (
-                                        <div key={fp.id} className="bg-white rounded-2xl p-3.5 shadow-sm">
+                                        <div key={fp.id} className="scrap-card relative" style={{ borderRadius: 12, padding: 13 }}>
                                             <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-bold text-sky-600">{fp.choice ? '选择' : fp.tag}</span>
-                                                <span className="text-[11px] text-stone-400">{fmtTime(fp.at)}</span>
+                                                <span className="font-hand" style={{ fontSize: 12, fontWeight: 700, color: KNOWN }}>{fp.choice ? '选择' : fp.tag}</span>
+                                                <span className="label-mono" style={{ fontSize: 9, color: '#bcb5a8' }}>{fmtTime(fp.at)}</span>
                                             </div>
-                                            <div className="flex items-center gap-1 mt-1.5 text-[11px] text-stone-400">
+                                            <div className="flex items-center gap-1 mt-1 font-hand" style={{ fontSize: 11, color: '#a79c8e' }}>
                                                 <Sparkle size={11} weight="fill" /> {fp.tag}
                                             </div>
-                                            <p className="text-[14px] font-bold text-stone-800 mt-1 leading-snug">{fp.title}</p>
-                                            {fp.detail && <p className="text-[12px] text-stone-500 mt-0.5 leading-snug">{fp.detail}</p>}
-                                            {fp.choice && <p className="text-[12px] text-stone-500 mt-1.5">已选：{fp.choice}</p>}
-                                            {fp.place && <p className="flex items-center gap-1 text-[11px] text-sky-500 mt-1.5"><MapPin size={11} weight="fill" /> {fp.place}</p>}
+                                            <p className="font-hand mt-1 leading-snug" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{fp.title}</p>
+                                            {fp.detail && <p className="mt-0.5 leading-snug" style={{ fontSize: 12, color: '#6b665d' }}>{fp.detail}</p>}
+                                            {fp.choice && <p className="font-hand mt-1.5" style={{ fontSize: 12, color: '#6b665d' }}>已选：{fp.choice}</p>}
+                                            {fp.place && <p className="flex items-center gap-1 mt-1.5 font-hand" style={{ fontSize: 11, color: KNOWN }}><MapPin size={11} weight="fill" /> {fp.place}</p>}
                                         </div>
                                     ))}
                                 </div>
@@ -595,22 +618,22 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     )}
 
                     {tab === 'nearby' && (
-                        <div className="space-y-2">
+                        <div className="space-y-2 scrap-list">
                             {state.nearby.length === 0 ? (
-                                <div className="text-center text-stone-400 text-xs py-10">附近暂时没人 · 点右上角刷新</div>
+                                <div className="text-center font-hand py-10" style={{ fontSize: 13, color: '#a79c8e' }}>附近暂时没人 · 点右上角刷新</div>
                             ) : state.nearby.map(p => (
-                                <div key={p.id} className="flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm">
-                                    <div className="w-11 h-11 rounded-full bg-stone-100 flex items-center justify-center text-xl overflow-hidden shrink-0">
+                                <div key={p.id} className="scrap-card flex items-center gap-3" style={{ borderRadius: 12, padding: 11 }}>
+                                    <div className="w-11 h-11 rounded-full flex items-center justify-center text-xl overflow-hidden shrink-0" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>
                                         {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" /> : <span>{p.emoji}</span>}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5">
-                                            <span className="text-sm font-bold text-stone-800 truncate">{p.name}</span>
-                                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${p.kind === 'known' ? 'bg-blue-50 text-blue-500' : 'bg-rose-50 text-rose-500'}`}>{p.kind === 'known' ? '熟人' : '陌生人'}</span>
+                                            <span className="font-hand truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{p.name}</span>
+                                            <span className="px-1.5 py-0.5 rounded-full" style={{ fontSize: 9, fontWeight: 700, background: p.kind === 'known' ? 'rgba(91,143,168,0.12)' : 'rgba(176,58,52,0.1)', color: p.kind === 'known' ? KNOWN : STRANGER }}>{p.kind === 'known' ? '熟人' : '陌生人'}</span>
                                         </div>
-                                        <div className="text-[12px] text-stone-400 truncate">{p.blurb}</div>
+                                        <div className="font-hand truncate" style={{ fontSize: 12, color: '#a79c8e' }}>{p.blurb}</div>
                                     </div>
-                                    <button onClick={() => chatWith(p)} className="px-3.5 py-2 rounded-full bg-stone-800 text-white text-[12px] font-bold active:scale-95 shrink-0">
+                                    <button onClick={() => chatWith(p)} className="scrap-btn font-hand shrink-0" style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700 }}>
                                         {p.kind === 'known' ? '去聊天' : '打招呼'}
                                     </button>
                                 </div>
@@ -619,23 +642,23 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     )}
 
                     {tab === 'msgs' && (
-                        <div className="space-y-2">
+                        <div className="space-y-2 scrap-list">
                             {state.threads.length === 0 ? (
-                                <div className="text-center text-stone-400 text-xs py-10">还没有对话 · 在街上和陌生人搭句话吧</div>
+                                <div className="text-center font-hand py-10" style={{ fontSize: 13, color: '#a79c8e' }}>还没有对话 · 在街上和陌生人搭句话吧</div>
                             ) : state.threads.slice().sort((a, b) => b.lastAt - a.lastAt).map(t => {
                                 const last = t.msgs[t.msgs.length - 1];
                                 return (
-                                    <button key={t.personId} onClick={() => openThread(t)} className="w-full flex items-center gap-3 bg-white rounded-2xl p-3 shadow-sm text-left active:scale-[0.99]">
-                                        <div className="relative w-11 h-11 rounded-full bg-stone-100 flex items-center justify-center text-xl overflow-hidden shrink-0">
+                                    <button key={t.personId} onClick={() => openThread(t)} className="scrap-card press-soft w-full flex items-center gap-3 text-left" style={{ borderRadius: 12, padding: 11 }}>
+                                        <div className="relative w-11 h-11 rounded-full flex items-center justify-center text-xl overflow-hidden shrink-0" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>
                                             {t.avatar ? <img src={t.avatar} className="w-full h-full object-cover" /> : <span>{t.emoji}</span>}
-                                            {t.unread && <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />}
+                                            {t.unread && <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-white" style={{ background: STRANGER }} />}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center justify-between">
-                                                <span className="text-sm font-bold text-stone-800 truncate">{t.name}</span>
-                                                <span className="text-[10px] text-stone-400">{fmtTime(t.lastAt)}</span>
+                                                <span className="font-hand truncate" style={{ fontSize: 15, fontWeight: 700, color: INK }}>{t.name}</span>
+                                                <span className="label-mono" style={{ fontSize: 9, color: '#bcb5a8' }}>{fmtTime(t.lastAt)}</span>
                                             </div>
-                                            <div className="text-[12px] text-stone-400 truncate">{last ? (last.role === 'user' ? '我：' : '') + last.text : '打个招呼吧'}</div>
+                                            <div className="truncate" style={{ fontSize: 12, color: '#a79c8e' }}>{last ? (last.role === 'user' ? '我：' : '') + last.text : '打个招呼吧'}</div>
                                         </div>
                                     </button>
                                 );
@@ -645,18 +668,18 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
                     {tab === 'secret' && (
                         <div>
-                            <button onClick={listenSecret} className="w-full mb-3 py-2.5 rounded-2xl bg-stone-900 text-white text-sm font-bold active:scale-95 flex items-center justify-center gap-2">
+                            <button onClick={listenSecret} className="scrap-btn w-full mb-3 py-2.5 font-hand flex items-center justify-center gap-2" style={{ fontSize: 14, fontWeight: 700 }}>
                                 <Eye size={16} weight="bold" /> 打听街坊秘闻
                             </button>
                             {state.secrets.length === 0 ? (
-                                <div className="text-center text-stone-400 text-xs py-8">这片街区还没什么风声…</div>
+                                <div className="text-center font-hand py-8" style={{ fontSize: 13, color: '#a79c8e' }}>这片街区还没什么风声…</div>
                             ) : (
-                                <div className="space-y-2.5">
+                                <div className="space-y-2.5 scrap-list">
                                     {state.secrets.map(sc => (
-                                        <div key={sc.id} className="bg-gradient-to-br from-violet-50 to-white rounded-2xl p-3.5 shadow-sm border border-violet-100">
-                                            <div className="flex items-center gap-1 text-[11px] text-violet-500 font-bold mb-1"><Sparkle size={11} weight="fill" /> 秘闻</div>
-                                            <p className="text-[13px] text-stone-700 leading-relaxed">{sc.text}</p>
-                                            {sc.place && <p className="flex items-center gap-1 text-[11px] text-violet-400 mt-1.5"><MapPin size={11} weight="fill" /> {sc.place}</p>}
+                                        <div key={sc.id} className="scrap-card relative" style={{ borderRadius: 12, padding: 13, borderLeft: '4px solid #9b5bb8' }}>
+                                            <div className="flex items-center gap-1 font-hand mb-1" style={{ fontSize: 12, color: '#9b5bb8', fontWeight: 700 }}><Sparkle size={11} weight="fill" /> 秘闻</div>
+                                            <p className="leading-relaxed" style={{ fontSize: 13, color: '#5c574f' }}>{sc.text}</p>
+                                            {sc.place && <p className="flex items-center gap-1 font-hand mt-1.5" style={{ fontSize: 11, color: '#9b5bb8' }}><MapPin size={11} weight="fill" /> {sc.place}</p>}
                                         </div>
                                     ))}
                                 </div>
@@ -667,32 +690,32 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     {tab === 'dex' && (
                         <div className="space-y-4">
                             <div>
-                                <div className="text-sm font-bold text-stone-700 mb-2 flex items-center gap-1.5"><ChatCircleDots size={15} weight="bold" /> 遇见的人（{state.dexPeople.length}）</div>
+                                <div className="drawer-tag mb-2"><span>遇见的人</span><span className="label-mono ml-1" style={{ fontSize: 9, color: '#a79c8e' }}>{state.dexPeople.length}</span></div>
                                 {state.dexPeople.length === 0 ? (
-                                    <div className="text-stone-400 text-xs py-3 text-center">和陌生人聊得来时，点「记入图鉴」收藏 TA</div>
+                                    <div className="font-hand py-3 text-center" style={{ fontSize: 12, color: '#a79c8e' }}>和陌生人聊得来时，点「记入图鉴」收藏 TA</div>
                                 ) : (
                                     <div className="grid grid-cols-3 gap-2">
                                         {state.dexPeople.map((d, i) => (
-                                            <div key={i} className="bg-white rounded-2xl p-2.5 shadow-sm flex flex-col items-center text-center">
-                                                <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-lg">{d.emoji}</div>
-                                                <div className="text-[11px] font-bold text-stone-700 mt-1 truncate w-full">{d.name}</div>
-                                                <div className="text-[9px] text-stone-400 truncate w-full">{d.blurb}</div>
+                                            <div key={i} className="scrap-card flex flex-col items-center text-center" style={{ borderRadius: 12, padding: 10, rotate: i % 2 ? '1deg' : '-1deg' }}>
+                                                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>{d.emoji}</div>
+                                                <div className="font-hand mt-1 truncate w-full" style={{ fontSize: 12, fontWeight: 700, color: '#5c574f' }}>{d.name}</div>
+                                                <div className="truncate w-full" style={{ fontSize: 9, color: '#a79c8e' }}>{d.blurb}</div>
                                             </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
                             <div>
-                                <div className="text-sm font-bold text-stone-700 mb-2 flex items-center gap-1.5"><Storefront size={15} weight="bold" /> 逛过的店（{state.dexShops.length}）</div>
+                                <div className="drawer-tag mb-2"><span>逛过的店</span><span className="label-mono ml-1" style={{ fontSize: 9, color: '#a79c8e' }}>{state.dexShops.length}</span></div>
                                 {state.dexShops.length === 0 ? (
-                                    <div className="text-stone-400 text-xs py-3 text-center">点地图上的店铺进去逛逛，会收进这里</div>
+                                    <div className="font-hand py-3 text-center" style={{ fontSize: 12, color: '#a79c8e' }}>点地图上的店铺进去逛逛，会收进这里</div>
                                 ) : (
                                     <div className="grid grid-cols-3 gap-2">
                                         {state.dexShops.map((d, i) => (
-                                            <div key={i} className="bg-white rounded-2xl p-2.5 shadow-sm flex flex-col items-center text-center">
-                                                <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-lg">{d.emoji}</div>
-                                                <div className="text-[11px] font-bold text-stone-700 mt-1 truncate w-full">{d.name}</div>
-                                                <div className="text-[9px] text-stone-400 truncate w-full">{d.kind}</div>
+                                            <div key={i} className="scrap-card flex flex-col items-center text-center" style={{ borderRadius: 12, padding: 10, rotate: i % 2 ? '-1deg' : '1deg' }}>
+                                                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>{d.emoji}</div>
+                                                <div className="font-hand mt-1 truncate w-full" style={{ fontSize: 12, fontWeight: 700, color: '#5c574f' }}>{d.name}</div>
+                                                <div className="truncate w-full" style={{ fontSize: 9, color: '#a79c8e' }}>{d.kind}</div>
                                             </div>
                                         ))}
                                     </div>
@@ -705,18 +728,19 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
             {/* 街头事件弹层 */}
             {state.activeEvent && (
-                <div className="absolute inset-0 z-30 flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setState(s => ({ ...s, activeEvent: null, eventPlace: undefined }))}>
-                    <div className="w-full max-w-md bg-white rounded-t-3xl p-5 pb-8 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-30 flex items-end justify-center roam-fade" style={{ background: 'rgba(43,41,51,0.4)' }} onClick={() => setState(s => ({ ...s, activeEvent: null, eventPlace: undefined }))}>
+                    <div className="roam-sheet scrap-card w-full max-w-md p-5 pb-8 relative" onClick={e => e.stopPropagation()} style={{ borderRadius: '24px 24px 0 0' }}>
+                        <span style={{ position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2deg)', width: 110, height: 18, background: 'rgba(120,180,210,0.4)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', pointerEvents: 'none' }} />
                         <div className="flex items-center gap-2 mb-3">
                             <span className="text-2xl">{state.activeEvent.emoji}</span>
-                            <span className="text-[11px] font-bold text-sky-600">街头事件</span>
-                            {state.eventPlace && <span className="ml-auto flex items-center gap-1 text-[11px] text-sky-500"><MapPin size={11} weight="fill" /> {state.eventPlace}</span>}
+                            <span className="font-hand" style={{ fontSize: 13, fontWeight: 700, color: KNOWN }}>街头事件</span>
+                            {state.eventPlace && <span className="ml-auto flex items-center gap-1 font-hand" style={{ fontSize: 11, color: KNOWN }}><MapPin size={11} weight="fill" /> {state.eventPlace}</span>}
                         </div>
-                        <p className="text-[15px] font-bold text-stone-800 leading-snug">{state.activeEvent.title}</p>
-                        {state.activeEvent.sub && <p className="text-[12px] text-stone-500 mt-1">{state.activeEvent.sub}</p>}
+                        <p className="font-hand leading-snug" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{state.activeEvent.title}</p>
+                        {state.activeEvent.sub && <p className="mt-1" style={{ fontSize: 12, color: '#6b665d' }}>{state.activeEvent.sub}</p>}
                         <div className="mt-4 space-y-2">
                             {state.activeEvent.choices.map((c, i) => (
-                                <button key={i} onClick={() => resolveEvent(i)} className="w-full py-3 rounded-2xl bg-stone-100 text-stone-800 font-bold text-sm active:scale-95 transition-transform hover:bg-stone-200">
+                                <button key={i} onClick={() => resolveEvent(i)} className="scrap-btn-paper press-soft w-full py-3 font-hand" style={{ fontSize: 14, fontWeight: 700 }}>
                                     {c.label}
                                 </button>
                             ))}
@@ -727,23 +751,24 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
             {/* 选同伴 */}
             {showCompanionPick && (
-                <div className="absolute inset-0 z-30 flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setShowCompanionPick(false)}>
-                    <div className="w-full max-w-md bg-white rounded-t-3xl p-5 pb-8 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-30 flex items-end justify-center roam-fade" style={{ background: 'rgba(43,41,51,0.4)' }} onClick={() => setShowCompanionPick(false)}>
+                    <div className="roam-sheet scrap-card w-full max-w-md p-5 pb-8 relative" onClick={e => e.stopPropagation()} style={{ borderRadius: '24px 24px 0 0' }}>
+                        <span style={{ position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2deg)', width: 110, height: 18, background: 'rgba(255,255,255,0.6)', borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)', pointerEvents: 'none' }} />
                         <div className="text-center mb-3">
-                            <div className="text-base font-bold text-stone-800">找个角色一起逛街</div>
-                            <div className="text-[11px] text-stone-400 mt-0.5">TA 会陪你出现在地图上，对沿途的事搭两句话</div>
+                            <div className="font-hand" style={{ fontSize: 18, fontWeight: 700, color: INK }}>找个角色一起逛街</div>
+                            <div className="font-hand mt-0.5" style={{ fontSize: 12, color: '#a79c8e' }}>TA 会陪你出现在地图上，对沿途的事搭两句话</div>
                         </div>
                         {state.companionId && (
-                            <button onClick={() => { setState(s => ({ ...s, companionId: undefined })); setShowCompanionPick(false); addToast('已解散同伴', 'info'); }} className="w-full mb-3 py-2.5 rounded-2xl bg-stone-100 text-stone-500 font-bold text-sm">独自逛逛</button>
+                            <button onClick={() => { setState(s => ({ ...s, companionId: undefined })); setShowCompanionPick(false); addToast('已解散同伴', 'info'); }} className="scrap-btn-paper w-full mb-3 py-2.5 font-hand" style={{ fontSize: 14, fontWeight: 700, color: '#a79c8e' }}>独自逛逛</button>
                         )}
                         {characters.length === 0 ? (
-                            <div className="text-center text-stone-400 text-xs py-6">还没有可邀请的角色</div>
+                            <div className="text-center font-hand py-6" style={{ fontSize: 13, color: '#a79c8e' }}>还没有可邀请的角色</div>
                         ) : (
                             <div className="grid grid-cols-4 gap-3 max-h-[44vh] overflow-y-auto no-scrollbar">
                                 {characters.map(c => (
-                                    <button key={c.id} onClick={() => { setState(s => ({ ...s, companionId: c.id })); setShowCompanionPick(false); addToast(`${c.name} 来陪你逛街了`, 'success'); }} className={`flex flex-col items-center gap-1.5 ${state.companionId === c.id ? 'opacity-100' : ''}`}>
-                                        <img src={c.avatar} className={`w-[52px] h-[52px] rounded-full object-cover ${state.companionId === c.id ? 'ring-2 ring-stone-800' : 'ring-1 ring-stone-100'}`} />
-                                        <span className="text-[10px] text-stone-600 truncate w-full text-center">{c.name}</span>
+                                    <button key={c.id} onClick={() => { setState(s => ({ ...s, companionId: c.id })); setShowCompanionPick(false); addToast(`${c.name} 来陪你逛街了`, 'success'); }} className="flex flex-col items-center gap-1.5">
+                                        <img src={c.avatar} className="w-[52px] h-[52px] rounded-full object-cover" style={{ boxShadow: state.companionId === c.id ? `0 0 0 2px ${INK}` : '0 0 0 1px rgba(236,233,226,0.95)' }} />
+                                        <span className="font-hand truncate w-full text-center" style={{ fontSize: 11, color: '#5c574f' }}>{c.name}</span>
                                     </button>
                                 ))}
                             </div>

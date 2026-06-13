@@ -28,7 +28,7 @@ import {
   Phone,
   EnvelopeSimpleOpen,
   Crosshair,
-  Smiley,
+  Storefront,
   Brain,
   Notebook,
   Plugs,
@@ -77,7 +77,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Phone: ({ className }) => <Phone className={className} weight="bold" />,
   ExchangeDiary: ({ className }) => <EnvelopeSimpleOpen className={className} weight="bold" />,
   Guidebook: ({ className }) => <Crosshair className={className} weight="bold" />,
-  LifeSim: ({ className }) => <Smiley className={className} weight="bold" />,
+  LifeSim: ({ className }) => <Storefront className={className} weight="bold" />,
   MemoryPalace: ({ className }) => <Brain className={className} weight="bold" />,
   Handbook: ({ className }) => <Notebook className={className} weight="bold" />,
   QQBridge: ({ className }) => <Plugs className={className} weight="bold" />,
@@ -136,7 +136,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
   { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
-  { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
+  { id: AppID.LifeSim, name: '街角手账', icon: 'LifeSim', color: 'purple' },
   { id: AppID.CharCreatorDev, name: '捏脸·开发', icon: 'CharCreatorDev', color: 'amber' }, // 仅开发模式显示（Launcher 过滤）
   // { id: AppID.QQBridge, name: 'QQ 桥', icon: 'QQBridge', color: 'sky' }, // Hidden temporarily
 ];

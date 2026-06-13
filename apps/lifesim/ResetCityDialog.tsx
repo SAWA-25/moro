@@ -1,5 +1,5 @@
 import React from 'react';
-import { WarningCircle, X } from '@phosphor-icons/react';
+import { Sparkle, X } from '@phosphor-icons/react';
 
 const ResetCityDialog: React.FC<{
     participantCount: number;
@@ -12,85 +12,60 @@ const ResetCityDialog: React.FC<{
     return (
         <div
             className="absolute inset-0 z-50 flex items-center justify-center px-4"
-            style={{ background: 'rgba(0,0,0,0.35)' }}
+            style={{ background: 'rgba(43,41,51,0.4)', animation: 'fadeIn 0.25s ease' }}
             onClick={event => { if (event.target === event.currentTarget && !processing) onCancel(); }}
         >
-            <div
-                className="retro-window w-full"
-                style={{
-                    maxWidth: 340,
-                    boxShadow: '4px 4px 0 rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',
-                }}
-            >
-                <div className="retro-titlebar">
-                    <span className="flex items-center gap-1">
-                        <WarningCircle size={11} weight="fill" /> reset-city.exe
+            <div className="scrap-card relative" style={{
+                width: '100%', maxWidth: 340, borderRadius: 16,
+                animation: 'popIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275)',
+            }}>
+                {/* 顶部胶带 */}
+                <span style={{
+                    position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2deg)',
+                    width: 104, height: 18, background: 'rgba(255,255,255,0.6)',
+                    borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)',
+                    pointerEvents: 'none',
+                }} />
+
+                <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                    <span className="flex items-center gap-1.5 font-hand" style={{ fontSize: 18, fontWeight: 700, color: '#2b2933' }}>
+                        <Sparkle size={15} weight="fill" style={{ color: '#b03a34' }} /> 翻篇 · 收尾这一本
                     </span>
                     {!processing && (
-                        <button
-                            onClick={onCancel}
-                            style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 18,
-                                height: 18,
-                                borderRadius: 3,
-                                background: 'rgba(255,255,255,0.15)',
-                                border: '1px solid rgba(255,255,255,0.25)',
-                                color: 'white',
-                            }}
-                        >
-                            <X size={10} weight="bold" />
+                        <button onClick={onCancel} className="scrap-btn-paper flex items-center justify-center" style={{ width: 30, height: 30 }}>
+                            <X size={14} weight="bold" />
                         </button>
                     )}
                 </div>
+                <div className="lace-edge mx-4" />
 
-                <div style={{ padding: 12 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: '#4d475c', lineHeight: 1.5 }}>
-                        是否结束这场游戏，并生成小结？
+                <div style={{ padding: '12px 16px' }}>
+                    <p className="font-hand" style={{ fontSize: 15, fontWeight: 700, color: '#2b2933', lineHeight: 1.5 }}>
+                        要把这一本合上，再写一张小结吗？
                     </p>
-                    <p style={{ fontSize: 10, color: '#7d778a', lineHeight: 1.6, marginTop: 6 }}>
-                        当前参与角色 {participantCount} 个，已记录主线 {mainPlotCount} 条。
+                    <p className="font-hand" style={{ fontSize: 12, color: '#a79c8e', lineHeight: 1.6, marginTop: 6 }}>
+                        这一本里有 {participantCount} 位角色登场，记下了 {mainPlotCount} 条主线。
                     </p>
 
-                    <div className="retro-inset" style={{ padding: '7px 9px', marginTop: 8 }}>
-                        <p style={{ fontSize: 9, color: '#7d746d', lineHeight: 1.6 }}>
-                            “确定” 会调用 API 把这局《都市人生》浓缩成一张像素风结算小卡片，并发送到参与角色的聊天记录里。
+                    <div style={{ padding: '8px 11px', marginTop: 9, background: 'rgba(120,116,106,0.06)', borderRadius: 10, border: '1px dashed rgba(167,162,151,0.45)' }}>
+                        <p className="font-hand" style={{ fontSize: 12, color: '#6b665d', lineHeight: 1.6 }}>
+                            「写小结」会调用 API，把这一本《街角手账》浓缩成一张拼贴小卡片，夹进参与角色的聊天记录里。
                         </p>
                     </div>
                 </div>
 
-                <div style={{ padding: '0 12px 12px' }} className="space-y-2">
-                    <button
-                        onClick={onCancel}
-                        disabled={processing}
-                        className="retro-btn w-full"
-                        style={{ padding: '7px 12px', opacity: processing ? 0.6 : 1 }}
-                    >
-                        取消
+                <div style={{ padding: '0 16px 16px' }} className="space-y-2">
+                    <button onClick={onArchiveAndReset} disabled={processing}
+                        className="scrap-btn w-full" style={{ padding: '11px', background: '#b03a34', opacity: processing ? 0.6 : 1, fontFamily: 'var(--font-hand)', fontSize: 15, fontWeight: 700 }}>
+                        {processing ? '正在写小结…' : '写小结，合上本子'}
                     </button>
-                    <button
-                        onClick={onArchiveAndReset}
-                        disabled={processing}
-                        className="retro-btn retro-btn-primary w-full"
-                        style={{ padding: '7px 12px', opacity: processing ? 0.6 : 1 }}
-                    >
-                        {processing ? '正在生成小结...' : '确定'}
+                    <button onClick={onDirectReset} disabled={processing}
+                        className="scrap-btn-paper w-full" style={{ padding: '10px', opacity: processing ? 0.6 : 1, fontFamily: 'var(--font-hand)', fontSize: 14, fontWeight: 700, color: '#9a6a6a' }}>
+                        不写了，直接翻篇
                     </button>
-                    <button
-                        onClick={onDirectReset}
-                        disabled={processing}
-                        className="retro-btn w-full"
-                        style={{
-                            padding: '7px 12px',
-                            background: 'linear-gradient(180deg, #e8d8d8, #d3b6b6)',
-                            borderColor: '#b78585',
-                            color: '#7b4a4a',
-                            opacity: processing ? 0.6 : 1,
-                        }}
-                    >
-                        直接结束游戏
+                    <button onClick={onCancel} disabled={processing}
+                        className="w-full font-hand" style={{ padding: '8px', opacity: processing ? 0.6 : 1, fontSize: 13, fontWeight: 700, color: '#a79c8e', background: 'transparent', border: 'none' }}>
+                        再想想
                     </button>
                 </div>
             </div>

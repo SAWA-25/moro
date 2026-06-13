@@ -667,90 +667,72 @@ const LifeSimResetCardView: React.FC<{ card: any }> = ({ card }) => {
 
     return (
         <div
-            className="w-72 overflow-hidden"
+            className="w-72 relative"
             style={{
-                border: '2px solid #8f674a',
-                borderRadius: 2,
-                background: '#f4ede6',
-                boxShadow: '4px 4px 0 rgba(105, 74, 52, 0.28), inset 0 0 0 1px rgba(255,255,255,0.35)',
+                background: '#fbfaf7',
+                borderRadius: 14,
+                border: '1px solid rgba(236,233,226,0.95)',
+                outline: '1px dashed rgba(167,162,151,0.34)',
+                outlineOffset: -5,
+                boxShadow: '0 14px 30px -18px rgba(50,48,60,0.5)',
+                rotate: '-1deg',
+                backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.06) 1px, transparent 0)',
+                backgroundSize: '14px 14px',
             }}
         >
-            <div
-                className="px-3 py-2 flex items-center gap-2"
-                style={{
-                    borderBottom: '2px solid rgba(96,65,44,0.22)',
-                    background: 'linear-gradient(180deg, #c99872, #9a6f52)',
-                }}
-            >
-                {parsed.charAvatar ? (
-                    <img src={parsed.charAvatar} className="w-8 h-8 object-cover shrink-0" style={{ borderRadius: 2, border: '2px solid rgba(255,255,255,0.25)' }} />
-                ) : (
-                    <div className="w-8 h-8 flex items-center justify-center text-white text-sm font-bold shrink-0" style={{ borderRadius: 2, background: 'linear-gradient(135deg, #b86c3d, #d39b62)' }}>
-                        {parsed.charName?.[0] || '?'}
-                    </div>
-                )}
+            {/* 顶部和纸胶带 */}
+            <span style={{
+                position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2.5deg)',
+                width: 104, height: 19, background: 'rgba(216,189,156,0.45)',
+                borderLeft: '1px dashed rgba(160,140,110,0.5)', borderRight: '1px dashed rgba(160,140,110,0.5)',
+                boxShadow: '0 1px 4px rgba(50,48,60,0.14)', pointerEvents: 'none',
+            }} />
+
+            <div className="px-3.5 pt-4 pb-2 flex items-center gap-2.5">
+                <div style={{ padding: 2, background: '#fff', borderRadius: 9, outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }} className="shrink-0">
+                    {parsed.charAvatar ? (
+                        <img src={parsed.charAvatar} className="w-9 h-9 object-cover" style={{ borderRadius: 7 }} />
+                    ) : (
+                        <div className="w-9 h-9 flex items-center justify-center text-white text-sm font-bold" style={{ borderRadius: 7, background: 'linear-gradient(135deg, #b86c3d, #d39b62)' }}>
+                            {parsed.charName?.[0] || '?'}
+                        </div>
+                    )}
+                </div>
                 <div className="flex-1 min-w-0">
-                    <div className="text-[8px] font-bold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.78)', fontFamily: 'monospace' }}>
-                        city-summary.exe
-                    </div>
-                    <div className="text-[11px] font-bold truncate" style={{ color: 'white' }}>
-                        {parsed.headline || parsed.title}
+                    <div className="label-mono" style={{ fontSize: 8, color: '#b09a82' }}>street-corner journal</div>
+                    <div className="font-hand truncate" style={{ fontSize: 16, fontWeight: 700, color: '#2b2933' }}>
+                        {parsed.headline || '这条街的小结'}
                     </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                    <span style={{ width: 10, height: 10, borderRadius: 2, background: '#fbbf24', border: '1px solid rgba(0,0,0,0.12)' }} />
-                    <span style={{ width: 10, height: 10, borderRadius: 2, background: '#86efac', border: '1px solid rgba(0,0,0,0.12)' }} />
-                </div>
+                <span style={{ fontSize: 15, color: '#b86c3d', flexShrink: 0, lineHeight: 1 }}>✦</span>
             </div>
 
-            <div
-                className="px-3 py-3"
-                style={{
-                    backgroundImage: 'linear-gradient(rgba(143,103,74,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(143,103,74,0.06) 1px, transparent 1px)',
-                    backgroundSize: '8px 8px',
-                }}
-            >
-                <div className="flex items-center justify-between text-[9px] font-bold mb-2" style={{ color: '#8f7968', fontFamily: 'monospace' }}>
+            <div className="lace-edge mx-3.5" />
+
+            <div className="px-3.5 pt-2.5 pb-3.5">
+                <div className="flex items-center justify-between mb-2 font-hand" style={{ fontSize: 11, fontWeight: 700, color: '#9b8677' }}>
                     <span>{parsed.charName}</span>
                     <span>主线 {parsed.mainPlotCount}</span>
                 </div>
-                <div
-                    className="px-3 py-2.5"
-                    style={{
-                        borderRadius: 2,
-                        background: 'rgba(255,255,255,0.82)',
-                        border: '2px solid rgba(168,123,91,0.3)',
-                        boxShadow: 'inset 1px 1px 0 rgba(255,255,255,0.6)',
-                    }}
-                >
-                    <div className="text-[11px] leading-relaxed whitespace-pre-wrap" style={{ color: '#5b4c42' }}>
+                <div className="px-3 py-2.5" style={{
+                    borderRadius: 10,
+                    background: 'rgba(255,255,255,0.85)',
+                    border: '1px dashed rgba(168,123,91,0.4)',
+                }}>
+                    <div className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: 12, color: '#5b4c42' }}>
                         {parsed.summary}
                     </div>
                 </div>
 
-                <div className="mt-3 retro-inset px-2.5 py-2" style={{ borderRadius: 2 }}>
-                    <div className="flex items-center justify-between text-[9px] font-bold" style={{ color: '#8f7968', fontFamily: 'monospace' }}>
-                        <span>参与者 {parsed.participantNames.length}</span>
-                        <span>回合 {parsed.turnCount}</span>
+                <div className="mt-3 px-3 py-2" style={{ borderRadius: 10, background: 'rgba(120,116,106,0.05)', border: '1px dashed rgba(167,162,151,0.4)' }}>
+                    <div className="flex items-center justify-between font-hand" style={{ fontSize: 11, fontWeight: 700, color: '#8f7968' }}>
+                        <span>登场 {parsed.participantNames.length}</span>
+                        <span>共 {parsed.turnCount} 页</span>
                     </div>
-                    <div className="mt-1 text-[9px] leading-relaxed" style={{ color: '#9b8677' }}>
+                    <div className="mt-1 leading-relaxed" style={{ fontSize: 10, color: '#9b8677' }}>
                         {parsed.participantNames.join('、') || '无参与角色'}
                     </div>
                 </div>
-            </div>
-
-            <div
-                className="px-3 py-1.5 flex items-center justify-between"
-                style={{
-                    borderTop: '2px solid rgba(143,103,74,0.18)',
-                    background: 'linear-gradient(180deg, #eadfce, #dfd0bd)',
-                    fontFamily: 'monospace',
-                    fontSize: 9,
-                    color: '#836b5b',
-                }}
-            >
-                <span>memory://lifesim/session-card</span>
-                <span>OK</span>
             </div>
         </div>
     );

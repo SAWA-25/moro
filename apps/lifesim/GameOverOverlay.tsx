@@ -1,48 +1,44 @@
 /**
- * GameOverOverlay — 游戏结束 (retro error dialog style)
- * Inspired by classic OS error windows
+ * GameOverOverlay — 整条街搬空了（拼贴手账 · 便签）
  */
 
 import React from 'react';
-import { Buildings, ArrowCounterClockwise } from '@phosphor-icons/react';
+import { Storefront, ArrowCounterClockwise } from '@phosphor-icons/react';
 
 const GameOverOverlay: React.FC<{ reason?: string; onRestart: () => void }> = ({ reason, onRestart }) => (
     <div className="absolute inset-0 flex items-center justify-center z-50 px-4"
-        style={{ background: 'rgba(0,0,0,0.4)' }}>
-        <div className="retro-window w-full" style={{
-            maxWidth: 280,
-            borderColor: '#b85050',
-            boxShadow: '4px 4px 0px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(255,255,255,0.5)',
+        style={{ background: 'rgba(43,41,51,0.42)', animation: 'fadeIn 0.25s ease' }}>
+        <div className="scrap-card relative tilt-l" style={{
+            width: '100%', maxWidth: 290, borderRadius: 16,
+            borderTop: '4px solid #b03a34',
+            animation: 'popIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275)',
         }}>
-            {/* Error-style titlebar */}
-            <div className="retro-titlebar" style={{
-                background: 'linear-gradient(180deg, #d06060, #b85050)',
-            }}>
-                <span className="flex items-center gap-1">
-                    <span style={{ fontSize: 12 }}>⚠</span> Error
-                </span>
-                <span className="retro-dots">
-                    <span className="retro-dot" style={{ background: '#f87171' }}>×</span>
-                </span>
-            </div>
+            {/* 顶部胶带 */}
+            <span style={{
+                position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2.5deg)',
+                width: 96, height: 18, background: 'rgba(216,98,91,0.28)',
+                borderLeft: '1px dashed rgba(176,58,52,0.5)', borderRight: '1px dashed rgba(176,58,52,0.5)',
+                pointerEvents: 'none',
+            }} />
 
-            <div style={{ padding: 16, textAlign: 'center' }}>
-                <Buildings size={48} weight="duotone" style={{ color: '#b85050', marginBottom: 8 }} className="mx-auto" />
+            <div style={{ padding: '22px 18px 18px', textAlign: 'center' }}>
+                <Storefront size={46} weight="duotone" style={{ color: '#b03a34', margin: '0 auto 6px' }} />
 
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#444', marginBottom: 8 }}>
-                    城市空了！
+                <p className="font-hand" style={{ fontSize: 22, fontWeight: 700, color: '#2b2933', marginBottom: 4 }}>
+                    整条街都搬空了
                 </p>
+                <p className="label-mono" style={{ fontSize: 8, color: '#a79c8e', marginBottom: 12 }}>the end of this page</p>
 
-                <div className="retro-inset" style={{ padding: '8px 12px', marginBottom: 12, textAlign: 'left' }}>
-                    <p style={{ fontSize: 10, color: '#666', lineHeight: 1.5 }}>
-                        {reason || '所有人都搬走了……这座城市空无一人。'}
+                <div style={{ padding: '9px 12px', marginBottom: 14, textAlign: 'left', background: 'rgba(120,116,106,0.06)', borderRadius: 10, border: '1px dashed rgba(167,162,151,0.45)' }}>
+                    <p className="font-hand" style={{ fontSize: 13, color: '#6b665d', lineHeight: 1.6 }}>
+                        {reason || '人都散了……这条街空空荡荡，只剩本子上的字。'}
                     </p>
                 </div>
 
                 <button onClick={onRestart}
-                    className="retro-btn retro-btn-primary w-full flex items-center justify-center gap-1"
-                    style={{ padding: '8px 16px', fontSize: 12 }}>
-                    <ArrowCounterClockwise size={13} weight="bold" /> 重建城市
+                    className="scrap-btn w-full flex items-center justify-center gap-1.5"
+                    style={{ padding: '11px', background: '#b03a34', fontFamily: 'var(--font-hand)', fontSize: 15, fontWeight: 700 }}>
+                    <ArrowCounterClockwise size={15} weight="bold" /> 再开新的一页
                 </button>
             </div>
         </div>

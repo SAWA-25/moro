@@ -13,8 +13,8 @@ export function buildLifeSimSessionSummaryPrompt(
     }).join('\n');
 
     return `
-你是《都市人生》结束结算器。
-任务：把这一整局的世界线浓缩成 300 字以内的中文总结。
+你是《街角手账》的收尾笔者。
+任务：把这一整本手账记下的世界线浓缩成 300 字以内的中文总结。
 
 规则：
 - 输出 JSON：{ "summary": "..." }
@@ -42,5 +42,5 @@ export function buildFallbackLifeSimSessionSummary(
         return `${cast} 一起围观了这座城的日常鸡飞狗跳，虽然没有拉出完整主线，但几段暧昧、站队和小型风波已经把气氛炒热。`;
     }
 
-    return `${cast} 一起把这局《都市人生》推成了 ${beats.join('、')} 这条世界线，整座城从吃瓜围观一路滚到站队升级，最后所有人都被卷进同一场 drama 里。`.slice(0, 300);
+    return `${cast} 一起把这本《街角手账》写成了 ${beats.join('、')} 这条世界线，整条街从吃瓜围观一路滚到站队升级，最后所有人都被卷进同一场 drama 里。`.slice(0, 300);
 }
