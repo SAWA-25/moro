@@ -188,7 +188,7 @@ export async function synthesizeSongMinimax(
 ): Promise<MinimaxMusicResult> {
   const { signal, onStatus } = options;
   const apiKey = resolveMiniMaxApiKey(apiConfig);
-  if (!apiKey) throw new Error('请先在「设置」里填 MiniMax API Key');
+  if (!apiKey) throw new Error('请先在「文具盒」里填 MiniMax API Key');
   if (!input.prompt && !input.lyrics) throw new Error('风格描述和歌词至少需要一个');
 
   const cacheKey = hashMinimaxMusicInputs(input);

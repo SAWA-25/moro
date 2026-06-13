@@ -128,7 +128,7 @@ const post = async (
     expectResponse = true
 ): Promise<{ response: McpJsonRpcResponse | null }> => {
     const token = getMcdToken();
-    if (!token) throw new Error('未配置麦当劳 MCP Token，请到设置 → 麦当劳填入');
+    if (!token) throw new Error('未配置麦当劳 MCP Token，请到 文具盒 → 麦当劳 填入');
 
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',

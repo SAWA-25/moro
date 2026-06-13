@@ -106,7 +106,7 @@ const VoiceDesignerApp: React.FC = () => {
   // ── Load voices ──
   const handleLoadVoices = async () => {
     const apiKey = resolveMiniMaxApiKey(apiConfig);
-    if (!apiKey) return addToast('请先在设置里配置 MiniMax API Key', 'error');
+    if (!apiKey) return addToast('请先在「文具盒」里配置 MiniMax API Key', 'error');
     setIsLoadingVoices(true);
     try {
       const result = await fetchMiniMaxVoices(apiKey, 'all');
@@ -194,7 +194,7 @@ const VoiceDesignerApp: React.FC = () => {
   // ── Preview ──
   const handlePreview = async () => {
     const apiKey = resolveMiniMaxApiKey(apiConfig);
-    if (!apiKey) return addToast('请先在设置里配置 MiniMax API Key', 'error');
+    if (!apiKey) return addToast('请先在「文具盒」里配置 MiniMax API Key', 'error');
     const text = previewText.trim();
     if (!text) return addToast('请输入试听文本', 'error');
 
@@ -262,7 +262,7 @@ const VoiceDesignerApp: React.FC = () => {
   // ── Bake voice: server synthesizes long audio with timber_weights → upload → clone ──
   const handleBakeVoice = async () => {
     const apiKey = resolveMiniMaxApiKey(apiConfig);
-    if (!apiKey) return addToast('请先在设置里配置 MiniMax API Key', 'error');
+    if (!apiKey) return addToast('请先在「文具盒」里配置 MiniMax API Key', 'error');
 
     const payload = buildPayload('');  // just to validate timber_weights
     if (!payload) return;

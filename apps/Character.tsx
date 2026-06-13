@@ -169,7 +169,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const handleLoadMiniMaxVoices = async () => {
       const minimaxApiKey = resolveMiniMaxApiKey(apiConfig);
       if (!minimaxApiKey) {
-          addToast('请先在设置中填入 MiniMax API Key（未填写时会回退使用通用 API Key）', 'error');
+          addToast('请先在「文具盒」里填入 MiniMax API Key（未填写时会回退使用通用 API Key）', 'error');
           return;
       }
 

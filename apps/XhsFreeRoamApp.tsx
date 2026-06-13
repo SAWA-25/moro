@@ -96,11 +96,11 @@ const XhsFreeRoamApp: React.FC = () => {
     const handleStart = async () => {
         if (!char || isRunning) return;
         if (!mcpEnabled || !mcpUrl) {
-            addToast('请先在设置中配置小红书 MCP Server', 'error');
+            addToast('请先在「文具盒」里配置小红书 MCP Server', 'error');
             return;
         }
         if (!apiConfig.baseUrl) {
-            addToast('请先在设置中配置 API', 'error');
+            addToast('请先在「文具盒」里配置 API', 'error');
             return;
         }
 
@@ -511,7 +511,7 @@ const XhsFreeRoamApp: React.FC = () => {
                 <div className="mx-4 mt-3 bg-amber-50 border border-amber-200 rounded-2xl p-3">
                     <p className="text-xs text-amber-700 font-medium">小红书 MCP 未开启</p>
                     <p className="text-[10px] text-amber-500 mt-1">
-                        请前往 设置 → 实时感知 → 小红书 MCP，开启并配置 Server URL。
+                        请前往 文具盒 → 风向标（实时感知）→ 小红书 MCP，开启并配置 Server URL。
                     </p>
                 </div>
             )}

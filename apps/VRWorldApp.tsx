@@ -828,7 +828,7 @@ const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     <div>· 角色在留言簿说的话，会原样进 ta 的聊天，不只是一句小总结。</div>
                     <div>· 阅读器里的批注都是<b>角色自己留</b>的；你目前只能翻看，<b className="text-amber-200">还不能亲自写批注</b>（以后再说）。</div>
                     <div>· 邮局/收件箱里的信多了也会分页，慢慢翻。</div>
-                    <div>· 彼方较费 API：可在 <b>「API」</b> 标签给它单独指定一份（和设置里的预设共用），还能看<b>调用记录</b>对账。</div>
+                    <div>· 彼方较费 API：可在 <b>「API」</b> 标签给它单独指定一份（和文具盒里的预设共用），还能看<b>调用记录</b>对账。</div>
                 </Block>
 
                 <div className="h-2" />
@@ -2597,7 +2597,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
     return (
         <div className="space-y-3">
             <p className="text-[11px] text-indigo-300/60 leading-relaxed">
-                彼方里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给彼方<b className="text-indigo-200">单独指定一份 API</b>（和「设置」里保存的预设共用同一批），不设则跟随聊天默认。
+                彼方里的角色会自主、按间隔登入触发模型调用，比较费 API。你可以在这里给彼方<b className="text-indigo-200">单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
             </p>
 
             {/* 当前生效 */}
@@ -2625,7 +2625,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                     {follow && <span className="text-[10px] text-sky-300 font-bold shrink-0">✓ 使用中</span>}
                 </button>
                 {apiPresets.length === 0 ? (
-                    <p className="text-[10.5px] text-white/35 px-1 py-1.5">「设置」里还没有保存的 API 预设。去设置里保存几个模型，这里就能选。</p>
+                    <p className="text-[10.5px] text-white/35 px-1 py-1.5">「文具盒」里还没有保存的 API 预设。去文具盒里保存几个模型，这里就能选。</p>
                 ) : (() => {
                     const activePreset = apiPresets.find(p => sameAs(p.config));
                     const shown = presetsOpen ? apiPresets : (activePreset ? [activePreset] : []);

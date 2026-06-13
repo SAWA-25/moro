@@ -695,7 +695,7 @@ const PresetApp: React.FC = () => {
                                         }}
                                         className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
-                                        <option value="">不绑（沿用设置里的全局 API）</option>
+                                        <option value="">不绑（沿用文具盒里的全局 API）</option>
                                         {apiPresets.map(ap => (
                                             <option key={ap.id} value={ap.id}>{ap.name}（{ap.config.model}）</option>
                                         ))}
@@ -703,7 +703,7 @@ const PresetApp: React.FC = () => {
                                     <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                                 </div>
                                 <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>
-                                    ✎ API 方案在「设置 → API 配置」里存。温度那些由下面的「火候」接管（可以关）。
+                                    ✎ API 方案在「文具盒 → 接线盒（API 配置）」里存。温度那些由下面的「火候」接管（可以关）。
                                 </p>
                             </div>
                         </div>
@@ -723,7 +723,7 @@ const PresetApp: React.FC = () => {
                                     <div className="flex items-center justify-between border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2.5">
                                         <div>
                                             <p className="text-[11px] font-black">火候随请求下发</p>
-                                            <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>关掉的话字版只管排版，火候仍走「设置」里的全局 API 配置</p>
+                                            <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>关掉的话字版只管排版，火候仍走「文具盒」里的全局 API 配置</p>
                                         </div>
                                         <InkSwitch on={applySampling} onChange={toggleSampling} small />
                                     </div>

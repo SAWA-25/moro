@@ -228,7 +228,7 @@ const ExchangeDiaryApp: React.FC = () => {
         messages: { role: 'system' | 'user'; content: string }[],
         temperature = 0.85,
     ): Promise<string> => {
-        if (!apiConfig.apiKey) throw new Error('请先在设置中配置 API');
+        if (!apiConfig.apiKey) throw new Error('请先在「文具盒」里配置 API');
         const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
@@ -268,7 +268,7 @@ const ExchangeDiaryApp: React.FC = () => {
     // --- AI 帮我起头：替用户拟 2-3 句日记开头，插入输入框 ---
     const handleAiOpening = async () => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setAiBusy('opening');
         try {
             const prompt = `你是一位温柔的日记写作助手。用户「${userProfile.name}」想写今天的日记，但不知道怎么开头。
@@ -293,7 +293,7 @@ ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(
     // 上下文 = 完整人设 (buildCoreContext) + 用户最新一篇 + 今天的聊天节选 + 本子近况。
     const requestCharEntry = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setAiBusy('entry');
         try {
             const latestUserEntry = [...book.entries]
@@ -367,7 +367,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
     // 把今天与活跃角色的聊天，让 LLM 以角色视角写成一篇日记式总结（isSummary 标记）
     const generateDailySummary = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('请先在设置中配置 API', 'error'); return; }
+        if (!apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setAiBusy('summary');
         try {
             const chatExcerpt = await getTodayChatExcerpt(char);

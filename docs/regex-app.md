@@ -54,3 +54,11 @@ iframe 渲染（脚本可执行，详见 `utils/chatRichContent.ts` 头注）。
 - `SLASH_COMMAND` / `REASONING` placement 可勾选但暂无挂载点
 - 没有 ST 的「角色卡脚本需用户授权」弹窗：随卡导入的脚本直接生效，
   可在正则 App「角色」标签里逐条停用/删除
+
+## 界面命名（黑白拼贴手账重构）
+
+桌面入口现名「**补丁铺**」。界面词对照：补丁 = 一条正则脚本、满铺通用 / 只缝给 TA =
+全局 / 角色作用域、要找的线头 = findRegex、缝上去的布 = replaceString、先剪掉的
+线头 = trimStrings、补在哪些布上 = placement、只改表面 / 只改寄出的信 =
+markdownOnly / promptOnly、试缝台 = 实时测试、收一箱 / 装箱带走 = 导入 / 导出。
+数据结构与挂载点语义不变。

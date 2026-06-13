@@ -82,7 +82,7 @@ export interface STImportResult {
     mountedWorldbooks: NonNullable<CharacterProfile['mountedWorldbooks']>;
     /**
      * 卡内自带的正则脚本（data.extensions.regex_scripts）。原样规范化导入，
-     * 作为角色局部脚本挂到 char.regexScripts（正则 App「角色」标签可管理）。
+     * 作为角色局部脚本挂到 char.regexScripts（补丁铺「只缝给 TA」标签可管理）。
      */
     regexScripts: RegexScriptData[];
 }

@@ -1557,8 +1557,8 @@ export interface CharacterProfile {
   /**
    * 角色局部正则脚本（SillyTavern scoped regex）。来源：
    * - 角色卡 data.extensions.regex_scripts 随卡导入
-   * - 正则 App 里手动添加 / 导入到该角色
-   * 与全局脚本（正则 App「全局」标签，localStorage）叠加生效，全局在前。
+   * - 补丁铺（正则 App）里手动添加 / 导入到该角色
+   * 与全局脚本（补丁铺「满铺通用」标签，localStorage）叠加生效，全局在前。
    */
   regexScripts?: RegexScriptData[];
   /** 日程卡片/桌面小组件的主题色相（HSL hue 0~360），未设置时取默认紫 260 */

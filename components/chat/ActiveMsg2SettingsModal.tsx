@@ -122,7 +122,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
       }
 
       if (!globalReady) {
-        throw new Error('请先去系统设置里完成“主动消息 2.0”的全局配置。');
+        throw new Error('请先去「文具盒」里完成“主动消息 2.0”的全局配置。');
       }
 
       const result = await ActiveMsgClient.scheduleCharacterTask({

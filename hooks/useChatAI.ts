@@ -578,7 +578,7 @@ export const useChatAI = ({
     ) => {
         if (isTyping || !char) return;
         const effectiveApi = overrideApiConfig || apiConfig;
-        if (!effectiveApi.baseUrl) { alert("请先在设置中配置 API URL"); return; }
+        if (!effectiveApi.baseUrl) { alert("请先在「文具盒」里配置 API URL"); return; }
 
         // Telegram 式回执：API 成功响应前出错 → 把待回执的用户消息标成「发送失败」；
         // 拿到回复后 → 全部升级「已读」。apiResponded 用于在 catch 里区分这两种情况

@@ -1286,7 +1286,7 @@ const McdMiniApp: React.FC<McdMiniAppProps> = ({ open, onClose, char, userProfil
                 <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center" onClick={(e: any) => e.stopPropagation()}>
                     <div className="text-3xl mb-2">🍔</div>
                     <div className="font-bold text-slate-800 mb-2">麦当劳还没开启</div>
-                    <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到设置 → 麦当劳填入 MCP token 并开启功能</div>
+                    <div className="text-[12px] text-slate-500 mb-4 leading-relaxed">请到 文具盒 → 麦当劳 填入 MCP token 并开启功能</div>
                     <button onClick={onClose} className="px-4 py-2 bg-yellow-500 text-white rounded-lg text-[12px] font-bold">知道了</button>
                 </div>
             </div>

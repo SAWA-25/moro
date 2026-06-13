@@ -694,7 +694,7 @@ const CallApp: React.FC = () => {
   };
   const requestAssistantReply = async (input: string, skipDbId?: number): Promise<string> => {
     const baseUrl = apiConfig.baseUrl?.replace(/\/+$/, '');
-    if (!baseUrl) throw new Error('请先在设置里配置聊天 API URL');
+    if (!baseUrl) throw new Error('请先在「文具盒」里配置聊天 API URL');
     const userName = userProfile?.name?.trim() || '用户';
     if (selectedChar) {
       const callMsgs = await DB.getMessagesByCharId(selectedChar.id);

@@ -1233,7 +1233,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                     req.onerror = () => res(0);
                 });
                 if (localCount > 0 && remoteCount < localCount * 0.5) {
-                    setTimeout(() => addToast(`本地有 ${localCount} 条向量，远程仅 ${remoteCount} 条。建议去设置页同步到远程。`, 'info'), 3000);
+                    setTimeout(() => addToast(`本地有 ${localCount} 条向量，远程仅 ${remoteCount} 条。建议去「文具盒」同步到远程。`, 'info'), 3000);
                 }
             }
         } catch { /* 静默 */ }
