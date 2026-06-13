@@ -6,7 +6,7 @@ import { XhsStockImage } from '../types';
 import ConfirmDialog from '../components/os/ConfirmDialog';
 
 const XhsStockApp: React.FC = () => {
-    const { closeApp, addToast } = useOS();
+    const { goBack, addToast } = useOS();
     const [images, setImages] = useState<XhsStockImage[]>([]);
     const [view, setView] = useState<'list' | 'add'>('list');
     const [newUrl, setNewUrl] = useState('');
@@ -228,7 +228,7 @@ const XhsStockApp: React.FC = () => {
 
             {/* Header */}
             <div className="h-14 bg-white/80 backdrop-blur-xl flex items-center px-4 border-b border-slate-100/60 shrink-0 z-10">
-                <button onClick={view === 'add' ? () => setView('list') : closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
+                <button onClick={view === 'add' ? () => setView('list') : goBack} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
                     </svg>

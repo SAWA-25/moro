@@ -41,6 +41,7 @@ import {
   Feather,
   PencilRuler,
   PushPin,
+  MaskHappy,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -86,6 +87,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
   Regex: ({ className }) => <Bandaids className={className} weight="bold" />,
   Creative: ({ className }) => <Feather className={className} weight="bold" />,
+  Theater: ({ className }) => <MaskHappy className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -118,7 +120,9 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
   { id: AppID.Social, name: '见闻簿', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
-  { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
+  // 「攻略本」(galgame 恋爱攻略) + 「TRPG」(跑团冒险) 合并为「小剧场」：一个图标，
+  // 封面页选「攻略本 / TRPG」再进对应剧目（两个子模式各自保留玩法与名字）。
+  { id: AppID.Theater, name: '小剧场', icon: 'Theater', color: 'orange' },
   // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
   { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
@@ -128,7 +132,6 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
   { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
-  { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
   { id: AppID.SpecialMoments, name: '特别时光', icon: 'SpecialMoments', color: 'pink' },
   { id: AppID.CharCreatorDev, name: '捏脸·开发', icon: 'CharCreatorDev', color: 'amber' }, // 仅开发模式显示（Launcher 过滤）

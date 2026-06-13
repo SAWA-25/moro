@@ -194,8 +194,10 @@ const GameMarkdown: React.FC<{ content: string, theme: any, customStyle?: { font
     );
 };
 
-const GameApp: React.FC = () => {
+/** onExit：当本 App 嵌在「小剧场」壳里时，顶层返回回到小剧场封面页而非直接关到桌面。未传则回桌面。 */
+const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter } = useOS();
+    const exitApp = onExit ?? closeApp;
     const [view, setView] = useState<'lobby' | 'create' | 'play'>('lobby');
     const [games, setGames] = useState<GameSession[]>([]);
     const [activeGame, setActiveGame] = useState<GameSession | null>(null);
@@ -1179,7 +1181,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
                 {/* Header */}
                 <div className="h-20 flex items-end justify-between px-6 pb-4 shrink-0 z-10">
-                    <button onClick={closeApp} className="p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 transition-colors">
+                    <button onClick={exitApp} className="p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 transition-colors">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
                     <span className="font-black tracking-[0.2em] text-xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">TRPG ADVENTURE</span>
