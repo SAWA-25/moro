@@ -38,6 +38,7 @@ import {
   Stamp,
   UserSwitch,
   Bandaids,
+  Feather,
   PencilRuler,
   PushPin,
 } from '@phosphor-icons/react';
@@ -84,6 +85,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Presets: ({ className }) => <Stamp className={className} weight="bold" />,
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
   Regex: ({ className }) => <Bandaids className={className} weight="bold" />,
+  Creative: ({ className }) => <Feather className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -117,8 +119,8 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Social, name: '见闻簿', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
   { id: AppID.Game, name: 'TRPG', icon: 'Game', color: 'orange' },
-  { id: AppID.Novel, name: '笔友会', icon: 'Novel', color: 'amber' },
-  { id: AppID.Songwriting, name: '写歌', icon: 'Songwriting', color: 'fuchsia' },
+  // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
+  { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '彼方', icon: 'VRWorld', color: 'indigo' },
   { id: AppID.Schedule, name: '时光契约', icon: 'Schedule', color: 'cyan' },
   { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },

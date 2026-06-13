@@ -120,12 +120,16 @@ const PaperSheet: React.FC<{
 /** 墨块开关：方形手账开关，黑=开 */
 const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string; disabled?: boolean }> = ({ on, onChange, title, disabled }) => (
     <button
-        onClick={(e) => { e.stopPropagation(); onChange(!on); }}
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={(e) => { e.stopPropagation(); if (!disabled) onChange(!on); }}
         title={title}
         disabled={disabled}
         className={`relative w-10 h-5 border-2 border-[#1c1b1a] shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'} ${disabled ? 'opacity-50' : ''}`}
     >
-        <span className={`absolute top-0 bottom-0 w-4 transition-all ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-[#1c1b1a]'}`} />
+        {/* 开=墨块滑到右侧（黑底浅块）；关=空心滑块停在左侧（白底描边），不留墨迹 */}
+        <span className={`absolute top-0 bottom-0 w-4 transition-all pointer-events-none ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-white border-2 border-[#1c1b1a]'}`} />
     </button>
 );
 

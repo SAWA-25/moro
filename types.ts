@@ -41,6 +41,7 @@ export enum AppID {
   Presets = 'presets', // 预设 — SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数，可导入酒馆预设 JSON）
   Personas = 'personas', // 人设 — SillyTavern 式用户人设管理（多套用户身份，可绑定角色 / 默认 / 世界书，描述按位置注入 prompt）
   Regex = 'regex', // 正则 — SillyTavern 式正则脚本（全局/角色局部，作用于用户输入/AI 输出/提示词/显示，可导入酒馆正则 JSON）
+  Creative = 'creative', // 创作社 — 「笔友会」（共创小说）与「写歌」（共创歌曲）合并入口，首页选模式后进入对应创作台
 }
 
 // =====================================================================

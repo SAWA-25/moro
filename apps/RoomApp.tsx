@@ -1178,7 +1178,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                             {/* 角上的胶带 */}
                             <Washi className={`-top-2.5 ${idx % 2 ? 'right-4 rotate-6' : 'left-4 -rotate-6'}`} />
                             <div className="relative w-20 h-20">
-                                <div className="w-full h-full border-2 border-[#1c1a17] overflow-hidden grayscale contrast-110 bg-[#ece8dd]">
+                                <div className="w-full h-full border-2 border-[#1c1a17] overflow-hidden contrast-110 bg-[#ece8dd]">
                                     <img src={c.avatar} className="w-full h-full object-cover" />
                                 </div>
                                 <span className="absolute -bottom-2 -right-2 w-7 h-7 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#f4f1e8] flex items-center justify-center">
@@ -1248,8 +1248,8 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
             {/* 舞台 —— 一张贴满剪报的居所内页 */}
             <div ref={roomRef} className="flex-1 relative overflow-hidden transition-all duration-500 touch-none" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onClick={handleStageClick}>
-                <div className="absolute top-0 left-0 w-full h-[65%] bg-center transition-all duration-500 z-0 grayscale" style={{ background: wallStyle }}></div>
-                <div className="absolute bottom-0 left-0 w-full h-[35%] bg-center transition-all duration-500 z-0 grayscale" style={{ background: floorStyle }}></div>
+                <div className="absolute top-0 left-0 w-full h-[65%] bg-center transition-all duration-500 z-0" style={{ background: wallStyle }}></div>
+                <div className="absolute bottom-0 left-0 w-full h-[35%] bg-center transition-all duration-500 z-0" style={{ background: floorStyle }}></div>
                 {/* 墙与地之间的折线 */}
                 <div className="absolute top-[65%] w-full border-t-2 border-dashed border-[#1c1a17]/40 z-0 pointer-events-none"></div>
                 <div className="absolute top-[65%] w-full h-6 bg-gradient-to-b from-[#1c1a17]/15 to-transparent pointer-events-none z-0"></div>
@@ -1271,7 +1271,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 willChange: isDragging ? 'left, top' : 'auto' // GPU layer only when needed
                             }}
                         >
-                            <img src={item.image} className="w-full h-auto object-contain pointer-events-none select-none grayscale contrast-[1.05]" draggable={false} loading="lazy" />
+                            <img src={item.image} className="w-full h-auto object-contain pointer-events-none select-none contrast-[1.05]" draggable={false} loading="lazy" />
                             {mode === 'edit' && selectedItemId === item.id && <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#1c1a17] text-[#f4f1e8] text-[9px] font-label tracking-widest px-2 py-0.5 whitespace-nowrap">选中</div>}
                         </div>
                     );
@@ -1279,7 +1279,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
                 {/* Character Actor - Z Index Boosted to simulate standing in front */}
                 <div onClick={(e) => { e.stopPropagation(); handlePokeActor(); }} className={`absolute transition-[left,top] duration-[1000ms] ease-in-out origin-bottom-center ${stickerClass} cursor-pointer active:scale-95 group`} style={{ left: `${actorState.x}%`, top: `${actorState.y}%`, width: '120px', transform: `translate(-50%, -100%) scale(${actorState.action === 'walk' ? 1.05 : (actorState.action === 'bounce' ? 1.1 : 1)})`, zIndex: Math.floor(actorState.y) + 20 }}>
-                    <img src={actorImage} className={`w-full h-full object-contain grayscale ${actorState.action === 'walk' ? 'animate-bounce' : ''}`} />
+                    <img src={actorImage} className={`w-full h-full object-contain ${actorState.action === 'walk' ? 'animate-bounce' : ''}`} />
                     {mode === 'edit' && <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-[#1c1a17] text-[#f4f1e8] text-[9px] px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 font-label tracking-widest"><I.cam size={12} /> 点我换装</div>}
                     {aiBubble.visible && (
                         <div className="absolute bottom-[110%] left-1/2 -translate-x-1/2 bg-[#fbf9f3] px-4 py-3 border-2 border-[#1c1a17] shadow-[3px_3px_0_#1c1a17] min-w-[120px] max-w-[300px] animate-pop-in z-50">
@@ -1441,8 +1441,8 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                     <input type="file" ref={floorInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'floor')} />
                                     <input type="file" ref={actorInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'actor')} />
                                 </div>
-                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">墙面 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{WALLPAPER_PRESETS.map((wp, i) => <button key={i} onClick={() => handleWallChange(wp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0 grayscale" style={{ background: wp.value }}></button>)}</div></div>
-                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">地板 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{FLOOR_PRESETS.map((fp, i) => <button key={i} onClick={() => handleFloorChange(fp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0 grayscale" style={{ background: fp.value }}></button>)}</div></div>
+                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">墙面 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{WALLPAPER_PRESETS.map((wp, i) => <button key={i} onClick={() => handleWallChange(wp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0" style={{ background: wp.value }}></button>)}</div></div>
+                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">地板 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{FLOOR_PRESETS.map((fp, i) => <button key={i} onClick={() => handleFloorChange(fp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0" style={{ background: fp.value }}></button>)}</div></div>
                             </div>
                         )}
                     </div>
@@ -1479,7 +1479,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                                 {...handlers}
                                             >
                                                 <div className="w-14 h-14 bg-[#fbf9f3] flex items-center justify-center border-2 border-[#1c1a17] overflow-hidden relative group-hover:shadow-[2px_2px_0_#1c1a17] transition-all">
-                                                    <img src={asset.image} className="w-full h-full object-contain grayscale" />
+                                                    <img src={asset.image} className="w-full h-full object-contain" />
                                                     {isCustom && asset.visibility === 'character' && <div className="absolute top-0 right-0 w-0 h-0 border-t-[12px] border-l-[12px] border-t-[#1c1a17] border-l-transparent" title="专属某人"></div>}
                                                 </div>
                                                 <span className="text-[10px] text-[#2b2823] truncate w-full text-center">{asset.name}</span>
@@ -1500,7 +1500,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 {editingAsset && (
                     <div className="space-y-3">
                         <div className="flex gap-3 items-start">
-                            <img src={editImage} className="w-14 h-14 object-contain bg-[#fbf9f3] border-2 border-[#1c1a17] shrink-0 grayscale" />
+                            <img src={editImage} className="w-14 h-14 object-contain bg-[#fbf9f3] border-2 border-[#1c1a17] shrink-0" />
                             <div className="flex-1 space-y-2">
                                 <div>
                                     <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">名字</label>
@@ -1547,7 +1547,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 <div className="space-y-4">
                     <div className="flex gap-4">
                         <div onClick={() => customItemInputRef.current?.click()} className="aspect-square w-24 bg-[#fbf9f3] border-2 border-dashed border-[#1c1a17] flex items-center justify-center cursor-pointer relative overflow-hidden shrink-0">
-                            {customItemImage ? <img src={customItemImage} className="w-full h-full object-contain grayscale" /> : <span className="text-[#9b958a] text-xs flex flex-col items-center gap-1"><I.plus size={18} />贴图</span>}
+                            {customItemImage ? <img src={customItemImage} className="w-full h-full object-contain" /> : <span className="text-[#9b958a] text-xs flex flex-col items-center gap-1"><I.plus size={18} />贴图</span>}
                             <input type="file" ref={customItemInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'custom_item')} />
                         </div>
                         <div className="flex-1 space-y-2">
