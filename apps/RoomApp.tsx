@@ -7,14 +7,9 @@ import ScheduleCard from '../components/schedule/ScheduleCard';
 import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processImage } from '../utils/file';
-import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
-import { Door, Sparkle, Image, GearSix, Camera } from '@phosphor-icons/react';
 import { FURNITURE_ICONS } from '../utils/furnitureIcons';
 import PixelHomeView from './pixelHome/PixelHomeView';
-
-const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
-const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
 
 // --- 1. 免版权贴纸素材库 (Sticker Library) ---
 // 使用手绘 SVG 图标替代 Twemoji，更精致的视觉体验
@@ -51,20 +46,20 @@ const ASSET_LIBRARY = {
     ]
 };
 
-// 预设背景图
+// 预设背景图 —— 黑白拼贴手账配色：素纸 / 网格 / 墨色，全程无彩
 const WALLPAPER_PRESETS = [
-    { name: '温馨暖白', value: 'radial-gradient(circle at 50% 50%, #fdfbf7 0%, #e2e8f0 100%)' },
-    { name: '深夜蓝调', value: 'linear-gradient(to bottom, #1e293b 0%, #0f172a 100%)' },
-    { name: '少女粉', value: 'radial-gradient(circle at 50% 50%, #fff1f2 0%, #ffe4e6 100%)' },
-    { name: '极简灰', value: 'linear-gradient(135deg, #f3f4f6 0%, #d1d5db 100%)' },
-    { name: '木质感', value: 'repeating-linear-gradient(45deg, #f7fee7 0px, #f7fee7 10px, #ecfccb 10px, #ecfccb 20px)' },
+    { name: '米白信纸', value: 'radial-gradient(circle at 50% 40%, #fbf9f3 0%, #ece8dd 100%)' },
+    { name: '点阵笔记', value: 'radial-gradient(#cfcabb 1.1px, #f6f3ea 1.1px) 0 0 / 16px 16px' },
+    { name: '横线稿纸', value: 'repeating-linear-gradient(0deg, #f6f3ea 0px, #f6f3ea 21px, #d6d1c4 22px)' },
+    { name: '墨夜', value: 'linear-gradient(to bottom, #2b2823 0%, #161410 100%)' },
+    { name: '炭笔斜纹', value: 'repeating-linear-gradient(45deg, #efece2 0px, #efece2 9px, #e2ddcf 9px, #e2ddcf 18px)' },
 ];
 
 const FLOOR_PRESETS = [
-    { name: '浅色木板', value: 'repeating-linear-gradient(90deg, #e7e5e4 0px, #e7e5e4 20px, #d6d3d1 21px)' },
-    { name: '深色木板', value: 'repeating-linear-gradient(90deg, #78350f 0px, #78350f 20px, #451a03 21px)' },
-    { name: '格纹地砖', value: 'conic-gradient(from 90deg at 2px 2px, #0000 90deg, #cbd5e1 0) 0 0/30px 30px' },
-    { name: '素色地毯', value: '#d1d5db' },
+    { name: '牛皮纸地板', value: 'repeating-linear-gradient(90deg, #e7e2d4 0px, #e7e2d4 20px, #d8d2c1 21px)' },
+    { name: '炭木地板', value: 'repeating-linear-gradient(90deg, #3a352c 0px, #3a352c 20px, #221f19 21px)' },
+    { name: '黑白棋格', value: 'conic-gradient(from 90deg at 2px 2px, #0000 90deg, #c9c3b3 0) 0 0/30px 30px' },
+    { name: '素麻地毯', value: '#cdc7b6' },
 ];
 
 const DEFAULT_FURNITURE: RoomItem[] = [
@@ -153,21 +148,21 @@ const renderInlineStyle = (text: string) => {
     const parts = text.split(/(\*\*.*?\*\*|~~.*?~~|\*.*?\*|`.*?`)/g);
     
     return parts.map((part, i) => {
-        // Bold
+        // Bold —— 手账里用马克笔涂一道底
         if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={i} className="font-bold text-slate-800 bg-yellow-100/50 px-0.5 rounded">{part.slice(2, -2)}</strong>;
+            return <strong key={i} className="font-bold text-[#1c1a17] bg-[#1c1a17]/10 box-decoration-clone px-0.5">{part.slice(2, -2)}</strong>;
         }
         // Strikethrough
         if (part.startsWith('~~') && part.endsWith('~~')) {
-            return <span key={i} className="line-through text-slate-400 opacity-80">{part.slice(2, -2)}</span>;
+            return <span key={i} className="line-through text-[#9b958a] opacity-80">{part.slice(2, -2)}</span>;
         }
         // Italic (single asterisk)
         if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
-            return <em key={i} className="italic text-slate-600">{part.slice(1, -1)}</em>;
+            return <em key={i} className="italic text-[#4a463e]">{part.slice(1, -1)}</em>;
         }
         // Inline Code
         if (part.startsWith('`') && part.endsWith('`')) {
-             return <code key={i} className="bg-slate-200 text-slate-600 px-1 rounded text-xs font-mono break-all">{part.slice(1, -1)}</code>;
+             return <code key={i} className="bg-[#1c1a17] text-[#f6f3ea] px-1 text-xs font-mono break-all">{part.slice(1, -1)}</code>;
         }
         return part;
     });
@@ -190,7 +185,7 @@ const renderNotebookContent = (text: string) => {
             return (
                 <div key={index} className="my-3 w-full max-w-full">
                     {/* Keep horizontal scroll for code blocks, don't wrap */}
-                    <pre className="bg-slate-800 text-green-400 p-3 rounded-xl text-[10px] font-mono overflow-x-auto border-l-4 border-green-600 shadow-sm whitespace-pre">
+                    <pre className="bg-[#1c1a17] text-[#f6f3ea] p-3 text-[10px] font-mono overflow-x-auto border-l-4 border-[#9b958a] whitespace-pre">
                         {codeContent}
                     </pre>
                 </div>
@@ -205,26 +200,26 @@ const renderNotebookContent = (text: string) => {
                     if (!trimLine) return <div key={key} className="h-2"></div>;
 
                     if (trimLine.startsWith('# ')) {
-                        return <h3 key={key} className="text-lg font-bold text-slate-800 mt-4 mb-2 pb-1 border-b-2 border-slate-200 break-words">{trimLine.substring(2)}</h3>;
+                        return <h3 key={key} className="text-xl font-bold text-[#1c1a17] mt-4 mb-2 pb-1 border-b-2 border-dashed border-[#1c1a17] break-words font-['Long_Cang']">{trimLine.substring(2)}</h3>;
                     }
                     if (trimLine.startsWith('## ')) {
-                        return <h4 key={key} className="text-sm font-bold text-slate-700 mt-3 mb-1 border-l-4 border-slate-300 pl-2 break-words">{trimLine.substring(3)}</h4>;
+                        return <h4 key={key} className="text-base font-bold text-[#1c1a17] mt-3 mb-1 border-l-4 border-[#1c1a17] pl-2 break-words font-['Long_Cang']">{trimLine.substring(3)}</h4>;
                     }
                     if (trimLine.startsWith('> ')) {
-                        return <div key={key} className="pl-3 border-l-4 border-slate-300 text-slate-500 italic my-2 py-1 bg-slate-100 rounded-r-lg text-xs break-words">{trimLine.substring(2)}</div>;
+                        return <div key={key} className="pl-3 border-l-4 border-[#1c1a17] text-[#4a463e] italic my-2 py-1 bg-[#1c1a17]/[0.04] text-xs break-words">{trimLine.substring(2)}</div>;
                     }
                     if (trimLine.startsWith('- ') || trimLine.startsWith('• ')) {
-                        return <div key={key} className="flex gap-2 my-1 pl-1 items-start"><span className="text-slate-400 mt-1 shrink-0">•</span><span className="flex-1 break-words">{renderInlineStyle(trimLine.substring(2))}</span></div>;
+                        return <div key={key} className="flex gap-2 my-1 pl-1 items-start"><span className="text-[#1c1a17] mt-0.5 shrink-0 font-bold">✦</span><span className="flex-1 break-words">{renderInlineStyle(trimLine.substring(2))}</span></div>;
                     }
-                    
+
                     if (trimLine.match(/^\[[ x]\]/)) {
                          const isChecked = trimLine.includes('[x]');
                          return (
                              <div key={key} className="flex gap-2 my-1 pl-1 items-center">
-                                 <div className={`w-3 h-3 border rounded-sm flex items-center justify-center shrink-0 ${isChecked ? 'bg-slate-600 border-slate-600' : 'border-slate-400'}`}>
-                                     {isChecked && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}
+                                 <div className={`w-3.5 h-3.5 border-2 border-[#1c1a17] flex items-center justify-center shrink-0 ${isChecked ? 'bg-[#1c1a17]' : ''}`}>
+                                     {isChecked && <svg className="w-2 h-2 text-[#f6f3ea]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}
                                  </div>
-                                 <span className={`flex-1 break-words ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{renderInlineStyle(trimLine.substring(3))}</span>
+                                 <span className={`flex-1 break-words ${isChecked ? 'line-through text-[#9b958a]' : 'text-[#2b2823]'}`}>{renderInlineStyle(trimLine.substring(3))}</span>
                              </div>
                          );
                     }
@@ -234,6 +229,94 @@ const renderNotebookContent = (text: string) => {
             </div>
         );
     });
+};
+
+// --- 黑白拼贴手账：视觉零件 ---------------------------------------------
+// 全部用内联线描 SVG，墨色随 currentColor 走，保证纯黑白手绘质感。
+const PAPER = '#f4f1e8'; // 主纸色（墨色统一用 #1c1a17，卡片用 #fbf9f3）
+
+// 信纸点阵底纹（贴在整个 App 背景上）
+const PAPER_GRID: React.CSSProperties = {
+    backgroundColor: PAPER,
+    backgroundImage: 'radial-gradient(rgba(28,26,23,0.10) 1px, transparent 1px)',
+    backgroundSize: '18px 18px',
+};
+
+const Ico: React.FC<{ d?: string; size?: number; className?: string; children?: React.ReactNode; sw?: number }>
+    = ({ d, size = 22, className = '', children, sw = 1.8 }) => (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor"
+        strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={className}>
+        {d ? <path d={d} /> : children}
+    </svg>
+);
+
+const I = {
+    back: (p: any) => <Ico {...p} d="M15 4.5 8 12l7 7.5" />,
+    fwd: (p: any) => <Ico {...p} d="M9 4.5 16 12l-7 7.5" />,
+    close: (p: any) => <Ico {...p} d="M6 6l12 12M18 6 6 18" />,
+    plus: (p: any) => <Ico {...p} d="M12 5v14M5 12h14" />,
+    check: (p: any) => <Ico {...p} d="M5 13l4 4L19 7" />,
+    house: (p: any) => <Ico {...p}><path d="M3.5 11 12 4l8.5 7" /><path d="M5.5 9.7V20h13V9.7" /><path d="M10 20v-5h4v5" /></Ico>,
+    pad: (p: any) => <Ico {...p}><rect x="2.5" y="7.5" width="19" height="9" rx="4.5" /><path d="M7 11v3M5.5 12.5h3M15.5 11.5h.01M18 13.5h.01" /></Ico>,
+    refresh: (p: any) => <Ico {...p}><path d="M4 11a8 8 0 0 1 13.7-4.6L20 8.5" /><path d="M20 4v4.5h-4.5" /><path d="M20 13a8 8 0 0 1-13.7 4.6L4 15.5" /><path d="M4 20v-4.5h4.5" /></Ico>,
+    pencil: (p: any) => <Ico {...p}><path d="M4 20l1-4L16 5l3 3L8 19l-4 1z" /><path d="M14 7l3 3" /></Ico>,
+    trash: (p: any) => <Ico {...p}><path d="M4 7h16" /><path d="M9.5 7V4.5h5V7" /><path d="M6.5 7l1 12.5h9L17.5 7" /><path d="M10 10.5v6M14 10.5v6" /></Ico>,
+    pin: (p: any) => <Ico {...p}><path d="M9 3.5h6l-1 5 3 3v2H7v-2l3-3-1-5z" /><path d="M12 13.5V21" /></Ico>,
+    broom: (p: any) => <Ico {...p}><path d="M19 4 11 12" /><path d="M5 20s.5-4 3.5-7 6.5-1 6.5-1L11 8s-2 3.5-5 6.5S5 20 5 20z" /></Ico>,
+    stack: (p: any) => <Ico {...p}><path d="M12 3.5 21 8l-9 4.5L3 8l9-4.5z" /><path d="M3 12l9 4.5L21 12" /><path d="M3 16l9 4.5L21 16" /></Ico>,
+    star: (p: any) => <Ico {...p}><path d="M12 3.5v7M12 13.5v7M3.5 12h7M13.5 12h7M6.5 6.5l3 3M14.5 14.5l3 3M17.5 6.5l-3 3M9.5 14.5l-3 3" /></Ico>,
+    wall: (p: any) => <Ico {...p}><rect x="3.5" y="4.5" width="17" height="15" rx="1.5" /><path d="M3.5 9.5h17M3.5 14.5h17M9 4.5v5M15 9.5v5M9 14.5v5" /></Ico>,
+    floor: (p: any) => <Ico {...p}><rect x="3.5" y="3.5" width="17" height="17" rx="1.5" /><path d="M3.5 9h17M3.5 15h17M9 3.5v17M15 3.5v17" /></Ico>,
+    gear: (p: any) => <Ico {...p}><circle cx="12" cy="12" r="3.3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></Ico>,
+    cam: (p: any) => <Ico {...p}><path d="M3.5 8.5h3l1.5-2h6L15.5 8.5h5v11h-17z" /><circle cx="12" cy="13.5" r="3.3" /></Ico>,
+    eye: (p: any) => <Ico {...p}><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.6" /></Ico>,
+    list: (p: any) => <Ico {...p}><path d="M4 6.5l1.5 1.5L8 5.5M11 7h9M4 12.5l1.5 1.5L8 11.5M11 13h9M4 18.5l1.5 1.5L8 17.5M11 19h9" /></Ico>,
+    cal: (p: any) => <Ico {...p}><rect x="3.5" y="5" width="17" height="15" rx="1.5" /><path d="M3.5 9.5h17M8 3v4M16 3v4" /></Ico>,
+    note: (p: any) => <Ico {...p}><path d="M6 3.5h9l4 4V20.5H6z" /><path d="M15 3.5v4h4M9 12h6M9 16h4" /></Ico>,
+    link: (p: any) => <Ico {...p}><path d="M9 12h6M10 8.5H8a3.5 3.5 0 0 0 0 7h2M14 8.5h2a3.5 3.5 0 0 1 0 7h-2" /></Ico>,
+};
+
+// 和纸胶带：旋转的斜纹墨块，用来"贴"卡片角
+const Washi: React.FC<{ className?: string }> = ({ className = '' }) => (
+    <span className={`pointer-events-none absolute ${className}`}>
+        <span className="block w-14 h-5 border border-[#1c1a17]/50"
+            style={{ background: 'repeating-linear-gradient(45deg, rgba(28,26,23,0.22) 0 4px, transparent 4px 8px)' }} />
+    </span>
+);
+
+// 圆形墨章
+const Stamp: React.FC<{ text: string; className?: string }> = ({ text, className = '' }) => (
+    <span className={`inline-flex items-center justify-center rounded-full border-2 border-[#1c1a17] text-[#1c1a17] font-label text-[8px] tracking-[0.15em] uppercase w-11 h-11 text-center leading-none -rotate-12 ${className}`}>
+        {text}
+    </span>
+);
+
+// 手账风弹窗（不复用全局 Modal，自带牛皮纸卡片 + 胶带标题）
+const PaperModal: React.FC<{ isOpen: boolean; title: string; tag?: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }>
+    = ({ isOpen, title, tag, onClose, children, footer }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in">
+            <div className="absolute inset-0 bg-[#1c1a17]/40" onClick={onClose} />
+            <div className="relative w-full max-w-sm animate-slide-up" style={{ filter: 'drop-shadow(5px 6px 0 rgba(28,26,23,0.9))' }}>
+                <div className="relative border-2 border-[#1c1a17] -rotate-[0.6deg]" style={PAPER_GRID}>
+                    {/* 胶带封口 */}
+                    <Washi className="-top-3 left-1/2 -translate-x-1/2 rotate-[2deg]" />
+                    <div className="px-6 pt-6 pb-2 border-b-2 border-dashed border-[#1c1a17]/40">
+                        {tag && <p className="font-label text-[9px] tracking-[0.3em] uppercase text-[#9b958a] mb-1">{tag}</p>}
+                        <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-2xl font-bold text-[#1c1a17] font-['Long_Cang'] leading-none">{title}</h3>
+                            <button onClick={onClose} className="text-[#1c1a17] active:scale-90 transition-transform shrink-0"><I.close size={20} /></button>
+                        </div>
+                    </div>
+                    <div className="px-6 py-4 max-h-[58vh] overflow-y-auto no-scrollbar text-[#2b2823]">
+                        {children}
+                    </div>
+                    {footer && <div className="px-6 pb-6 pt-1 flex gap-3">{footer}</div>}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const RoomApp: React.FC = () => {
@@ -255,7 +338,7 @@ const RoomApp: React.FC = () => {
 
     // UI State
     const [isInitializing, setIsInitializing] = useState(false);
-    const [initStatusText, setInitStatusText] = useState('正在推开房门...');
+    const [initStatusText, setInitStatusText] = useState('正在翻开居所手账…');
     const [showLibrary, setShowLibrary] = useState(false);
     const [showRefreshConfirm, setShowRefreshConfirm] = useState(false);
     const [showDevModal, setShowDevModal] = useState(false); // Developer Mode
@@ -407,7 +490,7 @@ const RoomApp: React.FC = () => {
             setNotebookEntries(existingNotes.sort((a, b) => b.timestamp - a.timestamp));
             setRoomSchedule(existingSchedule);
 
-            addToast('已恢复今日房间状态', 'info');
+            addToast('今天这一页，原样贴回来了', 'info');
         } else {
             initializeRoomState(c, loadedItems || []);
         }
@@ -462,7 +545,7 @@ const RoomApp: React.FC = () => {
                             actorAction: 'idle'
                         }
                     });
-                    addToast("已启动安全模式 (Safety Fallback)", "info");
+                    addToast("信号不太好，先用便签顶上", "info");
                 } catch (e) {
                     throw new Error("Fallback Parse Error");
                 }
@@ -479,7 +562,7 @@ const RoomApp: React.FC = () => {
         if (!apiConfig.apiKey) return;
 
         setIsInitializing(true);
-        const loadingTexts = [`正在打扫${c.name}的房间...`, "正在整理思绪...", "正在擦拭家具...", "正在生成全部物品记忆..."];
+        const loadingTexts = [`正在替 ${c.name} 拂去桌上的灰…`, "正在把今天的心事贴进本子…", "正在裁剪一页新的居所…", "正在为每件物什写下注脚…"];
         let textIdx = 0;
         const textInterval = setInterval(() => {
             setInitStatusText(loadingTexts[textIdx % loadingTexts.length]);
@@ -705,8 +788,8 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                 } catch (err) {}
             }
         } else {
-            setObservationText(`${item.name}静静地摆放在那里。`);
-            setAiBubble({ text: "(盯...)", visible: true });
+            setObservationText(`${item.name} 安安静静地待在原处。`);
+            setAiBubble({ text: "（瞅——）", visible: true });
         }
     };
 
@@ -714,7 +797,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         if (mode === 'edit') { actorInputRef.current?.click(); return; }
         setActorState(prev => ({ ...prev, action: 'bounce' }));
         setTimeout(() => setActorState(prev => ({ ...prev, action: 'idle' })), 500);
-        const thoughts = ["嗯？", "别闹...", "我在呢。", "盯着我看干嘛...", "(发呆)"];
+        const thoughts = ["唔…？", "别戳啦——", "我在的我在的。", "盯着我看作甚？", "（出神中）"];
         setAiBubble({ text: thoughts[Math.floor(Math.random() * thoughts.length)], visible: true });
     };
 
@@ -734,7 +817,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         const newTodo = { ...todaysTodo, items: newItems };
         setTodaysTodo(newTodo);
         await DB.saveRoomTodo(newTodo);
-        addToast('条目已删除', 'success');
+        addToast('这一条，撕掉了', 'success');
     };
 
     const handleDeleteNote = async (id: string) => {
@@ -744,7 +827,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         }
         await DB.deleteRoomNote(id);
         setNotebookEntries(prev => prev.filter(n => n.id !== id));
-        addToast('笔记已彻底粉碎 (相关记录已清除)', 'success');
+        addToast('这一页连同存根，一起碎掉了', 'success');
     };
 
     const handleStageClick = (e: React.MouseEvent) => {
@@ -792,7 +875,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         }; 
         saveRoom([...items, newItem]); 
         setShowLibrary(false); 
-        addToast(`已添加: ${asset.name}`, 'success'); 
+        addToast(`「${asset.name}」已贴进房间`, 'success');
     };
 
     // PERF: Update items in state immediately (visual), but debounce DB persistence
@@ -825,7 +908,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                     if (char) { 
                         const newSprites = { ...(char.sprites || {}), 'chibi': base64 }; 
                         updateCharacter(char.id, { sprites: newSprites }); 
-                        addToast('角色房间立绘已更新', 'success'); 
+                        addToast('居所里的身影换了新装', 'success');
                     } 
                 } 
                 if (target === 'custom_item') { 
@@ -846,7 +929,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
     const saveCustomItem = async () => {
         const imageToUse = customItemUrl || customItemImage;
-        if(!customItemName.trim() || !imageToUse) { addToast('请填写完整信息', 'error'); return; }
+        if(!customItemName.trim() || !imageToUse) { addToast('还有空格没填满呢', 'error'); return; }
 
         addItem({
             name: customItemName,
@@ -903,7 +986,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         } : a);
         await persistAssets(updated);
         setEditingAsset(null);
-        addToast('素材已更新', 'success');
+        addToast('素材改好了', 'success');
     };
 
     const deleteEditingAsset = async () => {
@@ -911,7 +994,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         const filtered = allCustomAssets.filter(a => a.id !== editingAsset.id);
         await persistAssets(filtered);
         setEditingAsset(null);
-        addToast('素材已删除', 'success');
+        addToast('素材撕掉了', 'success');
     };
 
     // New: Handle Background Config Update
@@ -927,7 +1010,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         if (!char) return;
         saveRoom(MORO_FURNITURE);
         setShowSettingsModal(false);
-        addToast('Moro 的房间已还原', 'success');
+        addToast('Moro 的样板页，复原了', 'success');
     };
 
     // --- PERF FIX: Direct DOM Dragging (bypasses React re-renders) ---
@@ -1052,60 +1135,58 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         );
     }
 
-    // SELECT SCREEN
+    // SELECT SCREEN —— 翻开目录页，挑一户人家
     if (viewState === 'select') {
         return (
-            <div className="h-full w-full bg-slate-50 flex flex-col font-light">
-                <div className="pt-12 pb-3 px-6 bg-white sticky top-0 z-20 shrink-0">
-                    <div className="flex items-center justify-between h-12">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-slate-100 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="h-full w-full flex flex-col text-[#1c1a17]" style={PAPER_GRID}>
+                <div className="pt-12 pb-4 px-5 shrink-0 border-b-2 border-[#1c1a17] bg-[#f4f1e8]/90 backdrop-blur-sm sticky top-0 z-20">
+                    <div className="flex items-center justify-between h-10">
+                        <button onClick={closeApp} className="flex items-center gap-1 active:scale-90 transition-transform">
+                            <I.back size={20} /><span className="font-label text-[10px] tracking-[0.2em] uppercase">close</span>
                         </button>
-                        <span className="font-bold text-slate-700 text-lg tracking-wide">
-                            {homeTab === 'room' ? '拜访谁的房间?' : '谁的像素家园?'}
-                        </span>
-                        <div className="w-8"></div>
+                        <span className="font-label text-[9px] tracking-[0.3em] uppercase text-[#9b958a]">栖 · 居 · 志</span>
                     </div>
-                    {/* Tab 切换 */}
-                    <div className="flex gap-1 mt-2 bg-slate-100 rounded-xl p-1">
-                        <button
-                            onClick={() => setHomeTab('room')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                homeTab === 'room' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400'
-                            }`}
-                        >
-                            🏠 小小窝
-                        </button>
-                        <button
-                            onClick={() => setHomeTab('pixelHome')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                                homeTab === 'pixelHome' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400'
-                            }`}
-                        >
-                            🎮 像素家园
-                        </button>
+                    <div className="flex items-end justify-between mt-1">
+                        <h1 className="text-4xl font-bold font-['Long_Cang'] leading-none">
+                            {homeTab === 'room' ? '今天翻开谁的居所' : '今天逛谁的像素家园'}
+                        </h1>
+                    </div>
+                    {/* Tab 切换 —— 两枚书签标签 */}
+                    <div className="flex gap-3 mt-4">
+                        {([
+                            { key: 'room', label: '纸上居所', icon: I.house },
+                            { key: 'pixelHome', label: '像素家园', icon: I.pad },
+                        ] as const).map(t => {
+                            const on = homeTab === t.key;
+                            return (
+                                <button key={t.key} onClick={() => setHomeTab(t.key)}
+                                    className={`flex items-center gap-1.5 px-4 py-1.5 border-2 border-[#1c1a17] font-bold text-xs transition-all ${on ? 'bg-[#1c1a17] text-[#f4f1e8] shadow-[3px_3px_0_rgba(28,26,23,0.35)]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}>
+                                    <t.icon size={16} />{t.label}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
-               <div className="p-6 grid grid-cols-2 gap-4 overflow-y-auto pb-20 no-scrollbar">
-    {characters.map(c => (
-        <div key={c.id} onClick={() => {
-            if (homeTab === 'pixelHome') {
-                setActiveCharacterId(c.id);
-                setViewState('pixelHome');
-            } else {
-                handleEnterRoom(c);
-            }
-        }} className="min-h-[180px] bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col items-center justify-center gap-3 cursor-pointer active:scale-95 transition-all relative overflow-hidden group hover:shadow-md">
-                            <div className="w-20 h-20 rounded-full p-1 border-2 border-slate-100 relative">
-                                <img src={c.avatar} className="w-full h-full rounded-full object-cover" />
-                                <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-400 rounded-full border-2 border-white flex items-center justify-center">
-                                    {homeTab === 'pixelHome'
-                                        ? <span className="text-[10px]">🎮</span>
-                                        : <img src={twemojiUrl('1f3e0')} alt="home" className="w-3 h-3" />
-                                    }
+                <div className="p-5 grid grid-cols-2 gap-5 overflow-y-auto pb-24 no-scrollbar">
+                    {characters.map((c, idx) => (
+                        <div key={c.id} onClick={() => {
+                            if (homeTab === 'pixelHome') { setActiveCharacterId(c.id); setViewState('pixelHome'); }
+                            else { handleEnterRoom(c); }
+                        }}
+                            className="relative min-h-[170px] bg-[#fbf9f3] border-2 border-[#1c1a17] p-4 pt-6 flex flex-col items-center justify-center gap-3 cursor-pointer active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all shadow-[4px_4px_0_#1c1a17]"
+                            style={{ transform: `rotate(${idx % 2 ? 1 : -1}deg)` }}>
+                            {/* 角上的胶带 */}
+                            <Washi className={`-top-2.5 ${idx % 2 ? 'right-4 rotate-6' : 'left-4 -rotate-6'}`} />
+                            <div className="relative w-20 h-20">
+                                <div className="w-full h-full border-2 border-[#1c1a17] overflow-hidden grayscale contrast-110 bg-[#ece8dd]">
+                                    <img src={c.avatar} className="w-full h-full object-cover" />
                                 </div>
+                                <span className="absolute -bottom-2 -right-2 w-7 h-7 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#f4f1e8] flex items-center justify-center">
+                                    {homeTab === 'pixelHome' ? <I.pad size={14} /> : <I.house size={14} />}
+                                </span>
                             </div>
-                            <span className="font-bold text-slate-700 text-sm">{c.name}</span>
+                            <span className="font-bold text-sm tracking-wide">{c.name}</span>
+                            <span className="font-label text-[8px] tracking-[0.2em] uppercase text-[#9b958a]">No.{String(idx + 1).padStart(2, '0')}</span>
                         </div>
                     ))}
                 </div>
@@ -1149,29 +1230,37 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     // Moro Check
     const isMoro = char?.id === 'preset-moro-v2' || char?.name === 'Moro';
 
+    // 贴纸抽屉的分类中文标签
+    const CAT_LABELS: Record<string, string> = { moro_special: 'Moro 专属', furniture: '家具', decor: '摆设', food: '吃的', custom: '我的剪贴' };
+
     return (
-        <div className="h-full w-full bg-[#f8fafc] flex flex-col relative overflow-hidden font-sans select-none">
-            
+        <div className="h-full w-full flex flex-col relative overflow-hidden font-sans select-none text-[#1c1a17]" style={PAPER_GRID}>
+
             {isInitializing && (
-                <div className="absolute inset-0 z-[500] bg-white flex flex-col items-center justify-center animate-fade-in">
-                    <div className="text-4xl mb-4 animate-bounce"><Door size={48} className="text-slate-400" /></div>
-                    <p className="text-sm font-bold text-slate-500">{initStatusText}</p>
+                <div className="absolute inset-0 z-[500] flex flex-col items-center justify-center animate-fade-in" style={PAPER_GRID}>
+                    <div className="border-2 border-[#1c1a17] bg-[#fbf9f3] px-8 py-7 -rotate-2 shadow-[5px_5px_0_#1c1a17] relative">
+                        <Washi className="-top-3 left-1/2 -translate-x-1/2 rotate-3" />
+                        <div className="mb-3 animate-bounce flex justify-center text-[#1c1a17]"><I.house size={42} /></div>
+                        <p className="text-sm font-bold text-[#1c1a17] font-['Long_Cang'] text-xl text-center">{initStatusText}</p>
+                    </div>
                 </div>
             )}
 
-            {/* Room Stage */}
+            {/* 舞台 —— 一张贴满剪报的居所内页 */}
             <div ref={roomRef} className="flex-1 relative overflow-hidden transition-all duration-500 touch-none" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onClick={handleStageClick}>
-                <div className="absolute top-0 left-0 w-full h-[65%] bg-center transition-all duration-500 z-0" style={{ background: wallStyle }}></div>
-                <div className="absolute bottom-0 left-0 w-full h-[35%] bg-center transition-all duration-500 z-0" style={{ background: floorStyle }}></div>
-                <div className="absolute top-[65%] w-full h-8 bg-gradient-to-b from-black/10 to-transparent pointer-events-none z-0"></div>
+                <div className="absolute top-0 left-0 w-full h-[65%] bg-center transition-all duration-500 z-0 grayscale" style={{ background: wallStyle }}></div>
+                <div className="absolute bottom-0 left-0 w-full h-[35%] bg-center transition-all duration-500 z-0 grayscale" style={{ background: floorStyle }}></div>
+                {/* 墙与地之间的折线 */}
+                <div className="absolute top-[65%] w-full border-t-2 border-dashed border-[#1c1a17]/40 z-0 pointer-events-none"></div>
+                <div className="absolute top-[65%] w-full h-6 bg-gradient-to-b from-[#1c1a17]/15 to-transparent pointer-events-none z-0"></div>
                 {items.map(item => {
                     const isDragging = draggingId === item.id;
                     return (
-                        <div 
-                            key={item.id} 
-                            onPointerDown={(e) => handlePointerDown(e, item.id)} 
-                            onClick={(e) => handleLookAt(item, e)} 
-                            className={`absolute origin-bottom-center ${stickerClass} ${mode === 'edit' ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : (item.isInteractive ? 'cursor-pointer active:scale-95' : '')} ${selectedItemId === item.id ? 'ring-2 ring-blue-400 rounded-lg ring-offset-4' : ''} touch-none select-none`}
+                        <div
+                            key={item.id}
+                            onPointerDown={(e) => handlePointerDown(e, item.id)}
+                            onClick={(e) => handleLookAt(item, e)}
+                            className={`absolute origin-bottom-center ${stickerClass} ${mode === 'edit' ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : (item.isInteractive ? 'cursor-pointer active:scale-95' : '')} ${selectedItemId === item.id ? 'ring-2 ring-[#1c1a17] ring-offset-2 ring-offset-[#f4f1e8]' : ''} touch-none select-none`}
                             style={{
                                 left: `${item.x}%`,
                                 top: `${item.y}%`,
@@ -1182,52 +1271,76 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 willChange: isDragging ? 'left, top' : 'auto' // GPU layer only when needed
                             }}
                         >
-                            <img src={item.image} className="w-full h-auto object-contain pointer-events-none select-none" draggable={false} loading="lazy" />
-                            {mode === 'edit' && selectedItemId === item.id && <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-full whitespace-nowrap">选中</div>}
+                            <img src={item.image} className="w-full h-auto object-contain pointer-events-none select-none grayscale contrast-[1.05]" draggable={false} loading="lazy" />
+                            {mode === 'edit' && selectedItemId === item.id && <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-[#1c1a17] text-[#f4f1e8] text-[9px] font-label tracking-widest px-2 py-0.5 whitespace-nowrap">选中</div>}
                         </div>
                     );
                 })}
-                
+
                 {/* Character Actor - Z Index Boosted to simulate standing in front */}
                 <div onClick={(e) => { e.stopPropagation(); handlePokeActor(); }} className={`absolute transition-[left,top] duration-[1000ms] ease-in-out origin-bottom-center ${stickerClass} cursor-pointer active:scale-95 group`} style={{ left: `${actorState.x}%`, top: `${actorState.y}%`, width: '120px', transform: `translate(-50%, -100%) scale(${actorState.action === 'walk' ? 1.05 : (actorState.action === 'bounce' ? 1.1 : 1)})`, zIndex: Math.floor(actorState.y) + 20 }}>
-                    <img src={actorImage} className={`w-full h-full object-contain ${actorState.action === 'walk' ? 'animate-bounce' : ''}`} />
-                    {mode === 'edit' && <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[9px] px-2 py-1 rounded backdrop-blur-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"><Camera size={12} /> 换装</div>}
-                    {/* Fixed: Wider bubble width */}
-                    {aiBubble.visible && <div className="absolute bottom-[105%] left-1/2 -translate-x-1/2 bg-white px-4 py-3 rounded-[20px] rounded-bl-none shadow-lg border-2 border-black/5 min-w-[120px] max-w-[300px] animate-pop-in z-50"><p className="text-xs font-bold text-slate-700 leading-tight text-center break-words">{aiBubble.text}</p><button onClick={(e) => { e.stopPropagation(); setAiBubble({ ...aiBubble, visible: false }); }} className="absolute -top-2 -right-2 bg-slate-200 text-slate-500 rounded-full w-4 h-4 flex items-center justify-center text-[8px]">×</button></div>}
+                    <img src={actorImage} className={`w-full h-full object-contain grayscale ${actorState.action === 'walk' ? 'animate-bounce' : ''}`} />
+                    {mode === 'edit' && <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-[#1c1a17] text-[#f4f1e8] text-[9px] px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 font-label tracking-widest"><I.cam size={12} /> 点我换装</div>}
+                    {aiBubble.visible && (
+                        <div className="absolute bottom-[110%] left-1/2 -translate-x-1/2 bg-[#fbf9f3] px-4 py-3 border-2 border-[#1c1a17] shadow-[3px_3px_0_#1c1a17] min-w-[120px] max-w-[300px] animate-pop-in z-50">
+                            <p className="text-xs font-bold text-[#2b2823] leading-snug text-center break-words">{aiBubble.text}</p>
+                            <span className="absolute -bottom-[7px] left-7 w-3 h-3 bg-[#fbf9f3] border-b-2 border-r-2 border-[#1c1a17] rotate-45"></span>
+                            <button onClick={(e) => { e.stopPropagation(); setAiBubble({ ...aiBubble, visible: false }); }} className="absolute -top-2.5 -right-2.5 bg-[#1c1a17] text-[#f4f1e8] w-5 h-5 flex items-center justify-center border-2 border-[#f4f1e8]"><I.close size={11} /></button>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Sidebar Toggle Button */}
-            <button onClick={() => setShowSidebar(true)} className={`absolute right-0 top-1/2 -translate-y-1/2 bg-white/90 p-3 rounded-l-2xl shadow-lg border border-r-0 border-slate-200 transition-transform duration-300 z-[300] ${showSidebar ? 'translate-x-full' : 'translate-x-0'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            {/* 侧栏抽出标签 */}
+            <button onClick={() => setShowSidebar(true)} className={`absolute right-0 top-1/2 -translate-y-1/2 bg-[#1c1a17] text-[#f4f1e8] py-4 px-2 border-2 border-r-0 border-[#1c1a17] transition-transform duration-300 z-[300] flex flex-col items-center gap-2 ${showSidebar ? 'translate-x-full' : 'translate-x-0'}`}>
+                <I.back size={16} />
+                <span className="font-label text-[9px] tracking-[0.2em]" style={{ writingMode: 'vertical-rl' }}>碎屑</span>
             </button>
-            {showSidebar && <div className="absolute inset-0 z-[290] bg-black/20" onClick={() => setShowSidebar(false)}></div>}
-            <div className={`absolute right-0 top-0 bottom-0 w-3/4 max-w-sm bg-white shadow-2xl z-[300] transition-transform duration-300 ease-out flex flex-col ${showSidebar ? 'translate-x-0' : 'translate-x-full'}`}>
-                <div className="p-6 pb-2 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="text-lg font-bold text-slate-700 tracking-tight">生活碎片</h3>
-                    <button onClick={() => setShowSidebar(false)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button>
+            {showSidebar && <div className="absolute inset-0 z-[290] bg-[#1c1a17]/30" onClick={() => setShowSidebar(false)}></div>}
+            <div className={`absolute right-0 top-0 bottom-0 w-3/4 max-w-sm border-l-2 border-[#1c1a17] z-[300] transition-transform duration-300 ease-out flex flex-col ${showSidebar ? 'translate-x-0' : 'translate-x-full'}`} style={PAPER_GRID}>
+                <div className="px-5 pt-12 pb-3 border-b-2 border-[#1c1a17] flex justify-between items-end">
+                    <div>
+                        <p className="font-label text-[9px] tracking-[0.3em] uppercase text-[#9b958a]">scraps of the day</p>
+                        <h3 className="text-3xl font-bold font-['Long_Cang'] leading-none">日子碎屑</h3>
+                    </div>
+                    <button onClick={() => setShowSidebar(false)} className="active:scale-90 transition-transform"><I.close size={22} /></button>
                 </div>
-                <div className="flex p-2 bg-slate-50 border-b border-slate-100">
-                    <button onClick={() => setActivePanel('todo')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'todo' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>今日计划</button>
-                    <button onClick={() => setActivePanel('schedule')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'schedule' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>日程</button>
-                    <button onClick={() => setActivePanel('notebook')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${activePanel === 'notebook' ? 'bg-white shadow text-primary' : 'text-slate-400 hover:bg-white/50'}`}>私密记事</button>
+                <div className="flex gap-2 px-4 py-3 border-b-2 border-dashed border-[#1c1a17]/40">
+                    {([
+                        { key: 'todo', label: '今日清单', icon: I.list },
+                        { key: 'schedule', label: '作息', icon: I.cal },
+                        { key: 'notebook', label: '私房随笔', icon: I.note },
+                    ] as const).map(t => {
+                        const on = activePanel === t.key;
+                        return (
+                            <button key={t.key} onClick={() => setActivePanel(t.key)}
+                                className={`flex-1 py-2 flex flex-col items-center gap-1 border-2 border-[#1c1a17] text-[10px] font-bold transition-all ${on ? 'bg-[#1c1a17] text-[#f4f1e8] shadow-[2px_2px_0_rgba(28,26,23,0.3)]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}>
+                                <t.icon size={16} />{t.label}
+                            </button>
+                        );
+                    })}
                 </div>
-                
-                {/* Fixed: Add no-scrollbar class to hide scrollbar */}
-                <div className="flex-1 overflow-y-auto p-6 bg-[#fcfcfc] no-scrollbar">
+
+                <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
                     {activePanel === 'todo' && (
-                        <div className="space-y-6">
-                            <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{todaysTodo?.date || 'Today'}</span><span className="text-[10px] bg-slate-100 px-2 py-1 rounded text-slate-500">完成度: {todaysTodo ? Math.round((todaysTodo.items.filter(i=>i.done).length / todaysTodo.items.length)*100) : 0}%</span></div>
+                        <div className="space-y-5">
+                            <div className="flex items-center justify-between">
+                                <span className="font-label text-[10px] font-bold tracking-widest text-[#1c1a17]">{todaysTodo?.date || 'TODAY'}</span>
+                                <span className="text-[10px] border-2 border-[#1c1a17] px-2 py-0.5 font-bold">划掉 {todaysTodo && todaysTodo.items.length ? Math.round((todaysTodo.items.filter(i=>i.done).length / todaysTodo.items.length)*100) : 0}%</span>
+                            </div>
                             {todaysTodo ? <ul className="space-y-3">{todaysTodo.items.map((item, idx) => (
                                 <li key={idx} className="flex items-start gap-3 group">
-                                    <div onClick={() => handleToggleTodo(idx)} className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${item.done ? 'bg-green-400 border-green-400' : 'border-slate-300 group-hover:border-primary'}`}>
-                                        {item.done && <svg className="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>}
+                                    <div onClick={() => handleToggleTodo(idx)} className={`mt-0.5 w-5 h-5 border-2 border-[#1c1a17] flex items-center justify-center transition-colors cursor-pointer ${item.done ? 'bg-[#1c1a17]' : 'bg-[#fbf9f3]'}`}>
+                                        {item.done && <svg className="w-3 h-3 text-[#f4f1e8]" viewBox="0 0 20 20" fill="currentColor"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>}
                                     </div>
-                                    <span onClick={() => handleToggleTodo(idx)} className={`text-sm leading-relaxed transition-all flex-1 cursor-pointer ${item.done ? 'text-slate-300 line-through decoration-slate-300' : 'text-slate-700 font-medium'}`}>{item.text}</span>
-                                    <button onClick={() => handleDeleteTodo(idx)} className="text-slate-300 hover:text-red-400 px-1 opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                    <span onClick={() => handleToggleTodo(idx)} className={`text-sm leading-relaxed transition-all flex-1 cursor-pointer ${item.done ? 'text-[#9b958a] line-through decoration-[#9b958a]' : 'text-[#2b2823] font-medium'}`}>{item.text}</span>
+                                    <button onClick={() => handleDeleteTodo(idx)} className="text-[#9b958a] hover:text-[#1c1a17] px-1 opacity-0 group-hover:opacity-100 transition-opacity"><I.close size={14} /></button>
                                 </li>
-                            ))}</ul> : <div className="text-center py-10 text-slate-400 text-xs">生成中...</div>}
-                            <div className="mt-8 p-4 bg-yellow-50 rounded-xl border border-yellow-100 text-xs text-yellow-800 leading-relaxed italic relative"><span className="absolute -top-3 left-4"><img src={twemojiUrl('1f4cc')} alt="pin" className="w-6 h-6" /></span>这是 {char?.name} 今天的自动行程表。虽然你不能帮TA做，但可以监督TA哦。</div>
+                            ))}</ul> : <div className="text-center py-10 text-[#9b958a] text-xs">正在列单子…</div>}
+                            <div className="mt-6 p-4 border-2 border-[#1c1a17] bg-[#fbf9f3] text-xs text-[#2b2823] leading-relaxed relative shadow-[3px_3px_0_#1c1a17]">
+                                <span className="absolute -top-3 left-4 text-[#1c1a17]"><I.pin size={22} /></span>
+                                这是 {char?.name} 今天给自己列的单子。你帮不上手，但可以盯着 TA 一条条划掉哦。
+                            </div>
                         </div>
                     )}
                     {activePanel === 'schedule' && (
@@ -1238,99 +1351,113 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                 compact={true}
                             />
                             {!roomSchedule && (
-                                <p className="text-center text-xs text-slate-400 py-4">日程将在首次聊天时自动生成</p>
+                                <p className="text-center text-xs text-[#9b958a] py-4">作息会在第一次聊天后自动排好</p>
                             )}
                         </div>
                     )}
                     {activePanel === 'notebook' && (
                         <div className="flex flex-col pb-4">
                             {notebookEntries.length > 0 ? (
-                                <div 
-                                    className="relative bg-white shadow-md border border-slate-200 p-6 min-h-[400px] flex flex-col rounded-xl" 
-                                    style={{ backgroundImage: 'radial-gradient(#e5e7eb 1px, transparent 1px)', backgroundSize: '20px 20px' }}
-                                >
-                                    {/* Spiral Binding Visual - Adaptive Height */}
-                                    <div className="absolute left-4 top-4 bottom-4 w-px border-l-2 border-dotted border-slate-300 pointer-events-none"></div>
-
-                                    <div className="mb-4 ml-6 flex justify-between items-center text-[10px] text-slate-400 font-mono border-b border-slate-100 pb-2">
-                                        <span>#{notebookEntries.length - notebookPage}</span>
+                                <div className="relative bg-[#fbf9f3] border-2 border-[#1c1a17] shadow-[4px_4px_0_#1c1a17] p-6 min-h-[400px] flex flex-col"
+                                    style={{ backgroundImage: 'radial-gradient(rgba(28,26,23,0.12) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+                                    {/* 装订线 */}
+                                    <div className="absolute left-4 top-4 bottom-4 w-px border-l-2 border-dashed border-[#1c1a17]/50 pointer-events-none"></div>
+                                    <div className="mb-4 ml-6 flex justify-between items-center text-[10px] text-[#9b958a] font-label border-b-2 border-dashed border-[#1c1a17]/40 pb-2">
+                                        <span className="font-bold text-[#1c1a17]">PAGE.{String(notebookEntries.length - notebookPage).padStart(2,'0')}</span>
                                         <div className="flex gap-2 items-center">
                                             <span>{new Date(notebookEntries[notebookPage].timestamp).toLocaleString()}</span>
-                                            <button onClick={() => handleDeleteNote(notebookEntries[notebookPage].id)} className="text-red-300 hover:text-red-500 font-bold px-1" title="删除此页">×</button>
+                                            <button onClick={() => handleDeleteNote(notebookEntries[notebookPage].id)} className="text-[#9b958a] hover:text-[#1c1a17] px-1" title="撕掉这页"><I.trash size={13} /></button>
                                         </div>
                                     </div>
-                                    <div className="flex-1 ml-6 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">{renderNotebookContent(notebookEntries[notebookPage].content)}</div>
-                                    <div className="mt-6 ml-6 flex justify-between items-center pt-4 border-t border-slate-100"><button disabled={notebookPage >= notebookEntries.length - 1} onClick={() => setNotebookPage(p => p + 1)} className="text-slate-400 hover:text-primary disabled:opacity-30">← 旧的</button><span className="text-[10px] text-slate-300">{notebookPage + 1} / {notebookEntries.length}</span><button disabled={notebookPage <= 0} onClick={() => setNotebookPage(p => p - 1)} className="text-slate-400 hover:text-primary disabled:opacity-30">新的 →</button></div>
+                                    <div className="flex-1 ml-6 text-[#2b2823] text-sm whitespace-pre-wrap leading-relaxed">{renderNotebookContent(notebookEntries[notebookPage].content)}</div>
+                                    <div className="mt-6 ml-6 flex justify-between items-center pt-4 border-t-2 border-dashed border-[#1c1a17]/40">
+                                        <button disabled={notebookPage >= notebookEntries.length - 1} onClick={() => setNotebookPage(p => p + 1)} className="flex items-center gap-1 text-[#1c1a17] disabled:opacity-25 font-bold text-xs"><I.back size={14} />往前翻</button>
+                                        <span className="text-[10px] text-[#9b958a] font-label">{notebookPage + 1} / {notebookEntries.length}</span>
+                                        <button disabled={notebookPage <= 0} onClick={() => setNotebookPage(p => p - 1)} className="flex items-center gap-1 text-[#1c1a17] disabled:opacity-25 font-bold text-xs">往后翻<I.fwd size={14} /></button>
+                                    </div>
                                 </div>
-                            ) : <div className="text-center py-10 text-slate-400 text-xs">记事本是空的...</div>}
+                            ) : <div className="text-center py-10 text-[#9b958a] text-xs">本子还是空白的…</div>}
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* UI Overlay */}
+            {/* 顶部操作条 */}
             <div className="absolute top-0 w-full pt-12 px-4 pb-2 flex justify-between z-30 pointer-events-none">
-                <button onClick={() => setViewState('select')} className="bg-white/90 p-2 rounded-full shadow-md pointer-events-auto active:scale-90 transition-transform text-slate-600"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
+                <button onClick={() => setViewState('select')} className="bg-[#fbf9f3] border-2 border-[#1c1a17] p-2 shadow-[2px_2px_0_#1c1a17] pointer-events-auto active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all text-[#1c1a17]"><I.back size={20} /></button>
                 <div className="flex gap-2 pointer-events-auto">
-                    {/* REFRESH BUTTON */}
                     {mode === 'view' && (
-                        <button onClick={() => setShowRefreshConfirm(true)} className="p-2 bg-white/90 rounded-full shadow-md text-slate-500 hover:text-primary active:scale-90 transition-transform" title="强制刷新今日">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                        <button onClick={() => setShowRefreshConfirm(true)} className="p-2 bg-[#fbf9f3] border-2 border-[#1c1a17] shadow-[2px_2px_0_#1c1a17] text-[#1c1a17] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all" title="重翻今天这一页">
+                            <I.refresh size={20} />
                         </button>
                     )}
-                    <button onClick={() => { setMode(mode === 'view' ? 'edit' : 'view'); setSelectedItemId(null); }} className={`px-4 py-2 rounded-full font-bold text-xs shadow-md transition-all ${mode === 'edit' ? 'bg-blue-500 text-white' : 'bg-white text-slate-600'}`}>{mode === 'edit' ? '完成' : '装修'}</button>
+                    <button onClick={() => { setMode(mode === 'view' ? 'edit' : 'view'); setSelectedItemId(null); }} className={`px-4 py-2 border-2 border-[#1c1a17] font-bold text-xs shadow-[2px_2px_0_#1c1a17] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all flex items-center gap-1.5 ${mode === 'edit' ? 'bg-[#1c1a17] text-[#f4f1e8]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}>{mode === 'edit' ? <><I.check size={15} />贴好了</> : <><I.pencil size={15} />动手布置</>}</button>
                 </div>
             </div>
 
-            {/* Observation Card (Bottom) */}
-            {observationText && mode === 'view' && <div className="absolute bottom-6 left-4 right-4 bg-white p-5 rounded-2xl shadow-2xl border border-slate-100 z-[150] animate-slide-up"><div className="flex justify-between items-start mb-2"><span className="text-xs font-bold text-blue-500 uppercase tracking-widest">OBSERVATION</span><button onClick={() => setObservationText('')} className="text-slate-400 hover:text-slate-600">×</button></div><p className="text-sm text-slate-700 leading-relaxed font-medium text-justify">{observationText}</p></div>}
+            {/* 随手记下（底部） */}
+            {observationText && mode === 'view' && (
+                <div className="absolute bottom-6 left-4 right-4 bg-[#fbf9f3] border-2 border-[#1c1a17] p-5 shadow-[4px_4px_0_#1c1a17] z-[150] animate-slide-up -rotate-[0.6deg]">
+                    <Washi className="-top-3 left-6 rotate-3" />
+                    <div className="flex justify-between items-start mb-2">
+                        <span className="flex items-center gap-1.5 font-label text-[10px] font-bold text-[#1c1a17] tracking-[0.2em] uppercase"><I.eye size={14} />随手记下</span>
+                        <button onClick={() => setObservationText('')} className="text-[#9b958a] hover:text-[#1c1a17]"><I.close size={16} /></button>
+                    </div>
+                    <p className="text-sm text-[#2b2823] leading-relaxed font-medium text-justify">{observationText}</p>
+                </div>
+            )}
 
-            {/* Edit Mode Toolbar - Collapsible */}
+            {/* 布置工具条（可收起） */}
             {mode === 'edit' && (
-                <div className={`absolute bottom-0 w-full bg-white border-t border-slate-200 z-[150] transition-transform duration-300 flex flex-col ${isToolbarCollapsed ? 'translate-y-[calc(100%-2.5rem)]' : ''}`} style={{ maxHeight: isToolbarCollapsed ? 'auto' : '45vh' }}>
-                    <div className="h-10 w-full flex items-center justify-center cursor-pointer bg-white active:bg-slate-50 border-b border-slate-100" onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}><div className="w-10 h-1 bg-slate-200 rounded-full"></div></div>
+                <div className={`absolute bottom-0 w-full border-t-2 border-[#1c1a17] z-[150] transition-transform duration-300 flex flex-col ${isToolbarCollapsed ? 'translate-y-[calc(100%-2.5rem)]' : ''}`} style={{ ...PAPER_GRID, maxHeight: isToolbarCollapsed ? 'auto' : '45vh' }}>
+                    <div className="h-10 w-full flex items-center justify-center cursor-pointer border-b-2 border-dashed border-[#1c1a17]/40" onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}><div className="w-12 h-1.5 bg-[#1c1a17]"></div></div>
                     <div className="p-4 overflow-y-auto flex-1">
                         {selectedItemId ? (
                             <div className="flex flex-col gap-3">
-                                <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500">调整家具</span><button onClick={deleteSelectedItem} className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full">删除</button></div>
+                                <div className="flex justify-between items-center"><span className="text-xs font-bold text-[#1c1a17] font-label tracking-widest">调整这张贴纸</span><button onClick={deleteSelectedItem} className="flex items-center gap-1 text-xs text-[#1c1a17] font-bold border-2 border-[#1c1a17] px-3 py-1"><I.trash size={13} />撕掉</button></div>
                                 <div className="flex gap-4">
-                                    <div className="flex-1"><label className="text-[10px] text-slate-400 block mb-1">缩放</label><input type="range" min="0.5" max="3" step="0.1" value={items.find(i => i.id === selectedItemId)?.scale || 1} onChange={(e) => updateSelectedItem({ scale: parseFloat(e.target.value) })} className="w-full h-1 bg-slate-200 rounded-full" /></div>
-                                    <div className="flex-1"><label className="text-[10px] text-slate-400 block mb-1">旋转</label><input type="range" min="-180" max="180" step="5" value={items.find(i => i.id === selectedItemId)?.rotation || 0} onChange={(e) => updateSelectedItem({ rotation: parseInt(e.target.value) })} className="w-full h-1 bg-slate-200 rounded-full" /></div>
+                                    <div className="flex-1"><label className="text-[10px] text-[#9b958a] font-label tracking-wider block mb-1">大小</label><input type="range" min="0.5" max="3" step="0.1" value={items.find(i => i.id === selectedItemId)?.scale || 1} onChange={(e) => updateSelectedItem({ scale: parseFloat(e.target.value) })} className="w-full h-1.5 bg-[#cdc7b6] rounded-none appearance-none cursor-pointer accent-[#1c1a17]" /></div>
+                                    <div className="flex-1"><label className="text-[10px] text-[#9b958a] font-label tracking-wider block mb-1">歪斜</label><input type="range" min="-180" max="180" step="5" value={items.find(i => i.id === selectedItemId)?.rotation || 0} onChange={(e) => updateSelectedItem({ rotation: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#cdc7b6] rounded-none appearance-none cursor-pointer accent-[#1c1a17]" /></div>
                                 </div>
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
-                                    <button onClick={() => setShowLibrary(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-md text-xl">+</div><span className="text-[10px] font-bold text-slate-500">家具库</span></button>
-                                    <button onClick={() => setShowCustomModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-purple-500 rounded-xl flex items-center justify-center text-white shadow-md"><Sparkle size={24} /></div><span className="text-[10px] font-bold text-slate-500">自定义</span></button>
-                                    <button onClick={() => wallInputRef.current?.click()} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-slate-200 rounded-xl flex items-center justify-center text-slate-500 shadow-sm border border-slate-300"><Image size={24} /></div><span className="text-[10px] font-bold text-slate-500">换墙纸</span></button>
-                                    <button onClick={() => floorInputRef.current?.click()} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-slate-200 rounded-xl flex items-center justify-center shadow-sm border border-slate-300"><img src={twemojiUrl('1f9f1')} alt="brick" className="w-6 h-6" /></div><span className="text-[10px] font-bold text-slate-500">换地板</span></button>
-                                    {/* Settings Button */}
-                                    <button onClick={() => setShowSettingsModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-slate-200 rounded-xl flex items-center justify-center text-slate-600 shadow-sm border border-slate-300"><GearSix size={24} /></div><span className="text-[10px] font-bold text-slate-500">设置</span></button>
-                                    {/* Developer Export Button */}
-                                    <button onClick={() => setShowDevModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center text-white shadow-sm border border-slate-600">{'{}'}</div><span className="text-[10px] font-bold text-slate-500">Dev</span></button>
-                                    
+                                <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                                    {([
+                                        { onClick: () => setShowLibrary(true), icon: I.stack, label: '贴纸抽屉', dark: true },
+                                        { onClick: () => setShowCustomModal(true), icon: I.star, label: '做新贴纸', dark: false },
+                                        { onClick: () => wallInputRef.current?.click(), icon: I.wall, label: '换墙纸', dark: false },
+                                        { onClick: () => floorInputRef.current?.click(), icon: I.floor, label: '换地板', dark: false },
+                                        { onClick: () => setShowSettingsModal(true), icon: I.gear, label: '边边角角', dark: false },
+                                    ] as const).map((b, i) => (
+                                        <button key={i} onClick={b.onClick} className="flex flex-col items-center gap-1 shrink-0">
+                                            <div className={`w-12 h-12 border-2 border-[#1c1a17] flex items-center justify-center shadow-[2px_2px_0_#1c1a17] ${b.dark ? 'bg-[#1c1a17] text-[#f4f1e8]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}><b.icon size={22} /></div>
+                                            <span className="text-[10px] font-bold text-[#1c1a17]">{b.label}</span>
+                                        </button>
+                                    ))}
+                                    <button onClick={() => setShowDevModal(true)} className="flex flex-col items-center gap-1 shrink-0"><div className="w-12 h-12 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#1c1a17] flex items-center justify-center shadow-[2px_2px_0_#1c1a17] font-mono font-bold">{'{ }'}</div><span className="text-[10px] font-bold text-[#1c1a17]">底稿</span></button>
+
                                     <input type="file" ref={wallInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'wall')} />
                                     <input type="file" ref={floorInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'floor')} />
                                     <input type="file" ref={actorInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'actor')} />
                                 </div>
-                                <div><h4 className="text-[10px] font-bold text-slate-400 mb-2 uppercase">墙面预设</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{WALLPAPER_PRESETS.map((wp, i) => <button key={i} onClick={() => handleWallChange(wp.value)} className="w-10 h-10 rounded-lg shadow-sm border border-slate-200 shrink-0" style={{ background: wp.value }}></button>)}</div></div>
-                                <div><h4 className="text-[10px] font-bold text-slate-400 mb-2 uppercase">地板预设</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{FLOOR_PRESETS.map((fp, i) => <button key={i} onClick={() => handleFloorChange(fp.value)} className="w-10 h-10 rounded-lg shadow-sm border border-slate-200 shrink-0" style={{ background: fp.value }}></button>)}</div></div>
+                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">墙面 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{WALLPAPER_PRESETS.map((wp, i) => <button key={i} onClick={() => handleWallChange(wp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0 grayscale" style={{ background: wp.value }}></button>)}</div></div>
+                                <div><h4 className="text-[10px] font-bold text-[#1c1a17] mb-2 font-label tracking-[0.2em] uppercase">地板 · 现成花样</h4><div className="flex gap-2 overflow-x-auto no-scrollbar">{FLOOR_PRESETS.map((fp, i) => <button key={i} onClick={() => handleFloorChange(fp.value)} className="w-10 h-10 border-2 border-[#1c1a17] shrink-0 grayscale" style={{ background: fp.value }}></button>)}</div></div>
                             </div>
                         )}
                     </div>
                 </div>
             )}
 
-            {/* Asset Library Modal */}
-            <Modal isOpen={showLibrary} title="家具超市" onClose={() => setShowLibrary(false)}>
+            {/* 贴纸抽屉 */}
+            <PaperModal isOpen={showLibrary} title="贴纸抽屉" tag="stickers · 往房间里贴" onClose={() => setShowLibrary(false)}>
                 <div className="h-96 overflow-y-auto no-scrollbar">
                     {Object.entries(displayLibrary).map(([category, assets]) => (
                         assets && assets.length > 0 && (
                             <div key={category} className="mb-6">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 sticky top-0 bg-white py-2 z-10 flex justify-between">
-                                    {category === 'moro_special' ? 'Moro 专属 (Special)' : (category === 'custom' ? '自定义 (Custom)' : category)}
-                                    <span className="text-[9px] bg-slate-100 px-2 rounded-full">{assets.length}</span>
+                                <h4 className="text-xs font-bold text-[#1c1a17] tracking-widest mb-3 sticky top-0 py-2 z-10 flex justify-between items-center border-b-2 border-dashed border-[#1c1a17]/40" style={PAPER_GRID}>
+                                    <span className="font-['Long_Cang'] text-lg">{CAT_LABELS[category] || category}</span>
+                                    <span className="text-[9px] border-2 border-[#1c1a17] px-2 font-label">{assets.length}</span>
                                 </h4>
                                 <div className="grid grid-cols-4 gap-4">
                                     {assets.map((asset: any, i: number) => {
@@ -1348,14 +1475,14 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                             <button
                                                 key={asset.id || i}
                                                 onClick={() => addItem(asset, category === 'custom' || category === 'moro_special' ? 'furniture' : category as any)}
-                                                className="flex flex-col items-center gap-2 group relative active:scale-95 transition-transform"
+                                                className="flex flex-col items-center gap-1.5 group relative active:scale-95 transition-transform"
                                                 {...handlers}
                                             >
-                                                <div className="w-14 h-14 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100 group-hover:border-blue-300 transition-colors overflow-hidden relative">
-                                                    <img src={asset.image} className="w-full h-full object-contain" />
-                                                    {isCustom && asset.visibility === 'character' && <div className="absolute top-0 right-0 w-3 h-3 bg-blue-400 rounded-bl-lg" title="角色专属"></div>}
+                                                <div className="w-14 h-14 bg-[#fbf9f3] flex items-center justify-center border-2 border-[#1c1a17] overflow-hidden relative group-hover:shadow-[2px_2px_0_#1c1a17] transition-all">
+                                                    <img src={asset.image} className="w-full h-full object-contain grayscale" />
+                                                    {isCustom && asset.visibility === 'character' && <div className="absolute top-0 right-0 w-0 h-0 border-t-[12px] border-l-[12px] border-t-[#1c1a17] border-l-transparent" title="专属某人"></div>}
                                                 </div>
-                                                <span className="text-[10px] text-slate-500 truncate w-full text-center">{asset.name}</span>
+                                                <span className="text-[10px] text-[#2b2823] truncate w-full text-center">{asset.name}</span>
                                             </button>
                                         );
                                     })}
@@ -1364,158 +1491,159 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                         )
                     ))}
                 </div>
-            </Modal>
+            </PaperModal>
 
-            {/* Custom Asset Edit Modal */}
-            <Modal isOpen={!!editingAsset} title="编辑家具" onClose={() => setEditingAsset(null)}
-                footer={<div className="flex gap-2 w-full"><button onClick={deleteEditingAsset} className="px-4 py-3 bg-red-50 text-red-500 rounded-2xl font-bold text-xs">删除</button><button onClick={saveEditingAsset} className="flex-1 py-3 bg-blue-500 text-white rounded-2xl font-bold text-xs">保存</button></div>}
+            {/* 改贴纸 */}
+            <PaperModal isOpen={!!editingAsset} title="改一改这张贴纸" tag="edit" onClose={() => setEditingAsset(null)}
+                footer={<div className="flex gap-3 w-full"><button onClick={deleteEditingAsset} className="px-4 py-3 border-2 border-[#1c1a17] text-[#1c1a17] font-bold text-xs flex items-center gap-1"><I.trash size={14} />撕掉</button><button onClick={saveEditingAsset} className="flex-1 py-3 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#1c1a17] font-bold text-xs">贴好</button></div>}
             >
                 {editingAsset && (
                     <div className="space-y-3">
                         <div className="flex gap-3 items-start">
-                            <img src={editImage} className="w-14 h-14 object-contain rounded-lg bg-slate-100 border shrink-0" />
+                            <img src={editImage} className="w-14 h-14 object-contain bg-[#fbf9f3] border-2 border-[#1c1a17] shrink-0 grayscale" />
                             <div className="flex-1 space-y-2">
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 block mb-1">名称</label>
-                                    <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold focus:outline-blue-500" />
+                                    <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">名字</label>
+                                    <input value={editName} onChange={e => setEditName(e.target.value)} className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-sm font-bold focus:outline-none" />
                                 </div>
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 block mb-1">图片 URL</label>
-                                    <input value={editImage} onChange={e => setEditImage(e.target.value)} placeholder="https://..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-blue-500" />
+                                    <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">图片链接</label>
+                                    <input value={editImage} onChange={e => setEditImage(e.target.value)} placeholder="https://..." className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-xs focus:outline-none" />
                                 </div>
                             </div>
                         </div>
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 block mb-1">描述</label>
-                            <input value={editDescription} onChange={e => setEditDescription(e.target.value)} placeholder="物品描述..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-blue-500" />
+                            <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">小注脚</label>
+                            <input value={editDescription} onChange={e => setEditDescription(e.target.value)} placeholder="这是什么、长什么样…" className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-xs focus:outline-none" />
                         </div>
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 block mb-1">分类</label>
+                            <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">归到哪</label>
                             <div className="flex gap-2">
-                                <button onClick={() => setEditVisibility('public')} className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${editVisibility === 'public' ? 'bg-green-50 border-green-300 text-green-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>公共</button>
-                                <button onClick={() => setEditVisibility('character')} className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${editVisibility === 'character' ? 'bg-blue-50 border-blue-300 text-blue-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>角色专属</button>
+                                <button onClick={() => setEditVisibility('public')} className={`flex-1 py-2 text-xs font-bold border-2 border-[#1c1a17] transition-colors ${editVisibility === 'public' ? 'bg-[#1c1a17] text-[#f4f1e8]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}>大家共用</button>
+                                <button onClick={() => setEditVisibility('character')} className={`flex-1 py-2 text-xs font-bold border-2 border-[#1c1a17] transition-colors ${editVisibility === 'character' ? 'bg-[#1c1a17] text-[#f4f1e8]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}>专属某人</button>
                             </div>
                         </div>
                         {editVisibility === 'character' && (
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 block mb-1">指定角色（可多选）</label>
+                                <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">贴给谁（可多选）</label>
                                 <div className="flex flex-wrap gap-2">
                                     {characters.map(c => (
                                         <button key={c.id} onClick={() => setEditAssignedCharIds(prev => prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id])}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${editAssignedCharIds.includes(c.id) ? 'bg-blue-100 border-blue-300 text-blue-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                                            className={`px-3 py-1.5 text-xs font-bold border-2 border-[#1c1a17] transition-colors ${editAssignedCharIds.includes(c.id) ? 'bg-[#1c1a17] text-[#f4f1e8]' : 'bg-[#fbf9f3] text-[#1c1a17]'}`}
                                         >
                                             {c.name}
                                         </button>
                                     ))}
                                 </div>
-                                {editAssignedCharIds.length === 0 && <p className="text-[9px] text-amber-500 mt-1">请至少选择一个角色</p>}
+                                {editAssignedCharIds.length === 0 && <p className="text-[9px] text-[#1c1a17] mt-1 font-bold">至少挑一个人吧</p>}
                             </div>
                         )}
                     </div>
                 )}
-            </Modal>
+            </PaperModal>
 
-            {/* Custom Item Modal */}
-            <Modal isOpen={showCustomModal} title="自定义家具" onClose={() => setShowCustomModal(false)} footer={<button onClick={saveCustomItem} className="w-full py-3 bg-purple-500 text-white font-bold rounded-2xl">添加到房间</button>}>
+            {/* 做新贴纸 */}
+            <PaperModal isOpen={showCustomModal} title="做一张新贴纸" tag="new sticker" onClose={() => setShowCustomModal(false)} footer={<button onClick={saveCustomItem} className="w-full py-3 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#1c1a17] font-bold flex items-center justify-center gap-1.5"><I.plus size={16} />贴进房间</button>}>
                 <div className="space-y-4">
                     <div className="flex gap-4">
-                        <div onClick={() => customItemInputRef.current?.click()} className="aspect-square w-24 bg-slate-100 rounded-2xl border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer hover:border-purple-400 relative overflow-hidden shrink-0">
-                            {customItemImage ? <img src={customItemImage} className="w-full h-full object-contain" /> : <span className="text-slate-400 text-xs">+ 上传</span>}
+                        <div onClick={() => customItemInputRef.current?.click()} className="aspect-square w-24 bg-[#fbf9f3] border-2 border-dashed border-[#1c1a17] flex items-center justify-center cursor-pointer relative overflow-hidden shrink-0">
+                            {customItemImage ? <img src={customItemImage} className="w-full h-full object-contain grayscale" /> : <span className="text-[#9b958a] text-xs flex flex-col items-center gap-1"><I.plus size={18} />贴图</span>}
                             <input type="file" ref={customItemInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, 'custom_item')} />
                         </div>
                         <div className="flex-1 space-y-2">
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">图片 URL (推荐图床)</label>
-                                <input value={customItemUrl} onChange={e => setCustomItemUrl(e.target.value)} placeholder="https://..." className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-purple-500" />
+                                <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">图片链接（推荐图床）</label>
+                                <input value={customItemUrl} onChange={e => setCustomItemUrl(e.target.value)} placeholder="https://..." className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-xs focus:outline-none" />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">物品名称</label>
-                                <input value={customItemName} onChange={e => setCustomItemName(e.target.value)} placeholder="例如: 懒人沙发" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-purple-500 font-bold" />
+                                <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">叫什么</label>
+                                <input value={customItemName} onChange={e => setCustomItemName(e.target.value)} placeholder="比如：懒人沙发" className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-sm focus:outline-none font-bold" />
                             </div>
                         </div>
                     </div>
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">物品描述 (Context)</label>
-                        <input value={customItemDescription} onChange={e => setCustomItemDescription(e.target.value)} placeholder="例如: 一个很软的沙发，坐上去就陷进去了。" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-purple-500" />
-                        <p className="text-[9px] text-slate-400 mt-1">这段描述会告诉 AI 这是什么，以及如何互动。</p>
+                        <label className="text-[10px] font-bold text-[#9b958a] font-label tracking-wider block mb-1">小注脚（告诉 TA 这是啥）</label>
+                        <input value={customItemDescription} onChange={e => setCustomItemDescription(e.target.value)} placeholder="比如：一个很软的沙发，坐上去就陷进去了。" className="w-full bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-xs focus:outline-none" />
+                        <p className="text-[9px] text-[#9b958a] mt-1">这段话会让 TA 知道这是什么、要怎么和它互动。</p>
                     </div>
                 </div>
-            </Modal>
+            </PaperModal>
 
-            {/* Room Settings Modal */}
-            <Modal isOpen={showSettingsModal} title="装修设置" onClose={() => setShowSettingsModal(false)}>
+            {/* 边边角角 · 设置 */}
+            <PaperModal isOpen={showSettingsModal} title="房间的边边角角" tag="settings" onClose={() => setShowSettingsModal(false)}>
                 <div className="space-y-6">
                     <div className="space-y-4">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">背景调整</h4>
+                        <h4 className="text-xs font-bold text-[#1c1a17] font-label tracking-[0.2em] uppercase border-b-2 border-dashed border-[#1c1a17]/40 pb-2">背景微调</h4>
                         <div>
-                            <div className="flex justify-between mb-1"><label className="text-xs font-bold text-slate-600">墙纸缩放 ({char?.roomConfig?.wallScale || 0}%)</label><span className="text-[10px] text-slate-400">{char?.roomConfig?.wallScale ? `${char.roomConfig.wallScale}%` : 'Cover (Default)'}</span></div>
-                            <input type="range" min="0" max="200" step="10" value={char?.roomConfig?.wallScale || 0} onChange={e => updateBgConfig({ wallScale: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" />
+                            <div className="flex justify-between mb-1"><label className="text-xs font-bold text-[#2b2823]">墙纸大小</label><span className="text-[10px] text-[#9b958a] font-label">{char?.roomConfig?.wallScale ? `${char.roomConfig.wallScale}%` : '铺满（默认）'}</span></div>
+                            <input type="range" min="0" max="200" step="10" value={char?.roomConfig?.wallScale || 0} onChange={e => updateBgConfig({ wallScale: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#cdc7b6] appearance-none cursor-pointer accent-[#1c1a17]" />
                             <div className="flex items-center gap-2 mt-2">
-                                <input type="checkbox" id="wallRepeat" checked={char?.roomConfig?.wallRepeat || false} onChange={e => updateBgConfig({ wallRepeat: e.target.checked })} className="accent-blue-500" />
-                                <label htmlFor="wallRepeat" className="text-xs text-slate-600">平铺模式 (Tile)</label>
+                                <input type="checkbox" id="wallRepeat" checked={char?.roomConfig?.wallRepeat || false} onChange={e => updateBgConfig({ wallRepeat: e.target.checked })} className="accent-[#1c1a17] w-4 h-4" />
+                                <label htmlFor="wallRepeat" className="text-xs text-[#2b2823]">平铺重复</label>
                             </div>
                         </div>
                         <div>
-                            <div className="flex justify-between mb-1"><label className="text-xs font-bold text-slate-600">地板缩放 ({char?.roomConfig?.floorScale || 0}%)</label><span className="text-[10px] text-slate-400">{char?.roomConfig?.floorScale ? `${char.roomConfig.floorScale}%` : 'Cover (Default)'}</span></div>
-                            <input type="range" min="0" max="200" step="10" value={char?.roomConfig?.floorScale || 0} onChange={e => updateBgConfig({ floorScale: parseInt(e.target.value) })} className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" />
+                            <div className="flex justify-between mb-1"><label className="text-xs font-bold text-[#2b2823]">地板大小</label><span className="text-[10px] text-[#9b958a] font-label">{char?.roomConfig?.floorScale ? `${char.roomConfig.floorScale}%` : '铺满（默认）'}</span></div>
+                            <input type="range" min="0" max="200" step="10" value={char?.roomConfig?.floorScale || 0} onChange={e => updateBgConfig({ floorScale: parseInt(e.target.value) })} className="w-full h-1.5 bg-[#cdc7b6] appearance-none cursor-pointer accent-[#1c1a17]" />
                             <div className="flex items-center gap-2 mt-2">
-                                <input type="checkbox" id="floorRepeat" checked={char?.roomConfig?.floorRepeat || false} onChange={e => updateBgConfig({ floorRepeat: e.target.checked })} className="accent-blue-500" />
-                                <label htmlFor="floorRepeat" className="text-xs text-slate-600">平铺模式 (Tile)</label>
+                                <input type="checkbox" id="floorRepeat" checked={char?.roomConfig?.floorRepeat || false} onChange={e => updateBgConfig({ floorRepeat: e.target.checked })} className="accent-[#1c1a17] w-4 h-4" />
+                                <label htmlFor="floorRepeat" className="text-xs text-[#2b2823]">平铺重复</label>
                             </div>
                         </div>
                     </div>
 
                     {isMoro && (
-                        <div className="pt-4 border-t border-slate-100">
-                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Moro 专属维护</h4>
-                            <button onClick={resetMoroRoom} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 flex items-center justify-center gap-2 active:scale-95 transition-transform">
-                                <img src={twemojiUrl('1f9f9')} alt="broom" className="w-5 h-5" /> 还原初始样板房
+                        <div className="pt-4 border-t-2 border-dashed border-[#1c1a17]/40">
+                            <h4 className="text-xs font-bold text-[#1c1a17] font-label tracking-[0.2em] uppercase mb-3">Moro 的维护抽屉</h4>
+                            <button onClick={resetMoroRoom} className="w-full py-3 bg-[#fbf9f3] text-[#1c1a17] font-bold border-2 border-[#1c1a17] shadow-[3px_3px_0_#1c1a17] flex items-center justify-center gap-2 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all">
+                                <I.broom size={18} /> 还原成样板页
                             </button>
-                            <p className="text-[9px] text-slate-400 mt-2 text-center">如果不小心弄乱了房间，点此可一键恢复默认布局。</p>
+                            <p className="text-[9px] text-[#9b958a] mt-2 text-center">要是把房间翻乱了，点这里一键贴回原样。</p>
                         </div>
                     )}
                 </div>
-            </Modal>
+            </PaperModal>
 
-            {/* Refresh Confirmation Modal */}
-            <Modal isOpen={showRefreshConfirm} title="强制刷新?" onClose={() => setShowRefreshConfirm(false)} footer={<div className="flex gap-2 w-full"><button onClick={() => setShowRefreshConfirm(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold">取消</button><button onClick={handleForceRefresh} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">少管我!</button></div>}>
-                <div className="text-center py-4 space-y-2">
-                    <div><img src={twemojiUrl('1f570-fe0f')} alt="clock" className="w-10 h-10 mx-auto" /></div>
-                    <p className="text-sm text-slate-600 font-bold">每天早上 6:00 自动刷新</p>
-                    <p className="text-xs text-slate-400">还没到时间哦，确定要消耗算力强制重新生成今天的房间状态吗？</p>
+            {/* 重翻今天 */}
+            <PaperModal isOpen={showRefreshConfirm} title="重翻今天？" tag="refresh" onClose={() => setShowRefreshConfirm(false)} footer={<div className="flex gap-3 w-full"><button onClick={() => setShowRefreshConfirm(false)} className="flex-1 py-3 bg-[#fbf9f3] text-[#1c1a17] border-2 border-[#1c1a17] font-bold">再想想</button><button onClick={handleForceRefresh} className="flex-1 py-3 bg-[#1c1a17] text-[#f4f1e8] border-2 border-[#1c1a17] font-bold">翻就翻！</button></div>}>
+                <div className="text-center py-3 space-y-3">
+                    <div className="flex justify-center"><Stamp text="06:00 RENEW" /></div>
+                    <p className="text-base text-[#1c1a17] font-bold font-['Long_Cang'] text-xl">每天清晨六点，自动换上新一页</p>
+                    <p className="text-xs text-[#9b958a] leading-relaxed">还没到点呢——确定要费点心力，现在就重新画一遍今天的居所吗？</p>
                 </div>
-            </Modal>
+            </PaperModal>
 
-            {/* Dev Export Modal */}
-            <Modal 
-                isOpen={showDevModal} 
-                title="开发者工具 (Dev Tools)" 
-                onClose={() => setShowDevModal(false)} 
-                footer={<button onClick={() => setShowDevModal(false)} className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">关闭</button>}
+            {/* 底稿 · 开发者抽屉 */}
+            <PaperModal
+                isOpen={showDevModal}
+                title="底稿抽屉"
+                tag="dev tools"
+                onClose={() => setShowDevModal(false)}
+                footer={<button onClick={() => setShowDevModal(false)} className="w-full py-3 bg-[#fbf9f3] text-[#1c1a17] border-2 border-[#1c1a17] font-bold">合上</button>}
             >
                 <div className="space-y-4">
                     <div>
-                        <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2">布局数据 (Layout JSON)</h4>
-                        <div className="bg-slate-100 rounded-xl p-3 border border-slate-200 mb-2">
-                            <pre className="text-[10px] text-slate-600 font-mono h-20 overflow-y-auto whitespace-pre-wrap select-all">
+                        <h4 className="text-[10px] font-bold text-[#1c1a17] font-label tracking-[0.2em] uppercase mb-2">布局数据 · JSON</h4>
+                        <div className="bg-[#1c1a17] p-3 border-2 border-[#1c1a17] mb-2">
+                            <pre className="text-[10px] text-[#f4f1e8] font-mono h-20 overflow-y-auto whitespace-pre-wrap select-all">
                                 {JSON.stringify(items, null, 2)}
                             </pre>
                         </div>
-                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('Layout Copied', 'success'); }} className="w-full py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">复制布局 JSON</button>
+                        <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(items, null, 2)); addToast('布局已抄进剪贴板', 'success'); }} className="w-full py-2 bg-[#1c1a17] text-[#f4f1e8] text-xs font-bold border-2 border-[#1c1a17]">抄走布局</button>
                     </div>
 
                     <div>
-                        <h4 className="text-[10px] font-bold text-red-400 uppercase mb-2">Prompt 调试 (Debugger)</h4>
-                        <div className="bg-slate-100 rounded-xl p-3 border border-slate-200 mb-2">
-                            <pre className="text-[10px] text-slate-600 font-mono h-20 overflow-y-auto whitespace-pre-wrap select-all">
-                                {lastPrompt || "(暂无数据，请先尝试进入房间)"}
+                        <h4 className="text-[10px] font-bold text-[#1c1a17] font-label tracking-[0.2em] uppercase mb-2">Prompt · 调试</h4>
+                        <div className="bg-[#1c1a17] p-3 border-2 border-[#1c1a17] mb-2">
+                            <pre className="text-[10px] text-[#f4f1e8] font-mono h-20 overflow-y-auto whitespace-pre-wrap select-all">
+                                {lastPrompt || "（还没有数据，先进一次房间吧）"}
                             </pre>
                         </div>
-                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('Prompt Copied', 'success'); } else addToast('No prompt yet', 'error'); }} className="w-full py-2 bg-red-500 text-white text-xs font-bold rounded-xl">复制 Prompt 到剪贴板</button>
-                        <p className="text-[9px] text-slate-400 mt-2 text-center">如果 AI 回复为空，请复制此 Prompt 检查是否有乱码/Base64 混入。</p>
+                        <button onClick={() => { if(lastPrompt) { navigator.clipboard.writeText(lastPrompt); addToast('Prompt 已抄进剪贴板', 'success'); } else addToast('本子上还没有 Prompt', 'error'); }} className="w-full py-2 bg-[#1c1a17] text-[#f4f1e8] text-xs font-bold border-2 border-[#1c1a17]">抄走 Prompt</button>
+                        <p className="text-[9px] text-[#9b958a] mt-2 text-center">要是 TA 没说话，把这段 Prompt 抄出来，看看有没有混进乱码 / Base64。</p>
                     </div>
                 </div>
-            </Modal>
+            </PaperModal>
 
         </div>
     );
