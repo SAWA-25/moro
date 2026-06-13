@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { ShopReview } from '../../types';
+import { ShopReview, ShopRegular } from '../../types';
 import { paperTexture, WashiTape, HAND_FONT } from '../../apps/almanac/handbookKit';
+import { REGULAR_VISITS, VIP_VISITS, regularTier } from './BankGameConstants';
 
 /**
  * 存钱罐 · 营业结算 & 口碑评价
@@ -211,6 +212,88 @@ export const ReviewsOverlay: React.FC<{
                                 <div className="text-[13px] text-[#6D5142] mt-2 leading-snug">{r.text}</div>
                             </div>
                         ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+/** 常客名册：谁是回头客 / VIP，按到访次数排序 */
+export const RegularsOverlay: React.FC<{
+    regulars: Record<string, ShopRegular>;
+    onClose: () => void;
+}> = ({ regulars, onClose }) => {
+    const { list, vipCount, regCount } = useMemo(() => {
+        const arr = Object.values(regulars).sort((a, b) => b.visits - a.visits);
+        return {
+            list: arr,
+            vipCount: arr.filter(r => r.visits >= VIP_VISITS).length,
+            regCount: arr.filter(r => r.visits >= REGULAR_VISITS && r.visits < VIP_VISITS).length,
+        };
+    }, [regulars]);
+
+    const tierMeta = (visits: number) => {
+        const t = regularTier(visits);
+        if (t === 'vip') return { label: '👑 VIP', color: '#fff', bg: 'linear-gradient(135deg,#f6c66a,#e8a33d)', next: null as number | null };
+        if (t === 'regular') return { label: '🎉 常客', color: '#7E57C2', bg: '#F1ECFB', next: VIP_VISITS as number | null };
+        return { label: '脸熟', color: '#A1887F', bg: '#F0E2CC', next: REGULAR_VISITS as number | null };
+    };
+
+    return (
+        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={paperTexture('kraft')}>
+            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
+            {/* 头 */}
+            <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
+                <WashiTape className="top-0 left-16" color="rgba(231,196,120,0.7)" rotate={-10} width={70} height={16} />
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-3deg)' }}>👑</div>
+                        <div style={{ fontFamily: HAND_FONT }}>
+                            <div className="font-black text-[18px]" style={{ color: '#5b4636' }}>常客名册</div>
+                            <div className="text-[10px]" style={{ color: '#a98e6f' }}>谁是你的回头客与 VIP</div>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="w-9 h-9 flex items-center justify-center active:scale-95" style={{ background: '#fffdf7', borderRadius: 10, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', color: '#7a5c44' }}>
+                        <span className="text-lg leading-none">×</span>
+                    </button>
+                </div>
+            </div>
+
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar p-4" style={{ color: '#5D4037' }}>
+                {/* 概览 */}
+                <div className="flex gap-2.5 mb-4">
+                    {([['👑 VIP', vipCount, '#e8a33d'], ['🎉 常客', regCount, '#7E57C2'], ['脸熟', list.length, '#A1887F']] as const).map(([label, n, c], i) => (
+                        <div key={i} className="flex-1 rounded-2xl py-2.5 text-center" style={{ background: '#FFFDF7', boxShadow: '0 4px 12px rgba(96,66,40,0.12)' }}>
+                            <div className="text-[20px] font-black leading-none" style={{ color: c, fontFamily: HAND_FONT }}>{n}</div>
+                            <div className="text-[10px] mt-1" style={{ color: '#a98e6f' }}>{label}</div>
+                        </div>
+                    ))}
+                </div>
+
+                {list.length === 0 ? (
+                    <div className="text-center py-12 text-[13px] text-[#A1887F]">还没有熟客。多开门「💰营业」，常来的客人会被记进名册，攒够次数升常客 / VIP～</div>
+                ) : (
+                    <div className="space-y-2.5">
+                        {list.map((r, idx) => {
+                            const m = tierMeta(r.visits);
+                            const remain = m.next ? Math.max(0, m.next - r.visits) : 0;
+                            return (
+                                <div key={r.id} className="rounded-2xl p-3 border border-[#EADFC8] flex items-center gap-3" style={{ background: '#FFFDF7' }}>
+                                    <div className="text-[12px] font-black w-5 text-center shrink-0" style={{ color: idx < 3 ? '#e8a33d' : '#c9b89a' }}>{idx + 1}</div>
+                                    <Avatar value={r.avatar} size={36} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[14px] font-bold truncate" style={{ color: '#5b4636' }}>{r.name}</span>
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ color: m.color, background: m.bg }}>{m.label}</span>
+                                        </div>
+                                        <div className="text-[10px] mt-0.5" style={{ color: '#a98e6f' }}>
+                                            到访 {r.visits} 次{m.next ? ` · 再来 ${remain} 次升${m.next === VIP_VISITS ? 'VIP' : '常客'}` : ' · 已封顶'}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
             </div>

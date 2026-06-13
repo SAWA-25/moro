@@ -10,7 +10,7 @@ import BankDollhouse from '../components/bank/BankDollhouse';
 import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
-import { BusinessResultModal, ReviewsOverlay, BusinessResult } from '../components/bank/BankBusiness';
+import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } from '../components/bank/BankBusiness';
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
@@ -113,6 +113,7 @@ const BankApp: React.FC = () => {
     // 营业结算 & 口碑评价
     const [businessResult, setBusinessResult] = useState<BusinessResult | null>(null);
     const [showReviews, setShowReviews] = useState(false);
+    const [showRegulars, setShowRegulars] = useState(false);
     
     // Forms
     const [txAmount, setTxAmount] = useState('');
@@ -1212,6 +1213,19 @@ ${JSON.stringify(list, null, 2)}
                             </button>
                         );
                     })()}
+                    {/* 常客名册入口 */}
+                    {(() => {
+                        const regs = Object.values(state.shop.regulars || {});
+                        const vipN = regs.filter(r => r.visits >= VIP_VISITS).length;
+                        const regN = regs.filter(r => r.visits >= REGULAR_VISITS).length;
+                        return (
+                            <button onClick={() => setShowRegulars(true)} className="absolute left-3 bottom-[60px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }}>
+                                <span className="text-sm">👑</span>
+                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{regN || '常客'}</span>
+                                <span className="text-[10px]" style={{ color: '#A1887F' }}>{vipN > 0 ? `${vipN} VIP` : '名册'}</span>
+                            </button>
+                        );
+                    })()}
                     </>
                 )}
 
@@ -1623,6 +1637,11 @@ ${JSON.stringify(list, null, 2)}
             {/* 口碑墙 */}
             {showReviews && (
                 <ReviewsOverlay reviews={state.shop.reviews || []} onClose={() => setShowReviews(false)} />
+            )}
+
+            {/* 常客名册 */}
+            {showRegulars && (
+                <RegularsOverlay regulars={state.shop.regulars || {}} onClose={() => setShowRegulars(false)} />
             )}
 
         </div>
