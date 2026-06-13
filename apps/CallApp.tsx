@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate } from '@phosphor-icons/react';
+import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate, Phone, ArrowsClockwise, Play, Trash, CaretLeft } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { safeFetchJson } from '../utils/safeApi';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
@@ -262,7 +262,7 @@ const renderAssistantLine = (text: string) => {
   return parts.map((part, idx) => {
     if (part === '\n') return <div key={`br-${idx}`} className="h-2" />;
     const isCue = /^（[^（）\n]{1,48}）$/.test(part);
-    if (isCue) return <div key={`cue-${idx}`} className="text-violet-300/95 italic my-1.5 text-[0.85em]">{part}</div>;
+    if (isCue) return <div key={`cue-${idx}`} className="text-black/45 italic my-1.5 text-[0.85em]">{part}</div>;
     return <React.Fragment key={`t-${idx}`}>{part}</React.Fragment>;
   });
 };
@@ -359,14 +359,15 @@ const buildCallPrompt = (userName: string, charName?: string, coreContext?: stri
   return [coreContext, timeContext, callPrompt, voiceLangPrompt].filter(Boolean).join('\n\n');
 };
 const getCallStateStyles = (state: CallState) => {
+  // 黑白拼贴手账：状态全部走墨黑深浅，不用彩色
   const map: Record<CallState, { label: string; textClass: string; ringClass: string; waveClass: string }> = {
-    idle: { label: '等待中', textClass: 'text-slate-500', ringClass: 'ring-slate-300/70', waveClass: 'bg-slate-300/50' },
-    connecting: { label: '接通中……', textClass: 'text-indigo-500', ringClass: 'ring-indigo-300/70', waveClass: 'bg-indigo-300/50' },
-    listening: { label: '在听', textClass: 'text-cyan-600', ringClass: 'ring-cyan-300/70', waveClass: 'bg-cyan-300/50' },
-    thinking: { label: '在想……', textClass: 'text-amber-600', ringClass: 'ring-amber-300/70', waveClass: 'bg-amber-300/50' },
-    speaking: { label: '在说', textClass: 'text-[#2b2933]', ringClass: 'ring-slate-400/60', waveClass: 'bg-slate-400/40' },
-    ended: { label: '已挂断', textClass: 'text-rose-500', ringClass: 'ring-rose-300/70', waveClass: 'bg-rose-300/50' },
-    error: { label: '断了', textClass: 'text-rose-500', ringClass: 'ring-rose-300/70', waveClass: 'bg-rose-300/50' },
+    idle: { label: '待机', textClass: 'text-neutral-500', ringClass: 'ring-black/30', waveClass: 'bg-black/30' },
+    connecting: { label: '接线中……', textClass: 'text-black', ringClass: 'ring-black/50', waveClass: 'bg-black/50' },
+    listening: { label: '在听', textClass: 'text-black', ringClass: 'ring-black/40', waveClass: 'bg-black/45' },
+    thinking: { label: '斟酌中……', textClass: 'text-black', ringClass: 'ring-black/40', waveClass: 'bg-black/45' },
+    speaking: { label: '出声', textClass: 'text-black', ringClass: 'ring-black/60', waveClass: 'bg-black/60' },
+    ended: { label: '已挂断', textClass: 'text-neutral-500', ringClass: 'ring-black/30', waveClass: 'bg-black/30' },
+    error: { label: '断线了', textClass: 'text-black', ringClass: 'ring-black/40', waveClass: 'bg-black/45' },
   };
   return map[state];
 };
@@ -1070,75 +1071,84 @@ const CallApp: React.FC = () => {
   };
   if (viewMode === 'role-select') {
     return (
-      <div className="h-full w-full bg-[#faf9f6] scrap-panel text-[#2b2933] px-5 pt-10 pb-6 flex flex-col">
-        <h1 className="text-2xl font-semibold">想找谁聊聊？</h1>
-        <p className="text-sm text-slate-400 mt-1">选一个人，拨过去吧。</p>
-        <div className="mt-5 space-y-3 flex-1 overflow-y-auto">
-          {characters.map(char => (
-            <button key={char.id} onClick={() => setSelectedCharId(char.id)} className={`w-full scrap-card rounded-2xl p-4 text-left transition ${selectedCharId === char.id ? '!border-[#2b2933]' : ''}`} style={selectedCharId === char.id ? { backgroundColor: `${accentColor}20` } : undefined}>
+      <div className="h-full w-full text-black px-5 pt-10 pb-6 flex flex-col" style={{ background: '#efece3' }}>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-serif font-black tracking-[0.12em]">接线台</h1>
+          <span className="inline-flex items-center border-2 border-dashed border-black px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] -rotate-3 bg-white">call</span>
+        </div>
+        <p className="text-sm text-neutral-500 mt-1.5 font-mono">翻开名册，挑一个号码拨过去。</p>
+        <div className="mt-5 space-y-3.5 flex-1 overflow-y-auto pr-0.5">
+          {characters.map((char, i) => {
+            const active = selectedCharId === char.id;
+            return (
+            <button key={char.id} onClick={() => setSelectedCharId(char.id)} className={`relative w-full p-3.5 text-left border-2 border-black transition-transform active:translate-x-px active:translate-y-px ${active ? 'bg-black text-white' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: active ? '3px 3px 0 rgba(27,26,23,0.4)' : '3px 3px 0 #000' }}>
+              {active && <span className="absolute -top-2 -right-2 border-2 border-black bg-white text-black text-[9px] font-mono px-1.5 rotate-6">选中</span>}
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full border border-[#e7e2d8] flex items-center justify-center font-semibold" style={{ backgroundColor: `${accentColor}40` }}>{char.avatar ? <img src={char.avatar} alt={char.name} className="w-full h-full rounded-full object-cover" /> : (char.name?.[0] || '角')}</div>
-                <div>
-                  <div className="font-medium">{char.name}</div>
-                  <div className="text-xs text-slate-500 mt-1 line-clamp-2">{char.description || '等你一通电话。'}</div>
+                <div className={`w-12 h-12 border-2 ${active ? 'border-white' : 'border-black'} grayscale flex items-center justify-center font-serif font-bold overflow-hidden -rotate-2`}>{char.avatar ? <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" /> : (char.name?.[0] || '某')}</div>
+                <div className="min-w-0">
+                  <div className="font-serif font-bold truncate">{char.name}</div>
+                  <div className={`text-xs mt-1 line-clamp-2 ${active ? 'text-white/70' : 'text-neutral-500'}`}>{char.description || '在听筒那头等你。'}</div>
                 </div>
               </div>
             </button>
-          ))}
+          );})}
         </div>
-        <div className="pt-4 space-y-2">
-          <button onClick={() => { resetCurrentCall(); setViewMode('in-call'); }} className="w-full py-3 rounded-2xl text-white font-medium transition active:scale-[0.98]" style={{ backgroundColor: accentColor }}>
-            {selectedChar ? `拨给 ${selectedChar.name}` : '开始通话'}
+        <div className="pt-4 space-y-2.5">
+          <button onClick={() => { resetCurrentCall(); setViewMode('in-call'); }} className="w-full py-3 border-2 border-black bg-black text-white font-mono uppercase tracking-widest transition-transform active:translate-x-px active:translate-y-px flex items-center justify-center gap-2" style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.4)' }}>
+            <Phone size={16} weight="fill" />
+            {selectedChar ? `拨给 ${selectedChar.name}` : '开始接线'}
           </button>
-          <button onClick={() => setViewMode('history')} className="w-full py-3 rounded-2xl border border-dashed border-[#d9d4c8] bg-white text-[#2b2933]">通话记录</button>
-          <button onClick={closeApp} className="w-full py-2 text-sm text-slate-400">关闭</button>
+          <button onClick={() => setViewMode('history')} className="w-full py-3 border-2 border-dashed border-black bg-white text-black font-mono uppercase tracking-widest transition-transform active:translate-x-px active:translate-y-px">通话存根</button>
+          <button onClick={closeApp} className="w-full py-2 text-sm text-neutral-500 underline decoration-dashed underline-offset-2 font-mono">收起</button>
         </div>
       </div>
     );
   }
   if (viewMode === 'history') {
     return (
-      <div className="h-full w-full bg-[#faf9f6] scrap-panel text-[#2b2933] px-5 pt-10 pb-6 flex flex-col">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setViewMode('role-select')} className="text-sm text-slate-500">← 返回</button>
-          <h1 className="text-lg font-medium">通话记录</h1>
-          <button onClick={() => setViewMode('role-select')} className="text-sm text-[#2b2933] font-medium">新通话</button>
+      <div className="h-full w-full text-black px-5 pt-10 pb-6 flex flex-col" style={{ background: '#efece3' }}>
+        <div className="flex items-center justify-between border-b-2 border-black pb-3">
+          <button onClick={() => setViewMode('role-select')} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform"><CaretLeft size={15} weight="bold" /></button>
+          <h1 className="text-lg font-serif font-black tracking-[0.2em]">通话存根</h1>
+          <button onClick={() => setViewMode('role-select')} className="text-xs font-mono border-2 border-black bg-white px-2 py-1 active:translate-x-px active:translate-y-px transition-transform">新拨一通</button>
         </div>
-        <div className="mt-4 flex-1 overflow-y-auto space-y-3">
+        <div className="mt-4 flex-1 overflow-y-auto space-y-3.5 pr-0.5">
           {!callRecords.length && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <p className="text-base text-slate-400">还没有通话记录</p>
-              <p className="text-sm text-slate-500 mt-1">每一通电话都会留在这里</p>
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="border-2 border-dashed border-black p-5 -rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}><Phone size={28} /></div>
+              <p className="text-base font-serif font-bold mt-4">存根夹是空的</p>
+              <p className="text-sm text-neutral-500 mt-1.5">每通电话都会留下一张存根</p>
             </div>
           )}
-          {callRecords.map(record => {
+          {callRecords.map((record, i) => {
             const turnCount = record.transcript.filter(t => t.role === 'user').length;
             const keepsake = summarizeKeepsakeLine(record.transcript, record.characterName);
             return (
-            <button key={record.id} onClick={() => { setRecordDetailId(record.id); setViewMode('record-detail'); }} className="w-full scrap-card rounded-2xl p-4 text-left transition hover:bg-[#f7f4ee]">
+            <button key={record.id} onClick={() => { setRecordDetailId(record.id); setViewMode('record-detail'); }} className={`relative w-full bg-white border-2 border-black p-4 text-left transition-transform active:translate-x-px active:translate-y-px ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
+              <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#efece3] border-2 border-black rounded-full -ml-2" />
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full border border-[#e7e2d8] flex items-center justify-center text-sm" style={{ backgroundColor: `${accentColor}35` }}>{record.characterName[0] || '角'}</div>
+                <div className="w-10 h-10 border-2 border-black grayscale flex items-center justify-center text-sm font-serif font-bold overflow-hidden -rotate-2">{record.characterName[0] || '某'}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm">{record.characterName}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{formatDuration(record.durationSec)} · {turnCount}轮对话</div>
+                  <div className="font-serif font-bold text-sm truncate">{record.characterName}</div>
+                  <div className="text-xs text-neutral-500 mt-0.5 font-mono">{formatDuration(record.durationSec)} · {turnCount} 个来回</div>
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record); }} className="text-xs px-2 py-1 rounded-lg text-slate-500 transition hover:text-rose-300">删除</button>
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record); }} className="p-1.5 text-black/40 hover:text-black transition" title="撕掉这张存根"><Trash size={15} weight="bold" /></button>
               </div>
-              <div className="text-xs text-slate-500/90 mt-2.5 italic leading-relaxed line-clamp-2">{keepsake}</div>
-              <div className="text-[10px] text-slate-400 mt-1.5">{record.createdAt}</div>
+              <div className="text-xs text-neutral-600 mt-2.5 italic leading-relaxed line-clamp-2 border-l-2 border-dashed border-black/30 pl-2">{keepsake}</div>
+              <div className="text-[10px] text-neutral-400 mt-1.5 font-mono text-right">{record.createdAt}</div>
             </button>
           );})}
         </div>
 
         {/* Delete confirm overlay */}
         {deleteConfirmRecord && (
-          <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center px-6">
-            <div className="w-full max-w-sm scrap-card rounded-3xl p-5">
-              <div className="text-base font-semibold text-[#2b2933]">删除通话记录？</div>
-              <p className="mt-2 text-sm text-slate-500 leading-relaxed">和 {deleteConfirmRecord.characterName} 的这通通话将被永久删除。</p>
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <button onClick={() => setDeleteConfirmRecord(null)} className="py-2.5 rounded-2xl border border-[#d9d4c8] text-slate-600 transition active:scale-[0.97]">取消</button>
-                <button onClick={confirmDeleteRecord} className="py-2.5 rounded-2xl bg-rose-500/80 text-white font-semibold transition active:scale-[0.97]">删除</button>
+          <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center px-6">
+            <div className="w-full max-w-sm bg-white border-2 border-black p-5 -rotate-1" style={{ boxShadow: '5px 5px 0 #000' }}>
+              <div className="text-base font-serif font-black">撕掉这张存根？</div>
+              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">和 {deleteConfirmRecord.characterName} 的这通电话会被永久撕掉。</p>
+              <div className="mt-5 grid grid-cols-2 gap-2.5">
+                <button onClick={() => setDeleteConfirmRecord(null)} className="py-2.5 border-2 border-black bg-white font-mono active:translate-x-px active:translate-y-px transition-transform">留着</button>
+                <button onClick={confirmDeleteRecord} className="py-2.5 border-2 border-black bg-black text-white font-mono active:translate-x-px active:translate-y-px transition-transform">撕掉</button>
               </div>
             </div>
           </div>
@@ -1148,25 +1158,25 @@ const CallApp: React.FC = () => {
   }
   if (viewMode === 'record-detail' && recordDetail) {
     return (
-      <div className="h-full w-full bg-[#faf9f6] scrap-panel text-[#2b2933] px-5 pt-10 pb-6 flex flex-col">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setViewMode('history')} className="text-sm text-slate-500">← 返回</button>
-          <div className="text-sm text-[#2b2933] font-medium">{recordDetail.characterName}</div>
-          <div className="text-xs text-slate-400">{formatDuration(recordDetail.durationSec)}</div>
+      <div className="h-full w-full text-black px-5 pt-10 pb-6 flex flex-col" style={{ background: '#efece3' }}>
+        <div className="flex items-center justify-between border-b-2 border-black pb-3">
+          <button onClick={() => setViewMode('history')} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform"><CaretLeft size={15} weight="bold" /></button>
+          <div className="text-sm font-serif font-black tracking-widest">{recordDetail.characterName}</div>
+          <div className="text-xs font-mono border-2 border-black bg-white px-2 py-0.5">{formatDuration(recordDetail.durationSec)}</div>
         </div>
         <div className="mt-2 text-center">
-          <p className="text-xs text-slate-400 italic">{recordDetail.createdAt}</p>
+          <p className="text-[11px] text-neutral-500 font-mono italic">{recordDetail.createdAt}</p>
         </div>
-        <div className="mt-4 flex-1 overflow-y-auto space-y-2.5">
+        <div className="mt-4 flex-1 overflow-y-auto space-y-3 pr-0.5">
           {recordDetail.transcript.map(item => (
-            <div key={item.id} className={`rounded-2xl px-3.5 py-2.5 ${item.role === 'user' ? 'bg-[#ece7dc] ml-6' : 'bg-white border border-[#ece9e1] mr-6'}`}>
-              <div className="text-[10px] text-slate-400">{item.role === 'user' ? '你' : recordDetail.characterName} · {item.time}</div>
+            <div key={item.id} className={`border-2 border-black px-3.5 py-2.5 bg-white ${item.role === 'user' ? 'ml-7' : 'mr-7'}`} style={{ boxShadow: item.role === 'user' ? '-3px 3px 0 rgba(27,26,23,0.18)' : '3px 3px 0 rgba(27,26,23,0.18)' }}>
+              <div className="text-[10px] text-neutral-500 font-mono uppercase tracking-wider">{item.role === 'user' ? '我' : recordDetail.characterName} · {item.time}</div>
               <div className="text-sm mt-1 leading-relaxed">{(() => {
                 if (item.role !== 'assistant') return item.text;
                 const { display, voiceText } = extractVoiceTag(item.text);
-                return <>{display}{voiceText && <div className="mt-1 text-[10px] text-slate-400/60 italic">{voiceText}</div>}</>;
+                return <>{display}{voiceText && <div className="mt-1 text-[10px] text-neutral-400 italic">{voiceText}</div>}</>;
               })()}</div>
-              {!!item.audioUrl && <button onClick={() => playAudio(item.audioUrl)} className="mt-2 text-xs px-2.5 py-1 rounded-full bg-white border border-[#e0dccf] text-slate-500 transition hover:bg-[#f4f1ea]">重播语音</button>}
+              {!!item.audioUrl && <button onClick={() => playAudio(item.audioUrl)} className="mt-2 inline-flex items-center gap-1 text-xs px-2.5 py-1 border-2 border-black bg-white font-mono transition active:scale-95"><Play size={11} weight="fill" />再放一遍</button>}
             </div>
           ))}
         </div>
@@ -1176,44 +1186,46 @@ const CallApp: React.FC = () => {
             resetCurrentCall();
             setViewMode('in-call');
           }}
-          className="w-full py-3 rounded-2xl mt-4 font-medium text-white transition active:scale-[0.98]"
-          style={{ backgroundColor: accentColor }}
-        >再打一通</button>
+          className="w-full py-3 mt-4 border-2 border-black bg-black text-white font-mono uppercase tracking-widest transition-transform active:translate-x-px active:translate-y-px flex items-center justify-center gap-2"
+          style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.4)' }}
+        ><Phone size={16} weight="fill" />再拨一通</button>
       </div>
     );
   }
   return (
-    <div className="h-full w-full relative bg-[#faf9f6] text-[#2b2933] flex flex-col overflow-hidden">
+    <div className="h-full w-full relative text-black flex flex-col overflow-hidden" style={{ background: '#efece3' }}>
       <div
-        className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-45"
+        className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-25 grayscale"
         style={{ backgroundImage: (selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar) ? `url(${selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar})` : undefined }}
       />
-      {/* 会话设置「通话立绘」：默认立绘作为通话形象铺在背景之上 */}
+      {/* 会话设置「通话立绘」：默认立绘作为通话形象铺在背景之上（黑白处理） */}
       {selectedChar?.convoSettings?.callSprites?.['默认'] && (
         <img
           src={selectedChar.convoSettings.callSprites['默认']}
           alt=""
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 max-h-[72%] max-w-[88%] object-contain pointer-events-none select-none opacity-90"
+          className="absolute bottom-0 left-1/2 -translate-x-1/2 max-h-[72%] max-w-[88%] object-contain pointer-events-none select-none opacity-80 grayscale"
         />
       )}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#faf9f6]/65 via-[#faf9f6]/80 to-[#faf9f6]/95" />
+      {/* 报纸网点纹理 */}
+      <div className="absolute inset-0 opacity-[0.06] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#1b1a17 1px, transparent 1px)', backgroundSize: '7px 7px' }} />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#efece3]/70 via-[#efece3]/82 to-[#efece3]/95" />
       <div className="relative z-10 flex flex-col h-full">
-      <div className="px-4 pt-10 pb-3 border-b border-dashed border-[#d9d4c8] flex items-center justify-between">
-        <button onClick={handleHangup} className="text-sm text-slate-500">挂断</button>
+      <div className="px-4 pt-10 pb-3 border-b-2 border-black flex items-center justify-between">
+        <button onClick={handleHangup} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断"><PhoneDisconnect size={15} weight="bold" /></button>
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ backgroundColor: `${accentColor}50` }}>{selectedChar?.avatar ? <img src={selectedChar.avatar} alt="" className="w-full h-full rounded-full object-cover" /> : (selectedChar?.name?.[0] || '角')}</div>
-          <div className="text-sm">{selectedChar?.name || '未选择角色'}</div>
+          <div className="w-8 h-8 border-2 border-black grayscale flex items-center justify-center text-xs font-serif font-bold overflow-hidden -rotate-2">{selectedChar?.avatar ? <img src={selectedChar.avatar} alt="" className="w-full h-full object-cover" /> : (selectedChar?.name?.[0] || '某')}</div>
+          <div className="text-sm font-serif font-bold">{selectedChar?.name || '未选号码'}</div>
         </div>
-        <div className="text-sm tabular-nums">{formatDuration(elapsedSeconds)}</div>
+        <div className="text-sm tabular-nums font-mono border-2 border-black bg-white px-1.5 py-0.5">{formatDuration(elapsedSeconds)}</div>
       </div>
-      <div className="px-4 pt-2">
-        <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${callStateStyles.textClass} ${callStateStyles.ringClass}`}>
+      <div className="px-4 pt-2.5">
+        <div className={`inline-flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-xs font-mono uppercase tracking-widest ${callStateStyles.textClass}`}>
           <span>{callStateStyles.label}</span>
           <div className="flex items-end gap-1 h-3" aria-hidden>
             {[10, 18, 13, 16].map((h, idx) => (
               <span
                 key={`${h}-${idx}`}
-                className={`w-1 rounded-full ${callStateStyles.waveClass} ${displayCallState === 'speaking' ? 'animate-pulse' : ''}`}
+                className={`w-1 ${callStateStyles.waveClass} ${displayCallState === 'speaking' ? 'animate-pulse' : ''}`}
                 style={{ height: `${displayCallState === 'speaking' ? h : 6}px`, animationDelay: `${idx * 90}ms` }}
               />
             ))}
@@ -1221,24 +1233,30 @@ const CallApp: React.FC = () => {
         </div>
       </div>
       <div className="pt-4 pb-2 flex flex-col items-center justify-center">
-        <div className={`relative w-36 h-36 rounded-full ring-1 ${callStateStyles.ringClass}`}>
-          <div className={`absolute inset-0 rounded-full ${callStateStyles.waveClass} ${displayCallState === 'speaking' ? 'animate-ping' : 'opacity-50'}`} />
-          <div className={`absolute -inset-4 rounded-full ${callStateStyles.waveClass} ${displayCallState === 'speaking' ? 'animate-pulse' : 'opacity-30'}`} />
-          {selectedChar?.avatar ? <img src={selectedChar.avatar} alt={selectedChar.name} className="relative z-10 w-full h-full rounded-full object-cover" /> : <div className="relative z-10 w-full h-full rounded-full flex items-center justify-center text-3xl" style={{ backgroundColor: `${accentColor}60` }}>{selectedChar?.name?.[0] || '角'}</div>}
+        <div className="relative w-36 h-36 -rotate-2">
+          {/* 拨打中的同心扩散框 */}
+          <div className={`absolute inset-0 border-2 border-black ${displayCallState === 'speaking' ? 'animate-ping' : 'opacity-40'}`} />
+          <div className={`absolute -inset-3 border-2 border-dashed border-black ${displayCallState === 'speaking' ? 'animate-pulse' : 'opacity-25'}`} />
+          {selectedChar?.avatar
+            ? <img src={selectedChar.avatar} alt={selectedChar.name} className="relative z-10 w-full h-full object-cover border-2 border-black grayscale" style={{ boxShadow: '4px 4px 0 #000' }} />
+            : <div className="relative z-10 w-full h-full border-2 border-black bg-white flex items-center justify-center text-3xl font-serif font-bold" style={{ boxShadow: '4px 4px 0 #000' }}>{selectedChar?.name?.[0] || '某'}</div>}
+          {/* 照片角 */}
+          <span className="absolute z-20 -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-black" />
+          <span className="absolute z-20 -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-black" />
         </div>
       </div>
       <div ref={callScrollableRef} className="flex-1 overflow-y-auto no-scrollbar px-6 py-2 space-y-3">
         {!bubbles.length && (
           <div className="flex flex-col items-center justify-center py-6 text-center">
-            <p className="text-base text-slate-600">电话已接通</p>
-            <p className="text-sm text-slate-500 mt-2">
+            <p className="text-base font-serif font-bold">线已接通</p>
+            <p className="text-sm text-neutral-600 mt-2">
               {callState === 'connecting'
                 ? `${selectedChar?.name || '对方'}正在接听……`
-                : selectedChar?.name ? `${selectedChar.name}在等你开口……` : '对方在等你开口……'}
+                : selectedChar?.name ? `${selectedChar.name}在听筒那头等你开口……` : '对方在听筒那头等你开口……'}
             </p>
             {callState === 'connecting'
-              ? <p className="text-xs text-slate-400 mt-4 animate-pulse">请稍等</p>
-              : <p className="text-xs text-slate-400 mt-4">在下方输入你想说的话</p>}
+              ? <p className="text-xs text-neutral-400 mt-4 animate-pulse font-mono uppercase tracking-widest">请稍等</p>
+              : <p className="text-xs text-neutral-400 mt-4 font-mono">在下方写下你想说的话</p>}
           </div>
         )}
         {bubbles.map((bubble, index) => {
@@ -1274,51 +1292,51 @@ const CallApp: React.FC = () => {
             style={{ opacity }}
             className={`px-1 py-1 ${bubble.role === 'user' ? 'text-right' : ''}`}
           >
-            <div className="text-[10px] text-slate-400 mb-1">{bubble.role === 'user' ? '你' : selectedChar?.name} · {bubble.time}</div>
-            <div className={`${sizeClass} whitespace-pre-wrap leading-relaxed ${bubble.role === 'user' ? 'text-slate-600' : 'text-[#2b2933]'}`}>
+            <div className="text-[10px] text-neutral-500 mb-1 font-mono uppercase tracking-wider">{bubble.role === 'user' ? '我' : selectedChar?.name} · {bubble.time}</div>
+            <div className={`${sizeClass} whitespace-pre-wrap leading-relaxed ${bubble.role === 'user' ? 'text-neutral-600' : 'text-black'}`}>
               {bubble.role === 'assistant' ? (() => {
                 const { display, voiceText } = extractVoiceTag(line || bubble.text);
                 return <>
                   {renderAssistantLine(display)}
-                  {voiceText && <div className="mt-1 text-[11px] text-slate-300/60 italic">{voiceText}</div>}
+                  {voiceText && <div className="mt-1 text-[11px] text-neutral-400 italic">{voiceText}</div>}
                 </>;
               })() : (line || bubble.text)}
             </div>
             {isLatest && bubble.role === 'assistant' && (
-              <div className="mt-2 flex gap-2">
-                {bubble.audioUrl && <button onClick={() => playAudio(bubble.audioUrl)} className="text-xs px-2.5 py-1 rounded-full bg-white border border-[#e0dccf] text-slate-500 transition hover:bg-[#f4f1ea]">重播语音</button>}
-                <button onClick={() => handleRerollAssistant(bubble)} disabled={!!rerollingBubbleId} className="text-xs px-2.5 py-1 rounded-full bg-white border border-[#e0dccf] text-slate-500 transition hover:bg-[#f4f1ea] disabled:opacity-40">{rerollingBubbleId === bubble.id ? '换一种说法…' : '换个说法'}</button>
+              <div className="mt-2 flex gap-2 justify-start">
+                {bubble.audioUrl && <button onClick={() => playAudio(bubble.audioUrl)} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 border-2 border-black bg-white font-mono transition active:scale-95"><Play size={11} weight="fill" />再放一遍</button>}
+                <button onClick={() => handleRerollAssistant(bubble)} disabled={!!rerollingBubbleId} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 border-2 border-black bg-white font-mono transition active:scale-95 disabled:opacity-40"><ArrowsClockwise size={11} weight="bold" className={rerollingBubbleId === bubble.id ? 'animate-spin' : ''} />{rerollingBubbleId === bubble.id ? '换种说法…' : '换种说法'}</button>
               </div>
             )}
           </div>
         )})}
-        {errorMessage && <div className="text-xs text-rose-300/80 px-1">{errorMessage}</div>}
+        {errorMessage && <div className="text-xs text-black bg-white border-2 border-dashed border-black px-2 py-1 font-mono">{errorMessage}</div>}
       </div>
       {showInputPanel && (
         <div className="px-4 pb-2">
-          <div className="rounded-2xl border border-[#e0dccf] bg-white/85 backdrop-blur-sm p-2 flex gap-2">
+          <div className="border-2 border-black bg-white p-2 flex gap-2" style={{ boxShadow: '3px 3px 0 #000' }}>
             <input
               value={draftInput}
               onChange={(e) => setDraftInput(e.target.value)}
-              className="flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-slate-400"
-              placeholder={sendingBusy ? `${selectedChar?.name || '对方'}正在想……` : `想对${selectedChar?.name || '对方'}说什么？`}
+              className="flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-neutral-400"
+              placeholder={sendingBusy ? `${selectedChar?.name || '对方'}在斟酌……` : `想对${selectedChar?.name || '对方'}说些什么？`}
               autoFocus
             />
-            <button onClick={handleTurn} disabled={sendingBusy} className="px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 transition active:scale-95" style={{ backgroundColor: accentColor }}>{sendingBusy ? '…' : '说'}</button>
+            <button onClick={handleTurn} disabled={sendingBusy} className="px-4 py-2 border-2 border-black bg-black text-white text-sm font-mono tracking-widest disabled:opacity-40 transition active:scale-95">{sendingBusy ? '…' : '说'}</button>
           </div>
         </div>
       )}
       <div className="px-5 pb-5 pt-1.5">
-        <div className="glass-pill rounded-3xl px-6 py-3 flex items-center justify-between">
-          <button onClick={() => setShowInputPanel(prev => !prev)} className={`w-12 h-12 rounded-full border flex items-center justify-center transition ${showInputPanel ? 'bg-emerald-100 border-emerald-300' : 'bg-white border-[#e0dccf]'}`}>
-            <Microphone size={22} weight="fill" className={showInputPanel ? 'text-emerald-600' : 'text-slate-500'} />
+        <div className="border-2 border-black bg-white px-6 py-3 flex items-center justify-between" style={{ boxShadow: '4px 4px 0 #000' }}>
+          <button onClick={() => setShowInputPanel(prev => !prev)} className={`w-12 h-12 border-2 border-black flex items-center justify-center transition active:translate-x-px active:translate-y-px ${showInputPanel ? 'bg-black text-white' : 'bg-white text-black'}`} title="写字板">
+            <Microphone size={22} weight="fill" />
           </button>
           <button
             onClick={() => setShowLangPicker(prev => !prev)}
-            className={`w-12 h-12 rounded-full border flex items-center justify-center transition ${voiceLang ? 'bg-amber-100 border-amber-300' : 'bg-white border-[#e0dccf]'}`}
+            className={`w-12 h-12 border-2 border-black flex items-center justify-center transition active:translate-x-px active:translate-y-px ${voiceLang ? 'bg-black text-white' : 'bg-white text-black'}`}
             title="语音语种"
           >
-            <Translate size={22} weight="fill" className={voiceLang ? 'text-amber-600' : 'text-slate-500'} />
+            <Translate size={22} weight="fill" />
           </button>
           <button
             onClick={() => {
@@ -1326,15 +1344,15 @@ const CallApp: React.FC = () => {
               setIsSpeakerOn(next);
               if (!next && isAudioPlaying) pauseAudio();
             }}
-            className={`w-12 h-12 rounded-full border flex items-center justify-center transition ${isSpeakerOn ? 'bg-cyan-100 border-cyan-300' : 'bg-rose-100 border-rose-300'}`}
+            className={`w-12 h-12 border-2 border-black flex items-center justify-center transition active:translate-x-px active:translate-y-px ${isSpeakerOn ? 'bg-white text-black' : 'bg-black text-white'}`}
             title={isSpeakerOn ? '静音（不调用语音合成）' : '取消静音'}
           >
             {isSpeakerOn
-              ? <SpeakerHigh size={22} weight="fill" className="text-cyan-600" />
-              : <SpeakerSlash size={22} weight="fill" className="text-rose-500" />}
+              ? <SpeakerHigh size={22} weight="fill" />
+              : <SpeakerSlash size={22} weight="fill" />}
           </button>
-          <button onClick={handleHangup} className="w-14 h-14 rounded-full bg-rose-400 border border-rose-300 shadow-[0_10px_22px_-10px_rgba(244,63,94,0.6)] flex items-center justify-center transition active:scale-95">
-            <PhoneDisconnect size={24} weight="fill" className="text-rose-950" />
+          <button onClick={handleHangup} className="w-14 h-14 border-2 border-black bg-black text-white flex items-center justify-center transition active:translate-x-px active:translate-y-px" style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.35)' }} title="挂断">
+            <PhoneDisconnect size={24} weight="fill" />
           </button>
         </div>
       </div>
@@ -1347,14 +1365,17 @@ const CallApp: React.FC = () => {
         onEnded={() => { setIsAudioPlaying(false); if (callState === 'speaking') setCallState('listening'); }}
       />
       {showLangPicker && (
-        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setShowLangPicker(false)}>
-          <div className="w-full bg-white border-t border-[#ece9e1] rounded-t-3xl p-5 space-y-3" onClick={e => e.stopPropagation()}>
-            <div className="text-sm text-slate-700 font-medium">语音语种</div>
-            <p className="text-xs text-slate-400">选择后，角色会用中文回复，语音则用对应语种朗读</p>
+        <div className="absolute inset-0 z-[60] bg-black/60 flex items-end" onClick={() => setShowLangPicker(false)}>
+          <div className="w-full bg-white border-t-2 border-black p-5 space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-serif font-black tracking-widest">语音语种</div>
+              <span className="border-2 border-dashed border-black px-1.5 font-mono text-[9px] uppercase -rotate-3">lang</span>
+            </div>
+            <p className="text-xs text-neutral-500 font-mono">选定后，角色用中文回复，语音改用对应语种朗读。</p>
             <div className="flex flex-wrap gap-2 pt-1">
               {VOICE_LANG_OPTIONS.map(opt => (
                 <button key={opt.value} onClick={() => { setVoiceLang(opt.value); setShowLangPicker(false); }}
-                  className={`text-xs px-3 py-2 rounded-full font-medium transition-colors ${voiceLang === opt.value ? 'bg-[#2b2933] text-white' : 'bg-[#f4f1ea] text-slate-600 hover:bg-[#ece7dc]'}`}>
+                  className={`text-xs px-3 py-2 border-2 border-black font-mono transition active:translate-x-px active:translate-y-px ${voiceLang === opt.value ? 'bg-black text-white' : 'bg-white text-black'}`}>
                   {opt.label}
                 </button>
               ))}
@@ -1363,23 +1384,23 @@ const CallApp: React.FC = () => {
         </div>
       )}
       {showHangupConfirm && (
-        <div className="absolute inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center px-6">
-          <div className="w-full max-w-sm scrap-card rounded-3xl p-5">
-            <div className="text-lg font-semibold text-[#2b2933]">要挂了吗？</div>
-            <p className="mt-2 text-sm text-slate-500 leading-relaxed">和{selectedChar?.name || '对方'}聊了 {formatDuration(elapsedSeconds)}，这通电话会好好保存下来。</p>
-            <div className="mt-5 space-y-2">
+        <div className="absolute inset-0 z-[70] bg-black/60 flex items-center justify-center px-6">
+          <div className="w-full max-w-sm bg-white border-2 border-black p-5 -rotate-1" style={{ boxShadow: '5px 5px 0 #000' }}>
+            <div className="text-lg font-serif font-black">要收线了吗？</div>
+            <p className="mt-2 text-sm text-neutral-600 leading-relaxed">和 {selectedChar?.name || '对方'}聊了 {formatDuration(elapsedSeconds)}，这通电话会好好压成一张存根。</p>
+            <div className="mt-5 space-y-2.5">
               <button onClick={() => {
                 setShowHangupConfirm(false);
                 if (selectedChar) {
                   suspendCall({ charId: selectedChar.id, charName: selectedChar.name, charAvatar: selectedChar.avatar, startedAt: callStartedAt || Date.now(), bubbles, sessionId: currentSessionId, elapsedSeconds, voiceLang });
-                  addToast('通话已挂起，点击顶部绿色条可随时回来', 'success');
+                  addToast('通话先搁着了，点顶部那道条随时接回来', 'success');
                 }
-              }} className="w-full py-2.5 rounded-2xl bg-emerald-500/80 text-white font-semibold transition active:scale-[0.97] flex items-center justify-center gap-2">
-                <span>先忙别的</span><span className="text-xs opacity-70">（挂起通话）</span>
+              }} className="w-full py-2.5 border-2 border-black bg-black text-white font-mono tracking-widest transition active:translate-x-px active:translate-y-px flex items-center justify-center gap-2">
+                <span>先忙别的</span><span className="text-xs opacity-70">（搁置通话）</span>
               </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setShowHangupConfirm(false)} className="py-2.5 rounded-2xl border border-[#d9d4c8] text-slate-600 transition active:scale-[0.97]">再聊会儿</button>
-                <button onClick={finishCall} className="py-2.5 rounded-2xl bg-rose-400 text-white font-semibold transition active:scale-[0.97]">挂了吧</button>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button onClick={() => setShowHangupConfirm(false)} className="py-2.5 border-2 border-black bg-white font-mono transition active:translate-x-px active:translate-y-px">再聊会儿</button>
+                <button onClick={finishCall} className="py-2.5 border-2 border-black bg-black text-white font-mono transition active:translate-x-px active:translate-y-px">收线</button>
               </div>
             </div>
           </div>
@@ -1387,12 +1408,12 @@ const CallApp: React.FC = () => {
       )}
       {editingBubble && (
         <div className="absolute inset-0 bg-black/60 flex items-end z-50">
-          <div className="w-full bg-white border-t border-[#ece9e1] p-5 space-y-3">
-            <div className="text-sm text-slate-700">改一下刚才说的话</div>
-            <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full h-24 bg-[#f4f1ea] rounded-xl p-3 text-sm outline-none resize-none placeholder:text-slate-400" placeholder="重新措辞……" autoFocus />
-            <div className="flex gap-2">
-              <button onClick={() => setEditingBubble(null)} className="flex-1 py-2.5 rounded-xl border border-[#d9d4c8] text-slate-600 transition active:scale-[0.97]">算了</button>
-              <button onClick={saveEditedBubble} className="flex-1 py-2.5 rounded-xl font-medium text-white transition active:scale-[0.97]" style={{ backgroundColor: accentColor }}>就这样</button>
+          <div className="w-full bg-white border-t-2 border-black p-5 space-y-3">
+            <div className="text-sm font-serif font-bold">改一下刚才说的话</div>
+            <textarea value={editingText} onChange={(e) => setEditingText(e.target.value)} className="w-full h-24 bg-[#efece3] border-2 border-black p-3 text-sm outline-none resize-none placeholder:text-neutral-400" placeholder="重新措辞……" autoFocus />
+            <div className="flex gap-2.5">
+              <button onClick={() => setEditingBubble(null)} className="flex-1 py-2.5 border-2 border-black bg-white font-mono transition active:translate-x-px active:translate-y-px">算了</button>
+              <button onClick={saveEditedBubble} className="flex-1 py-2.5 border-2 border-black bg-black text-white font-mono transition active:translate-x-px active:translate-y-px">就这样</button>
             </div>
           </div>
         </div>

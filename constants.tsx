@@ -104,7 +104,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Regex, name: '补丁铺', icon: 'Regex', color: 'teal' },
   { id: AppID.Appearance, name: '拼贴册', icon: 'Appearance', color: 'slate' },
   // ── 后续页 ──
-  { id: AppID.MemoryPalace, name: '记忆宫殿', icon: 'MemoryPalace', color: 'violet' },
+  { id: AppID.MemoryPalace, name: '回忆标本馆', icon: 'MemoryPalace', color: 'violet' },
   { id: AppID.Room, name: '小小窝', icon: 'Room', color: 'rose' },
   // 查手机已并入聊天 App：聊天界面底部 + 号面板 →「查手机」（不再是独立桌面 App）
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
@@ -125,7 +125,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
-  { id: AppID.Phone, name: '电话', icon: 'Phone', color: 'green' },
+  { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
   { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
   { id: AppID.Guidebook, name: '攻略本', icon: 'Guidebook', color: 'slate' },
   { id: AppID.LifeSim, name: '都市人生', icon: 'LifeSim', color: 'purple' },
