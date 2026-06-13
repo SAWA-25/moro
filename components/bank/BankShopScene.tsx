@@ -250,7 +250,7 @@ Language: Chinese.`;
 
                     {/* Sprite */}
                     <div className={`text-5xl filter drop-shadow-lg transform group-hover:scale-110 transition-transform select-none relative z-10 origin-bottom ${isOwnerVisiting ? 'animate-pulse' : ''}`}>
-                        {s.avatar.startsWith('http') || s.avatar.startsWith('data') ? <img src={s.avatar} className="w-14 h-14 object-contain rounded-lg" /> : s.avatar}
+                        {s.avatar.startsWith('http') || s.avatar.startsWith('data') ? <img src={s.avatar} className="w-14 h-14 object-contain rounded-lg" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : s.avatar}
                     </div>
 
                     {/* Name Tag */}
