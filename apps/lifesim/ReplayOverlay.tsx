@@ -1,12 +1,11 @@
 /**
- * NarrativeReplayOverlay — 叙事回放 (retro window style)
- * Looks like a retro OS notification/dialog window
+ * NarrativeReplayOverlay — 叙事回放（拼贴手账 · 翻页明信片）
  */
 
 import React from 'react';
 import { SimAction } from '../../types';
 import {
-    Alien, BookOpen, Lightning, Globe, ChatCircleDots, WarningCircle,
+    Alien, BookOpen, Lightning, Globe, ChatCircleDots, BookmarkSimple, CaretRight,
 } from '@phosphor-icons/react';
 import StoryAttachments from './StoryAttachments';
 import { formatLifeSimActionDescription } from '../../utils/lifeSimTone';
@@ -36,159 +35,129 @@ const NarrativeReplayOverlay: React.FC<{
     const storyLabel = action.storyKind === 'main_plot'
         ? '主线剧情'
         : action.storyKind === 'character_drama'
-            ? '角色剧情'
+            ? '街坊剧情'
             : action.storyKind === 'system'
                 ? '系统播报'
                 : null;
     const accent = action.storyKind === 'main_plot'
         ? '#b86c3d'
         : action.storyKind === 'system'
-            ? '#7f8c9b'
-            : toneStyle?.accent || '#8b7bb8';
+            ? '#9b958a'
+            : toneStyle?.accent || '#6f9b6a';
+
+    const box: React.CSSProperties = {
+        padding: '7px 10px', borderRadius: 10, marginBottom: 9,
+        background: 'rgba(120,116,106,0.05)', border: '1px dashed rgba(167,162,151,0.45)',
+    };
 
     return (
         <div className="absolute inset-0 flex items-center justify-center z-50 px-4"
-            style={{ background: 'rgba(0,0,0,0.35)' }}>
-            <div className="retro-window w-full" style={{
-                maxWidth: 320,
+            style={{ background: 'rgba(43,41,51,0.4)', animation: 'fadeIn 0.25s ease' }}>
+            <div className="scrap-card relative" style={{
+                width: '100%', maxWidth: 320,
                 maxHeight: 'calc(var(--app-height, 100lvh) - 32px)',
-                boxShadow: '4px 4px 0px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',
-                borderColor: accent,
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
+                borderTop: `4px solid ${accent}`,
+                borderRadius: 16,
+                display: 'flex', flexDirection: 'column', minHeight: 0,
+                animation: 'popIn 0.3s cubic-bezier(0.175,0.885,0.32,1.275)',
             }}>
-                {/* Titlebar */}
-                <div className="retro-titlebar" style={{
-                    background: `linear-gradient(180deg, ${accent}cc, ${accent})`,
-                    flexShrink: 0,
-                }}>
-                    <span>replay.exe - {currentIndex + 1}/{actions.length}</span>
+                {/* 顶部胶带 */}
+                <span style={{
+                    position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2deg)',
+                    width: 100, height: 18, background: `${accent}33`,
+                    borderLeft: `1px dashed ${accent}66`, borderRight: `1px dashed ${accent}66`,
+                    pointerEvents: 'none',
+                }} />
+
+                {/* 页眉 */}
+                <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                    <span className="font-hand" style={{ fontSize: 16, fontWeight: 700, color: accent }}>回放</span>
                     <div className="flex items-center gap-1.5">
-                        {storyLabel && (
-                            <span style={{ fontSize: 8, opacity: 0.9 }}>[ {storyLabel} ]</span>
-                        )}
-                        {toneStyle && (
-                            <span style={{ fontSize: 8, opacity: 0.8 }}>[ {toneStyle.label} ]</span>
-                        )}
+                        {storyLabel && <span className="font-hand" style={{ fontSize: 11, color: '#a79c8e' }}>{storyLabel}</span>}
+                        {toneStyle && <span style={{ fontSize: 9, fontWeight: 700, color: accent, border: `1px solid ${accent}55`, borderRadius: 999, padding: '0 6px' }}>{toneStyle.label}</span>}
+                        <span className="label-mono" style={{ fontSize: 9, color: '#bcb5a8' }}>{currentIndex + 1}/{actions.length}</span>
                     </div>
                 </div>
+                <div className="lace-edge mx-4" />
 
-                <div
-                    className="no-scrollbar"
-                    style={{
-                        padding: 12,
-                        overflowY: 'auto',
-                        overflowX: 'hidden',
-                        minHeight: 0,
-                        flex: 1,
-                        overscrollBehavior: 'contain',
-                    }}
-                >
-                    {/* Character info */}
+                <div className="no-scrollbar" style={{ padding: 14, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, flex: 1, overscrollBehavior: 'contain' }}>
+                    {/* 人物 */}
                     <div className="flex items-start gap-2.5 mb-3">
                         <div style={{
-                            width: 36, height: 36, borderRadius: 4,
-                            background: 'rgba(0,0,0,0.05)',
-                            border: '2px solid rgba(0,0,0,0.1)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            overflow: 'hidden', flexShrink: 0,
+                            width: 38, height: 38, borderRadius: 8, padding: 2,
+                            background: '#fbfaf7', outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0,
                         }}>
                             {action.actorAvatar?.startsWith('http') || action.actorAvatar?.startsWith('data:')
-                                ? <img src={action.actorAvatar} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 3 }} alt="" />
+                                ? <img src={action.actorAvatar} style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6 }} alt="" />
                                 : action.actorAvatar ? <span style={{ fontSize: 18 }}>{action.actorAvatar}</span>
-                                : <Alien size={18} weight="bold" style={{ color: '#aaa' }} />}
+                                : <Alien size={18} weight="bold" style={{ color: '#bcb5a8' }} />}
                         </div>
                         <div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <p style={{ fontSize: 12, fontWeight: 700, color: accent }}>{action.actor}</p>
-                                {storyLabel && (
-                                    <span style={{
-                                        fontSize: 8,
-                                        fontWeight: 700,
-                                        color: accent,
-                                        border: `1px solid ${accent}55`,
-                                        borderRadius: 999,
-                                        padding: '1px 5px',
-                                        background: `${accent}12`,
-                                    }}>
-                                        {storyLabel}
-                                    </span>
-                                )}
-                            </div>
-                            <p style={{ fontSize: 9, color: '#aaa', fontFamily: 'monospace' }}>第 {action.turnNumber} 回合</p>
+                            <p className="font-hand" style={{ fontSize: 15, fontWeight: 700, color: accent }}>{action.actor}</p>
+                            <p className="label-mono" style={{ fontSize: 8.5, color: '#bcb5a8' }}>page {action.turnNumber}</p>
                         </div>
                     </div>
 
                     {action.headline && (
-                        <div className="retro-inset" style={{ padding: '6px 8px', marginBottom: 8 }}>
-                            <p style={{ fontSize: 9, fontWeight: 600, color: accent, marginBottom: 3 }}>
-                                剧情标题
-                            </p>
-                            <p style={{ fontSize: 12, color: '#403847', lineHeight: 1.45, fontWeight: 700 }}>
-                                {action.headline}
-                            </p>
+                        <div style={box}>
+                            <p className="font-hand" style={{ fontSize: 11, fontWeight: 700, color: accent, marginBottom: 3 }}>标题</p>
+                            <p className="font-hand" style={{ fontSize: 16, color: '#2b2933', lineHeight: 1.4, fontWeight: 700 }}>{action.headline}</p>
                         </div>
                     )}
 
-                    {/* Inner thought */}
                     {(narrative?.innerThought || action.reasoning) && (
-                        <div className="retro-inset" style={{ padding: '6px 8px', marginBottom: 8 }}>
-                            <p style={{ fontSize: 9, fontWeight: 600, color: '#b89840', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <ChatCircleDots size={10} weight="bold" /> 内心独白
+                        <div style={box}>
+                            <p className="font-hand" style={{ fontSize: 11, fontWeight: 700, color: '#b89840', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                <ChatCircleDots size={11} weight="bold" /> 内心独白
                             </p>
-                            <p style={{ fontSize: 10, color: '#887750', lineHeight: 1.5, fontStyle: 'italic' }}>
+                            <p className="font-hand" style={{ fontSize: 13, color: '#887750', lineHeight: 1.55, fontStyle: 'italic' }}>
                                 "{narrative?.innerThought || action.reasoning}"
                             </p>
                         </div>
                     )}
 
-                    {/* Dialogue */}
                     {narrative?.dialogue && (
-                        <div className="retro-inset" style={{ padding: '6px 8px', marginBottom: 8 }}>
-                            <p style={{ fontSize: 9, fontWeight: 600, color: '#888', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <BookOpen size={10} weight="bold" /> 场景
+                        <div style={box}>
+                            <p className="font-hand" style={{ fontSize: 11, fontWeight: 700, color: '#a79c8e', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                <BookOpen size={11} weight="bold" /> 场景
                             </p>
-                            <p style={{ fontSize: 10, color: '#555', lineHeight: 1.5 }}>{narrative.dialogue}</p>
+                            <p style={{ fontSize: 11.5, color: '#5c574f', lineHeight: 1.55 }}>{narrative.dialogue}</p>
                         </div>
                     )}
 
-                    {/* Action description */}
-                    <p style={{ fontSize: 11, color: '#333', lineHeight: 1.5, marginBottom: 8, fontWeight: 500 }}>
+                    <p style={{ fontSize: 12, color: '#3f3a32', lineHeight: 1.55, marginBottom: 9, fontWeight: 500 }}>
                         {displayDescription}
                     </p>
 
-                    {/* Result */}
-                    <div className="retro-inset" style={{ padding: '6px 8px' }}>
-                        <p style={{ fontSize: 9, fontWeight: 600, color: '#888', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <Lightning size={10} weight="bold" /> 结果
+                    <div style={{ ...box, marginBottom: 0 }}>
+                        <p className="font-hand" style={{ fontSize: 11, fontWeight: 700, color: '#a79c8e', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Lightning size={11} weight="bold" /> 结果
                         </p>
-                        <p style={{ fontSize: 11, color: '#444', lineHeight: 1.4 }}>{action.immediateResult}</p>
+                        <p style={{ fontSize: 12, color: '#3f3a32', lineHeight: 1.5 }}>{action.immediateResult}</p>
                     </div>
 
                     <StoryAttachments attachments={action.attachments} />
 
-                    {/* Comment on world */}
                     {narrative?.commentOnWorld && (
-                        <p style={{ fontSize: 9, color: '#aaa', fontStyle: 'italic', marginTop: 8, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                        <p style={{ fontSize: 10, color: '#a79c8e', fontStyle: 'italic', marginTop: 9, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                             <Globe size={9} weight="bold" /> "{narrative.commentOnWorld}"
                         </p>
                     )}
 
-                    {/* Reaction to user */}
                     {action.reactionToUser && (
-                        <p style={{ fontSize: 9, color: '#9080a0', fontStyle: 'italic', marginTop: 4, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <ChatCircleDots size={9} weight="bold" /> "{action.reactionToUser}"
+                        <p className="font-hand" style={{ fontSize: 12, color: '#9080a0', fontStyle: 'italic', marginTop: 5, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                            <ChatCircleDots size={10} weight="bold" /> "{action.reactionToUser}"
                         </p>
                     )}
                 </div>
 
-                {/* Action button */}
-                <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
+                {/* 翻页 */}
+                <div style={{ padding: '10px 16px 14px' }}>
                     <button onClick={onNext}
-                        className="retro-btn retro-btn-primary w-full flex items-center justify-center gap-1"
-                        style={{ padding: '7px 12px', background: `linear-gradient(180deg, ${accent}cc, ${accent})`, borderColor: accent }}>
-                        {isLast ? <><WarningCircle size={12} weight="bold" /> 回到游戏</> : '下一条 →'}
+                        className="scrap-btn w-full flex items-center justify-center gap-1.5"
+                        style={{ padding: '11px', background: accent, fontFamily: 'var(--font-hand)', fontSize: 15, fontWeight: 700 }}>
+                        {isLast ? <><BookmarkSimple size={15} weight="bold" /> 合上回放</> : <>翻下一页 <CaretRight size={14} weight="bold" /></>}
                     </button>
                 </div>
             </div>

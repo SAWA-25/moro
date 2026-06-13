@@ -1,6 +1,6 @@
 /**
- * LifeSimApp — 都市模拟人生 · 2026现代版
- * 核心体验：看角色操控都市居民，制造都市Drama，离线回来发现整栋楼翻天覆地
+ * LifeSimApp — 街角 · 拼贴手账版
+ * 核心体验：翻着手账看角色操控街坊邻里，制造街角Drama，离线回来发现整条街翻天覆地
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -28,8 +28,8 @@ import { extractJson, safeFetchJson } from '../utils/safeApi';
 import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
-    Buildings, ArrowCounterClockwise, Gear, Star, Hourglass,
-    MaskHappy, UserPlus, Eye, UsersThree, MaskSad, HeartHalf, Lightning, MapTrifold,
+    Storefront, ArrowLeft, ArrowCounterClockwise, GearSix, Star,
+    MaskHappy, UserPlus, Eye, UsersThree, ChatsCircle, HeartHalf, MapTrifold,
 } from '@phosphor-icons/react';
 
 // Twemoji helper: converts an emoji string to a Twemoji CDN <img> tag
@@ -67,6 +67,14 @@ const CHAR_TURN_COUNT_RANGE = [1, 3] as const;
 const MAIN_PLOT_WATCH_CHANCE = 0.45;
 const genId = () => Math.random().toString(36).slice(2, 10);
 
+// 季节胶带色：奶油纸基不变，只在胶带 / 印章 / 贴纸的点缀色上体现季节
+const SEASON_SCRAP: Record<string, { accent: string; tape: string; tape2: string; hanzi: string }> = {
+    spring: { accent: '#6f9b6a', tape: 'rgba(150,190,150,0.5)', tape2: 'rgba(196,220,176,0.55)', hanzi: '春' },
+    summer: { accent: '#4f8bb0', tape: 'rgba(120,180,210,0.46)', tape2: 'rgba(176,210,228,0.55)', hanzi: '夏' },
+    fall:   { accent: '#b07442', tape: 'rgba(205,150,95,0.46)', tape2: 'rgba(228,196,156,0.55)', hanzi: '秋' },
+    winter: { accent: '#737da0', tape: 'rgba(150,160,190,0.46)', tape2: 'rgba(202,208,224,0.6)', hanzi: '冬' },
+};
+
 // ── API调用 ──────────────────────────────────────────────────────
 
 const AI_MAX_RETRIES = 2;
@@ -91,7 +99,7 @@ async function callCharAI(
                         response_format: { type: 'json_object' },
                     }),
                 },
-                2, 0, { appName: '都市人生', purpose: '剧情生成' }
+                2, 0, { appName: '街角', purpose: '剧情生成' }
             );
             return data?.choices?.[0]?.message?.content?.trim() || '';
         } catch (e: any) {
@@ -466,7 +474,7 @@ const LifeSimApp: React.FC = () => {
                         narrative: {
                             innerThought: `${char.name}决定先嗑着瓜子围观一轮，看看局面会不会自己炸开。`,
                             dialogue: '',
-                            commentOnWorld: '没接上外部AI的时候，这座城也会自己慢慢酝酿戏剧。',
+                            commentOnWorld: '没接上外部AI的时候，这条街也会自己慢慢酝酿戏剧。',
                             emotionalTone: 'amused',
                         },
                         reactionToUser: '你先继续折腾，我在旁边看戏。',
@@ -672,9 +680,9 @@ const LifeSimApp: React.FC = () => {
         const toneEmoji = getLifeSimToneEmoji(narr?.emotionalTone);
         const tone = toneEmoji ? ` ${toneEmoji}` : '';
         switch (act.type) {
-            case 'ADD_NPC': return `${charName}${tone}往游戏里捏了个叫"${act.newNpcEmoji}${act.newNpcName}"的小人`;
-            case 'TRIGGER_EVENT': return `${charName}${tone}在游戏里制造了${act.eventType}事件：${act.eventDescription || '…'}`;
-            default: return `${charName}${tone}看了看游戏，这轮跳过了`;
+            case 'ADD_NPC': return `${charName}${tone}往本子里捏了个叫"${act.newNpcEmoji}${act.newNpcName}"的小人`;
+            case 'TRIGGER_EVENT': return `${charName}${tone}在街角制造了${act.eventType}事件：${act.eventDescription || '…'}`;
+            default: return `${charName}${tone}翻了翻手账，这页跳过了`;
         }
     }
 
@@ -767,7 +775,7 @@ const LifeSimApp: React.FC = () => {
         const resolvedApiConfig = resolveLifeSimApiConfig(gameState);
 
         setIsResetting(true);
-        setProcessingMsg('正在生成城市小结...');
+        setProcessingMsg('正在把这条街收进手账...');
 
         try {
             let summary = fallbackSummary;
@@ -840,15 +848,13 @@ const LifeSimApp: React.FC = () => {
 
     if (isLoading) {
         return (
-            <div className="h-full flex items-center justify-center" style={{ background: '#c4c0d4' }}>
-                <div className="text-center">
-                    <div className="retro-window mx-auto" style={{ width: 200, padding: 0 }}>
-                        <div className="retro-titlebar"><span>loading...</span><span className="retro-dots">···</span></div>
-                        <div className="p-4 text-center">
-                            <Buildings size={36} weight="duotone" className="mb-2 mx-auto" style={{ color: '#6b5b95' }} />
-                            <p style={{ color: '#6b5b95', fontSize: 11, fontWeight: 700 }}>城市加载中…</p>
-                        </div>
-                    </div>
+            <div className="sj-app h-full flex items-center justify-center" style={{ background: '#f4f2ed' }}>
+                <SJStyles accent="#6f9b6a" tape="rgba(150,190,150,0.5)" tape2="rgba(196,220,176,0.55)" />
+                <div className="scrap-card press-soft tilt-l relative" style={{ width: 200, padding: '26px 18px', borderRadius: 16, textAlign: 'center' }}>
+                    <span className="sj-tape" style={{ top: -11, left: '50%', transform: 'translateX(-50%) rotate(-3deg)', width: 96 }} />
+                    <Storefront size={34} weight="duotone" className="mx-auto" style={{ color: '#6f9b6a' }} />
+                    <p className="font-hand" style={{ color: '#2b2933', fontSize: 20, marginTop: 8, fontWeight: 700 }}>正在翻开《街角》…</p>
+                    <p className="label-mono" style={{ color: '#a79c8e', fontSize: 8, marginTop: 4 }}>opening the journal</p>
                 </div>
             </div>
         );
@@ -866,267 +872,154 @@ const LifeSimApp: React.FC = () => {
     const participantChars = getParticipatingCharacters(gameState);
     const activeThinkingChar = participantChars.find(char => char.id === gameState.currentActorId) || null;
     const isMainPlotThinking = !!processingMsg && !gameState.isProcessingCharTurn;
-
-    // Retro OS palette based on season
-    const seasonPalette: Record<string, { bg: string; accent: string; titlebar: string; windowBg: string }> = {
-        spring: { bg: '#d4cfe8', accent: '#8b7bb8', titlebar: '#a594d0', windowBg: '#eeeaf6' },
-        summer: { bg: '#c8dce8', accent: '#5b8fa8', titlebar: '#7badc4', windowBg: '#e8f0f6' },
-        fall: { bg: '#e4d5c8', accent: '#a87b5b', titlebar: '#c49a78', windowBg: '#f4ede6' },
-        winter: { bg: '#d0d4e0', accent: '#7878a0', titlebar: '#9898b8', windowBg: '#eaebf2' },
-    };
-    const pal = seasonPalette[season] || seasonPalette.spring;
+    const scrap = SEASON_SCRAP[season] || SEASON_SCRAP.spring;
+    const highTension = gameState.chaosLevel > 70;
     const topSafePadding = 'max(12px, env(safe-area-inset-top, 12px))';
 
-    const TAB_LABELS: Record<string, string> = { npcs: '住户.exe', drama: '动态.log', relations: '关系.dat' };
+    const TABS = [
+        { id: 'npcs', label: '街坊', en: 'folks', Icon: UsersThree },
+        { id: 'drama', label: '街谈', en: 'word on the street', Icon: ChatsCircle },
+        { id: 'relations', label: '人情', en: 'ties', Icon: HeartHalf },
+    ] as const;
 
     return (
-        <div className="h-full w-full max-w-full flex flex-col overflow-hidden select-none" style={{ background: pal.bg, overflowX: 'hidden' }}>
+        <div className="sj-app h-full w-full max-w-full flex flex-col overflow-hidden select-none"
+            style={{ background: '#f4f2ed', overflowX: 'hidden' }}>
 
-            {/* ── Retro OS global styles ── */}
-            <style>{`
-                .retro-window {
-                    background: ${pal.windowBg};
-                    border: 2px solid ${pal.accent};
-                    border-radius: 6px;
-                    box-shadow: 3px 3px 0px rgba(0,0,0,0.15), inset 0 0 0 1px rgba(255,255,255,0.5);
-                    overflow: hidden;
-                }
-                .retro-titlebar {
-                    background: linear-gradient(180deg, ${pal.titlebar}, ${pal.accent});
-                    color: white;
-                    font-size: 10px;
-                    font-weight: 700;
-                    padding: 3px 8px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    letter-spacing: 0.03em;
-                    user-select: none;
-                }
-                .retro-titlebar .retro-dots {
-                    display: flex; gap: 3px;
-                }
-                .retro-titlebar .retro-dot {
-                    width: 10px; height: 10px; border-radius: 2px;
-                    border: 1px solid rgba(0,0,0,0.2);
-                    display: inline-flex; align-items: center; justify-content: center;
-                    font-size: 8px; line-height: 1; cursor: pointer;
-                }
-                .retro-titlebar .retro-dot:hover { filter: brightness(1.1); }
-                .retro-btn {
-                    background: ${pal.windowBg};
-                    border: 2px solid ${pal.accent};
-                    border-radius: 4px;
-                    box-shadow: 2px 2px 0px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.6);
-                    color: ${pal.accent};
-                    font-size: 11px;
-                    font-weight: 700;
-                    padding: 5px 12px;
-                    cursor: pointer;
-                    transition: all 0.1s;
-                }
-                .retro-btn:active {
-                    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2);
-                    transform: translate(1px, 1px);
-                }
-                .retro-btn-primary {
-                    background: linear-gradient(180deg, ${pal.titlebar}, ${pal.accent});
-                    color: white;
-                    border-color: ${pal.accent};
-                }
-                .retro-divider {
-                    height: 2px;
-                    background: linear-gradient(90deg, transparent, ${pal.accent}40, transparent);
-                }
-                .retro-inset {
-                    background: rgba(0,0,0,0.05);
-                    border: 1px solid rgba(0,0,0,0.1);
-                    border-radius: 3px;
-                    box-shadow: inset 1px 1px 3px rgba(0,0,0,0.08);
-                }
-                .retro-tag {
-                    background: ${pal.windowBg};
-                    border: 1px solid ${pal.accent}50;
-                    border-radius: 3px;
-                    padding: 1px 5px;
-                    font-size: 9px;
-                    font-weight: 600;
-                    color: ${pal.accent};
-                }
-                .no-scrollbar::-webkit-scrollbar { display: none; }
-                .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-            `}</style>
+            <SJStyles accent={scrap.accent} tape={scrap.tape} tape2={scrap.tape2} />
 
-            {/* ── 顶部状态栏 (retro taskbar) ── */}
-            <div className="flex-shrink-0" style={{
-                background: `linear-gradient(180deg, ${pal.titlebar}ee, ${pal.accent}dd)`,
+            {/* ── 页眉：手写刊头 + 工具贴纸 + 蕾丝花边 ── */}
+            <div className="flex-shrink-0 relative" style={{
                 paddingTop: topSafePadding,
-                borderBottom: `2px solid ${pal.accent}`,
-                boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                background: 'linear-gradient(180deg, #fbfaf7, #f4f2ed)',
+                borderBottom: '1px solid rgba(236,233,226,0.9)',
             }}>
-                <div className="flex items-center gap-2 px-3 py-2" style={{ minHeight: 46 }}>
-                    {/* Start button */}
-                    <button onClick={closeApp}
-                        className="flex items-center gap-1 px-2 py-0.5 rounded"
-                        style={{
-                            background: 'rgba(255,255,255,0.2)',
-                            border: '1px solid rgba(255,255,255,0.3)',
-                            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.3)',
-                            fontSize: 13, fontWeight: 700, color: 'white',
-                            minHeight: 40, minWidth: 66, padding: '0 12px',
-                            touchAction: 'manipulation',
-                            WebkitTapHighlightColor: 'transparent',
-                        }}>
-                        <Buildings size={16} weight="fill" /> 返回
+                <div className="flex items-center gap-2 px-3 pt-2 pb-3" style={{ minHeight: 46 }}>
+                    {/* 合上本子（返回） */}
+                    <button onClick={closeApp} aria-label="返回"
+                        className="scrap-btn-paper flex items-center justify-center flex-shrink-0"
+                        style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+                        <ArrowLeft size={17} weight="bold" />
                     </button>
 
-                    <div className="flex-1" />
-
-                    {/* Compact info chips */}
-                    <div className="flex items-center gap-1.5" style={{ fontSize: 11, color: 'rgba(255,255,255,0.95)', fontWeight: 700 }}>
-                        <TwemojiImg emoji={si.emoji} size={13} />
-                        <span>{si.zh}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
-                        <TwemojiImg emoji={ti.emoji} size={13} />
-                        <span>{ti.zh}</span>
-                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>|</span>
-                        <TwemojiImg emoji={wi.emoji} size={13} />
-                        <span>{wi.zh}</span>
+                    {/* 刊头 */}
+                    <div className="flex-1 min-w-0 flex flex-col items-start leading-none pl-0.5">
+                        <div className="flex items-baseline gap-1.5">
+                            <span className="font-hand" style={{ fontSize: 33, fontWeight: 700, color: '#2b2933', letterSpacing: '0.06em' }}>街角</span>
+                            <span className="sj-stamp" title={`${si.zh}`}>
+                                <TwemojiImg emoji={si.emoji} size={11} />
+                                <span style={{ fontSize: 8.5, fontWeight: 700, color: scrap.accent }}>{scrap.hanzi}</span>
+                            </span>
+                        </div>
+                        <span className="label-mono" style={{ fontSize: 7.5, color: '#a79c8e', marginTop: 2 }}>street-corner journal</span>
                     </div>
 
-                    <div className="flex-1" />
-
-                    {/* Turn & chaos compact */}
-                    <div className="flex items-center gap-1.5">
-                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.82)', fontWeight: 700, fontFamily: 'monospace' }}>
-                            R{gameState.turnNumber} D{gameState.day ?? 1}
-                        </span>
-                        <button
-                            onClick={() => setShowRoam(true)}
-                            className="flex items-center justify-center"
-                            title="漫游"
-                            style={{
-                                width: 44, height: 44, borderRadius: 7,
-                                background: 'rgba(255,255,255,0.2)',
-                                border: '1px solid rgba(255,255,255,0.3)',
-                                fontSize: 12, color: 'white',
-                                touchAction: 'manipulation',
-                                WebkitTapHighlightColor: 'transparent',
-                            }}>
+                    {/* 工具贴纸：出门 / 设定 / 翻篇 */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => setShowRoam(true)} title="出门逛逛"
+                            className="scrap-btn-paper flex items-center justify-center"
+                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                             <MapTrifold size={16} weight="bold" />
                         </button>
-                        <button
-                            onClick={() => setShowSettings(true)}
-                            className="flex items-center justify-center relative"
-                            style={{
-                                width: 44, height: 44, borderRadius: 7,
-                                background: 'rgba(255,255,255,0.2)',
-                                border: '1px solid rgba(255,255,255,0.3)',
-                                fontSize: 12, color: 'white',
-                                touchAction: 'manipulation',
-                                WebkitTapHighlightColor: 'transparent',
-                            }}>
-                            <Gear size={16} weight="bold" />
+                        <button onClick={() => setShowSettings(true)} title="设定" className="scrap-btn-paper flex items-center justify-center relative"
+                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+                            <GearSix size={16} weight="bold" />
                             <span style={{
-                                position: 'absolute',
-                                right: 3,
-                                bottom: 3,
-                                fontSize: 8,
-                                fontWeight: 700,
-                                background: 'rgba(0,0,0,0.28)',
-                                borderRadius: 999,
-                                padding: '0 4px',
-                            }}>
-                                {participantChars.length}
-                            </span>
+                                position: 'absolute', right: -3, bottom: -3,
+                                fontSize: 8, fontWeight: 700, color: 'white',
+                                background: scrap.accent, borderRadius: 999, padding: '0 4px',
+                                border: '1.5px solid #fbfaf7', minWidth: 15, textAlign: 'center',
+                            }}>{participantChars.length}</span>
                         </button>
-                        <button
-                            onClick={() => setShowResetDialog(true)}
-                            className="flex items-center justify-center"
-                            style={{
-                                width: 44, height: 44, borderRadius: 7,
-                                background: 'rgba(255,255,255,0.2)',
-                                border: '1px solid rgba(255,255,255,0.3)',
-                                fontSize: 12, color: 'white',
-                                touchAction: 'manipulation',
-                                WebkitTapHighlightColor: 'transparent',
-                            }}>
+                        <button onClick={() => setShowResetDialog(true)} title="翻篇重开"
+                            className="scrap-btn-paper flex items-center justify-center"
+                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                             <ArrowCounterClockwise size={16} weight="bold" />
                         </button>
                     </div>
                 </div>
+
+                {/* 季节 / 时辰 / 天气 小贴条 + 页码 */}
+                <div className="flex items-center gap-1.5 px-3 pb-2 flex-wrap">
+                    <span className="sj-chip"><TwemojiImg emoji={si.emoji} size={12} /> {si.zh}</span>
+                    <span className="sj-chip"><TwemojiImg emoji={ti.emoji} size={12} /> {ti.zh}</span>
+                    <span className="sj-chip"><TwemojiImg emoji={wi.emoji} size={12} /> {wi.zh}</span>
+                    <span className="flex-1" />
+                    <span className="label-mono" style={{ fontSize: 9, color: '#8b8996', letterSpacing: '0.12em' }}>
+                        DAY {gameState.day ?? 1} · pg.{gameState.turnNumber}
+                    </span>
+                </div>
+                <div className="lace-edge absolute left-0 right-0" style={{ bottom: -9 }} />
             </div>
 
-            {/* ── Festival banner (compact) ── */}
+            {/* ── 节日便签 ── */}
             {(todayFestival || festivalAnnounce) && (
-                <div className="flex-shrink-0 text-center py-1 px-2" style={{
-                    background: `linear-gradient(90deg, ${pal.titlebar}cc, ${pal.accent}cc)`,
-                    fontSize: 10, fontWeight: 700, color: 'white', letterSpacing: '0.05em',
+                <div className="flex-shrink-0 mx-3 mt-3 px-3 py-1.5 relative tilt-r" style={{
+                    background: scrap.tape2,
+                    borderRadius: 4,
+                    border: '1px dashed rgba(120,116,106,0.4)',
+                    color: '#3f3a32', fontSize: 11, fontWeight: 700, textAlign: 'center',
+                    fontFamily: 'var(--font-hand)',
                 }}>
-                    {todayFestival ? <><TwemojiImg emoji={todayFestival.emoji} size={11} /> {todayFestival.name}</> : festivalAnnounce}
+                    {todayFestival ? <><TwemojiImg emoji={todayFestival.emoji} size={13} /> {todayFestival.name}</> : festivalAnnounce}
                 </div>
             )}
 
-            {/* ── 地图窗口 ── */}
-            <div className="flex-shrink-0 mx-2 mt-2 retro-window">
-                <div className="retro-titlebar">
-                    <span>cityview.exe — {si.zh}季 Y{gameState.year ?? 1}</span>
-                    <span className="retro-dots">
-                        <span className="retro-dot" style={{ background: '#fbbf24' }}>─</span>
-                        <span className="retro-dot" style={{ background: '#86efac' }}>□</span>
-                    </span>
+            {/* ── 地图：贴在手账里的街区照片 ── */}
+            <figure className="sj-photo flex-shrink-0 mx-3 mt-3 tilt-l">
+                <span className="sj-tape" style={{ top: -10, left: 24, transform: 'rotate(-5deg)', width: 64 }} />
+                <span className="sj-tape" style={{ top: -10, right: 24, transform: 'rotate(4deg)', width: 64, background: scrap.tape2 }} />
+                <div className="sj-photo-inner">
+                    <WorldMap gameState={gameState} />
                 </div>
-                <WorldMap gameState={gameState} />
-            </div>
+                <figcaption className="flex items-center justify-between px-1 pt-1.5">
+                    <span className="font-hand" style={{ fontSize: 14, color: '#2b2933' }}>{si.zh}日的街区</span>
+                    <span className="label-mono" style={{ fontSize: 8, color: '#a79c8e' }}>year {gameState.year ?? 1}</span>
+                </figcaption>
+            </figure>
 
-            {/* ── Chaos meter (compact retro bar) ── */}
-            <div className="flex items-center gap-2 mx-2 mt-1.5 px-2 py-1 retro-inset" style={{ borderRadius: 4 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: pal.accent, minWidth: 32 }}>{chaosLabel}</span>
-                <div className="flex-1 h-2 rounded-sm overflow-hidden" style={{ background: 'rgba(0,0,0,0.08)', border: `1px solid ${pal.accent}30` }}>
-                    <div className="h-full transition-all duration-700 ease-out" style={{
+            {/* ── 街区热度（手绘热度条） ── */}
+            <div className="flex items-center gap-2 mx-3 mt-2.5 px-1">
+                <span className="font-hand" style={{ fontSize: 13, color: highTension ? '#b03a34' : '#2b2933', minWidth: 56, fontWeight: 700 }}>{chaosLabel}</span>
+                <div className="flex-1 sj-heat-track">
+                    <div className="sj-heat-fill" style={{
                         width: `${gameState.chaosLevel}%`,
-                        background: gameState.chaosLevel > 70
-                            ? 'linear-gradient(90deg, #e05070, #d060a0)'
-                            : `linear-gradient(90deg, ${pal.titlebar}, ${pal.accent})`,
-                        borderRadius: 1,
+                        background: highTension
+                            ? 'repeating-linear-gradient(45deg, #d8625b, #d8625b 5px, #c44f48 5px, #c44f48 10px)'
+                            : `repeating-linear-gradient(45deg, ${scrap.accent}, ${scrap.accent} 5px, ${scrap.accent}cc 5px, ${scrap.accent}cc 10px)`,
                     }} />
                 </div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: pal.accent, fontFamily: 'monospace' }}>{gameState.chaosLevel}</span>
+                <span className="label-mono" style={{ fontSize: 9, color: '#8b8996', minWidth: 24, textAlign: 'right' }}>{gameState.chaosLevel}°</span>
             </div>
 
-            {/* ── Turn status (compact) ── */}
+            {/* ── 回合状态便签 ── */}
             {(gameState.isProcessingCharTurn || isUserTurn) && (
-                <div className="mx-2 mt-1 px-2 py-1 flex items-center gap-1.5" style={{
-                    fontSize: 10, fontWeight: 600,
-                    color: gameState.isProcessingCharTurn ? '#8b6bb8' : '#5b8b6b',
-                    background: gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.1)' : 'rgba(91,139,107,0.1)',
-                    borderRadius: 4,
-                    border: `1px solid ${gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.2)' : 'rgba(91,139,107,0.2)'}`,
+                <div className="mx-3 mt-2 px-2.5 py-1 flex items-center gap-1.5" style={{
+                    fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
+                    color: gameState.isProcessingCharTurn ? '#8b6bb8' : scrap.accent,
+                    alignSelf: 'flex-start',
+                    background: gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.1)' : `${scrap.accent}1a`,
+                    borderRadius: 999,
+                    border: `1px dashed ${gameState.isProcessingCharTurn ? 'rgba(139,107,184,0.4)' : scrap.accent + '66'}`,
                 }}>
                     {gameState.isProcessingCharTurn ? (
-                        <><Gear size={12} weight="bold" className="animate-spin" /> {processingMsg || '角色们在思考…'}</>
+                        <><GearSix size={13} weight="bold" className="animate-spin" /> {processingMsg || '街坊们在琢磨…'}</>
                     ) : (
-                        <><Star size={12} weight="fill" /> 你的回合</>
+                        <><Star size={13} weight="fill" /> 轮到你落笔了</>
                     )}
                 </div>
             )}
 
+            {/* ── 出场角色贴纸条 ── */}
             {(participantChars.length > 0 || isMainPlotThinking) && (
-                <div className="mx-2 mt-1 px-2 py-1.5 retro-inset" style={{ borderRadius: 4 }}>
+                <div className="mx-3 mt-2 px-2 py-2 scrap-card" style={{ borderRadius: 12 }}>
                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                         {isMainPlotThinking && (
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '4px 8px',
-                                borderRadius: 999,
-                                border: '1px solid rgba(184,108,61,0.35)',
-                                background: 'rgba(184,108,61,0.12)',
-                                color: '#9b6238',
-                                fontSize: 10,
-                                fontWeight: 700,
-                                flexShrink: 0,
+                            <div className="flex items-center gap-1.5 flex-shrink-0" style={{
+                                padding: '4px 9px', borderRadius: 999,
+                                border: '1px dashed rgba(176,116,66,0.5)',
+                                background: 'rgba(176,116,66,0.12)',
+                                color: '#9b6238', fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
                             }}>
                                 <span style={{ fontSize: 14 }}>🎬</span>
                                 <span>主线编剧室</span>
@@ -1136,108 +1029,84 @@ const LifeSimApp: React.FC = () => {
                         {participantChars.map(char => {
                             const isActive = gameState.isProcessingCharTurn && gameState.currentActorId === char.id;
                             return (
-                                <div
-                                    key={char.id}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 6,
-                                        padding: '4px 8px',
-                                        borderRadius: 999,
-                                        border: isActive ? '1px solid rgba(139,107,184,0.5)' : '1px solid rgba(0,0,0,0.08)',
-                                        background: isActive ? 'rgba(139,107,184,0.14)' : 'rgba(255,255,255,0.55)',
-                                        color: isActive ? '#7b61aa' : '#777',
-                                        fontSize: 10,
-                                        fontWeight: isActive ? 700 : 600,
-                                        boxShadow: isActive ? '0 0 0 1px rgba(139,107,184,0.15) inset' : 'none',
-                                        flexShrink: 0,
-                                        transition: 'all 0.18s ease',
-                                    }}>
-                                    <img
-                                        src={char.avatar}
-                                        alt={char.name}
-                                        style={{
-                                            width: 20,
-                                            height: 20,
-                                            borderRadius: 999,
-                                            objectFit: 'cover',
-                                            boxShadow: isActive ? '0 0 0 2px rgba(139,107,184,0.22)' : 'none',
-                                        }}
-                                    />
+                                <div key={char.id} className="flex items-center gap-1.5 flex-shrink-0" style={{
+                                    padding: '4px 9px', borderRadius: 999,
+                                    border: isActive ? `1px dashed ${scrap.accent}` : '1px dashed rgba(167,162,151,0.5)',
+                                    background: isActive ? `${scrap.accent}1f` : 'rgba(255,255,255,0.6)',
+                                    color: isActive ? '#3f3a32' : '#8b8996',
+                                    fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-hand)',
+                                    transition: 'all 0.18s ease',
+                                }}>
+                                    <img src={char.avatar} alt={char.name} style={{
+                                        width: 20, height: 20, borderRadius: 999, objectFit: 'cover',
+                                        boxShadow: isActive ? `0 0 0 2px ${scrap.accent}55` : 'none',
+                                    }} />
                                     <span>{char.name}</span>
-                                    {isActive && (
-                                        <span style={{
-                                            width: 6,
-                                            height: 6,
-                                            borderRadius: '50%',
-                                            background: '#8b6bb8',
-                                            boxShadow: '0 0 10px rgba(139,107,184,0.45)',
-                                        }} />
-                                    )}
+                                    {isActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: scrap.accent }} />}
                                 </div>
                             );
                         })}
                     </div>
                     {(activeThinkingChar || isMainPlotThinking) && (
-                        <div style={{ marginTop: 5, fontSize: 9, color: '#8b8099', fontWeight: 700 }}>
+                        <div style={{ marginTop: 5, fontSize: 11, color: '#a79c8e', fontFamily: 'var(--font-hand)' }}>
                             {isMainPlotThinking
                                 ? processingMsg
-                                : `${activeThinkingChar?.name || '角色'} 正在思考，API 已开始调用`}
+                                : `${activeThinkingChar?.name || '角色'} 正在落笔，API 已开始调用`}
                         </div>
                     )}
                 </div>
             )}
 
-            {/* ── Content window with tabs ── */}
-            <div className="flex-1 flex flex-col mx-2 mt-1.5 mb-1 retro-window overflow-hidden" style={{ minHeight: 0, minWidth: 0 }}>
-                {/* Retro tab bar as titlebar */}
-                <div className="retro-titlebar" style={{ padding: 0 }}>
-                    {([
-                        ['npcs', '住户', UsersThree],
-                        ['drama', '动态', MaskSad],
-                        ['relations', '关系', HeartHalf],
-                    ] as const).map(([tab, label, Icon]) => (
-                        <button key={tab} onClick={() => setActiveTab(tab as any)}
-                            className="flex items-center gap-1 px-3 py-1"
-                            style={{
-                                fontSize: 10, fontWeight: 700,
-                                color: activeTab === tab ? pal.accent : 'rgba(255,255,255,0.8)',
-                                background: activeTab === tab ? pal.windowBg : 'transparent',
-                                borderRight: `1px solid ${pal.accent}40`,
-                                borderBottom: activeTab === tab ? `2px solid ${pal.windowBg}` : '2px solid transparent',
-                                marginBottom: activeTab === tab ? -2 : 0,
-                                borderRadius: activeTab === tab ? '4px 4px 0 0' : 0,
-                            }}>
-                            <Icon size={11} weight="bold" /> {TAB_LABELS[tab]}
-                        </button>
-                    ))}
-                    <div className="flex-1" />
+            {/* ── 内页：分栏笔记本 ── */}
+            <div className="flex-1 flex flex-col mx-3 mt-2.5 mb-1 scrap-card overflow-hidden" style={{ minHeight: 0, minWidth: 0, borderRadius: 14 }}>
+                {/* 索引页签 */}
+                <div className="flex items-end gap-1 px-2 pt-2" style={{ borderBottom: '1px dashed rgba(167,162,151,0.5)' }}>
+                    {TABS.map(({ id, label, Icon }) => {
+                        const active = activeTab === id;
+                        return (
+                            <button key={id} onClick={() => setActiveTab(id as any)}
+                                className="flex items-center gap-1.5 px-3 py-1.5"
+                                style={{
+                                    fontFamily: 'var(--font-hand)', fontSize: 14, fontWeight: 700,
+                                    color: active ? '#fbfaf7' : '#8b8996',
+                                    background: active ? scrap.accent : 'transparent',
+                                    borderRadius: '10px 10px 0 0',
+                                    border: active ? `1px solid ${scrap.accent}` : '1px solid transparent',
+                                    borderBottom: 'none',
+                                    marginBottom: -1,
+                                    transition: 'all 0.15s',
+                                }}>
+                                <Icon size={13} weight="bold" /> {label}
+                            </button>
+                        );
+                    })}
+                    <span className="flex-1" />
                 </div>
-                <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar" style={{ background: pal.windowBg, minWidth: 0 }}>
+                <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar scrap-panel" style={{ minWidth: 0 }}>
                     {activeTab === 'npcs' && <NPCGrid gameState={gameState} onLongPressNpc={setEditingNpc} />}
                     {activeTab === 'drama' && <DramaFeed gameState={gameState} />}
                     {activeTab === 'relations' && <RelationsTab gameState={gameState} />}
                 </div>
             </div>
 
-            {/* ── Bottom action bar (retro buttons) ── */}
+            {/* ── 底部动作贴纸：搅局 / 拉人 / 吃瓜 ── */}
             {isUserTurn && (
-                <div className="flex-shrink-0 flex gap-2 px-2 pb-2 pt-1"
+                <div className="flex-shrink-0 grid grid-cols-3 gap-2 px-3 pb-2 pt-1"
                     style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 8px))' }}>
                     <button onClick={() => setActionPanel('stir')}
-                        className="flex-1 retro-btn retro-btn-primary flex items-center justify-center gap-1"
-                        style={{ padding: '7px 8px' }}>
-                        <MaskHappy size={13} weight="bold" /> 搅局
+                        className="scrap-btn flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px' }}>
+                        <MaskHappy size={17} weight="bold" />
+                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>搅局</span>
                     </button>
                     <button onClick={() => setActionPanel('add')}
-                        className="flex-1 retro-btn retro-btn-primary flex items-center justify-center gap-1"
-                        style={{ padding: '7px 8px', background: `linear-gradient(180deg, #7badc4, #5b8fa8)` }}>
-                        <UserPlus size={13} weight="bold" /> 拉人
+                        className="scrap-btn flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px', background: scrap.accent }}>
+                        <UserPlus size={17} weight="bold" />
+                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>拉人</span>
                     </button>
                     <button onClick={handleWatch}
-                        className="flex-1 retro-btn flex items-center justify-center gap-1"
-                        style={{ padding: '7px 8px' }}>
-                        <Eye size={13} weight="bold" /> 吃瓜
+                        className="scrap-btn-paper flex flex-col items-center justify-center gap-0.5 sj-action" style={{ padding: '9px 6px' }}>
+                        <Eye size={17} weight="bold" />
+                        <span className="font-hand" style={{ fontSize: 13, fontWeight: 700 }}>吃瓜</span>
                     </button>
                 </div>
             )}
@@ -1247,6 +1116,7 @@ const LifeSimApp: React.FC = () => {
                 <ActionPanel
                     gameState={gameState}
                     mode={actionPanel}
+                    accent={scrap.accent}
                     onStir={handleStir}
                     onAdd={handleAddNpc}
                     onClose={() => setActionPanel('none')}
@@ -1306,5 +1176,82 @@ const LifeSimApp: React.FC = () => {
         </div>
     );
 };
+
+// ── 街角 · 共享拼贴样式 ──────────────────────────────────────
+const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ accent, tape, tape2 }) => (
+    <style>{`
+        .sj-app {
+            color: #2b2933;
+            --sj-accent: ${accent};
+            --sj-tape: ${tape};
+            --sj-tape2: ${tape2};
+            background-image: radial-gradient(circle at 1px 1px, rgba(120,116,106,0.05) 1px, transparent 0);
+            background-size: 16px 16px;
+        }
+        /* 和纸胶带条 */
+        .sj-app .sj-tape {
+            position: absolute;
+            height: 19px;
+            background: var(--sj-tape);
+            border-left: 1px dashed rgba(160,156,146,0.5);
+            border-right: 1px dashed rgba(160,156,146,0.5);
+            box-shadow: 0 1px 4px rgba(50,48,60,0.12);
+            backdrop-filter: blur(1px);
+            -webkit-backdrop-filter: blur(1px);
+            z-index: 6;
+            pointer-events: none;
+        }
+        /* 季节邮戳 */
+        .sj-app .sj-stamp {
+            display: inline-flex; align-items: center; gap: 2px;
+            padding: 1px 5px;
+            background: #fbfaf7;
+            border-radius: 5px;
+            outline: 1px dashed rgba(120,116,106,0.5);
+            outline-offset: -2px;
+            transform: rotate(-3deg);
+        }
+        /* 小贴条 chip */
+        .sj-app .sj-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 999px;
+            background: rgba(255,255,255,0.85);
+            border: 1px solid rgba(236,233,226,0.95);
+            outline: 1px dashed rgba(167,162,151,0.32);
+            outline-offset: -3px;
+            font-size: 11px; font-weight: 700; color: #5c574f;
+            font-family: var(--font-hand);
+        }
+        /* 拍立得照片框 */
+        .sj-app .sj-photo {
+            position: relative;
+            background: #fbfaf7;
+            border: 1px solid rgba(236,233,226,0.95);
+            border-radius: 6px;
+            padding: 9px 9px 4px;
+            box-shadow: 0 12px 26px -16px rgba(50,48,60,0.4);
+        }
+        .sj-app .sj-photo-inner {
+            border-radius: 3px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,0.06);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+        }
+        /* 热度条 */
+        .sj-app .sj-heat-track {
+            height: 10px; border-radius: 999px; overflow: hidden;
+            background: rgba(120,116,106,0.1);
+            border: 1px solid rgba(167,162,151,0.4);
+        }
+        .sj-app .sj-heat-fill {
+            height: 100%; border-radius: 999px;
+            transition: width 0.7s ease-out;
+        }
+        /* 底部动作贴纸轻微歪斜 */
+        .sj-app .sj-action:nth-child(1) { rotate: -1.4deg; }
+        .sj-app .sj-action:nth-child(3) { rotate: 1.4deg; }
+        .sj-app .sj-action:active { transform: scale(0.96); }
+    `}</style>
+);
 
 export default LifeSimApp;

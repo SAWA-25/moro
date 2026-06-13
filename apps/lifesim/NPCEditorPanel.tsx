@@ -15,6 +15,8 @@ const GENDER_OPTIONS: { value: SimGender; label: string }[] = [
     { value: 'nonbinary', label: '非二元' },
 ];
 
+const INK = '#2b2933';
+
 const NPCEditorPanel: React.FC<{
     npc: SimNPC;
     onSave: (updates: Partial<SimNPC>) => void;
@@ -40,162 +42,88 @@ const NPCEditorPanel: React.FC<{
         });
     };
 
+    const inputStyle: React.CSSProperties = {
+        width: '100%', padding: '8px 11px', fontSize: 12,
+        background: '#fbfaf7', border: '1px solid rgba(236,233,226,0.95)',
+        outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: -3,
+        borderRadius: 10, color: '#2b2933', fontFamily: 'var(--font-hand)',
+    };
+    const chip = (sel: boolean): React.CSSProperties => ({
+        padding: '3px 10px', fontSize: 12, borderRadius: 999,
+        fontFamily: 'var(--font-hand)', fontWeight: 700,
+        border: sel ? `1px solid ${INK}` : '1px solid rgba(236,233,226,0.95)',
+        background: sel ? INK : 'rgba(255,255,255,0.95)',
+        color: sel ? '#fbfaf7' : '#5c574f',
+        outline: sel ? '1px dashed rgba(255,255,255,0.35)' : '1px dashed rgba(167,162,151,0.36)',
+        outlineOffset: -3,
+    });
+
     return (
-        <div
-            className="absolute inset-0 z-50 flex items-end justify-center"
-            style={{ background: 'rgba(0,0,0,0.34)' }}
-            onClick={event => { if (event.target === event.currentTarget) onClose(); }}
-        >
-            <div
-                className="retro-window w-full mx-2 mb-2"
-                style={{
-                    maxHeight: '78vh',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    boxShadow: '4px 4px 0 rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.5)',
-                }}
-            >
-                <div className="retro-titlebar">
-                    <span>npc-editor.cfg</span>
-                    <button
-                        onClick={onClose}
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 18,
-                            height: 18,
-                            borderRadius: 3,
-                            background: 'rgba(255,255,255,0.15)',
-                            border: '1px solid rgba(255,255,255,0.25)',
-                            color: 'white',
-                        }}
-                    >
-                        <X size={10} weight="bold" />
+        <div className="absolute inset-0 z-50 flex items-end justify-center"
+            style={{ background: 'rgba(43,41,51,0.36)', animation: 'fadeIn 0.25s ease' }}
+            onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+            <div className="scrap-card w-full mx-2 mb-2 relative" style={{
+                maxHeight: '80vh', display: 'flex', flexDirection: 'column', borderRadius: 18,
+                animation: 'slideUp 0.3s cubic-bezier(0.25,1,0.5,1)',
+            }}>
+                <span style={{
+                    position: 'absolute', top: -11, left: '50%', transform: 'translateX(-50%) rotate(-2deg)',
+                    width: 116, height: 20, background: 'rgba(255,255,255,0.6)',
+                    borderLeft: '1px dashed rgba(160,156,146,0.5)', borderRight: '1px dashed rgba(160,156,146,0.5)',
+                    pointerEvents: 'none',
+                }} />
+                <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                    <span className="font-hand" style={{ fontSize: 18, fontWeight: 700, color: '#2b2933' }}>改改这位街坊</span>
+                    <button onClick={onClose} className="scrap-btn-paper flex items-center justify-center" style={{ width: 30, height: 30 }}>
+                        <X size={14} weight="bold" />
                     </button>
                 </div>
+                <div className="lace-edge mx-4" />
 
-                <div className="overflow-y-auto flex-1" style={{ padding: 10 }}>
-                    <div className="flex items-center gap-3 retro-inset" style={{ padding: '8px 10px', marginBottom: 8 }}>
-                        <NPCAvatar name={name || npc.name} size={42} className="rounded-lg" />
+                <div className="overflow-y-auto flex-1 no-scrollbar" style={{ padding: '12px 16px' }}>
+                    <div className="flex items-center gap-3" style={{ padding: '9px 11px', marginBottom: 12, background: 'rgba(120,116,106,0.05)', borderRadius: 12, border: '1px dashed rgba(167,162,151,0.4)' }}>
+                        <div style={{ padding: 3, background: '#fbfaf7', borderRadius: 12, outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }}>
+                            <NPCAvatar name={name || npc.name} size={42} className="rounded-lg" />
+                        </div>
                         <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: '#544f63' }}>{name || npc.name}</div>
-                            <div style={{ fontSize: 9, color: '#8d859d', marginTop: 2 }}>
-                                长按居民卡可改设定
-                            </div>
+                            <div className="font-hand" style={{ fontSize: 16, fontWeight: 700, color: '#2b2933' }}>{name || npc.name}</div>
+                            <div className="font-hand" style={{ fontSize: 11, color: '#a79c8e', marginTop: 2 }}>长按街坊卡就能翻到这页</div>
                         </div>
                     </div>
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', marginBottom: 4 }}>名字</div>
-                    <input
-                        value={name}
-                        onChange={event => setName(event.target.value)}
-                        style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            fontSize: 10,
-                            background: 'white',
-                            border: '2px solid rgba(0,0,0,0.15)',
-                            borderRadius: 4,
-                            outline: 'none',
-                            color: '#333',
-                            boxShadow: 'inset 1px 1px 3px rgba(0,0,0,0.08)',
-                        }}
-                    />
+                    <div className="drawer-tag" style={{ marginBottom: 6 }}><span>名字</span></div>
+                    <input value={name} onChange={event => setName(event.target.value)} style={inputStyle} />
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', margin: '10px 0 4px' }}>性别</div>
+                    <div className="drawer-tag" style={{ margin: '12px 0 6px' }}><span>性别</span></div>
                     <div className="flex gap-1.5 flex-wrap">
                         {GENDER_OPTIONS.map(option => (
-                            <button
-                                key={option.value}
-                                onClick={() => setGender(option.value)}
-                                className="retro-btn"
-                                style={{
-                                    padding: '3px 10px',
-                                    fontSize: 10,
-                                    ...(gender === option.value ? {
-                                        background: 'linear-gradient(180deg, #a594d0, #8b7bb8)',
-                                        color: 'white',
-                                        borderColor: '#8b7bb8',
-                                    } : {}),
-                                }}
-                            >
+                            <button key={option.value} onClick={() => setGender(option.value)} style={chip(gender === option.value)}>
                                 {option.label}
                             </button>
                         ))}
                     </div>
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', margin: '10px 0 4px' }}>性格</div>
-                    <div className="flex flex-wrap gap-1">
-                        {PERSONALITY_OPTIONS.map(item => {
-                            const active = personality.includes(item);
-                            return (
-                                <button
-                                    key={item}
-                                    onClick={() => togglePersonality(item)}
-                                    className="retro-btn"
-                                    style={{
-                                        padding: '2px 8px',
-                                        fontSize: 9,
-                                        ...(active ? {
-                                            background: 'linear-gradient(180deg, #a594d0, #8b7bb8)',
-                                            color: 'white',
-                                            borderColor: '#8b7bb8',
-                                        } : {}),
-                                    }}
-                                >
-                                    {item}
-                                </button>
-                            );
-                        })}
+                    <div className="drawer-tag" style={{ margin: '12px 0 6px' }}><span>性格</span></div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {PERSONALITY_OPTIONS.map(item => (
+                            <button key={item} onClick={() => togglePersonality(item)} style={chip(personality.includes(item))}>
+                                {item}
+                            </button>
+                        ))}
                     </div>
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', margin: '10px 0 4px' }}>简介</div>
-                    <textarea
-                        value={bio}
-                        onChange={event => setBio(event.target.value)}
-                        rows={3}
-                        style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            fontSize: 10,
-                            background: 'white',
-                            border: '2px solid rgba(0,0,0,0.15)',
-                            borderRadius: 4,
-                            outline: 'none',
-                            color: '#333',
-                            resize: 'vertical',
-                            boxShadow: 'inset 1px 1px 3px rgba(0,0,0,0.08)',
-                        }}
-                    />
+                    <div className="drawer-tag" style={{ margin: '12px 0 6px' }}><span>简介</span></div>
+                    <textarea value={bio} onChange={event => setBio(event.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
 
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#666', margin: '10px 0 4px' }}>背景</div>
-                    <textarea
-                        value={backstory}
-                        onChange={event => setBackstory(event.target.value)}
-                        rows={4}
-                        style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            fontSize: 10,
-                            background: 'white',
-                            border: '2px solid rgba(0,0,0,0.15)',
-                            borderRadius: 4,
-                            outline: 'none',
-                            color: '#333',
-                            resize: 'vertical',
-                            boxShadow: 'inset 1px 1px 3px rgba(0,0,0,0.08)',
-                        }}
-                    />
+                    <div className="drawer-tag" style={{ margin: '12px 0 6px' }}><span>来历</span></div>
+                    <textarea value={backstory} onChange={event => setBackstory(event.target.value)} rows={4} style={{ ...inputStyle, resize: 'vertical' }} />
                 </div>
 
-                <div style={{ padding: '6px 10px', borderTop: '1px solid rgba(0,0,0,0.08)' }}>
-                    <button
-                        onClick={handleSave}
-                        className="retro-btn retro-btn-primary w-full flex items-center justify-center gap-1"
-                        style={{ padding: '7px 12px' }}
-                    >
-                        <CheckCircle size={12} weight="bold" /> 保存设定
+                <div style={{ padding: '10px 16px 14px' }}>
+                    <button onClick={handleSave}
+                        className="scrap-btn w-full flex items-center justify-center gap-1.5"
+                        style={{ padding: '11px', fontFamily: 'var(--font-hand)', fontSize: 15, fontWeight: 700 }}>
+                        <CheckCircle size={15} weight="bold" /> 记下这页设定
                     </button>
                 </div>
             </div>

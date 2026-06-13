@@ -25,7 +25,7 @@ export function createLifeSimResetCardData(input: {
 }): LifeSimResetCardData {
     return {
         type: 'lifesim_reset_card',
-        title: '都市人生 - 城市小结',
+        title: '街角 · 这条街的小结',
         summary: input.summary,
         headline: input.headline,
         userName: input.userName,
@@ -41,14 +41,14 @@ export function formatLifeSimResetCardForContext(card: LifeSimResetCardData, cur
     const others = card.participantNames.filter(name => name && name !== currentCharName);
     const joined = others.length > 0 ? `${others.join('、')} 和 ${card.userName}` : card.userName;
     const headline = card.headline ? `这一局最像主线标题的是《${card.headline}》。` : '';
-    return `[都市人生结算卡] 你和 ${joined} 一起玩了《都市人生》。${headline}整局共推进了 ${card.turnCount} 回合，主线节点 ${card.mainPlotCount} 个。最终小结：${card.summary}`;
+    return `[街角小结] 你和 ${joined} 一起翻完了这本《街角》。${headline}整本共记了 ${card.turnCount} 页，主线节点 ${card.mainPlotCount} 个。最终小结：${card.summary}`;
 }
 
 export function tryParseLifeSimResetCard(raw: any): LifeSimResetCardData | null {
     if (!raw || typeof raw !== 'object' || raw.type !== 'lifesim_reset_card') return null;
     return {
         type: 'lifesim_reset_card',
-        title: String(raw.title || '都市人生 - 城市小结'),
+        title: String(raw.title || '街角 · 这条街的小结'),
         summary: String(raw.summary || ''),
         headline: raw.headline ? String(raw.headline) : undefined,
         userName: String(raw.userName || '用户'),
