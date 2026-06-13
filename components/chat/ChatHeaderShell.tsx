@@ -386,13 +386,19 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
 
     return (
         <div className="shrink-0 z-30 sticky top-0">
-        {/* safe-top spacer：透明 + backdrop-blur 跟 iOS status bar 一致自适应容器色，刘海下不再铺白带 */}
-        <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
-        {/* 最顶部装饰文案（参考设计：顶栏卡片上方居中的一行小字） */}
-        {decorText && !selectionMode && (
-            <div className="moro-chat-topdecor flex justify-center items-center pt-1 pb-1.5 px-8">
+        {/* 顶部安全区 + 页眉小字：
+            没有页眉小字时只铺一条 safe-top 占位（透明 + backdrop-blur 跟 iOS status bar 自适应）。
+            有页眉小字时，用 --chrome-top（safe-top + 1.5rem）下沉到「时间/电量」状态栏下方再画这行字，
+            否则它会和 z-50 的 StatusBar 叠在同一高度被挤没（这正是「页眉小字不显示」的根因）。 */}
+        {decorText && !selectionMode ? (
+            <div
+                className="moro-chat-topdecor flex justify-center items-end pb-1 px-8 bg-transparent backdrop-blur-xl"
+                style={{ paddingTop: 'var(--chrome-top)' }}
+            >
                 <span className={`text-[12px] font-bold tracking-wide truncate max-w-full ${isDarkHeader ? 'text-slate-300' : 'text-slate-500'}`}>{decorText}</span>
             </div>
+        ) : (
+            <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
         )}
         {/* header 主体：moro-chat-header 钩子 + 内容垂直居中（items-center）；safe-top 已由上面 spacer 让位 */}
         <div className={`moro-chat-header ${headerDensityClass} flex items-center relative ${headerToneClass}`} style={headerSafeStyle}>

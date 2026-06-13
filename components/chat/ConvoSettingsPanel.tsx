@@ -376,7 +376,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="♡" title="TA 叫我什么" note="TA 平日里对你的称呼，会写进提示词——以后 TA 就这么喊你。">
+                    <Entry mark="♡" title="TA 叫我什么" note="TA 平日里对你的称呼，会写进提示词——以后 TA 就这么喊你。TA 也可能在聊天里主动给你换备注。">
                         <LineInput
                             value={cs.userNickname || ''}
                             onChange={v => updateConvo({ userNickname: v || undefined })}
@@ -384,8 +384,46 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
+                    {(cs.userRemarkMotivation || (cs.userRemarkHistory && cs.userRemarkHistory.length > 0)) && (
+                        <Entry mark="✎" title="TA 怎么称呼你" note="TA 主动给你换的备注会记在这里，连同当时的小心思。">
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px]" style={{ color: '#a96f84' }}>现在叫你</span>
+                                    <span className="text-[14px] font-bold" style={{ color: '#a96f84' }}>{cs.userNickname || '（未设置）'}</span>
+                                    {cs.userRemarkUpdatedAt && (
+                                        <span className="text-[10px] text-slate-300 ml-auto">{new Date(cs.userRemarkUpdatedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} 改</span>
+                                    )}
+                                </div>
+                                {cs.userRemarkMotivation && (
+                                    <div className="rounded-xl p-2.5 text-[12px] text-slate-600 leading-relaxed" style={{ background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)' }}>
+                                        💭 {cs.userRemarkMotivation}
+                                    </div>
+                                )}
+                                {cs.userRemarkHistory && cs.userRemarkHistory.length > 1 && (
+                                    <details className="text-[11px] text-slate-400">
+                                        <summary className="cursor-pointer select-none py-1">TA 给你换过的备注（{cs.userRemarkHistory.length}）</summary>
+                                        <ul className="mt-1 space-y-1.5">
+                                            {cs.userRemarkHistory.map((h, i) => (
+                                                <li key={i} className="flex flex-col gap-0.5 border-l-2 pl-2" style={{ borderColor: 'rgba(176,122,141,0.3)' }}>
+                                                    <span className="text-slate-600 font-bold">「{h.remark}」<span className="text-slate-300 font-normal ml-1">{new Date(h.at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</span></span>
+                                                    {h.motivation && <span className="text-slate-400 leading-snug">{h.motivation}</span>}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                )}
+                            </div>
+                        </Entry>
+                    )}
+
                     <Entry mark="♡" title="TA 的名片" note="角色主页上的微信号、地区和签名都由你来填（不再交给 AI 编），空着就不展示。">
                         <div className="space-y-2.5">
+                            {cs.userNickname && (
+                                <div className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: 'rgba(176,122,141,0.08)', color: '#a96f84' }}>
+                                    <span className="opacity-70">TA 叫你</span>
+                                    <span className="font-bold">{cs.userNickname}</span>
+                                </div>
+                            )}
                             <LineInput
                                 tag="WECHAT ID"
                                 value={char.socialProfile?.handle || ''}

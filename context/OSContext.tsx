@@ -5,6 +5,7 @@ import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
+import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
 import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
@@ -1449,6 +1450,38 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           window.removeEventListener(CHAR_BLOCK_EVENT, onCharBlock);
           clearInterval(unblockTimer);
       };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // ─── 角色给用户换备注（[[SET_USER_REMARK]]）：落 convoSettings + 历史 + 系统消息 ───
+  // 弹窗由 Chat.tsx 监听同一事件负责（点开看动机）；这里只做数据落库，确保用户不在该聊天页时也生效。
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const onUserRemark = async (e: Event) => {
+          const { charId, remark, motivation } = ((e as CustomEvent).detail || {}) as Partial<UserRemarkEventDetail>;
+          if (!charId || !remark) return;
+          const char = charactersRef.current.find(c => c.id === charId);
+          if (!char) return;
+          const cs = char.convoSettings || {};
+          if (cs.userNickname === remark) return; // 没真变化就不重复落
+          const entry = { remark, motivation, at: Date.now() };
+          const history = [entry, ...(cs.userRemarkHistory || [])].slice(0, 20);
+          updateCharacter(charId, {
+              convoSettings: {
+                  ...cs,
+                  userNickname: remark,
+                  userRemarkMotivation: motivation,
+                  userRemarkUpdatedAt: entry.at,
+                  userRemarkHistory: history,
+              },
+          });
+          try {
+              await DB.saveMessage({ charId, role: 'system', type: 'text', content: `「${char.name}」把对你的备注改成了「${remark}」` });
+          } catch { /* ignore */ }
+          setLastMsgTimestamp(Date.now());
+      };
+      window.addEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
+      return () => window.removeEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
 

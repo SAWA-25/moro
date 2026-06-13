@@ -10,7 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
 import { processImage } from '../utils/file';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
@@ -38,7 +38,8 @@ const GroupMessageItem = React.memo(({
     displayName,
     memberTitle,
     onAvatarClick,
-    onAvatarPoke
+    onAvatarPoke,
+    onShowNicknameThought
 }: {
     msg: Message,
     isUser: boolean,
@@ -56,7 +57,9 @@ const GroupMessageItem = React.memo(({
     /** 单击成员头像：打开成员资料/角色设置 */
     onAvatarClick?: () => void,
     /** 双击成员头像：戳一戳 */
-    onAvatarPoke?: () => void
+    onAvatarPoke?: () => void,
+    /** 点带「改名小心思」的系统提示：弹出查看角色改群名片的动机 */
+    onShowNicknameThought?: (msg: Message) => void
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -81,10 +84,16 @@ const GroupMessageItem = React.memo(({
 
     // 系统通知（改群名/禁言/头衔/移除成员等）：居中灰色胶囊
     if (msg.role === 'system' || msg.type === 'system') {
+        // 角色改群名片若带了「小心思」，胶囊变成可点击，点开看动机
+        const nickThought = (msg.metadata as any)?.nicknameThought as string | undefined;
+        const revealable = !!nickThought && !selectionMode;
         return (
-            <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
-                <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
-                    {msg.content}
+            <div className="flex justify-center my-3 animate-fade-in" onClick={() => {
+                if (selectionMode) { onToggleSelect(msg.id); return; }
+                if (nickThought) onShowNicknameThought?.(msg);
+            }}>
+                <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${revealable ? 'cursor-pointer hover:bg-slate-300/70 active:scale-95 transition' : ''} ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
+                    {msg.content}{nickThought ? ' 💭' : ''}
                 </span>
             </div>
         );
@@ -272,10 +281,14 @@ const ChatHub: React.FC = () => {
     const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
     // 头衔编辑 / 禁言时长选择
     const [tempTitle, setTempTitle] = useState('');
+    // 管理员/群主给成员改群名片（成员资料页里）
+    const [tempMemberNickname, setTempMemberNickname] = useState('');
     // 移除成员二次确认（第一次点变红，再点才执行）
     const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
     // 我的群名片编辑（设置弹窗里）
     const [tempMyNickname, setTempMyNickname] = useState('');
+    // 点开「改名小心思」系统提示后，要展示动机的那条消息
+    const [nicknameThoughtMsg, setNicknameThoughtMsg] = useState<Message | null>(null);
     // 群聊表情抽屉搜索
     const [emojiSearch, setEmojiSearch] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
@@ -298,7 +311,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'mute-member' | 'add-member'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
@@ -692,6 +705,23 @@ const ChatHub: React.FC = () => {
             await postGroupNotice(activeGroup.id, title ? `你给「${name}」设置了头衔「${title}」` : `你撤销了「${name}」的头衔`);
             setModalType('member-profile');
             addToast(title ? '头衔已设置' : '头衔已撤销', 'success');
+        }
+    };
+
+    /** 群主/管理员给某成员改群名片（角色自己也能改，这里是用户代改） */
+    const handleSetMemberNickname = async () => {
+        if (!activeGroup || !profileMemberId) return;
+        const charName = characters.find(c => c.id === profileMemberId)?.name || '成员';
+        const oldDisplay = activeGroup.memberNicknames?.[profileMemberId] || charName;
+        const nick = tempMemberNickname.trim().slice(0, 24);
+        const nicknames = { ...(activeGroup.memberNicknames || {}) };
+        if (nick) nicknames[profileMemberId] = nick;
+        else delete nicknames[profileMemberId];
+        const updated = await applyGroupUpdate({ memberNicknames: nicknames });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, nick ? `你把「${oldDisplay}」的群名片改为「${nick}」` : `你清除了「${oldDisplay}」的群名片`);
+            setModalType('member-profile');
+            addToast(nick ? '群名片已修改' : '群名片已清除', 'success');
         }
     };
 
@@ -1229,7 +1259,7 @@ ${attachedImagesNote}
 #### 六点五、群事件感知与群名片
 - 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶等——按各自性格来，也允许无视。
 - **被【禁言中】标记的成员本轮严禁发言**——不要为该成员生成任何消息（包括表情包）。其他成员可以提到ta、调侃ta只能干瞪眼。
-- **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`（可与一句发言放在同一条 content 里）。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
+- **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`，也可以在后面用竖线带上「改名的小心思/动机」：\`[[SET_NICKNAME: 新群名片|为什么改成这个名字的真实想法]]\`（可与一句发言放在同一条 content 里）。这段小心思不会直接显示，用户点开那条系统提示才能看到——所以可以写得更真实私密。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -1318,8 +1348,11 @@ ${attachedImagesNote}
                     nickMatches.push(nickMatch);
                 }
                 if (nickMatches.length > 0) {
-                    // 只取最后一个（一轮多次改名没意义）
-                    const newNick = nickMatches[nickMatches.length - 1][1].trim().slice(0, 24);
+                    // 只取最后一个（一轮多次改名没意义）。格式：新群名片[|改名的小心思]
+                    const rawNick = nickMatches[nickMatches.length - 1][1].trim();
+                    const [nickPart, ...thoughtParts] = rawNick.split('|');
+                    const newNick = nickPart.trim().slice(0, 24);
+                    const thought = thoughtParts.join('|').trim().slice(0, 200);
                     for (const m of nickMatches) {
                         action.content = action.content.replace(m[0], '');
                     }
@@ -1338,7 +1371,9 @@ ${attachedImagesNote}
                             groupId: liveGroup.id,
                             role: 'system',
                             type: 'system',
-                            content: `「${oldDisplay}」将自己的群名片改为「${newNick}」`,
+                            content: `「${oldDisplay}」把群名片改成了「${newNick}」`,
+                            // 改名小心思：存进 metadata，点系统提示即可查看（见 GroupMessageItem）
+                            ...(thought ? { metadata: { nicknameThought: thought, nicknameChar: charName, nicknameNew: newNick } } : {}),
                         } as any);
                         setMessages(await DB.getGroupMessages(liveGroup.id));
                     }
@@ -1937,6 +1972,7 @@ ${attachedImagesNote}
                             memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
                             onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
                             onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
+                            onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                         />
                     );
                 })}
@@ -2287,6 +2323,9 @@ ${attachedImagesNote}
                             {canManage && (
                                 <div className="pt-3 border-t border-slate-100 space-y-2">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">管理操作（{isUserOwner(activeGroup) ? '群主' : '管理员'}）</label>
+                                    <button onClick={() => { setTempMemberNickname(nickname || ''); setModalType('set-member-nickname'); }} className="w-full py-2.5 bg-indigo-50 text-indigo-600 font-bold rounded-xl border border-indigo-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
+                                        <IdentificationCard size={14} weight="bold" /> 改群名片
+                                    </button>
                                     <div className="grid grid-cols-2 gap-2">
                                         <button onClick={() => { setTempTitle(title || ''); setModalType('set-title'); }} className="py-2.5 bg-amber-50 text-amber-600 font-bold rounded-xl border border-amber-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
                                             <Crown size={14} weight="bold" /> 设置头衔
@@ -2310,6 +2349,39 @@ ${attachedImagesNote}
                     </Modal>
                 );
             })()}
+
+            {/* 改群名片 Modal（群主/管理员代成员改） */}
+            <Modal
+                isOpen={modalType === 'set-member-nickname'} title="改群名片" onClose={() => setModalType('member-profile')}
+                footer={<div className="flex gap-2 w-full">
+                    <button onClick={() => { setTempMemberNickname(''); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
+                    <button onClick={handleSetMemberNickname} className="flex-1 py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">保存</button>
+                </div>}
+            >
+                <div className="space-y-3">
+                    <p className="text-xs text-slate-400">群名片只改变这位成员在本群的显示名，不影响 TA 的角色本名。清空保存即恢复角色名。群里所有人都会看到这条改动通知。</p>
+                    <input value={tempMemberNickname} onChange={e => setTempMemberNickname(e.target.value)} maxLength={24} placeholder="给 TA 起个群里的昵称…" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-indigo-300 transition-all" autoFocus />
+                </div>
+            </Modal>
+
+            {/* 改名小心思 Modal（点系统提示弹出，查看角色为什么改群名片） */}
+            <Modal isOpen={!!nicknameThoughtMsg} title="改名的小心思" onClose={() => setNicknameThoughtMsg(null)}>
+                {nicknameThoughtMsg && (() => {
+                    const md: any = nicknameThoughtMsg.metadata || {};
+                    return (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                                <IdentificationCard size={14} weight="bold" />
+                                <span>{md.nicknameChar || '某位成员'} 改成了「{md.nicknameNew || ''}」</span>
+                            </div>
+                            <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-4 text-sm text-slate-700 leading-relaxed">
+                                {md.nicknameThought || '（没有留下想法）'}
+                            </div>
+                            <p className="text-[10px] text-slate-300 text-center">只有你能看到这段心声</p>
+                        </div>
+                    );
+                })()}
+            </Modal>
 
             {/* 设置头衔 Modal */}
             <Modal

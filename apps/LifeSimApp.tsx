@@ -29,7 +29,7 @@ import { DB } from '../utils/db';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
     Buildings, ArrowCounterClockwise, Gear, Star, Hourglass,
-    MaskHappy, UserPlus, Eye, UsersThree, MaskSad, HeartHalf, Lightning,
+    MaskHappy, UserPlus, Eye, UsersThree, MaskSad, HeartHalf, Lightning, MapTrifold,
 } from '@phosphor-icons/react';
 
 // Twemoji helper: converts an emoji string to a Twemoji CDN <img> tag
@@ -59,6 +59,7 @@ import GameOverOverlay from './lifesim/GameOverOverlay';
 import LifeSimSettingsPanel from './lifesim/LifeSimSettingsPanel';
 import NPCEditorPanel from './lifesim/NPCEditorPanel';
 import ResetCityDialog from './lifesim/ResetCityDialog';
+import RoamView from './lifesim/RoamView';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -125,6 +126,7 @@ const LifeSimApp: React.FC = () => {
     const [showResetDialog, setShowResetDialog] = useState(false);
     const [editingNpc, setEditingNpc] = useState<SimNPC | null>(null);
     const [isResetting, setIsResetting] = useState(false);
+    const [showRoam, setShowRoam] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'npcs'|'drama'|'relations'>('npcs');
     const [actionPanel, setActionPanel] = useState<'none'|'stir'|'add'>('none');
@@ -1000,6 +1002,20 @@ const LifeSimApp: React.FC = () => {
                             R{gameState.turnNumber} D{gameState.day ?? 1}
                         </span>
                         <button
+                            onClick={() => setShowRoam(true)}
+                            className="flex items-center justify-center"
+                            title="漫游"
+                            style={{
+                                width: 44, height: 44, borderRadius: 7,
+                                background: 'rgba(255,255,255,0.2)',
+                                border: '1px solid rgba(255,255,255,0.3)',
+                                fontSize: 12, color: 'white',
+                                touchAction: 'manipulation',
+                                WebkitTapHighlightColor: 'transparent',
+                            }}>
+                            <MapTrifold size={16} weight="bold" />
+                        </button>
+                        <button
                             onClick={() => setShowSettings(true)}
                             className="flex items-center justify-center relative"
                             style={{
@@ -1284,6 +1300,9 @@ const LifeSimApp: React.FC = () => {
             {showGameOver && (
                 <GameOverOverlay reason={gameState.gameOverReason} onRestart={resetGame} />
             )}
+
+            {/* ── 漫游系统 ── */}
+            {showRoam && <RoamView onClose={() => setShowRoam(false)} />}
         </div>
     );
 };

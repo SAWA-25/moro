@@ -1,17 +1,41 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
-import { ArrowLeft, ArrowClockwise, Newspaper, WarningCircle, ArrowSquareOut } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowClockwise, Newspaper, WarningCircle, ArrowSquareOut, PaperPlaneTilt } from '@phosphor-icons/react';
 import { DB } from '../utils/db';
 import { RealtimeContextManager } from '../utils/realtimeContext';
+import Modal from '../components/os/Modal';
 import type { HotNewsSnapshot, HotNewsItem } from '../types';
 
 const SLOT_WINDOW = ['00:00–04:00', '04:00–08:00', '08:00–12:00', '12:00–16:00', '16:00–20:00', '20:00–24:00'];
 
 const HotNewsApp: React.FC = () => {
-    const { closeApp, realtimeConfig, addToast } = useOS();
+    const { closeApp, realtimeConfig, addToast, characters } = useOS();
     const [snapshot, setSnapshot] = useState<HotNewsSnapshot | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // 转发：选中要分享给角色的那条热点
+    const [forwardItem, setForwardItem] = useState<HotNewsItem | null>(null);
+
+    // 把一条热点当作新闻卡片转发到与某个角色的聊天里（用户主动分享）
+    const handleForward = useCallback(async (charId: string) => {
+        const item = forwardItem;
+        if (!item) return;
+        try {
+            await DB.saveMessage({
+                charId,
+                role: 'user',
+                type: 'news_card',
+                content: `[你分享了一个热点：「${item.title}」${item.source ? `（来源：${item.source}）` : ''}]`,
+                metadata: { source: item.source, title: item.title, url: item.url, desc: item.desc },
+            });
+            const name = characters.find(c => c.id === charId)?.name || '角色';
+            addToast(`已转发给 ${name}`, 'success');
+        } catch {
+            addToast('转发失败', 'error');
+        } finally {
+            setForwardItem(null);
+        }
+    }, [forwardItem, characters, addToast]);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -162,6 +186,14 @@ const HotNewsApp: React.FC = () => {
                                                     <p className="text-[11px] text-stone-500/90 leading-snug mt-0.5">{it.desc}</p>
                                                 )}
                                             </div>
+                                            <button
+                                                onClick={() => setForwardItem(it)}
+                                                className="shrink-0 self-start mt-0.5 p-1 rounded-full text-stone-400 hover:text-red-700 hover:bg-black/5 active:scale-90 transition-transform"
+                                                title="转发给角色"
+                                                aria-label="转发给角色"
+                                            >
+                                                <PaperPlaneTilt size={15} weight="bold" />
+                                            </button>
                                         </li>
                                     ))}
                                 </ol>
@@ -176,6 +208,27 @@ const HotNewsApp: React.FC = () => {
                     </p>
                 )}
             </div>
+
+            {/* 转发到聊天：挑一个角色，把这条热点当新闻卡片递过去 */}
+            <Modal isOpen={!!forwardItem} title="转发给角色" onClose={() => setForwardItem(null)}>
+                {forwardItem && (
+                    <p className="text-[12px] text-stone-500 mb-3 line-clamp-2 leading-snug">
+                        「{forwardItem.title}」
+                    </p>
+                )}
+                {characters.length === 0 ? (
+                    <div className="text-center text-xs text-stone-300 py-6">还没有可转发的角色</div>
+                ) : (
+                    <div className="grid grid-cols-4 gap-4 p-2 max-h-[50vh] overflow-y-auto no-scrollbar">
+                        {characters.map(c => (
+                            <button key={c.id} onClick={() => handleForward(c.id)} className="flex flex-col items-center gap-2 group">
+                                <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-stone-100 group-active:scale-90 transition-transform" />
+                                <span className="text-[10px] text-stone-600 truncate w-full text-center">{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };

@@ -35,6 +35,7 @@ import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { splitOutRichBlocks } from './chatRichContent';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
+import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
@@ -441,6 +442,21 @@ export async function applyAssistantPostProcessing(
             aiContent = blockExtract.content;
             if (!isCharBlockDisabled() && !char.charBlock?.active && typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_BLOCK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // ─── Step 1.55: [[SET_USER_REMARK]] 角色主动给用户换备注 ───
+    // 先剥后播：OSContext 监听事件落 convoSettings.userNickname + 动机 + 系统消息，
+    // Chat.tsx 监听弹「换备注」弹窗（点开看动机）。
+    {
+        const remarkExtract = extractUserRemarkDirective(aiContent);
+        if (remarkExtract.remark) {
+            aiContent = remarkExtract.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_USER_REMARK_EVENT, {
+                    detail: { charId: char.id, remark: remarkExtract.remark, motivation: remarkExtract.motivation },
+                }));
             }
         }
     }
