@@ -20,6 +20,57 @@ import { recordRecallReceipt } from './recallReceipts';
 const DEFAULT_MAX_OUTPUT_ITEMS = 15;
 const MAX_LIVE_NODES_PER_BOX = 8; // 单盒最多展开多少条活节点（防止超大盒污染）
 
+// ─── 窗台期盼/锚点的「出现节流」 ───────────────────────────
+// 痛点：active/anchor 的期盼之前是**每一轮全量注入**，于是一条「锚点」会被角色
+// 每句话都拎出来念叨——这正是「把一件事当锚点反复提及」。这里给锚点加冷却：
+// 同一条锚点最多每 ANCHOR_COOLDOWN_TURNS 轮露一次面，单轮最多 MAX_ANCHORS_PER_TURN 条，
+// 让它从「时刻悬在嘴边」退回「偶尔想起」。新近的 active 期盼仍正常展示（它们本就该在心头）。
+const ANCHOR_COOLDOWN_KEY = (charId: string) => `mp_anchor_cooldown_${charId}`;
+const ANCHOR_COOLDOWN_TURNS = 3;   // 同一锚点的冷却轮数
+const MAX_ANCHORS_PER_TURN = 2;    // 单轮最多注入几条锚点
+const MAX_ACTIVE_ANTS = 3;         // 单轮最多注入几条 active 期盼
+
+interface AnchorCooldownState { turn: number; shown: Record<string, number> }
+
+/**
+ * 选出本轮要注入的期盼/锚点：
+ *  - active（近期、尚未沉淀成锚点的期盼）→ 正常展示，限 MAX_ACTIVE_ANTS 条
+ *  - anchor（心理锚点）→ 过了冷却才再次露面，按「最久没出现」优先，限 MAX_ANCHORS_PER_TURN 条
+ * 用 localStorage 维护每角色的轮次游标 + 各锚点上次出现轮次。
+ */
+function pickAnticipationsToShow(charId: string, ants: Anticipation[]): Anticipation[] {
+    const active = ants.filter(a => a.status === 'active');
+    const anchors = ants.filter(a => a.status === 'anchor');
+    if (anchors.length === 0) return active.slice(0, MAX_ACTIVE_ANTS);
+
+    let state: AnchorCooldownState = { turn: 0, shown: {} };
+    try {
+        const raw = localStorage.getItem(ANCHOR_COOLDOWN_KEY(charId));
+        if (raw) {
+            const p = JSON.parse(raw);
+            if (p && typeof p.turn === 'number') state = { turn: p.turn, shown: p.shown || {} };
+        }
+    } catch { /* 读失败按初始态走 */ }
+
+    const turn = state.turn + 1;
+    // 冷却已过（含从没出现过）的锚点才有资格；从没出现过默认 turn-COOLDOWN（立即有资格）
+    const eligible = anchors
+        .filter(a => turn - (state.shown[a.id] ?? (turn - ANCHOR_COOLDOWN_TURNS)) >= ANCHOR_COOLDOWN_TURNS)
+        .sort((a, b) => (state.shown[a.id] ?? 0) - (state.shown[b.id] ?? 0)) // 最久没露面的优先
+        .slice(0, MAX_ANCHORS_PER_TURN);
+
+    for (const a of eligible) state.shown[a.id] = turn;
+    // 清理已不存在的锚点记录，避免 shown 无限膨胀
+    const liveIds = new Set(anchors.map(a => a.id));
+    for (const id of Object.keys(state.shown)) if (!liveIds.has(id)) delete state.shown[id];
+
+    try {
+        localStorage.setItem(ANCHOR_COOLDOWN_KEY(charId), JSON.stringify({ turn, shown: state.shown }));
+    } catch { /* 写失败不影响本轮输出 */ }
+
+    return [...active.slice(0, MAX_ACTIVE_ANTS), ...eligible];
+}
+
 interface RenderItem {
     /** 用于排序：取该 item 内最高的 finalScore */
     score: number;
@@ -222,8 +273,8 @@ export async function expandAndFormat(
         }
     }
 
-    // 5. 窗台期盼
-    const activeAnticipations = anticipations.filter(a => a.status === 'active' || a.status === 'anchor');
+    // 5. 窗台期盼（带出现节流：锚点不再每轮全量复读，见 pickAnticipationsToShow）
+    const activeAnticipations = pickAnticipationsToShow(charId, anticipations);
     if (activeAnticipations.length > 0) {
         output += `> **窗台期盼**:\n`;
         for (const ant of activeAnticipations) {

@@ -100,6 +100,30 @@ export function getReceiptIdsInRange(
     return result;
 }
 
+/**
+ * 统计「最近 windowSize 次召回」里每条 memoryId 各出现了几次。
+ *
+ * 用途：召回疲劳（习惯化）。一条记忆若在最近连续多轮里反复被注入 prompt，
+ * 说明角色一直在「揪着它不放」——据此对它降权，让别的记忆有机会浮上来。
+ * 这里只读最近的 receipt（当前这一轮还没写进去），所以拿到的是「过去几轮」的注入频次。
+ *
+ * @param windowSize 回看多少条 receipt（默认 6，约等于过去 6 轮召回）
+ * @returns Map<memoryId, 近窗内出现次数>
+ */
+export function getRecentInjectionCounts(
+    charId: string,
+    windowSize: number = 6,
+): Map<string, number> {
+    const list = readAll(charId);
+    const recent = windowSize > 0 ? list.slice(-windowSize) : list;
+    const counts = new Map<string, number>();
+    for (const r of recent) {
+        // 写入时已对单条 receipt 内的 ids 去重，这里每条 receipt 每个 id 记 1 次
+        for (const id of r.ids) counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    return counts;
+}
+
 /** 测试/调试用：清空某角色的回执表 */
 export function clearReceipts(charId: string): void {
     try {

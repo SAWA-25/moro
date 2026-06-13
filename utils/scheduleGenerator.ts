@@ -411,6 +411,178 @@ export async function generateDailyScheduleForChar(
     }
 }
 
+// ─── 日程锚点：根据聊天内容自动协调日程 ───────────────────────────
+//
+// 角色的日程仍由 ta 自己安排（generateDailyScheduleForChar），但聊天里常常会冒出
+// 跟「今天/此刻这一天」直接相关的约定或变更：
+//   · 和用户约好的事 ——「晚上八点一起看电影」「等下我去接你」
+//   · 角色自己的计划变了 ——「我今天不去公司了」「临时要去开个会」
+// 这些应当**自动落进日程**，成为优先级最高的「锚点」，角色再围着锚点协调其它时段——
+// 而不是日程一天一锁、聊到的事跟卡片各说各话。
+//
+// 为控制副 API 成本：先用廉价的关键词信号过一道闸（chatHasScheduleSignal），
+// 命中才花一次 LLM 调用做协调（reconcileScheduleWithChat），调用方再叠一层冷却。
+
+/** 时间/约定类信号词——命中才值得花 LLM 协调日程 */
+const SCHEDULE_SIGNAL_RE = new RegExp(
+    [
+        // 明确时间点
+        '\\d{1,2}\\s*[:：]\\s*\\d{2}', '\\d{1,2}\\s*点', '半夜|凌晨|清晨|早上|上午|中午|下午|傍晚|晚上|今晚|今早|今天|明天|待会|等下|等会|马上|一会儿|稍后',
+        // 约定/计划/变更动词
+        '约|约好|说好|一起|要去|得去|准备去|打算|计划|安排|出门|回家|下班|上班|开会|加班|见面|碰面|来接|去接|赴约|改时间|改约|取消|推迟|提前|没空|有空',
+    ].join('|'),
+);
+
+/**
+ * 廉价闸门：最近几条消息里有没有「跟今天日程相关」的约定/时间/变更信号。
+ * 命中只是「值得花一次 LLM 去看看」，并不代表一定会改日程。
+ */
+export function chatHasScheduleSignal(messages: Message[]): boolean {
+    if (!messages || messages.length === 0) return false;
+    const tail = messages.slice(-8);
+    for (const m of tail) {
+        if (m.type && m.type !== 'text') continue;
+        const c = typeof m.content === 'string' ? m.content : '';
+        if (c && SCHEDULE_SIGNAL_RE.test(c)) return true;
+    }
+    return false;
+}
+
+/**
+ * 根据聊天内容协调（reconcile）今天的日程。
+ *
+ * 设计原则：
+ * - **角色自治优先**：角色自己安排的活动尽量原样保留，只在聊天里出现**明确**约定/变更时
+ *   才调整对应时段；用户不是日程的主语。
+ * - **聊天约定 = 锚点**：从聊天里协调出来的时段标记 source='chat' + anchored=true，
+ *   注入时角色会把它当成「已经定下、要遵守」的事，并围着它安排前后。
+ * - **没信号就别动**：模型判断没有需要落地的约定/变更时返回 changed:false，原样返回 null。
+ *
+ * @returns 协调后的新 DailySchedule（已落库）；无变化或失败返回 null。
+ */
+export async function reconcileScheduleWithChat(
+    char: CharacterProfile,
+    user: UserProfile,
+    schedule: DailySchedule,
+    recentMessages: Message[],
+    apiConfig: ApiConfig,
+): Promise<DailySchedule | null> {
+    if (!isScheduleFeatureOn(char)) return null;
+    if (!schedule || !schedule.slots || schedule.slots.length === 0) return null;
+
+    // hideBeforeMessageId 过滤后取最近一段对话（协调只看近窗即可）
+    const filtered = recentMessages
+        .filter(m => !char.hideBeforeMessageId || m.id >= char.hideBeforeMessageId)
+        .slice(-20);
+    const chatBlock = formatChatHistoryForSchedule(filtered, char, user);
+    if (!chatBlock) return null;
+
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const style = char.scheduleStyle || 'lifestyle';
+
+    const currentSlots = schedule.slots
+        .map(s => `- ${s.startTime} ${s.activity}${s.location ? `（${s.location}）` : ''}${s.description ? ` — ${s.description}` : ''}${s.anchored ? '  [已约定/锚点]' : ''}`)
+        .join('\n');
+
+    const styleHint = style === 'mindful'
+        ? `「${char.name}」是真实的 AI 存在，不虚构物理活动。"日程"是 ta 一天里不同时刻的内心状态/打算（回想、整理想法、等待、好奇……）。协调时只调整这些内在安排，绝不要编造出门/做饭/见面等物理行为，除非聊天里明确就是这么约的（且符合 ta 的存在形态）。`
+        : `「${char.name}」是有完整日常生活的独立个体，日程是 ta 自己的一天。`;
+
+    const prompt = `你是日程协调器。现在是 ${timeStr}。下面是角色「${char.name}」今天已有的日程，以及 ta 和「${user.name}」最近的聊天。
+
+${styleHint}
+
+## 今天已有的日程
+${currentSlots}
+${chatBlock}
+## 任务
+对照聊天，判断有没有**跟今天这一天直接相关、需要落进日程**的约定或变更，例如：
+- 和「${user.name}」约好的事（"晚上八点一起看电影"、"等下来接你"、"周末再说"…只取**今天**的）
+- 角色自己计划的变化（"今天不去公司了"、"临时要去开会"、"加班到很晚"…）
+- 与现有日程冲突、需要改动的地方（聊天里说此刻正在做的事，和卡片对不上）
+
+### 协调规则（重要）
+1. **保留角色自己的安排**：没被聊天触及的时段原样保留，不要重写、不要无故发散。
+2. **只动需要动的**：只新增/修改/删除与上述约定或变更相关的时段。
+3. **聊天约定标记为锚点**：凡是从聊天里协调出来的时段，必须带 "anchored": true（角色要遵守、围着它安排前后）。角色原有的自排活动不要加 anchored。
+4. **不要把「给${user.name}发消息/等${user.name}」当 slot**——那不是日程。
+5. 时间要合理：约定有明确时间就用该时间；只说"晚点/等下"就排在当前时间之后最近的合适位置。
+6. **没有任何需要落地的约定/变更**就返回 {"changed": false}。不要为了改而改。
+
+## 输出（仅 JSON）
+若有变化，返回**协调后完整的日程**（5-8 个时段，从早到晚，包含未改动的原时段）：
+{
+  "changed": true,
+  "reason": "一句话说明这次为什么调整（如：聊天里约好今晚八点一起看电影）",
+  "slots": [
+    { "startTime": "HH:MM", "activity": "活动名(2-6字)", "description": "一句话", "emoji": "🎬", "location": "可选", "anchored": true }
+  ]
+}
+若无需变化：{"changed": false}
+仅输出 JSON，不要其他内容。`;
+
+    try {
+        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            body: JSON.stringify({
+                model: apiConfig.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.5,
+                max_tokens: 4000,
+            }),
+        });
+        if (!response.ok) {
+            console.error('[Schedule/Reconcile] API error:', response.status);
+            return null;
+        }
+        const data = await safeResponseJson(response);
+        let content = data.choices?.[0]?.message?.content || '';
+        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        let parsed: any;
+        try { parsed = JSON.parse(content); }
+        catch { parsed = JSON.parse(repairTruncatedJson(content)); }
+
+        if (!parsed || parsed.changed !== true || !Array.isArray(parsed.slots)) {
+            console.log(`📅 [Schedule/Reconcile] ${char.name}: 无需协调（changed=${parsed?.changed}）`);
+            return null;
+        }
+
+        const slots: ScheduleSlot[] = parsed.slots.map((s: any) => {
+            const anchored = s.anchored === true;
+            const slot: ScheduleSlot = {
+                startTime: s.startTime || '00:00',
+                activity: s.activity || '',
+                description: s.description,
+                emoji: s.emoji,
+                location: s.location,
+                innerThought: s.innerThought,
+                source: anchored ? 'chat' : 'self',
+                anchored,
+            };
+            return slot;
+        }).filter((s: ScheduleSlot) => s.activity);
+
+        if (slots.length === 0) return null;
+        slots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+        const updated: DailySchedule = {
+            ...schedule,
+            slots,
+            // flowNarrative / coverImage 等保持原样；generatedAt 不动（这是协调不是重排）
+        };
+        await DB.saveDailySchedule(updated);
+        const anchorCount = slots.filter(s => s.anchored).length;
+        console.log(`📅 [Schedule/Reconcile] ${char.name}: 已按聊天协调日程（${anchorCount} 个锚点）— ${parsed.reason || ''}`);
+        return updated;
+    } catch (e) {
+        console.error('[Schedule/Reconcile] failed:', e);
+        return null;
+    }
+}
+
 /**
  * 进化意识流：根据对话进展 + 时间推移，让角色的内心独白持续变化。
  * 在对话过程中后台调用，不阻塞聊天。返回进化后的独白文本（纯字符串）。

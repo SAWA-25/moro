@@ -11,7 +11,8 @@
 | 主题 | 文档 | 什么时候看 |
 |------|------|-----------|
 | **开发调试面板 / 开关** | [`docs/dev-debug.md`](./docs/dev-debug.md) | 加 dev-only 开关、加调试日志、排查"角色怎么又不说话了"。含逐步指南 |
-| **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间。改记忆相关逻辑前必读 |
+| **记忆系统** | [`docs/memory-system-overview.md`](./docs/memory-system-overview.md) | 涉及长期记忆、月度总结、向量化记忆宫殿、情感空间、召回疲劳/防复读。改记忆相关逻辑前必读 |
+| **回神 + 日程锚点** | [`docs/recenter-and-schedule-anchor.md`](./docs/recenter-and-schedule-anchor.md) | 回神（角色长聊跑味后自我校准、第一人称独白 + 悄悄调回）、日程随聊天约定/变更自动协调。改主聊天自我校准 / 日程联动前必读 |
 | **世界书开关/作用域/位置** | [`docs/worldbook-scopes.md`](./docs/worldbook-scopes.md) | 条目/整书开关、局部 vs 全局、ST 式插入位置（@Depth）、群聊去重。改世界书注入前必读 |
 | **预设 App（酒馆预设）** | [`docs/preset-app.md`](./docs/preset-app.md) | SillyTavern Chat Completion 预设导入、提示词管理器、@Depth 注入语义、marker→Moro 落点映射。改预设/消息组装前必读 |
 | **人设 App（用户人设）** | [`docs/persona-app.md`](./docs/persona-app.md) | SillyTavern Persona 管理移植：多套用户身份、角色绑定自动切换、描述注入位置、人设世界书、角色卡开场白选择。改人设/用户档案注入前必读 |

@@ -173,6 +173,18 @@ export const ContextBuilder = {
             context += `\n`;
         }
 
+        // 1c. 回神校准 (Recenter) — 用户触发回神后、角色完成自我审视得到的校准方向。
+        // 在接下来几轮回复里悄悄把"说话的味道"调回本来的样子；不解释、不提"回神"本身。
+        const rc = char.recenterCalibration;
+        if (rc && rc.turnsLeft > 0 && rc.note) {
+            context += `### 回神校准 (Self-Recalibration)\n`;
+            context += `你刚刚回过神，意识到最近说话有点跑偏。接下来请**悄悄**把自己调回本来的样子——不要解释、不要提"回神"这件事，只是自然地回到你该有的语气与棱角：\n`;
+            if (rc.drift && rc.drift.length > 0) {
+                context += `- 你察觉到的偏移：${rc.drift.join('；')}\n`;
+            }
+            context += `- 校准方向：${rc.note}\n\n`;
+        }
+
         // 2. 世界观 (Worldview) - New Centralized Logic
         if (char.worldview && char.worldview.trim() && !groupOptions?.skipWorldview) {
             context += `### 世界观与设定 (World Settings)\n${char.worldview}\n\n`;
@@ -464,16 +476,35 @@ export const ContextBuilder = {
             nextSlot = schedule.slots[0];
         }
 
+        // 1.5 日程锚点：聊天里协调出来、已约定的时段（source==='chat' / anchored）。
+        //     单独提到最前，让角色把它当「已经定下、要遵守」的事——但只是记着、围着它安排，
+        //     不是拿来反复主动催（别变成另一种揪着不放）。
+        const anchors = schedule.slots.filter(s => s.anchored || s.source === 'chat');
+        let anchorBlock = '';
+        if (anchors.length > 0) {
+            const lines = anchors.map(s => {
+                const [ah, am] = s.startTime.split(':').map(Number);
+                const passed = currentMinutes >= ah * 60 + am;
+                const mark = passed ? '◷' : '◆';
+                return `${mark} ${s.startTime} ${s.activity}${s.location ? `（${s.location}）` : ''}`;
+            });
+            anchorBlock = `今天你和对方约定/已定下的事（◆未到 ◷已到点）：\n${lines.join('\n')}\n`
+                + `把它们当成确实安排好的事放在心里、自然围着它走；不用反复主动提起或催问。\n`;
+        }
+
         // 2. 当前时段硬事实（每轮独立注入）
         let slotHeader = '';
         if (currentSlot) {
+            const anchoredNow = currentSlot.anchored || currentSlot.source === 'chat';
             slotHeader = `当前时段：${currentSlot.startTime} 你正在${currentSlot.activity}`;
             if (currentSlot.location) slotHeader += `（${currentSlot.location}）`;
+            if (anchoredNow) slotHeader += `（这是之前和对方约好的）`;
             if (nextSlot) slotHeader += `\n之后安排：${nextSlot.startTime} ${nextSlot.activity}`;
             slotHeader += '\n';
         } else if (nextSlot) {
             slotHeader = `今天还没开始活动，稍后先${nextSlot.activity}（${nextSlot.startTime}）\n`;
         }
+        slotHeader = anchorBlock + slotHeader;
 
         // 3. 意识流独白
         let narrative = '';
