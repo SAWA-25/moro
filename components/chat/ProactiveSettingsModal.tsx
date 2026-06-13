@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import JournalSheet, { SealBtn, CandyToggle, StickerChip, LinedInput, NoteStrip } from './JournalSheet';
 import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile } from '../../types';
+import { getNotifyPermission, requestNotifyPermission, detectBrowser, isRecommendedForWebNotify, type NotifyPermission } from '../../utils/browserNotify';
 
 interface ProactiveSettingsModalProps {
     isOpen: boolean;
@@ -30,6 +31,8 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     const [enabled, setEnabled] = useState(saved?.enabled ?? false);
     const [interval, setInterval_] = useState(saved?.intervalMinutes ?? 60);
     const [randomMode, setRandomMode] = useState(saved?.randomMode ?? false);
+    const [autonomousLife, setAutonomousLife] = useState(saved?.autonomousLifeEnabled ?? true);
+    const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>(() => getNotifyPermission());
     const [useSecondaryApi, setUseSecondaryApi] = useState(saved?.useSecondaryApi ?? false);
     const [secUrl, setSecUrl] = useState(saved?.secondaryApi?.baseUrl ?? '');
     const [secKey, setSecKey] = useState(saved?.secondaryApi?.apiKey ?? '');
@@ -43,6 +46,8 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
             setEnabled(s?.enabled ?? false);
             setInterval_(s?.intervalMinutes ?? 60);
             setRandomMode(s?.randomMode ?? false);
+            setAutonomousLife(s?.autonomousLifeEnabled ?? true);
+            setNotifyPerm(getNotifyPermission());
             setUseSecondaryApi(s?.useSecondaryApi ?? false);
             setSecUrl(s?.secondaryApi?.baseUrl ?? '');
             setSecKey(s?.secondaryApi?.apiKey ?? '');
@@ -51,11 +56,17 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
         }
     }, [isOpen, char.id]);
 
+    const handleRequestNotify = async () => {
+        const perm = await requestNotifyPermission();
+        setNotifyPerm(perm);
+    };
+
     const handleSave = () => {
         onSave({
             enabled,
             intervalMinutes: interval,
             randomMode,
+            autonomousLifeEnabled: autonomousLife,
             useSecondaryApi: useSecondaryApi && !!secUrl,
             secondaryApi: useSecondaryApi && secUrl ? {
                 baseUrl: secUrl,
@@ -109,6 +120,22 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
 
                 {enabled && (
                     <>
+                        {/* 离线自主生活 */}
+                        <div className="flex items-start justify-between gap-3 rounded-[8px] px-3 py-2.5" style={{ background: 'rgba(250,245,255,0.85)', border: '1px dashed #ddc9e8' }}>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] leading-none" aria-hidden>🌱</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>让 TA 过自己的生活</span>
+                                </div>
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                    开了之后，{char.name} 在你不在时会有自己的日常（上班、吃饭、追剧、和朋友出门…）。
+                                    来信会从 TA 正在经历的事里取材——分享自己的生活，而不是每次都催你回复。
+                                    你离开一阵子再回来，还能看到「你不在时 TA 经历了…」的回顾。
+                                </p>
+                            </div>
+                            <CandyToggle on={autonomousLife} onToggle={() => setAutonomousLife(!autonomousLife)} candy="#c8a3dd" />
+                        </div>
+
                         {/* 触发方式 */}
                         <div className="pt-1">
                             <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>什么时候来信</div>
@@ -193,6 +220,47 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                         placeholder="gpt-4o-mini"
                                     />
                                 </div>
+                            )}
+                        </div>
+
+                        {/* 离线消息弹窗 · 浏览器授权 */}
+                        <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] leading-none" aria-hidden>📣</span>
+                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>离线也能收到弹窗</span>
+                            </div>
+                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                授权一次浏览器通知，{char.name} 来信时即使你切到别的标签或最小化，也会弹出系统通知。电脑版 Chrome / Edge 体验最好。
+                            </p>
+                            <div className="mt-2.5">
+                                {notifyPerm === 'granted' && (
+                                    <div className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5" style={{ background: 'rgba(240,250,245,0.9)', border: '1px dashed #bfe1cf' }}>
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#5ca57f' }} />
+                                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>浏览器通知已开启</span>
+                                    </div>
+                                )}
+                                {notifyPerm === 'default' && (
+                                    <button type="button" onClick={handleRequestNotify}
+                                        className="rounded-[10px] px-3.5 py-1.5 text-[11.5px] font-bold transition active:scale-95"
+                                        style={{ ...CUTE_STACK, color: '#fff', background: 'linear-gradient(135deg,#c8a3dd,#f29db0)', boxShadow: '0 2px 6px rgba(200,140,180,0.35)' }}>
+                                        开启浏览器通知
+                                    </button>
+                                )}
+                                {notifyPerm === 'denied' && (
+                                    <NoteStrip>
+                                        浏览器已拒绝通知权限。请点地址栏左侧的 🔒 / ⓘ 图标 →「通知」改为「允许」，再回到这里即可。
+                                    </NoteStrip>
+                                )}
+                                {notifyPerm === 'unsupported' && (
+                                    <NoteStrip>
+                                        当前环境不支持网页通知。建议用电脑版 Chrome 或 Edge 打开；iOS 需先把 Moro「添加到主屏幕」装成 App。
+                                    </NoteStrip>
+                                )}
+                            </div>
+                            {notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && !isRecommendedForWebNotify() && (
+                                <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                                    提示：当前是 {detectBrowser().name}。离线弹窗在电脑版 Chrome / Edge 上最稳定。
+                                </p>
                             )}
                         </div>
                     </>

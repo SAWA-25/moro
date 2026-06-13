@@ -1594,6 +1594,33 @@ export interface CharMusicProfile {
     updatedAt: number;
 }
 
+/**
+ * 角色离线自主生活事件 —— 由 utils/autonomousLife.ts 的 agent 生成。
+ * 角色在用户离线 / 没在聊天时「过自己的日子」，每条事件代表 TA 正在或刚刚经历的
+ * 一件小事（上班、吃饭、追剧、和朋友出门、emo…）。这些事件有两个出口：
+ *  1. 给主动消息取材 —— 角色分享自己的生活，而不是反复催用户回复（不围着用户转）；
+ *  2. 攒成「你不在时 TA 经历了…」的离线动态回顾时间线（来往 App 内可查看）。
+ */
+export interface CharLifeEvent {
+  /** `life_${charId}_${timestamp}_${rand}` */
+  id: string;
+  charId: string;
+  /** 事件发生时刻（ms）。回顾按它排序 / 分组。 */
+  timestamp: number;
+  /** 一句话活动，如「在公司赶方案」「窝在沙发追剧」 */
+  activity: string;
+  /** 当下心情，一两个词或 emoji，如「有点累」「😌 惬意」 */
+  mood?: string;
+  /** 可选地点，如「公司」「楼下咖啡店」 */
+  location?: string;
+  /** 用于通知 / 回顾的简短摘要（通常等于 activity，或更口语的一句话） */
+  summary: string;
+  /** 是否已作为主动消息发给用户（回顾里据此标注「已经跟你说过」，避免重复强调） */
+  surfacedAsMsg?: boolean;
+  /** 生成来源：proactive 触发时顺带生成 / 用户离线回来时补齐 */
+  source: 'proactive' | 'catchup';
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -1735,6 +1762,11 @@ export interface CharacterProfile {
     /** 随机时间模式：间隔随机（1 小时 ~ 1 天），且用户刚回过消息时不打扰，
      *  发不发、说什么完全交给角色性格 */
     randomMode?: boolean;
+    /** 离线自主生活：开启后角色在后台「过自己的日子」，主动消息从 TA 正在经历的
+     *  生活事件取材（分享自己的生活、而不是催用户回复），离线期间的活动也会攒成
+     *  一份「你不在时 TA 经历了…」的回顾时间线（见 utils/autonomousLife.ts）。
+     *  undefined 视为开启（默认行为）。 */
+    autonomousLifeEnabled?: boolean;
     useSecondaryApi?: boolean;
     secondaryApi?: {
       baseUrl: string;

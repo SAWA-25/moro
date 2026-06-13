@@ -763,6 +763,10 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                                 <EnvelopeOpen className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
+                            <ActionStrip label="TA 的日常" hint="看看 TA 自己的生活轨迹" dark={isDiscordStyle} onClick={() => onPanelAction('life-recap')}>
+                                <Scroll className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
                             <DrawerTag>这 本 手 帐</DrawerTag>
 
                             <ActionStrip label={isSummarizing ? '装订中…' : '装订成册'} hint="把聊天归档进记忆" dark={isDiscordStyle} onClick={() => onPanelAction('archive')}>
