@@ -255,6 +255,8 @@ interface OSContextType {
   // User Profile
   userProfile: UserProfile;
   updateUserProfile: (updates: Partial<UserProfile>) => void;
+  /** 钱包余额增减（并发安全：基于上一份 state 累加，自动持久化）。返回更新后的余额。 */
+  adjustUserBalance: (delta: number) => number;
 
   availableModels: string[];
   setAvailableModels: (models: string[]) => void;
@@ -381,7 +383,8 @@ const generateAvatar = (seed: string) => {
 const defaultUserProfile: UserProfile = {
     name: 'User',
     avatar: generateAvatar('User'),
-    bio: 'No description yet.'
+    bio: 'No description yet.',
+    balance: 0
 };
 
 // Moro 四张本地表情头像（public/moro-avatars/）：平静 / 撒娇 / 可怜 / 疑惑
@@ -2487,6 +2490,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   const updateUserProfile = async (updates: Partial<UserProfile>) => { setUserProfile(prev => { const next = { ...prev, ...updates }; DB.saveUserProfile(next); return next; }); };
+
+  // 钱包余额增减：用函数式更新避免并发覆盖（店铺营业 + 聊天转账可能几乎同时发生）。
+  // userBalanceRef 跟随已提交余额，保证同一 tick 内多次调用累加一致；函数式 setState 才是真值来源。
+  const userBalanceRef = useRef(0);
+  useEffect(() => { userBalanceRef.current = userProfile.balance || 0; }, [userProfile.balance]);
+  const adjustUserBalance = (delta: number): number => {
+    const next = Math.max(0, Math.round((userBalanceRef.current + delta) * 100) / 100);
+    userBalanceRef.current = next;
+    setUserProfile(prev => {
+      const nb = Math.max(0, Math.round(((prev.balance || 0) + delta) * 100) / 100);
+      const np = { ...prev, balance: nb };
+      DB.saveUserProfile(np);
+      return np;
+    });
+    return next;
+  };
   const addCustomTheme = async (theme: ChatTheme) => { setCustomThemes(prev => { const exists = prev.find(t => t.id === theme.id); if (exists) return prev.map(t => t.id === theme.id ? theme : t); return [...prev, theme]; }); await DB.saveTheme(theme); };
   const removeCustomTheme = async (id: string) => { setCustomThemes(prev => prev.filter(t => t.id !== id)); await DB.deleteTheme(id); };
   const setCustomIcon = async (appId: string, iconUrl: string | undefined) => { setCustomIcons(prev => { const next = { ...prev }; if (iconUrl) next[appId] = iconUrl; else delete next[appId]; return next; }); if (iconUrl) { await DB.saveAsset(`icon_${appId}`, iconUrl); } else { await DB.deleteAsset(`icon_${appId}`); } };
@@ -3719,6 +3738,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     updateGroup,
     userProfile,
     updateUserProfile,
+    adjustUserBalance,
     availableModels,
     setAvailableModels,
     apiPresets,

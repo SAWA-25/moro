@@ -18,6 +18,8 @@ interface ChatModalsProps {
     setTransferMode: (v: 'transfer' | 'redpacket') => void;
     transferNote: string;
     setTransferNote: (v: string) => void;
+    /** 钱包余额（来自存钱罐营业所得），转账/红包从这里扣 */
+    walletBalance?: number;
     emojiImportText: string;
     setEmojiImportText: (v: string) => void;
     settingsContextLimit: number;
@@ -128,6 +130,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     modalType, setModalType,
     transferAmt, setTransferAmt,
     transferMode, setTransferMode, transferNote, setTransferNote,
+    walletBalance = 0,
     emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
     settingsHideSysLogs, setSettingsHideSysLogs,
@@ -312,6 +315,17 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             placeholder="比如：恭喜发财，大吉大利" maxLength={30}
                         />
                     )}
+                    {/* 钱包余额（存钱罐营业所得），转账/红包从这里扣 */}
+                    {(() => {
+                        const amt = parseFloat(transferAmt) || 0;
+                        const insufficient = amt > walletBalance;
+                        return (
+                            <div className="flex items-center justify-between px-1 text-[12px]" style={{ color: insufficient ? '#c0392b' : '#a08a6a' }}>
+                                <span>钱包余额 ¥{Math.round(walletBalance)}</span>
+                                {insufficient && <span className="font-bold">不够啦，去存钱罐营业赚点</span>}
+                            </div>
+                        );
+                    })()}
                 </div>
             </JournalSheet>
 

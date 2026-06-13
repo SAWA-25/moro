@@ -1315,10 +1315,36 @@ export interface SpecialMomentRecord {
 export interface BankTransaction {
     id: string;
     amount: number;
-    category: string; 
+    category: string;
     note: string;
     timestamp: number;
     dateStr: string; // YYYY-MM-DD
+    /** 进账 / 支出。默认 expense（兼容旧数据） */
+    type?: 'income' | 'expense';
+    /** 角色对这笔现实账目的点评（AI 生成，一笔一条） */
+    charComment?: { charId: string; charName: string; text: string; ts: number };
+}
+
+/** 账本里一条评论（用户 ↔ 角色互评） */
+export interface LedgerComment {
+    author: 'user' | 'character';
+    text: string;
+    ts: number;
+}
+
+/**
+ * 角色账本：角色按人设给自己记的一条账（AI 生成的进账/支出），
+ * 用户可在下面留言评论，角色会 AI 回复。与用户钱包、店铺均无关。
+ */
+export interface CharLedgerEntry {
+    id: string;
+    charId: string;
+    type: 'income' | 'expense';
+    amount: number;
+    note: string;
+    dateStr: string;   // YYYY-MM-DD
+    ts: number;
+    comments?: LedgerComment[];
 }
 
 export interface SavingsGoal {
@@ -1438,6 +1464,10 @@ export interface BankShopState {
     };
     guestbook?: BankGuestbookItem[];
     dollhouse?: DollhouseState;
+    /** 上次「营业」结算的时间戳（用于营业冷却） */
+    lastBusinessAt?: number;
+    /** 店铺累计营业额（进过钱包的总收入，仅作展示统计） */
+    totalRevenue?: number;
 }
 
 export interface BankFullState {
@@ -1903,6 +1933,11 @@ export interface UserProfile {
     name: string;
     avatar: string;
     bio: string;
+    /**
+     * 钱包余额（可花的钱）。靠经营店铺「营业」赚取，用于「往来」里给角色转账 / 发红包，
+     * 收到角色红包领取后回到钱包。与「记账」（记录现实金钱的流水）相互独立、互不影响。
+     */
+    balance?: number;
     /**
      * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
