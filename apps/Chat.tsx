@@ -17,6 +17,7 @@ import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
+import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
 import McdMiniApp from '../components/mcd/McdMiniApp';
@@ -111,6 +112,9 @@ const Chat: React.FC = () => {
     // ── 拉黑系统 ──
     // 回到聊天界面时弹一次「你已将对方拉黑」提示（按角色记忆，解除后重置）
     const [showUserBlockNotice, setShowUserBlockNotice] = useState(false);
+    // 角色给用户换备注弹窗（点开看动机）
+    const [remarkChangeNotice, setRemarkChangeNotice] = useState<{ remark: string; motivation?: string } | null>(null);
+    const [remarkMotivationOpen, setRemarkMotivationOpen] = useState(false);
     const userBlockNoticeShownRef = useRef<string | null>(null);
     // 被角色拉黑后重新发送好友验证
     const [showFriendVerify, setShowFriendVerify] = useState(false);
@@ -1134,6 +1138,18 @@ const Chat: React.FC = () => {
         };
         window.addEventListener(CHAR_PHONE_CHECK_EVENT, handler);
         return () => window.removeEventListener(CHAR_PHONE_CHECK_EVENT, handler);
+    }, []);
+
+    // ── 角色给用户换备注：监听 [[SET_USER_REMARK]] 广播，弹「换备注」弹窗（点开看动机）──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as Partial<UserRemarkEventDetail>;
+            if (!d?.charId || d.charId !== activeCharIdRef.current || !d.remark) return;
+            setRemarkMotivationOpen(false);
+            setRemarkChangeNotice({ remark: d.remark, motivation: d.motivation });
+        };
+        window.addEventListener(CHAR_USER_REMARK_EVENT, handler);
+        return () => window.removeEventListener(CHAR_USER_REMARK_EVENT, handler);
     }, []);
 
     // 进入/切换角色时兜底：有 pending（事件发出时不在本聊天页）或未结束的线下会话则恢复弹窗
@@ -3829,6 +3845,42 @@ ${recent || '（你们还没怎么聊过）'}
                         <button
                             onClick={() => setShowUserBlockNotice(false)}
                             className="w-full py-3.5 text-[16px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
+                        >
+                            知道了
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 「角色给你换备注」弹窗：点开看动机 */}
+            {remarkChangeNotice && char && (
+                <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => setRemarkChangeNotice(null)}>
+                    <div className="w-[min(82vw,320px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="px-6 pt-6 pb-5 text-center">
+                            <img src={displayCharAvatar} className="w-12 h-12 mx-auto mb-3 rounded-full object-cover ring-2 ring-white shadow" alt="" />
+                            <div className="text-[15px] font-bold text-slate-800">{displayCharName} 给你换了备注</div>
+                            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100">
+                                <span className="text-[11px] text-indigo-400">现在叫你</span>
+                                <span className="text-[14px] font-bold text-indigo-600">{remarkChangeNotice.remark}</span>
+                            </div>
+                            {remarkChangeNotice.motivation && (
+                                remarkMotivationOpen ? (
+                                    <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-100 p-3.5 text-[13px] text-slate-600 leading-relaxed text-left animate-fade-in">
+                                        {remarkChangeNotice.motivation}
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => setRemarkMotivationOpen(true)}
+                                        className="mt-4 text-[12px] text-indigo-500 font-bold active:scale-95 transition-transform"
+                                    >
+                                        TA 为什么这么改？ 💭
+                                    </button>
+                                )
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setRemarkChangeNotice(null)}
+                            className="w-full py-3.5 text-[15px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
                         >
                             知道了
                         </button>

@@ -1829,8 +1829,14 @@ export interface CharacterProfile {
 export interface ConvoSettings {
     /** 备注名：聊天界面顶栏 / 消息列表 / 聊天列表显示的名字（不改变角色本名） */
     remarkName?: string;
-    /** TA 对我的备注：角色对用户的称呼（注入提示词，角色平时就这么叫用户） */
+    /** TA 对我的备注：角色对用户的称呼（注入提示词，角色平时就这么叫用户）。角色可通过 [[SET_USER_REMARK]] 自己改。 */
     userNickname?: string;
+    /** 角色最近一次主动换备注（[[SET_USER_REMARK]]）的动机说明（弹窗 / 聊天手帐里展示） */
+    userRemarkMotivation?: string;
+    /** 角色最近一次换备注的时间戳 */
+    userRemarkUpdatedAt?: number;
+    /** 角色历次给用户换备注的记录（聊天手帐「TA 怎么称呼你」栏目展示，最新在前） */
+    userRemarkHistory?: Array<{ remark: string; motivation?: string; at: number }>;
     /** 关联群聊记忆：'all' 携带全部所在群的近期活动（默认，与旧行为一致）/ 'none' 不关联 / 'selected' 仅关联指定群 */
     groupMemoryMode?: 'all' | 'none' | 'selected';
     /** groupMemoryMode='selected' 时关联的群 id 列表 */
