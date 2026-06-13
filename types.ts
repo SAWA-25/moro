@@ -1518,6 +1518,10 @@ export interface BankShopState {
     stock?: Record<string, number>;
     /** 回头客 / VIP（identity id → 记录）。营业时累计到访，常客会回头光顾。 */
     regulars?: Record<string, ShopRegular>;
+    /** 挂机营业额：离店期间持续累计、点金币收进钱包（上限见 IDLE_CAP_HOURS）。 */
+    pendingRevenue?: number;
+    /** 上次把流逝时间折算成 pendingRevenue 的锚点时间戳。 */
+    lastAccrualAt?: number;
 }
 
 export interface BankFullState {

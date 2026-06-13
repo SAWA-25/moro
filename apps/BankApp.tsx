@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, idleCap } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -61,6 +61,21 @@ const isDeadImg = (u?: string | null): boolean =>
 
 // 营业冷却：每 3 小时可「营业」一轮赚一笔进钱包
 const BUSINESS_COOLDOWN_MS = 3 * 60 * 60 * 1000;
+
+// 挂机营业额结算（纯函数）：把「锚点→现在」流逝的时间折算成待收营业额（有店员才产出，封顶）。
+// 锚点 lastAccrualAt 只在真正入账时前移，所以不足 1 元的零头会保留到下次，不丢。
+const accrueShopIdle = (shop: { staff: { id: string }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number }, now: number): { pendingRevenue: number; lastAccrualAt: number } => {
+    const level = shop.shopLevel || 1;
+    const appeal = shop.appeal || 100;
+    const rate = (shop.staff?.length || 0) > 0 ? idleRatePerHour(appeal, level) : 0;
+    const cap = idleCap(appeal, level);
+    const last = shop.lastAccrualAt || now;
+    const gained = Math.max(0, Math.floor(rate * ((now - last) / 3600000)));
+    const pending = Math.min(cap, Math.max(0, shop.pendingRevenue || 0) + gained);
+    // 只有真正入账（pending 变大）才把锚点前移；否则保留旧锚点让零头继续累积
+    const advanced = pending > Math.max(0, shop.pendingRevenue || 0) ? now : last;
+    return { pendingRevenue: pending, lastAccrualAt: advanced };
+};
 
 // 手账风弹窗壳 + 输入样式（替代共享 Modal，统一拼贴手账观感）
 const hbInputStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, color: '#5b4636', boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.2)' };
@@ -134,6 +149,22 @@ const BankApp: React.FC = () => {
     // Load Data
     useEffect(() => {
         loadData();
+    }, []);
+
+    // 挂机营业额随时间累计：每 30s 把流逝时间折算进 pendingRevenue（仅在金额变化时落库）
+    useEffect(() => {
+        const t = window.setInterval(() => {
+            const cur = stateRef.current;
+            if (!cur?.shop || (cur.shop.staff?.length || 0) === 0) return;
+            const idle = accrueShopIdle(cur.shop, Date.now());
+            if (idle.pendingRevenue !== Math.max(0, cur.shop.pendingRevenue || 0)) {
+                const ns = { ...cur, shop: { ...cur.shop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+                stateRef.current = ns;
+                setState(ns);
+                void DB.saveBankState(ns);
+            }
+        }, 30000);
+        return () => window.clearInterval(t);
     }, []);
 
     // Calculate Appeal dynamically
@@ -330,10 +361,7 @@ const BankApp: React.FC = () => {
             // 改为店铺自身的每日补给：登录奖励 + 人气分红。
             const appealNow = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
             const dailyAP = 10 + Math.floor(appealNow / 25);
-
-            // 店铺「过夜营业额」→ 进钱包（真实可花的钱），与记账完全无关。店铺等级越高分红越多。
-            const shopLevelNow = currentState.shop.shopLevel || 1;
-            const passiveRevenue = currentState.shop.staff.length > 0 ? Math.max(0, Math.floor(appealNow * 0.6 * shopLevelPassiveMult(shopLevelNow))) : 0;
+            // 过夜营业额已并入「挂机营业额」——离店时间会在下方折算成待收金币，不再一次性补发。
 
             // Recover Fatigue
             const updatedStaff = currentState.shop.staff.map(s => ({
@@ -357,26 +385,21 @@ const BankApp: React.FC = () => {
                     actionPoints: (currentState.shop.actionPoints || 0) + dailyAP,
                     staff: updatedStaff,
                     activeVisitor: undefined,
-                    totalRevenue: (currentState.shop.totalRevenue || 0) + passiveRevenue,
                     stock: replenishedStock,
                 }
             };
 
             await DB.saveBankState(currentState);
-            if (passiveRevenue > 0) adjustUserBalance(passiveRevenue);
-            addToast(
-                passiveRevenue > 0
-                    ? `新的一天！店铺补给 +${dailyAP} AP，过夜营业额 +¥${passiveRevenue} 已进钱包`
-                    : `新的一天！店铺补给 +${dailyAP} AP（雇个店员就能赚营业额啦）`,
-                'success'
-            );
+            addToast(`新的一天！店铺补给 +${dailyAP} AP`, 'success');
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
         const spent = todayTx.reduce((sum, t) => sum + t.amount, 0);
         const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
 
-        const finalState = { ...currentState, todaySpent: spent, shop: { ...currentState.shop, appeal } };
+        // 挂机营业额：把离店期间流逝的时间折算成待收金币（基于刚算好的 appeal/等级/店员）
+        const idle = accrueShopIdle({ ...currentState.shop, appeal }, Date.now());
+        const finalState = { ...currentState, todaySpent: spent, shop: { ...currentState.shop, appeal, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
         stateRef.current = finalState;
         setState(finalState);
         setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
@@ -564,6 +587,20 @@ const BankApp: React.FC = () => {
         await DB.saveBankState(newState);
         adjustUserBalance(-cost);
         addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
+    };
+
+    // --- 收取挂机营业额：把待收金币进钱包 ---
+    const handleCollectIdle = async () => {
+        const cur = stateRef.current;
+        const idle = accrueShopIdle(cur.shop, Date.now()); // 先把零头折算进来再收
+        const amount = Math.floor(idle.pendingRevenue);
+        if (amount < 1) { addToast('还没攒下营业额，过会儿再来收～', 'info'); return; }
+        const newState = { ...cur, shop: { ...cur.shop, pendingRevenue: 0, lastAccrualAt: Date.now(), totalRevenue: (cur.shop.totalRevenue || 0) + amount } };
+        stateRef.current = newState;
+        setState(newState);
+        await DB.saveBankState(newState);
+        adjustUserBalance(amount);
+        addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}`, 'success');
     };
 
     // --- Fire / Rehire / Delete Staff ---
@@ -1226,6 +1263,19 @@ ${JSON.stringify(list, null, 2)}
                             </button>
                         );
                     })()}
+                    {/* 挂机营业额：攒下的待收金币，点击收进钱包 */}
+                    {(() => {
+                        const pending = Math.floor(state.shop.pendingRevenue || 0);
+                        if (pending < 1) return null;
+                        const full = pending >= idleCap(state.shop.appeal || 100, state.shop.shopLevel || 1);
+                        return (
+                            <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 bottom-[60px] z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
+                                <span className="text-sm">💰</span>
+                                <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
+                                {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
+                            </button>
+                        );
+                    })()}
                     </>
                 )}
 
@@ -1607,7 +1657,7 @@ ${JSON.stringify(list, null, 2)}
             <HbModal open={showTutorial} onClose={() => setShowTutorial(false)} title="这间小店怎么玩" sub="一页纸看懂" tapeColor="rgba(231,163,156,0.7)">
                 <div className="space-y-3" style={{ color: '#5b4636' }}>
                     {[
-                        { emoji: '💰', t: '开门营业赚钱', d: '点顶栏「营业」让店员接客，按人气来客、卖出有货的商品收钱——赚的钱进「钱包」，能在聊天里给角色转账、发红包。在「经营」里花钱包给店铺升级，客流和收入档次都更高。', bg: '#dfeccd' },
+                        { emoji: '💰', t: '营业与挂机', d: '点顶栏「营业」让店员接客、卖出有货的商品收钱进「钱包」。离店时店铺会慢慢攒「挂机营业额」，回来点店里的金币收进钱包（攒满约 8 小时就停，记得常回来）。在「经营」里花钱包升级，客流和收入档次都更高。', bg: '#dfeccd' },
                         { emoji: '📦', t: '进货与库存', d: '每件商品都有库存，营业卖一份扣一份；见底就去「经营·商品」花钱包的钱进货。进货价只有售价四成，卖出去就是赚的——货架空了客人会空手而归。', bg: '#e3d2bd' },
                         { emoji: '🧾', t: '口碑与熟客', d: '客人会点单、留 1~5 星评价（配了 API 会由 AI 写得更鲜活多样）；常来的成为常客 / VIP——小费更高、评分更稳、还爱回头。口碑越好营业收入越高，点店铺「⭐口碑」可翻看。', bg: '#f6ddc9' },
                         { emoji: '📖', t: '记账是另一本账', d: '「账本」记的是你现实的钱（进账/支出），和店铺的钱各算各的；记完角色会点评，角色也会记自己的账等你回应。', bg: '#cfe3e0' },
