@@ -327,17 +327,19 @@ export const ChatPrompts = {
                 }
             } catch { /* 静默失败，不影响主 prompt */ }
 
+            // 在线一起听开关（per-char，默认开）：关掉后不再宣称"一起听"、也不提供 join 选项
+            const listenTogetherEnabled = char.musicProfile?.listenTogetherEnabled !== false;
             const musicBlock = ContextBuilder.buildMusicAtmosphere(
                 char,
                 userProfile.name,
                 userListeningContext || null,
                 charListening,
-                isListeningTogether,
+                isListeningTogether && listenTogetherEnabled,
             );
             if (musicBlock) {
                 baseSystemPrompt += `\n${musicBlock}\n`;
                 if (userListeningContext) {
-                    baseSystemPrompt += `\n${ContextBuilder.buildMusicActionGuide(isListeningTogether)}\n`;
+                    baseSystemPrompt += `\n${ContextBuilder.buildMusicActionGuide(isListeningTogether, listenTogetherEnabled)}\n`;
                 }
             }
             // 主动分享歌曲：有音乐人格的角色随时可主动推一首真实的歌（克制使用），不依赖对方在听歌

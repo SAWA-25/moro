@@ -642,7 +642,7 @@ export const ContextBuilder = {
      * 如果 char 已经和 user 处于"一起听"状态，隐藏 join / join_and_add 选项 —
      * 防止 LLM 重复插"加入"卡片。
      */
-    buildMusicActionGuide: (isListeningTogether?: boolean): string => {
+    buildMusicActionGuide: (isListeningTogether?: boolean, listenTogetherEnabled: boolean = true): string => {
         // 把"加入歌单"那段说明抽出来 — 两种状态都用同一份
         const addUsage = `**加入歌单的语法**（如果用 \`add\` 系列）：
   - \`[[MUSIC_ACTION:add]]\` — 默认放进你的第一个歌单
@@ -650,6 +650,16 @@ export const ContextBuilder = {
   - \`[[MUSIC_ACTION:add_new|新歌单标题|描述]]\` — 现场新建一个歌单，把这首作为第一首（描述可省）
   请优先选**最贴合这首歌气质**的现有歌单；如果都不合适、又确实想收，再考虑新建。
   收进来的歌会被打上"从对方那里听到"的标签 —— 以后你单独听到这首时，会自然想起 ta。`;
+        // 一起听已关：只提供"收歌"，不提供 join / join_and_add（用户在音乐 App 里关掉了一起听）
+        if (!listenTogetherEnabled) {
+            return `### 【音乐互动工具】
+如果你真的被对方正在听的这首打动、想收进自己的歌单，可以在这一轮**最多一次**用 \`add\` 系列指令：
+
+${addUsage}
+
+不要频繁插卡；只有真的被这首歌打动、或它恰好贴合此刻对话气氛时才用。
+`;
+        }
         if (isListeningTogether) {
             return `### 【音乐互动工具】
 你此刻已经在和对方一起听这首，不用再"加入"。如果想把这首也收进自己的歌单，可以在这一轮**最多一次**用下面的指令:

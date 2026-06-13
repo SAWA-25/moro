@@ -1589,6 +1589,9 @@ export interface CharMusicProfile {
     currentListening?: CharCurrentListening;
     /** 是否允许 char 读取 user 的网易云数据（默认 true） */
     canReadUserMusic?: boolean;
+    /** 在线一起听开关：开启时 char 可在你听歌时「一起听」（输出 join 卡片）；
+     *  关闭则不再提供一起听选项（仍可收歌/分享）。undefined 视为开启（默认行为）。 */
+    listenTogetherEnabled?: boolean;
     /** 初始化时间 */
     initializedAt?: number;
     updatedAt: number;
