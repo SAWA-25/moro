@@ -33,6 +33,7 @@ import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../comp
 import { MONO_STACK, SERIF_STACK, CUTE_STACK } from '../components/handbook/paper';
 import { PhoneSlash } from '@phosphor-icons/react';
 import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
+import LifeRecapModal, { countUnseenCatchup, markLifeRecapSeen } from '../components/chat/LifeRecapModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { useChatAI } from '../hooks/useChatAI';
@@ -160,6 +161,9 @@ const Chat: React.FC = () => {
     const [isSummarizing, setIsSummarizing] = useState(false);
     const [archiveProgress, setArchiveProgress] = useState('');
     const [showProactiveModal, setShowProactiveModal] = useState(false);
+    const [showLifeRecapModal, setShowLifeRecapModal] = useState(false);
+    // 离线自主生活·回看横幅：用户回来时若角色攒了未看过的离线事件，顶部提示「TA 经历了 N 件事」
+    const [lifeRecapBanner, setLifeRecapBanner] = useState(0);
     const [showThinkingChainModal, setShowThinkingChainModal] = useState(false);
 
     // ── 语音通话（聊天内发起，角色按人设决定接不接）──
@@ -1307,6 +1311,21 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         triggerAI(messages);
     };
 
+    // 离线自主生活·回看横幅：进入角色时算「未看过的离线事件」数；并实时接收补齐事件。
+    useEffect(() => {
+        if (!activeCharacterId) { setLifeRecapBanner(0); return; }
+        let alive = true;
+        countUnseenCatchup(activeCharacterId).then(n => { if (alive) setLifeRecapBanner(n); }).catch(() => {});
+        const onCatchup = (e: Event) => {
+            const detail = (e as CustomEvent).detail as { charId?: string };
+            if (detail?.charId === activeCharacterId) {
+                countUnseenCatchup(activeCharacterId).then(n => { if (alive) setLifeRecapBanner(n); }).catch(() => {});
+            }
+        };
+        window.addEventListener('autonomous-life-catchup', onCatchup);
+        return () => { alive = false; window.removeEventListener('autonomous-life-catchup', onCatchup); };
+    }, [activeCharacterId]);
+
     const handlePanelAction = (type: string, payload?: any) => {
         switch (type) {
             case 'transfer': setModalType('transfer'); break;
@@ -1323,6 +1342,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'category-options': setSelectedCategory(payload); setModalType('category-options'); break;
             case 'delete-category-req': setSelectedCategory(payload); setModalType('delete-category'); break;
             case 'proactive': setShowProactiveModal(true); break;
+            case 'life-recap': setShowPanel('none'); setShowLifeRecapModal(true); setLifeRecapBanner(0); break;
             case 'emotion': setModalType('schedule'); break; // 情绪已并入日程，打开同一 modal
             case 'schedule': setModalType('schedule'); break;
             case 'mcd-not-configured':
@@ -3153,6 +3173,22 @@ ${recent || '（你们还没怎么聊过）'}
                 decorText={convo?.headerDecorText}
              />
 
+            {/* 离线自主生活·回看横幅：用户离开期间角色攒了未看过的离线事件时提示，点开看时间线 */}
+            {lifeRecapBanner > 0 && !selectionMode && (
+                <button
+                    type="button"
+                    onClick={() => { if (activeCharacterId) markLifeRecapSeen(activeCharacterId); setLifeRecapBanner(0); setShowLifeRecapModal(true); }}
+                    className="relative z-20 mx-3 mt-2 flex items-center gap-2 px-3 py-2 rounded-[12px] text-left transition active:scale-[0.99]"
+                    style={{ background: 'linear-gradient(135deg, rgba(214,200,232,0.94), rgba(191,225,207,0.94))', boxShadow: '0 2px 8px rgba(140,120,170,0.25)' }}
+                >
+                    <span className="text-[15px]" aria-hidden>🌱</span>
+                    <span className="flex-1 min-w-0 text-[11.5px] font-bold truncate" style={{ color: '#4a3a5c' }}>
+                        {char?.name || 'TA'} 在你离开时经历了 {lifeRecapBanner} 件事
+                    </span>
+                    <span className="text-[10.5px] font-bold shrink-0 px-2 py-0.5 rounded-full" style={{ color: '#fff', background: 'rgba(122,90,114,0.55)' }}>看看 →</span>
+                </button>
+            )}
+
             {/* 会话设置「顶部贴边」：顶栏下方装饰横条（不占布局，浮在消息区顶部） */}
             {convo?.headerEdgeImage && (
                 <div className="relative z-20 h-0 pointer-events-none">
@@ -3645,6 +3681,15 @@ ${recent || '（你们还没怎么聊过）'}
                         updateCharacter(char.id, { proactiveConfig: { ...char.proactiveConfig!, enabled: false } });
                         addToast('已停止主动消息', 'info');
                     }}
+                />
+            )}
+
+            {/* 离线自主生活·日常回顾 Modal — 入口：加号面板「TA 的日常」/ 顶部回看横幅 */}
+            {char && (
+                <LifeRecapModal
+                    isOpen={showLifeRecapModal}
+                    onClose={() => setShowLifeRecapModal(false)}
+                    char={char}
                 />
             )}
 

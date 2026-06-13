@@ -8,12 +8,12 @@ import {
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
-    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry
+    PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 68; // Bumped: v68 新增 char_ledgers（存钱罐·角色账本，角色自记账 + 互评）
+const DB_VERSION = 69; // Bumped: v69 新增 char_life_events（来往·角色离线自主生活事件）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -68,6 +68,7 @@ const STORE_EXCHANGE_DIARY = 'exchange_diary_books'; // 日记社：多角色交
 const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-char，不进聊天上下文）
 const STORE_LLM_PRESETS = 'llm_presets';          // 预设 App：SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数）
 const STORE_PERSONAS = 'personas';                // 人设 App：SillyTavern 式用户人设（多套用户身份，可绑定角色/世界书）
+const STORE_CHAR_LIFE_EVENTS = 'char_life_events'; // 来往·角色离线自主生活事件（每条一件小事，攒成离线回顾时间线 + 给主动消息取材）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
@@ -580,6 +581,13 @@ export const openDB = (): Promise<IDBDatabase> => {
       // ─── v64: 预设 App（SillyTavern 式 Chat Completion 预设） ───
       createStore(STORE_LLM_PRESETS, { keyPath: 'id' });
       createStore(STORE_PERSONAS, { keyPath: 'id' });
+
+      // ─── v69: 来往·角色离线自主生活（autonomous life）事件 ───
+      if (!db.objectStoreNames.contains(STORE_CHAR_LIFE_EVENTS)) {
+          const leStore = db.createObjectStore(STORE_CHAR_LIFE_EVENTS, { keyPath: 'id' });
+          leStore.createIndex('charId', 'charId', { unique: false });
+          leStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
     };
   });
 
@@ -1106,6 +1114,85 @@ export const DB = {
       } catch (e) {
           console.warn('[EmojiMigration] 默认表情包迁移失败，下次启动重试:', e);
       }
+  },
+
+  // ─── 来往·角色离线自主生活事件（autonomous life）─────────────────
+  // 见 utils/autonomousLife.ts：角色在用户离线时「过自己的日子」，事件既给主动
+  // 消息取材、也攒成离线动态回顾时间线。
+  saveLifeEvent: async (event: CharLifeEvent): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
+      tx.objectStore(STORE_CHAR_LIFE_EVENTS).put(event);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  /** 取某角色的生活事件，按时间升序；limit>0 时只留最近 limit 条。 */
+  getLifeEvents: async (charId: string, limit?: number): Promise<CharLifeEvent[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readonly');
+          const idx = tx.objectStore(STORE_CHAR_LIFE_EVENTS).index('charId');
+          const req = idx.getAll(charId);
+          req.onsuccess = () => {
+              const all = ((req.result as CharLifeEvent[]) || []).sort((a, b) => a.timestamp - b.timestamp);
+              resolve(limit && limit > 0 ? all.slice(-limit) : all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  /** 取某角色自 sinceTs 起的生活事件（离线回顾用）。 */
+  getLifeEventsSince: async (charId: string, sinceTs: number): Promise<CharLifeEvent[]> => {
+      const all = await DB.getLifeEvents(charId);
+      return all.filter(e => e.timestamp >= sinceTs);
+  },
+
+  /** 标记某事件已作为主动消息发出（回顾里据此区分「已说过 / 你没在时发生的」）。 */
+  markLifeEventSurfaced: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
+      const store = tx.objectStore(STORE_CHAR_LIFE_EVENTS);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+          const ev = getReq.result as CharLifeEvent | undefined;
+          if (ev) { ev.surfacedAsMsg = true; store.put(ev); }
+      };
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  /** 修剪：每个角色只保留最近 keepN 条，防止无限增长（默认 200）。 */
+  pruneLifeEvents: async (charId: string, keepN = 200): Promise<void> => {
+      const all = await DB.getLifeEvents(charId);
+      if (all.length <= keepN) return;
+      const toDelete = all.slice(0, all.length - keepN);
+      const db = await openDB();
+      const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
+      const store = tx.objectStore(STORE_CHAR_LIFE_EVENTS);
+      toDelete.forEach(e => store.delete(e.id));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  /** 删除某角色全部生活事件（删角色 / 清理时用）。 */
+  deleteLifeEventsForChar: async (charId: string): Promise<void> => {
+      const all = await DB.getLifeEvents(charId);
+      if (all.length === 0) return;
+      const db = await openDB();
+      const tx = db.transaction(STORE_CHAR_LIFE_EVENTS, 'readwrite');
+      const store = tx.objectStore(STORE_CHAR_LIFE_EVENTS);
+      all.forEach(e => store.delete(e.id));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
   },
 
   getThemes: async (): Promise<ChatTheme[]> => {

@@ -1,9 +1,10 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile } from '../types';
+import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
 import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
+import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
@@ -1691,13 +1692,29 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const userName = currentUserProfile?.name || '对方';
               // 主动语音通话：开关打开时允许角色用 [[CALL_USER]] 指令直接拨电话（按人设自行决定）
               const proactiveCallAllowed = !!char.convoSettings?.proactiveCallEnabled;
+
+              // 离线自主生活：先让角色的生活往前走一格，主动消息就从 TA 此刻正在经历的事
+              // 取材——分享自己的生活，而不是反复催用户回复（不每天围着用户转）。
+              // 生成失败 / 未开启时回退到旧的「主动找用户」hint。
+              let lifeEvent: CharLifeEvent | null = null;
+              if (isAutonomousLifeEnabled(char)) {
+                  // api 已是本次 proactive 选好的接口（副 API 或主 API），直接复用。
+                  lifeEvent = await advanceLife(char, api, { source: 'proactive' });
+              }
+
+              const hintContent = lifeEvent
+                  ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed })
+                  : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`;
+
               await DB.saveMessage({
                   charId,
                   role: 'user',
                   type: 'text',
-                  content: `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`,
+                  content: hintContent,
                   metadata: { proactiveHint: true, hidden: true }
               });
+              // 这条生活事件已经作为主动消息发给用户了，回顾里据此标注「已说过」。
+              if (lifeEvent) void DB.markLifeEventSurfaced(lifeEvent.id);
 
               // 3. Build prompt & message history — 走和 useChatAI / emotion eval 同一个 helper，
               //    保证三家拿到的"材料"完全一致；区别只在前面追加的"现在主动找用户"那条 hint。
@@ -2094,6 +2111,74 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Cleanup: detach proactive listeners when OSContext unmounts (unlikely but safe)
           ProactiveChat.onTrigger(() => {});
           VRScheduler.onTrigger(() => {});
+      };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // ─── 离线自主生活·回看补齐 ───────────────────────────────────────
+  // 用户离线一段时间回来时，为开启了「自主生活」的角色补齐这段时间发生的小事，
+  // 攒成「你不在时 TA 经历了…」的回顾时间线（LifeRecapModal 读 char_life_events 渲染）。
+  // 用 localStorage 记上次活跃时刻；gap ≥ CATCHUP_MIN_GAP_MS 才补，且每段 gap 只补一次。
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const LAST_SEEN_KEY = 'autonomous_life_last_seen';
+      const BUSY_KEY = 'autonomous_life_catchup_busy';
+      let cancelled = false;
+
+      const markSeen = () => {
+          try { localStorage.setItem(LAST_SEEN_KEY, String(Date.now())); } catch { /* ignore */ }
+      };
+
+      const runCatchUp = async () => {
+          let lastSeen = 0;
+          try { lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) || '0', 10) || 0; } catch { /* ignore */ }
+          const now = Date.now();
+          // 首次 / 无记录：仅记录当下，不补（避免给「老用户首次升级」凭空造历史）。
+          if (!lastSeen || now - lastSeen < CATCHUP_MIN_GAP_MS) { markSeen(); return; }
+
+          // 防并发（多标签 / 快速切换）：粗粒度互斥锁，60s 自动过期。
+          try {
+              const busy = parseInt(localStorage.getItem(BUSY_KEY) || '0', 10) || 0;
+              if (busy && now - busy < 60_000) return;
+              localStorage.setItem(BUSY_KEY, String(now));
+          } catch { /* ignore */ }
+
+          const gapStart = lastSeen;
+          markSeen(); // 先推进，保证这段 gap 不被重复补
+
+          const chars = charactersRef.current.filter(c => isAutonomousLifeEnabled(c) && !c.charBlock?.active);
+          for (const char of chars) {
+              if (cancelled) break;
+              const main = apiConfigRef.current;
+              const api = resolveLifeApi(char, { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model });
+              if (!api.baseUrl) continue;
+              try {
+                  const events = await catchUpOfflineLife(char, api, gapStart, { now });
+                  if (events.length > 0 && !cancelled) {
+                      window.dispatchEvent(new CustomEvent('autonomous-life-catchup', {
+                          detail: { charId: char.id, charName: char.name, count: events.length },
+                      }));
+                  }
+              } catch { /* per-char failure ignored */ }
+          }
+          try { localStorage.removeItem(BUSY_KEY); } catch { /* ignore */ }
+      };
+
+      const onVisibility = () => {
+          if (document.visibilityState === 'visible') void runCatchUp();
+          else markSeen();
+      };
+      const onFocus = () => { void runCatchUp(); };
+
+      // 启动即跑一次（覆盖「整页关闭后重开」的离线 gap），再挂可见性 / focus 监听。
+      void runCatchUp();
+      document.addEventListener('visibilitychange', onVisibility);
+      window.addEventListener('focus', onFocus);
+      return () => {
+          cancelled = true;
+          markSeen();
+          document.removeEventListener('visibilitychange', onVisibility);
+          window.removeEventListener('focus', onFocus);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
