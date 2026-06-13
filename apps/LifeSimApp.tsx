@@ -1,5 +1,5 @@
 /**
- * LifeSimApp — 街角手账 · 拼贴手账版
+ * LifeSimApp — 街角 · 拼贴手账版
  * 核心体验：翻着手账看角色操控街坊邻里，制造街角Drama，离线回来发现整条街翻天覆地
  */
 
@@ -99,7 +99,7 @@ async function callCharAI(
                         response_format: { type: 'json_object' },
                     }),
                 },
-                2, 0, { appName: '街角手账', purpose: '剧情生成' }
+                2, 0, { appName: '街角', purpose: '剧情生成' }
             );
             return data?.choices?.[0]?.message?.content?.trim() || '';
         } catch (e: any) {
@@ -853,7 +853,7 @@ const LifeSimApp: React.FC = () => {
                 <div className="scrap-card press-soft tilt-l relative" style={{ width: 200, padding: '26px 18px', borderRadius: 16, textAlign: 'center' }}>
                     <span className="sj-tape" style={{ top: -11, left: '50%', transform: 'translateX(-50%) rotate(-3deg)', width: 96 }} />
                     <Storefront size={34} weight="duotone" className="mx-auto" style={{ color: '#6f9b6a' }} />
-                    <p className="font-hand" style={{ color: '#2b2933', fontSize: 20, marginTop: 8, fontWeight: 700 }}>正在翻开街角手账…</p>
+                    <p className="font-hand" style={{ color: '#2b2933', fontSize: 20, marginTop: 8, fontWeight: 700 }}>正在翻开《街角》…</p>
                     <p className="label-mono" style={{ color: '#a79c8e', fontSize: 8, marginTop: 4 }}>opening the journal</p>
                 </div>
             </div>
@@ -905,7 +905,7 @@ const LifeSimApp: React.FC = () => {
                     {/* 刊头 */}
                     <div className="flex-1 min-w-0 flex flex-col items-start leading-none pl-0.5">
                         <div className="flex items-baseline gap-1.5">
-                            <span className="font-hand" style={{ fontSize: 25, fontWeight: 700, color: '#2b2933' }}>街角手账</span>
+                            <span className="font-hand" style={{ fontSize: 33, fontWeight: 700, color: '#2b2933', letterSpacing: '0.06em' }}>街角</span>
                             <span className="sj-stamp" title={`${si.zh}`}>
                                 <TwemojiImg emoji={si.emoji} size={11} />
                                 <span style={{ fontSize: 8.5, fontWeight: 700, color: scrap.accent }}>{scrap.hanzi}</span>
@@ -1177,7 +1177,7 @@ const LifeSimApp: React.FC = () => {
     );
 };
 
-// ── 街角手账 · 共享拼贴样式 ──────────────────────────────────────
+// ── 街角 · 共享拼贴样式 ──────────────────────────────────────
 const SJStyles: React.FC<{ accent: string; tape: string; tape2: string }> = ({ accent, tape, tape2 }) => (
     <style>{`
         .sj-app {

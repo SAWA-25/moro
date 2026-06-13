@@ -49,7 +49,7 @@ const ResetCityDialog: React.FC<{
 
                     <div style={{ padding: '8px 11px', marginTop: 9, background: 'rgba(120,116,106,0.06)', borderRadius: 10, border: '1px dashed rgba(167,162,151,0.45)' }}>
                         <p className="font-hand" style={{ fontSize: 12, color: '#6b665d', lineHeight: 1.6 }}>
-                            「写小结」会调用 API，把这一本《街角手账》浓缩成一张拼贴小卡片，夹进参与角色的聊天记录里。
+                            「写小结」会调用 API，把这一本《街角》浓缩成一张拼贴小卡片，夹进参与角色的聊天记录里。
                         </p>
                     </div>
                 </div>

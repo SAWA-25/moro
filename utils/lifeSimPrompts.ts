@@ -446,7 +446,7 @@ export function buildWorldDramaPlannerPrompt(
     actionLog: SimAction[]
 ): string {
     return `
-你不是某个角色，也不是玩家。你是这本《街角手账》里小世界的“主线编剧室”。
+你不是某个角色，也不是玩家。你是这本《街角》里小世界的“主线编剧室”。
 
 任务：现在进入非常 drama 的规划环节，请围绕 NPC 直接启动一段新的主线剧情。
 规则：

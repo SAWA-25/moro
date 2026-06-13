@@ -1,5 +1,5 @@
 /**
- * RoamView — 街角手账 · 出门逛逛
+ * RoamView — 街角 · 出门逛逛
  *
  * 进去就在一张手绘街区地图上「闲逛」：点空白处移动、点 pin 和附近的人聊天、刷新换一批人，
  * 路上会冒出店铺和街头事件（今日足迹）。可以挑一个角色陪你一起逛街。陌生人也会主动来搭话。
@@ -185,7 +185,7 @@ async function roamChatAI(api: Api, system: string, history: RoamMsg[]): Promise
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` },
                 body: JSON.stringify({ model: api.model, messages, temperature: 0.9, max_tokens: 600, stream: false }),
             },
-            2, 30000, { appName: '街角手账·漫游', purpose: '街头对话' },
+            2, 30000, { appName: '街角·漫游', purpose: '街头对话' },
         );
         const txt = data?.choices?.[0]?.message?.content?.trim();
         return txt ? txt.replace(/^\[.*?\]\s*/, '').slice(0, 500) : null;

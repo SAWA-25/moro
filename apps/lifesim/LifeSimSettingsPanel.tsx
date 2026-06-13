@@ -90,7 +90,7 @@ const LifeSimSettingsPanel: React.FC<{
                     pointerEvents: 'none',
                 }} />
                 <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                    <span className="font-hand" style={{ fontSize: 18, fontWeight: 700, color: '#2b2933' }}>街角手账 · 设定</span>
+                    <span className="font-hand" style={{ fontSize: 18, fontWeight: 700, color: '#2b2933' }}>街角 · 设定</span>
                     <button onClick={() => void handleSaveAndClose()} className="scrap-btn-paper flex items-center justify-center" style={{ width: 30, height: 30 }}>
                         <X size={14} weight="bold" />
                     </button>
@@ -99,7 +99,7 @@ const LifeSimSettingsPanel: React.FC<{
 
                 <div className="overflow-y-auto overflow-x-hidden no-scrollbar flex-1" style={{ padding: '12px 16px' }}>
                     <p className="font-hand" style={{ fontSize: 13, color: '#a79c8e', lineHeight: 1.6, marginBottom: 12 }}>
-                        在这里挑这一本里允许哪些角色登场，也能单独给街角手账配一套 API ✎
+                        在这里挑这一本里允许哪些角色登场，也能单独给街角配一套 API ✎
                     </p>
 
                     <div className="drawer-tag" style={{ marginBottom: 8 }}><span>登场角色</span></div>
@@ -161,8 +161,8 @@ const LifeSimSettingsPanel: React.FC<{
                     <div style={{ padding: '7px 10px', marginBottom: 10, background: 'rgba(120,116,106,0.05)', borderRadius: 10, border: '1px dashed rgba(167,162,151,0.4)' }}>
                         <p className="font-hand" style={{ fontSize: 11.5, color: '#6b665d', lineHeight: 1.6 }}>
                             {useIndependentApi
-                                ? '开启后，街角手账会优先用下面这套；没填的字段回退到全局 API。'
-                                : '关闭时，街角手账沿用系统全局 API。'}
+                                ? '开启后，街角会优先用下面这套；没填的字段回退到全局 API。'
+                                : '关闭时，街角沿用系统全局 API。'}
                         </p>
                     </div>
 
