@@ -500,6 +500,21 @@ const BankApp: React.FC = () => {
         return true;
     };
 
+    // 擦吧台攒 AP：60s 冷却，每次 +1~2 AP（轻量「活的店」互动，返回实得 AP，0=冷却中）
+    const wipeCooldownRef = useRef(0);
+    const handleWipeCounter = async (): Promise<number> => {
+        const now = Date.now();
+        if (now - wipeCooldownRef.current < 60000) return 0;
+        wipeCooldownRef.current = now;
+        const ap = 1 + Math.floor(Math.random() * 2);
+        const cur = stateRef.current;
+        const newState = { ...cur, shop: { ...cur.shop, actionPoints: (cur.shop.actionPoints || 0) + ap } };
+        stateRef.current = newState;
+        setState(newState);
+        await DB.saveBankState(newState);
+        return ap;
+    };
+
     const handleStaffRest = async (staffId: string) => {
         const COST = 20;
         if (!(await consumeAP(COST))) return;
@@ -1234,6 +1249,7 @@ ${JSON.stringify(list, null, 2)}
                         }}
                         onStaffClick={handleOpenStaffEdit}
                         onOpenGuestbook={() => setShowGuestbook(true)}
+                        onWipeCounter={handleWipeCounter}
                     />
                     ) : (
                         <div className="flex-1 flex items-center justify-center text-sm text-[#8A5A3D]">加载咖啡店中...</div>

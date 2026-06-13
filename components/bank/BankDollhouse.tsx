@@ -4,7 +4,8 @@ import {
     ShopStaff, CharacterProfile, UserProfile, APIConfig, RoomLayout
 } from '../../types';
 import {
-    ROOM_LAYOUTS, WALLPAPER_PRESETS, FLOOR_PRESETS, STICKER_LIBRARY, INITIAL_DOLLHOUSE
+    ROOM_LAYOUTS, WALLPAPER_PRESETS, FLOOR_PRESETS, STICKER_LIBRARY, INITIAL_DOLLHOUSE,
+    CUSTOMER_QUIPS, STAFF_QUIPS, PET_QUIPS
 } from './BankGameConstants';
 import BankAssetIcon, { isBankAssetUrl } from './BankAssetIcon';
 import { useOS } from '../../context/OSContext';
@@ -60,6 +61,8 @@ interface Props {
     updateState: (updater: (prev: BankShopState) => BankShopState) => Promise<void>;
     onStaffClick?: (staff: ShopStaff) => void;
     onOpenGuestbook: () => void;
+    /** 擦吧台攒 AP：返回本次实得 AP（0 = 冷却中） */
+    onWipeCounter?: () => Promise<number>;
 }
 
 // 咖啡店「默认布景」——纯展示层，只在主店铺、且用户没自定义「全屋贴图」时渲染。
@@ -195,9 +198,58 @@ const CafeBackdrop = React.memo(() => (
 ));
 
 const BankDollhouse: React.FC<Props> = ({
-    shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook
+    shopState, dollhouseState, onDollhouseChange, characters, updateState, onStaffClick, onOpenGuestbook, onWipeCounter
 }) => {
     const { addToast } = useOS();
+
+    // 「碎碎念」气泡：戳一戳演员 / 闲时随机冒泡，让店子像活的
+    const [quips, setQuips] = useState<Record<string, string>>({});
+    const quipTimersRef = useRef<Record<string, number>>({});
+    const randOf = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+    const staffQuip = (s: ShopStaff): string => s.isPet
+        ? randOf(PET_QUIPS)
+        : (s.personality && Math.random() < 0.5 ? `（${s.personality}）` : randOf(STAFF_QUIPS));
+    const showQuip = (actorId: string, text: string) => {
+        setQuips(prev => ({ ...prev, [actorId]: text }));
+        if (quipTimersRef.current[actorId]) window.clearTimeout(quipTimersRef.current[actorId]);
+        quipTimersRef.current[actorId] = window.setTimeout(() => {
+            setQuips(prev => { const n = { ...prev }; delete n[actorId]; return n; });
+        }, 2800);
+    };
+
+    // 擦吧台特效（飘字）
+    const [wipeFx, setWipeFx] = useState<{ x: number; y: number; text: string } | null>(null);
+    const wipeFxTimerRef = useRef<number | null>(null);
+    const handleWipe = async (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!onWipeCounter) return;
+        const host = e.currentTarget.parentElement as HTMLElement | null;
+        const rect = host?.getBoundingClientRect();
+        const x = rect ? ((e.clientX - rect.left) / rect.width) * 100 : 50;
+        const y = rect ? ((e.clientY - rect.top) / rect.height) * 100 : 66;
+        const ap = await onWipeCounter();
+        setWipeFx({ x, y, text: ap > 0 ? `✨ +${ap} AP` : '擦干净啦~' });
+        if (wipeFxTimerRef.current) window.clearTimeout(wipeFxTimerRef.current);
+        wipeFxTimerRef.current = window.setTimeout(() => setWipeFx(null), 1100);
+    };
+
+    // 店员闲时碎碎念：每隔几秒随机一位店员冒个想法泡泡
+    useEffect(() => {
+        const t = window.setInterval(() => {
+            const staff = shopState.staff;
+            if (!staff || staff.length === 0) return;
+            if (Math.random() < 0.65) {
+                const s = staff[Math.floor(Math.random() * staff.length)];
+                showQuip(s.id, staffQuip(s));
+            }
+        }, 9000);
+        return () => window.clearInterval(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shopState.staff]);
+    // 卸载时清掉所有气泡 / 飘字定时器
+    useEffect(() => () => {
+        Object.values(quipTimersRef.current).forEach(id => window.clearTimeout(id));
+        if (wipeFxTimerRef.current) window.clearTimeout(wipeFxTimerRef.current);
+    }, []);
     const [showUnlockConfirm, setShowUnlockConfirm] = useState<string | null>(null);
     const [renameTarget, setRenameTarget] = useState<DollhouseRoom | null>(null);
     const [renameValue, setRenameValue] = useState('');
@@ -994,6 +1046,16 @@ const BankDollhouse: React.FC<Props> = ({
                     {/* 默认咖啡店布景：仅主店铺、且无自定义全屋贴图时显示（纯展示、不写存档） */}
                     {!locked && room.id === MAIN_ROOM_ID && !roomTexture && <CafeBackdrop />}
 
+                    {/* 擦吧台攒 AP：吧台一带的可点区域（演员在其上、装修/摆件不受影响） */}
+                    {!locked && room.id === MAIN_ROOM_ID && !roomTexture && onWipeCounter && !editMode && !placingFurniture && (
+                        <div className="absolute left-0 right-0 cursor-pointer" style={{ top: '58%', height: '20%', zIndex: 8 }} title="擦擦吧台，攒点 AP" onClick={(e) => { e.stopPropagation(); void handleWipe(e); }} />
+                    )}
+                    {wipeFx && room.id === MAIN_ROOM_ID && (
+                        <div className="absolute z-[46] pointer-events-none animate-fade-in" style={{ left: `${wipeFx.x}%`, top: `${wipeFx.y}%`, transform: 'translate(-50%,-120%)' }}>
+                            <span className="text-[12px] font-black px-2 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a', boxShadow: '0 3px 8px rgba(200,150,40,0.35)' }}>{wipeFx.text}</span>
+                        </div>
+                    )}
+
                     {/* Room Texture Overlay - uses blob URL for stable rendering */}
                     {!locked && roomTexture && (
                         <div className="absolute inset-0 pointer-events-none z-[5]">
@@ -1054,9 +1116,15 @@ const BankDollhouse: React.FC<Props> = ({
                                         suppressNextStaffOpenRef.current = false;
                                         return;
                                     }
-                                    if (!hadDrag && !suppressActorClickRef.current) onStaffClick?.(staff);
+                                    if (!hadDrag && !suppressActorClickRef.current) showQuip(staff.id, staffQuip(staff));
                                 }}
                             >
+                                {quips[staff.id] && (
+                                    <div className="absolute left-1/2 bottom-full mb-1 -translate-x-1/2 px-2 py-1 rounded-xl text-[10px] font-bold leading-snug animate-fade-in z-40" style={{ background: '#fffef9', color: '#6b4528', boxShadow: '0 3px 10px rgba(96,66,40,0.25)', border: '1px solid #efdcc4', maxWidth: 150, width: 'max-content' }}>
+                                        {quips[staff.id]}
+                                        <span className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45" style={{ background: '#fffef9', borderRight: '1px solid #efdcc4', borderBottom: '1px solid #efdcc4' }} />
+                                    </div>
+                                )}
                                 <div className="drop-shadow-md origin-bottom" style={{ transform: `scale(${staffScale})` }}>
                                     {isStaffUrl
                                         ? <img src={staff.avatar} className="w-10 h-10 object-contain" draggable={false} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1089,8 +1157,14 @@ const BankDollhouse: React.FC<Props> = ({
                                 className={`absolute ${draggingActorId === visitor.id ? 'cursor-grabbing' : 'cursor-grab'} select-none group/staff transition-[left,top] ${draggingActorId === visitor.id ? 'duration-0' : 'duration-200'} ease-out`}
                                 style={{ left: `${visitorPos.x}%`, top: `${visitorPos.y}%`, transform: 'translate(-50%, -100%)', zIndex: 35 }}
                                 onPointerDown={(e) => { e.stopPropagation(); handleActorPressStart(visitor.id, room.id, true); }}
-                                onPointerUp={(e) => { e.stopPropagation(); void handleRoomPointerUp(); }}
+                                onPointerUp={async (e) => { e.stopPropagation(); const moved = await handleRoomPointerUp(); if (!moved && !suppressActorClickRef.current) showQuip(visitor.id, randOf(CUSTOMER_QUIPS)); }}
                             >
+                                {quips[visitor.id] && (
+                                    <div className="absolute left-1/2 bottom-full mb-1 -translate-x-1/2 px-2 py-1 rounded-xl text-[10px] font-bold leading-snug animate-fade-in z-40" style={{ background: '#fffef9', color: '#6b4528', boxShadow: '0 3px 10px rgba(96,66,40,0.25)', border: '1px solid #efdcc4', maxWidth: 150, width: 'max-content' }}>
+                                        {quips[visitor.id]}
+                                        <span className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 rotate-45" style={{ background: '#fffef9', borderRight: '1px solid #efdcc4', borderBottom: '1px solid #efdcc4' }} />
+                                    </div>
+                                )}
                                 <div className="drop-shadow-md origin-bottom" style={{ transform: `scale(${shopState.activeVisitor?.scale ?? 4})` }}>
                                     <img src={visitor.sprites?.chibi || visitor.avatar} className="w-10 h-10 object-contain" draggable={false} />
                                 </div>
