@@ -528,7 +528,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                  {isVectorizing ? '🏰 向量化处理中...' : '🏰 一键向量化所有聊天记录'}
                              </button>
                              <p className="text-[10px] text-slate-400 mt-2 text-center leading-relaxed">
-                                 将所有未处理的聊天记录交给记忆宫殿向量化，完成后可安全清空聊天。<br/>
+                                 将所有未处理的聊天记录交给回忆标本馆向量化，完成后可安全清空聊天。<br/>
                                  <span className="text-slate-300">看不懂这是什么的话不需要操作此按钮。</span>
                              </p>
                          </div>
@@ -574,7 +574,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             return (
                                 <NoteStrip tone="good">
                                     <b>自动装订已经开着</b>：palace 处理完会按日期把聊天自动收进「本月日度总结」。
-                                    自动那条线用的是<b>记忆宫殿内置的笔法</b>（保证向量检索稳定）；
+                                    自动那条线用的是<b>回忆标本馆内置的笔法</b>（保证向量检索稳定）；
                                     下面挑的笔法<b>只管这里的手动装订</b>，怎么换都不影响自动装订。
                                 </NoteStrip>
                             );
@@ -582,16 +582,16 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         if (palaceOn && !autoOn) {
                             return (
                                 <NoteStrip tone="warn">
-                                    记忆宫殿开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
+                                    回忆标本馆开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
                                     <b>不会</b>自动写进「本月日度总结」。想让它自动写：剪影集 → 登场人物 → 角色 →
-                                    记忆宫殿开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
+                                    回忆标本馆开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
                                     按选中的<b>《{activeName}》</b>笔法手动装订一次。
                                 </NoteStrip>
                             );
                         }
                         return (
                             <NoteStrip>
-                                <b>纯手装本</b>（记忆宫殿没开）。按钮会按选中的<b>《{activeName}》</b>笔法
+                                <b>纯手装本</b>（回忆标本馆没开）。按钮会按选中的<b>《{activeName}》</b>笔法
                                 把聊天按天总结进「本月日度总结」；订完会自动把已总结的旧消息收起来（留最近一段可见）。
                             </NoteStrip>
                         );
@@ -685,7 +685,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     {typeof activeCharacter.hideBeforeMessageId === 'number' && activeCharacter.hideBeforeMessageId > 0 && (
                         <div className="bg-[#f4f1ea] border border-[#e3ddcf] rounded-xl p-2.5 text-[11px] text-[#5a5648] leading-relaxed mb-2">
                             <b>💡 已经有隐藏起点了</b>：灰色消息是自动/手动归档时标记为"已总结"的，AI 现在看不到原文，但能看到它们的总结。<br/>
-                            <span className="text-[#8a8270]">记忆宫殿向量记忆有自己的水位线（和这里无关），不用手动管。</span>
+                            <span className="text-[#8a8270]">回忆标本馆向量记忆有自己的水位线（和这里无关），不用手动管。</span>
                         </div>
                     )}
                     <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 pb-1.5 -mx-1 px-1">

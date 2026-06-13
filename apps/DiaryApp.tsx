@@ -3,7 +3,7 @@ import JournalApp from './JournalApp';
 import ExchangeDiaryApp from './ExchangeDiaryApp';
 
 // 合并后的「日记」App：一个图标进来，顶部两张手账标签卡在两种体验间切换 ——
-//   · 对页信笺（JournalApp）：按角色 / 按日历的双页（信纸 + 贴纸）私密交换日记，可收进记忆宫殿 / 神经链接。
+//   · 对页信笺（JournalApp）：按角色 / 按日历的双页（信纸 + 贴纸）私密交换日记，可收进回忆标本馆 / 往事柜。
 //   · 合写本子（ExchangeDiaryApp）：多角色共用的日记本，时间线信息流，含心情 / 印章 / AI 起头 / 今日对话总结。
 // 两种模式的数据模型各自独立保留，底层 LLM 调用 / 取日期 / 抠 JSON 等共用逻辑收在 diaryShared.ts。
 type DiaryTab = 'journal' | 'club';

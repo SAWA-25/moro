@@ -1858,10 +1858,10 @@ ${recent || '（你们还没怎么聊过）'}
                 // 有未处理的消息，弹出选择对话框
                 const processedMsgs = allMessages.filter(m => m.id <= hwm);
                 const choice = confirm(
-                    `⚠️ 记忆宫殿提醒\n\n` +
-                    `当前有 ${unprocessedCount} 条聊天记录尚未被记忆宫殿处理（向量化）。\n` +
+                    `⚠️ 回忆标本馆提醒\n\n` +
+                    `当前有 ${unprocessedCount} 条聊天记录尚未被回忆标本馆处理（向量化）。\n` +
                     `直接清空会导致这些记录永久丢失，无法被角色记住。\n\n` +
-                    `点击「确定」→ 仅删除已被记忆宫殿处理过的记录（安全）\n` +
+                    `点击「确定」→ 仅删除已被回忆标本馆处理过的记录（安全）\n` +
                     `点击「取消」→ 取消清空操作\n\n` +
                     `（看不懂在问什么的话就点确定）`
                 );
@@ -1925,7 +1925,7 @@ ${recent || '（你们还没怎么聊过）'}
         const mpEmb = memoryPalaceConfig?.embedding;
         const mpLLM = memoryPalaceConfig?.lightLLM;
         if (!mpEmb?.baseUrl || !mpEmb?.apiKey || !mpLLM?.baseUrl) {
-            addToast('请先在记忆宫殿设置中配置 API', 'error');
+            addToast('请先在回忆标本馆设置中配置 API', 'error');
             return;
         }
 

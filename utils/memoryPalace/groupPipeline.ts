@@ -236,7 +236,7 @@ export async function processGroupNewMessages(
         }
 
         console.log(`🏰 [GroupPalace] 群 ${group.name}：提取 ${drafts.length} 条群记忆，开始为 ${enabledMembers.length} 个成员各持久化一份`);
-        onProgress?.(`提取到 ${drafts.length} 条群记忆，正在向量化并存入 ${enabledMembers.length} 个成员的记忆宫殿...`);
+        onProgress?.(`提取到 ${drafts.length} 条群记忆，正在向量化并存入 ${enabledMembers.length} 个成员的回忆标本馆...`);
 
         // 6. 为每个开启记忆宫殿的成员各存一份
         //    每个成员用 ta 自己的 embedding 配置——这样 retrieve 时向量空间一致

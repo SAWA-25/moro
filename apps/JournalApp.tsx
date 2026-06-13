@@ -776,8 +776,8 @@ ${charPart}
                 <div className="rounded-2xl bg-[#faf6ee] border border-[#ece4d3] px-4 py-3 space-y-2" style={{ outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: '-5px' }}>
                     <p><span className="font-bold text-[#b03a34]">① 自动塞进聊天：</span> 角色回了你的日记后，会自动变成一张漂亮卡片出现在和 TA 的聊天里 —— 不用再手动发送。之后你在本子里改字 / 撕页，聊天里那张卡片也跟着同步。</p>
                     <p><span className="font-bold text-[#b03a34]">② 单页不进记忆：</span> 如果你只是单方面写给角色看（没让 TA 回），这一页就不会进入任何记忆，照旧存着即可。</p>
-                    <p><span className="font-bold text-[#b03a34]">③ 新页不用管收纳：</span> 这次翻新<b>之后</b>新写的页走的就是上面"自动塞进聊天"那条线 —— 卡片落到聊天后，chatapp 的日度归档 / 记忆宫殿管线会像处理别的消息一样顺手收掉，不需要也<b>不该</b>再手动收一次。所以新页看不到收纳入口，这是故意的。</p>
-                    <p><span className="font-bold text-[#b03a34]">④ 老页还能手动收：</span> 翻新<b>之前</b>留下、且角色回过的老页，<b>点进那一页，右上角会有一枚"收进记忆"的印</b>，按一下就行 —— 没开宫殿的角色走主 API 出散文式总结写进神经链接，开了宫殿的走副 API 一次抽多条结构化记忆，节点入向量库 + 同一组内容也 bullet 化写进神经链接，和 chatapp 自动归档一模一样。</p>
+                    <p><span className="font-bold text-[#b03a34]">③ 新页不用管收纳：</span> 这次翻新<b>之后</b>新写的页走的就是上面"自动塞进聊天"那条线 —— 卡片落到聊天后，chatapp 的日度归档 / 回忆标本馆管线会像处理别的消息一样顺手收掉，不需要也<b>不该</b>再手动收一次。所以新页看不到收纳入口，这是故意的。</p>
+                    <p><span className="font-bold text-[#b03a34]">④ 老页还能手动收：</span> 翻新<b>之前</b>留下、且角色回过的老页，<b>点进那一页，右上角会有一枚"收进记忆"的印</b>，按一下就行 —— 没开回忆标本馆的角色走主 API 出散文式总结写进往事柜，开了的走副 API 一次抽多条结构化记忆，标本入向量库 + 同一组内容也 bullet 化写进往事柜，和 chatapp 自动归档一模一样。</p>
                 </div>
                 <p className="font-hand text-base text-[#a79c8e]">这张小纸条只出现一次。</p>
             </div>
@@ -791,22 +791,22 @@ ${charPart}
         // 宫殿状态文案
         let palaceStatus: { tone: 'on' | 'off' | 'warn' | 'fail'; title: string; detail: string } = { tone: 'off', title: '', detail: '' };
         if (!p) {
-            palaceStatus = { tone: 'fail', title: '记忆宫殿 · 写入失败', detail: '入宫过程抛了异常，详情看控制台。神经链接已 fallback 走主 API 散文版，写入成功。' };
+            palaceStatus = { tone: 'fail', title: '回忆标本馆 · 写入失败', detail: '处理过程抛了异常，详情看控制台。往事柜已 fallback 走主 API 散文版，写入成功。' };
         } else if (p.status === 'palace_disabled') {
-            palaceStatus = { tone: 'off', title: '记忆宫殿 · 没开', detail: `${archiveResult.charName} 没开记忆宫殿，走的是主 API 散文路径写神经链接。想让日记进向量记忆，去角色设置里打开"记忆宫殿"开关再收一次。` };
+            palaceStatus = { tone: 'off', title: '回忆标本馆 · 没开', detail: `${archiveResult.charName} 没开回忆标本馆，走的是主 API 散文路径写往事柜。想让日记进向量记忆，去角色设置里打开"回忆标本馆"开关再收一次。` };
         } else if (p.status === 'lightllm_missing') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 没配', detail: '宫殿开着，但宫殿副 API (memoryPalaceConfig.lightLLM) 没填；没法做结构化抽取，神经链接已 fallback 走主 API 散文版。' };
+            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 副 API 没配', detail: '标本馆开着，但标本馆副 API (memoryPalaceConfig.lightLLM) 没填；没法做结构化抽取，往事柜已 fallback 走主 API 散文版。' };
         } else if (p.status === 'embedding_missing') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 嵌入模型没配', detail: '宫殿开着，但 embedding 配置缺失；没法向量化，神经链接已 fallback 走主 API 散文版。' };
+            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 嵌入模型没配', detail: '标本馆开着，但 embedding 配置缺失；没法向量化，往事柜已 fallback 走主 API 散文版。' };
         } else if (p.status === 'empty_input') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 内容是空的', detail: '日记两页都没有正文，没东西可入宫。' };
+            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 内容是空的', detail: '日记两页都没有正文，没东西可收进馆。' };
         } else if (p.status === 'extracted_none') {
-            palaceStatus = { tone: 'warn', title: '记忆宫殿 · 副 API 没抽出东西', detail: '副 API 读完日记，但没觉得有值得记的内容。神经链接已 fallback 走主 API 散文版写入。' };
+            palaceStatus = { tone: 'warn', title: '回忆标本馆 · 副 API 没抽出东西', detail: '副 API 读完日记，但没觉得有值得记的内容。往事柜已 fallback 走主 API 散文版写入。' };
         } else {
             palaceStatus = {
                 tone: 'on',
-                title: `记忆宫殿 · 入了 ${p.stored} 条${p.skipped > 0 ? `（另有 ${p.skipped} 条撞上已有记忆去重）` : ''}`,
-                detail: '副 API 把日记拆成下面这几条结构化记忆并向量化，同一组内容也 bullet 化进了上面的神经链接。之后聊天召回时按语义命中。createdAt 已对齐到日记当天。',
+                title: `回忆标本馆 · 收了 ${p.stored} 条${p.skipped > 0 ? `（另有 ${p.skipped} 条撞上已有记忆去重）` : ''}`,
+                detail: '副 API 把日记拆成下面这几条结构化记忆并向量化，同一组内容也 bullet 化进了上面的往事柜。之后聊天召回时按语义命中。createdAt 已对齐到日记当天。',
             };
         }
 
@@ -827,19 +827,19 @@ ${charPart}
                     {/* 顶部一行: 数据流向示意 */}
                     {archiveResult.summaryOrigin === 'palace_bullets' ? (
                         <div className="rounded-xl bg-gradient-to-r from-emerald-50 to-purple-50 border border-emerald-200/60 px-3 py-2 text-[11px] text-slate-600">
-                            ✓ 这次同时进了 <b className="text-emerald-700">神经链接</b> 和 <b className="text-purple-700">记忆宫殿</b>，
-                            两边拿的是 <b>同一组抽出来的内容</b> —— 副 API 抽的 MemoryNode 直接 bullet 化写进神经链接，跟 chatapp 自动归档一致。
+                            ✓ 这次同时进了 <b className="text-emerald-700">往事柜</b> 和 <b className="text-purple-700">回忆标本馆</b>，
+                            两边拿的是 <b>同一组抽出来的内容</b> —— 副 API 抽的 MemoryNode 直接 bullet 化写进往事柜，跟 chatapp 自动归档一致。
                         </div>
                     ) : (
                         <div className="rounded-xl bg-emerald-50/70 border border-emerald-100 px-3 py-2 text-[11px] text-slate-600">
-                            这次只进了 <b className="text-emerald-700">神经链接</b>，用主 API 生成的散文式总结。原因看下面"记忆宫殿"那块。
+                            这次只进了 <b className="text-emerald-700">往事柜</b>，用主 API 生成的散文式总结。原因看下面"回忆标本馆"那块。
                         </div>
                     )}
 
-                    {/* 神经链接 */}
+                    {/* 往事柜 */}
                     <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 space-y-2">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-700">● 神经链接 · char.memories</span>
+                            <span className="text-[10px] font-bold tracking-widest uppercase text-emerald-700">● 往事柜 · char.memories</span>
                             <span className="text-[10px] text-emerald-600/70">写入 1 条 · 日期 {archiveResult.date}</span>
                             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">mood={archiveResult.summaryOrigin === 'palace_bullets' ? 'diary_palace' : 'diary'}</span>
                         </div>
@@ -847,14 +847,14 @@ ${charPart}
                             {archiveResult.summary}
                         </p>
                         <p className="text-[10px] text-emerald-700/70">
-                            ↑ 这条会出现在「{archiveResult.charName}」的本月详细记录里，自动跟聊天上下文一起送进 LLM。
+                            ↑ 这条会进「{archiveResult.charName}」的往事柜（本月日账），自动跟聊天上下文一起送进 LLM。
                             {archiveResult.summaryOrigin === 'palace_bullets'
-                                ? ' 每个 bullet 都对应下面记忆宫殿里的一个节点。'
+                                ? ' 每个 bullet 都对应下面回忆标本馆里的一个标本。'
                                 : ''}
                         </p>
                     </div>
 
-                    {/* 记忆宫殿 */}
+                    {/* 回忆标本馆 */}
                     <div className={`rounded-2xl border px-4 py-3 space-y-2 ${
                         palaceStatus.tone === 'on' ? 'border-purple-100 bg-purple-50/70'
                         : palaceStatus.tone === 'off' ? 'border-slate-100 bg-slate-50'
@@ -1077,7 +1077,7 @@ ${charPart}
                         </div>
                     )}
                     {currentEntry?.isArchived && (
-                        <div className="px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1" style={{ background: 'rgba(176,58,52,0.18)', color: '#e8a39d' }} title="这一页已收进神经链接">
+                        <div className="px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1" style={{ background: 'rgba(176,58,52,0.18)', color: '#e8a39d' }} title="这一页已收进往事柜">
                             <Archive size={11} weight="fill" />
                             收过了
                         </div>
@@ -1089,7 +1089,7 @@ ${charPart}
                             onClick={() => handleArchiveDiary(currentEntry)}
                             disabled={archivingId === currentEntry.id}
                             className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-lg transition-all flex items-center gap-1.5 ${archivingId === currentEntry.id ? 'bg-[#7a3531] text-[#e8c7c3] cursor-wait' : 'bg-[#b03a34] text-white hover:bg-[#c2453e] active:scale-95'}`}
-                            title={'把这页老日记收进神经链接' + (selectedChar?.memoryPalaceEnabled ? ' / 记忆宫殿' : '')}
+                            title={'把这页老日记收进往事柜' + (selectedChar?.memoryPalaceEnabled ? ' / 回忆标本馆' : '')}
                         >
                             {archivingId === currentEntry.id ? (
                                 <>

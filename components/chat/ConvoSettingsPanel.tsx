@@ -458,7 +458,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     <Entry
                         mark="✦"
                         title={`随身记忆 · ${unlimitedContext ? '不设上限' : `最近 ${contextLimit} 条`}`}
-                        note="每次对话随身携带的最近消息条数；更早的往事交给记忆摘要和记忆宫殿补全。"
+                        note="每次对话随身携带的最近消息条数；更早的往事交给记忆摘要和回忆标本馆补全。"
                     >
                         <div className="flex items-center gap-2.5">
                             <input
@@ -907,8 +907,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
                     {char.memoryPalaceEnabled && onForceVectorize && (
                         <Entry
-                            mark="❒" title="送进记忆宫殿"
-                            note="把还没处理的聊天记录全部交给记忆宫殿做向量化，办完之后就能放心清空聊天。"
+                            mark="❒" title="送进回忆标本馆"
+                            note="把还没处理的聊天记录全部交给回忆标本馆做向量化，办完之后就能放心清空聊天。"
                             side={
                                 <PinButton tone="mint" onClick={onForceVectorize} disabled={isVectorizing}>
                                     {isVectorizing ? '搬运中…' : '🏰 全部送去'}
