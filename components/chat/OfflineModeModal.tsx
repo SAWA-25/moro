@@ -5,6 +5,9 @@ import {
     OfflineEntry,
     OfflinePov,
     OfflinePovPerson,
+    OfflineOpeningPreset,
+    OFFLINE_OPENING_PRESETS,
+    resolveOpeningFrame,
     loadOfflineSession,
     saveOfflineSession,
     clearOfflineSession,
@@ -38,6 +41,11 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     const [ending, setEnding] = useState(false);
     // 叙述人称：角色 / 用户各可选 第一/第二/第三人称，自由组合（存 localStorage，per-char）
     const [pov, setPov] = useState<OfflinePov>(() => loadOfflinePov(char.id));
+    // 开场白方式：新会话先让用户挑这场见面怎么开始（靠近/造访/偶遇/赴约/自定义）；
+    // 续上的会话（已有情景）直接跳过选择。
+    const [openingChosen, setOpeningChosen] = useState(() => loadOfflineSession(char.id).length > 0);
+    const [customScenario, setCustomScenario] = useState('');
+    const [customOpen, setCustomOpen] = useState(false);
 
     const setPovFor = (who: 'char' | 'user', person: OfflinePovPerson) => {
         setPov(prev => {
@@ -57,25 +65,26 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
         });
     };
 
-    // 首次打开（无历史情景）：生成见面开场
-    useEffect(() => {
-        if (entries.length > 0 || openingStartedRef.current) return;
+    // 选定开场白方式后才生成见面开场（不再一打开就自动生成）。
+    const startOpening = async (preset: OfflineOpeningPreset) => {
+        if (busy || openingStartedRef.current) return;
+        if (preset === 'custom' && !customOpen) { setCustomOpen(true); return; }
+        const scenario = resolveOpeningFrame(preset, customScenario, char.name, userProfile.name || '你');
+        if (preset === 'custom' && !scenario) { addToast('写一句这场见面怎么开始吧～', 'info'); return; }
         openingStartedRef.current = true;
-        let cancelled = false;
-        (async () => {
-            setBusy(true);
-            try {
-                const opening = await generateOfflineOpening(char, userProfile, apiConfig, pov);
-                if (!cancelled && opening) pushEntries({ role: 'scene', text: opening, at: Date.now() });
-            } catch (e: any) {
-                if (!cancelled) addToast(`线下开场生成失败：${e?.message || e}`, 'error');
-            } finally {
-                if (!cancelled) setBusy(false);
-            }
-        })();
-        return () => { cancelled = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        setOpeningChosen(true);
+        setBusy(true);
+        try {
+            const opening = await generateOfflineOpening(char, userProfile, apiConfig, pov, scenario);
+            if (opening) pushEntries({ role: 'scene', text: opening, at: Date.now() });
+        } catch (e: any) {
+            addToast(`线下开场生成失败：${e?.message || e}`, 'error');
+            openingStartedRef.current = false;
+            setOpeningChosen(false); // 允许重新选
+        } finally {
+            setBusy(false);
+        }
+    };
 
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -182,6 +191,65 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
 
                 {/* 情景流 */}
                 <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 space-y-4">
+                    {/* 开场白方式选择：这场见面怎么开始（靠近/造访/偶遇/赴约/自定义） */}
+                    {!openingChosen && (
+                        <div className="pt-1">
+                            <div className="text-center mb-3">
+                                <div className="text-[14px] font-bold" style={{ ...SERIF_STACK, color: PAPER_TONES.ink }}>这场见面，怎么开始？</div>
+                                <div className="text-[10.5px] mt-1" style={{ color: PAPER_TONES.inkSoft }}>挑一种起手式，下面就照着写开场</div>
+                            </div>
+                            <div className="space-y-2.5">
+                                {OFFLINE_OPENING_PRESETS.map(p => {
+                                    const desc = p.desc.replace(/\{char\}/g, char.name).replace(/\{user\}/g, userProfile.name || '你');
+                                    return (
+                                        <button
+                                            key={p.key}
+                                            type="button"
+                                            disabled={busy}
+                                            onClick={() => startOpening(p.key)}
+                                            className="w-full text-left rounded-[12px] px-4 py-3 active:scale-[0.98] transition disabled:opacity-50 flex items-center gap-3"
+                                            style={{ background: '#fffdfa', border: '1px dashed #ddc9d3', boxShadow: '0 1px 3px rgba(122,90,114,0.12)' }}
+                                        >
+                                            <span className="text-[22px] shrink-0" aria-hidden>{p.emoji}</span>
+                                            <span className="min-w-0">
+                                                <span className="block text-[13.5px] font-bold" style={{ ...CUTE_STACK, color: '#b25e7a' }}>{p.label}</span>
+                                                <span className="block text-[10.5px] mt-0.5 leading-snug" style={{ color: PAPER_TONES.inkSoft }}>{desc}</span>
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {customOpen && (
+                                <div className="mt-3 rounded-[12px] px-3 py-3" style={{ background: 'rgba(255,250,232,0.7)', border: '1px dashed #ecd9a0' }}>
+                                    <textarea
+                                        value={customScenario}
+                                        onChange={e => setCustomScenario(e.target.value)}
+                                        rows={3}
+                                        placeholder="例：在你们常去的那家咖啡馆，TA 已经先到了，正低头翻一本书…"
+                                        className="w-full bg-transparent text-[12.5px] outline-none resize-none placeholder:text-[#cbb6a2]"
+                                        style={{ color: PAPER_TONES.ink }}
+                                    />
+                                    <div className="flex justify-end mt-1">
+                                        <button
+                                            type="button"
+                                            disabled={busy || !customScenario.trim()}
+                                            onClick={() => startOpening('custom')}
+                                            className="px-4 py-1.5 rounded-[10px] text-[11px] font-bold active:translate-y-[1px] transition disabled:opacity-50"
+                                            style={{ background: '#f6a7bb', border: '1.5px solid #d97a93', color: '#5d2434', ...CUTE_STACK }}
+                                        >
+                                            就这么开始
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            {busy && (
+                                <div className="flex items-center justify-center gap-2 text-[11px] pt-4" style={{ color: PAPER_TONES.inkFaint }}>
+                                    <span className="animate-pulse" style={{ color: '#f29db0' }} aria-hidden>♥</span>
+                                    正在布置见面的场景…
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {entries.map((e, i) => (
                         e.role === 'scene' ? (
                             // 旁白：贴在页中央的便签
@@ -211,12 +279,10 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             这一幕还在写…
                         </div>
                     )}
-                    {!busy && entries.length === 0 && (
-                        <div className="text-center text-[11px] pt-10" style={{ color: PAPER_TONES.inkFaint }}>正在布置见面的场景…</div>
-                    )}
                 </div>
 
-                {/* 输入区：发言/行动 + 让角色继续 */}
+                {/* 输入区：发言/行动 + 让角色继续（选好开场白方式后才出现） */}
+                {openingChosen && (
                 <div className="shrink-0 px-4 py-3 flex items-center gap-2 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.22)' }}>
                     <input
                         value={input}
@@ -248,6 +314,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         </button>
                     )}
                 </div>
+                )}
             </div>
         </div>
     );

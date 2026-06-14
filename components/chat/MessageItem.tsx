@@ -792,6 +792,10 @@ interface MessageItemProps {
     blockedMark?: boolean;
     /** 点开角色发来的转账 / 红包卡片：弹出「收款」确认弹窗（仅 pending 且未过期时可点）。 */
     onClaimTransfer?: (m: Message) => void;
+    /** 这条是不是最后一轮里的 user 消息（用于「行动选择器」头像入口）。 */
+    isLastUserMsg?: boolean;
+    /** 点击最后一轮的 user 头像：打开「行动选择器」（生成可编辑的行动选项）。 */
+    onUserAvatarClick?: () => void;
 }
 
 const SWIPE_REPLY_TRIGGER = 56; // px：左滑超过此距离松手即触发引用
@@ -834,6 +838,8 @@ const MessageItem = React.memo(({
     onAvatarPoke,
     blockedMark = false,
     onClaimTransfer,
+    isLastUserMsg = false,
+    onUserAvatarClick,
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
@@ -1372,12 +1378,26 @@ const MessageItem = React.memo(({
                     >!</span>
                 )}
 
-                {/* User Avatar - Absolute Positioned */}
-                {isUser && (
-                    <div className="absolute right-3 bottom-[1.25rem] z-0">
-                        {renderAvatar(userAvatar)}
-                    </div>
-                )}
+                {/* User Avatar - Absolute Positioned（最后一轮可点：打开行动选择器） */}
+                {isUser && (() => {
+                    const canPickAction = !!onUserAvatarClick && isLastUserMsg && !selectionMode;
+                    return (
+                        <div
+                            className={`absolute right-3 bottom-[1.25rem] ${canPickAction ? 'z-10 cursor-pointer' : 'z-0'}`}
+                            onClick={canPickAction ? (e) => { e.stopPropagation(); onUserAvatarClick!(); } : undefined}
+                            title={canPickAction ? '帮我想想接下来说点啥' : undefined}
+                        >
+                            {renderAvatar(userAvatar)}
+                            {canPickAction && (
+                                <span
+                                    className="absolute -top-1 -left-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-sm pointer-events-none animate-pulse"
+                                    style={{ background: 'linear-gradient(135deg,#ff9eb5,#ff7aa0)' }}
+                                    aria-hidden
+                                >✦</span>
+                            )}
+                        </div>
+                    );
+                })()}
             </div>
     );
 
@@ -2777,6 +2797,7 @@ const MessageItem = React.memo(({
            prev.voiceData?.url === next.voiceData?.url &&
            prev.voiceLoading === next.voiceLoading &&
            prev.isVoicePlaying === next.isVoicePlaying &&
+           prev.isLastUserMsg === next.isLastUserMsg &&
            // 转账 / 红包卡片的收款状态变化（pending→claimed/expired/declined）只动 metadata，
            // 不动 content/id，需单独比对，否则 memo 会挡掉卡片状态更新。
            prev.msg.metadata?.status === next.msg.metadata?.status;
