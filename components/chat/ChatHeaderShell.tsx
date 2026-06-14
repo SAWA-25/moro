@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CaretLeft, DotsThreeVertical, GearSix } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
@@ -47,9 +47,8 @@ interface ChatHeaderShellProps {
     /** 动森彩蛋模式：头部换成木质草绿栏。 */
 }
 
-const COLLAPSED_BUFF_MIN = 2;
+const COLLAPSED_BUFF_MIN = 1;
 const COLLAPSED_BUFF_MAX = 3;
-const CHIP_GAP_PX = 2;
 
 const normalizeIntensity = (n: number | undefined | null): 1 | 2 | 3 => {
     const parsed = Number.isFinite(n) ? Math.round(Number(n)) : 2;
@@ -97,7 +96,6 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const cardRef = useRef<HTMLDivElement>(null);
     const buffPanelRef = useRef<HTMLDivElement>(null);
     const buffPreviewRef = useRef<HTMLDivElement>(null);
-    const measureChipRefs = useRef<Array<HTMLSpanElement | null>>([]);
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const visibleBuffs = buffs.slice(0, collapsedVisibleCount);
@@ -144,54 +142,40 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         return () => document.removeEventListener('mousedown', handler);
     }, [openBuff, isBuffListExpanded]);
 
+    // buff 的稳定签名：任何增删 / 改名 / 换 emoji 都会变，用它驱动「复位 → 收缩到刚好不溢出」。
+    const buffSig = buffs.map((b) => `${b.id}:${b.label}:${b.emoji || ''}`).join('|');
+
+    // 切角色 / buff 变化时收起展开态，并把可见数复位到最大（随后由下面的收缩逻辑收敛）。
     useEffect(() => {
         setIsBuffListExpanded(false);
         setOpenBuff(null);
         setCollapsedVisibleCount(Math.min(COLLAPSED_BUFF_MAX, buffs.length));
-    }, [activeCharacter.id, buffs.length]);
+    }, [activeCharacter.id, buffSig]);
 
+    // 顶栏宽度变化（旋转 / 分屏 / 自定义 CSS 重排）时复位可见数，重新测一遍。
+    const [buffSizeTick, setBuffSizeTick] = useState(0);
     useEffect(() => {
-        if (buffs.length <= COLLAPSED_BUFF_MIN) {
-            setCollapsedVisibleCount(buffs.length);
-            return;
+        const node = buffPreviewRef.current;
+        if (!node || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(() => {
+            setCollapsedVisibleCount(Math.min(COLLAPSED_BUFF_MAX, buffs.length));
+            setBuffSizeTick((t) => t + 1);
+        });
+        ro.observe(node);
+        return () => ro.disconnect();
+    }, [buffs.length]);
+
+    // 关键修复：用「真实渲染出来的那一行」的横向溢出来判断，而不是另测一行隐藏样本。
+    // 自定义 CSS 只会撑大真实的 <button> 胶囊（.moro-chat-buffs button{padding…}），隐藏样本是 <span>
+    // 不受影响 —— 旧逻辑因此会少算、留下溢出的胶囊。现在直接量真实行，逐步收到 1 个 + 「+N」，
+    // 顶栏情绪栏既不会溢出，也不会在居中布局下被两端裁切。
+    useLayoutEffect(() => {
+        const node = buffPreviewRef.current;
+        if (!node) return;
+        if (node.scrollWidth - node.clientWidth > 1 && collapsedVisibleCount > COLLAPSED_BUFF_MIN) {
+            setCollapsedVisibleCount((c) => Math.max(COLLAPSED_BUFF_MIN, c - 1));
         }
-
-        const updateCollapsedCount = () => {
-            const previewNode = buffPreviewRef.current;
-            const containerWidth = previewNode?.clientWidth ?? 0;
-            const candidateCount = Math.min(COLLAPSED_BUFF_MAX, buffs.length);
-            const widths = measureChipRefs.current
-                .slice(0, candidateCount)
-                .map((node) => node?.offsetWidth ?? 0);
-
-            if (!containerWidth || widths.length < candidateCount || widths.some((width) => width <= 0)) {
-                return;
-            }
-
-            const hiddenChipWidth = buffs.length > candidateCount ? 30 : 0;
-            const totalWidth = widths.reduce((sum, width) => sum + width, 0)
-                + CHIP_GAP_PX * Math.max(0, widths.length - 1)
-                + hiddenChipWidth
-                + (hiddenChipWidth > 0 ? CHIP_GAP_PX : 0);
-            const liveOverflow = !!previewNode && previewNode.scrollWidth - previewNode.clientWidth > 1;
-            const nextCount = candidateCount >= 3 && (totalWidth > containerWidth || liveOverflow) ? COLLAPSED_BUFF_MIN : candidateCount;
-            setCollapsedVisibleCount((prev) => (prev === nextCount ? prev : nextCount));
-        };
-
-        updateCollapsedCount();
-
-        const resizeObserver = typeof ResizeObserver !== 'undefined' && buffPreviewRef.current
-            ? new ResizeObserver(updateCollapsedCount)
-            : null;
-        if (resizeObserver && buffPreviewRef.current) {
-            resizeObserver.observe(buffPreviewRef.current);
-        }
-        window.addEventListener('resize', updateCollapsedCount);
-        return () => {
-            resizeObserver?.disconnect();
-            window.removeEventListener('resize', updateCollapsedCount);
-        };
-    }, [activeCharacter.id, buffs.length]);
+    }, [collapsedVisibleCount, buffSig, buffSizeTick]);
 
     const isDarkHeader = headerStyle === 'discord';
     const isPixelHeader = headerStyle === 'pixel';
@@ -288,22 +272,6 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                             +{hiddenBuffCount}
                         </button>
                     )}
-                </div>
-
-                <div className="pointer-events-none absolute -z-10 h-0 overflow-hidden opacity-0" aria-hidden>
-                    <div className="flex items-center gap-0.5 whitespace-nowrap">
-                        {buffs.slice(0, Math.min(COLLAPSED_BUFF_MAX, buffs.length)).map((buff, index) => (
-                            <span
-                                key={`measure-${buff.id}`}
-                                ref={(node) => { measureChipRefs.current[index] = node; }}
-                                className="inline-flex shrink-0 max-w-[8.75rem] text-[8px] leading-none px-1 py-[3px] rounded-[10px] font-bold border"
-                                style={buffChipStyle(buff)}
-                            >
-                                {buff.emoji ? `${buff.emoji} ` : ''}
-                                {buff.label}
-                            </span>
-                        ))}
-                    </div>
                 </div>
             </div>
         );

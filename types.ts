@@ -3497,6 +3497,17 @@ export interface TakeoutStore {
   distanceKm: number;
   promo?: string;          // 满减 / 首单优惠文案
   dishes: TakeoutDish[];
+  /** AI 生成的店铺简介 / 招牌一句话（参照真实外卖店的「店铺公告」）。 */
+  blurb?: string;
+  /**
+   * 隐藏的「良心值」0~1：越低越黑心（分量不足、卫生差、图文不符、强制砍单的概率越高）。
+   * 现实里下单前看不见，只用于下单后掷配送事件；UI 不直接展示。
+   */
+  integrity?: number;
+  /** 现实里看得见的红旗提示（如「近期卫生差评多·谨慎下单」）。黑心店里有一部分会亮明，正常店为空。 */
+  warning?: string;
+  /** AI 生成标记（用于「AI 现搓的店」徽标）。 */
+  aiGenerated?: boolean;
 }
 export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
 /** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
@@ -3518,7 +3529,39 @@ export interface TakeoutReview {
  * - cancelled 已取消
  */
 export type TakeoutStatus = 'preparing' | 'delivering' | 'arrived' | 'delivered' | 'cancelled';
-export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store'; text: string; at: number; }
+export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store' | 'support'; text: string; at: number; }
+
+/** 黑心商家 / 坏骑手会触发的现实化配送事故种类。 */
+export type TakeoutIncidentKind =
+  | 'short_weight'    // 缺斤少两 / 分量明显不足
+  | 'missing_item'    // 漏发餐品
+  | 'wrong_item'      // 送错餐 / 上错菜
+  | 'foreign_object'  // 餐里有异物（头发、塑料…）
+  | 'cold_food'       // 餐品冰凉坨成一团
+  | 'spilled'         // 撒漏 / 包装破损汤汁洒光
+  | 'severe_late'     // 严重超时
+  | 'rider_ate'       // 骑手偷吃 / 动过餐
+  | 'left_at_door'    // 不打电话直接丢门口（甚至放错地方）
+  | 'fake_photo'      // 图文严重不符（卖家秀 vs 买家秀）
+  | 'force_cancel';   // 商家收了钱迟迟不接单 / 强制砍单
+
+/** 一桩配送事故；下单时按良心值/骑手靠谱度掷出，送达后暴露给用户。 */
+export interface TakeoutIncident {
+  kind: TakeoutIncidentKind;
+  by: 'store' | 'rider';   // 责任方
+  title: string;           // 短标题「缺斤少两」
+  detail: string;          // 现实化描述
+  suggestedRefund: number; // 合理赔付金额（投诉成立后退回钱包）
+}
+
+/** 投诉 / 售后处理状态。 */
+export interface TakeoutComplaint {
+  filed: boolean;          // 已发起投诉
+  resolved: boolean;       // 平台已结案
+  outcome?: string;        // 结案结论文案
+  refunded: number;        // 本次投诉退回金额
+}
+
 export interface TakeoutOrder {
   id: string;
   storeId: string;
@@ -3545,8 +3588,16 @@ export interface TakeoutOrder {
   placedAt: number;
   etaAt: number;           // 预计送达时间戳
   deliveredAt?: number;
-  chat: TakeoutChatMsg[];  // 和骑手/商家的对话
-  chatTarget?: 'rider' | 'store';
+  chat: TakeoutChatMsg[];  // 和骑手/商家/平台客服的对话
+  chatTarget?: 'rider' | 'store' | 'support';
+  /** 隐藏的骑手靠谱度 0~1：越低越容易超时/撒漏/偷吃/不送上门。 */
+  riderReliability?: number;
+  /** 下单时掷出、送达后暴露的配送事故（黑心商家 / 坏骑手）。 */
+  incidents?: TakeoutIncident[];
+  /** 投诉 / 售后。 */
+  complaint?: TakeoutComplaint;
+  /** 强制砍单的店铺：被商家单方面取消（钱已退回钱包）。 */
+  cancelledByStore?: boolean;
   /** 发起方：用户在外卖 App / 聊天回形针点的 = 'user'；角色主动为用户点的 = 'char'。 */
   initiatedBy?: 'user' | 'char';
   /** 是否已在该角色聊天里生成「外卖订单小票」卡片（避免重复生成）。 */
