@@ -27,8 +27,8 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 // 留空则使用纯色占位背景
 // ============================================================
 export const WHITEDAY_ASSETS = {
-    chocolateBottom: 'https://sharkpan.xyz/f/dDzLi8/001.png', // 底层：完整巧克力心形
-    chocolateTop: 'https://sharkpan.xyz/f/lmD6Tx/002.png',    // 顶层：外框（中心透明），覆盖用户照片外缘
+    chocolateBottom: '', // 底层：完整巧克力心形（失效图床已清空；填入可用 PNG URL 即恢复心形效果）
+    chocolateTop: '',    // 顶层：外框（中心透明），覆盖用户照片外缘
 };
 
 // ============================================================
@@ -1141,15 +1141,16 @@ ${answerSummary}
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const loadImg = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+        const loadImg = (src: string): Promise<HTMLImageElement | null> => new Promise((resolve) => {
+            if (!src) { resolve(null); return; } // 留空（巧克力外框失效已清空）直接返回 null
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => resolve(img);
-            img.onerror = reject;
+            img.onerror = () => resolve(null); // 死链/失败也不炸，返回 null 走降级
             img.src = src;
         });
 
-        // 加载巧克力图层
+        // 加载巧克力图层（外框图床已失效 → 为 null，下面退化成纯方形照片卡）
         const [bottomImg, topImg] = await Promise.all([
             loadImg(WHITEDAY_ASSETS.chocolateBottom),
             loadImg(WHITEDAY_ASSETS.chocolateTop),
@@ -1157,60 +1158,69 @@ ${answerSummary}
 
         const cx = SIDE_PAD; // 巧克力区左上角 x
         const cy = SIDE_PAD; // 巧克力区左上角 y
-
-        // object-contain：等比缩放，居中填入 SIZE×SIZE 区域
-        const chocoScale = Math.min(SIZE / bottomImg.naturalWidth, SIZE / bottomImg.naturalHeight);
-        const chocoW = bottomImg.naturalWidth * chocoScale;
-        const chocoH = bottomImg.naturalHeight * chocoScale;
-        const chocoOffX = (SIZE - chocoW) / 2;
-        const chocoOffY = (SIZE - chocoH) / 2;
+        const containerW = SIZE * 0.8;
+        const containerH = SIZE * 0.8;
 
         // 巧克力区白色底
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(cx, cy, SIZE, SIZE);
 
-        // 1. 底层巧克力
-        ctx.drawImage(bottomImg, cx + chocoOffX, cy + chocoOffY, chocoW, chocoH);
+        if (bottomImg) {
+            // object-contain：等比缩放，居中填入 SIZE×SIZE 区域
+            const chocoScale = Math.min(SIZE / bottomImg.naturalWidth, SIZE / bottomImg.naturalHeight);
+            const chocoW = bottomImg.naturalWidth * chocoScale;
+            const chocoH = bottomImg.naturalHeight * chocoScale;
+            const chocoOffX = (SIZE - chocoW) / 2;
+            const chocoOffY = (SIZE - chocoH) / 2;
 
-        // 2. 用户自定义图片（heart mask）
-        if (customImage) {
-            const tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = SIZE;
-            tmpCanvas.height = SIZE;
-            const tmpCtx = tmpCanvas.getContext('2d')!;
+            // 1. 底层巧克力
+            ctx.drawImage(bottomImg, cx + chocoOffX, cy + chocoOffY, chocoW, chocoH);
 
-            const userImg = await loadImg(customImage.src);
-
-            const containerW = SIZE * 0.8;
-            const containerH = SIZE * 0.8;
-            const imgCenterX = (customImage.x / 100) * SIZE;
-            const imgCenterY = (customImage.y / 100) * SIZE;
-
-            tmpCtx.save();
-            tmpCtx.translate(imgCenterX, imgCenterY);
-            tmpCtx.rotate((customImage.rotation * Math.PI) / 180);
-            tmpCtx.scale(customImage.scale, customImage.scale);
-
-            const aspect = userImg.naturalWidth / userImg.naturalHeight;
-            let drawW: number, drawH: number;
-            if (aspect > containerW / containerH) {
-                drawW = containerW;
-                drawH = containerW / aspect;
-            } else {
-                drawH = containerH;
-                drawW = containerH * aspect;
+            // 2. 用户自定义图片（heart mask）
+            if (customImage) {
+                const userImg = await loadImg(customImage.src);
+                if (userImg) {
+                    const tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width = SIZE;
+                    tmpCanvas.height = SIZE;
+                    const tmpCtx = tmpCanvas.getContext('2d')!;
+                    tmpCtx.save();
+                    tmpCtx.translate((customImage.x / 100) * SIZE, (customImage.y / 100) * SIZE);
+                    tmpCtx.rotate((customImage.rotation * Math.PI) / 180);
+                    tmpCtx.scale(customImage.scale, customImage.scale);
+                    const aspect = userImg.naturalWidth / userImg.naturalHeight;
+                    let drawW: number, drawH: number;
+                    if (aspect > containerW / containerH) { drawW = containerW; drawH = containerW / aspect; }
+                    else { drawH = containerH; drawW = containerH * aspect; }
+                    tmpCtx.drawImage(userImg, -drawW / 2, -drawH / 2, drawW, drawH);
+                    tmpCtx.restore();
+                    tmpCtx.globalCompositeOperation = 'destination-in';
+                    tmpCtx.drawImage(bottomImg, chocoOffX, chocoOffY, chocoW, chocoH);
+                    ctx.drawImage(tmpCanvas, cx, cy);
+                }
             }
-            tmpCtx.drawImage(userImg, -drawW / 2, -drawH / 2, drawW, drawH);
-            tmpCtx.restore();
 
-            tmpCtx.globalCompositeOperation = 'destination-in';
-            tmpCtx.drawImage(bottomImg, chocoOffX, chocoOffY, chocoW, chocoH);
-
-            ctx.drawImage(tmpCanvas, cx, cy);
+            // 3. 顶层巧克力（对齐底层）
+            if (topImg) ctx.drawImage(topImg, cx + chocoOffX, cy + chocoOffY, chocoW, chocoH);
+        } else if (customImage) {
+            // 巧克力外框失效 → 退化：用户照片直接按 80% 居中裁进方形卡（无心形遮罩）
+            const userImg = await loadImg(customImage.src);
+            if (userImg) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(cx, cy, SIZE, SIZE);
+                ctx.clip();
+                ctx.translate(cx + (customImage.x / 100) * SIZE, cy + (customImage.y / 100) * SIZE);
+                ctx.rotate((customImage.rotation * Math.PI) / 180);
+                ctx.scale(customImage.scale, customImage.scale);
+                const aspect = userImg.naturalWidth / userImg.naturalHeight;
+                let drawW: number, drawH: number;
+                if (aspect > containerW / containerH) { drawW = containerW; drawH = containerW / aspect; }
+                else { drawH = containerH; drawW = containerH * aspect; }
+                ctx.drawImage(userImg, -drawW / 2, -drawH / 2, drawW, drawH);
+                ctx.restore();
+            }
         }
-
-        // 3. 顶层巧克力（对齐底层）
-        ctx.drawImage(topImg, cx + chocoOffX, cy + chocoOffY, chocoW, chocoH);
 
         // ── 拍立得底部条 ──────────────────────────────────────────────
         const wmY = SIDE_PAD + SIZE; // 底部条起始 y（= 664）
@@ -1230,17 +1240,19 @@ ${answerSummary}
         if (char?.avatar) {
             try {
                 const avatarImg = await loadImg(char.avatar);
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(avatarX, row1Y, avatarR, 0, Math.PI * 2);
-                ctx.clip();
-                ctx.drawImage(avatarImg, avatarX - avatarR, row1Y - avatarR, avatarR * 2, avatarR * 2);
-                ctx.restore();
-                ctx.strokeStyle = 'rgba(245,158,11,0.55)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(avatarX, row1Y, avatarR, 0, Math.PI * 2);
-                ctx.stroke();
+                if (avatarImg) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(avatarX, row1Y, avatarR, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(avatarImg, avatarX - avatarR, row1Y - avatarR, avatarR * 2, avatarR * 2);
+                    ctx.restore();
+                    ctx.strokeStyle = 'rgba(245,158,11,0.55)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(avatarX, row1Y, avatarR, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
             } catch { /* 头像加载失败时跳过 */ }
         }
 
@@ -1656,20 +1668,22 @@ ${answerSummary}
                             aspectRatio: '1 / 1',
                         }}
                     >
-                        {/* 底层：完整巧克力心形 */}
-                        <img
-                            src={WHITEDAY_ASSETS.chocolateBottom}
-                            crossOrigin="anonymous"
-                            className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-                            alt=""
-                        />
+                        {/* 底层：完整巧克力心形（外框图床失效则跳过，照片直接铺在方形卡内） */}
+                        {WHITEDAY_ASSETS.chocolateBottom && (
+                            <img
+                                src={WHITEDAY_ASSETS.chocolateBottom}
+                                crossOrigin="anonymous"
+                                className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+                                alt=""
+                            />
+                        )}
 
-                        {/* 中间层：mask 容器将照片剪裁到心形轮廓内 */}
+                        {/* 中间层：mask 容器将照片剪裁到心形轮廓内（无外框时不加 mask，照片铺满方形） */}
                         <div
                             className="absolute inset-0"
                             style={{
-                                WebkitMaskImage: `url(${WHITEDAY_ASSETS.chocolateBottom})`,
-                                maskImage: `url(${WHITEDAY_ASSETS.chocolateBottom})`,
+                                WebkitMaskImage: WHITEDAY_ASSETS.chocolateBottom ? `url(${WHITEDAY_ASSETS.chocolateBottom})` : undefined,
+                                maskImage: WHITEDAY_ASSETS.chocolateBottom ? `url(${WHITEDAY_ASSETS.chocolateBottom})` : undefined,
                                 WebkitMaskSize: 'contain',
                                 maskSize: 'contain',
                                 WebkitMaskRepeat: 'no-repeat',
@@ -1714,14 +1728,14 @@ ${answerSummary}
                                 )}
                         </div>
 
-                        {/* 顶层：外框覆盖层（中心透明），遮住照片超出心形的部分 */}
-                        <img
+                        {/* 顶层：外框覆盖层（中心透明），遮住照片超出心形的部分（图床失效则跳过） */}
+                        {WHITEDAY_ASSETS.chocolateTop && <img
                             src={WHITEDAY_ASSETS.chocolateTop}
                             crossOrigin="anonymous"
                             className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
                             style={{ zIndex: 10 }}
                             alt=""
-                        />
+                        />}
 
                         {/* 无图片时的提示（在顶层之下，心形透明区可见） */}
                         {!customImage && (
@@ -1877,12 +1891,12 @@ ${answerSummary}
                             className="relative mx-4 mt-4 overflow-hidden bg-white"
                             style={{ aspectRatio: '1 / 1' }}
                         >
-                            <img src={WHITEDAY_ASSETS.chocolateBottom} crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" alt="" />
+                            {WHITEDAY_ASSETS.chocolateBottom && <img src={WHITEDAY_ASSETS.chocolateBottom} crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" alt="" />}
                             <div
                                 className="absolute inset-0"
                                 style={{
-                                    WebkitMaskImage: `url(${WHITEDAY_ASSETS.chocolateBottom})`,
-                                    maskImage: `url(${WHITEDAY_ASSETS.chocolateBottom})`,
+                                    WebkitMaskImage: WHITEDAY_ASSETS.chocolateBottom ? `url(${WHITEDAY_ASSETS.chocolateBottom})` : undefined,
+                                    maskImage: WHITEDAY_ASSETS.chocolateBottom ? `url(${WHITEDAY_ASSETS.chocolateBottom})` : undefined,
                                     WebkitMaskSize: 'contain',
                                     maskSize: 'contain',
                                     WebkitMaskRepeat: 'no-repeat',
@@ -1900,7 +1914,7 @@ ${answerSummary}
                                     </div>
                                 )}
                             </div>
-                            <img src={WHITEDAY_ASSETS.chocolateTop} crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" style={{ zIndex: 10 }} alt="" />
+                            {WHITEDAY_ASSETS.chocolateTop && <img src={WHITEDAY_ASSETS.chocolateTop} crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" style={{ zIndex: 10 }} alt="" />}
                         </div>
                         <div className="px-4 py-3 flex items-center justify-between">
                             <div className="flex items-center gap-2">

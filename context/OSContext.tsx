@@ -408,16 +408,6 @@ export const MORO_AVATARS = {
   puzzled: '/moro-avatars/puzzled.jpg' // 疑惑M
 } as const;
 
-// 旧版 Moro 远程头像（已废弃，用于老用户数据迁移判定）
-const LEGACY_MORO_AVATAR = 'https://sharkpan.xyz/f/BZ3VSa/head.png';
-const LEGACY_MORO_SPRITES: Record<string, string> = {
-  'normal': 'https://sharkpan.xyz/f/w3QQFq/01.png',
-  'happy': 'https://sharkpan.xyz/f/MKg7ta/02.png',
-  'sad': 'https://sharkpan.xyz/f/3WnMce/03.png',
-  'angry': 'https://sharkpan.xyz/f/5n1xSj/04.png',
-  'shy': 'https://sharkpan.xyz/f/kdwet6/05.png'
-};
-
 const moroV2: CharacterProfile = {
   id: 'preset-moro-v2', // Unique ID to prevent duplication
   name: 'Moro',
@@ -500,29 +490,13 @@ Moro 是小手机的内置猫娘AI。
       'sad': MORO_AVATARS.pity,       // 可怜
       'angry': MORO_AVATARS.puzzled,  // 疑惑
       'shy': MORO_AVATARS.coy,        // 撒娇（复用）
-      'chibi': 'https://sharkpan.xyz/f/oWZQF4/S2.png' // Default Room Sprite (家园 Moro chibi)
   },
-  
+
   spriteConfig: {
       scale: 1.0, // Default scale
       x: 0,
       y: 0
   },
-
-  dateSkinSets: [
-      {
-          id: 'skin_moro_valentine',
-          name: 'Valentine',
-          sprites: {
-              'normal': 'https://sharkpan.xyz/f/4rzdtj/VNormal.png',
-              'happy':  'https://sharkpan.xyz/f/m3adhW/Vha.png',
-              'sad':    'https://sharkpan.xyz/f/BZgDfa/Vsad.png',
-              'angry':  'https://sharkpan.xyz/f/NdlVfv/VAn.png',
-              'shy':    'https://sharkpan.xyz/f/VyontY/Vshy.png',
-              'love':   'https://sharkpan.xyz/f/xl8muX/VBl.png',
-          }
-      }
-  ],
 
   // Default theme settings
   bubbleStyle: 'default', // Or specific theme ID if we had one
@@ -531,7 +505,6 @@ Moro 是小手机的内置猫娘AI。
   // Default Room Config —— 默认 Moro 的专属家具已移除（栖居志两个模式不再自带默认 Moro 布置），
   // 进房时与其它角色一样走通用默认家具。
   roomConfig: {
-      wallImage: 'https://sharkpan.xyz/f/NdJyhv/b.png', // Updated Background
       floorImage: 'repeating-linear-gradient(90deg, #e7e5e4 0px, #e7e5e4 20px, #d6d3d1 21px)',
       items: []
   },
@@ -1085,68 +1058,63 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             await DB.saveCharacter(moroV2);
             finalChars = [...finalChars, moroV2];
         } else {
-            // REPAIR LOGIC
+            // REPAIR LOGIC —— 主要任务：把老用户数据里残留的失效图床（sharkpan.xyz）死链清掉，
+            // 回落到本地头像 / 默认值；并在老用户从未自定义人设时升级到新版人设。
+            // 清理是幂等的：清干净后各 changed 标记都为 false，不再重复写库。
             const existingMoro = finalChars.find(c => c.id === moroV2.id);
             if (existingMoro) {
-                 const currentSprites = existingMoro.sprites || {};
-                 const isCorrupted = !currentSprites['normal'] || !currentSprites['chibi'];
-                 const needsWallUpdate = existingMoro.roomConfig?.wallImage !== moroV2.roomConfig?.wallImage;
-                 const needsSkinSets = !existingMoro.dateSkinSets || existingMoro.dateSkinSets.length === 0;
-                 // 之前误把家园 chibi 替换成了像素小屋的像素立绘 → 还原为原版 sharkpan 立绘
-                 const hasMisplacedPixelChibi = typeof currentSprites['chibi'] === 'string'
-                     && currentSprites['chibi'].startsWith('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADUAAAA4CAYAAABdeLCu');
-                 // 人设性格增强升级：仅当老用户的人设仍是旧版默认（从未自定义）时才替换为新版
-                 const needsPersonaUpgrade = (existingMoro.systemPrompt || '').trim() === LEGACY_MORO_SYSTEM_PROMPT.trim()
-                     && existingMoro.systemPrompt !== moroV2.systemPrompt;
-                 // 头像升级：老用户仍在用旧版远程头像/情绪图（从未自定义）→ 换成本地四张表情头像
-                 const needsAvatarUpgrade = existingMoro.avatar === LEGACY_MORO_AVATAR;
-                 const needsSpriteUpgrade = Object.entries(LEGACY_MORO_SPRITES)
-                     .some(([k, url]) => currentSprites[k] === url);
+                const isDead = (v: unknown): boolean => typeof v === 'string' && v.includes('sharkpan.xyz');
+                // 之前误把家园 chibi 替换成了像素小屋的像素立绘 → 也一并清掉
+                const MISPLACED_CHIBI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADUAAAA4CAYAAABdeLCu';
+                const presetSprites = moroV2.sprites as Record<string, string> | undefined;
 
-                 if (isCorrupted || !existingMoro.roomConfig || needsWallUpdate || needsSkinSets || hasMisplacedPixelChibi || needsPersonaUpgrade || needsAvatarUpgrade || needsSpriteUpgrade) {
-                     const restoredSprites = { ...moroV2.sprites, ...currentSprites };
-                     // 旧版远程情绪图 → 新本地表情头像（用户自定义过的不动）
-                     for (const [k, url] of Object.entries(LEGACY_MORO_SPRITES)) {
-                         if (restoredSprites[k] === url) restoredSprites[k] = moroV2.sprites![k];
-                     }
+                // sprites：死链 / 误植 chibi 清掉。moroV2 仍有的键换成本地立绘，没有的（chibi）丢弃 →
+                // 消费方（RoomApp / Bank / VR）本就 `sprites.chibi || avatar` 回落到本地头像。
+                const currentSprites = existingMoro.sprites || {};
+                const cleanedSprites: Record<string, string> = {};
+                let spritesChanged = false;
+                for (const [k, v] of Object.entries(currentSprites)) {
+                    const dead = isDead(v) || (k === 'chibi' && typeof v === 'string' && v.startsWith(MISPLACED_CHIBI));
+                    if (dead) {
+                        spritesChanged = true;
+                        const repl = presetSprites?.[k];
+                        if (repl) cleanedSprites[k] = repl;
+                    } else {
+                        cleanedSprites[k] = v as string;
+                    }
+                }
+                // 缺失的基础表情用本地头像补齐
+                for (const k of ['normal', 'happy', 'sad', 'angry', 'shy'] as const) {
+                    const local = presetSprites?.[k];
+                    if (!cleanedSprites[k] && local) { cleanedSprites[k] = local; spritesChanged = true; }
+                }
 
-                     if (!restoredSprites['normal']) restoredSprites['normal'] = moroV2.sprites!['normal'];
-                     if (!restoredSprites['happy']) restoredSprites['happy'] = moroV2.sprites!['happy'];
-                     if (!restoredSprites['sad']) restoredSprites['sad'] = moroV2.sprites!['sad'];
-                     if (!restoredSprites['angry']) restoredSprites['angry'] = moroV2.sprites!['angry'];
-                     if (!restoredSprites['shy']) restoredSprites['shy'] = moroV2.sprites!['shy'];
-                     if (!restoredSprites['chibi']) restoredSprites['chibi'] = moroV2.sprites!['chibi'];
-                     if (hasMisplacedPixelChibi) restoredSprites['chibi'] = moroV2.sprites!['chibi'];
+                const needsAvatarUpgrade = isDead(existingMoro.avatar);
+                // 含死链的整套皮肤（如旧版 Valentine 立绘）剔除
+                const cleanedSkins = (existingMoro.dateSkinSets || []).filter(
+                    s => !Object.values(s.sprites || {}).some(isDead)
+                );
+                const skinsChanged = cleanedSkins.length !== (existingMoro.dateSkinSets || []).length;
+                const wallIsDead = isDead(existingMoro.roomConfig?.wallImage);
+                // 人设性格增强升级：仅当老用户的人设仍是旧版默认（从未自定义）时才替换为新版
+                const needsPersonaUpgrade = (existingMoro.systemPrompt || '').trim() === LEGACY_MORO_SYSTEM_PROMPT.trim()
+                    && existingMoro.systemPrompt !== moroV2.systemPrompt;
 
-                     const updatedRoomConfig = existingMoro.roomConfig ? {
-                         ...existingMoro.roomConfig,
-                         wallImage: (existingMoro.roomConfig.wallImage?.includes('radial-gradient') || !existingMoro.roomConfig.wallImage)
-                                    ? moroV2.roomConfig?.wallImage
-                                    : existingMoro.roomConfig.wallImage
-                     } : moroV2.roomConfig;
+                if (spritesChanged || needsAvatarUpgrade || skinsChanged || wallIsDead || needsPersonaUpgrade) {
+                    const updatedMoro = {
+                        ...existingMoro,
+                        sprites: cleanedSprites,
+                        dateSkinSets: cleanedSkins,
+                        ...(existingMoro.roomConfig
+                            ? { roomConfig: { ...existingMoro.roomConfig, ...(wallIsDead ? { wallImage: undefined } : {}) } }
+                            : {}),
+                        ...(needsPersonaUpgrade ? { systemPrompt: moroV2.systemPrompt } : {}),
+                        ...(needsAvatarUpgrade ? { avatar: moroV2.avatar } : {}),
+                    };
 
-                     // Merge preset skin sets: add any preset skins not already present
-                     const existingSkins = existingMoro.dateSkinSets || [];
-                     const presetSkins = moroV2.dateSkinSets || [];
-                     const mergedSkins = [...existingSkins];
-                     for (const ps of presetSkins) {
-                         if (!mergedSkins.some(s => s.id === ps.id)) {
-                             mergedSkins.push(ps);
-                         }
-                     }
-
-                     const updatedMoro = {
-                         ...existingMoro,
-                         sprites: restoredSprites,
-                         roomConfig: updatedRoomConfig,
-                         dateSkinSets: mergedSkins,
-                         ...(needsPersonaUpgrade ? { systemPrompt: moroV2.systemPrompt } : {}),
-                         ...(needsAvatarUpgrade ? { avatar: moroV2.avatar } : {})
-                     };
-                     
-                     await DB.saveCharacter(updatedMoro);
-                     finalChars = finalChars.map(c => c.id === moroV2.id ? updatedMoro : c);
-                 }
+                    await DB.saveCharacter(updatedMoro);
+                    finalChars = finalChars.map(c => c.id === moroV2.id ? updatedMoro : c);
+                }
             }
         }
 
