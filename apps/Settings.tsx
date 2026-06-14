@@ -2337,7 +2337,7 @@ const Settings: React.FC = () => {
                           </div>
                           {rtWeatherMode === 'geo' ? (
                               <p className="text-xs text-[#1c1b1a]/60 leading-relaxed">
-                                  用浏览器定位取你所在地的实时天气（Open-Meteo，免密钥、不用申请）。首次会弹窗请求定位授权，允许即可；拒绝或定位失败时可切到「手填 Key」。
+                                  取你所在地的实时天气（Open-Meteo，全程免密钥、不用申请）。优先用浏览器定位（更准，首次会弹窗请求授权）；<b>即使拒绝授权或没有定位权限，也会自动按 IP 取城市级的本地实时天气</b>，无需填任何 Key。「手填 Key」仅作老用户兼容保留。
                               </p>
                           ) : (
                               <>
