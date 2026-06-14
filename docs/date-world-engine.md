@@ -25,9 +25,9 @@
 | 世界引擎回合 `runDateTurn` | `utils/dateEngine.ts`：副 API → JSON `{char_speech, char_action, world, vibe, title?}`；prompt 强调日常陪伴向 + 话/动作一一回应 + 克制的场景调度 |
 | 20 回合总结 `runDateRecap` | `utils/dateEngine.ts`：浓缩前文 → `worldline.recap`，可见消息只留尾部 `DATE_KEEP_TAIL` 条（隐藏上文、降 token） |
 | 氛围 BGM | `utils/dateEngine.ts` `buildDateBgmPrompt` + `utils/minimaxMusic.ts` `synthesizeSongMinimax`（instrumental），按当前 vibe 生成专属恋爱 BGM，缓存 assetKey 复用 |
-| 语音 | `utils/minimaxTts.ts` `synthesizeSpeech`：开「🔊 有声」后角色台词逐句 TTS 播放（用角色 voiceProfile） |
+| 语音 | `utils/minimaxTts.ts` `synthesizeSpeech`：开「🔊 有声」后角色台词逐句 TTS 播放（用角色 voiceProfile）。**用户语音输入**：💬输入框旁 🎤 用浏览器 Web Speech API（`webkitSpeechRecognition`，zh-CN）实时转写进「说点什么」 |
 | 持久化 | `utils/dateStore.ts`：localStorage 按角色存多条世界线（list/save/create/fork/delete/rename） |
-| UI | `apps/lifesim/DateView.tsx`：场景选择 / 世界线列表 / 约会会话（消息流 + 话·动作分输入 + BGM/语音/分叉）|
+| UI | `apps/lifesim/DateView.tsx`：场景选择 / 世界线**分叉树**（`buildForest` + `WorldlineNode` 递归缩进展示血缘）/ 约会会话（消息流 + 话·动作分输入 + 🎤语音输入 + BGM/语音/分叉）|
 | 入口 | `apps/LifeSimApp.tsx`：顶栏 ♥ 按钮 → `showDate` 覆盖层 |
 
 ## 几个有意的设计点
@@ -38,8 +38,12 @@
 - **副 API 门控是软的**：没开副 API 也能用（回退主 API），列表页给一句提示引导去开副线盒。
 - **BGM/语音都走 MiniMax**，需要在「文具盒」配 MiniMax Key；语音还需角色配 voiceProfile 音色。
 
-## 后续可扩展（v1 未做）
+## 语音的两端
 
-- 用户**语音输入**（STT）目前未接，现为角色台词**语音输出**；
-- 世界线之间的可视化分叉树；
-- 把约会里的高光沉淀进回忆标本馆（记忆宫殿）。
+- **角色台词语音输出**：开「🔊 有声」，角色每句话经 MiniMax TTS 念出来（需角色 voiceProfile 音色）。
+- **用户语音输入（STT）**：💬旁的 🎤 用浏览器 `webkitSpeechRecognition`（zh-CN）实时把你说的话转写进「说点什么」；不支持的浏览器（Firefox / 部分 WebView）自动隐藏该按钮。免费、本地，不走 API。
+
+## 后续可扩展
+
+- 把约会里的高光沉淀进回忆标本馆（记忆宫殿）；
+- 分叉树的可视化连线再精细些（目前是缩进 + 血缘标注）。
