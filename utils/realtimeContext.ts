@@ -122,13 +122,29 @@ const readCachedGeo = (): { lat: number; lon: number; ts: number } | null => {
     return null;
 };
 
-/** 浏览器定位：成功则缓存坐标；拒绝/超时回退到上次成功定位。null 表示拿不到。 */
-const getGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
+/** 免密钥 IP 定位兜底（没有浏览器定位权限/拒绝授权时，给一个城市级的大致坐标）。 */
+const ipGeolocate = async (): Promise<{ lat: number; lon: number } | null> => {
+    try {
+        const r = await fetch('https://get.geojs.io/v1/ip/geo.json');
+        if (r.ok) {
+            const d = await safeResponseJson(r);
+            const lat = parseFloat(d?.latitude), lon = parseFloat(d?.longitude);
+            if (isFinite(lat) && isFinite(lon)) {
+                try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
+                return { lat, lon };
+            }
+        }
+    } catch { /* ignore */ }
+    return null;
+};
+
+/** 仅浏览器定位：成功缓存坐标；拒绝/超时/不支持返回 null（不在此处兜底）。 */
+const browserGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
     return new Promise(resolve => {
-        if (typeof navigator === 'undefined' || !navigator.geolocation) { resolve(readCachedGeoCoords()); return; }
+        if (typeof navigator === 'undefined' || !navigator.geolocation) { resolve(null); return; }
         let settled = false;
         const done = (v: { lat: number; lon: number } | null) => { if (!settled) { settled = true; resolve(v); } };
-        const fallbackTimer = setTimeout(() => done(readCachedGeoCoords()), 12000);
+        const fallbackTimer = setTimeout(() => done(null), 12000);
         navigator.geolocation.getCurrentPosition(
             pos => {
                 clearTimeout(fallbackTimer);
@@ -136,10 +152,20 @@ const getGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: number } 
                 try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
                 done({ lat, lon });
             },
-            () => { clearTimeout(fallbackTimer); done(readCachedGeoCoords()); },
+            () => { clearTimeout(fallbackTimer); done(null); },
             { enableHighAccuracy: false, timeout: 10000, maximumAge: Math.max(maxAgeMs, 600000) },
         );
     });
+};
+
+/** 取坐标（全程免密钥）：浏览器定位 → 上次缓存 → IP 定位兜底。三者皆失败才 null。
+ *  这样天气不依赖任何 API Key，也不强制定位授权——拒绝授权时仍能按 IP 取到本地实时天气。 */
+const getGeoPosition = async (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
+    const browser = await browserGeoPosition(maxAgeMs);
+    if (browser) return browser;
+    const cached = readCachedGeoCoords();
+    if (cached) return cached;
+    return await ipGeolocate();
 };
 
 const readCachedGeoCoords = (): { lat: number; lon: number } | null => {
