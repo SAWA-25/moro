@@ -9,18 +9,24 @@ SillyTavern 正则脚本系统的完整移植：脚本数据结构、执行引�
 | 文件 | 职责 |
 |------|------|
 | `utils/regex/engine.ts` | 纯函数引擎：`regexFromString` / `runRegexScript` / `getRegexedString` / `normalizeRegexScript`，与 ST `extensions/regex/engine.js` 一一对应 |
-| `utils/regex/store.ts` | 全局脚本存取（localStorage `moro_global_regex_scripts`）、`applyRegexToText` 一站式入口、导入导出 |
+| `utils/regex/store.ts` | 全局脚本存取（localStorage `moro_global_regex_scripts`）、预设自带脚本运行时缓存（`presetCache` / `setPresetRegexScripts` / `getPresetRegexScripts`）、`applyRegexToText` 一站式入口、导入导出 |
 | `apps/RegexApp.tsx` | 正则 App UI：全局/角色两个作用域、增删改、启停、导入导出、实时测试 |
 | `types.ts` | `RegexScriptData` 接口、`AppID.Regex`、`CharacterProfile.regexScripts` |
 
-## 两个作用域（同 ST GLOBAL / SCOPED）
+## 三个作用域（同 ST GLOBAL / PRESET / SCOPED）
 
 - **全局**：对所有角色生效，存 localStorage。保存后广播
   `REGEX_SCRIPTS_UPDATED_EVENT`，聊天页监听刷新显示层。
+- **预设自带**：`preset.regexScripts`，随预设导入（解析预设 JSON 的
+  `extensions.regex_scripts`），**只有该预设被激活、且印坊开印时生效**。运行时是
+  同步管线、取不到 async 的激活预设，所以 `store.ts` 维持一份模块级缓存 `presetCache`，
+  由 `presets.ts` 的 `refreshPresetRegexCache`（App 启动）、`chatRequestPayload`
+  （每次发送复用已取到的激活预设）、活字盘（选预设 / 开关印坊 / 改正则）三处刷新。
+  详见 [`preset-app.md`](./preset-app.md)。
 - **角色局部**：`char.regexScripts`，随角色进 IndexedDB / 备份。
   ST 卡导入时 `sillyTavernCard.ts` 解析 `extensions.regex_scripts` 填充。
 
-执行顺序：全局在前、局部在后。
+执行顺序：全局 → 预设 → 角色局部（对齐 ST `getRegexScripts` 的 GLOBAL→PRESET→SCOPED）。
 
 ## 聊天管线四个挂载点
 
@@ -53,7 +59,8 @@ iframe 渲染（脚本可执行，详见 `utils/chatRichContent.ts` 头注）。
 - 宏只支持 `{{user}}` / `{{char}}` / `{{match}}`（Moro 没有完整宏系统）
 - `SLASH_COMMAND` / `REASONING` placement 可勾选但暂无挂载点
 - 没有 ST 的「角色卡脚本需用户授权」弹窗：随卡导入的脚本直接生效，
-  可在正则 App「角色」标签里逐条停用/删除
+  可在正则 App「角色」标签里逐条停用/删除。预设自带正则同理 —— 随预设导入直接生效
+  （无 ST 的 `preset_allowed_regex` 授权门），在活字盘里逐条停用/拆除
 
 ## 界面命名（黑白拼贴手账重构）
 

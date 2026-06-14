@@ -19,6 +19,7 @@ import { normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
+import { refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
 import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
@@ -861,6 +862,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const clearLogs = () => setSystemLogs([]);
 
+  // 启动预热「预设自带正则」运行时缓存：用户可能直接进聊天（不开活字盘），
+  // 激活预设带来的脚本要在第一条消息（含 USER_INPUT 挂载点）就能命中。
+  useEffect(() => { void refreshPresetRegexCache(); }, []);
+
   useEffect(() => {
     const loadSettings = async () => {
         // ... (existing load logic)
@@ -1437,13 +1442,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           // 消息真的到了 → 之前那条「发送失败 / Instant Push 报错」其实是双通道误报（SSE 断了
           // 但 push 晚到，见 docs/instant-push-dual-channel.md）。立刻撤掉该报错弹窗，别让它停驻。
-          setErrorDialog(prev => {
-              if (prev && /Instant Push|发送失败|发送错误/.test(prev.title)) {
-                  if (errorDialogTimerRef.current) { clearTimeout(errorDialogTimerRef.current); errorDialogTimerRef.current = null; }
-                  return null;
-              }
-              return prev;
-          });
+          // （残留的自动消失计时器即便晚点再 fire 也只是又置一次 null，无副作用。）
+          setErrorDialog(prev => (prev && /Instant Push|发送失败|发送错误/.test(prev.title)) ? null : prev);
 
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
           const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));

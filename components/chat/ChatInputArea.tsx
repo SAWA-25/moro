@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
-import { EmojiCategory, Emoji } from '../../types';
+import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
+import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
 
 interface ChatInputAreaProps {
     input: string;
@@ -41,6 +42,8 @@ interface ChatInputAreaProps {
     chromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
     /** 自定义输入框占位文案（会话设置「输入框文案」，默认 "说点什么…"） */
     inputPlaceholder?: string;
+    /** 拼贴册·输入动效：贴在输入栏上的装饰动画（上传图片或 AI 写的 SVG）。 */
+    inputAnimation?: OSTheme['chatInputAnimation'];
     /** 动森彩蛋模式：输入栏换成木质草绿圆角。 */
 }
 
@@ -92,6 +95,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     sendButtonStyle = 'circle',
     chromeStyle = 'soft',
     inputPlaceholder,
+    inputAnimation,
 }) => {
     const chatImageInputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -491,7 +495,26 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
             </div>
         )}
         <div className={`moro-chat-inputbar ${shellClass} pb-safe shrink-0 z-40 relative`}>
-            
+            {/* 拼贴册·输入动效：贴在输入栏上的装饰（上传图片或 AI 写的 SVG） */}
+            {inputAnimation?.data && !selectionMode && (() => {
+                const src = inputAnimationSrc(inputAnimation);
+                if (!src) return null;
+                const op = inputAnimation.opacity ?? 0.9;
+                const pos = inputAnimation.position || 'corner';
+                const base: React.CSSProperties = { position: 'absolute', pointerEvents: 'none', userSelect: 'none', zIndex: 5 };
+                const style: React.CSSProperties = pos === 'top'
+                    ? { ...base, left: 0, right: 0, top: -12, height: 28, width: '100%', objectFit: 'contain', opacity: op }
+                    : pos === 'background'
+                        ? { ...base, inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: Math.min(op, 0.4) }
+                        : { ...base, right: 12, top: -24, height: 50, width: 'auto', opacity: op, animation: 'moroInputFloat 3.2s ease-in-out infinite' };
+                return (
+                    <>
+                        <style>{`@keyframes moroInputFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}`}</style>
+                        <img src={src} alt="" aria-hidden className="max-w-none" style={style} />
+                    </>
+                );
+            })()}
+
             {selectionMode ? (
                 <div className={`p-3 flex gap-2 ${isPixelStyle ? 'bg-[#f3e7d6]' : isDiscordStyle ? 'bg-slate-900/60 backdrop-blur-md' : 'bg-white/50 backdrop-blur-md'}`}>
                     {onForwardSelected && (

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { findDisplayRegexSpans, splitOutDisplayRegexSegments } from './store';
+import {
+    findDisplayRegexSpans, splitOutDisplayRegexSegments,
+    collectRegexScripts, getPresetRegexScripts, setPresetRegexScripts, saveGlobalRegexScripts,
+} from './store';
 import { regex_placement } from './engine';
 import { CharacterProfile, RegexScriptData } from '../../types';
 
@@ -60,5 +63,24 @@ describe('显示层正则命中区间（分泡保护用）', () => {
         const char = charWith([script({ findRegex: '/[未闭合/' })]);
         expect(findDisplayRegexSpans('随便什么', char)).toEqual([]);
         expect(findDisplayRegexSpans('', char)).toEqual([]);
+    });
+});
+
+describe('预设自带正则缓存（ST PRESET 作用域）', () => {
+    it('collectRegexScripts 按 全局 → 预设 → 角色 顺序合并（对齐 ST getRegexScripts）', () => {
+        saveGlobalRegexScripts([script({ id: 'g', scriptName: 'G' })]);
+        setPresetRegexScripts([script({ id: 'p', scriptName: 'P' })]);
+        const char = charWith([script({ id: 'c', scriptName: 'C' })]);
+        expect(collectRegexScripts(char).map(s => s.id)).toEqual(['g', 'p', 'c']);
+        // 清理，避免污染其它用例
+        setPresetRegexScripts(null);
+        saveGlobalRegexScripts([]);
+    });
+
+    it('setPresetRegexScripts(null) 清空缓存', () => {
+        setPresetRegexScripts([script({ id: 'x' })]);
+        expect(getPresetRegexScripts()).toHaveLength(1);
+        setPresetRegexScripts(null);
+        expect(getPresetRegexScripts()).toEqual([]);
     });
 });

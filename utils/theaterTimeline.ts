@@ -13,6 +13,7 @@
 
 import { CharacterProfile } from '../types';
 import { DB } from './db';
+import { sanitizeLifeText } from './autonomousLife';
 import { extractJson } from './safeApi';
 
 export interface TimelineApi {
@@ -92,10 +93,14 @@ function buildPersona(char: CharacterProfile): string {
 export async function resolveFirstMet(charId: string, fallback: number): Promise<number> {
     try {
         const msgs = await DB.getMessagesByCharId(charId);
-        const stamps = msgs
-            .filter(m => m.role !== 'system' && typeof m.timestamp === 'number' && m.timestamp > 0)
-            .map(m => m.timestamp);
-        if (stamps.length) return Math.min(...stamps);
+        // 用循环求最小值，别用 Math.min(...stamps)——消息可能上万条，展开会爆调用栈。
+        let min = Infinity;
+        for (const m of msgs) {
+            if (m.role !== 'system' && typeof m.timestamp === 'number' && m.timestamp > 0 && m.timestamp < min) {
+                min = m.timestamp;
+            }
+        }
+        if (min !== Infinity) return min;
     } catch { /* ignore */ }
     return fallback;
 }
@@ -137,16 +142,20 @@ async function assembleNodes(
         const events = await DB.getLifeEvents(charId);
         afterNodes = (events || [])
             .filter(e => e.timestamp > firstMetTs)
-            .map(e => ({
-                id: e.id,
-                ts: e.timestamp,
-                era: 'after' as const,
-                title: (e.activity || e.summary || '').slice(0, 14) || '某一天',
-                scene: e.summary || e.activity || '',
-                mood: e.mood,
-                place: e.location,
-                source: 'lifeEvent' as const,
-            }));
+            .map(e => {
+                const activity = sanitizeLifeText(e.activity) || e.activity || '';
+                const summary = sanitizeLifeText(e.summary || '') || e.summary || '';
+                return {
+                    id: e.id,
+                    ts: e.timestamp,
+                    era: 'after' as const,
+                    title: (activity || summary).slice(0, 14) || '某一天',
+                    scene: summary || activity || '',
+                    mood: e.mood,
+                    place: e.location,
+                    source: 'lifeEvent' as const,
+                };
+            });
     } catch { /* 没有自主生活事件也没关系 */ }
 
     return [...beforeNodes, meeting, ...afterNodes].sort((a, b) => a.ts - b.ts);

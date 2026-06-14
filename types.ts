@@ -43,6 +43,7 @@ export enum AppID {
   Creative = 'creative', // 创作社 — 「笔友会」（共创小说）与「写歌」（共创歌曲）合并入口，首页选模式后进入对应创作台
   Theater = 'theater', // 小剧场 — 「攻略本」(galgame 恋爱攻略) 与「TRPG」(跑团冒险) 合并入口，封面页选模式后进入对应剧目（Guidebook/Game 子 App 保留路由兼容）
   Almanac = 'almanac', // 岁时记 — 「时光契约」(日程/心愿单/纪念日倒数) 与「特别时光」(节日记忆活动) 合并入口，封面页选模式后进入对应页（Schedule/SpecialMoments 子 App 保留路由兼容）
+  Takeout = 'takeout', // 外卖 — 参考美团：本地生成店铺点菜下单、配送进度、和骑手/商家聊天、自付/代付，并与来往联动（给角色点单/代付）
 }
 
 // =====================================================================
@@ -198,6 +199,12 @@ export interface TavernPreset {
     // —— 提示词管理器 ——
     prompts: PresetPrompt[];
     prompt_order: PresetPromptOrderCharacter[];
+    /**
+     * 预设自带的正则脚本（SillyTavern PRESET 作用域，存在预设 JSON 的
+     * extensions.regex_scripts 里）。导入时解析填充，仅当本预设被激活且印坊开印时
+     * 生效（执行顺序：全局 → 预设 → 角色局部），导出时写回 extensions.regex_scripts。
+     */
+    regexScripts?: RegexScriptData[];
     /** 导入时的原始 JSON 全量兜底（utility prompts / 模型选择等未映射字段），导出时原样合并 */
     raw?: Record<string, any>;
 }
@@ -260,6 +267,13 @@ export interface OSTheme {
   chatHeaderDensity?: 'compact' | 'default' | 'airy';
   chatStatusStyle?: 'subtle' | 'pill' | 'dot';
   chatSendButtonStyle?: 'circle' | 'pill' | 'minimal';
+  /** 聊天「输入动效」：在输入栏上叠一层装饰动画 —— 上传图片（含动图）或让 AI 写一段 SVG。 */
+  chatInputAnimation?: {
+    kind: 'image' | 'svg';
+    data: string;             // 图片 data URL，或 SVG 源码字符串
+    position?: 'corner' | 'top' | 'background';
+    opacity?: number;         // 0..1，默认 0.9
+  };
   /** Instant Push 用户气泡左侧的"准备中"圆点动画。默认开启。 */
   chatPendingIndicator?: boolean;
   /** 聊天「白框」自定义 CSS：作用于 .moro-chat-header / .moro-chat-inputbar / .moro-chat-root，
@@ -3353,4 +3367,100 @@ export interface DateWorldline {
   forkedAtTurn?: number;
   bgmAssetKey?: string;    // 已生成的专属 BGM 资源 key（minimaxMusic 缓存）
   bgmVibe?: string;        // 生成该 BGM 时的氛围
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 小剧场·谈心（heart-to-heart）：让 user 有个被认真倾听、被安慰的地方。
+// 每段谈心是一串 user / char 轮流的话，可存档、可收录进岁时记·典藏馆、可转发给别的角色。
+// ──────────────────────────────────────────────────────────────────
+export interface TalkTurn {
+  role: 'user' | 'char';
+  text: string;
+  at: number;
+}
+export interface TalkSession {
+  id: string;
+  charId: string;
+  title: string;          // 取自首句或主题，列表展示用
+  mood?: string;          // 谈心当下选的心情 / 主题标签
+  turns: TalkTurn[];
+  createdAt: number;
+  lastActiveAt: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
+// 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
+// ──────────────────────────────────────────────────────────────────
+export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game';
+export interface CollectionItem {
+  id: string;                 // = `${sourceType}:${sourceId}`，天然去重
+  sourceType: CollectionSourceType;
+  sourceId: string;
+  title: string;
+  subtitle?: string;          // 副标题：参与角色 / 体裁 / 心情等
+  excerpt?: string;           // 一小段预览
+  charIds?: string[];         // 关联角色（用于「我和 A 的记录」与转发措辞）
+  cover?: string;             // emoji 或图片 URL
+  collectedAt: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 外卖 App（参考美团）：char 可以给 user 点单、user 也可以给 char 点单。
+// 店铺为本地生成（每次刷新 10+ 家，可进店点菜），订单可看配送进度、和骑手/商家聊天，
+// 付款支持自己付与代付，并与来往 App 联动（给某角色点单/代付会在该角色聊天里留消息）。
+// ──────────────────────────────────────────────────────────────────
+export interface TakeoutDish {
+  id: string;
+  name: string;
+  desc?: string;
+  price: number;
+  emoji?: string;
+  popular?: boolean;       // 招牌/热销
+}
+export interface TakeoutStore {
+  id: string;
+  name: string;
+  emoji: string;           // 店铺 logo（emoji）
+  category: string;        // 中餐 / 奶茶 / 快餐 / 甜品 …
+  rating: number;          // 4.x
+  monthlySales: number;    // 月售
+  deliveryMinutes: number; // 预计配送分钟
+  deliveryFee: number;
+  minOrder: number;        // 起送价
+  distanceKm: number;
+  promo?: string;          // 满减 / 首单优惠文案
+  dishes: TakeoutDish[];
+}
+export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
+export type TakeoutStatus = 'preparing' | 'delivering' | 'delivered' | 'cancelled';
+export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store'; text: string; at: number; }
+export interface TakeoutOrder {
+  id: string;
+  storeId: string;
+  storeName: string;
+  storeEmoji: string;
+  items: TakeoutOrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  packFee: number;
+  total: number;
+  /** 收货人：'me' = 用户本人，否则是 charId。 */
+  recipient: string;
+  /** 付款人：'me' = 用户自付，否则是某角色代付。 */
+  payer: string;
+  /** 主要关联角色 id（用于来往联动 / 列表展示）：recipient 或 payer 中那个角色。 */
+  charId?: string;
+  payStatus: 'unpaid' | 'paid';
+  /** 落库时的基础状态；展示进度时按时间实时推算（liveTakeoutStatus）。 */
+  status: TakeoutStatus;
+  riderName: string;
+  riderEmoji: string;
+  address: string;
+  note?: string;
+  placedAt: number;
+  etaAt: number;           // 预计送达时间戳
+  deliveredAt?: number;
+  chat: TakeoutChatMsg[];  // 和骑手/商家的对话
+  chatTarget?: 'rider' | 'store';
 }

@@ -3,6 +3,7 @@ import JournalSheet, { SealBtn } from './JournalSheet';
 import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile, CharLifeEvent } from '../../types';
 import { DB } from '../../utils/db';
+import { sanitizeLifeText } from '../../utils/autonomousLife';
 
 interface LifeRecapModalProps {
     isOpen: boolean;
@@ -109,7 +110,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                         {/* 内容卡 */}
                                         <div className="flex-1 min-w-0 rounded-[9px] px-3 py-2"
                                             style={{ background: 'rgba(255,255,255,0.62)', border: '1px dashed rgba(122,90,114,0.18)' }}>
-                                            <p className="text-[12px] leading-relaxed" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{ev.activity}</p>
+                                            <p className="text-[12px] leading-relaxed" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                                 {ev.mood && (
                                                     <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#7a3845', background: 'rgba(251,184,200,0.32)' }}>{ev.mood}</span>

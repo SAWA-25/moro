@@ -125,20 +125,41 @@ async function callLLM(api: LifeApi, messages: any[], maxTokens: number, signal?
   return data?.choices?.[0]?.message?.content || '';
 }
 
-/** 从 LLM 输出里抠出第一个 JSON 对象 / 数组，容忍 ```json 围栏和前后废话。 */
+/** 去掉代码围栏：成对的 ```json…``` 优先，否则剥掉未闭合的开头/结尾围栏。 */
+function stripFences(text: string): string {
+  if (!text) return '';
+  const t = text.trim();
+  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) return fenced[1].trim();
+  // 围栏没闭合（常见于被 max_tokens 截断）：去掉开头 ```json / ``` 和结尾残留的 ```
+  return t.replace(/^```(?:json)?\s*/i, '').replace(/```$/i, '').trim();
+}
+
+/**
+ * 从 LLM 输出里抠出第一个 JSON 对象 / 数组，容忍 ```json 围栏和前后废话。
+ * 括号配平时跳过字符串内部的括号，避免活动文本里出现 {} [] 把深度算乱。
+ */
 function extractJson<T>(text: string): T | null {
   if (!text) return null;
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = fenced ? fenced[1] : text;
+  const body = stripFences(text);
   const start = body.search(/[[{]/);
   if (start < 0) return null;
-  // 从第一个 [ 或 { 往后找配平的结尾，做一次宽松截取再 parse
   const open = body[start];
   const close = open === '[' ? ']' : '}';
   let depth = 0;
+  let inStr = false;
+  let esc = false;
   for (let i = start; i < body.length; i++) {
-    if (body[i] === open) depth++;
-    else if (body[i] === close) {
+    const ch = body[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === open) depth++;
+    else if (ch === close) {
       depth--;
       if (depth === 0) {
         try { return JSON.parse(body.slice(start, i + 1)) as T; } catch { return null; }
@@ -146,6 +167,94 @@ function extractJson<T>(text: string): T | null {
     }
   }
   return null;
+}
+
+/** 从（可能被截断的）JSON 残骸里宽松抠出某个字符串字段的值。 */
+function looseField(text: string, key: string): string | undefined {
+  // 1) 完整带引号的值（容忍转义）
+  const full = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'i'));
+  if (full) {
+    try { return JSON.parse(`"${full[1]}"`); } catch { return full[1]; }
+  }
+  // 2) 截断在该字段中途（缺收尾引号）：取到文本结尾
+  const open = text.match(new RegExp(`"${key}"\\s*:\\s*"([^"]*)$`, 'i'));
+  if (open) return open[1].trim().replace(/[\s,}\]]+$/, '') || undefined;
+  return undefined;
+}
+
+/** 扫出文本里所有「配平的 {…} 对象」并逐个 parse（数组被截断时兜底用）。 */
+function extractObjects<T>(text: string): T[] {
+  const body = stripFences(text);
+  const out: T[] = [];
+  let depth = 0;
+  let startIdx = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{') { if (depth === 0) startIdx = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && startIdx >= 0) {
+        try { out.push(JSON.parse(body.slice(startIdx, i + 1)) as T); } catch { /* 跳过坏对象 */ }
+        startIdx = -1;
+      }
+    }
+  }
+  return out;
+}
+
+/** JSON 整体没法 parse（截断等）时，宽松凑一个草稿出来。 */
+function looseDraft(text: string): LifeEventDraft | null {
+  const body = stripFences(text);
+  const activity = looseField(body, 'activity') || looseField(body, 'summary');
+  if (!activity) return null;
+  return {
+    activity,
+    mood: looseField(body, 'mood'),
+    location: looseField(body, 'location'),
+    summary: looseField(body, 'summary'),
+  };
+}
+
+/**
+ * 兜底清洗：把一段疑似 JSON / 带围栏的废话洗成一句干净的活动文本。
+ * 既用于生成失败时的兜底，也用于展示时清理历史脏数据
+ * （修复「TA 的日常」里直接显示 ```json {"activity":… 的格式 bug）。
+ */
+export function sanitizeLifeText(raw: string): string {
+  if (!raw) return '';
+  let t = stripFences(raw);
+  // 仍是 JSON 残骸：优先抠 activity / summary 字段
+  const field = looseField(t, 'activity') || looseField(t, 'summary');
+  if (field) return field.trim();
+  // 否则去掉 JSON 标点与已知键名，留下可读文字
+  t = t
+    .replace(/^[\s{[]+/, '')
+    .replace(/[\s}\]]+$/, '')
+    .replace(/"?(activity|mood|location|summary)"?\s*:\s*/gi, '')
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/[{}\[\]]/g, '')
+    .trim();
+  return t;
+}
+
+/** 一个值若仍带围栏 / 像 JSON 残骸，再洗一遍；正常文本原样返回。 */
+function cleanField(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  const s = v.trim();
+  if (!s) return undefined;
+  if (s.includes('```') || /^[{\[]/.test(s) || /^"?(activity|summary)"?\s*:/i.test(s)) {
+    return sanitizeLifeText(s) || undefined;
+  }
+  return s;
 }
 
 interface LifeEventDraft {
@@ -161,16 +270,16 @@ function draftToEvent(
   timestamp: number,
   source: CharLifeEvent['source'],
 ): CharLifeEvent | null {
-  const activity = (draft.activity || draft.summary || '').trim();
+  const activity = cleanField(draft.activity) || cleanField(draft.summary) || '';
   if (!activity) return null;
   return {
     id: `life_${charId}_${timestamp}_${genId()}`,
     charId,
     timestamp,
     activity,
-    mood: (draft.mood || '').trim() || undefined,
-    location: (draft.location || '').trim() || undefined,
-    summary: (draft.summary || draft.activity || '').trim() || activity,
+    mood: cleanField(draft.mood),
+    location: cleanField(draft.location),
+    summary: cleanField(draft.summary) || activity,
     source,
   };
 }
@@ -215,7 +324,12 @@ export async function advanceLife(
       SINGLE_MAX_TOKENS,
       opts?.signal,
     );
-    const draft = extractJson<LifeEventDraft>(raw) ?? (raw.trim() ? { activity: raw.trim().slice(0, 120) } : null);
+    // 先严格解析 → 截断时宽松抠字段 → 最后兜底清洗，绝不把 ```json {…} 原样落库。
+    let draft = extractJson<LifeEventDraft>(raw) ?? looseDraft(raw);
+    if (!draft) {
+      const cleaned = sanitizeLifeText(raw);
+      draft = cleaned ? { activity: cleaned.slice(0, 120) } : null;
+    }
     if (!draft) return null;
     const event = draftToEvent(draft, char.id, now, opts?.source ?? 'proactive');
     if (!event) return null;
@@ -285,7 +399,11 @@ export async function catchUpOfflineLife(
       BATCH_MAX_TOKENS,
       opts?.signal,
     );
-    const drafts = extractJson<LifeEventDraft[]>(raw);
+    // 数组完整就直接解析；被截断时退而求其次，逐个抠出已写完的对象。
+    let drafts = extractJson<LifeEventDraft[]>(raw);
+    if (!Array.isArray(drafts) || drafts.length === 0) {
+      drafts = extractObjects<LifeEventDraft>(raw);
+    }
     if (!Array.isArray(drafts) || drafts.length === 0) return [];
 
     const picked = drafts.slice(0, CATCHUP_MAX_EVENTS);

@@ -33,10 +33,12 @@ import {
     exportTavernPreset,
     importTavernPreset,
 } from '../utils/presets';
+import { setPresetRegexScripts } from '../utils/regex/store';
+import { PLACEMENT_LABELS } from '../utils/regex/engine';
 import type { PresetPrompt, PresetPromptOrderEntry, TavernPreset } from '../types';
 import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
-    List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X,
+    List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X, Scissors,
 } from '@phosphor-icons/react';
 
 // ── 黑白手账设计 token（与扮相手账 / 剪报夹同一套语言） ────
@@ -316,6 +318,13 @@ const PresetApp: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // 把激活字版自带的正则即时推进运行时缓存：选字版 / 开关印坊 / 改动正则都会
+    // 立刻反映到聊天管线与气泡渲染（歇业或没选中本字版时为空）。其余时机（App 启动、
+    // 每次发送）由 OSContext / chatRequestPayload 兜底刷新。
+    useEffect(() => {
+        setPresetRegexScripts(enabled && active ? active.regexScripts ?? null : null);
+    }, [enabled, active]);
+
     // ── 持久化 ──────────────────────────────────────────
     const persistPreset = (next: TavernPreset) => {
         next.updatedAt = Date.now();
@@ -413,8 +422,10 @@ const PresetApp: React.FC = () => {
             setPresets(prev => [...prev, preset]);
             await DB.savePreset(preset);
             selectPreset(preset.id);
-            if (!enabled) addToast('收进来了。不过印坊还歇着业，记得按右上角「开印」', 'info');
-            else addToast(`已收进「${preset.name}」`, 'success');
+            const regexCount = preset.regexScripts?.length ?? 0;
+            const regexNote = regexCount > 0 ? `，随带 ${regexCount} 条正则补丁` : '';
+            if (!enabled) addToast(`收进来了${regexNote}。不过印坊还歇着业，记得按右上角「开印」`, 'info');
+            else addToast(`已收进「${preset.name}」${regexNote}`, 'success');
         } catch (err: any) {
             addToast(`收不进来: ${err?.message || err}`, 'error');
         }
@@ -504,6 +515,22 @@ const PresetApp: React.FC = () => {
             }
         });
         setShowInsert(false);
+    };
+
+    // ── 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域） ──────
+    const presetRegex = active?.regexScripts ?? [];
+
+    const togglePresetRegex = (id: string, on: boolean) => {
+        mutateActive(d => {
+            d.regexScripts = (d.regexScripts ?? []).map(s => (s.id === id ? { ...s, disabled: !on } : s));
+        });
+    };
+
+    const deletePresetRegex = (id: string) => {
+        if (!window.confirm('把这条随字版的正则补丁拆掉？（只动这副字版，不影响补丁铺里的通用补丁）')) return;
+        mutateActive(d => {
+            d.regexScripts = (d.regexScripts ?? []).filter(s => s.id !== id);
+        });
     };
 
     // ── 拖拽排序（pointer events，手机 / 桌面通吃） ──────
@@ -826,11 +853,52 @@ const PresetApp: React.FC = () => {
                             </div>
                         </div>
 
-                        <p className="text-[13px] text-[#1c1b1a]/50 leading-relaxed px-2 pb-4" style={HAND_CN}>
+                        <p className="text-[13px] text-[#1c1b1a]/50 leading-relaxed px-2" style={HAND_CN}>
                             带 <Placeholder size={12} weight="bold" className="inline" /> 的是占位铅块（marker）：Chat History 处填进聊天记录；角色相关的铅块共同对应
                             Moro 的角色核心上下文（人设+世界书+记忆+印象），填在架上第一枚启用的角色铅块处。带 <ArrowElbowDownRight size={12} weight="bold" className="inline" /> 的按
                             @深度插进聊天历史（和酒馆的 In-Chat 注入一致）。
                         </p>
+
+                        {/* 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域） */}
+                        {presetRegex.length > 0 && (
+                            <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                                <Tape className="-top-2.5 left-8 rotate-[3deg] w-12" />
+                                <div className="flex items-end justify-between">
+                                    <span className="label-mono text-[8px] text-[#1c1b1a]/45 flex items-center gap-1">
+                                        <Scissors size={11} weight="bold" /> PRESET PATCHES / 随字版的补丁
+                                    </span>
+                                    <span className="label-mono text-[8px] text-[#1c1b1a]/35">{presetRegex.length} 条</span>
+                                </div>
+                                <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>
+                                    这些正则补丁跟着这副字版走（酒馆 extensions.regex_scripts）：只有选中本字版、且印坊开印时才生效，执行顺序排在补丁铺「满铺通用」之后、角色「只缝给 TA」之前。
+                                </p>
+                                <div className="space-y-2">
+                                    {presetRegex.map(s => {
+                                        const places = (s.placement || []).map(p => PLACEMENT_LABELS[p]).filter(Boolean).join(' · ');
+                                        const scope = s.markdownOnly ? '只改显示' : s.promptOnly ? '只改寄出' : '改原文';
+                                        return (
+                                            <div
+                                                key={s.id}
+                                                className={`flex items-center gap-2 border-2 border-[#1c1b1a]/40 px-2 py-2 bg-white ${s.disabled ? 'opacity-45' : ''}`}
+                                            >
+                                                <Scissors size={14} weight="bold" className="shrink-0 text-[#1c1b1a]/55" />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className={`text-sm font-black truncate ${s.disabled ? 'line-through decoration-2' : ''}`}>{s.scriptName}</div>
+                                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#1c1b1a]/70">{scope}</span>
+                                                        {places && <span className="label-mono text-[8px] text-[#1c1b1a]/40 truncate">{places}</span>}
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#1c1b1a]/40 hover:text-[#1c1b1a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
+                                                    <Trash size={14} weight="bold" />
+                                                </button>
+                                                <InkSwitch small on={!s.disabled} onChange={v => togglePresetRegex(s.id, v)} />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>

@@ -24,6 +24,7 @@ import { isPromptBuildSkipped } from './devDebug';
 import { renderMesExampleBlock } from './context';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { PresetRuntime, applyPresetToMessages } from './presets';
+import { setPresetRegexScripts } from './regex/store';
 import { PersonaRuntime, normalizePersonaPosition } from './personas';
 import { PERSONA_POSITION } from '../types';
 import { substituteMacros } from './macros';
@@ -205,6 +206,11 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // （世界书 / 用户档案块单独产出，由预设的 worldInfo* / personaDescription
     // marker 决定位置与开关）。
     const activePreset = await PresetRuntime.getActivePreset();
+
+    // 预设自带正则（PRESET 作用域）随激活预设进运行时缓存：聊天管线四个挂载点
+    // （USER_INPUT / AI_OUTPUT / 组装 / 渲染）是同步的、取不到 async 预设，这里用
+    // 已取到的 activePreset 把它的 regexScripts 推进缓存（歇业 / 无激活 → 清空）。
+    setPresetRegexScripts(activePreset?.regexScripts ?? null);
 
     // 人设（SillyTavern Persona 移植）：激活时名字/头像/描述覆盖档案，
     // 描述按 position 语义落点（嵌入提示词 / @Depth / 不注入），

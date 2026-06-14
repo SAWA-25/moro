@@ -21,10 +21,10 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 
 | 文件 | 职责 |
 |------|------|
-| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除） |
-| `utils/presets.ts` | 导入导出、运行时组装（`applyPresetToMessages`）、采样参数（`getPresetGenParams`）、`PresetRuntime` 开关读写 |
-| `utils/presets.test.ts` | 导入映射 / 组装语义（含 @Depth 注入次序）的单测 |
-| `types.ts` | `TavernPreset` / `PresetPrompt` / `PresetPromptOrderCharacter`（字段名与 ST 对齐，snake_case） |
+| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除）、随字版的正则补丁（停用/拆除） |
+| `utils/presets.ts` | 导入导出（含 `extensions.regex_scripts` 解析/写回）、运行时组装（`applyPresetToMessages`）、采样参数（`getPresetGenParams`）、`PresetRuntime` 开关读写、`refreshPresetRegexCache`（预热预设正则缓存） |
+| `utils/presets.test.ts` | 导入映射 / 组装语义（含 @Depth 注入次序）/ 预设自带正则往返的单测 |
+| `types.ts` | `TavernPreset`（含 `regexScripts`）/ `PresetPrompt` / `PresetPromptOrderCharacter`（字段名与 ST 对齐，snake_case） |
 | `utils/db.ts` | `llm_presets` store（v64）+ `DB.getAllPresets/getPreset/savePreset/deletePreset`，备份导入导出已接入 |
 
 ## 接入点（谁在用预设）
@@ -79,6 +79,28 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 （人设/世界观/世界书/用户档案都在里面）、@Depth 世界书消息、预设提示词、marker
 内容都过同一遍替换。支持 `{{char}} {{user}} {{date}} {{time}} {{weekday}}
 {{newline}}` 与 ST 旧版 `<char> <bot> <user>` 标记，大小写不敏感，未知宏原样保留。
+
+## 预设自带正则（extensions.regex_scripts，ST PRESET 作用域）
+
+酒馆预设可在 `extensions.regex_scripts` 里夹带正则脚本（ST 的 PRESET 作用域）。导入
+预设时一并解析、规范化后挂到 `preset.regexScripts`（复用 `utils/regex/engine.ts` 的
+`normalizeRegexScript`，与全局 / 角色卡正则同一套）：
+
+- **只跟着这副字版走**：仅当本预设被激活、且印坊开印（`os_preset_enabled`）时生效。
+  执行顺序排在补丁铺「满铺通用」（全局）之后、角色「只缝给 TA」（局部）之前 —— 对齐
+  ST `getRegexScripts` 的 GLOBAL→PRESET→SCOPED。
+- **运行时缓存**：聊天管线四个挂载点是同步的、取不到 async 的激活预设，所以
+  `utils/regex/store.ts` 维持一份模块级 `presetCache`（`setPresetRegexScripts` 写、
+  `getPresetRegexScripts` 读、`collectRegexScripts` 合并）。缓存刷新三处：App 启动
+  （`refreshPresetRegexCache`，OSContext）、每次发送（`buildChatRequestPayload` 复用
+  已 await 的激活预设，免再读库）、活字盘里选预设 / 开关印坊 / 改动正则（即时反映到
+  聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染）。
+- **管理**：活字盘激活字版下方的「随字版的补丁」区可逐条停用 / 拆除（只动这副字版，
+  不碰补丁铺里的通用补丁）。没有 ST 的「预设脚本需授权」弹窗 —— 随预设导入直接生效
+  （与角色卡正则「随卡直接生效」一致）。
+- **往返**：`exportTavernPreset` 把 `preset.regexScripts` 写回
+  `extensions.regex_scripts`（权威源，覆盖 raw 里可能过期的副本；清空后连旧副本一并
+  抹掉），导出物可拿回酒馆继续用。
 
 ## API 联动
 

@@ -156,18 +156,62 @@ ${recentLines || '（你们还没怎么聊过）'}
 你们的对话已经发展到见面情境，现在切换到线下面对面模式。接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。${clockBlock}`;
 };
 
+// ── 线下开场白方式（见面是怎么开始的）──────────────────────────────
+// 同一个「见面」可以有不同的起手式：是 user 找上门、char 找上门、还是不期而遇…
+// 选一种，开场情景就按那种方式来写。纯手动选择，无开关。
+
+export type OfflineOpeningPreset = 'approach' | 'visit' | 'encounter' | 'appointment' | 'custom';
+
+export const OFFLINE_OPENING_PRESETS: {
+    key: OfflineOpeningPreset; label: string; emoji: string; desc: string; frame: string;
+}[] = [
+    {
+        key: 'approach', label: '靠近', emoji: '🚶', desc: '{user} 去找 {char} 见面',
+        frame: '这场见面由 {user} 主动发起：{user} 出门去找 {char}。开场写 {user} 抵达 {char} 所在的地方、出现在 TA 面前的那一刻——{char} 没料到（或正盼着）{user} 来时的第一反应。',
+    },
+    {
+        key: 'visit', label: '造访', emoji: '🚪', desc: '{char} 来找 {user}',
+        frame: '这场见面由 {char} 主动登门：{char} 来找 {user}（敲门、等在楼下、忽然出现等）。开场写 TA 出现在 {user} 面前的样子，以及 TA 上门的理由与神态。',
+    },
+    {
+        key: 'encounter', label: '偶遇', emoji: '✨', desc: '哇好巧，不期而遇',
+        frame: '这是一场毫无预约的偶遇：两人在某个公共场合（街角、便利店、地铁、书店、雨檐下等）撞了个正着，谁都没想到会在这里遇见对方。开场写那份「怎么会是你」的意外，和心照不宣的惊喜。',
+    },
+    {
+        key: 'appointment', label: '赴约', emoji: '🤝', desc: '之前约好了，双向奔赴',
+        frame: '两人此前在线上就约好了要见面（请参考最近聊天里关于见面的约定/暗示）。现在到了约定的时间地点，双方都赶来赴约、终于碰头。开场写那份期待落地、向彼此奔去的心情。',
+    },
+    {
+        key: 'custom', label: '自定义', emoji: '✍️', desc: '自己写这场见面怎么开始',
+        frame: '',
+    },
+];
+
+/** 把某个开场白方式解析成喂给模型的「开场设定」文字（替换好 user/char 名）。 */
+export const resolveOpeningFrame = (
+    preset: OfflineOpeningPreset, customText: string | undefined, charName: string, userName: string,
+): string => {
+    if (preset === 'custom') return (customText || '').trim();
+    const def = OFFLINE_OPENING_PRESETS.find(p => p.key === preset);
+    if (!def) return '';
+    return def.frame.replace(/\{char\}/g, charName).replace(/\{user\}/g, userName);
+};
+
 /** 线下开场：生成见面的开场情景（旁白 + 角色的第一句话/动作） */
 export const generateOfflineOpening = async (
-    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov,
+    char: CharacterProfile, userProfile: UserProfile, api: OfflineApi, pov?: OfflinePov, scenario?: string,
 ): Promise<string> => {
     const base = await buildOfflineBase(char, userProfile);
     const povText = buildPovInstruction(pov ?? loadOfflinePov(char.id), char.name, userProfile.name);
+    const sceneFrame = scenario && scenario.trim()
+        ? `\n### [这场见面是怎么开始的]\n${scenario.trim()}\n请严格按这个方式来安排开场。\n`
+        : '';
     return callLLM(api, `${base}
 
 ${povText}
-
+${sceneFrame}
 ### [任务]
-写出见面那一刻的开场（120-250字）：交代你们在哪里见面、现场的环境氛围（基于最近聊天里约定/暗示的地点，没有就合理推断一个），以及「${char.name}」见到 ${userProfile.name} 的第一反应——动作、神态、说的第一句话，必须完全贴合人设。
+写出见面那一刻的开场（120-250字）：交代你们在哪里见面、现场的环境氛围${sceneFrame ? '（按上面「这场见面是怎么开始的」来安排，地点要与之相符）' : '（基于最近聊天里约定/暗示的地点，没有就合理推断一个）'}，以及「${char.name}」见到 ${userProfile.name} 的第一反应——动作、神态、说的第一句话，必须完全贴合人设。
 按上面 [叙述人称] 的要求叙述，旁白 + 角色台词混排，直接输出正文，不要任何前缀或解释。`);
 };
 

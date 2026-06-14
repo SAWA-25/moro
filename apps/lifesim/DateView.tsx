@@ -55,9 +55,43 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const [voiceOn, setVoiceOn] = useState(false);
     const [bgmOn, setBgmOn] = useState(false);
     const [bgmBusy, setBgmBusy] = useState(false);
+    const [listening, setListening] = useState(false);
     const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
     const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
     const streamRef = useRef<HTMLDivElement | null>(null);
+    const recognitionRef = useRef<any>(null);
+    const micBaseRef = useRef('');
+    // 浏览器语音识别（STT）：用户用嘴说「话」，转写进说点什么输入框
+    const sttSupported = typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+    const stopMic = () => {
+        try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+        recognitionRef.current = null;
+        setListening(false);
+    };
+    const toggleMic = () => {
+        if (listening) { stopMic(); return; }
+        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SR) { addToast('这台设备的浏览器不支持语音输入', 'info'); return; }
+        try {
+            const rec = new SR();
+            rec.lang = 'zh-CN'; rec.continuous = true; rec.interimResults = true;
+            micBaseRef.current = speech ? speech.trimEnd() + ' ' : '';
+            rec.onresult = (event: any) => {
+                let finalText = '', interim = '';
+                for (let i = 0; i < event.results.length; i++) {
+                    const r = event.results[i];
+                    if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+                }
+                setSpeech(micBaseRef.current + finalText + interim);
+            };
+            rec.onerror = () => { stopMic(); };
+            rec.onend = () => { setListening(false); recognitionRef.current = null; };
+            rec.start();
+            recognitionRef.current = rec;
+            setListening(true);
+        } catch { addToast('麦克风启动失败', 'error'); }
+    };
 
     const auxOn = isAuxApiOn(auxApiConfig);
     const api = resolveAuxApi(auxApiConfig, apiConfig);
@@ -65,8 +99,8 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const reload = () => { if (char) setWorldlines(listWorldlines(char.id)); };
     useEffect(() => { if (char) { const ls = listWorldlines(char.id); setWorldlines(ls); setScreen(ls.length ? 'list' : 'scene'); } }, [char?.id]);
 
-    // 切世界线时停掉旧 BGM
-    useEffect(() => () => { bgmAudioRef.current?.pause(); ttsAudioRef.current?.pause(); }, []);
+    // 卸载时停掉 BGM / TTS / 麦克风
+    useEffect(() => () => { bgmAudioRef.current?.pause(); ttsAudioRef.current?.pause(); try { recognitionRef.current?.stop(); } catch { /* ignore */ } }, []);
 
     useEffect(() => {
         if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
@@ -96,6 +130,7 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     // ── 发一回合 ──
     const send = async () => {
         if (!active || sending) return;
+        if (listening) stopMic();
         const sp = speech.trim(), ac = action.trim();
         if (!sp && !ac) { addToast('说句话，或者做个动作～', 'info'); return; }
         if (!api.baseUrl || !api.model) { addToast('请先在「文具盒」配置 API（主线或副线）', 'error'); return; }
@@ -240,21 +275,20 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
                     {worldlines.length === 0 ? (
                         <div style={{ color: C.accent2, textAlign: 'center', padding: 40, fontSize: 13 }}>还没有约会过。挑个场景，带 TA 出门吧。</div>
-                    ) : worldlines.map(wl => (
-                        <div key={wl.id} style={{ border: `1px solid ${C.line}`, background: C.card, borderRadius: 14, padding: 14, marginBottom: 10 }}>
-                            <div onClick={() => { setActive(wl); setScreen('session'); }} style={{ cursor: 'pointer' }}>
-                                <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{wl.sceneEmoji} {wl.title}</div>
-                                <div style={{ fontSize: 11, color: C.accent2, marginTop: 4 }}>
-                                    {wl.sceneName} · {wl.turnCount} 回合{wl.parentId ? ' · 分叉' : ''} · {new Date(wl.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </div>
-                                {wl.vibe && <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>♪ 此刻氛围：{wl.vibe}</div>}
-                            </div>
-                            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                                <Pill onClick={() => { setActive(wl); setScreen('session'); }} active>继续</Pill>
-                                <Pill onClick={() => { if (confirm('删除这条世界线？')) { deleteWorldline(char.id, wl.id); reload(); } }}>删除</Pill>
-                            </div>
-                        </div>
-                    ))}
+                    ) : (() => {
+                        const forest = buildForest(worldlines);
+                        const hasForks = worldlines.some(w => w.parentId && worldlines.some(p => p.id === w.parentId));
+                        return (
+                            <>
+                                {hasForks && <div style={{ fontSize: 10.5, color: C.accent2, marginBottom: 10 }}>🌳 分叉树：缩进的是从某条世界线分出来的剧情走向</div>}
+                                {forest.map(n => (
+                                    <WorldlineNode key={n.wl.id} node={n} depth={0}
+                                        onResume={(wl) => { setActive(wl); setScreen('session'); }}
+                                        onDelete={(wl) => { if (confirm('删除这条世界线？它的分叉会变成独立世界线。')) { deleteWorldline(char.id, wl.id); reload(); } }} />
+                                ))}
+                            </>
+                        );
+                    })()}
                 </div>
             </Overlay>
         );
@@ -293,9 +327,18 @@ const DateView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div style={{ borderTop: `1px solid ${C.line}`, padding: 12, background: 'rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 16, alignSelf: 'center' }}>💬</span>
-                    <input value={speech} onChange={e => setSpeech(e.target.value)} placeholder="说点什么…"
+                    <input value={speech} onChange={e => setSpeech(e.target.value)} placeholder={listening ? '在听你说…' : '说点什么…'}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }}
                         style={inputStyle()} disabled={sending} />
+                    {sttSupported && (
+                        <button onClick={toggleMic} disabled={sending} title="用嘴说（语音输入）"
+                            style={{
+                                width: 40, flexShrink: 0, borderRadius: 10, cursor: 'pointer', fontSize: 16,
+                                border: `1px solid ${listening ? C.accent : C.line}`,
+                                background: listening ? C.accent : 'rgba(255,255,255,0.06)',
+                                color: listening ? '#1c1822' : C.ink,
+                            }}>{listening ? '⏺' : '🎤'}</button>
+                    )}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                     <span style={{ fontSize: 16, alignSelf: 'center' }}>🤍</span>
@@ -333,6 +376,46 @@ const MessageRow: React.FC<{ m: DateMessage; char: any; userName: string; onFork
                 <button onClick={onFork} title="从这一刻另开一条世界线"
                     style={{ fontSize: 10, color: '#8a7ea0', background: 'none', border: 'none', cursor: 'pointer', marginTop: 3, padding: '2px 4px' }}>⑂ 从这儿分叉</button>
             )}
+        </div>
+    );
+};
+
+// ── 世界线分叉树 ──
+interface ForestNode { wl: DateWorldline; children: ForestNode[] }
+function buildForest(list: DateWorldline[]): ForestNode[] {
+    const byId = new Map(list.map(w => [w.id, w]));
+    const nodes = new Map<string, ForestNode>(list.map(w => [w.id, { wl: w, children: [] }]));
+    const roots: ForestNode[] = [];
+    for (const w of list) {
+        const node = nodes.get(w.id)!;
+        if (w.parentId && byId.has(w.parentId)) nodes.get(w.parentId)!.children.push(node);
+        else roots.push(node);
+    }
+    const sortKids = (arr: ForestNode[]) => { arr.sort((a, b) => a.wl.createdAt - b.wl.createdAt); arr.forEach(n => sortKids(n.children)); };
+    roots.forEach(r => sortKids(r.children));
+    roots.sort((a, b) => b.wl.updatedAt - a.wl.updatedAt);
+    return roots;
+}
+
+const WorldlineNode: React.FC<{ node: ForestNode; depth: number; onResume: (wl: DateWorldline) => void; onDelete: (wl: DateWorldline) => void }> = ({ node, depth, onResume, onDelete }) => {
+    const wl = node.wl;
+    return (
+        <div style={{ marginLeft: depth ? 12 : 0, borderLeft: depth ? `1px solid ${C.line}` : undefined, paddingLeft: depth ? 12 : 0, position: 'relative' }}>
+            {depth > 0 && <span style={{ position: 'absolute', left: -1, top: 16, width: 10, height: 1, background: C.line }} />}
+            <div style={{ border: `1px solid ${C.line}`, background: C.card, borderRadius: 14, padding: 14, marginBottom: 10 }}>
+                <div onClick={() => onResume(wl)} style={{ cursor: 'pointer' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.ink }}>{wl.sceneEmoji} {wl.title}</div>
+                    <div style={{ fontSize: 11, color: C.accent2, marginTop: 4 }}>
+                        {wl.sceneName} · {wl.turnCount} 回合{wl.parentId ? `${wl.forkedAtTurn != null ? ` · 从第 ${wl.forkedAtTurn} 回合分出` : ' · 分叉'}` : ''} · {new Date(wl.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    {wl.vibe && <div style={{ fontSize: 11, color: C.accent, marginTop: 4 }}>♪ 此刻氛围：{wl.vibe}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <Pill onClick={() => onResume(wl)} active>继续</Pill>
+                    <Pill onClick={() => onDelete(wl)}>删除</Pill>
+                </div>
+            </div>
+            {node.children.map(c => <WorldlineNode key={c.wl.id} node={c} depth={depth + 1} onResume={onResume} onDelete={onDelete} />)}
         </div>
     );
 };
