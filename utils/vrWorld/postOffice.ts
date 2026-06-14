@@ -61,19 +61,69 @@ export interface RemoteReply { id: string; letter_id: string; pen: string; conte
 export interface RemoteLetterStat { id: string; likes: number; dislikes: number; views: number; reply_count: number; created_at: number; }
 export interface RemoteAdminLetter { id: string; pen: string; content: string; lang?: string; created_at: number; reply_count: number; likes: number; dislikes: number; views: number; }
 
-async function call<T>(path: string, opts: RequestInit & { query?: Record<string, string> } = {}): Promise<T> {
-    const base = getPostOfficeBase();
+/**
+ * 同源代理兜底：默认后端 noir2.cc.cd 在部分网络/地区客户端直连会抛 "Failed to fetch"
+ * （网络层/DNS/区域封锁，非 CORS——worker 已开 *）。部署在 Netlify 时由 netlify.toml 的
+ * /po/* 代理把请求转到真实后端（服务端取，绕过客户端封锁）。
+ * 策略：先按配置地址直连，直连抛网络错（fetch 抛 TypeError）再退到同源 /po；谁通用谁、
+ * 并记住下次优先用。HTTP 4xx/5xx 或业务错(ok:false) 视为后端真的拒了，不再换基址。
+ */
+let workingBase: string | null = null;
+
+function sameOriginProxyBase(): string | null {
+    try {
+        if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return null;
+        return `${location.origin}/po`;
+    } catch { return null; }
+}
+
+async function tryBase<T>(base: string, path: string, opts: RequestInit & { query?: Record<string, string> }): Promise<T> {
     const qs = opts.query ? '?' + new URLSearchParams(opts.query).toString() : '';
+    // fetch 本身在网络层失败会抛 TypeError，由 call() 捕获后换下一个基址
     const res = await fetch(`${base}${path}${qs}`, {
         method: opts.method || 'GET',
         headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers as Record<string, string> || {}) },
         body: opts.body,
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || (data && data.ok === false)) {
-        throw new Error((data && data.error) || `HTTP ${res.status}`);
+    let data: any = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (!res.ok) {
+        const err: any = new Error((data && data.error) || `HTTP ${res.status}`);
+        err.fatal = true; // 后端可达但拒绝 → 换基址没意义
+        throw err;
+    }
+    if (data === null) {
+        // 2xx 但非 JSON（多半是同源 SPA 的 index.html 兜底，说明该基址没有真后端）→ 可换下一个
+        throw new Error('non-json-response');
+    }
+    if (data.ok === false) {
+        const err: any = new Error(data.error || `HTTP ${res.status}`);
+        err.fatal = true;
+        throw err;
     }
     return data as T;
+}
+
+async function call<T>(path: string, opts: RequestInit & { query?: Record<string, string> } = {}): Promise<T> {
+    const configured = getPostOfficeBase();
+    const proxy = sameOriginProxyBase();
+    // 候选基址：上次走通的优先；否则先配置地址、再同源代理。去重。
+    const ordered = [workingBase, configured, proxy].filter((b): b is string => !!b);
+    const candidates = ordered.filter((b, i) => ordered.indexOf(b) === i);
+    let lastErr: any;
+    for (const base of candidates) {
+        try {
+            const data = await tryBase<T>(base, path, opts);
+            workingBase = base;
+            return data;
+        } catch (e: any) {
+            lastErr = e;
+            if (e?.fatal) throw e; // 后端真拒了，不再换基址
+            // 网络错 / 非 JSON → 试下一个候选基址
+            if (workingBase === base) workingBase = null; // 之前走通的现在挂了，清掉重选
+        }
+    }
+    throw lastErr || new Error('network');
 }
 
 export const PostOffice = {
