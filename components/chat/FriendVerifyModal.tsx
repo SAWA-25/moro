@@ -4,6 +4,7 @@ import { CharacterProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 /**
  * 好友验证（被角色拉黑后重新申请加好友）。
@@ -76,7 +77,9 @@ const coerceVerifyResult = (raw: string): { accept: boolean; reply: string } | n
 };
 
 const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onClose, onAccepted }) => {
-    const { apiConfig, userProfile, updateCharacter, addToast } = useOS();
+    const { apiConfig, auxApiConfig, userProfile, updateCharacter, addToast } = useOS();
+    // 好友验证是「聊天以外的辅助决策」→ 走副 API（未配置副 API 时 resolveAuxApi 回退主 API）
+    const api = resolveAuxApi(auxApiConfig, apiConfig);
     const [text, setText] = useState('');
     const [phase, setPhase] = useState<'input' | 'sending' | 'accepted' | 'rejected'>('input');
     const [reply, setReply] = useState('');
@@ -88,7 +91,7 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
     const handleSend = async () => {
         const verifyText = text.trim();
         if (!verifyText) { addToast('先写一句验证消息吧', 'info'); return; }
-        if (!apiConfig?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!api?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setPhase('sending');
         try {
             const userName = userProfile?.name || '用户';
@@ -118,11 +121,11 @@ ${historyText || '（没有可用的聊天记录）'}
             // max_tokens 给足：推理模型的思考过程也计入 completion tokens，
             // 300 会被截断导致 JSON 不完整（「验证结果解析失败」的主因之一）
             const callOnce = async (extraInstruction?: string): Promise<{ accept: boolean; reply: string } | null> => {
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                const response = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
                     body: JSON.stringify({
-                        model: apiConfig.model,
+                        model: api.model,
                         messages: [{ role: 'user', content: extraInstruction ? `${prompt}\n\n${extraInstruction}` : prompt }],
                         temperature: 0.85,
                         max_tokens: 2000,

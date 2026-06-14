@@ -1504,7 +1504,9 @@ ${recent || '（你们相处了很久）'}
             addToast(char.charBlock?.active ? '你已被对方拉黑，无法拨打' : '你已将对方拉黑，无法拨打', 'error');
             return;
         }
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        // 来电「接不接」是聊天以外的辅助决策 → 走副 API（未配置时回退主 API）
+        const callApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!callApi.baseUrl || !callApi.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setShowPanel('none');
         voiceCallCancelRef.current = false;
         setVoiceCallPhase('dialing');
@@ -1522,11 +1524,11 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 只输出一行 JSON，不要任何其他内容：{"answer": true 或 false, "reason": "你做这个决定时的内心想法（一句话）"}`;
             // 决策请求与最短响铃时间并行：让"正在呼叫"至少停留一会儿，更像真的在拨号
             const minRing = new Promise(r => setTimeout(r, 2500));
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${callApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${callApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: callApi.model,
                     messages: [{ role: 'user', content: prompt }],
                     temperature: 0.9,
                 }),
