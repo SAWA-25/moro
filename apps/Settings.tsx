@@ -165,6 +165,55 @@ const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ la
     </div>
 );
 
+/** 界面全屏开关（文具盒）：用 Fullscreen API 让整机网页铺满屏幕、藏起浏览器地址栏等 chrome。 */
+const FullscreenCard: React.FC<{ addToast: (m: string, t: 'info' | 'success' | 'error') => void }> = ({ addToast }) => {
+    const isFullscreenNow = () => typeof document !== 'undefined' && !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+    const [isFs, setIsFs] = useState<boolean>(isFullscreenNow);
+    const supported = typeof document !== 'undefined' && !!(
+        document.documentElement.requestFullscreen || (document.documentElement as any).webkitRequestFullscreen
+    );
+    useEffect(() => {
+        const onChange = () => setIsFs(isFullscreenNow());
+        document.addEventListener('fullscreenchange', onChange);
+        document.addEventListener('webkitfullscreenchange', onChange as any);
+        return () => {
+            document.removeEventListener('fullscreenchange', onChange);
+            document.removeEventListener('webkitfullscreenchange', onChange as any);
+        };
+    }, []);
+    const toggle = async () => {
+        const el = document.documentElement as any;
+        const doc = document as any;
+        try {
+            if (!isFullscreenNow()) {
+                if (el.requestFullscreen) await el.requestFullscreen();
+                else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+                else { addToast('当前浏览器不支持网页全屏（iOS Safari 可「添加到主屏幕」获得全屏）', 'info'); return; }
+            } else {
+                if (document.exitFullscreen) await document.exitFullscreen();
+                else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+            }
+        } catch (e: any) {
+            addToast('全屏切换失败：' + (e?.message || '浏览器拒绝'), 'error');
+        }
+    };
+    return (
+        <SectionCard
+            tag="FULL BLEED"
+            title="界面全屏"
+            hand="把整台机器铺满屏幕，藏起浏览器边框"
+            rotate="rotate-[0.4deg]"
+            right={<InkSwitch on={isFs} onChange={() => void toggle()} title="界面全屏" disabled={!supported} />}
+        >
+            <p className="text-[11px] text-[#1c1b1a]/55 leading-snug">
+                {supported
+                    ? '调用浏览器全屏：隐藏地址栏 / 系统状态栏，整机沉浸式铺满。再点一次开关或按返回键即可退出。'
+                    : '当前环境不支持网页全屏。iOS Safari 可用分享菜单「添加到主屏幕」，以独立 App 的全屏方式打开。'}
+            </p>
+        </SectionCard>
+    );
+};
+
 const Settings: React.FC = () => {
   const {
       apiConfig, updateApiConfig, auxApiConfig, updateAuxApiConfig, closeApp, availableModels, setAvailableModels,
@@ -978,6 +1027,9 @@ const Settings: React.FC = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-7 no-scrollbar pb-20">
+
+        {/* 界面全屏（沉浸式铺满屏幕） */}
+        <FullscreenCard addToast={addToast} />
 
         {/* 锁扣与暗码（锁屏与密码） */}
         <SectionCard tag="CLASP" title="锁扣与暗码" hand="盒盖上的小锁，防隔壁桌偷看" rotate="rotate-[-0.5deg]">
