@@ -86,15 +86,6 @@ export const VR_ROOMS: VRRoomDef[] = [
         implemented: true,
         accent: 'plum',
     },
-    {
-        id: 'cafe',
-        name: '糯米鸡研发中心',
-        blurb: '蒸笼咕嘟咕嘟冒着热气，据说很快就会端出点什么。',
-        affordance: '',
-        emoji: '',
-        implemented: false,
-        accent: 'rose',
-    },
 ];
 
 export const getRoom = (id: VRRoomId): VRRoomDef =>

@@ -897,7 +897,7 @@ export interface NovelBook {
 // =====================================================================
 
 /** 虚拟世界里的房间。 */
-export type VRRoomId = 'plaza' | 'library' | 'music' | 'guestbook' | 'gym' | 'postoffice' | 'theater' | 'cafe';
+export type VRRoomId = 'plaza' | 'library' | 'music' | 'guestbook' | 'gym' | 'postoffice' | 'theater';
 
 /** 全局小说库里的一本书（所有角色共享原文，各自留批注、各自书签）。 */
 export interface VRWorldNovel {
