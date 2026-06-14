@@ -136,6 +136,11 @@ function parseMemoryNodesFromBuffer(
             // (v, a) 非必需：LLM 没给就不写，下游 getEmotionVA 查表兜底
             const v = typeof item.valence === 'number' ? clampVA(item.valence) : undefined;
             const a = typeof item.arousal === 'number' ? clampVA(item.arousal) : undefined;
+            // 记忆浏览器用：原文摘录（找茬）+ 生成碎碎念。截断防止个别条目超长污染存储。
+            const sourceQuote = typeof item.quote === 'string' && item.quote.trim()
+                ? item.quote.trim().slice(0, 280) : undefined;
+            const genNote = typeof item.aside === 'string' && item.aside.trim()
+                ? item.aside.trim().slice(0, 120) : undefined;
             return {
                 id: generateId(),
                 charId,
@@ -153,6 +158,8 @@ function parseMemoryNodesFromBuffer(
                 pinnedUntil,
                 eventBoxId: null,  // 由 pipeline 在 binding 阶段设置
                 origin: 'extraction',
+                sourceQuote,
+                genNote,
             };
         });
 }
@@ -403,12 +410,15 @@ ${buildRulesBlock(charName, userLabel)}${relatedToRule}${unpinRule}
     "arousal": 0,
     "tags": ["标签1", "标签2"],
     "date": "YYYY-MM-DD",
-    "pinDays": 3${relatedToFormat}
+    "pinDays": 3,
+    "quote": "对话里最能支撑这条记忆的 1-2 句原话（逐字摘录，可含说话人，≤2句）",
+    "aside": "形成这条记忆时你脑子里的一句碎碎念（第一人称、口语、很短）"${relatedToFormat}
   }
 ]
 
 date 必填，按该记忆实际发生当天填（参考消息行首的时间戳）。
 pinDays 仅在需要置顶时才写，大多数记忆不需要。
+quote 尽量逐字摘对话原文（别改写），方便日后回看对账；aside 是你当下的私心话，例如"他嘴上说没事，但我不信"。两者都简短，写不出就省略。
 如果对话过于琐碎无值得记忆的内容，返回空数组 []。`;
 
     try {
