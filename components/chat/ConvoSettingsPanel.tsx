@@ -6,6 +6,8 @@ import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../../utils/minimaxApiKey';
 import { isCharBlockDisabled, setCharBlockDisabled } from '../../utils/blockSystem';
+import { isScheduleFeatureOn } from '../../utils/scheduleGenerator';
+import { isAuxApiOn } from '../../utils/auxApi';
 import {
     PAPER_TONES, PAPERS, PaperKind, WashiTape, PAPER_SHADOW,
     MONO_STACK, SERIF_STACK, CUTE_STACK, tiltFor,
@@ -53,6 +55,8 @@ interface ConvoSettingsPanelProps {
     // 消息区背景（沿用 char.chatBackground 的上传管线）
     onBgUpload: (file: File) => void;
     onRemoveBg: () => void;
+    // 日程表：翻开今日日程卡片（由 Chat 切到 schedule modal）
+    onOpenSchedule: () => void;
 }
 
 // ── 手账 UI 原子 ──────────────────────────────────────────────────────────
@@ -214,9 +218,9 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         onOpenHistoryManager, onClearHistory, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
         onOpenChromeCss, categories, emojiCounts, onSaveCategoryVisibility,
-        onBgUpload, onRemoveBg,
+        onBgUpload, onRemoveBg, onOpenSchedule,
     } = props;
-    const { updateCharacter, groups, worldbooks, characters, apiConfig, addToast, openApp } = useOS();
+    const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp } = useOS();
 
     const cs: ConvoSettings = char.convoSettings || {};
     const updateConvo = (patch: Partial<ConvoSettings>) => {
@@ -762,6 +766,27 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         note="往提示词里塞「距上次聊天过了多久」这类线索，让 TA 对时间更敏感、贴着现实的钟点过日子。"
                         side={<CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />}
                     />
+
+                    <Entry
+                        mark="☘" title="TA 的日程表"
+                        note="TA 有自己的一天：作息时间线 + 意识流独白，会悄悄染进聊天的语气与情绪。"
+                        side={<CandyToggle on={isScheduleFeatureOn(char)} onToggle={() => updateCharacter(char.id, { scheduleFeatureEnabled: !isScheduleFeatureOn(char) })} />}
+                    >
+                        {isScheduleFeatureOn(char) && (
+                            <div className="space-y-2">
+                                <button
+                                    onClick={onOpenSchedule}
+                                    className="w-full py-2.5 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
+                                    style={{ background: '#fff', border: '1.5px solid #bfa3dd', color: '#7a5aa0', boxShadow: '2px 2px 0 #ddccef', ...CUTE_STACK }}
+                                >翻开今日日程 →</button>
+                                <p className="text-[9.5px] leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                                    {isAuxApiOn(auxApiConfig)
+                                        ? '已接副 API：聊到约定/变更（“晚上八点一起看电影”“今天不去公司了”…）时，TA 会主动把日程调过来。'
+                                        : '想让 TA 照着聊天主动调整日程？去「文具盒 → 副线盒（副 API）」开启副 API。'}
+                                </p>
+                            </div>
+                        )}
+                    </Entry>
 
                     <Entry
                         mark="☘" title="出门前看一眼世界"

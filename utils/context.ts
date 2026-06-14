@@ -173,6 +173,14 @@ export const ContextBuilder = {
             context += `\n`;
         }
 
+        // 1b2. 生活侧写 (Life Profile) — 帮角色「更了解自己」的生活速写（日常节奏 / 习惯 /
+        // 在意的事 / 与用户关系底色 / 情绪走向）。像自我认知一样垫在设定下方，稳住角色对自己的把握。
+        if (char.lifeProfile?.content && char.lifeProfile.content.trim()) {
+            context += `### 你的生活侧写 (Life Profile)\n`;
+            context += `这是你这个人的底子——你的日子、习惯、在意的事、和${user.name}相处的样子。它不是要你逐条复述，而是让你更稳地"像你自己"：\n`;
+            context += `${char.lifeProfile.content.trim()}\n\n`;
+        }
+
         // 1c. 回神校准 (Recenter) — 用户触发回神后、角色完成自我审视得到的校准方向。
         // 在接下来几轮回复里悄悄把"说话的味道"调回本来的样子；不解释、不提"回神"本身。
         const rc = char.recenterCalibration;

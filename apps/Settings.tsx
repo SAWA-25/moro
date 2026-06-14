@@ -165,7 +165,7 @@ const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ la
 
 const Settings: React.FC = () => {
   const {
-      apiConfig, updateApiConfig, closeApp, availableModels, setAvailableModels,
+      apiConfig, updateApiConfig, auxApiConfig, updateAuxApiConfig, closeApp, availableModels, setAvailableModels,
       exportSystem, importSystem, addToast, showError, resetSystem,
       apiPresets, addApiPreset, removeApiPreset,
       sysOperation, // Get progress state
@@ -189,6 +189,13 @@ const Settings: React.FC = () => {
   );
   const [localAceStepKey, setLocalAceStepKey] = useState(apiConfig.aceStepApiKey || '');
   const [showAceStepGuide, setShowAceStepGuide] = useState(false);
+
+  // 副 API（处理主聊天以外的辅助任务：日程、生活侧写……）
+  const [localAuxEnabled, setLocalAuxEnabled] = useState<boolean>(!!auxApiConfig.enabled);
+  const [localAuxUrl, setLocalAuxUrl] = useState(auxApiConfig.baseUrl);
+  const [localAuxKey, setLocalAuxKey] = useState(auxApiConfig.apiKey);
+  const [localAuxModel, setLocalAuxModel] = useState(auxApiConfig.model);
+  const [auxStatusMsg, setAuxStatusMsg] = useState('');
   const [otherStatusMsg, setOtherStatusMsg] = useState('');
   // 高级设置（流式/温度）默认折叠 — 大多数用户不需要碰
   const [showApiAdvanced, setShowApiAdvanced] = useState(false);
@@ -469,6 +476,32 @@ const Settings: React.FC = () => {
       setLocalMiniMaxRegion(apiConfig.minimaxRegion === 'overseas' ? 'overseas' : 'domestic');
       setLocalAceStepKey(apiConfig.aceStepApiKey || '');
   }, [apiConfig]);
+
+  useEffect(() => {
+      setLocalAuxEnabled(!!auxApiConfig.enabled);
+      setLocalAuxUrl(auxApiConfig.baseUrl);
+      setLocalAuxKey(auxApiConfig.apiKey);
+      setLocalAuxModel(auxApiConfig.model);
+  }, [auxApiConfig]);
+
+  const handleSaveAuxApi = () => {
+      updateAuxApiConfig({
+          enabled: localAuxEnabled,
+          baseUrl: localAuxUrl.trim(),
+          apiKey: localAuxKey.trim(),
+          model: localAuxModel.trim(),
+      });
+      setAuxStatusMsg('副线已接好');
+      setTimeout(() => setAuxStatusMsg(''), 2000);
+  };
+
+  /** 把主 API 的 URL/Key/模型一键拷进副 API（多数人主副同源，省得重填） */
+  const handleCopyMainToAux = () => {
+      setLocalAuxUrl(apiConfig.baseUrl);
+      setLocalAuxKey(apiConfig.apiKey);
+      setLocalAuxModel(apiConfig.model);
+      addToast('已照抄主线，可改模型后保存', 'info');
+  };
 
   const loadPreset = (preset: typeof apiPresets[0]) => {
       setLocalUrl(preset.config.baseUrl);
@@ -1322,6 +1355,62 @@ const Settings: React.FC = () => {
                         {testApiResult}
                     </div>
                 )}
+            </div>
+        </SectionCard>
+
+        {/* 副线盒（副 API） — 处理「主聊天以外」的辅助 LLM 任务：日程生成/协调、角色生活侧写… */}
+        <SectionCard
+            tag="AUX WIRE"
+            title="副线盒（副 API）"
+            hand="主线管聊天，副线管杂活：日程、生活侧写…"
+            rotate="rotate-[-0.4deg]"
+            right={
+                <button
+                    onClick={() => { setLocalAuxEnabled(v => !v); }}
+                    className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 rotate-[2deg] ${localAuxEnabled ? INK_BTN : STICKER}`}
+                >
+                    {localAuxEnabled ? '已启用' : '未启用'}
+                </button>
+            }
+        >
+            <div className="space-y-4">
+                <p className="text-[12px] text-[#1c1b1a]/60 leading-relaxed border-2 border-dashed border-[#1c1b1a]/30 px-3 py-2">
+                    开启后，<b>日程的生成与「随聊天主动协调」、角色生活侧写</b>等后台任务都走这根副线，
+                    把主线（聊天）的额度和注意力让出来。<b>不填或关掉</b>就回退主线，行为不变。
+                </p>
+
+                <div className="flex items-center justify-between">
+                    <label className={LABEL}>启用副 API</label>
+                    <button
+                        onClick={() => setLocalAuxEnabled(v => !v)}
+                        role="switch" aria-checked={localAuxEnabled}
+                        className={`px-4 py-1.5 text-[11px] font-black ${localAuxEnabled ? INK_BTN : STICKER}`}
+                    >
+                        {localAuxEnabled ? 'ON' : 'OFF'}
+                    </button>
+                </div>
+
+                <div className="group">
+                    <div className="flex items-center justify-between mb-1">
+                        <label className={LABEL}>BASE URL</label>
+                        <button onClick={handleCopyMainToAux} className="text-[10px] text-[#1c1b1a] font-black underline underline-offset-2">照抄主线</button>
+                    </div>
+                    <input type="text" value={localAuxUrl} onChange={(e) => setLocalAuxUrl(e.target.value)} placeholder="https://…（同 OpenAI 兼容端点）" className={`${FIELD} font-mono`} />
+                </div>
+
+                <div className="group">
+                    <label className={LABEL}>KEY</label>
+                    <input type="password" value={localAuxKey} onChange={(e) => setLocalAuxKey(e.target.value)} placeholder="sk-…" className={`${FIELD} font-mono`} />
+                </div>
+
+                <div className="group">
+                    <label className={LABEL}>MODEL · 建议用便宜/快的模型跑杂活</label>
+                    <input type="text" value={localAuxModel} onChange={(e) => setLocalAuxModel(e.target.value)} placeholder="如 gpt-4o-mini / glm-4-flash …" className={`${FIELD} font-mono`} />
+                </div>
+
+                <button onClick={handleSaveAuxApi} className={`w-full py-3 font-black mt-2 ${INK_BTN}`}>
+                    {auxStatusMsg || '把副线收好'}
+                </button>
             </div>
         </SectionCard>
 
