@@ -77,6 +77,12 @@ export interface MemoryNode {
     // cognition=长期认知（由反复强共激活的记忆簇提炼的稳定理解，落 self_room、检索时置顶注入，见 cognition.ts）
     origin?: 'extraction' | 'digestion' | 'system' | 'cognition';
 
+    // ─── 记忆浏览器：原文溯源 + 生成碎碎念（提取时记录，供「找茬」与展示） ───────
+    /** 这条记忆主要基于的原始对话原文（1-2 句逐字摘录），方便用户回看/找茬。提取时由 LLM 给出 */
+    sourceQuote?: string;
+    /** 生成这条记忆当下，角色脑子里的一句碎碎念（第一人称、短）。提取时由 LLM 给出 */
+    genNote?: string;
+
     // ─── EventBox 绑定（新） ─────────────────
     eventBoxId?: string | null;  // 所属事件盒 ID，null/undefined = 独立记忆（"地上的球"）
     archived?: boolean;          // true = 已被压入 box summary，不再参与召回（可复活）

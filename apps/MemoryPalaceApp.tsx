@@ -10,6 +10,7 @@ import {
     wipeAllMemoryPalace,
 } from '../utils/memoryPalace';
 import type { Anticipation, MigrationProgress, DigestResult, MemoryLink, EventBox } from '../utils/memoryPalace';
+import MindMap from '../components/memoryPalace/MindMap';
 
 /** UI 内部类型：统一描述"关联"来源（EventBox 兄弟 or 旧 MemoryLink） */
 type LinkedMemoryUI = {
@@ -411,7 +412,7 @@ export default function MemoryPalaceApp() {
     const { activeCharacterId, characters, updateCharacter, setActiveCharacterId, closeApp, apiPresets, userProfile, memoryPalaceConfig, updateMemoryPalaceConfig, remoteVectorConfig, updateRemoteVectorConfig, addToast } = useOS();
     const char = characters.find(c => c.id === activeCharacterId);
 
-    const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes'>('picker');
+    const [view, setView] = useState<'picker' | 'palace' | 'room' | 'memory' | 'settings' | 'globalSettings' | 'all' | 'boxes' | 'browser' | 'mindmap'>('picker');
     const [selectedRoom, setSelectedRoom] = useState<MemoryRoom | null>(null);
     const [selectedNode, setSelectedNode] = useState<MemoryNode | null>(null);
     const [roomCounts, setRoomCounts] = useState<Record<MemoryRoom, number>>({} as any);
@@ -450,7 +451,19 @@ export default function MemoryPalaceApp() {
     const [allNodes, setAllNodes] = useState<MemoryNode[]>([]);
     const [allSortBy, setAllSortBy] = useState<'time' | 'importance'>('time');
     const [allSortDir, setAllSortDir] = useState<'desc' | 'asc'>('desc');
-    const [prevView, setPrevView] = useState<'room' | 'all' | 'boxes'>('room');
+    const [prevView, setPrevView] = useState<'room' | 'all' | 'boxes' | 'browser'>('room');
+
+    // 记忆浏览器视图（看全部记忆 + 原文 + 碎碎念，方便找茬）
+    const [browserNodes, setBrowserNodes] = useState<MemoryNode[]>([]);
+    const [browserQuery, setBrowserQuery] = useState('');
+    const [browserRoom, setBrowserRoom] = useState<MemoryRoom | 'all'>('all');
+    const [browserExpanded, setBrowserExpanded] = useState<Set<string>>(new Set());
+
+    // 心意图谱视图（记忆关联网络：char 怎样把两条记忆联系到一起）
+    const [graphNodes, setGraphNodes] = useState<MemoryNode[]>([]);
+    const [graphLinks, setGraphLinks] = useState<MemoryLink[]>([]);
+    const [graphFocusId, setGraphFocusId] = useState<string | null>(null);
+    const [graphLoading, setGraphLoading] = useState(false);
 
     // 认知消化状态
     const [digesting, setDigesting] = useState(false);
@@ -675,6 +688,54 @@ export default function MemoryPalaceApp() {
         setView('boxes');
     };
 
+    // 记忆浏览器：拉全部记忆（含归档），按时间倒序，进视图
+    const openMemoryBrowser = async () => {
+        if (!char) return;
+        const nodes = await MemoryNodeDB.getByCharId(char.id);
+        nodes.sort((a, b) => b.createdAt - a.createdAt);
+        setBrowserNodes(nodes);
+        setBrowserQuery('');
+        setBrowserRoom('all');
+        setBrowserExpanded(new Set());
+        setView('browser');
+    };
+
+    // 心意图谱：拉全部节点 + 全部关联边（按节点聚边去重），默认聚焦关联最多的节点
+    const openMindMap = async () => {
+        if (!char) return;
+        setGraphLoading(true);
+        setView('mindmap');
+        try {
+            const nodes = (await MemoryNodeDB.getByCharId(char.id)).filter(n => !n.archived);
+            const nodeIds = new Set(nodes.map(n => n.id));
+            const linkMap = new Map<string, MemoryLink>();
+            // 逐节点取边（links 无 charId 索引），按 link.id 去重，只留两端都在本角色节点集里的边
+            await Promise.all(nodes.map(async n => {
+                const ls = await MemoryLinkDB.getByNodeId(n.id);
+                for (const l of ls) {
+                    if (nodeIds.has(l.sourceId) && nodeIds.has(l.targetId)) linkMap.set(l.id, l);
+                }
+            }));
+            const links = [...linkMap.values()];
+            // 默认聚焦：度数（连边数）最高的节点
+            const degree = new Map<string, number>();
+            for (const l of links) {
+                degree.set(l.sourceId, (degree.get(l.sourceId) || 0) + 1);
+                degree.set(l.targetId, (degree.get(l.targetId) || 0) + 1);
+            }
+            let focus: string | null = null; let best = -1;
+            for (const [id, d] of degree) { if (d > best) { best = d; focus = id; } }
+            setGraphNodes(nodes);
+            setGraphLinks(links);
+            setGraphFocusId(focus);
+        } catch (e) {
+            console.warn('[MindMap] load failed:', e);
+            setGraphNodes([]); setGraphLinks([]); setGraphFocusId(null);
+        } finally {
+            setGraphLoading(false);
+        }
+    };
+
     /** 把一条归档记忆复活成活节点。
      *  归档节点默认被压入 summary 不参与召回——手动点"复活"后回到活池独立参与召回。
      *  数据层走 reviveArchivedMemory：archived=false + box.archivedMemoryIds → liveMemoryIds
@@ -867,7 +928,7 @@ export default function MemoryPalaceApp() {
         }
     };
 
-    const openMemory = (node: MemoryNode, from?: 'room' | 'all' | 'boxes') => {
+    const openMemory = (node: MemoryNode, from?: 'room' | 'all' | 'boxes' | 'browser') => {
         setSelectedNode(node);
         setEditing(false);
         setEditContent(node.content);
@@ -3315,6 +3376,32 @@ create table if not exists memory_vectors (
                             <Icon name="box" size={13} />
                             <span>翻看事件盒</span>
                         </div>
+                        <div
+                            onClick={openMemoryBrowser}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                fontSize: 11, fontWeight: 600, color: '#626262',
+                                cursor: 'pointer', padding: '4px 12px',
+                                borderRadius: 3, border: '2px solid #1a1a1a',
+                                background: '#eef3ef',
+                            }}
+                        >
+                            <Icon name="book" size={13} />
+                            <span>记忆浏览器</span>
+                        </div>
+                        <div
+                            onClick={openMindMap}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 5,
+                                fontSize: 11, fontWeight: 600, color: '#626262',
+                                cursor: 'pointer', padding: '4px 12px',
+                                borderRadius: 3, border: '2px solid #1a1a1a',
+                                background: '#eeeaf3',
+                            }}
+                        >
+                            <Icon name="link" size={13} />
+                            <span>心意图谱</span>
+                        </div>
                     </div>
 
                     {/* 全局搜索 */}
@@ -3564,6 +3651,206 @@ create table if not exists memory_vectors (
                             </div>
                         ))}
                     </div>
+                )}
+            </div>
+        );
+    }
+
+    // ─── 记忆浏览器视图（全部记忆 + 原文 + 碎碎念，方便找茬） ──────────
+    if (view === 'browser') {
+        const ROOM_ORDER: MemoryRoom[] = ['bedroom', 'living_room', 'study', 'user_room', 'self_room', 'attic', 'windowsill'];
+        const q = browserQuery.trim().toLowerCase();
+        const filtered = browserNodes.filter(n => {
+            if (browserRoom !== 'all' && n.room !== browserRoom) return false;
+            if (!q) return true;
+            const hay = (n.content + ' ' + (n.tags || []).join(' ') + ' ' + n.mood + ' ' + (n.sourceQuote || '') + ' ' + (n.genNote || '')).toLowerCase();
+            return q.split(/\s+/).every(kw => hay.includes(kw));
+        });
+        const provenanceCount = browserNodes.filter(n => n.sourceQuote || n.genNote).length;
+
+        return (
+            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div
+                        onClick={() => setView('palace')}
+                        style={{ fontSize: 12, color: '#1a1a1a', cursor: 'pointer', fontFamily: 'monospace', border: '2px solid #1a1a1a', background: '#fff', padding: '4px 10px', boxShadow: '2px 2px 0 #1a1a1a' }}
+                    >
+                        ← 返回标本馆
+                    </div>
+                    <div style={{ fontSize: 12, color: '#a2a2a2' }}>{filtered.length} / {browserNodes.length} 条</div>
+                </div>
+
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="book" size={18} />
+                    <span>记忆浏览器</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 12, lineHeight: 1.6 }}>
+                    {char!.name} 的全部记忆都在这儿。展开能看到生成这条记忆所凭的<b>原文</b>（对账找茬）和当时的<b>碎碎念</b>。
+                    {provenanceCount === 0 && '（早期记忆没留原文/碎碎念，往后新记的会带上。）'}
+                </div>
+
+                {/* 搜索 */}
+                <input
+                    type="text"
+                    value={browserQuery}
+                    onChange={(e) => setBrowserQuery(e.target.value)}
+                    placeholder="搜内容 / 标签 / 情绪 / 原文…"
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 3, border: '2px solid #1a1a1a', background: '#fafafa', fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 10 }}
+                />
+
+                {/* 房间筛选 */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {(['all', ...ROOM_ORDER] as const).map(r => {
+                        const active = browserRoom === r;
+                        const label = r === 'all' ? '全部' : getRoomLabel(r as MemoryRoom, userProfile?.name);
+                        const color = r === 'all' ? '#1a1a1a' : ROOM_COLORS[r as MemoryRoom];
+                        return (
+                            <button
+                                key={r}
+                                onClick={() => setBrowserRoom(r as MemoryRoom | 'all')}
+                                style={{
+                                    padding: '3px 10px', borderRadius: 3, fontSize: 11, fontWeight: 600,
+                                    border: '2px solid #1a1a1a', cursor: 'pointer',
+                                    background: active ? color : 'white',
+                                    color: active ? '#fff' : '#626262',
+                                }}
+                            >{label}</button>
+                        );
+                    })}
+                </div>
+
+                {filtered.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 40, fontSize: 13 }}>没有匹配的记忆</div>
+                ) : filtered.map((node: MemoryNode) => {
+                    const expanded = browserExpanded.has(node.id);
+                    const hasProvenance = !!(node.sourceQuote || node.genNote);
+                    return (
+                        <div key={node.id} style={{ padding: 12, borderRadius: 3, marginBottom: 8, border: '2px solid #1a1a1a', backgroundColor: node.archived ? '#f0f0ee' : '#fafafa' }}>
+                            <div style={{ fontSize: 13, lineHeight: 1.5 }}>{node.content}</div>
+                            <div style={{ fontSize: 11, color: '#a2a2a2', marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                    <RoomIcon room={node.room} size={12} style={{ color: ROOM_COLORS[node.room] }} />
+                                    {getRoomLabel(node.room, userProfile?.name)}
+                                </span>
+                                <span>重要性 {node.importance}</span>
+                                <span>{node.mood}</span>
+                                <span>{new Date(node.createdAt).toLocaleDateString('zh-CN')}</span>
+                                <span>访问 {node.accessCount} 次</span>
+                                {node.archived && <span style={{ color: '#b08968' }}>已归档</span>}
+                            </div>
+                            {node.tags.length > 0 && (
+                                <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                    {node.tags.map((t: string) => (
+                                        <span key={t} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, backgroundColor: '#f3f3f3', color: '#626262' }}>{t}</span>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* 原文 / 碎碎念 折叠区 */}
+                            <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
+                                <span
+                                    onClick={() => setBrowserExpanded(prev => { const next = new Set(prev); next.has(node.id) ? next.delete(node.id) : next.add(node.id); return next; })}
+                                    style={{ fontSize: 11, fontWeight: 600, color: '#5a6c8a', cursor: 'pointer', userSelect: 'none' }}
+                                >
+                                    {expanded ? '收起 ▲' : (hasProvenance ? '看原文 · 碎碎念 ▼' : '溯源 ▼')}
+                                </span>
+                                <span onClick={() => openMemory(node, 'browser')} style={{ fontSize: 11, color: '#9a9a9a', cursor: 'pointer' }}>详情 / 编辑 →</span>
+                            </div>
+                            {expanded && (
+                                <div style={{ marginTop: 8, borderTop: '1px dashed #d2d2cc', paddingTop: 8 }}>
+                                    {node.sourceQuote ? (
+                                        <div style={{ marginBottom: node.genNote ? 8 : 0 }}>
+                                            <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>📄 原文（对账找茬）</div>
+                                            <div style={{ fontSize: 12, lineHeight: 1.6, color: '#3a3a3a', background: '#fff', border: '1px solid #e0ddd5', borderLeft: '3px solid #b9b2a3', padding: '6px 9px', whiteSpace: 'pre-wrap' }}>{node.sourceQuote}</div>
+                                        </div>
+                                    ) : null}
+                                    {node.genNote ? (
+                                        <div>
+                                            <div style={{ fontSize: 10, color: '#8a8a8a', marginBottom: 3 }}>💭 当时的碎碎念</div>
+                                            <div style={{ fontSize: 12, lineHeight: 1.6, color: '#6a5a7a', fontStyle: 'italic' }}>「{node.genNote}」</div>
+                                        </div>
+                                    ) : null}
+                                    {!hasProvenance && (
+                                        <div style={{ fontSize: 11, color: '#a2a2a2' }}>这是较早记下的，没留下原文和碎碎念。往后新记的记忆会带上。</div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    // ─── 心意图谱视图（记忆关联网络） ──────────────────────────
+    if (view === 'mindmap') {
+        // 焦点候选：按度数排序的前若干节点，给用户快速切换焦点
+        const degree = new Map<string, number>();
+        for (const l of graphLinks) {
+            degree.set(l.sourceId, (degree.get(l.sourceId) || 0) + 1);
+            degree.set(l.targetId, (degree.get(l.targetId) || 0) + 1);
+        }
+        const nodeById = new Map(graphNodes.map(n => [n.id, n]));
+        const topHubs = [...degree.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+            .map(([id, d]) => ({ node: nodeById.get(id)!, d })).filter(x => x.node);
+
+        return (
+            <div style={{ paddingLeft: 16, paddingRight: 16, paddingBottom: 16, paddingTop: SAFE_PAD_TOP, maxHeight: '100%', overflowY: 'auto', background: '#efece3', minHeight: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div
+                        onClick={() => setView('palace')}
+                        style={{ fontSize: 12, color: '#1a1a1a', cursor: 'pointer', fontFamily: 'monospace', border: '2px solid #1a1a1a', background: '#fff', padding: '4px 10px', boxShadow: '2px 2px 0 #1a1a1a' }}
+                    >
+                        ← 返回标本馆
+                    </div>
+                    <div style={{ fontSize: 12, color: '#a2a2a2' }}>{graphNodes.length} 节点 · {graphLinks.length} 关联</div>
+                </div>
+
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Icon name="link" size={18} />
+                    <span>心意图谱</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#8a8a8a', marginBottom: 12, lineHeight: 1.6 }}>
+                    {char!.name} 脑子里，记忆是怎样彼此勾连的。点中心或任一节点，顺着关联一路走下去——尤其看看「隐喻 / 因果」这种<b>看似不相干却被连上</b>的地方。
+                </div>
+
+                {graphLoading ? (
+                    <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 48, fontSize: 13 }}>正在梳理关联网络…</div>
+                ) : graphLinks.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: '#a2a2a2', padding: 48, fontSize: 13, lineHeight: 1.7 }}>
+                        还没有长出关联。<br />多聊一些、让记忆之间生出时间 / 情绪 / 因果 / 人物 / 隐喻的联系，这里就有图谱可看了。
+                    </div>
+                ) : (
+                    <>
+                        {/* 焦点快切 */}
+                        {topHubs.length > 0 && (
+                            <div style={{ marginBottom: 12 }}>
+                                <div style={{ fontSize: 10, color: '#9a9a9a', marginBottom: 5 }}>挑一条记忆当焦点（连得越多越靠前）：</div>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {topHubs.map(({ node, d }) => (
+                                        <button
+                                            key={node.id}
+                                            onClick={() => setGraphFocusId(node.id)}
+                                            style={{
+                                                padding: '3px 9px', borderRadius: 3, fontSize: 11, fontWeight: 600,
+                                                border: '2px solid #1a1a1a', cursor: 'pointer',
+                                                background: graphFocusId === node.id ? '#1a1a1a' : 'white',
+                                                color: graphFocusId === node.id ? '#fff' : '#626262',
+                                            }}
+                                        >{node.content.length > 10 ? node.content.slice(0, 10) + '…' : node.content}<span style={{ opacity: 0.6 }}> ·{d}</span></button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        <MindMap
+                            nodes={graphNodes}
+                            links={graphLinks}
+                            focusId={graphFocusId}
+                            onFocus={setGraphFocusId}
+                            roomColors={ROOM_COLORS}
+                            roomLabel={(r) => getRoomLabel(r, userProfile?.name)}
+                        />
+                    </>
                 )}
             </div>
         );
@@ -4057,7 +4344,7 @@ create table if not exists memory_vectors (
                         onClick={() => { setView(prevView); setSelectedNode(null); setEditing(false); }}
                         style={{ fontSize: 12, color: '#1a1a1a', cursor: 'pointer', fontFamily: 'monospace', border: '2px solid #1a1a1a', background: '#fff', padding: '4px 10px', boxShadow: '2px 2px 0 #1a1a1a' }}
                     >
-                        ← 返回 {prevView === 'all' ? '全部标本' : prevView === 'boxes' ? '事件盒' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
+                        ← 返回 {prevView === 'all' ? '全部标本' : prevView === 'boxes' ? '事件盒' : prevView === 'browser' ? '记忆浏览器' : getRoomLabel(selectedRoom || selectedNode.room, userProfile?.name)}
                     </div>
                     {!editing && (
                         <div

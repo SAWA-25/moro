@@ -221,6 +221,24 @@ active(新建) → anchor(7天+，心理锚点) → fulfilled / disappointed
 | `digestion.ts` | `runCognitiveDigestion` 收尾调用 `formCognitions` |
 | `formatter.ts` | 跳过 `origin==='cognition'`（由 pipeline 顶部专段注入） |
 
+### 六、认知网络 UI（回忆标本馆里看：记忆浏览器 + 心意图谱）
+
+回忆标本馆（`apps/MemoryPalaceApp.tsx`）概览页新增两个入口：
+
+- **记忆浏览器**（`view==='browser'`）：直观看 char 的**全部记忆**，按房间筛 + 搜索；每条可展开看到
+  - **原文**（`MemoryNode.sourceQuote`）：生成这条记忆所凭的对话原话（逐字摘录），方便用户回看 / 找茬；
+  - **碎碎念**（`MemoryNode.genNote`）：提取当下 char 的一句私心话（第一人称）。
+  - 两者在 `extraction.ts` 提取时由 LLM 一并给出（prompt 里的 `quote` / `aside` 字段），早期记忆没有则优雅缺省。
+- **心意图谱**（`view==='mindmap'`，组件 `components/memoryPalace/MindMap.tsx`）：把记忆关联网络画成 ego-graph——
+  以一条记忆为中心，四周是与它直接相连的记忆，边按关联类型上色（时间 / 情绪 / 因果 / 人物 / 隐喻），
+  点任一节点即可把焦点切过去顺着网络走。下方「连接清单」逐条讲清**怎么连上的**，重点呈现「隐喻 / 因果」
+  这类「看似不相干却被 char 连到一起」的处理。数据 = 全部 `MemoryNode` + 逐节点聚合去重的 `MemoryLink`。
+
+| 文件 | 职责 |
+|------|------|
+| `MemoryPalaceApp.tsx` | `browser` / `mindmap` 两个 view 块 + 数据加载（openMemoryBrowser / openMindMap） |
+| `components/memoryPalace/MindMap.tsx` | 心意图谱 SVG ego-graph（纯展示组件） |
+
 ---
 
 ## 系统对比
