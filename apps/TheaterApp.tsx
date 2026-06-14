@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { MaskHappy, Crosshair, GameController, Heart, Sparkle } from '@phosphor-icons/react';
+import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
+import TrajectoryApp from './theater/TrajectoryApp';
+import ReflectionApp from './theater/ReflectionApp';
 
 /**
  * 小剧场：原「攻略本」（galgame 恋爱攻略，apps/GuidebookApp.tsx）与「TRPG」（跑团
@@ -16,10 +18,12 @@ import GameApp from './GameApp';
 
 const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'guide' | 'trpg'>('home');
+    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection'>('home');
 
     if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
     if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
+    if (section === 'trajectory') return <TrajectoryApp onExit={() => setSection('home')} />;
+    if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
 
     return (
         <div
@@ -85,6 +89,34 @@ const TheaterApp: React.FC = () => {
                     </div>
                     <div className="text-[11px] text-white/55 mt-3 leading-relaxed">拉上熟人开团：AI 生成世界观、骰子判定、自由行动，剧情可转发回聊天一起回味。</div>
                     <GameController size={64} weight="fill" className="absolute -bottom-3 -right-2 text-purple-300/10 rotate-[-12deg]" />
+                </button>
+
+                {/* 轨迹 */}
+                <button
+                    onClick={() => setSection('trajectory')}
+                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-indigo-300/15 bg-gradient-to-br from-indigo-500/15 to-violet-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
+                >
+                    <div className="text-[9px] tracking-[0.3em] text-indigo-200/70 font-mono mb-2">TRAJECTORY — 那些还未曾相遇的日子</div>
+                    <div className="flex items-center gap-2.5">
+                        <Footprints size={26} weight="bold" className="text-indigo-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-indigo-50">轨迹</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">回到过去的时间节点，看看角色原本走过的路——一个人不是从被看见的那一刻才开始存在的。也看见你是从什么时候，慢慢走进 TA 的人生。</div>
+                    <Footprints size={64} weight="fill" className="absolute -bottom-3 -right-2 text-indigo-300/10 rotate-[12deg]" />
+                </button>
+
+                {/* 对影 */}
+                <button
+                    onClick={() => setSection('reflection')}
+                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-amber-300/15 bg-gradient-to-br from-amber-500/15 to-rose-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
+                >
+                    <div className="text-[9px] tracking-[0.3em] text-amber-200/70 font-mono mb-2">REFLECTION — 对影成几人</div>
+                    <div className="flex items-center gap-2.5">
+                        <Users size={26} weight="bold" className="text-amber-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-amber-50">对影</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">同一个人，在不同时间里的相逢。看见 TA 并非突然变成今天的样子，也看见——是谁让命运偏离过原本的方向。举杯邀明月，对影成几人。</div>
+                    <Users size={64} weight="fill" className="absolute -bottom-3 -right-2 text-amber-300/10 rotate-[-12deg]" />
                 </button>
             </div>
         </div>
