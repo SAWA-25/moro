@@ -199,6 +199,12 @@ export interface TavernPreset {
     // —— 提示词管理器 ——
     prompts: PresetPrompt[];
     prompt_order: PresetPromptOrderCharacter[];
+    /**
+     * 预设自带的正则脚本（SillyTavern PRESET 作用域，存在预设 JSON 的
+     * extensions.regex_scripts 里）。导入时解析填充，仅当本预设被激活且印坊开印时
+     * 生效（执行顺序：全局 → 预设 → 角色局部），导出时写回 extensions.regex_scripts。
+     */
+    regexScripts?: RegexScriptData[];
     /** 导入时的原始 JSON 全量兜底（utility prompts / 模型选择等未映射字段），导出时原样合并 */
     raw?: Record<string, any>;
 }
