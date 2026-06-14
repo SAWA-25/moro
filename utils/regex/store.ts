@@ -59,7 +59,11 @@ let presetCacheSig = '';
 
 /** 缓存内容指纹：只在「真正影响执行/显示」的字段变化时才广播刷新（见 setPresetRegexScripts） */
 const presetCacheSignature = (scripts: RegexScriptData[]): string =>
-    scripts.map(s => `${s.id}${s.disabled ? 0 : 1}${s.findRegex}${s.replaceString}`).join('');
+    scripts.map(s => JSON.stringify([
+        s.id, s.disabled ? 0 : 1, s.findRegex, s.replaceString,
+        s.placement, s.markdownOnly, s.promptOnly, s.runOnEdit,
+        s.trimStrings, s.substituteRegex, s.minDepth ?? null, s.maxDepth ?? null,
+    ])).join('|');
 
 /** 当前生效的「预设自带正则」（无激活预设 / 印坊歇业时为空数组） */
 export const getPresetRegexScripts = (): RegexScriptData[] => presetCache;

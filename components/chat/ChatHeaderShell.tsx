@@ -388,12 +388,14 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         <div className="shrink-0 z-30 sticky top-0">
         {/* 顶部安全区 + 页眉小字：
             没有页眉小字时只铺一条 safe-top 占位（透明 + backdrop-blur 跟 iOS status bar 自适应）。
-            有页眉小字时，用 --chrome-top（safe-top + 1.5rem）下沉到「时间/电量」状态栏下方再画这行字，
-            否则它会和 z-50 的 StatusBar 叠在同一高度被挤没（这正是「页眉小字不显示」的根因）。 */}
+            有页眉小字时，下沉到「时间/电量」状态栏 + 居中的灵动岛（DynamicIsland，约 safe-top+26px、
+            z-59）下方再画这行字 —— 这行字本身居中，正好在灵动岛正下方，光用 --chrome-top（safe-top+1.5rem）
+            还会被灵动岛压住（这正是「页眉小字被遮挡」的根因）。所以这里多留到 safe-top+2.5rem 让它整段
+            落到灵动岛底缘之下。 */}
         {decorText && !selectionMode ? (
             <div
                 className="moro-chat-topdecor flex justify-center items-end pb-1 px-8 bg-transparent backdrop-blur-xl"
-                style={{ paddingTop: 'var(--chrome-top)' }}
+                style={{ paddingTop: 'calc(var(--safe-top) + 2.5rem)' }}
             >
                 <span className={`text-[12px] font-bold tracking-wide truncate max-w-full ${isDarkHeader ? 'text-slate-300' : 'text-slate-500'}`}>{decorText}</span>
             </div>

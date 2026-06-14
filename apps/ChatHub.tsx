@@ -276,6 +276,7 @@ const ChatHub: React.FC = () => {
         last?: Message;
         dissolved?: boolean;
         memberCount?: number;
+        starred?: boolean;
     }>>([]);
     // 成员资料页（点头像进入）
     const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
@@ -511,9 +512,14 @@ const ChatHub: React.FC = () => {
                     name: c.convoSettings?.remarkName?.trim() || c.name,
                     avatar: c.convoSettings?.charAvatarOverride || c.avatar,
                     last: lastMsgs[lastMsgs.length - 1],
+                    starred: !!c.starredFriend,
                 });
             }
-            items.sort((a, b) => (b.last?.timestamp || 0) - (a.last?.timestamp || 0));
+            // 星标置顶：先按星标（星标的排前面），同组内再按最后一条消息时间倒序。
+            items.sort((a, b) => {
+                if (!!a.starred !== !!b.starred) return a.starred ? -1 : 1;
+                return (b.last?.timestamp || 0) - (a.last?.timestamp || 0);
+            });
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
@@ -1651,11 +1657,14 @@ ${attachedImagesNote}
                                 <div
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
-                                    className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]"
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-amber-50/60' : ''}`}
                                 >
                                     <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-slate-700 truncate text-sm">{cv.name}</div>
+                                        <div className="flex items-center gap-1">
+                                            {cv.starred && <span className="text-amber-400 text-[12px] shrink-0" title="已星标置顶">★</span>}
+                                            <span className="font-bold text-slate-700 truncate text-sm">{cv.name}</span>
+                                        </div>
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
                                     </div>
                                     <span className="text-[9px] text-slate-300 shrink-0">{formatConvoTime(cv.last?.timestamp)}</span>

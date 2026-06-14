@@ -1229,6 +1229,37 @@ const MessageItem = React.memo(({
             );
         }
 
+        // 长篇系统叙述（如「查手机记录」）：胶囊药丸（rounded-full + 单行）撑不下整段文字，
+        // 会溢出白框。这类内容改用左对齐的可读卡片，保留换行、自动换行、限定宽度。
+        // 阈值放在「胶囊单行能稳稳容下」附近：超过约 24 字 / 含换行 / 查手机长记录都走可读卡片，
+        // 避免被胶囊截断丢字（短通知仍是居中小药丸）。
+        const isLongNarration = !!m.metadata?.charPhoneCheck || displayText.length > 24 || displayText.includes('\n');
+        if (isLongNarration) {
+            const tagMatch = displayText.match(/^\[([^\]]+)\]\s*/);
+            const tag = m.metadata?.charPhoneCheck ? '查手机记录' : (tagMatch ? tagMatch[1] : '系统记录');
+            const body = tagMatch ? displayText.slice(tagMatch[0].length) : displayText;
+            return (
+                <div className={`flex items-start w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+                    {selectionMode && (
+                        <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                                {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                            </div>
+                        </div>
+                    )}
+                    <div className="w-full px-5 my-4" {...interactionProps}>
+                        <div className="rounded-2xl bg-slate-100/70 backdrop-blur-md border border-slate-200/60 px-4 py-3 shadow-sm select-none cursor-pointer active:scale-[0.99] transition-transform">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                                <img src={m.metadata?.charPhoneCheck ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4f1.png' : 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f514.png'} alt="" className="w-3.5 h-3.5 shrink-0" />
+                                <span className="text-[10px] font-bold tracking-wider text-slate-400">{tag}</span>
+                            </div>
+                            <div className="text-[11px] leading-relaxed text-slate-500 whitespace-pre-wrap break-words">{body}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className={`flex items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
                 {selectionMode && (
@@ -1238,13 +1269,13 @@ const MessageItem = React.memo(({
                         </div>
                     </div>
                 )}
-                <div className="flex justify-center my-6 px-10 w-full" {...interactionProps}>
-                    <div className="flex items-center gap-1.5 bg-slate-200/40 backdrop-blur-md text-slate-500 px-3 py-1 rounded-full shadow-sm border border-white/20 select-none cursor-pointer active:scale-95 transition-transform">
+                <div className="flex justify-center my-6 px-6 w-full" {...interactionProps}>
+                    <div className="flex items-center gap-1.5 bg-slate-200/40 backdrop-blur-md text-slate-500 px-3 py-1 rounded-full shadow-sm border border-white/20 select-none cursor-pointer active:scale-95 transition-transform max-w-full min-w-0">
                         {/* Optional Icon based on content */}
                         <img src={displayText.includes('任务') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/2728.png' :
                         displayText.includes('纪念日') || displayText.includes('Event') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' :
-                        displayText.includes('转账') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png' : 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f514.png'} alt="" className="w-4 h-4" />
-                        <span className="text-[10px] font-medium tracking-wide">{displayText}</span>
+                        displayText.includes('转账') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png' : 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f514.png'} alt="" className="w-4 h-4 shrink-0" />
+                        <span className="text-[10px] font-medium tracking-wide truncate">{displayText}</span>
                     </div>
                 </div>
             </div>

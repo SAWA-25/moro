@@ -382,12 +382,16 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="♡" title="TA 叫我什么" note="TA 平日里对你的称呼，会写进提示词——以后 TA 就这么喊你。TA 也可能在聊天里主动给你换备注。">
-                        <LineInput
-                            value={cs.userNickname || ''}
-                            onChange={v => updateConvo({ userNickname: v || undefined })}
-                            placeholder="比如：阿宝 / 小朋友 / 主人…"
-                        />
+                    <Entry mark="♡" title="TA 对我的备注" note="TA 根据你们的相处和剧情，自己决定怎么称呼你（聊天里 TA 会主动给你换备注）。这里只展示 TA 现在给你的备注，不由你来改。">
+                        <div
+                            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-[14px] font-bold"
+                            style={cs.userNickname
+                                ? { background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)', color: '#a96f84' }
+                                : { background: 'rgba(148,163,184,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#94a3b8' }}
+                        >
+                            <span className="opacity-60 text-[12px] font-normal shrink-0">TA 叫你</span>
+                            <span className="truncate">{cs.userNickname || '还没给你起备注'}</span>
+                        </div>
                     </Entry>
 
                     {(cs.userRemarkMotivation || (cs.userRemarkHistory && cs.userRemarkHistory.length > 0)) && (
