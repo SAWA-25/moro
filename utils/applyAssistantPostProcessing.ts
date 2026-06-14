@@ -35,6 +35,8 @@ import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { splitOutRichBlocks } from './chatRichContent';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
+import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
+import { TAKEOUT_ORDER_EVENT } from './takeout';
 import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
@@ -490,6 +492,44 @@ export async function applyAssistantPostProcessing(
             if (typeof window !== 'undefined') {
                 setPhoneCheckPending(char.id);
                 window.dispatchEvent(new CustomEvent(CHAR_PHONE_CHECK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // ─── Step 1.75: 来往·关系 / 求婚 / 角色点外卖 / 婚事 指令 ───
+    // 先剥后播：OSContext 监听对应事件落库（更新关系 / 生成求婚小卡 / 下外卖单 / 推进婚事）。
+    // 这些都是「决定性 / 主动行为」类副作用，跟 BLOCK_USER 一样客户端直接派发，不回连 LLM。
+    if (typeof window !== 'undefined') {
+        // [[REL: stage | label | reason]]  关系决定性变更（表白成功 / 分手 / 决裂…）
+        {
+            const m = aiContent.match(/\[\[REL[：:]\s*([a-zA-Z_]+)\s*(?:[|｜]\s*([^|｜\]]*?))?\s*(?:[|｜]\s*([^\]]*?))?\s*\]\]/);
+            if (m) {
+                aiContent = aiContent.replace(/\[\[REL[：:][^\]]*\]\]/g, '').trim();
+                window.dispatchEvent(new CustomEvent(RELATIONSHIP_EVENT, { detail: { charId: char.id, stage: m[1].trim(), label: m[2]?.trim(), reason: m[3]?.trim() } }));
+            }
+        }
+        // [[PROPOSE: vow]]  角色主动求婚 → 生成求婚小卡
+        {
+            const m = aiContent.match(/\[\[PROPOSE(?:[：:]\s*([\s\S]*?))?\]\]/);
+            if (m) {
+                aiContent = aiContent.replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '').trim();
+                window.dispatchEvent(new CustomEvent(PROPOSAL_EVENT, { detail: { charId: char.id, vow: (m[1] || '').trim() } }));
+            }
+        }
+        // [[TAKEOUT_ORDER: 菜品/店铺描述]]  角色主动为用户点外卖（需会话开关）
+        {
+            const m = aiContent.match(/\[\[TAKEOUT_ORDER[：:]\s*([\s\S]*?)\]\]/);
+            if (m) {
+                aiContent = aiContent.replace(/\[\[TAKEOUT_ORDER[：:][\s\S]*?\]\]/g, '').trim();
+                window.dispatchEvent(new CustomEvent(TAKEOUT_ORDER_EVENT, { detail: { charId: char.id, desc: (m[1] || '').trim() } }));
+            }
+        }
+        // [[WEDDING_PLAN: kind | date | note]]  婚事推进（plan/register/wedding/custom）
+        {
+            const m = aiContent.match(/\[\[WEDDING_PLAN[：:]\s*([a-zA-Z_]+)\s*(?:[|｜]\s*([0-9\-\/]*))?\s*(?:[|｜]\s*([^\]]*?))?\s*\]\]/);
+            if (m) {
+                aiContent = aiContent.replace(/\[\[WEDDING_PLAN[：:][^\]]*\]\]/g, '').trim();
+                window.dispatchEvent(new CustomEvent(MARRIAGE_PLAN_EVENT, { detail: { charId: char.id, kind: m[1].trim(), date: (m[2] || '').trim().replace(/\//g, '-') || undefined, note: m[3]?.trim() } }));
             }
         }
     }

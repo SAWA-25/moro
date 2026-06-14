@@ -7,6 +7,8 @@ import { ProactiveChat } from '../utils/proactiveChat';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
+import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
+import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated } from '../utils/takeout';
 import { isBackgroundReplyNotifyEnabled } from '../utils/backgroundReply';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
@@ -1399,6 +1401,105 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
 
+  // ─── 来往·关系系统 / 求婚 / 角色主动点外卖 / 婚事推进（聊天指令 → 落库） ───
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const nameOf = (id: string) => charactersRef.current.find(c => c.id === id)?.name || '';
+      const bumpUnread = (charId: string) => {
+          setLastMsgTimestamp(Date.now());
+          const chatting = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
+          if (!chatting) setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
+      };
+
+      // 关系决定性变更（[[REL:stage|label]]：表白成功 / 分手 / 决裂…）
+      const onRelationship = (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; stage: string; label?: string; reason?: string } | undefined;
+          if (!d?.charId || !isRelationshipStage(d.stage)) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char) return;
+          const sane = sanitizeRelationshipUpdate(char.relationship, d.stage, d.label, char.affection, { decisive: true });
+          if (!sane) return;
+          updateCharacter(d.charId, { relationship: buildRelationshipState(char.relationship, sane.stage, sane.label, d.reason || '剧情变化') });
+          addToast(`你和 ${char.name} 的关系变成了「${sane.label}」`, 'info');
+      };
+
+      // 角色主动求婚（[[PROPOSE:vow]]）→ 生成求婚小卡（assistant）
+      const onPropose = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; vow?: string } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char) return;
+          if (char.marriage?.active) return;
+          if ((char.affection ?? 0) < 100) return;             // 满好感才允许
+          const vow = (d.vow || `愿意和我步入婚姻吗？`).slice(0, 200);
+          try {
+              await DB.saveMessage({ charId: d.charId, role: 'assistant', type: 'proposal_card', content: '[求婚]', metadata: { proposal: { from: 'char', vow, status: 'pending', at: Date.now() } } } as any);
+              bumpUnread(d.charId);
+              addToast(`${char.name} 向你求婚了…`, 'success');
+          } catch { /* ignore */ }
+      };
+
+      // 角色主动为用户点外卖（[[TAKEOUT_ORDER:desc]]）—— 需会话开关打开
+      const onCharTakeout = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; desc?: string } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char || !char.convoSettings?.proactiveTakeoutOrder) return;
+          let address = '城南花园 3 栋 502';
+          try { address = localStorage.getItem('moro_takeout_address') || address; } catch { /* ignore */ }
+          try {
+              const order = synthesizeCharOrder(d.charId, d.desc || '', address);
+              order.cardPosted = true;
+              await DB.saveTakeoutOrder(order);
+              await postTakeoutPlacedToChat(order, nameOf);
+              notifyTakeoutUpdated();
+              bumpUnread(d.charId);
+              addToast(`${char.name} 给你点了份外卖`, 'success');
+          } catch { /* ignore */ }
+      };
+
+      // 婚事推进（[[WEDDING_PLAN:kind|date|note]]：商定婚期 / 领证 / 完婚）
+      const onMarriagePlan = async (e: Event) => {
+          const d = (e as CustomEvent).detail as { charId: string; kind?: string; date?: string; note?: string } | undefined;
+          if (!d?.charId) return;
+          const char = charactersRef.current.find(c => c.id === d.charId);
+          if (!char?.marriage?.active) return;
+          const kind = (['plan', 'register', 'wedding', 'custom'].includes(d.kind || '') ? d.kind : 'custom') as 'plan' | 'register' | 'wedding' | 'custom';
+          const m = char.marriage;
+          const milestone = {
+              id: `mm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+              kind, title: d.note || (kind === 'plan' ? '商定婚期' : kind === 'register' ? '领证登记' : kind === 'wedding' ? '举行婚礼' : '婚事进展'),
+              date: d.date, note: d.note, by: 'char' as const, done: kind === 'register' || kind === 'wedding', at: Date.now(),
+          };
+          const stage = kind === 'wedding' ? 'wed' : kind === 'register' ? 'registered' : kind === 'plan' ? 'planning' : m.stage;
+          updateCharacter(d.charId, {
+              marriage: {
+                  ...m, stage,
+                  weddingDate: kind === 'plan' && d.date ? d.date : m.weddingDate,
+                  registeredAt: kind === 'register' ? Date.now() : m.registeredAt,
+                  milestones: [...(m.milestones || []), milestone],
+              },
+          });
+          if (d.date) {
+              try { await DB.saveAnniversary({ id: `wedding-${d.charId}`, title: `和 ${char.name} 的婚期`, date: d.date, charId: d.charId } as any); } catch { /* ignore */ }
+              try { await DB.saveCalendarMark({ id: `wed-${d.charId}-${Date.now().toString(36)}`, date: d.date, text: `💒 ${milestone.title}`, author: 'character', charId: d.charId, emoji: '💒', createdAt: Date.now() } as any); } catch { /* ignore */ }
+          }
+          addToast(`婚事有了新进展：${milestone.title}`, 'info');
+      };
+
+      window.addEventListener(RELATIONSHIP_EVENT, onRelationship);
+      window.addEventListener(PROPOSAL_EVENT, onPropose as EventListener);
+      window.addEventListener(TAKEOUT_ORDER_EVENT, onCharTakeout as EventListener);
+      window.addEventListener(MARRIAGE_PLAN_EVENT, onMarriagePlan as EventListener);
+      return () => {
+          window.removeEventListener(RELATIONSHIP_EVENT, onRelationship);
+          window.removeEventListener(PROPOSAL_EVENT, onPropose as EventListener);
+          window.removeEventListener(TAKEOUT_ORDER_EVENT, onCharTakeout as EventListener);
+          window.removeEventListener(MARRIAGE_PLAN_EVENT, onMarriagePlan as EventListener);
+      };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
   // ─── 角色给用户换备注（[[SET_USER_REMARK]]）：落 convoSettings + 历史 + 系统消息 ───
   // 弹窗由 Chat.tsx 监听同一事件负责（点开看动机）；这里只做数据落库，确保用户不在该聊天页时也生效。
   useEffect(() => {
@@ -1565,7 +1666,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           }
       };
 
-      const runProactive = async (charId: string) => {
+      const runProactive = async (charId: string, opts?: { customHint?: string }) => {
+          const customHint = opts?.customHint;
           if (proactiveRunningRef.current) {
               if (!proactiveQueueRef.current.includes(charId)) {
                   proactiveQueueRef.current.push(charId);
@@ -1586,8 +1688,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               return;
           }
 
-          // Respect per-character proactive config
-          if (char.proactiveConfig && !char.proactiveConfig.enabled) {
+          // Respect per-character proactive config（事件驱动的反应 customHint 不受主动消息开关限制）
+          if (!customHint && char.proactiveConfig && !char.proactiveConfig.enabled) {
               drainQueuedProactive();
               console.log(`🔕 [Proactive/Global] Skipped for ${char.name}: disabled`);
               return;
@@ -1632,8 +1734,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               // 随机时间模式：以「用户超过一段时间没回复」为前提——最近 1 小时内回过
-              // 消息就这轮不打扰，等下一个随机间隔再说（finally 会正常释放运行锁）
-              if (pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
+              // 消息就这轮不打扰，等下一个随机间隔再说（finally 会正常释放运行锁）。
+              // 事件驱动的反应（customHint）是对具体事件的即时回应，不受此限。
+              if (!customHint && pCfg?.randomMode && lastRealUserMsg && now.getTime() - lastRealUserMsg.timestamp < 60 * 60 * 1000) {
                   console.log(`🔕 [Proactive/Global] Random mode: ${char.name} skipped (user replied recently)`);
                   return;
               }
@@ -1647,12 +1750,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 取材——分享自己的生活，而不是反复催用户回复（不每天围着用户转）。
               // 生成失败 / 未开启时回退到旧的「主动找用户」hint。
               let lifeEvent: CharLifeEvent | null = null;
-              if (isAutonomousLifeEnabled(char)) {
+              if (!customHint && isAutonomousLifeEnabled(char)) {
                   // api 已是本次 proactive 选好的接口（副 API 或主 API），直接复用。
                   lifeEvent = await advanceLife(char, api, { source: 'proactive' });
               }
 
-              const hintContent = lifeEvent
+              const hintContent = customHint
+                  ? customHint
+                  : lifeEvent
                   ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed })
                   : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`;
 
@@ -2026,6 +2131,40 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           void runProactive(charId);
       });
 
+      // ─── 外卖「角色收到货」反应 watcher ───
+      // 给角色点的外卖到点（now>=etaAt）后：自动签收 + 让角色像真人收到外卖那样在聊天里反应。
+      // 即便外卖 App 没开着也会触发（与现实时间同步）。
+      const takeoutReactRunning = { v: false };
+      const checkTakeoutDeliveries = async () => {
+          if (takeoutReactRunning.v) return;
+          takeoutReactRunning.v = true;
+          try {
+              const orders = await DB.getTakeoutOrders().catch(() => []);
+              const now = Date.now();
+              const userName = userProfileRef.current?.name || '对方';
+              for (const o of orders) {
+                  if (!o.charId || o.recipient !== o.charId) continue;      // 只处理「给角色点的」单
+                  if (o.deliveredAt || o.reactionPosted || o.status === 'cancelled') continue;
+                  if (now < o.etaAt) continue;                              // 还没到点
+                  const char = charactersRef.current.find(c => c.id === o.charId);
+                  if (!char) continue;
+                  // 签收 + 打标，避免重复反应
+                  await DB.saveTakeoutOrder({ ...o, status: 'delivered', deliveredAt: now, reactionPosted: true }).catch(() => {});
+                  notifyTakeoutUpdated();
+                  // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）
+                  updateCharacter(o.charId, { affection: applyAffectionDelta(char.affection, 2) });
+                  if (char.charBlock?.active || char.blacklisted) continue; // 拉黑期间不反应
+                  await runProactive(o.charId, { customHint: buildTakeoutReceivedHint(o, userName) });
+              }
+          } catch (e) {
+              console.warn('[Takeout] delivery react check failed', e);
+          } finally {
+              takeoutReactRunning.v = false;
+          }
+      };
+      const takeoutReactTimer = setInterval(() => { void checkTakeoutDeliveries(); }, 30_000);
+      void checkTakeoutDeliveries();
+
       // 「彼方」自主登入 —— 独立调度，复用同一批 refs 拿最新状态
       const runVR = async (charId: string, room?: string, letterId?: string) => {
           const char = charactersRef.current.find(c => c.id === charId);
@@ -2062,6 +2201,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Cleanup: detach proactive listeners when OSContext unmounts (unlikely but safe)
           ProactiveChat.onTrigger(() => {});
           VRScheduler.onTrigger(() => {});
+          clearInterval(takeoutReactTimer);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);

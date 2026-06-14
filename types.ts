@@ -751,19 +751,64 @@ export interface ChatTheme {
 export interface PhoneCustomApp {
     id: string;
     name: string;
-    icon: string; 
-    color: string; 
-    prompt: string; 
+    icon: string;
+    color: string;
+    prompt: string;
 }
 
 export interface PhoneEvidence {
     id: string;
-    type: 'chat' | 'order' | 'social' | 'delivery' | string; 
-    title: string; 
-    detail: string; 
+    type: 'chat' | 'order' | 'social' | 'delivery' | string;
+    title: string;
+    detail: string;
     timestamp: number;
-    systemMessageId?: number; 
-    value?: string; 
+    systemMessageId?: number;
+    value?: string;
+}
+
+/**
+ * 查手机·角色专属手机皮肤（每个角色一套，让"翻 TA 手机"的桌面千人千面）。
+ * 主要由 char.id 确定性派生（配色/排版），可选地用 LLM 生成一份更贴人设的「手机侧写」
+ * （设备名 / 桌面副标 / 一句话 vibe / 一组贴人设的 App），生成后缓存在 phoneState.profile。
+ */
+export interface PhoneProfile {
+    /** 设备名（桌面顶部，如「Ethan 的 iPhone」） */
+    deviceName?: string;
+    /** 桌面副标题 / 一句话状态 */
+    tagline?: string;
+    /** 壁纸：CSS 渐变串或图片 url（缺省时按 char.id 派生渐变） */
+    wallpaper?: string;
+    /** 主题强调色 hex */
+    accent?: string;
+    /** 配色方案 id（确定性派生，决定深浅/色相） */
+    paletteId?: string;
+    /** LLM 生成的一组贴人设 App（覆盖默认 App 集的展示名/图标/取数指令） */
+    apps?: Array<{ id: string; name: string; icon: string; color: string; kind: string; prompt?: string }>;
+    /** 是否由 LLM 生成过（用于按钮文案 ✎ 装点 / ↻ 重新装点） */
+    generated?: boolean;
+    generatedAt?: number;
+}
+
+/** 回望小报（昨日来信 / 回望·周章 / 回望·月章）：把过去一段时间整理成娱乐小报 */
+export interface Tabloid {
+    /** 'day' 昨日来信 / 'week' 回望·周章 / 'month' 回望·月章 */
+    period: 'day' | 'week' | 'month';
+    /** 小报头条大标题 */
+    headline: string;
+    /** 副标 / 期号小字 */
+    subhead?: string;
+    /** 主笔（角色）寄语：像编辑手记一样的开场白 */
+    editorNote?: string;
+    /** 栏目：每条是一个娱乐版块 */
+    sections: Array<{ tag: string; title: string; body: string; quote?: string }>;
+    /** 花絮 / 边栏小料 */
+    sidebar?: string[];
+    /** 结尾签名 */
+    signoff?: string;
+    /** 覆盖的时间窗口 [from, to) */
+    rangeFrom: number;
+    rangeTo: number;
+    generatedAt: number;
 }
 
 /**
@@ -1799,7 +1844,9 @@ export interface CharacterProfile {
 
   phoneState?: {
       records: PhoneEvidence[];
-      customApps?: PhoneCustomApp[]; 
+      customApps?: PhoneCustomApp[];
+      /** 角色专属手机皮肤（确定性派生 + 可选 LLM 装点，详见 PhoneProfile） */
+      profile?: PhoneProfile;
   };
 
   voiceProfile?: {
@@ -1820,7 +1867,16 @@ export interface CharacterProfile {
   // 时间感知强化：开启（默认）时会向上下文注入「距离上次聊天已过去多久」的强化提示，
   // 让角色强化时间观念、主动匹配现实世界时间。关掉后不再注入这组提示词
   // （注意：历史消息本身仍带时间戳，关掉后弱化程度取决于模型自身理解）。
+  // 这里承载「时间流逝感知」：两次聊天 / 有待跟进事件时，TA 知道过去了多久。
   timeAwarenessEnabled?: boolean;
+
+  // 柔顺奉养（Soft Devotion Chat）：开启后这个角色在聊天里共情能力大幅提升——
+  // 更偏爱、更耐心地接住用户的敏感、撒娇和不安（向 system prompt 注入共情强化段）。
+  softDevotionChatEnabled?: boolean;
+
+  // 回望小报缓存：键为周期标识（'day-YYYY-MM-DD' / 'week-YYYY-WW' / 'month-YYYY-MM'），
+  // 值为已生成的娱乐小报。开关在会话设置 convoSettings.tabloidEnabled。
+  generatedTabloids?: Record<string, Tabloid>;
 
   // Chat & Date voice TTS settings
   chatVoiceEnabled?: boolean;
@@ -1856,10 +1912,14 @@ export interface CharacterProfile {
   activeBuffs?: CharacterBuff[];
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
 
-  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新） */
+  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新；走 utils/relationship 的加减框架，日常小幅徘徊、决定性事件才大幅波动） */
   affection?: number;
   /** 当前心情（与好感值同一评估链路更新），显示在心声面板 */
   currentMood?: { emoji?: string; label: string; updatedAt: number };
+  /** 关系状态（来往·偷看心声 的关系系统）：由 AI 依据好感 / 设定关系 / 剧情自动更新 */
+  relationship?: RelationshipState;
+  /** 婚姻状态（求婚成功后进入「婚姻筹备期」，落入岁时记·喜事页） */
+  marriage?: MarriageState;
   emotionConfig?: {
     enabled: boolean;
     api?: {
@@ -1986,6 +2046,65 @@ export interface CharacterProfile {
 }
 
 /**
+ * 关系阶段（来往·偷看心声 的关系系统）。由 AI 依据好感 / 设定关系 / 剧情自动更新。
+ * 顺序大致对应「亲密度递进」，utils/relationship 用它约束跳变（不能凭空从陌生跳到已婚）。
+ */
+export type RelationshipStage =
+  | 'stranger'      // 陌生
+  | 'acquaintance'  // 认识
+  | 'friend'        // 朋友
+  | 'close'         // 好友 / 知己
+  | 'crush'         // 暧昧（高好感但未确立恋人关系）
+  | 'lover'         // 恋人（男女朋友）
+  | 'engaged'       // 未婚夫妻（求婚成功 → 婚姻筹备期）
+  | 'married'       // 已婚（领证 / 完婚）
+  | 'ex'            // 前任（分手）
+  | 'estranged';    // 决裂 / 形同陌路
+
+export interface RelationshipState {
+  stage: RelationshipStage;
+  /** 展示用关系名（如「男朋友」「未婚妻」「暧昧对象」「前男友」），AI 给、落地展示 */
+  label: string;
+  /** 进入当前阶段的时间戳 */
+  since: number;
+  updatedAt: number;
+  /** 关系变更简史（最新在前），供来往面板回看 */
+  history?: Array<{ stage: RelationshipStage; label: string; at: number; reason?: string }>;
+}
+
+/** 婚姻筹备阶段：求婚成功后逐步推进，时间与现实匹配。 */
+export type MarriageStage =
+  | 'engaged'     // 已订婚·筹备中
+  | 'planning'    // 已商定婚期
+  | 'registered'  // 已领证
+  | 'wed';        // 已完婚
+
+export interface MarriageMilestone {
+  id: string;
+  kind: 'proposal' | 'plan' | 'register' | 'wedding' | 'custom';
+  title: string;
+  date?: string;       // YYYY-MM-DD（与现实匹配）
+  note?: string;
+  by?: 'user' | 'char';
+  done?: boolean;
+  at: number;
+}
+
+/** 婚姻状态（落入岁时记·喜事页；聊天上下文据此让角色商量婚期 / 领证等）。 */
+export interface MarriageState {
+  active: boolean;
+  stage: MarriageStage;
+  /** 谁先求的婚 */
+  proposalBy: 'user' | 'char';
+  engagedAt: number;
+  /** 商定的婚期（YYYY-MM-DD） */
+  weddingDate?: string;
+  /** 领证时间戳 */
+  registeredAt?: number;
+  milestones: MarriageMilestone[];
+}
+
+/**
  * 会话设置（聊天设置面板）—— 本会话（与该角色的单聊）专属配置。
  * 展示类字段只影响聊天界面；行为类字段会以「会话设定」块注入系统提示词。
  */
@@ -2020,12 +2139,21 @@ export interface ConvoSettings {
     hideTimestamp?: boolean;
     /** 所在地区：注入提示词，影响角色作息 / 时差 / 话题贴合 */
     region?: string;
+    /** 实时感知·线上：在线聊天里明确把「当前真实时间」告诉模型（默认开，关掉则不注入钟点）。 */
+    realtimeClockOnline?: boolean;
+    /** 实时感知·线下：线下面对面模式里也把「当前真实时间」告诉模型（默认关，线下多为架空场景）。 */
+    realtimeClockOffline?: boolean;
+    /** 回望小报：开启后聊天里可生成「昨日来信 / 回望·周章 / 回望·月章」娱乐小报。 */
+    tabloidEnabled?: boolean;
     /** 主动查询：发消息前先留意当前时间 / 天气 / 热点等实时信息再开口（提示词注入） */
     proactiveLookup?: boolean;
     /** 主动发消息「随机 30 分~10h」模式标记（intervalMinutes 仍是调度器实际读的值） */
     proactiveRandom?: boolean;
     /** 主动语音通话：角色在主动找用户时可按人设/剧情自行决定直接拨语音电话（需主动发消息开启） */
     proactiveCallEnabled?: boolean;
+    /** 主动为用户点外卖：开启后角色可在合适场景（饭点/降温/用户喊饿…）主动替用户下单外卖并代付，
+     *  在聊天里生成可点开的外卖订单小票。关闭则永不触发该行为。默认关。 */
+    proactiveTakeoutOrder?: boolean;
     /** 主动发朋友圈：'off' 关 / 'random' 随缘 / 数字 = 自定义间隔小时（提示词倾向 + 配置位） */
     momentsAutoPost?: 'off' | 'random' | number;
     /** 允许 char 看手机：角色可自然提及用户手机里的日程 / 朋友圈 / 音乐动态（提示词注入） */
@@ -2640,7 +2768,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card';
 
 /**
  * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：
@@ -3382,7 +3510,25 @@ export interface TakeoutStore {
   aiGenerated?: boolean;
 }
 export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
-export type TakeoutStatus = 'preparing' | 'delivering' | 'delivered' | 'cancelled';
+/** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
+export interface TakeoutReviewReply { name: string; emoji: string; text: string; at: number; isMerchant?: boolean; }
+/** 用户对某单的评价 */
+export interface TakeoutReview {
+  rating: number;       // 1~5 星
+  text?: string;
+  tags?: string[];      // 快捷标签（如「分量足」「送得快」）
+  at: number;
+  likes?: number;       // 其它食客点的「有用」数
+  replies?: TakeoutReviewReply[];  // 商家 / 其它食客的评论
+}
+/**
+ * 配送状态：
+ * - preparing 商家备餐中 / delivering 骑手配送中（按时间实时推算）
+ * - arrived 已到达·待收货（now >= etaAt 但用户尚未确认收货；「收到货才能点送达」的前提）
+ * - delivered 已送达（用户点了确认收货，或给角色点的单到时角色已收下）
+ * - cancelled 已取消
+ */
+export type TakeoutStatus = 'preparing' | 'delivering' | 'arrived' | 'delivered' | 'cancelled';
 export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store' | 'support'; text: string; at: number; }
 
 /** 黑心商家 / 坏骑手会触发的现实化配送事故种类。 */
@@ -3452,4 +3598,12 @@ export interface TakeoutOrder {
   complaint?: TakeoutComplaint;
   /** 强制砍单的店铺：被商家单方面取消（钱已退回钱包）。 */
   cancelledByStore?: boolean;
+  /** 发起方：用户在外卖 App / 聊天回形针点的 = 'user'；角色主动为用户点的 = 'char'。 */
+  initiatedBy?: 'user' | 'char';
+  /** 是否已在该角色聊天里生成「外卖订单小票」卡片（避免重复生成）。 */
+  cardPosted?: boolean;
+  /** 给角色点的单：到时角色已在聊天里对收到外卖做出反应，避免重复触发。 */
+  reactionPosted?: boolean;
+  /** 用户对本单的评价（送达后可评价；含商家/其它食客的评论）。 */
+  review?: TakeoutReview;
 }

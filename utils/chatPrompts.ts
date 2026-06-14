@@ -167,6 +167,8 @@ export const ChatPrompts = {
                     const realtimeContext = await RealtimeContextManager.buildFullContext(realtimeCfg);
                     return `\n${realtimeContext}\n`;
                 }
+                // 实时感知·线上（会话设置）：默认开；关掉后不再主动把当前钟点塞进在线聊天上下文。
+                if (char.convoSettings?.realtimeClockOnline === false) return '';
                 const time = RealtimeContextManager.getTimeContext();
                 const specialDates = RealtimeContextManager.checkSpecialDates();
                 let s = `\n### 【当前时间】\n`;

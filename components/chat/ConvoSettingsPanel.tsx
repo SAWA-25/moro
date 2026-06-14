@@ -57,6 +57,8 @@ interface ConvoSettingsPanelProps {
     onRemoveBg: () => void;
     // 日程表：翻开今日日程卡片（由 Chat 切到 schedule modal）
     onOpenSchedule: () => void;
+    // 回望小报：翻开「昨日来信 / 回望·周章 / 回望·月章」弹层
+    onOpenTabloid: () => void;
 }
 
 // ── 手账 UI 原子 ──────────────────────────────────────────────────────────
@@ -218,7 +220,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         onOpenHistoryManager, onClearHistory, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
         onOpenChromeCss, categories, emojiCounts, onSaveCategoryVisibility,
-        onBgUpload, onRemoveBg, onOpenSchedule,
+        onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
     } = props;
     const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp } = useOS();
 
@@ -761,11 +763,45 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         })()}
                     </Entry>
 
+                    <Entry mark="☘" title="TA 对时间的感知" note="分「实时感知」（明确告诉 TA 现在几点）和「时间流逝感知」（让 TA 知道两次聊天/没跟进的约定隔了多久）。线上线下可分开开关。">
+                        <div className="space-y-3 pt-1">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>实时感知 · 线上</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>在线聊天里把「当前真实时间」（几号、星期几、几点、上午下午）明确告诉 TA。</p>
+                                </div>
+                                <CandyToggle candy="#9ec7e8" on={cs.realtimeClockOnline !== false} onToggle={() => updateConvo({ realtimeClockOnline: cs.realtimeClockOnline === false })} />
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>实时感知 · 线下</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>线下面对面（见面）模式里也把当前真实时间告诉 TA。线下多为架空场景，默认关。</p>
+                                </div>
+                                <CandyToggle candy="#9ec7e8" on={!!cs.realtimeClockOffline} onToggle={() => updateConvo({ realtimeClockOffline: !cs.realtimeClockOffline })} />
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>时间流逝感知</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>两次聊天之间、或有没跟进的约定时，让 TA 知道「隔了多久」——短暂停顿、久别都会被 TA 察觉并回应。</p>
+                                </div>
+                                <CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />
+                            </div>
+                        </div>
+                    </Entry>
+
                     <Entry
-                        mark="☘" title="TA 知道现在几点"
-                        note="往提示词里塞「距上次聊天过了多久」这类线索，让 TA 对时间更敏感、贴着现实的钟点过日子。"
-                        side={<CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />}
-                    />
+                        mark="☘" title="回望小报"
+                        note="让 TA 当主笔，把过去一天/一周/一月你们之间的事，揉成一份俏皮的娱乐小报（昨日来信 / 回望·周章 / 回望·月章）。"
+                        side={<CandyToggle candy="#f0a0b8" on={!!cs.tabloidEnabled} onToggle={() => updateConvo({ tabloidEnabled: !cs.tabloidEnabled })} />}
+                    >
+                        {cs.tabloidEnabled && (
+                            <button
+                                onClick={onOpenTabloid}
+                                className="w-full py-2.5 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
+                                style={{ background: '#fff', border: '1.5px solid #e289a0', color: '#b04a66', boxShadow: '2px 2px 0 #f3cdd8', ...CUTE_STACK }}
+                            >翻开回望小报 →</button>
+                        )}
+                    </Entry>
 
                     <Entry
                         mark="☘" title="TA 的日程表"
@@ -798,6 +834,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         mark="☘" title="TA 会突然打电话来"
                         note="TA 主动找你时，会按人设和剧情自己决定要不要直接拨语音电话（主动消息在聊天界面下方 + 号面板里开启）。来电可接可挂，没接到会留一条未接记录。"
                         side={<CandyToggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
+                    />
+
+                    <Entry
+                        mark="☘" title="TA 会主动给你点外卖"
+                        note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默替你下一单外卖并代付，在聊天里生成一张能点开看的外卖订单小票。关掉则永远不会触发。"
+                        side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
                     />
 
                     <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">

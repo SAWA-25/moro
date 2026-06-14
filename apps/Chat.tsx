@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallba
 import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder } from '../types';
+import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
+import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
+import ProposalOverlay from '../components/chat/ProposalOverlay';
 import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
@@ -15,6 +18,7 @@ import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER 
 import MessageItem from '../components/chat/MessageItem';
 import CharacterProfilePage from '../components/character/CharacterProfilePage';
 import CheckPhone from './CheckPhone';
+import CameraApp from './CameraApp';
 import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
@@ -30,6 +34,7 @@ import CharacterEntryTransition from '../components/chat/CharacterEntryTransitio
 import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
+import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
@@ -104,7 +109,7 @@ const Chat: React.FC = () => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css' | 'tabloid'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
@@ -118,6 +123,14 @@ const Chat: React.FC = () => {
     const [transferAmt, setTransferAmt] = useState('');
     const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
     const [transferNote, setTransferNote] = useState('');
+    // 外卖订单小票详情弹窗（点开聊天里的外卖卡片看具体内容）
+    const [takeoutCardTarget, setTakeoutCardTarget] = useState<Message | null>(null);
+    const [takeoutCardOrder, setTakeoutCardOrder] = useState<TakeoutOrder | null>(null);
+    // 求婚：浪漫求婚界面目标卡 + 主动发起求婚的撰写弹窗
+    const [proposalTarget, setProposalTarget] = useState<Message | null>(null);
+    const [showProposeCompose, setShowProposeCompose] = useState(false);
+    const [proposeVow, setProposeVow] = useState('');
+    const [proposalBusy, setProposalBusy] = useState(false);
 
     // 角色主页（微信好友资料页风格，单击消息头像进入）
     const [showCharProfile, setShowCharProfile] = useState(false);
@@ -135,6 +148,8 @@ const Chat: React.FC = () => {
     // ── 查手机（双向）──
     // 用户查角色手机：+ 号面板入口，内嵌 CheckPhone（原桌面独立 App）
     const [showCheckPhone, setShowCheckPhone] = useState(false);
+    // 相机：用 TA 的手机拍下此刻给 TA 看（+ 号面板「拍张照」）
+    const [showCamera, setShowCamera] = useState(false);
     // 角色查用户手机：「允许 char 看手机」开启时角色主动发起的全屏覆盖层
     const [charPhoneCheckActive, setCharPhoneCheckActive] = useState(false);
 
@@ -1124,6 +1139,14 @@ const Chat: React.FC = () => {
         }
     };
 
+    // 查手机·把翻到的内容塞进剧情：从 CheckPhone 里点「拿去对峙」时，关掉查手机浮层并以
+    // 用户口吻把这条证据抛进聊天，触发角色当场解释 / 狡辩 / 评价（content 已在 CheckPhone 侧框好）。
+    const handlePhoneConfront = (text: string) => {
+        if (!text?.trim()) return;
+        setShowCheckPhone(false);
+        void handleSendText(text.trim(), 'text', { phoneConfront: true });
+    };
+
     // ── 拉黑模式「看看 TA 在做什么」：用户仍无法私聊，但落一条引导 system 消息后
     //    触发角色生成此刻的动态（发现被拉黑的反应 / 把对话框当备忘录 / 试图挽回等，按人设）──
     const handlePeekBlockedChar = async () => {
@@ -1166,6 +1189,125 @@ const Chat: React.FC = () => {
         await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'declined', declinedAt: Date.now() }));
         await reloadMessages(visibleCountRef.current);
         addToast('没有收下', 'info');
+    };
+
+    // ── 外卖订单小票：点开看具体内容（载入实时订单） ──
+    const handleOpenTakeoutCard = useCallback(async (m: Message) => {
+        setTakeoutCardTarget(m);
+        setTakeoutCardOrder(null);
+        const oid = m.metadata?.takeoutOrderId || m.metadata?.takeout?.takeoutOrderId;
+        if (oid) {
+            try {
+                const all = await DB.getTakeoutOrders();
+                setTakeoutCardOrder(all.find(o => o.id === oid) || null);
+            } catch { /* ignore */ }
+        }
+    }, []);
+
+    // ── 求婚 / 订婚 ──
+    const finalizeEngagement = async (proposalBy: 'user' | 'char', vow: string) => {
+        if (!char) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const rel = buildRelationshipState(char.relationship, 'engaged', STAGE_DEFAULT_LABEL.engaged, '求婚成功');
+        const marriage = createMarriageState(proposalBy, proposalBy === 'user' ? (userProfile.name || '我') : char.name);
+        updateCharacter(char.id, { relationship: rel, marriage, affection: 100 });
+        try { await DB.saveAnniversary({ id: `engage-${char.id}`, title: `和 ${char.name} 订婚`, date: today, charId: char.id } as any); } catch { /* ignore */ }
+        try { await DB.saveCalendarMark({ id: `engage-${char.id}-${Date.now().toString(36)}`, date: today, text: `💍 和 ${char.name} 订婚了`, author: 'user', charId: char.id, emoji: '💍', createdAt: Date.now() } as any); } catch { /* ignore */ }
+        void vow;
+    };
+
+    // 角色对「用户求婚」的决定（专用一次性调用，不走常规对话管线）
+    const decideCharProposal = async (vow: string): Promise<{ accept: boolean; reply: string }> => {
+        const fallback = { accept: true, reply: `我愿意……${userProfile.name || '你'}，我愿意和你在一起。` };
+        if (!char || !apiConfig.baseUrl || !apiConfig.apiKey) return fallback;
+        try {
+            const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+            const allMsgs = await DB.getMessagesByCharId(char.id);
+            const recent = allMsgs.slice(-24).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
+            const prompt = `${context}
+
+### [最近的对话]
+${recent || '（你们相处了很久）'}
+
+### [Task: 回应求婚]
+此刻，${userProfile.name || '对方'} 向你求婚了，对你说："${vow}"
+你对 ${userProfile.name || '对方'} 已满怀深情（好感已满）。是否答应仍取决于你的人设、价值观与你们的剧情——深爱时通常会答应；但若你的人设确有顾虑（还没准备好 / 现实阻碍 / 性格使然），也可以婉拒。请以「${char.name}」第一人称真实地回应。
+
+只输出一个 JSON（不要 markdown 代码块、不要多余解释）：
+{"accept": true 或 false, "reply": "你此刻对 ${userProfile.name || '对方'} 说的话（30-120字，带情绪与动作）"}`;
+            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+            });
+            if (!res.ok) throw new Error();
+            const data = await safeResponseJson(res);
+            const content = (extractContent(data) || '').trim();
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const reply = typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim() : fallback.reply;
+                return { accept: parsed.accept !== false, reply };
+            }
+            return { accept: true, reply: content || fallback.reply };
+        } catch {
+            return fallback;
+        }
+    };
+
+    // 用户主动求婚：生成求婚小卡 → 打开浪漫界面 → 角色给出回应
+    const sendUserProposal = async () => {
+        if (!char) return;
+        if (!canProposeNow(char)) { addToast('还没到能求婚的时候哦（需满好感且感情到位）', 'info'); return; }
+        const vow = proposeVow.trim() || `${char.name}，愿意和我一直走下去，步入婚姻吗？`;
+        setShowProposeCompose(false);
+        setProposeVow('');
+        const meta = { proposal: { from: 'user', vow, status: 'pending', at: Date.now() } };
+        const id = await DB.saveMessage({ charId: char.id, role: 'user', type: 'proposal_card', content: '[求婚]', metadata: meta } as any);
+        await reloadMessages(visibleCountRef.current);
+        const saved = { id, charId: char.id, role: 'user', type: 'proposal_card', content: '[求婚]', timestamp: Date.now(), metadata: meta } as Message;
+        setProposalTarget(saved);
+        setProposalBusy(true);
+        try {
+            const decision = await decideCharProposal(vow);
+            const status = decision.accept ? 'accepted' : 'declined';
+            const newMeta = { proposal: { ...meta.proposal, status, reply: decision.reply } };
+            await DB.updateMessageMetadata(id, (prev: any) => ({ ...(prev || {}), proposal: { ...(prev?.proposal || {}), status, reply: decision.reply } }));
+            if (decision.reply) await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: decision.reply } as any);
+            if (decision.accept) await finalizeEngagement('user', vow);
+            await reloadMessages(visibleCountRef.current);
+            setProposalTarget({ ...saved, metadata: newMeta });
+        } catch {
+            addToast('求婚没能送出去…再试一次', 'error');
+        } finally {
+            setProposalBusy(false);
+        }
+    };
+
+    const handleOpenProposal = useCallback((m: Message) => {
+        setProposalTarget(m);
+    }, []);
+
+    // 用户回应「角色的求婚」
+    const respondToCharProposal = async (accept: boolean) => {
+        const m = proposalTarget;
+        if (!m || !char) return;
+        const vow = m.metadata?.proposal?.vow || '';
+        setProposalBusy(true);
+        try {
+            const status = accept ? 'accepted' : 'declined';
+            await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), proposal: { ...(prev?.proposal || {}), status } }));
+            if (accept) await finalizeEngagement('char', vow);
+            const hint = accept
+                ? `[系统提示（非${userProfile.name || '对方'}发言）：${userProfile.name || '对方'} 答应了你的求婚！你们订婚了。请像真人那样真实地表达此刻的激动 / 幸福 / 不敢置信，并自然地说两句。]`
+                : `[系统提示（非${userProfile.name || '对方'}发言）：${userProfile.name || '对方'} 这次婉拒了你的求婚（还没准备好）。请按你的人设真实反应——可以失落、体谅、或故作轻松，别强求。]`;
+            await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: hint, metadata: { proactiveHint: true, hidden: true } } as any);
+            await reloadMessages(visibleCountRef.current);
+            setProposalTarget({ ...m, metadata: { ...(m.metadata || {}), proposal: { ...(m.metadata?.proposal || {}), status } } });
+            void triggerAI(messages);
+        } finally {
+            setProposalBusy(false);
+        }
     };
 
     // ── 过期检测：进入聊天时扫描角色发来、超过 24h 未领的转账 / 红包 →
@@ -1510,12 +1652,32 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 break;
             }
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
+            case 'camera': setShowPanel('none'); setShowCamera(true); break;
             case 'recenter': setShowPanel('none'); handleRecenter(); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
             case 'voice-call': void startVoiceCall(); break;
             case 'system-command': setShowPanel('none'); setShowSystemCmdModal(true); break;
+            case 'takeout': {
+                // 回形针「点外卖」：带着「给当前角色点」的意图跳到外卖 App
+                if (!char) break;
+                setShowPanel('none');
+                setTakeoutIntent({ recipientCharId: char.id, recipientName: char.name });
+                openApp(AppID.Takeout);
+                break;
+            }
+            case 'propose': {
+                if (!char) break;
+                if (!canProposeNow(char)) {
+                    addToast('求婚需要满好感 100、且感情走到想更进一步时才行哦', 'info');
+                    break;
+                }
+                setShowPanel('none');
+                setProposeVow('');
+                setShowProposeCompose(true);
+                break;
+            }
             case 'offline-date': {
                 // 用户主动发起线下模式（原「见面」App 并入此处）：直接打开线下场景窗口，
                 // OfflineModeModal 没有进行中的会话时会自动生成见面开场；与角色 [[OFFLINE_START]]
@@ -1611,13 +1773,15 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             const allMsgs = await DB.getMessagesByCharId(char.id);
             const recent = allMsgs.slice(-30).map(m => formatMessageWithTime(m, char.name, userProfile.name, formatTime)).join('\n');
             const currentAffection = typeof char.affection === 'number' ? Math.round(char.affection) : null;
+            const curRel = char.relationship;
+            const relLine = curRel ? `你和用户当前的关系是「${curRel.label}」（${curRel.stage}）。` : '你和用户还没有明确的关系定位。';
             const fullPrompt = `${context}
 
 ### [最近的对话]
 ${recent || '（你们还没怎么聊过）'}
 
 ### [Task: 内心独白 + 状态评估]
-此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称完成三件事：
+此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称完成下面几件事：
 
 1. voice —— 写一段此刻真实的内心独白（150-250字）：
 - 写那些你**没有说出口**的想法：对刚才对话的真实感受、藏起来的情绪、对用户的真实看法、心里盘算的小心思
@@ -1626,10 +1790,18 @@ ${recent || '（你们还没怎么聊过）'}
 
 2. mood —— 你此刻的心情：label 是 2~6 个字的中文词（如"有点雀跃"、"烦躁"、"安心"），emoji 是最贴切的一个表情符号。
 
-3. affection —— 你当前对用户的好感值（0~100 整数；50 为中性，关系亲密则高，疏远/闹矛盾则低）。${currentAffection !== null ? `你此前的好感值是 ${currentAffection}，请基于最近互动微调（一次变化一般不超过 ±8），重大事件才允许大幅波动。` : '这是第一次评估，请基于人设与目前关系给出基准值。'}
+3. affection —— 你当前对用户的好感值（0~100 整数；50 为中性，关系亲密则高，疏远/闹矛盾则低）。${currentAffection !== null ? `你此前的好感值是 ${currentAffection}。**好感应当平稳**：日常评估请只在 ±5 以内微调，绝大多数时候上下徘徊即可；只有真正的决定性事件（表白、深刻的争吵和解、背叛、重大付出/伤害等）才允许较大波动，此时把 decisive 设为 true。无缘无故不要大起大落。` : '这是第一次评估，请基于人设与目前关系给出基准值（一般 45~60）。'}
+
+4. decisive —— 距上次评估之间，是否发生了改变关系的**决定性事件**？true / false。没有就填 false。
+
+5. relationship —— 你和用户此刻的关系，依据「好感 + 你的人设设定 + 剧情」综合判断：
+- stage 从这些里选一个：stranger(陌生) / acquaintance(认识) / friend(朋友) / close(好友知己) / crush(暧昧·高好感但未确立) / lover(恋人) / engaged(未婚夫妻) / married(已婚) / ex(前任) / estranged(决裂)
+- label 是中文展示名（如"男朋友""暧昧对象""无话不谈的朋友""前任"）。
+- ${relLine}
+- **关系不可凭空跃迁**：lover / ex / estranged 只能在剧情里真的发生了表白成功 / 分手 / 决裂时才填；engaged / married 只能由求婚成功 / 领证决定，这里**永远不要**主动填 engaged 或 married。高好感但没正式在一起，就是 crush(暧昧)。没有明确变化就维持原关系。
 
 只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释）：
-{"voice":"内心独白正文","mood":{"emoji":"🙂","label":"平静"},"affection":${currentAffection ?? 50}}`;
+{"voice":"内心独白正文","mood":{"emoji":"🙂","label":"平静"},"affection":${currentAffection ?? 50},"decisive":false,"relationship":{"stage":"${curRel?.stage || 'friend'}","label":"${curRel?.label || '朋友'}"}}`;
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
@@ -1649,6 +1821,7 @@ ${recent || '（你们还没怎么聊过）'}
             let voice = content;
             let moodPatch: CharacterProfile['currentMood'] | undefined;
             let affectionPatch: number | undefined;
+            let relationshipPatch: CharacterProfile['relationship'] | undefined;
             try {
                 const jsonMatch = content.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -1663,8 +1836,17 @@ ${recent || '（你们还没怎么聊过）'}
                                 updatedAt: Date.now(),
                             };
                         }
+                        const decisive = parsed.decisive === true;
                         const aff = Number(parsed.affection);
-                        if (Number.isFinite(aff)) affectionPatch = Math.max(0, Math.min(100, Math.round(aff)));
+                        // 好感经加减框架收敛：日常微调、决定性事件才大幅波动
+                        if (Number.isFinite(aff)) affectionPatch = applyAffectionEval(char.affection, aff, { decisive });
+                        // 关系：经收敛函数防止无理跳变（lover/ex/engaged/married 受限）
+                        const effAff = affectionPatch ?? char.affection;
+                        const propStage = parsed.relationship?.stage;
+                        if (isRelationshipStage(propStage)) {
+                            const sane = sanitizeRelationshipUpdate(char.relationship, propStage, parsed.relationship?.label, effAff, { decisive });
+                            if (sane) relationshipPatch = buildRelationshipState(char.relationship, sane.stage, sane.label, decisive ? '决定性事件' : '日常评估');
+                        }
                     }
                 }
             } catch { /* 按纯文本独白兜底 */ }
@@ -1679,10 +1861,11 @@ ${recent || '（你们还没怎么聊过）'}
             setInnerVoiceCurrent(entry);
             setInnerVoiceHistory(prev => [entry, ...prev]);
 
-            if (moodPatch || affectionPatch !== undefined) {
+            if (moodPatch || affectionPatch !== undefined || relationshipPatch) {
                 const patch: Partial<CharacterProfile> = {};
                 if (moodPatch) patch.currentMood = moodPatch;
                 if (affectionPatch !== undefined) patch.affection = affectionPatch;
+                if (relationshipPatch) patch.relationship = relationshipPatch;
                 updateCharacter(char.id, patch);
             }
         } catch (e: any) {
@@ -3166,6 +3349,13 @@ ${recent || '（你们还没怎么聊过）'}
                                     <div className="h-full rounded-full bg-slate-900 transition-all duration-700" style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%` }} />
                                 </div>
                             </div>
+                            {/* 关系状态徽标（来往·关系系统）：由 AI 依好感/设定/剧情自动更新 */}
+                            <div className="px-5 pt-2.5 flex items-center justify-center gap-1.5">
+                                <span className="text-[11px] text-slate-400">你们的关系</span>
+                                <span className="text-[12px] font-black px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-500 border border-rose-100">
+                                    {char.marriage?.active ? '💍 ' : ''}{char.relationship?.label || '尚未明确'}
+                                </span>
+                            </div>
                             {/* 双按钮（Follow / Message 式） */}
                             <div className="flex gap-2.5 px-5 py-3.5">
                                 <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-[#2b2933] shadow-[0_10px_22px_-12px_rgba(43,41,51,0.6)]'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
@@ -3205,6 +3395,81 @@ ${recent || '（你们还没怎么聊过）'}
                         </div>
                     </div>
                 </div>
+             )}
+
+             {/* 外卖订单小票详情：点开聊天里的外卖卡片看具体内容 */}
+             {takeoutCardTarget && (() => {
+                 const t: any = takeoutCardTarget.metadata?.takeout || (takeoutCardOrder ? buildTakeoutCardMeta(takeoutCardOrder, (id) => characters.find(c => c.id === id)?.name || '') : {});
+                 const items: { name: string; qty: number; emoji?: string }[] = (takeoutCardOrder?.items as any) || t.items || [];
+                 return (
+                     <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }}>
+                         <div className="w-[min(84vw,330px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                             <div className="px-5 py-3 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
+                                 <span className="text-[13px] font-black text-white">🛵 外卖订单详情</span>
+                                 <span className="text-[11px] text-white/90">{t.payLabel || ''}</span>
+                             </div>
+                             <div className="px-5 pt-4 pb-2">
+                                 <div className="text-[14px] font-black text-slate-800 mb-2">{t.storeEmoji} {t.storeName}</div>
+                                 <div className="space-y-1 mb-3">
+                                     {items.map((it, i) => (
+                                         <div key={i} className="flex items-center justify-between text-[13px]">
+                                             <span className="text-slate-600">{it.emoji || '🍽️'} {it.name}</span>
+                                             <span className="text-slate-400">×{it.qty}</span>
+                                         </div>
+                                     ))}
+                                 </div>
+                                 <div className="border-t border-dashed border-slate-200 pt-2.5 text-[12.5px] text-slate-500 space-y-1">
+                                     <div className="flex justify-between"><span>合计</span><span className="font-black text-[14px]" style={{ color: '#FF5339' }}>¥{t.total}</span></div>
+                                     <div className="flex justify-between"><span>收货</span><span>{takeoutCardOrder?.address || t.recipientLabel}</span></div>
+                                     {(takeoutCardOrder?.note || t.note) && <div className="flex justify-between"><span>备注</span><span className="text-right max-w-[60%] truncate">{takeoutCardOrder?.note || t.note}</span></div>}
+                                 </div>
+                             </div>
+                             <div className="flex border-t border-slate-100">
+                                 <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }} className="flex-1 py-3.5 text-[14px] text-slate-500 font-medium active:bg-slate-50">合上</button>
+                                 <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#FF5339' }}>去外卖看进度</button>
+                             </div>
+                         </div>
+                     </div>
+                 );
+             })()}
+
+             {/* 主动求婚撰写弹窗 */}
+             {showProposeCompose && char && (
+                 <div className="absolute inset-0 z-[450] flex items-center justify-center bg-black/45 animate-fade-in p-6" onClick={() => setShowProposeCompose(false)}>
+                     <div className="w-[min(84vw,330px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                         <div className="px-6 pt-6 pb-4 text-center" style={{ background: 'linear-gradient(160deg,#fff5f7,#ffe3ec)' }}>
+                             <div className="text-4xl mb-2">💍</div>
+                             <div className="text-[16px] font-black" style={{ color: '#a83a5e' }}>向 {displayCharName} 求婚</div>
+                             <div className="text-[12px] mt-1" style={{ color: '#b06a82' }}>写下你想对 TA 说的话</div>
+                         </div>
+                         <div className="px-5 py-4">
+                             <textarea
+                                 value={proposeVow}
+                                 onChange={e => setProposeVow(e.target.value)}
+                                 rows={3}
+                                 placeholder={`${displayCharName}，愿意和我一直走下去，步入婚姻吗？`}
+                                 className="w-full bg-rose-50/60 rounded-2xl px-3.5 py-3 text-[13px] outline-none resize-none border border-rose-100 focus:border-rose-300"
+                             />
+                         </div>
+                         <div className="flex border-t border-slate-100">
+                             <button onClick={() => setShowProposeCompose(false)} className="flex-1 py-3.5 text-[14px] text-slate-500 font-medium active:bg-slate-50">再想想</button>
+                             <button onClick={() => void sendUserProposal()} className="flex-1 py-3.5 text-[15px] font-black border-l border-slate-100 active:bg-rose-50" style={{ color: '#c2557a' }}>送出求婚 💍</button>
+                         </div>
+                     </div>
+                 </div>
+             )}
+
+             {/* 浪漫求婚界面 */}
+             {proposalTarget && char && (
+                 <ProposalOverlay
+                     message={proposalTarget}
+                     charName={displayCharName}
+                     charAvatar={displayCharAvatar}
+                     userName={userProfile.name || '我'}
+                     busy={proposalBusy}
+                     onRespond={(accept) => void respondToCharProposal(accept)}
+                     onClose={() => setProposalTarget(null)}
+                 />
              )}
 
              <ChatModals
@@ -3762,6 +4027,8 @@ ${recent || '（你们还没怎么聊过）'}
                             onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
                             blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
                             onClaimTransfer={handleClaimRequest}
+                            onOpenTakeoutCard={handleOpenTakeoutCard}
+                            onOpenProposal={handleOpenProposal}
                             isLastUserMsg={m.role === 'user' && m.id === lastUserMsgId}
                             onUserAvatarClick={() => setShowActionSelector(true)}
                         />
@@ -3937,6 +4204,7 @@ ${recent || '（你们还没怎么聊过）'}
                     mcdConfigured={mcdConfiguredFlag}
                     mcdActivated={mcdActivated}
                     showThinkingChain={!!(char as any).showThinkingChain}
+                    canPropose={!!char && canProposeNow(char)}
                     inputStyle={osTheme.chatInputStyle || 'rounded'}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
                     chromeStyle={osTheme.chatChromeStyle}
@@ -4130,7 +4398,13 @@ ${recent || '（你们还没怎么聊过）'}
                     onBgUpload={handleBgUpload}
                     onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
                     onOpenSchedule={() => setModalType('schedule')}
+                    onOpenTabloid={() => setModalType('tabloid')}
                 />
+            )}
+
+            {/* 回望小报（昨日来信 / 回望·周章 / 回望·月章） */}
+            {modalType === 'tabloid' && char && (
+                <TabloidModal char={char} isOpen onClose={() => setModalType('none')} />
             )}
 
             {/* 角色主页（微信好友资料页风格）：单击消息头像进入；角色设置入口移到 ··· / 朋友资料 */}
@@ -4254,8 +4528,17 @@ ${recent || '（你们还没怎么聊过）'}
             {/* 查手机（用户 → 角色）：+ 号面板入口，内嵌原 CheckPhone */}
             {showCheckPhone && char && (
                 <div className="absolute inset-0 z-[410]">
-                    <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} />
+                    <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} onConfront={handlePhoneConfront} />
                 </div>
+            )}
+
+            {/* 相机：用 TA 的手机拍下此刻给 TA 看 */}
+            {showCamera && char && (
+                <CameraApp
+                    charId={char.id}
+                    onExit={() => setShowCamera(false)}
+                    onSendToChat={(dataUrl) => { setShowCamera(false); void handleSendText(dataUrl, 'image'); }}
+                />
             )}
 
             {/* 查手机（角色 → 用户）：界面变成用户桌面，角色自己翻看 + 想法框 */}

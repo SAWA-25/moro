@@ -8,7 +8,10 @@ import {
     generateStores, generateStoresAI, liveTakeoutStatus, STATUS_LABEL, etaText, newRider, PACK_FEE,
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
+    isTakeoutArrived, consumeTakeoutIntent, notifyTakeoutUpdated,
+    generateStoreReviews, reviewQuickTags, generateReviewReplies, type StoreNpcReview,
 } from '../utils/takeout';
+import { TakeoutReview } from '../types';
 
 /**
  * 外卖 App（参考美团）。店铺 AI 现搓 / 本地兜底，可进店点菜下单；订单可看配送进度、和骑手/商家/平台客服聊天；
@@ -20,7 +23,7 @@ const Y = '#FFD161';      // 顶栏黄
 const O = '#FF5339';      // 主橙红
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const ADDR_KEY = 'moro_takeout_address';
-const CATS = ['全部', '中餐', '快餐', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
+const CATS = ['全部', '中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
 
 type View = 'home' | 'store' | 'checkout' | 'orders' | 'detail';
 type ChatTarget = 'rider' | 'store' | 'support';
@@ -46,6 +49,8 @@ const TakeoutApp: React.FC = () => {
     // 结算配置
     const [recipient, setRecipient] = useState('me');
     const [payer, setPayer] = useState('me');
+    // 从聊天回形针「点外卖」进来时预设的收货角色（一次性）
+    const [intentCharId, setIntentCharId] = useState<string | null>(null);
     const [address, setAddress] = useState(() => { try { return localStorage.getItem(ADDR_KEY) || '城南花园 3 栋 502'; } catch { return '城南花园 3 栋 502'; } });
     const [note, setNote] = useState('');
 
@@ -54,9 +59,25 @@ const TakeoutApp: React.FC = () => {
     const [chatInput, setChatInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
 
+    // 评价
+    const [reviewing, setReviewing] = useState(false);      // 评价弹窗开
+    const [reviewRating, setReviewRating] = useState(5);
+    const [reviewTags, setReviewTags] = useState<string[]>([]);
+    const [reviewText, setReviewText] = useState('');
+    // 店铺 NPC 评价（按店名稳定生成）
+    const storeReviews = useMemo<StoreNpcReview[]>(() => activeStore ? generateStoreReviews(activeStore.name, activeStore.rating) : [], [activeStore]);
+
     const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
     useEffect(() => { void reloadOrders(); }, []);
     useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, []);
+    // 聊天回形针「点外卖」带来的下单意图：预设收货角色，提示用户在选店点菜后直接结算。
+    useEffect(() => {
+        const intent = consumeTakeoutIntent();
+        if (intent?.recipientCharId && characters.some(c => c.id === intent.recipientCharId)) {
+            setIntentCharId(intent.recipientCharId);
+            setRecipient(intent.recipientCharId);
+        }
+    }, [characters]);
 
     // 进店前先让 AI 现搓一批店铺（配了副 API / 主 API 才走，否则保留本地兜底）。
     const loadStoresAI = async () => {
@@ -98,7 +119,8 @@ const TakeoutApp: React.FC = () => {
     const goCheckout = () => {
         if (!activeStore) return;
         if (cartSubtotal < activeStore.minOrder) { addToast(`还差 ¥${activeStore.minOrder - cartSubtotal} 起送`, 'info'); return; }
-        setRecipient('me'); setPayer('me'); setNote('');
+        // 从聊天「点外卖」进来时，默认收货人就是那个角色；否则默认送给自己。
+        setRecipient(intentCharId || 'me'); setPayer('me'); setNote('');
         setView('checkout');
     };
 
@@ -133,6 +155,8 @@ const TakeoutApp: React.FC = () => {
             note: note.trim() || undefined,
             placedAt, etaAt: placedAt + activeStore.deliveryMinutes * 60000,
             chat: [], chatTarget: 'rider',
+            initiatedBy: 'user',
+            cardPosted: !!charId,
         };
 
         let order: TakeoutOrder;
@@ -155,9 +179,11 @@ const TakeoutApp: React.FC = () => {
         if (order.charId) {
             try { order.cancelledByStore ? await postTakeoutIssueToChat(order) : await postTakeoutPlacedToChat(order, nameOf); } catch { /* ignore */ }
         }
+        notifyTakeoutUpdated();
         await reloadOrders();
         setActiveOrderId(order.id);
         setChatTarget(order.cancelledByStore ? 'support' : 'rider');
+        setIntentCharId(null);
         setCart({});
         setView('detail');
         if (order.cancelledByStore) addToast('商家迟迟未接单，已自动退款 🙄', 'info');
@@ -185,6 +211,7 @@ const TakeoutApp: React.FC = () => {
         const done = { ...order, status: 'delivered' as const, deliveredAt: Date.now() };
         await DB.saveTakeoutOrder(done);
         if (order.charId) { try { await postTakeoutDeliveredToChat(done); } catch { /* ignore */ } }
+        notifyTakeoutUpdated();
         await reloadOrders();
         addToast('已确认收货～', 'success');
     };
@@ -208,9 +235,40 @@ const TakeoutApp: React.FC = () => {
         addToast(credited > 0 ? `平台已赔付 ¥${credited} 到钱包` : (refund > 0 ? `已为 ${nameOf(order.payer)} 退回 ¥${refund}` : '已提交投诉，平台会跟进'), credited > 0 ? 'success' : 'info');
     };
 
+    const openReview = (order: TakeoutOrder) => {
+        setReviewRating(order.review?.rating || 5);
+        setReviewTags(order.review?.tags || []);
+        setReviewText(order.review?.text || '');
+        setReviewing(true);
+    };
+
+    const submitReview = async () => {
+        if (!activeOrder) return;
+        const review: TakeoutReview = {
+            rating: reviewRating,
+            tags: reviewTags,
+            text: reviewText.trim() || undefined,
+            at: Date.now(),
+            likes: Math.floor(Math.random() * 6),
+            replies: generateReviewReplies(reviewRating, reviewText.trim(), activeOrder.storeName),
+        };
+        await DB.saveTakeoutOrder({ ...activeOrder, review });
+        notifyTakeoutUpdated();
+        await reloadOrders();
+        setReviewing(false);
+        addToast('评价成功，感谢反馈～', 'success');
+    };
+
+    const toggleReviewTag = (t: string) => setReviewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+
     const recipientOptions = [{ id: 'me', label: '我自己' }, ...characters.map(c => ({ id: c.id, label: c.name }))];
 
     // ════════════════ 渲染 ════════════════
+    const Stars = ({ n, size = 12 }: { n: number; size?: number }) => (
+        <span className="inline-flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map(i => <Star key={i} size={size} weight="fill" color={i <= Math.round(n) ? '#ff9500' : '#e2e2e2'} />)}
+        </span>
+    );
     const topBar = (title: string, onBack: () => void, right?: React.ReactNode) => (
         <div className="shrink-0 flex items-center justify-between px-3 py-2.5" style={{ background: Y, paddingTop: 'calc(var(--safe-top) + 8px)' }}>
             <button onClick={onBack} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/5 active:scale-90 transition"><ArrowLeft size={18} weight="bold" color="#4a3000" /></button>
@@ -330,6 +388,31 @@ const TakeoutApp: React.FC = () => {
                             </div>
                         </div>
                     ))}
+
+                    {/* 大家的评价（NPC 评论） */}
+                    <div className="bg-white rounded-xl p-3.5 mt-1">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <span className="text-[13px] font-black text-slate-800">大家的评价</span>
+                            <span className="flex items-center gap-1 text-[12px] font-bold" style={{ color: '#ff9500' }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
+                        </div>
+                        <div className="space-y-3">
+                            {storeReviews.slice(0, 6).map(r => (
+                                <div key={r.id} className="flex gap-2.5">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-[18px] shrink-0" style={{ background: '#faf7f2' }}>{r.emoji}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[12px] font-bold text-slate-700 truncate">{r.name}</span>
+                                            <span className="text-[10px] text-slate-300">{r.date}</span>
+                                        </div>
+                                        <Stars n={r.rating} size={10} />
+                                        <div className="text-[12px] text-slate-600 mt-0.5 leading-snug">{r.text}</div>
+                                        {r.reply && <div className="mt-1 text-[11px] text-slate-500 bg-[#faf7f2] rounded-lg px-2 py-1.5">🏪 商家回复：{r.reply}</div>}
+                                        <div className="text-[10px] text-slate-300 mt-1">👍 {r.likes}</div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                     <div className="h-20" />
                 </div>
                 {/* 购物车条 */}
@@ -425,13 +508,13 @@ const TakeoutApp: React.FC = () => {
                     {orders.length === 0 && <div className="text-center text-[12px] text-slate-400 py-12">还没有订单，去点一单吧～</div>}
                     {orders.map(o => {
                         const st = liveTakeoutStatus(o, now);
-                        const issues = st === 'delivered' || st === 'cancelled' ? incidentsSummary(o) : '';
+                        const issues = st === 'delivered' || st === 'arrived' || st === 'cancelled' ? incidentsSummary(o) : '';
                         const open = hasOpenIssues(o);
                         return (
                             <button key={o.id} onClick={() => { setActiveOrderId(o.id); setChatTarget(o.chatTarget || 'rider'); setView('detail'); }} className="w-full text-left bg-white rounded-2xl p-3 active:scale-[0.99] transition">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[13px] font-black text-slate-800 truncate">{o.storeEmoji} {o.storeName}</span>
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: st === 'delivered' ? '#eef7ee' : st === 'cancelled' ? '#fdecec' : '#fff0ec', color: st === 'delivered' ? '#3a9d52' : st === 'cancelled' ? '#dc2626' : O }}>{o.cancelledByStore ? '商家砍单' : STATUS_LABEL[st]}</span>
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={st === 'delivered' ? { background: '#eef7ee', color: '#3a9d52' } : st === 'cancelled' ? { background: '#fdecec', color: '#dc2626' } : st === 'arrived' ? { background: '#fff7e6', color: '#c47d12' } : { background: '#fff0ec', color: O }}>{o.cancelledByStore ? '商家砍单' : STATUS_LABEL[st]}</span>
                                 </div>
                                 <div className="text-[11.5px] text-slate-500 mt-1 truncate">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
                                 {(issues || o.complaint?.refunded) ? (
@@ -460,8 +543,9 @@ const TakeoutApp: React.FC = () => {
         const steps: { key: string; label: string }[] = [
             { key: 'preparing', label: '商家备餐' }, { key: 'delivering', label: '骑手配送' }, { key: 'delivered', label: '已送达' },
         ];
-        const stepIdx = st === 'delivered' ? 2 : st === 'delivering' ? 1 : 0;
-        const showIssues = (st === 'delivered' || st === 'cancelled') && (o.incidents || []).length > 0;
+        const stepIdx = (st === 'delivered' || st === 'arrived') ? 2 : st === 'delivering' ? 1 : 0;
+        const arrived = st === 'arrived';
+        const showIssues = (st === 'delivered' || st === 'arrived' || st === 'cancelled') && (o.incidents || []).length > 0;
         const targets: { id: ChatTarget; label: string }[] = [
             { id: 'rider', label: `${o.riderEmoji} 联系骑手` }, { id: 'store', label: '🏪 联系商家' }, { id: 'support', label: '🛡️ 平台客服' },
         ];
@@ -478,7 +562,7 @@ const TakeoutApp: React.FC = () => {
                     ) : (
                         <div className="rounded-2xl p-4 text-white" style={{ background: `linear-gradient(135deg, ${O}, #ff8a5c)` }}>
                             <div className="text-[17px] font-black">{etaText(o, now)}</div>
-                            <div className="text-[11.5px] opacity-90 mt-0.5">{st === 'delivered' ? '希望你/TA吃得开心～' : `${o.riderEmoji} ${o.riderName} 正在为你奔波`}</div>
+                            <div className="text-[11.5px] opacity-90 mt-0.5">{st === 'delivered' ? '希望你/TA吃得开心～' : arrived ? '外卖已经到了，记得确认收货' : `${o.riderEmoji} ${o.riderName} 正在为你奔波`}</div>
                             <div className="flex items-center gap-1 mt-3">
                                 {steps.map((s, i) => (
                                     <React.Fragment key={s.key}>
@@ -560,13 +644,90 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     </div>
 
-                    {st !== 'delivered' && st !== 'cancelled' && (
-                        <button onClick={() => void notifyDelivered(o)} className="w-full py-3 rounded-2xl text-[13px] font-black active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#eef7ee', color: '#3a9d52' }}>
-                            <CheckCircle size={16} weight="fill" /> 确认收货{o.charId ? '并告诉 TA' : ''}
-                        </button>
+                    {/* 评价（送达后，仅自己那份可评） */}
+                    {st === 'delivered' && o.recipient === 'me' && (
+                        <div className="bg-white rounded-2xl p-3.5">
+                            <div className="text-[13px] font-black text-slate-800 mb-2">我的评价</div>
+                            {o.review ? (
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <Stars n={o.review.rating} />
+                                        <button onClick={() => openReview(o)} className="ml-auto text-[11px] font-bold" style={{ color: O }}>修改</button>
+                                    </div>
+                                    {o.review.tags && o.review.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                            {o.review.tags.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff0ec', color: O }}>{t}</span>)}
+                                        </div>
+                                    )}
+                                    {o.review.text && <div className="text-[12.5px] text-slate-600 mt-1.5 leading-snug">{o.review.text}</div>}
+                                    {o.review.replies && o.review.replies.length > 0 && (
+                                        <div className="mt-2.5 space-y-1.5 border-t border-dashed border-slate-100 pt-2">
+                                            {o.review.replies.map((rp, i) => (
+                                                <div key={i} className="text-[11.5px] leading-snug">
+                                                    <span className="font-bold text-slate-700">{rp.emoji} {rp.name}{rp.isMerchant ? '（商家）' : ''}：</span>
+                                                    <span className="text-slate-500">{rp.text}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <button onClick={() => openReview(o)} className="w-full py-2.5 rounded-xl text-[13px] font-black active:scale-[0.98] transition" style={{ background: '#fff0ec', color: O }}>
+                                    ⭐ 评价此单
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 收货按钮：收到货（到点）才能确认；给角色点的单由 TA 自己签收并回应。砍单/取消则不显示。 */}
+                    {st !== 'delivered' && st !== 'cancelled' && o.recipient !== 'me' && (
+                        <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center" style={{ background: '#f3f3f3', color: '#888' }}>
+                            {arrived ? `已送到 ${nameOf(o.recipient)} 那儿，TA 收到后会在聊天里回应你～` : `送到后 ${nameOf(o.recipient)} 会签收，并在聊天里回应你`}
+                        </div>
+                    )}
+                    {st !== 'delivered' && st !== 'cancelled' && o.recipient === 'me' && (
+                        arrived ? (
+                            <button onClick={() => void notifyDelivered(o)} className="w-full py-3 rounded-2xl text-[13px] font-black active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#eef7ee', color: '#3a9d52' }}>
+                                <CheckCircle size={16} weight="fill" /> 确认收货
+                            </button>
+                        ) : (
+                            <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center flex items-center justify-center gap-1.5" style={{ background: '#f3f3f3', color: '#aaa' }}>
+                                <CheckCircle size={15} /> 送达后才能确认收货 · {etaText(o, now)}
+                            </div>
+                        )
                     )}
                     <div className="h-3" />
                 </div>
+
+                {/* 评价弹窗 */}
+                {reviewing && (
+                    <div className="absolute inset-0 z-[60] flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setReviewing(false)}>
+                        <div className="w-full bg-white rounded-t-3xl p-5" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }} onClick={e => e.stopPropagation()}>
+                            <div className="text-center text-[15px] font-black text-slate-800 mb-1">评价「{o.storeName}」</div>
+                            <div className="text-center text-[11px] text-slate-400 mb-3">{o.items.map(i => i.name).join('、')}</div>
+                            {/* 星级 */}
+                            <div className="flex items-center justify-center gap-2 mb-3">
+                                {[1, 2, 3, 4, 5].map(i => (
+                                    <button key={i} onClick={() => { setReviewRating(i); setReviewTags([]); }} className="active:scale-90 transition">
+                                        <Star size={32} weight="fill" color={i <= reviewRating ? '#ff9500' : '#e2e2e2'} />
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="text-center text-[12px] font-bold text-slate-500 mb-3">{['', '很差', '一般', '还行', '满意', '超赞'][reviewRating]}</div>
+                            {/* 快捷标签 */}
+                            <div className="flex flex-wrap gap-2 justify-center mb-3">
+                                {reviewQuickTags(reviewRating).map(t => (
+                                    <button key={t} onClick={() => toggleReviewTag(t)} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={reviewTags.includes(t) ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>{t}</button>
+                                ))}
+                            </div>
+                            <textarea value={reviewText} onChange={e => setReviewText(e.target.value)} rows={3} placeholder="说说这次的体验吧～（选填）" className="w-full bg-[#faf7f2] rounded-2xl px-3 py-2.5 text-[13px] outline-none resize-none mb-3" />
+                            <div className="flex gap-2.5">
+                                <button onClick={() => setReviewing(false)} className="flex-1 py-3 rounded-2xl text-[14px] font-bold bg-slate-100 text-slate-600 active:scale-[0.98] transition">取消</button>
+                                <button onClick={() => void submitReview()} className="flex-1 py-3 rounded-2xl text-[14px] font-black text-white active:scale-[0.98] transition" style={{ background: O }}>发布评价</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
