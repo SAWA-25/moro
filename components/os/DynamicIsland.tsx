@@ -241,6 +241,8 @@ const DynamicIsland: React.FC = () => {
                             displayNext();
                             return;
                         }
+                        // 灵动岛此刻正作为外卖 Live Activity 展示 → 点击进外卖 App（仍可下滑展开通知）
+                        if (showTakeoutLive) { openApp(AppID.Takeout); return; }
                         setExpanded(v => !v);
                     }}
                     onTouchStart={(e) => { touchStartY.current = e.touches[0]?.clientY ?? null; }}
@@ -254,12 +256,12 @@ const DynamicIsland: React.FC = () => {
                     style={{
                         background: islandStyle?.background || '#0b0b12',
                         color: islandStyle?.textColor || '#ffffff',
-                        height: notice ? '38px' : '26px',
-                        minWidth: notice ? undefined : '92px',
+                        height: (notice || showTakeoutLive) ? '38px' : '26px',
+                        minWidth: (notice || showTakeoutLive) ? undefined : '92px',
                         maxWidth: '78vw',
-                        padding: notice ? '0 14px 0 8px' : '0 12px',
+                        padding: (notice || showTakeoutLive) ? '0 14px 0 8px' : '0 12px',
                         ...(typeof islandStyle?.radius === 'number' ? { borderRadius: `${islandStyle.radius}px` } : {}),
-                        animation: notice ? 'islandPop 320ms ease-out' : undefined,
+                        animation: notice ? 'islandPop 320ms ease-out' : showTakeoutLive ? 'islandDrop 240ms ease-out both' : undefined,
                         transition: 'min-width 300ms ease, height 240ms ease',
                         WebkitTapHighlightColor: 'transparent',
                         boxShadow: '0 8px 20px -8px rgba(0,0,0,0.55)',
@@ -282,6 +284,20 @@ const DynamicIsland: React.FC = () => {
                                 </span>
                             </span>
                         </>
+                    ) : showTakeoutLive && liveOrder ? (
+                        <>
+                            <span className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[15px] shrink-0" style={{ background: 'rgba(255,209,97,0.18)' }}>{liveOrder.riderEmoji || '🛵'}</span>
+                            <span className="flex flex-col items-start min-w-0 text-left leading-tight">
+                                <span className="text-[10px] font-bold whitespace-nowrap max-w-[200px] truncate" style={{ color: '#ffe1a8' }}>
+                                    {liveOrder.storeName}{activeTakeout.length > 1 ? ` 等${activeTakeout.length}单` : ''} · {liveStatus ? STATUS_LABEL[liveStatus] : ''}
+                                </span>
+                                <span className="text-[10px] opacity-75 whitespace-nowrap max-w-[200px] truncate">{etaText(liveOrder)}</span>
+                            </span>
+                            <span className="ml-0.5 w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: liveStColor, boxShadow: `0 0 6px ${liveStColor}` }} />
+                            {totalUnread > 0 && (
+                                <span className="ml-1 px-1.5 py-px rounded-full bg-red-500 text-white text-[9px] font-bold shrink-0">{totalUnread > 99 ? '99+' : totalUnread}</span>
+                            )}
+                        </>
                     ) : totalUnread > 0 ? (
                         <>
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" style={{ boxShadow: '0 0 6px #34d399' }} />
@@ -293,27 +309,8 @@ const DynamicIsland: React.FC = () => {
                 </button>
             </div>
 
-            {/* 外卖 Live Activity：进行中的订单胶囊（点开进外卖 App） */}
-            {showTakeoutLive && liveOrder && (
-                <div className="absolute left-1/2 -translate-x-1/2 z-[57]" style={{ top: 'calc(max(6px, var(--safe-top)) + 2.05rem)' }}>
-                    <button
-                        onClick={() => openApp(AppID.Takeout)}
-                        className="flex items-center gap-2 rounded-full shadow-lg select-none pl-2 pr-3.5 py-1.5"
-                        style={{ background: '#1a1206', color: '#ffe7ad', maxWidth: '80vw', boxShadow: '0 8px 20px -8px rgba(0,0,0,0.55)', animation: 'islandDrop 240ms ease-out both' }}
-                        aria-label="外卖配送进度"
-                    >
-                        <span className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[15px] shrink-0" style={{ background: 'rgba(255,209,97,0.18)' }}>{liveOrder.riderEmoji || '🛵'}</span>
-                        <span className="flex flex-col items-start min-w-0 text-left leading-tight">
-                            <span className="text-[10px] font-bold whitespace-nowrap max-w-[200px] truncate">
-                                {liveOrder.storeName}{activeTakeout.length > 1 ? ` 等${activeTakeout.length}单` : ''} · {liveStatus ? STATUS_LABEL[liveStatus] : ''}
-                            </span>
-                            <span className="text-[10px] opacity-75 whitespace-nowrap max-w-[200px] truncate">{etaText(liveOrder)}</span>
-                        </span>
-                        {/* 跑动的小进度点 */}
-                        <span className="ml-0.5 w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: liveStColor, boxShadow: `0 0 6px ${liveStColor}` }} />
-                    </button>
-                </div>
-            )}
+            {/* 外卖 Live Activity 已并入灵动岛本体（见上方胶囊的 showTakeoutLive 分支），
+                不再单独悬浮在岛外，避免「通知出现在灵动岛外」。 */}
 
             {/* 下滑通知面板 */}
             {expanded && (
