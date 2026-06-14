@@ -1529,6 +1529,18 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         }
     };
 
+    // 群聊「回形针」深链：群聊里对某成员发起单聊专属功能（拨过去 / 翻手机 / 回个神 / 今日作息…）时，
+    // ChatHub 把动作名写进 localStorage 再深链跳到该成员单聊，这里读出来复用 handlePanelAction 执行。
+    useEffect(() => {
+        let action: string | null = null;
+        try { action = localStorage.getItem('moro_chat_pending_action'); } catch { /* ignore */ }
+        if (!action) return;
+        try { localStorage.removeItem('moro_chat_pending_action'); } catch { /* ignore */ }
+        const t = setTimeout(() => handlePanelAction(action!), 80);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeCharacterId]);
+
     // --- 语音消息：录音结束后落库发送（转写文字进 metadata，AI 上下文可读）---
     const handleSendVoice = async (audio: string, durationSec: number, transcript: string) => {
         await handleSendText('[语音消息]', 'voice', { voiceAudio: audio, durationSec, transcript });
