@@ -9,12 +9,12 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    TalkSession, CollectionItem
+    TalkSession, CollectionItem, TakeoutOrder
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 70; // Bumped: v70 新增 talk_sessions（小剧场·谈心）+ collection_items（岁时记·典藏馆）
+const DB_VERSION = 71; // Bumped: v71 新增 takeout_orders（外卖 App 订单）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -72,6 +72,7 @@ const STORE_PERSONAS = 'personas';                // 人设 App：SillyTavern �
 const STORE_CHAR_LIFE_EVENTS = 'char_life_events'; // 来往·角色离线自主生活事件（每条一件小事，攒成离线回顾时间线 + 给主动消息取材）
 const STORE_TALK_SESSIONS = 'talk_sessions';      // 小剧场·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/小剧场内容）
+const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
@@ -603,6 +604,12 @@ export const openDB = (): Promise<IDBDatabase> => {
           const ciStore = db.createObjectStore(STORE_COLLECTION_ITEMS, { keyPath: 'id' });
           ciStore.createIndex('collectedAt', 'collectedAt', { unique: false });
           ciStore.createIndex('sourceType', 'sourceType', { unique: false });
+      }
+      // ─── v71: 外卖 App 订单 ───
+      if (!db.objectStoreNames.contains(STORE_TAKEOUT_ORDERS)) {
+          const toStore = db.createObjectStore(STORE_TAKEOUT_ORDERS, { keyPath: 'id' });
+          toStore.createIndex('placedAt', 'placedAt', { unique: false });
+          toStore.createIndex('charId', 'charId', { unique: false });
       }
     };
   });
@@ -1272,6 +1279,35 @@ export const DB = {
       const db = await openDB();
       const tx = db.transaction(STORE_COLLECTION_ITEMS, 'readwrite');
       tx.objectStore(STORE_COLLECTION_ITEMS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  // ─── 外卖订单 ───
+  getTakeoutOrders: async (): Promise<TakeoutOrder[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readonly');
+          const req = tx.objectStore(STORE_TAKEOUT_ORDERS).getAll();
+          req.onsuccess = () => resolve(((req.result as TakeoutOrder[]) || []).sort((a, b) => b.placedAt - a.placedAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  saveTakeoutOrder: async (order: TakeoutOrder): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readwrite');
+      tx.objectStore(STORE_TAKEOUT_ORDERS).put(order);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTakeoutOrder: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readwrite');
+      tx.objectStore(STORE_TAKEOUT_ORDERS).delete(id);
       return new Promise((resolve, reject) => {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
