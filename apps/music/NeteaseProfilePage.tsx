@@ -33,6 +33,7 @@ interface Props {
   onOpenSearch?: () => void;
   onOpenSettings?: () => void;
   onVisitChar?: (charId: string) => void;
+  onListenTogether?: () => void;
 }
 
 // ─── 「一起写的歌」本地专辑卡 — 写歌 App 同步过来的 ACE-Step / MiniMax 出歌 ───
@@ -149,7 +150,7 @@ const LocalAlbumCard: React.FC<LocalAlbumCardProps> = ({ songs, expanded, setExp
   </div>
 );
 
-const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar }) => {
+const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearch, onOpenSettings, onVisitChar, onListenTogether }) => {
   const { addToast, characters, userProfile } = useOS();
   const {
     cfg, setCfg, profile, refreshProfile, playSong,
@@ -389,6 +390,16 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
         onBack={onBack}
         right={
           <div className="flex items-center gap-1">
+            {onListenTogether && (
+              <button
+                onClick={onListenTogether}
+                className="px-2 py-1.5 rounded-full transition-all text-[12px] font-bold flex items-center gap-1"
+                style={{ color: C.primary }}
+                title="一起听歌"
+              >
+                🎧 一起听
+              </button>
+            )}
             {onOpenSearch && (
               <button
                 onClick={onOpenSearch}

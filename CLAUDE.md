@@ -23,6 +23,7 @@
 | **角色真实城市系统** | [`docs/char-city.md`](./docs/char-city.md) | 真实/架空城市选择 + 原型城市 + 虚拟程度、实时天气按角色城市取、查手机外卖彩蛋（真实本地店）。改角色城市 / 实时接地前看 |
 | **街角·约会世界引擎** | [`docs/date-world-engine.md`](./docs/date-world-engine.md) | 街角（LifeSim）里 char 带 user 约会：副 API 世界引擎做场景调度、内置/自定义场景、多世界线分支、话/动作分输入、MiniMax 氛围 BGM、角色台词语音、每 20 回合总结隐藏上文。改约会前必读 |
 | **外卖联动 / 好感框架 / 关系 / 求婚婚姻** | [`docs/takeout-relationship-marriage.md`](./docs/takeout-relationship-marriage.md) | 外卖送达与现实同步+收货确认+角色收到外卖反应、回形针点外卖与订单小票、聊天设置「角色主动点外卖」开关、好感度加减框架、来往·偷看心声关系系统、回形针求婚+浪漫界面、求婚成功进婚姻筹备期+岁时记「喜事」栏目。改这些前必读 |
+| **音乐·一起听歌** | [`docs/listen-together.md`](./docs/listen-together.md) | 音乐 App 里和角色一起听歌：专门界面讨论正在放的歌、角色主动换歌/暂停/继续/下一首（副 AI 调用 + 网易云搜歌）。改一起听前必读 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、Instant Push Phase 2、sfworker 清单），动后端 / 加功能前先扫一遍。
