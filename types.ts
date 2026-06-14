@@ -3292,3 +3292,39 @@ export interface DateWorldline {
   bgmAssetKey?: string;    // 已生成的专属 BGM 资源 key（minimaxMusic 缓存）
   bgmVibe?: string;        // 生成该 BGM 时的氛围
 }
+
+// ──────────────────────────────────────────────────────────────────
+// 小剧场·谈心（heart-to-heart）：让 user 有个被认真倾听、被安慰的地方。
+// 每段谈心是一串 user / char 轮流的话，可存档、可收录进岁时记·典藏馆、可转发给别的角色。
+// ──────────────────────────────────────────────────────────────────
+export interface TalkTurn {
+  role: 'user' | 'char';
+  text: string;
+  at: number;
+}
+export interface TalkSession {
+  id: string;
+  charId: string;
+  title: string;          // 取自首句或主题，列表展示用
+  mood?: string;          // 谈心当下选的心情 / 主题标签
+  turns: TalkTurn[];
+  createdAt: number;
+  lastActiveAt: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
+// 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
+// ──────────────────────────────────────────────────────────────────
+export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game';
+export interface CollectionItem {
+  id: string;                 // = `${sourceType}:${sourceId}`，天然去重
+  sourceType: CollectionSourceType;
+  sourceId: string;
+  title: string;
+  subtitle?: string;          // 副标题：参与角色 / 体裁 / 心情等
+  excerpt?: string;           // 一小段预览
+  charIds?: string[];         // 关联角色（用于「我和 A 的记录」与转发措辞）
+  cover?: string;             // emoji 或图片 URL
+  collectedAt: number;
+}

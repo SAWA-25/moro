@@ -3,6 +3,7 @@ import { useOS } from '../context/OSContext';
 import ScheduleApp from './ScheduleApp';
 import { SpecialMomentsApp } from '../components/ValentineEvent';
 import AlmanacCalendar from './almanac/AlmanacCalendar';
+import CollectionHall from './almanac/CollectionHall';
 import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, PaperClip, HAND_FONT } from './almanac/handbookKit';
 
 /**
@@ -20,11 +21,12 @@ const WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
 
 const AlmanacApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'schedule' | 'moments' | 'calendar'>('home');
+    const [section, setSection] = useState<'home' | 'schedule' | 'moments' | 'calendar' | 'collection'>('home');
 
     if (section === 'schedule') return <ScheduleApp onExit={() => setSection('home')} />;
     if (section === 'moments') return <SpecialMomentsApp onExit={() => setSection('home')} />;
     if (section === 'calendar') return <AlmanacCalendar onExit={() => setSection('home')} />;
+    if (section === 'collection') return <CollectionHall onExit={() => setSection('home')} />;
 
     const now = new Date();
 
@@ -94,6 +96,24 @@ const AlmanacApp: React.FC = () => {
                             </div>
                             <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#5d6a4d' }}>
                                 一整页真实月历。点哪天都能贴张便签；角色也会自己往某些日子贴上惦记的事。
+                            </div>
+                        </PaperNote>
+
+                        {/* 典藏馆（新增）*/}
+                        <PaperNote rotate={0.9} bg="#f6f0fa" className="px-5 py-5" onClick={() => setSection('collection')}>
+                            <WashiTape className="-top-2 left-9" color="rgba(200,155,224,0.62)" rotate={-11} width={76} />
+                            <div className="absolute top-3 right-4">
+                                <Postmark size={40} color="#9a6fbf" rotate={8}>NEW</Postmark>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[34px] leading-none">🗃️</span>
+                                <div>
+                                    <TapeLabel color="#d9bfe3" textColor="#6a4b78">第 四 页</TapeLabel>
+                                    <div className="text-[26px] font-black mt-1" style={{ fontFamily: HAND_FONT, color: '#6a4b78' }}>典藏馆</div>
+                                </div>
+                            </div>
+                            <div className="text-[12px] mt-3 leading-relaxed" style={{ color: '#6d5a78' }}>
+                                谈心、同人、课业、剧目都收进这里珍藏；想分享时，把任意一份转发给某个角色看。
                             </div>
                         </PaperNote>
 
