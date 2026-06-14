@@ -19,6 +19,7 @@ import { normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
+import { refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
 import { splitOutRichBlocks } from '../utils/chatRichContent';
 import { loadMusicPlaybackSnapshot } from './MusicContext';
@@ -860,6 +861,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const clearLogs = () => setSystemLogs([]);
+
+  // 启动预热「预设自带正则」运行时缓存：用户可能直接进聊天（不开活字盘），
+  // 激活预设带来的脚本要在第一条消息（含 USER_INPUT 挂载点）就能命中。
+  useEffect(() => { void refreshPresetRegexCache(); }, []);
 
   useEffect(() => {
     const loadSettings = async () => {

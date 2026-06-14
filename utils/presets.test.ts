@@ -120,6 +120,60 @@ describe('exportTavernPreset', () => {
     });
 });
 
+describe('预设自带正则（extensions.regex_scripts，PRESET 作用域）', () => {
+    const REGEX_PRESET = {
+        ...ST_PRESET_JSON,
+        extensions: {
+            regex_scripts: [
+                { id: 'r1', scriptName: '剥离思考', findRegex: '/<think>[\\s\\S]*?<\\/think>/g', replaceString: '', placement: [2], promptOnly: true },
+                { id: 'r2', scriptName: '状态栏美化', findRegex: '/<status>([\\s\\S]*?)<\\/status>/g', replaceString: '$1', placement: [2], markdownOnly: true },
+            ],
+        },
+    };
+
+    it('导入：extensions.regex_scripts → preset.regexScripts，逐条规范化', () => {
+        const p = importTavernPreset(REGEX_PRESET, 'n');
+        expect(p.regexScripts).toHaveLength(2);
+        expect(p.regexScripts?.[0].id).toBe('r1');
+        expect(p.regexScripts?.[0].scriptName).toBe('剥离思考');
+        expect(p.regexScripts?.[0].promptOnly).toBe(true);
+        // normalizeRegexScript 补齐缺省字段
+        expect(p.regexScripts?.[1].trimStrings).toEqual([]);
+        expect(p.regexScripts?.[1].markdownOnly).toBe(true);
+    });
+
+    it('导入：兼容平铺到顶层的 regex_scripts', () => {
+        const p = importTavernPreset({ ...ST_PRESET_JSON, regex_scripts: REGEX_PRESET.extensions.regex_scripts }, 'n');
+        expect(p.regexScripts).toHaveLength(2);
+    });
+
+    it('导入：没带正则时 preset.regexScripts 为 undefined（不留空数组噪声）', () => {
+        const p = importTavernPreset(ST_PRESET_JSON, 'n');
+        expect(p.regexScripts).toBeUndefined();
+    });
+
+    it('导出：preset.regexScripts 写回 extensions.regex_scripts', () => {
+        const p = importTavernPreset(REGEX_PRESET, 'n');
+        const out = exportTavernPreset(p);
+        expect(out.extensions.regex_scripts).toHaveLength(2);
+        expect(out.extensions.regex_scripts[0].id).toBe('r1');
+    });
+
+    it('往返：导入→导出→再导入，正则不丢', () => {
+        const out = exportTavernPreset(importTavernPreset(REGEX_PRESET, 'n'));
+        const again = importTavernPreset(out, 'n2');
+        expect(again.regexScripts).toHaveLength(2);
+        expect(again.regexScripts?.map(s => s.id)).toEqual(['r1', 'r2']);
+    });
+
+    it('导出：删光正则后，raw 里的旧副本一并抹掉', () => {
+        const p = importTavernPreset(REGEX_PRESET, 'n');
+        p.regexScripts = [];
+        const out = exportTavernPreset(p);
+        expect(out.extensions?.regex_scripts).toBeUndefined();
+    });
+});
+
 describe('substitutePresetMacros', () => {
     it('替换 {{char}} / {{user}}，未知宏原样保留', () => {
         expect(substitutePresetMacros('{{char}}对{{user}}说{{unknown}}', MACROS)).toBe('小明对阿罗说{{unknown}}');

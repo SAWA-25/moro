@@ -22,10 +22,13 @@ import type {
     PresetPrompt,
     PresetPromptOrderCharacter,
     PresetPromptOrderEntry,
+    RegexScriptData,
     TavernPreset,
 } from '../types';
 import { DB } from './db';
 import { substituteMacros, type MacroContext } from './macros';
+import { normalizeRegexScript } from './regex/engine';
+import { setPresetRegexScripts } from './regex/store';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -225,6 +228,20 @@ export function importTavernPreset(data: any, fallbackName: string): TavernPrese
 
     preset.prompts = prompts;
     preset.prompt_order = promptOrder;
+
+    // 预设自带正则（ST extensions.regex_scripts，PRESET 作用域）：随预设一同收进，
+    // 激活该预设 + 印坊开印时生效。规范化与角色卡 / 全局正则导入共用 normalizeRegexScript。
+    // 兼容个别导出里把脚本平铺到顶层 regex_scripts 的写法。
+    const rawRegex = Array.isArray(data?.extensions?.regex_scripts)
+        ? data.extensions.regex_scripts
+        : (Array.isArray(data?.regex_scripts) ? data.regex_scripts : null);
+    if (rawRegex) {
+        const scripts = rawRegex
+            .map(normalizeRegexScript)
+            .filter((s: RegexScriptData | null): s is RegexScriptData => !!s);
+        if (scripts.length > 0) preset.regexScripts = scripts;
+    }
+
     return preset;
 }
 
@@ -244,6 +261,14 @@ export function exportTavernPreset(preset: TavernPreset): Record<string, any> {
         character_id: po.character_id,
         order: po.order.map(e => ({ identifier: e.identifier, enabled: e.enabled })),
     }));
+    // 预设自带正则写回 extensions.regex_scripts（preset.regexScripts 是权威源，覆盖
+    // raw 里可能过期的副本；全部删完时把 raw 里的旧副本一并抹掉，保证往返一致）。
+    if (preset.regexScripts && preset.regexScripts.length > 0) {
+        out.extensions = { ...(out.extensions && typeof out.extensions === 'object' ? out.extensions : {}), regex_scripts: preset.regexScripts };
+    } else if (out.extensions && typeof out.extensions === 'object' && 'regex_scripts' in out.extensions) {
+        out.extensions = { ...out.extensions };
+        delete out.extensions.regex_scripts;
+    }
     return out;
 }
 
@@ -540,3 +565,21 @@ export const PresetRuntime = {
         return Object.keys(params).length > 0 ? params : null;
     },
 };
+
+/**
+ * 把激活预设自带的正则（preset.regexScripts）推进 utils/regex/store.ts 的运行时缓存。
+ * 聊天管线四个挂载点是同步的、取不到 async 的激活预设，所以由这里在以下时机刷新：
+ *  - App 启动（OSContext，确保「直接进聊天、没开活字盘」时第一条 USER_INPUT 也能命中）
+ *  - 活字盘里选预设 / 开关印坊 / 改动正则（即时反映到聊天与气泡渲染）
+ * buildChatRequestPayload 走另一条更省的路：它已 await 出激活预设，直接调
+ * setPresetRegexScripts，免去再读一次 IndexedDB。印坊歇业 / 无激活预设时清空缓存。
+ */
+export async function refreshPresetRegexCache(): Promise<void> {
+    try {
+        const preset = await PresetRuntime.getActivePreset();
+        setPresetRegexScripts(preset?.regexScripts ?? null);
+    } catch (e) {
+        console.warn('[Presets] 刷新预设正则缓存失败:', e);
+        setPresetRegexScripts(null);
+    }
+}

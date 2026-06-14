@@ -46,10 +46,45 @@ export const saveGlobalRegexScripts = (scripts: RegexScriptData[]): void => {
     }
 };
 
-/** 全局（在前）+ 角色局部（在后）合并，含禁用项（engine 内部跳过 disabled） */
+// ── 预设自带正则（SillyTavern PRESET 作用域）─────────────────────────────────
+//
+// 预设 JSON 的 extensions.regex_scripts 导入时挂到 preset.regexScripts 上，只有该
+// 预设被激活、且印坊开印时才生效。聊天管线四个挂载点都是同步的（collectRegexScripts
+// 不能 await IndexedDB 里的激活预设），所以这里维持一份模块级缓存 —— 与 globalCache
+// 同款手法。缓存由 presets.ts 的 refreshPresetRegexCache（App 启动）、
+// chatRequestPayload（每次发送，复用已取到的激活预设）、活字盘（选预设 / 开关 /
+// 改动正则时即时反映）三处刷新。
+let presetCache: RegexScriptData[] = [];
+let presetCacheSig = '';
+
+/** 缓存内容指纹：只在「真正影响执行/显示」的字段变化时才广播刷新（见 setPresetRegexScripts） */
+const presetCacheSignature = (scripts: RegexScriptData[]): string =>
+    scripts.map(s => `${s.id}${s.disabled ? 0 : 1}${s.findRegex}${s.replaceString}`).join('');
+
+/** 当前生效的「预设自带正则」（无激活预设 / 印坊歇业时为空数组） */
+export const getPresetRegexScripts = (): RegexScriptData[] => presetCache;
+
+/**
+ * 设置当前生效的「预设自带正则」。传 null/空 = 没有激活预设或预设没带正则。
+ * 仅在内容指纹变化时更新并广播 REGEX_SCRIPTS_UPDATED_EVENT —— chatRequestPayload
+ * 每次发送都会调用本函数（传入新对象引用），靠指纹去重避免每条消息都触发气泡层重渲染。
+ */
+export const setPresetRegexScripts = (scripts: RegexScriptData[] | null | undefined): void => {
+    const next = Array.isArray(scripts) ? scripts.filter((s): s is RegexScriptData => !!s) : [];
+    const sig = presetCacheSignature(next);
+    if (sig === presetCacheSig) return;
+    presetCache = next;
+    presetCacheSig = sig;
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(REGEX_SCRIPTS_UPDATED_EVENT));
+    }
+};
+
+/** 全局（在前）+ 预设自带（居中）+ 角色局部（在后）合并，含禁用项（engine 内部跳过 disabled）。
+ *  顺序与 ST getRegexScripts 一致：GLOBAL → PRESET → SCOPED。 */
 export const collectRegexScripts = (char?: CharacterProfile | null): RegexScriptData[] => {
     const scoped = Array.isArray(char?.regexScripts) ? char!.regexScripts! : [];
-    return [...getGlobalRegexScripts(), ...scoped];
+    return [...getGlobalRegexScripts(), ...presetCache, ...scoped];
 };
 
 export interface ApplyRegexOptions extends Omit<RegexApplyParams, 'charName'> {
