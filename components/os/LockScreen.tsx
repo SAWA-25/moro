@@ -129,10 +129,12 @@ const LockScreen: React.FC = () => {
     };
 
     const requestUnlock = (charId?: string | null) => {
-        // 首次交互顺便申请通知权限（沿用旧锁屏行为，仅在未决定时询问）
-        if ('Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission();
-        }
+        // 注意：这里不再隐式申请通知权限。
+        // 旧行为在解锁手势/退场动画期间直接调 Notification.requestPermission()，会和锁屏
+        // 这层叠加 + 安卓系统悬浮窗（其他 App 的气泡/叠加层）撞上，触发 Chrome 的
+        // 「此网站无法请求您授权 · 请关闭来自其他应用的所有气泡或叠加层」错误弹窗。
+        // 通知授权改为完全由用户在「文具盒 → 通知」/ 主动消息设置里显式开启（走
+        // browserNotify 的安全封装），不在解锁这种带叠加层的时机突然弹系统授权。
         if (!isLockPasscodeEnabled()) {
             doUnlock(charId);
             return;
