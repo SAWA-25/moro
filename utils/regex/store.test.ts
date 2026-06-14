@@ -83,4 +83,27 @@ describe('预设自带正则缓存（ST PRESET 作用域）', () => {
         setPresetRegexScripts(null);
         expect(getPresetRegexScripts()).toEqual([]);
     });
+
+    it('只改 placement / 只改显示·只改寄出 等字段也会刷新缓存（活字盘里编辑预设正则即时生效）', () => {
+        // 修复「编辑了预设正则却不生效」：旧指纹只看 id/disabled/find/replace，改 placement、
+        // markdownOnly、trimStrings、深度等不会触发刷新 → 缓存早退、编辑白改。现在指纹覆盖
+        // 全部影响执行/显示的字段，下面用「缓存内容确实变了」证明刷新已发生。
+        const base = script({ id: 'p1', findRegex: '/x/', replaceString: 'y', placement: [regex_placement.AI_OUTPUT], markdownOnly: false });
+        setPresetRegexScripts([base]);
+        expect(getPresetRegexScripts()[0].placement).toEqual([regex_placement.AI_OUTPUT]);
+
+        // 只改 placement（find/replace/disabled 都没动）—— 旧实现会因指纹相同而早退不更新
+        setPresetRegexScripts([{ ...base, placement: [regex_placement.USER_INPUT] }]);
+        expect(getPresetRegexScripts()[0].placement).toEqual([regex_placement.USER_INPUT]);
+
+        // 只切 markdownOnly 也要反映到缓存
+        setPresetRegexScripts([{ ...base, placement: [regex_placement.USER_INPUT], markdownOnly: true }]);
+        expect(getPresetRegexScripts()[0].markdownOnly).toBe(true);
+
+        // 只改 trimStrings 同样要刷新
+        setPresetRegexScripts([{ ...base, placement: [regex_placement.USER_INPUT], markdownOnly: true, trimStrings: ['剪掉'] }]);
+        expect(getPresetRegexScripts()[0].trimStrings).toEqual(['剪掉']);
+
+        setPresetRegexScripts(null);
+    });
 });

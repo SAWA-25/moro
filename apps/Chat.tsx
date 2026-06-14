@@ -2296,7 +2296,12 @@ ${recent || '（你们还没怎么聊过）'}
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            addToast('已清空', 'success');
+            // 全部清除：连角色的情绪（心情 / buff）与日程一并抹掉 —— 只有勾选「留最近10条」时才保留。
+            // 否则清空后旧心情/日程还残留会污染下一轮 prompt，与「全部清除」语义不符。
+            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '' });
+            await DB.deleteDailySchedulesByChar(char.id);
+            setScheduleData(null);
+            addToast('已清空（含心情与日程）', 'success');
         }
         setModalType('none');
     };
