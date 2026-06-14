@@ -7,6 +7,7 @@ import { resolveAuxApi } from '../utils/auxApi';
 import {
     generateStores, liveTakeoutStatus, STATUS_LABEL, etaText, newRider, PACK_FEE,
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat,
+    isTakeoutArrived, consumeTakeoutIntent,
 } from '../utils/takeout';
 
 /**
@@ -40,6 +41,8 @@ const TakeoutApp: React.FC = () => {
     // 结算配置
     const [recipient, setRecipient] = useState('me');
     const [payer, setPayer] = useState('me');
+    // 从聊天回形针「点外卖」进来时预设的收货角色（一次性）
+    const [intentCharId, setIntentCharId] = useState<string | null>(null);
     const [address, setAddress] = useState(() => { try { return localStorage.getItem(ADDR_KEY) || '城南花园 3 栋 502'; } catch { return '城南花园 3 栋 502'; } });
     const [note, setNote] = useState('');
 
@@ -51,6 +54,14 @@ const TakeoutApp: React.FC = () => {
     const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
     useEffect(() => { void reloadOrders(); }, []);
     useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, []);
+    // 聊天回形针「点外卖」带来的下单意图：预设收货角色，提示用户在选店点菜后直接结算。
+    useEffect(() => {
+        const intent = consumeTakeoutIntent();
+        if (intent?.recipientCharId && characters.some(c => c.id === intent.recipientCharId)) {
+            setIntentCharId(intent.recipientCharId);
+            setRecipient(intent.recipientCharId);
+        }
+    }, [characters]);
 
     const activeOrder = orders.find(o => o.id === activeOrderId) || null;
 
@@ -78,7 +89,8 @@ const TakeoutApp: React.FC = () => {
     const goCheckout = () => {
         if (!activeStore) return;
         if (cartSubtotal < activeStore.minOrder) { addToast(`还差 ¥${activeStore.minOrder - cartSubtotal} 起送`, 'info'); return; }
-        setRecipient('me'); setPayer('me'); setNote('');
+        // 从聊天「点外卖」进来时，默认收货人就是那个角色；否则默认送给自己。
+        setRecipient(intentCharId || 'me'); setPayer('me'); setNote('');
         setView('checkout');
     };
 
@@ -102,11 +114,14 @@ const TakeoutApp: React.FC = () => {
             note: note.trim() || undefined,
             placedAt, etaAt: placedAt + activeStore.deliveryMinutes * 60000,
             chat: [], chatTarget: 'rider',
+            initiatedBy: 'user',
+            cardPosted: !!charId,
         };
         await DB.saveTakeoutOrder(order);
         if (order.charId) { try { await postTakeoutPlacedToChat(order, nameOf); } catch { /* ignore */ } }
         await reloadOrders();
         setActiveOrderId(order.id);
+        setIntentCharId(null);
         setCart({});
         setView('detail');
         addToast(payer !== 'me' ? `已下单，已通知 ${nameOf(payer)} 代付` : '下单成功，骑手马上接单🛵', 'success');
@@ -327,7 +342,7 @@ const TakeoutApp: React.FC = () => {
                             <button key={o.id} onClick={() => { setActiveOrderId(o.id); setChatTarget(o.chatTarget || 'rider'); setView('detail'); }} className="w-full text-left bg-white rounded-2xl p-3 active:scale-[0.99] transition">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[13px] font-black text-slate-800 truncate">{o.storeEmoji} {o.storeName}</span>
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: st === 'delivered' ? '#eef7ee' : '#fff0ec', color: st === 'delivered' ? '#3a9d52' : O }}>{STATUS_LABEL[st]}</span>
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={st === 'delivered' ? { background: '#eef7ee', color: '#3a9d52' } : st === 'arrived' ? { background: '#fff7e6', color: '#c47d12' } : { background: '#fff0ec', color: O }}>{STATUS_LABEL[st]}</span>
                                 </div>
                                 <div className="text-[11.5px] text-slate-500 mt-1 truncate">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
                                 <div className="flex items-center justify-between mt-1.5">
@@ -349,7 +364,8 @@ const TakeoutApp: React.FC = () => {
         const steps: { key: string; label: string }[] = [
             { key: 'preparing', label: '商家备餐' }, { key: 'delivering', label: '骑手配送' }, { key: 'delivered', label: '已送达' },
         ];
-        const stepIdx = st === 'delivered' ? 2 : st === 'delivering' ? 1 : 0;
+        const stepIdx = (st === 'delivered' || st === 'arrived') ? 2 : st === 'delivering' ? 1 : 0;
+        const arrived = st === 'arrived';
         return (
             <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
                 {topBar('订单详情', () => setView('orders'))}
@@ -357,7 +373,7 @@ const TakeoutApp: React.FC = () => {
                     {/* 进度 */}
                     <div className="rounded-2xl p-4 text-white" style={{ background: `linear-gradient(135deg, ${O}, #ff8a5c)` }}>
                         <div className="text-[17px] font-black">{etaText(o, now)}</div>
-                        <div className="text-[11.5px] opacity-90 mt-0.5">{st === 'delivered' ? '希望你/TA吃得开心～' : `${o.riderEmoji} ${o.riderName} 正在为你奔波`}</div>
+                        <div className="text-[11.5px] opacity-90 mt-0.5">{st === 'delivered' ? '希望你/TA吃得开心～' : arrived ? '外卖已经到了，记得确认收货' : `${o.riderEmoji} ${o.riderName} 正在为你奔波`}</div>
                         <div className="flex items-center gap-1 mt-3">
                             {steps.map((s, i) => (
                                 <React.Fragment key={s.key}>
@@ -415,10 +431,22 @@ const TakeoutApp: React.FC = () => {
                         </div>
                     </div>
 
-                    {st !== 'delivered' && (
-                        <button onClick={() => void notifyDelivered(o)} className="w-full py-3 rounded-2xl text-[13px] font-black active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#eef7ee', color: '#3a9d52' }}>
-                            <CheckCircle size={16} weight="fill" /> 确认收货{o.charId ? '并告诉 TA' : ''}
-                        </button>
+                    {/* 收货按钮：收到货（到点）才能确认；给角色点的单由 TA 自己签收并回应。 */}
+                    {st !== 'delivered' && o.recipient !== 'me' && (
+                        <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center" style={{ background: '#f3f3f3', color: '#888' }}>
+                            {arrived ? `已送到 ${nameOf(o.recipient)} 那儿，TA 收到后会在聊天里回应你～` : `送到后 ${nameOf(o.recipient)} 会签收，并在聊天里回应你`}
+                        </div>
+                    )}
+                    {st !== 'delivered' && o.recipient === 'me' && (
+                        arrived ? (
+                            <button onClick={() => void notifyDelivered(o)} className="w-full py-3 rounded-2xl text-[13px] font-black active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#eef7ee', color: '#3a9d52' }}>
+                                <CheckCircle size={16} weight="fill" /> 确认收货
+                            </button>
+                        ) : (
+                            <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center flex items-center justify-center gap-1.5" style={{ background: '#f3f3f3', color: '#aaa' }}>
+                                <CheckCircle size={15} /> 送达后才能确认收货 · {etaText(o, now)}
+                            </div>
+                        )
                     )}
                     <div className="h-3" />
                 </div>

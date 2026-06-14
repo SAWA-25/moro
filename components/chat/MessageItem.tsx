@@ -4,6 +4,7 @@
 import React, { useRef, useState } from 'react';
 import { Message, ChatTheme } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
+import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 import McdCard from './McdCard';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
@@ -792,6 +793,10 @@ interface MessageItemProps {
     blockedMark?: boolean;
     /** 点开角色发来的转账 / 红包卡片：弹出「收款」确认弹窗（仅 pending 且未过期时可点）。 */
     onClaimTransfer?: (m: Message) => void;
+    /** 点开外卖订单小票卡片：弹出订单详情（看具体内容 / 跳外卖 App）。 */
+    onOpenTakeoutCard?: (m: Message) => void;
+    /** 点开求婚小卡：进入浪漫的求婚界面（决定是否答应）。 */
+    onOpenProposal?: (m: Message) => void;
     /** 这条是不是最后一轮里的 user 消息（用于「行动选择器」头像入口）。 */
     isLastUserMsg?: boolean;
     /** 点击最后一轮的 user 头像：打开「行动选择器」（生成可编辑的行动选项）。 */
@@ -838,6 +843,8 @@ const MessageItem = React.memo(({
     onAvatarPoke,
     blockedMark = false,
     onClaimTransfer,
+    onOpenTakeoutCard,
+    onOpenProposal,
     isLastUserMsg = false,
     onUserAvatarClick,
 }: MessageItemProps) => {
@@ -2206,6 +2213,69 @@ const MessageItem = React.memo(({
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="m9.69 18.933.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 0 0 .281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 1 0 3 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 0 0 2.273 1.765 11.842 11.842 0 0 0 1.04.572l.018.008.006.003ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clipRule="evenodd" /></svg>
                         落脚点 · 此刻在这
                     </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (m.type === 'takeout_card') {
+        // 外卖订单小票（聊天里：角色/用户为对方点外卖）。点开看具体内容。
+        const t = m.metadata?.takeout || {};
+        const items: { name: string; qty: number; emoji?: string }[] = Array.isArray(t.items) ? t.items : [];
+        const st = liveTakeoutStatus({ status: 'preparing', deliveredAt: t.deliveredAt, etaAt: t.etaAt || 0, placedAt: t.placedAt || 0 } as any);
+        const stColor = st === 'delivered' ? '#3a9d52' : st === 'arrived' ? '#c47d12' : '#FF5339';
+        const headline = t.initiatedBy === 'char'
+            ? `${charName} 给${t.recipientLabel === '我' ? '你' : t.recipientLabel}点了外卖`
+            : `${t.recipientLabel === '我' ? '给自己' : `送给 ${t.recipientLabel}`}的外卖`;
+        return commonLayout(
+            <div
+                onClick={() => onOpenTakeoutCard?.(m)}
+                className="w-64 bg-white rounded-[1.4rem] overflow-hidden relative transition-transform border border-orange-100 shadow-[0_14px_28px_-18px_rgba(255,83,57,0.45)] active:scale-[0.98] cursor-pointer"
+            >
+                <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
+                    <span className="text-[12px] font-black text-white tracking-wide">🛵 外卖订单</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90" style={{ color: stColor }}>{STATUS_LABEL[st]}</span>
+                </div>
+                <div className="px-4 pt-3 pb-3.5">
+                    <div className="text-[12px] text-slate-400 mb-1">{headline}</div>
+                    <div className="text-[13px] font-black text-slate-800 truncate mb-2">{t.storeEmoji} {t.storeName}</div>
+                    <div className="space-y-0.5 mb-2">
+                        {items.slice(0, 4).map((it, i) => (
+                            <div key={i} className="flex items-center justify-between text-[12px] text-slate-600">
+                                <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
+                                <span className="text-slate-400 shrink-0 ml-2">×{it.qty}</span>
+                            </div>
+                        ))}
+                        {items.length > 4 && <div className="text-[11px] text-slate-400">…等 {items.length} 样</div>}
+                    </div>
+                    <div className="flex items-center justify-between border-t border-dashed border-slate-200 pt-2">
+                        <span className="text-[10.5px] text-slate-400">{t.payLabel} · 点开看详情</span>
+                        <span className="text-[14px] font-black" style={{ color: '#FF5339' }}>¥{t.total}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (m.type === 'proposal_card') {
+        // 求婚小卡（角色/用户发起）。点开进入浪漫的求婚界面。
+        const p = m.metadata?.proposal || {};
+        const status = p.status || 'pending';
+        const fromChar = p.from === 'char';
+        const statusText = status === 'accepted' ? '❤️ 答应了，我们订婚啦' : status === 'declined' ? '这一次，没能走到一起' : fromChar ? '点开，看 TA 想对你说的话' : '等待 TA 的回应…';
+        const grayed = status === 'declined';
+        return commonLayout(
+            <div
+                onClick={() => onOpenProposal?.(m)}
+                className={`w-64 rounded-[1.6rem] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer border ${grayed ? 'opacity-70 grayscale border-slate-200' : 'border-rose-200'}`}
+                style={{ background: 'linear-gradient(160deg,#fff5f7 0%,#ffe3ec 100%)', boxShadow: '0 16px 32px -18px rgba(225,80,120,0.5)' }}
+            >
+                <div className="absolute -top-3 -right-3 text-[64px] opacity-15 select-none">💍</div>
+                <div className="px-5 pt-4 pb-4 relative">
+                    <div className="text-[11px] font-mono font-bold tracking-[0.3em] uppercase mb-2" style={{ color: '#c2557a' }}>Will&nbsp;You…</div>
+                    <div className="text-[15px] font-black mb-1.5" style={{ color: '#a83a5e' }}>{status === 'accepted' ? '一生之约 · 已许下' : '一生一次的约定'}</div>
+                    {p.vow && <div className="text-[12px] leading-relaxed mb-2 line-clamp-3" style={{ color: '#8a4a60' }}>「{String(p.vow).slice(0, 60)}」</div>}
+                    <div className="text-[11px] font-bold mt-1" style={{ color: status === 'accepted' ? '#c2557a' : '#b06a82' }}>{statusText}</div>
                 </div>
             </div>
         );

@@ -3,6 +3,36 @@ import { CharacterProfile, UserProfile, DailySchedule } from '../types';
 import { buildCityPromptBlock } from './charCity';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
+import { MARRIAGE_STAGE_LABEL } from './relationship';
+
+/**
+ * 来往·关系系统 / 好感 / 婚事 的提示词块。
+ * 让角色知道当前关系定位与好感，按规则自然推进关系（[[REL]]）、在满好感且"想更进一步"时
+ * 可主动求婚（[[PROPOSE]]），订婚后在婚姻筹备期商量婚事并用 [[WEDDING_PLAN]] 推进。
+ * 同时约束好感平稳、关系不可凭空跃迁。
+ */
+function buildRelationshipPromptBlock(char: CharacterProfile, userName: string): string {
+    const lines: string[] = [];
+    const aff = typeof char.affection === 'number' ? Math.round(char.affection) : null;
+    const rel = char.relationship;
+    if (rel) lines.push(`- 你和${userName}目前的关系：「${rel.label}」。请始终按这个关系定位来相处、说话。`);
+    if (aff !== null) lines.push(`- 你对${userName}的好感度约为 ${aff}/100。好感是**长期平稳**的：日常里只小幅波动，不要因为一两句话就态度剧变；只有真正的决定性事件才会让它明显升降。`);
+
+    lines.push(`- 关系推进要顺其自然、贴合人设与剧情：当剧情里真的出现改变关系的决定性时刻（确认心意/正式在一起、提分手、闹到决裂、和好…），可在回复最后单独输出一行 \`[[REL: 阶段 | 关系名]]\` 更新关系。阶段从 stranger/acquaintance/friend/close/crush(暧昧)/lover(恋人)/ex(前任)/estranged(决裂) 里选，关系名用中文（如"男朋友""前女友"）。例：在一起 → \`[[REL: lover | 男朋友]]\`，分手 → \`[[REL: ex | 前任]]\`。没有这种时刻就不要输出、关系保持不变。订婚/结婚不走这个指令（见下）。`);
+
+    if (!char.marriage?.active) {
+        if (aff !== null && aff >= 100) {
+            lines.push(`- 你对${userName}的感情已满溢（好感拉满）。若你的人设与此刻剧情让你真心想和${userName}更进一步、步入婚姻，你**可以主动求婚**：在回复最后单独输出一行 \`[[PROPOSE: 你的求婚誓言]]\`，系统会生成求婚小卡让${userName}回应。是否求婚取决于你是否真的"想更进一步"，不要为用功能而求婚。`);
+        }
+    } else {
+        const m = char.marriage;
+        lines.push(`- 你和${userName}已经订婚，正处于**婚姻筹备期**（当前：${MARRIAGE_STAGE_LABEL[m.stage]}）。${m.weddingDate ? `你们商定的婚期是 ${m.weddingDate}。` : '你们还没定下婚期。'}请像真要结婚的人那样，自然地和${userName}商量婚事——挑日子、领证、婚礼怎么办、双方家里态度等，按人设来、节奏贴合现实（别今天订婚明天就结婚）。`);
+        lines.push(`- 当你们真的定下某个婚事节点时，可在回复最后单独输出推进指令：\`[[WEDDING_PLAN: plan | YYYY-MM-DD | 备注]]\`（定婚期）、\`[[WEDDING_PLAN: register | YYYY-MM-DD | 领证]]\`、\`[[WEDDING_PLAN: wedding | YYYY-MM-DD | 婚礼]]\`。日期要用与现实匹配的将来日期，会记进岁时记喜事页。没真正定下时不要输出。`);
+    }
+
+    if (lines.length === 0) return '';
+    return `### 来往·关系与感情 (Relationship)\n${lines.join('\n')}\n\n`;
+}
 
 /**
  * Memory Central
@@ -265,6 +295,9 @@ export const ContextBuilder = {
                 if (cs.momentsAutoPost && cs.momentsAutoPost !== 'off') {
                     lines.push(`- 朋友圈习惯：你有空时会随手发朋友圈记录生活，聊天中可以提到你刚发/想发的动态。`);
                 }
+                if (cs.proactiveTakeoutOrder) {
+                    lines.push(`- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${user.name}说饿了或没空做饭、加班晚归…），你可以默默替 ${user.name} 点一份外卖并代付。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗热乎的牛肉面]]\`），系统会生成订单小票并通知 ${user.name}。前面正常说你给 TA 点了什么。别频繁、别刻意，像真的会照顾人那样偶尔为之。`);
+                }
                 if (lines.length > 0) {
                     context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
                 }
@@ -273,6 +306,9 @@ export const ContextBuilder = {
             // 真实城市系统：城市真实感接地（聊天 / 查手机 / 线下都读 coreContext，自动带上）
             const cityBlock = buildCityPromptBlock(char);
             if (cityBlock) context += `${cityBlock}\n\n`;
+
+            // 来往·关系 / 好感 / 婚事 状态 + 规则（指导角色如何"自然地"推进关系，并约束乱跳）
+            context += buildRelationshipPromptBlock(char, user.name);
         }
 
         // 5. 记忆库 (Memory Bank)

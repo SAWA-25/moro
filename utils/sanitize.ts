@@ -51,6 +51,9 @@ const stripBusinessTagsForBubble = (t: string): string =>
   t
     .replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, '')
     .replace(/\[\[\s*BLOCK_USER\s*\]\]/gi, '')
+    // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
+    .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
+    .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')
     .replace(/\[schedule_message[^\]]*\]/g, '');
 
 /**

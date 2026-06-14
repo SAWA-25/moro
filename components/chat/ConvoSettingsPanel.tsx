@@ -836,6 +836,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         side={<CandyToggle on={!!cs.proactiveCallEnabled} onToggle={() => updateConvo({ proactiveCallEnabled: !cs.proactiveCallEnabled })} />}
                     />
 
+                    <Entry
+                        mark="☘" title="TA 会主动给你点外卖"
+                        note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默替你下一单外卖并代付，在聊天里生成一张能点开看的外卖订单小票。关掉则永远不会触发。"
+                        side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
+                    />
+
                     <Entry mark="☘" title="TA 发此刻的勤快度" note="TA 自己更新此刻的频率。「看心情」全凭 TA 当下的情绪；TA 聊天时也会提起自己发过的动态。">
                         <div className="flex flex-wrap gap-2 items-center">
                             <StickerChip seed="mp-off" active={!cs.momentsAutoPost || cs.momentsAutoPost === 'off'} candy="#d6c8e8" onClick={() => updateConvo({ momentsAutoPost: 'off' })}>不发</StickerChip>

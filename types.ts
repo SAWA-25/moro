@@ -1912,10 +1912,14 @@ export interface CharacterProfile {
   activeBuffs?: CharacterBuff[];
   buffInjection?: string;   // 注入到systemPrompt的叙事型情绪底色描述
 
-  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新） */
+  /** 好感值 0~100（点聊天顶栏头像「偷看心声」时由模型一并评估更新；走 utils/relationship 的加减框架，日常小幅徘徊、决定性事件才大幅波动） */
   affection?: number;
   /** 当前心情（与好感值同一评估链路更新），显示在心声面板 */
   currentMood?: { emoji?: string; label: string; updatedAt: number };
+  /** 关系状态（来往·偷看心声 的关系系统）：由 AI 依据好感 / 设定关系 / 剧情自动更新 */
+  relationship?: RelationshipState;
+  /** 婚姻状态（求婚成功后进入「婚姻筹备期」，落入岁时记·喜事页） */
+  marriage?: MarriageState;
   emotionConfig?: {
     enabled: boolean;
     api?: {
@@ -2042,6 +2046,65 @@ export interface CharacterProfile {
 }
 
 /**
+ * 关系阶段（来往·偷看心声 的关系系统）。由 AI 依据好感 / 设定关系 / 剧情自动更新。
+ * 顺序大致对应「亲密度递进」，utils/relationship 用它约束跳变（不能凭空从陌生跳到已婚）。
+ */
+export type RelationshipStage =
+  | 'stranger'      // 陌生
+  | 'acquaintance'  // 认识
+  | 'friend'        // 朋友
+  | 'close'         // 好友 / 知己
+  | 'crush'         // 暧昧（高好感但未确立恋人关系）
+  | 'lover'         // 恋人（男女朋友）
+  | 'engaged'       // 未婚夫妻（求婚成功 → 婚姻筹备期）
+  | 'married'       // 已婚（领证 / 完婚）
+  | 'ex'            // 前任（分手）
+  | 'estranged';    // 决裂 / 形同陌路
+
+export interface RelationshipState {
+  stage: RelationshipStage;
+  /** 展示用关系名（如「男朋友」「未婚妻」「暧昧对象」「前男友」），AI 给、落地展示 */
+  label: string;
+  /** 进入当前阶段的时间戳 */
+  since: number;
+  updatedAt: number;
+  /** 关系变更简史（最新在前），供来往面板回看 */
+  history?: Array<{ stage: RelationshipStage; label: string; at: number; reason?: string }>;
+}
+
+/** 婚姻筹备阶段：求婚成功后逐步推进，时间与现实匹配。 */
+export type MarriageStage =
+  | 'engaged'     // 已订婚·筹备中
+  | 'planning'    // 已商定婚期
+  | 'registered'  // 已领证
+  | 'wed';        // 已完婚
+
+export interface MarriageMilestone {
+  id: string;
+  kind: 'proposal' | 'plan' | 'register' | 'wedding' | 'custom';
+  title: string;
+  date?: string;       // YYYY-MM-DD（与现实匹配）
+  note?: string;
+  by?: 'user' | 'char';
+  done?: boolean;
+  at: number;
+}
+
+/** 婚姻状态（落入岁时记·喜事页；聊天上下文据此让角色商量婚期 / 领证等）。 */
+export interface MarriageState {
+  active: boolean;
+  stage: MarriageStage;
+  /** 谁先求的婚 */
+  proposalBy: 'user' | 'char';
+  engagedAt: number;
+  /** 商定的婚期（YYYY-MM-DD） */
+  weddingDate?: string;
+  /** 领证时间戳 */
+  registeredAt?: number;
+  milestones: MarriageMilestone[];
+}
+
+/**
  * 会话设置（聊天设置面板）—— 本会话（与该角色的单聊）专属配置。
  * 展示类字段只影响聊天界面；行为类字段会以「会话设定」块注入系统提示词。
  */
@@ -2088,6 +2151,9 @@ export interface ConvoSettings {
     proactiveRandom?: boolean;
     /** 主动语音通话：角色在主动找用户时可按人设/剧情自行决定直接拨语音电话（需主动发消息开启） */
     proactiveCallEnabled?: boolean;
+    /** 主动为用户点外卖：开启后角色可在合适场景（饭点/降温/用户喊饿…）主动替用户下单外卖并代付，
+     *  在聊天里生成可点开的外卖订单小票。关闭则永不触发该行为。默认关。 */
+    proactiveTakeoutOrder?: boolean;
     /** 主动发朋友圈：'off' 关 / 'random' 随缘 / 数字 = 自定义间隔小时（提示词倾向 + 配置位） */
     momentsAutoPost?: 'off' | 'random' | number;
     /** 允许 char 看手机：角色可自然提及用户手机里的日程 / 朋友圈 / 音乐动态（提示词注入） */
@@ -2702,7 +2768,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card';
 
 /**
  * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：
@@ -3433,7 +3499,14 @@ export interface TakeoutStore {
   dishes: TakeoutDish[];
 }
 export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
-export type TakeoutStatus = 'preparing' | 'delivering' | 'delivered' | 'cancelled';
+/**
+ * 配送状态：
+ * - preparing 商家备餐中 / delivering 骑手配送中（按时间实时推算）
+ * - arrived 已到达·待收货（now >= etaAt 但用户尚未确认收货；「收到货才能点送达」的前提）
+ * - delivered 已送达（用户点了确认收货，或给角色点的单到时角色已收下）
+ * - cancelled 已取消
+ */
+export type TakeoutStatus = 'preparing' | 'delivering' | 'arrived' | 'delivered' | 'cancelled';
 export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store'; text: string; at: number; }
 export interface TakeoutOrder {
   id: string;
@@ -3463,4 +3536,10 @@ export interface TakeoutOrder {
   deliveredAt?: number;
   chat: TakeoutChatMsg[];  // 和骑手/商家的对话
   chatTarget?: 'rider' | 'store';
+  /** 发起方：用户在外卖 App / 聊天回形针点的 = 'user'；角色主动为用户点的 = 'char'。 */
+  initiatedBy?: 'user' | 'char';
+  /** 是否已在该角色聊天里生成「外卖订单小票」卡片（避免重复生成）。 */
+  cardPosted?: boolean;
+  /** 给角色点的单：到时角色已在聊天里对收到外卖做出反应，避免重复触发。 */
+  reactionPosted?: boolean;
 }

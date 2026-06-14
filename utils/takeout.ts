@@ -6,7 +6,7 @@
  * - 与来往 App 联动：给某角色点单 / 让角色代付，会在该角色聊天里留一条消息（进上下文，角色会回应）。
  */
 
-import { TakeoutStore, TakeoutDish, TakeoutOrder, TakeoutStatus } from '../types';
+import { TakeoutStore, TakeoutDish, TakeoutOrder, TakeoutOrderItem, TakeoutStatus } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
 import { safeResponseJson, extractContent } from './safeApi';
@@ -78,19 +78,30 @@ export function generateStores(count = 12): TakeoutStore[] {
 // ── 配送进度 ──────────────────────────────────────────────────────
 export const PACK_FEE = 2;
 
-/** 按时间实时推算订单状态（已取消/已送达保持不变）。 */
+/**
+ * 按时间实时推算订单状态（与现实时间同步）。
+ * 关键：到达预计时间（now >= etaAt）只进入 `arrived`（已到达·待收货），
+ * 不再自动跳 `delivered` —— 「收到货才能点击送达」：必须等真正到点后，
+ * 用户手动确认收货（或给角色点的单到点后角色自动签收）才置 deliveredAt → delivered。
+ */
 export function liveTakeoutStatus(order: TakeoutOrder, now = Date.now()): TakeoutStatus {
     if (order.status === 'cancelled') return 'cancelled';
     if (order.deliveredAt) return 'delivered';
-    if (now >= order.etaAt) return 'delivered';
+    if (now >= order.etaAt) return 'arrived';
     const span = order.etaAt - order.placedAt;
     if (span > 0 && now >= order.placedAt + span * 0.35) return 'delivering';
     return 'preparing';
 }
 
+/** 是否已到点（到了就可以确认收货了）。 */
+export function isTakeoutArrived(order: TakeoutOrder, now = Date.now()): boolean {
+    return !order.deliveredAt && order.status !== 'cancelled' && now >= order.etaAt;
+}
+
 export const STATUS_LABEL: Record<TakeoutStatus, string> = {
     preparing: '商家备餐中',
     delivering: '骑手配送中',
+    arrived: '已到达·待收货',
     delivered: '已送达',
     cancelled: '已取消',
 };
@@ -100,6 +111,7 @@ export function etaText(order: TakeoutOrder, now = Date.now()): string {
     const s = liveTakeoutStatus(order, now);
     if (s === 'delivered') return '已送达';
     if (s === 'cancelled') return '已取消';
+    if (s === 'arrived') return '外卖已到，请确认收货';
     const mins = Math.max(1, Math.ceil((order.etaAt - now) / 60000));
     return `预计 ${mins} 分钟后送达`;
 }
@@ -135,32 +147,147 @@ export async function buildDeliveryReply(
     }
 }
 
-// ── 与来往 App 联动 ───────────────────────────────────────────────
+// ── 与来往 App 联动（外卖订单小票卡片） ───────────────────────────
 const itemsText = (order: TakeoutOrder) => order.items.map(i => `${i.emoji || ''}${i.name}×${i.qty}`).join('、');
 
-/** 下单时给关联角色的聊天里留一条消息（让角色看到并回应）。 */
+/** 聊天里「外卖订单小票」卡片的快照数据（存 message.metadata.takeout）。 */
+export interface TakeoutCardMeta {
+    takeoutOrderId: string;
+    storeName: string;
+    storeEmoji: string;
+    items: { name: string; qty: number; emoji?: string }[];
+    total: number;
+    placedAt: number;
+    etaAt: number;
+    deliveredAt?: number;
+    /** 谁给谁点：用于小票文案与图标 */
+    initiatedBy: 'user' | 'char';
+    recipientLabel: string;   // 收货人显示名（「你」/ 角色名 / 用户名）
+    payLabel: string;         // 「我请客」/「TA 代付」/「我自己付」…
+    note?: string;
+}
+
+export function buildTakeoutCardMeta(order: TakeoutOrder, nameOf: (id: string) => string): TakeoutCardMeta {
+    const recipientLabel = order.recipient === 'me' ? '我' : (nameOf(order.recipient) || 'TA');
+    let payLabel: string;
+    if (order.payer === 'me') payLabel = order.recipient === 'me' ? '我自己付' : '我请客';
+    else payLabel = `${nameOf(order.payer) || 'TA'}代付`;
+    return {
+        takeoutOrderId: order.id,
+        storeName: order.storeName,
+        storeEmoji: order.storeEmoji,
+        items: order.items.map(i => ({ name: i.name, qty: i.qty, emoji: i.emoji })),
+        total: order.total,
+        placedAt: order.placedAt,
+        etaAt: order.etaAt,
+        deliveredAt: order.deliveredAt,
+        initiatedBy: order.initiatedBy || 'user',
+        recipientLabel,
+        payLabel,
+        note: order.note,
+    };
+}
+
+/**
+ * 下单时在关联角色聊天里生成一张「外卖订单小票」卡片。
+ * - 用户为角色点 / 找角色代付 → role:'user'（小票出现在用户侧）。
+ * - 角色为用户点（initiatedBy='char'）→ role:'assistant'（小票出现在角色侧，用户可点开看内容）。
+ */
 export async function postTakeoutPlacedToChat(order: TakeoutOrder, nameOf: (id: string) => string): Promise<void> {
     if (!order.charId) return;
-    const items = itemsText(order);
-    const mins = Math.max(1, Math.ceil((order.etaAt - order.placedAt) / 60000));
-    let text: string;
-    if (order.recipient !== 'me' && order.recipient === order.charId) {
-        // 给角色点的（user 请客 / 帮点）
-        const treat = order.payer === 'me' ? '我请你吃，' : '';
-        text = `［外卖🛵］我在「${order.storeName}」给你点了 ${items}，${treat}骑手说大概 ${mins} 分钟送到你那边，记得收哦～`;
-    } else if (order.recipient === 'me' && order.payer === order.charId) {
-        // 角色代付 / 角色请我吃
-        text = `［外卖🛵］我刚在「${order.storeName}」点了 ${items}，一共 ¥${order.total}，让你帮我付啦——谢谢你呀，下次我请回来！`;
-    } else {
-        text = `［外卖🛵］我在「${order.storeName}」下了一单 ${items}，跟你说一声～`;
-    }
+    const role: 'user' | 'assistant' = order.initiatedBy === 'char' ? 'assistant' : 'user';
+    await DB.saveMessage({
+        charId: order.charId,
+        role,
+        type: 'takeout_card',
+        content: '[外卖订单]',
+        metadata: { takeoutOrderId: order.id, takeout: buildTakeoutCardMeta(order, nameOf) },
+    } as any);
+}
+
+/** 用户确认收到「自己那份」外卖后，轻量地给角色留一句（角色可自然接话）。 */
+export async function postTakeoutDeliveredToChat(order: TakeoutOrder): Promise<void> {
+    if (!order.charId || order.recipient !== 'me') return;
+    const text = `［外卖✅］「${order.storeName}」的外卖送到啦，已经收下了～（${itemsText(order)}）`;
     await DB.saveMessage({ charId: order.charId, role: 'user', type: 'text', content: text, metadata: { takeoutOrderId: order.id } } as any);
 }
 
-/** 送达时给关联角色补一条消息（可选，用户点「告诉 TA 已送达」时）。 */
-export async function postTakeoutDeliveredToChat(order: TakeoutOrder): Promise<void> {
-    if (!order.charId) return;
-    const who = order.recipient !== 'me' ? '你的' : '我的';
-    const text = `［外卖✅］「${order.storeName}」的外卖送到${order.recipient !== 'me' ? '你那儿' : '啦'}，趁热吃呀～（${who}那份 ${itemsText(order)}）`;
-    await DB.saveMessage({ charId: order.charId, role: 'user', type: 'text', content: text, metadata: { takeoutOrderId: order.id } } as any);
+/**
+ * 给角色点的单到点送达后的「角色收到外卖」系统提示——交给主动消息链路，
+ * 让角色像真人收到对方送来的外卖那样在聊天里自然反应。
+ */
+export function buildTakeoutReceivedHint(order: TakeoutOrder, userName: string): string {
+    const items = itemsText(order);
+    return `[系统提示（非${userName}发言）：${userName}之前在「${order.storeName}」给你点的外卖（${items}）刚刚送到你这边，你签收了。请像真人收到对方专门送来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、边吃边说味道、或调侃${userName}怎么知道你想吃这个。一两句话就好，别像在汇报。]`;
+}
+
+// ── 角色主动为用户点外卖（由聊天指令触发，需会话设置开关打开） ──────
+const KEYWORDIZE = (s: string) => s.replace(/[，。、,.!！?？\s]+/g, ' ').trim();
+
+/**
+ * 依据一句菜品/店铺描述，合成一张「角色为用户点」的外卖订单（recipient=me, payer=char）。
+ * 尽量从描述里匹配店铺与菜名，匹配不到则随机选店 + 招牌菜兜底。
+ */
+export function synthesizeCharOrder(charId: string, desc: string, address: string): TakeoutOrder {
+    const stores = generateStores(16);
+    const kw = KEYWORDIZE(desc).split(' ').filter(Boolean);
+    const matchScore = (s: TakeoutStore) => {
+        let score = 0;
+        for (const k of kw) {
+            if (s.name.includes(k) || s.category.includes(k)) score += 2;
+            score += s.dishes.filter(d => d.name.includes(k) || k.includes(d.name)).length;
+        }
+        return score;
+    };
+    let store = stores[0];
+    let best = -1;
+    for (const s of stores) { const sc = matchScore(s); if (sc > best) { best = sc; store = s; } }
+
+    // 选菜：优先描述里点到的菜，否则用招牌（popular）兜底，最多 3 样
+    let chosen = store.dishes.filter(d => kw.some(k => d.name.includes(k) || k.includes(d.name)));
+    if (chosen.length === 0) chosen = store.dishes.filter(d => d.popular);
+    if (chosen.length === 0) chosen = store.dishes.slice(0, 2);
+    chosen = chosen.slice(0, 3);
+    const items: TakeoutOrderItem[] = chosen.map(d => ({ dishId: d.id, name: d.name, price: d.price, qty: 1, emoji: d.emoji }));
+    const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+    const placedAt = Date.now();
+    const rider = newRider();
+    return {
+        id: genId('order'),
+        storeId: store.id, storeName: store.name, storeEmoji: store.emoji,
+        items,
+        subtotal, deliveryFee: store.deliveryFee, packFee: PACK_FEE,
+        total: subtotal + store.deliveryFee + PACK_FEE,
+        recipient: 'me', payer: charId, charId,
+        payStatus: 'paid',
+        status: 'preparing',
+        riderName: rider.name, riderEmoji: rider.emoji,
+        address: address || '城南花园 3 栋 502',
+        placedAt, etaAt: placedAt + store.deliveryMinutes * 60000,
+        chat: [], chatTarget: 'rider',
+        initiatedBy: 'char',
+    };
+}
+
+/** 聊天里供角色主动点外卖用的指令名（应答文本里出现，会被后处理剥离并执行）。 */
+export const TAKEOUT_ORDER_EVENT = 'moro-char-takeout-order';
+
+// ── 从聊天回形针打开外卖 App 的「下单意图」（预设收货角色） ──────────
+const INTENT_KEY = 'moro_takeout_intent_v1';
+export interface TakeoutIntent { recipientCharId: string; recipientName?: string; }
+
+export function setTakeoutIntent(intent: TakeoutIntent | null): void {
+    try {
+        if (intent) localStorage.setItem(INTENT_KEY, JSON.stringify(intent));
+        else localStorage.removeItem(INTENT_KEY);
+    } catch { /* ignore */ }
+}
+
+/** 读取并清除一次性下单意图。 */
+export function consumeTakeoutIntent(): TakeoutIntent | null {
+    try {
+        const raw = localStorage.getItem(INTENT_KEY);
+        if (raw) { localStorage.removeItem(INTENT_KEY); return JSON.parse(raw) as TakeoutIntent; }
+    } catch { /* ignore */ }
+    return null;
 }

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
+import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
@@ -36,6 +36,8 @@ interface ChatInputAreaProps {
     mcdActivated?: boolean;    // 当前会话已发"麦请求"
     // 思考过程展示（会话级）
     showThinkingChain?: boolean;
+    /** 求婚可用：角色满好感且感情到位（控制「求婚」纸条是否可点） */
+    canPropose?: boolean;
     // Input style
     inputStyle?: 'default' | 'rounded' | 'flat' | 'wechat' | 'ios' | 'telegram' | 'discord' | 'pixel';
     sendButtonStyle?: 'circle' | 'pill' | 'minimal';
@@ -91,6 +93,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     mcdConfigured = false,
     mcdActivated = false,
     showThinkingChain = false,
+    canPropose = false,
     inputStyle = 'default',
     sendButtonStyle = 'circle',
     chromeStyle = 'soft',
@@ -818,6 +821,20 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             {/* 偷看心声入口已移至顶栏角色头像（点头像查看心声/好感/心情） */}
 
                             <DrawerTag>特 别 通 道</DrawerTag>
+
+                            <ActionStrip label="点外卖" hint="联通外卖 App，为 TA 点一单" dark={isDiscordStyle} onClick={() => onPanelAction('takeout')}>
+                                <ForkKnife className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip
+                              label="求婚"
+                              hint={canPropose ? '一生一次的约定' : '满好感、感情到位才解锁'}
+                              dark={isDiscordStyle}
+                              disabled={!canPropose}
+                              onClick={() => onPanelAction('propose')}
+                            >
+                                <Heart className="w-5 h-5" weight="fill" />
+                            </ActionStrip>
 
                             <ActionStrip
                               label={mcdActivated ? '收摊点单' : '麦麦点单'}
