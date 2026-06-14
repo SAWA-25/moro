@@ -36,6 +36,11 @@ const VALENTINE_SPRITES: Record<string, string> = {
     love:    'https://sharkpan.xyz/f/xl8muX/VBl.png',
 };
 
+// 头像兜底：http/data/blob 链接或本地资源路径（如 Moro 的 /moro-avatars/calm.jpg）按图片渲染，
+// 其余（emoji）按文字渲染。只判 http/data 会把本地路径当成 emoji 文本 → 头像失效。
+const isImageAvatar = (a?: string): boolean =>
+    !!a && (/^https?:\/\//i.test(a) || a.startsWith('data:') || a.startsWith('blob:') || a.startsWith('/'));
+
 // localStorage keys
 const VALENTINE_DISMISSED_KEY = 'moro_valentine_2026_dismissed';
 const VALENTINE_COMPLETED_KEY = 'moro_valentine_2026_completed';
@@ -734,7 +739,11 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                                     onContextMenu={(e) => { e.preventDefault(); setDeleteTargetId(c.id); }}
                                     className="bg-white rounded-2xl p-4 shadow-sm border border-pink-100 active:scale-95 transition-transform flex flex-col items-center gap-3 hover:shadow-md hover:border-pink-200 relative"
                                 >
-                                    <img src={c.avatar} className="w-16 h-16 rounded-full object-cover shadow-sm border-2 border-pink-100" alt={c.name} />
+                                    {isImageAvatar(c.avatar) ? (
+                                        <img src={c.avatar} className="w-16 h-16 rounded-full object-cover shadow-sm border-2 border-pink-100" alt={c.name} />
+                                    ) : (
+                                        <span className="w-16 h-16 rounded-full flex items-center justify-center text-4xl shadow-sm border-2 border-pink-100 bg-pink-50">{c.avatar || '🌸'}</span>
+                                    )}
                                     <span className="font-bold text-slate-700 text-sm">{c.name}</span>
                                     {hasRecord && <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-pink-400" />}
                                 </button>
@@ -785,7 +794,9 @@ export const ValentineSession: React.FC<ValentineSessionProps> = ({ charId, onCl
                 <div className="flex flex-col items-center gap-6">
                     <div className="relative">
                         <div className="w-20 h-20 rounded-full border-2 border-pink-500/20 flex items-center justify-center">
-                            {char && <img src={char.avatar} className="w-16 h-16 rounded-full object-cover" alt="" />}
+                            {char && (isImageAvatar(char.avatar)
+                                ? <img src={char.avatar} className="w-16 h-16 rounded-full object-cover" alt="" />
+                                : <span className="w-16 h-16 rounded-full flex items-center justify-center text-4xl bg-pink-500/10">{char.avatar || '🌸'}</span>)}
                         </div>
                         <div className="absolute inset-0 w-20 h-20 rounded-full border-2 border-transparent border-t-pink-400 animate-spin" />
                     </div>
@@ -1253,7 +1264,7 @@ const SpecialEventCardImpl: React.FC<EventCardProps> = ({
                                             className="flex flex-col items-center gap-2 p-3 rounded-2xl active:scale-95 transition-transform relative"
                                             style={{ background: '#fff', boxShadow: isPending ? `0 0 0 2.5px ${theme.accent}` : '0 2px 6px rgba(96,66,40,0.12)' }}
                                         >
-                                            {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:') ? (
+                                            {isImageAvatar(c.avatar) ? (
                                                 <img src={c.avatar} loading="lazy" decoding="async" alt="" className="w-12 h-12 rounded-full object-cover" style={{ border: '2px solid #f3ead7' }} />
                                             ) : (
                                                 <span className="w-12 h-12 rounded-full flex items-center justify-center text-2xl" style={{ background: '#f3ead7', border: '2px solid #fff' }}>{c.avatar || '🌸'}</span>

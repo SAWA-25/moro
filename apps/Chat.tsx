@@ -104,6 +104,8 @@ const Chat: React.FC = () => {
     const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
+    // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
+    const [claimTarget, setClaimTarget] = useState<Message | null>(null);
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
     // 回神：自我校准结果弹窗 + 进行中状态
@@ -1134,6 +1136,71 @@ const Chat: React.FC = () => {
         await reloadMessages(visibleCountRef.current);
         triggerAI(messages);
     };
+
+    // ── 收款流程：角色发来的转账 / 红包，点开卡片 → 弹窗让用户选择是否收下 ──
+    const handleClaimRequest = useCallback((m: Message) => {
+        const meta: any = m.metadata || {};
+        const expired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
+        if (meta.status === 'claimed' || meta.status === 'declined' || expired) return;
+        setClaimTarget(m);
+    }, []);
+
+    const handleAcceptTransfer = async () => {
+        const m = claimTarget;
+        if (!m) return;
+        const amt = Math.abs(parseFloat(String(m.metadata?.amount))) || 0;
+        setClaimTarget(null);
+        if (amt > 0) adjustUserBalance(+amt); // 收到的钱进入用户钱包余额
+        await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'claimed', claimedAt: Date.now() }));
+        await reloadMessages(visibleCountRef.current);
+        addToast(`收下了 ¥${Math.round(amt)} · 已进入钱包`, 'success');
+    };
+
+    const handleDeclineTransfer = async () => {
+        const m = claimTarget;
+        if (!m) return;
+        setClaimTarget(null);
+        await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'declined', declinedAt: Date.now() }));
+        await reloadMessages(visibleCountRef.current);
+        addToast('没有收下', 'info');
+    };
+
+    // ── 过期检测：进入聊天时扫描角色发来、超过 24h 未领的转账 / 红包 →
+    //    标记 expired，并落一条 system 提示让角色对「钱没被领」做出反应（角色会有反应）──
+    const expiryScanLockRef = useRef(false);
+    useEffect(() => {
+        if (!char || isTyping || expiryScanLockRef.current) return;
+        if (char.charBlock?.active || char.blacklisted) return;
+        if (!apiConfig?.apiKey || !apiConfig?.baseUrl) return; // 没配 API 时只靠 UI 时间判定显示「已过期」，反应延后到配好后再触发
+        const now = Date.now();
+        const expired = messages.filter(m =>
+            m.role === 'assistant' && m.type === 'transfer' &&
+            m.metadata?.status === 'pending' &&
+            typeof m.metadata?.expiresAt === 'number' && now > m.metadata.expiresAt
+        );
+        if (expired.length === 0) return;
+        expiryScanLockRef.current = true;
+        (async () => {
+            try {
+                for (const m of expired) {
+                    await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'expired' }));
+                }
+                const summary = expired.map(m => `${m.metadata?.kind === 'redpacket' ? '红包' : '转账'}（¥${m.metadata?.amount}）`).join('、');
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: 'system',
+                    type: 'text',
+                    content: `[红包过期] 你之前发给 ${userProfile.name} 的${summary}，超过 24 小时一直没被领取，已经自动退回、过期了。请以「${char.name}」的身份，按你的人设对「钱没被收下」这件事做出自然反应（失落、打趣、关心 TA 是不是没看到、赌气或装作无所谓都行），不要复述本提示。`,
+                    metadata: { transferExpired: true },
+                } as any);
+                await reloadMessages(visibleCountRef.current);
+                triggerAI(messages);
+            } finally {
+                expiryScanLockRef.current = false;
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, char, isTyping]);
 
     // ── 角色主动查用户手机：「允许 char 看手机」开启时，AI 回复落定后小概率发起（带冷却）──
     const CHAR_PHONE_CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
@@ -3669,6 +3736,7 @@ ${recent || '（你们还没怎么聊过）'}
                             onAvatarClick={() => setShowCharProfile(true)}
                             onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
                             blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
+                            onClaimTransfer={handleClaimRequest}
                         />
                         </div>
                     );
@@ -4093,6 +4161,31 @@ ${recent || '（你们还没怎么聊过）'}
                     </div>
                 </div>
             )}
+
+            {/* 收款弹窗：角色发来的转账 / 红包，用户选择是否收下（超 24h 自动过期） */}
+            {claimTarget && char && (() => {
+                const meta: any = claimTarget.metadata || {};
+                const isRedpacket = meta.kind === 'redpacket';
+                const amt = Math.abs(parseFloat(String(meta.amount))) || 0;
+                const note = isRedpacket && typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '';
+                return (
+                    <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => setClaimTarget(null)}>
+                        <div className="w-[min(82vw,320px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <div className="px-6 pt-7 pb-5 text-center" style={{ background: isRedpacket ? 'linear-gradient(150deg,#fffbeb,#fef3c7)' : '#fff' }}>
+                                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center text-2xl" style={{ background: isRedpacket ? 'rgba(245,158,11,0.25)' : '#f1f5f9' }}>{isRedpacket ? '🧧' : '💸'}</div>
+                                <div className="text-[15px] font-bold text-slate-800">{displayCharName} 给你{isRedpacket ? '发了个红包' : '转了笔零花钱'}</div>
+                                {note && <div className="text-[13px] text-amber-700 mt-1.5">「{note}」</div>}
+                                <div className="text-[30px] font-black tracking-tight text-slate-800 mt-3">¥ {meta.amount}</div>
+                                <div className="text-[11px] text-slate-400 mt-2 leading-relaxed">收下后进入你的钱包余额 · 超过 24 小时不领会自动退回</div>
+                            </div>
+                            <div className="flex border-t border-slate-100">
+                                <button onClick={() => { void handleDeclineTransfer(); }} className="flex-1 py-3.5 text-[15px] text-slate-500 font-medium active:bg-slate-50">先不收</button>
+                                <button onClick={() => { void handleAcceptTransfer(); }} className="flex-1 py-3.5 text-[15px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: isRedpacket ? '#d97706' : '#576b95' }}>收下 ¥{Math.round(amt)}</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* 「角色给你换备注」弹窗：点开看动机 */}
             {remarkChangeNotice && char && (

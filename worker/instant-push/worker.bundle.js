@@ -2578,6 +2578,11 @@ var SIDE_EFFECT_TAGS = [
     re: /\[\[ACTION:TRANSFER:(\d+)\]\]/g,
     toDirective: (m) => ({ type: "transfer", amount: Number(m[1]) })
   },
+  // [[ACTION:REDPACKET:123]] 或 [[ACTION:REDPACKET:123|祝福语]]（红包：推送语义同转账，剥掉标签即可）
+  {
+    re: /\[\[ACTION:REDPACKET:(\d+)(?:\|[^\]]*)?\]\]/g,
+    toDirective: (m) => ({ type: "transfer", amount: Number(m[1]) })
+  },
   // [[ACTION:ADD_EVENT|title|date]]
   {
     re: /\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/g,

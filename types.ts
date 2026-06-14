@@ -17,7 +17,6 @@ export enum AppID {
   CheckPhone = 'check_phone',
   Social = 'social',
   Study = 'study',
-  FAQ = 'faq',
   Game = 'game',
   Worldbook = 'worldbook', 
   Novel = 'novel', 

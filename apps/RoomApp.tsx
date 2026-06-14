@@ -14,14 +14,6 @@ import PixelHomeView from './pixelHome/PixelHomeView';
 // --- 1. 免版权贴纸素材库 (Sticker Library) ---
 // 使用手绘 SVG 图标替代 Twemoji，更精致的视觉体验
 const ASSET_LIBRARY = {
-    // Moro专属家具 (默认大小已根据你的布局调整)
-    moro_special: [
-        { name: 'Moro床', image: 'https://sharkpan.xyz/f/A3XeUZ/BED.png', defaultScale: 2.4 },
-        { name: 'Moro电脑桌', image: 'https://sharkpan.xyz/f/G5n3Ul/DNZ.png', defaultScale: 2.4 },
-        { name: 'Moro书柜', image: 'https://sharkpan.xyz/f/zlpWS5/SG.png', defaultScale: 2.0 },
-        { name: 'Moro洞洞板', image: 'https://sharkpan.xyz/f/85K5ij/DDB.png', defaultScale: 2.6 },
-        { name: 'Moro垃圾桶', image: 'https://sharkpan.xyz/f/75Nvsj/LJT.png', defaultScale: 0.9 },
-    ],
     furniture: [
         { name: '床', image: FURNITURE_ICONS.bed, defaultScale: 1.5 },
         { name: '沙发', image: FURNITURE_ICONS.sofa, defaultScale: 1.4 },
@@ -65,70 +57,6 @@ const FLOOR_PRESETS = [
 const DEFAULT_FURNITURE: RoomItem[] = [
     { id: 'desk', name: '书桌', type: 'furniture', image: ASSET_LIBRARY.furniture[1].image, x: 20, y: 55, scale: 1.2, rotation: 0, isInteractive: true, descriptionPrompt: '这里是书桌，可能乱糟糟的，也可能整整齐齐。' },
     { id: 'plant', name: '盆栽', type: 'decor', image: ASSET_LIBRARY.decor[0].image, x: 85, y: 40, scale: 0.8, rotation: 0, isInteractive: true, descriptionPrompt: '角落里的植物。' },
-];
-
-// User-provided layout (Perfectly aligned!)
-const MORO_FURNITURE: RoomItem[] = [
-  {
-    id: "item-1768927221380",
-    name: "Moro床",
-    type: "furniture",
-    image: "https://sharkpan.xyz/f/A3XeUZ/BED.png",
-    x: 78.45852578067732,
-    y: 97.38889754570907,
-    scale: 2.4,
-    rotation: 0,
-    isInteractive: true,
-    descriptionPrompt: "看起来很好睡的猫窝（确信）。"
-  },
-  {
-    id: "item-1768927255102",
-    name: "Moro电脑桌",
-    type: "furniture",
-    image: "https://sharkpan.xyz/f/G5n3Ul/DNZ.png",
-    x: 28.853756791175588,
-    y: 69.9444485439727,
-    scale: 2.4,
-    rotation: 0,
-    isInteractive: true,
-    descriptionPrompt: "硬核的电脑桌，上面大概运行着什么毁灭世界的程序。"
-  },
-  {
-    id: "item-1768927271632",
-    name: "Moro垃圾桶",
-    type: "furniture",
-    image: "https://sharkpan.xyz/f/75Nvsj/LJT.png",
-    x: 10.276680026943646,
-    y: 80.49999880981437,
-    scale: 0.9,
-    rotation: 0,
-    isInteractive: true,
-    descriptionPrompt: "不要乱翻垃圾桶！"
-  },
-  {
-    id: "item-1768927286526",
-    name: "Moro洞洞板",
-    type: "furniture",
-    image: "https://sharkpan.xyz/f/85K5ij/DDB.png",
-    x: 32.608697687684455,
-    y: 48.72222587415929,
-    scale: 2.6,
-    rotation: 0,
-    isInteractive: true,
-    descriptionPrompt: "收纳着各种奇奇怪怪的黑客工具和猫咪周边的洞洞板。"
-  },
-  {
-    id: "item-1768927303472",
-    name: "Moro书柜",
-    type: "furniture",
-    image: "https://sharkpan.xyz/f/zlpWS5/SG.png",
-    x: 79.84189945375853,
-    y: 68.94444543117953,
-    scale: 2,
-    rotation: 0,
-    isInteractive: true,
-    descriptionPrompt: "塞满了技术书籍和漫画书的柜子。"
-  }
 ];
 
 const FLOOR_HORIZON = 65; // Floor starts at 65% from top
@@ -460,18 +388,11 @@ const RoomApp: React.FC = () => {
         setActiveCharacterId(c.id);
         setViewState('room');
         
-        // Load Items: Priority -> Character Config > Moro Defaults > Generic Defaults
+        // Load Items: Priority -> Character Config > Generic Defaults
         let loadedItems = c.roomConfig?.items;
-        
+
         if (!loadedItems || loadedItems.length === 0) {
-            // Check if it's Moro (Preset ID or Name fallback)
-            if (c.id === 'preset-moro-v2' || c.name === 'Moro') {
-                loadedItems = MORO_FURNITURE; 
-                // Auto-save Moro's furniture to persist it
-                updateCharacter(c.id, { roomConfig: { ...c.roomConfig, items: MORO_FURNITURE } });
-            } else {
-                loadedItems = DEFAULT_FURNITURE;
-            }
+            loadedItems = DEFAULT_FURNITURE;
         }
         
         setItems(loadedItems || []);
@@ -1005,14 +926,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         });
     };
 
-    // New: Reset Moro
-    const resetMoroRoom = () => {
-        if (!char) return;
-        saveRoom(MORO_FURNITURE);
-        setShowSettingsModal(false);
-        addToast('Moro 的样板页，复原了', 'success');
-    };
-
     // --- PERF FIX: Direct DOM Dragging (bypasses React re-renders) ---
     // During drag: manipulate DOM directly via element.style
     // On drop: sync final position to React state once
@@ -1227,11 +1140,8 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
         custom: customAssets
     };
 
-    // Moro Check
-    const isMoro = char?.id === 'preset-moro-v2' || char?.name === 'Moro';
-
     // 贴纸抽屉的分类中文标签
-    const CAT_LABELS: Record<string, string> = { moro_special: 'Moro 专属', furniture: '家具', decor: '摆设', food: '吃的', custom: '我的剪贴' };
+    const CAT_LABELS: Record<string, string> = { furniture: '家具', decor: '摆设', food: '吃的', custom: '我的剪贴' };
 
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden font-sans select-none text-[#1c1a17]" style={PAPER_GRID}>
@@ -1474,7 +1384,7 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                         return (
                                             <button
                                                 key={asset.id || i}
-                                                onClick={() => addItem(asset, category === 'custom' || category === 'moro_special' ? 'furniture' : category as any)}
+                                                onClick={() => addItem(asset, category === 'custom' ? 'furniture' : category as any)}
                                                 className="flex flex-col items-center gap-1.5 group relative active:scale-95 transition-transform"
                                                 {...handlers}
                                             >
@@ -1592,15 +1502,6 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                         </div>
                     </div>
 
-                    {isMoro && (
-                        <div className="pt-4 border-t-2 border-dashed border-[#1c1a17]/40">
-                            <h4 className="text-xs font-bold text-[#1c1a17] font-label tracking-[0.2em] uppercase mb-3">Moro 的维护抽屉</h4>
-                            <button onClick={resetMoroRoom} className="w-full py-3 bg-[#fbf9f3] text-[#1c1a17] font-bold border-2 border-[#1c1a17] shadow-[3px_3px_0_#1c1a17] flex items-center justify-center gap-2 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all">
-                                <I.broom size={18} /> 还原成样板页
-                            </button>
-                            <p className="text-[9px] text-[#9b958a] mt-2 text-center">要是把房间翻乱了，点这里一键贴回原样。</p>
-                        </div>
-                    )}
                 </div>
             </PaperModal>
 

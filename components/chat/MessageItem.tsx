@@ -790,6 +790,8 @@ interface MessageItemProps {
     onAvatarPoke?: () => void;
     /** 拉黑标记：角色被用户拉黑后发来的消息，气泡旁显示红色感叹号 */
     blockedMark?: boolean;
+    /** 点开角色发来的转账 / 红包卡片：弹出「收款」确认弹窗（仅 pending 且未过期时可点）。 */
+    onClaimTransfer?: (m: Message) => void;
 }
 
 const SWIPE_REPLY_TRIGGER = 56; // px：左滑超过此距离松手即触发引用
@@ -831,6 +833,7 @@ const MessageItem = React.memo(({
     onAvatarClick,
     onAvatarPoke,
     blockedMark = false,
+    onClaimTransfer,
 }: MessageItemProps) => {
     const isUser = m.role === 'user';
     const isSystem = m.role === 'system';
@@ -2191,8 +2194,23 @@ const MessageItem = React.memo(({
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
         // 红包卡片（参考设计：奶油底 + 墨色字的手帐风，保留暖黄的「红包」识别色）
         const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';
+        const meta = m.metadata || {};
+        const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
+        const isClaimed = meta.status === 'claimed';
+        const isDeclined = meta.status === 'declined';
+        const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
+        const footerText = isUser
+            ? `发给${charName}的红包`
+            : isClaimed ? '已收下 · 进了钱包 ✓'
+            : isExpired ? '没来得及收 · 已过期退回'
+            : isDeclined ? '你没有收下这个红包'
+            : '发给你的红包 · 点开收下';
         return commonLayout(
-            <div className="w-64 rounded-[1.4rem] p-4 relative overflow-hidden active:scale-[0.98] transition-transform border border-amber-200/70 shadow-[0_14px_28px_-18px_rgba(180,130,20,0.5)]" style={{ background: 'linear-gradient(150deg, #fffbeb 0%, #fef3c7 100%)', color: '#42361e' }}>
+            <div
+                onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
+                className={`w-64 rounded-[1.4rem] p-4 relative overflow-hidden transition-transform border border-amber-200/70 shadow-[0_14px_28px_-18px_rgba(180,130,20,0.5)] ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-60 grayscale' : ''}`}
+                style={{ background: 'linear-gradient(150deg, #fffbeb 0%, #fef3c7 100%)', color: '#42361e' }}
+            >
                 {/* 右上书签缎带 */}
                 <div className="absolute top-0 right-5 w-4 h-7 bg-amber-400/90" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
                 <div className="flex items-center gap-2 mb-3 relative">
@@ -2202,7 +2220,7 @@ const MessageItem = React.memo(({
                 <div className="relative">
                     <div className="text-[13px] font-medium opacity-80 mb-1.5 truncate">「{note}」</div>
                     <div className="text-[26px] font-black tracking-tight">₩ {m.metadata?.amount}</div>
-                    <div className="mt-2 pt-2 border-t border-amber-900/10 text-[10px] opacity-60">{isUser ? `发给${charName}的红包` : '发给你的红包 · 点开收下'}</div>
+                    <div className={`mt-2 pt-2 border-t border-amber-900/10 text-[10px] ${claimable ? 'font-bold opacity-80' : 'opacity-60'}`}>{footerText}</div>
                 </div>
             </div>
         );
@@ -2210,8 +2228,22 @@ const MessageItem = React.memo(({
 
     if (m.type === 'transfer') {
         // 转账卡片（参考设计：白卡 + 墨色大金额 + 细线分隔的极简手帐风）
+        const meta = m.metadata || {};
+        const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
+        const isClaimed = meta.status === 'claimed';
+        const isDeclined = meta.status === 'declined';
+        const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
+        const footerText = isUser
+            ? `寄给${charName}的零花钱`
+            : isClaimed ? '已收下 · 进了钱包 ✓'
+            : isExpired ? '没来得及收 · 已过期退回'
+            : isDeclined ? '你没有收下'
+            : '寄给你的零花钱 · 点开收下';
         return commonLayout(
-            <div className="w-64 bg-white rounded-[1.4rem] p-4 relative overflow-hidden active:scale-[0.98] transition-transform border border-slate-100 shadow-[0_14px_28px_-18px_rgba(50,48,60,0.4)]">
+            <div
+                onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
+                className={`w-64 bg-white rounded-[1.4rem] p-4 relative overflow-hidden transition-transform border border-slate-100 shadow-[0_14px_28px_-18px_rgba(50,48,60,0.4)] ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-60 grayscale' : ''}`}
+            >
                 {/* 右上书签缎带 */}
                 <div className="absolute top-0 right-5 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
                 <div className="flex items-center gap-2 mb-3">
@@ -2222,7 +2254,7 @@ const MessageItem = React.memo(({
                 </div>
                 <div className="text-[26px] font-black tracking-tight text-slate-800">₩ {m.metadata?.amount}</div>
                 <div className="mt-2 pt-2 border-t border-slate-50 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">寄给{isUser ? charName : '你'}的零花钱</span>
+                    <span className={`text-[10px] ${claimable ? 'text-slate-600 font-bold' : 'text-slate-400'}`}>{footerText}</span>
                     <span className="text-[10px] text-slate-300">♡</span>
                 </div>
             </div>
@@ -2744,7 +2776,10 @@ const MessageItem = React.memo(({
            prev.showTimestamp === next.showTimestamp &&
            prev.voiceData?.url === next.voiceData?.url &&
            prev.voiceLoading === next.voiceLoading &&
-           prev.isVoicePlaying === next.isVoicePlaying;
+           prev.isVoicePlaying === next.isVoicePlaying &&
+           // 转账 / 红包卡片的收款状态变化（pending→claimed/expired/declined）只动 metadata，
+           // 不动 content/id，需单独比对，否则 memo 会挡掉卡片状态更新。
+           prev.msg.metadata?.status === next.msg.metadata?.status;
 });
 
 export default MessageItem;

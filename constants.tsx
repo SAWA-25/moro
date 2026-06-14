@@ -14,7 +14,6 @@ import {
   House,
   DeviceMobileCamera,
   Books,
-  Question,
   GameController,
   NewspaperClipping,
   PenNib,
@@ -63,7 +62,6 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   CheckPhone: ({ className }) => <DeviceMobileCamera className={className} weight="bold" />,
   Social: ({ className }) => <PushPin className={className} weight="bold" />,
   Study: ({ className }) => <Books className={className} weight="bold" />,
-  FAQ: ({ className }) => <Question className={className} weight="bold" />,
   Game: ({ className }) => <GameController className={className} weight="bold" />,
   Worldbook: ({ className }) => <NewspaperClipping className={className} weight="bold" />,
   Novel: ({ className }) => <PenNib className={className} weight="bold" />,
@@ -132,7 +130,6 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 「时光契约」(日程/心愿单/纪念日倒数) + 「特别时光」(节日记忆活动) 合并为「岁时记」：
   // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
-  { id: AppID.FAQ, name: '使用帮助', icon: 'FAQ', color: 'indigo' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },

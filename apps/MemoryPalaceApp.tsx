@@ -2870,20 +2870,6 @@ export default function MemoryPalaceApp() {
                         </div>
                     </div>
 
-                    {/* 图文教程 */}
-                    <a href="https://www.kdocs.cn/l/ctifnJA5VGA3" target="_blank" rel="noopener noreferrer"
-                        style={{
-                            display: 'block', marginTop: 10, padding: '10px 12px', borderRadius: 3,
-                            background: 'white', border: '2px dashed #1a1a1a', color: '#626262',
-                            fontSize: 11, fontWeight: 600, textDecoration: 'none', textAlign: 'center',
-                        }}
-                    >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            <Icon name="book" size={13} />
-                            <span>查看详细图文教程（金山文档）→</span>
-                        </span>
-                    </a>
-
                     {/* 3 步操作提示 */}
                     <div style={{ marginTop: 12, padding: 12, borderRadius: 3, background: '#f5f5f5', fontSize: 11, color: '#434343', lineHeight: 1.8 }}>
                         <b>3 步搞定：</b><br/>

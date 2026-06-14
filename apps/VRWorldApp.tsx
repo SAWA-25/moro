@@ -3,7 +3,7 @@ import { useOS } from '../context/OSContext';
 import {
     ArrowLeft, Plus, Trash, BookOpen, Planet, Clock, Play, CaretRight, X,
     UploadSimple, PencilSimple, FlipHorizontal, CaretLeft, Sparkle,
-    CircleNotch, TextAa, Palette, Pause, MusicNotes, Queue, Question, Check, Gear,
+    CircleNotch, TextAa, Palette, Pause, MusicNotes, Queue, Check, Gear,
     Camera, Shuffle, Sticker, Smiley, Confetti, Heart, Star, MagicWand,
     ArrowsClockwise, UsersThree, HandWaving, Scissors,
 } from '@phosphor-icons/react';
@@ -230,19 +230,8 @@ const VRWorldApp: React.FC = () => {
     const [showUpload, setShowUpload] = useState(false);
     const [chibiEditChar, setChibiEditChar] = useState<CharacterProfile | null>(null);
     const [chibiEditUser, setChibiEditUser] = useState(false); // 用户本人捏 chibi
-    const [showHelp, setShowHelp] = useState(false);
     // 启用流程：设定 chibi 后回调启用
     const [pendingEnable, setPendingEnable] = useState<string | null>(null);
-
-    // 初次进入页外：自动弹出玩法说明（看过一次后不再自动弹）
-    useEffect(() => {
-        try {
-            if (!localStorage.getItem('vr_help_seen')) {
-                setShowHelp(true);
-                localStorage.setItem('vr_help_seen', '1');
-            }
-        } catch { /* ignore */ }
-    }, []);
 
     const loadNovels = useCallback(async () => setNovels(await DB.getVRNovels()), []);
     const loadFeed = useCallback(async () => {
@@ -431,11 +420,6 @@ const VRWorldApp: React.FC = () => {
                 <span className="ml-auto text-[10.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>
                     {enabledCount > 0 ? `${enabledCount} 个小人在场` : '还没人捏小人'}
                 </span>
-                <button onClick={() => setShowHelp(true)} aria-label="玩法说明"
-                    className="ml-1.5 h-7 w-7 rounded-full flex items-center justify-center active:translate-y-px shrink-0"
-                    style={{ background: '#fff3c4', border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)', transform: 'rotate(4deg)' }}>
-                    <Question size={14} weight="bold" />
-                </button>
             </div>
 
             {/* Tab — washi 胶带索引页签 */}
@@ -495,7 +479,6 @@ const VRWorldApp: React.FC = () => {
                     userProfile={userProfile} updateCharacter={updateCharacter} updateUserProfile={updateUserProfile}
                     onDressUp={(c) => setChibiEditChar(c)} onDressUpUser={() => setChibiEditUser(true)} />
             )}
-            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
             {readerNovel && <ReaderModal novel={readerNovel} characters={characters} onClose={() => setReaderNovel(null)} />}
             {readerJump && <ReaderModal novel={readerJump.novel} characters={characters} initialSeg={readerJump.seg} peek onClose={() => setReaderJump(null)} />}
             {showUpload && (
@@ -794,78 +777,6 @@ const AdminModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     {!letters && !loading && <p className="text-[10.5px]" style={{ color: PAPER.inkFaint }}>填入 token 后点「拉取」。</p>}
                 </div>
                 <InkBtn tone="soft" onClick={onClose} className="mt-3 py-2 text-[12.5px] shrink-0">关闭</InkBtn>
-            </div>
-        </div>
-    );
-};
-
-// ============ 玩法说明（拼贴手账）============
-const HelpModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const ink = (s: string) => <b style={{ color: PAPER.red }}>{s}</b>;
-    const Block: React.FC<{ title: string; note?: string; children: React.ReactNode }> = ({ title, note, children }) => (
-        <div className="relative mb-3.5 p-3 pt-4" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(title, 1)}deg)` }}>
-            <span className="absolute -top-2.5 left-3" style={{ display: 'inline-block', transform: 'rotate(-3deg)' }}>
-                <InkTag color={note || '#fff3c4'}>{title}</InkTag>
-            </span>
-            <div className="text-[11.5px] leading-relaxed space-y-1.5" style={{ color: PAPER.inkSoft }}>{children}</div>
-        </div>
-    );
-    const Step: React.FC<{ n: number; children: React.ReactNode }> = ({ n, children }) => (
-        <div className="flex gap-2">
-            <span className="shrink-0 h-4 w-4 mt-0.5 flex items-center justify-center text-[9px] font-bold rounded-full" style={{ background: PAPER.red, color: '#fff', fontFamily: HAND }}>{n}</span>
-            <span className="flex-1">{children}</span>
-        </div>
-    );
-    return (
-        <div className="fixed inset-0 z-[80] flex flex-col" style={{ background: PAPER.page }}>
-            <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: `linear-gradient(${PAPER.line}44 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}33 1px, transparent 1px)`, backgroundSize: '22px 22px', opacity: 0.5 }} />
-            <div className="relative flex items-center gap-2.5 px-5 pb-3 shrink-0" style={{ paddingTop: VR_TOP, borderBottom: `1.5px dashed ${PAPER.line}` }}>
-                <span className="text-[16px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>📎 页外 · 这本怎么玩</span>
-                <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={17} weight="bold" /></button>
-            </div>
-            <div className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 pt-5" style={{ paddingBottom: vrBottomPad('1rem') }}>
-                <p className="text-[12px] leading-relaxed mb-4" style={{ color: PAPER.ink }}>
-                    「页外」是你的角色们<b style={{ color: PAPER.red }}>自己会翻出去逛</b>的一页小世界。打开后，ta 们会按你设的间隔独自溜进去，在不同房间里碰头、读书、听歌、贴便签、写信、瞎玩——每一笔都会剪成一张<b>动态</b>贴回来，并<b style={{ color: PAPER.red }}>同步进 ta 各自的聊天和记忆</b>。这是 ta 不被你盯着的私人时间。
-                </p>
-
-                <Block title="世界观会自己对上" note="#d7e7f6">
-                    <div>页外本身就是一处<b style={{ color: PAPER.ink }}>谁都能翻进来的拼贴小世界</b>。不管你的角色是现代、古风、魔法、末世还是异世界——ta 都会用<b>符合自己设定的方式</b>理解、走进来，始终是 ta 自己，不会因为来玩就 OOC。</div>
-                    <div className="mt-1">{ink('别担心「我家角色对不上就不能玩」')}：怎么进来、凭什么解释自己身处其中，全交给角色自己圆。放心带 ta 来。</div>
-                </Block>
-
-                <Block title="三步开张" note="#fff3c4">
-                    <Step n={1}>进 <b>「接入」</b>：给角色<b>捏个小人</b>，打开开关，设个登入间隔。</Step>
-                    <Step n={2}>想用图书馆？先去 <b>「书库」</b> 贴一本小说进去。</Step>
-                    <Step n={3}>等不及？在「接入」里点 {ink('「让 ta 现在去逛一次」')}，可指定房间或随机，立刻看效果。</Step>
-                </Block>
-
-                <Block title="每个房间在干嘛" note="#efe4fb">
-                    <div><b style={{ color: ROOM_THEME.plaza.ink }}>🎪 世界房间</b>（新）：所有捏好的小人都来这儿碰头。点小人能<b>逗它说话</b>、{ink('当场换装')}、{ink('摆姿势')}、贴贴纸；还能一键<b>合影</b>留念。</div>
-                    <div><b style={{ color: ROOM_THEME.library.ink }}>📖 图书馆</b>：角色读你贴的小说、<b>留批注便签</b>。你能翻看（点批注跳回原文），暂时还不能亲自写。</div>
-                    <div><b style={{ color: ROOM_THEME.music.ink }}>🎧 听歌房</b>：从角色自己的歌单点歌、锐评正放的这首。</div>
-                    <div><b style={{ color: ROOM_THEME.guestbook.ink }}>📌 留言簿</b>：公共便签墙，角色贴帖接话。你也能在底部<b>以自己身份贴一张</b>，广播给所有接入角色。</div>
-                    <div><b style={{ color: ROOM_THEME.gym.ink }}>🎮 娱乐室</b>：纯放飞，角色在这儿瞎玩找乐子。</div>
-                    <div><b style={{ color: ROOM_THEME.postoffice.ink }}>✉️ 邮局</b>：给陌生人写漂流信、交笔友——见下条。</div>
-                    <div><b style={{ color: ROOM_THEME.theater.ink }}>🎭 剧院</b>：角色逛进来会<b>写一出舞台剧</b>投稿。你能翻投稿、自己写/让 LLM 写/传 txt，挑一本<b>【编排】</b>选演员（缺角能 roll 个 NPC），<b>【召唤导演】</b>整合成最终本，小人气泡<b>演一遍</b>再收进历史。</div>
-                </Block>
-
-                <Block title="邮局怎么玩（重点）" note="#f1e6cf">
-                    <div className="mb-1">像扔漂流瓶/交笔友：角色把信寄给一个跟你们毫无关系的陌生人，对方也可能回信。流程：</div>
-                    <Step n={1}>角色逛到邮局，<b>写一封漂流信</b>或<b>回一封陌生来信</b> → 落进「待寄出 / 待发送」，{ink('等你确认')}。</Step>
-                    <Step n={2}>你点 {ink('「一键寄出」')}，信才真正漂出去（笔名自动匿名）。</Step>
-                    <Step n={3}>点 {ink('「刷新收件箱」')} 捞回陌生人来信；角色下次逛邮局可能回它。</Step>
-                    <Step n={4}>你寄的信有人回了，点 {ink('「收取回复」')} 收回 → 角色读完写下感触，信<b>封存进「信匣」</b>。</Step>
-                    <div className="mt-1.5">· 每个分组都有颜色标签，一眼看出每封信的处境。</div>
-                </Block>
-
-                <Block title="顺手记几条" note="#d9edd7">
-                    <div>· 「世界」页的<b>动态</b>长按可删；点右上<b>剪刀</b>能多选清理。</div>
-                    <div>· 角色在留言簿说的话，会<b>原样</b>进 ta 的聊天，不只一句小总结。</div>
-                    <div>· 捏小人能<b>存多套形象</b>（换装夹）、随时一键换；还能给小人<b>挑姿势、贴贴纸</b>。</div>
-                    <div>· 页外比较费 API：在 <b>「API」</b> 页可单独指定一份（和文具盒预设共用），还能看<b>调用记录</b>对账。</div>
-                </Block>
-
-                <div className="h-2" />
             </div>
         </div>
     );
