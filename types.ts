@@ -751,19 +751,64 @@ export interface ChatTheme {
 export interface PhoneCustomApp {
     id: string;
     name: string;
-    icon: string; 
-    color: string; 
-    prompt: string; 
+    icon: string;
+    color: string;
+    prompt: string;
 }
 
 export interface PhoneEvidence {
     id: string;
-    type: 'chat' | 'order' | 'social' | 'delivery' | string; 
-    title: string; 
-    detail: string; 
+    type: 'chat' | 'order' | 'social' | 'delivery' | string;
+    title: string;
+    detail: string;
     timestamp: number;
-    systemMessageId?: number; 
-    value?: string; 
+    systemMessageId?: number;
+    value?: string;
+}
+
+/**
+ * 查手机·角色专属手机皮肤（每个角色一套，让"翻 TA 手机"的桌面千人千面）。
+ * 主要由 char.id 确定性派生（配色/排版），可选地用 LLM 生成一份更贴人设的「手机侧写」
+ * （设备名 / 桌面副标 / 一句话 vibe / 一组贴人设的 App），生成后缓存在 phoneState.profile。
+ */
+export interface PhoneProfile {
+    /** 设备名（桌面顶部，如「Ethan 的 iPhone」） */
+    deviceName?: string;
+    /** 桌面副标题 / 一句话状态 */
+    tagline?: string;
+    /** 壁纸：CSS 渐变串或图片 url（缺省时按 char.id 派生渐变） */
+    wallpaper?: string;
+    /** 主题强调色 hex */
+    accent?: string;
+    /** 配色方案 id（确定性派生，决定深浅/色相） */
+    paletteId?: string;
+    /** LLM 生成的一组贴人设 App（覆盖默认 App 集的展示名/图标/取数指令） */
+    apps?: Array<{ id: string; name: string; icon: string; color: string; kind: string; prompt?: string }>;
+    /** 是否由 LLM 生成过（用于按钮文案 ✎ 装点 / ↻ 重新装点） */
+    generated?: boolean;
+    generatedAt?: number;
+}
+
+/** 回望小报（昨日来信 / 回望·周章 / 回望·月章）：把过去一段时间整理成娱乐小报 */
+export interface Tabloid {
+    /** 'day' 昨日来信 / 'week' 回望·周章 / 'month' 回望·月章 */
+    period: 'day' | 'week' | 'month';
+    /** 小报头条大标题 */
+    headline: string;
+    /** 副标 / 期号小字 */
+    subhead?: string;
+    /** 主笔（角色）寄语：像编辑手记一样的开场白 */
+    editorNote?: string;
+    /** 栏目：每条是一个娱乐版块 */
+    sections: Array<{ tag: string; title: string; body: string; quote?: string }>;
+    /** 花絮 / 边栏小料 */
+    sidebar?: string[];
+    /** 结尾签名 */
+    signoff?: string;
+    /** 覆盖的时间窗口 [from, to) */
+    rangeFrom: number;
+    rangeTo: number;
+    generatedAt: number;
 }
 
 /**
@@ -1799,7 +1844,9 @@ export interface CharacterProfile {
 
   phoneState?: {
       records: PhoneEvidence[];
-      customApps?: PhoneCustomApp[]; 
+      customApps?: PhoneCustomApp[];
+      /** 角色专属手机皮肤（确定性派生 + 可选 LLM 装点，详见 PhoneProfile） */
+      profile?: PhoneProfile;
   };
 
   voiceProfile?: {
@@ -1820,7 +1867,16 @@ export interface CharacterProfile {
   // 时间感知强化：开启（默认）时会向上下文注入「距离上次聊天已过去多久」的强化提示，
   // 让角色强化时间观念、主动匹配现实世界时间。关掉后不再注入这组提示词
   // （注意：历史消息本身仍带时间戳，关掉后弱化程度取决于模型自身理解）。
+  // 这里承载「时间流逝感知」：两次聊天 / 有待跟进事件时，TA 知道过去了多久。
   timeAwarenessEnabled?: boolean;
+
+  // 柔顺奉养（Soft Devotion Chat）：开启后这个角色在聊天里共情能力大幅提升——
+  // 更偏爱、更耐心地接住用户的敏感、撒娇和不安（向 system prompt 注入共情强化段）。
+  softDevotionChatEnabled?: boolean;
+
+  // 回望小报缓存：键为周期标识（'day-YYYY-MM-DD' / 'week-YYYY-WW' / 'month-YYYY-MM'），
+  // 值为已生成的娱乐小报。开关在会话设置 convoSettings.tabloidEnabled。
+  generatedTabloids?: Record<string, Tabloid>;
 
   // Chat & Date voice TTS settings
   chatVoiceEnabled?: boolean;
@@ -2020,6 +2076,12 @@ export interface ConvoSettings {
     hideTimestamp?: boolean;
     /** 所在地区：注入提示词，影响角色作息 / 时差 / 话题贴合 */
     region?: string;
+    /** 实时感知·线上：在线聊天里明确把「当前真实时间」告诉模型（默认开，关掉则不注入钟点）。 */
+    realtimeClockOnline?: boolean;
+    /** 实时感知·线下：线下面对面模式里也把「当前真实时间」告诉模型（默认关，线下多为架空场景）。 */
+    realtimeClockOffline?: boolean;
+    /** 回望小报：开启后聊天里可生成「昨日来信 / 回望·周章 / 回望·月章」娱乐小报。 */
+    tabloidEnabled?: boolean;
     /** 主动查询：发消息前先留意当前时间 / 天气 / 热点等实时信息再开口（提示词注入） */
     proactiveLookup?: boolean;
     /** 主动发消息「随机 30 分~10h」模式标记（intervalMinutes 仍是调度器实际读的值） */

@@ -1104,6 +1104,31 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                </p>
                            </div>
 
+                           {/* 柔顺奉养（Soft Devotion Chat）：开启后角色共情能力大幅提升 */}
+                           <div className={`p-3 ${STICKER}`} style={{ transform: 'rotate(-0.4deg)' }}>
+                               <div className="flex items-start justify-between gap-3">
+                                   <div className="min-w-0">
+                                       <div className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5">柔顺奉养 / SOFT DEVOTION CHAT</div>
+                                       <p className="text-[12px] text-[#1c1b1a]/70 leading-relaxed" style={HAND_CN}>
+                                           开启后，这个角色在聊天里会更偏爱、更耐心地接住你的敏感、撒娇和不安。
+                                       </p>
+                                   </div>
+                                   <button
+                                       role="switch"
+                                       aria-checked={!!formData.softDevotionChatEnabled}
+                                       onClick={() => handleChange('softDevotionChatEnabled', !formData.softDevotionChatEnabled)}
+                                       className="relative w-[46px] h-[26px] shrink-0 rounded-full border-2 border-[#1c1b1a] transition-all active:scale-95"
+                                       style={{ background: formData.softDevotionChatEnabled ? INK : '#fff' }}
+                                       title="柔顺奉养"
+                                   >
+                                       <span
+                                           className="absolute top-1/2 -translate-y-1/2 w-[16px] h-[16px] rounded-full border-2 border-[#1c1b1a] transition-all duration-300"
+                                           style={{ left: formData.softDevotionChatEnabled ? 24 : 3, background: formData.softDevotionChatEnabled ? '#fff' : INK }}
+                                       />
+                                   </button>
+                               </div>
+                           </div>
+
                            <div>
                                {fieldLabel('TA 的世界（世界观补充）', 'WORLD')}
                                <textarea

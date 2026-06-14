@@ -15,6 +15,7 @@ import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER 
 import MessageItem from '../components/chat/MessageItem';
 import CharacterProfilePage from '../components/character/CharacterProfilePage';
 import CheckPhone from './CheckPhone';
+import CameraApp from './CameraApp';
 import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
 import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
@@ -30,6 +31,7 @@ import CharacterEntryTransition from '../components/chat/CharacterEntryTransitio
 import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
+import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
@@ -104,7 +106,7 @@ const Chat: React.FC = () => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css' | 'tabloid'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
@@ -135,6 +137,8 @@ const Chat: React.FC = () => {
     // ── 查手机（双向）──
     // 用户查角色手机：+ 号面板入口，内嵌 CheckPhone（原桌面独立 App）
     const [showCheckPhone, setShowCheckPhone] = useState(false);
+    // 相机：用 TA 的手机拍下此刻给 TA 看（+ 号面板「拍张照」）
+    const [showCamera, setShowCamera] = useState(false);
     // 角色查用户手机：「允许 char 看手机」开启时角色主动发起的全屏覆盖层
     const [charPhoneCheckActive, setCharPhoneCheckActive] = useState(false);
 
@@ -1124,6 +1128,14 @@ const Chat: React.FC = () => {
         }
     };
 
+    // 查手机·把翻到的内容塞进剧情：从 CheckPhone 里点「拿去对峙」时，关掉查手机浮层并以
+    // 用户口吻把这条证据抛进聊天，触发角色当场解释 / 狡辩 / 评价（content 已在 CheckPhone 侧框好）。
+    const handlePhoneConfront = (text: string) => {
+        if (!text?.trim()) return;
+        setShowCheckPhone(false);
+        void handleSendText(text.trim(), 'text', { phoneConfront: true });
+    };
+
     // ── 拉黑模式「看看 TA 在做什么」：用户仍无法私聊，但落一条引导 system 消息后
     //    触发角色生成此刻的动态（发现被拉黑的反应 / 把对话框当备忘录 / 试图挽回等，按人设）──
     const handlePeekBlockedChar = async () => {
@@ -1510,6 +1522,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 break;
             }
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
+            case 'camera': setShowPanel('none'); setShowCamera(true); break;
             case 'recenter': setShowPanel('none'); handleRecenter(); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
@@ -4118,7 +4131,13 @@ ${recent || '（你们还没怎么聊过）'}
                     onBgUpload={handleBgUpload}
                     onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
                     onOpenSchedule={() => setModalType('schedule')}
+                    onOpenTabloid={() => setModalType('tabloid')}
                 />
+            )}
+
+            {/* 回望小报（昨日来信 / 回望·周章 / 回望·月章） */}
+            {modalType === 'tabloid' && char && (
+                <TabloidModal char={char} isOpen onClose={() => setModalType('none')} />
             )}
 
             {/* 角色主页（微信好友资料页风格）：单击消息头像进入；角色设置入口移到 ··· / 朋友资料 */}
@@ -4242,8 +4261,17 @@ ${recent || '（你们还没怎么聊过）'}
             {/* 查手机（用户 → 角色）：+ 号面板入口，内嵌原 CheckPhone */}
             {showCheckPhone && char && (
                 <div className="absolute inset-0 z-[410]">
-                    <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} />
+                    <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} onConfront={handlePhoneConfront} />
                 </div>
+            )}
+
+            {/* 相机：用 TA 的手机拍下此刻给 TA 看 */}
+            {showCamera && char && (
+                <CameraApp
+                    charId={char.id}
+                    onExit={() => setShowCamera(false)}
+                    onSendToChat={(dataUrl) => { setShowCamera(false); void handleSendText(dataUrl, 'image'); }}
+                />
             )}
 
             {/* 查手机（角色 → 用户）：界面变成用户桌面，角色自己翻看 + 想法框 */}

@@ -1,13 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneEvidence, PhoneCustomApp } from '../types';
+import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneProfile } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildPhoneCityHint } from '../utils/charCity';
-import { User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut } from '@phosphor-icons/react';
+import {
+    User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
+    NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
+} from '@phosphor-icons/react';
+
+// ── 角色专属手机皮肤：按 char.id 确定性派生一套配色（千人千面，无需联网） ──
+interface PhoneTheme { id: string; grad: string; accent: string; text: string; sub: string; tile: string; border: string; dock: string }
+const PHONE_PALETTES: PhoneTheme[] = [
+    { id: 'dusk',   grad: 'linear-gradient(165deg,#312a52 0%,#1e1830 60%,#15111f 100%)', accent: '#a78bfa', text: '#ece9f8', sub: '#a9a2c9', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(30,24,48,0.6)' },
+    { id: 'sea',    grad: 'linear-gradient(165deg,#173a4a 0%,#102733 60%,#0b1a22 100%)', accent: '#38bdf8', text: '#e3f2f7', sub: '#a3c0cb', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(16,39,51,0.6)' },
+    { id: 'rose',   grad: 'linear-gradient(165deg,#4a2336 0%,#321826 60%,#22111b 100%)', accent: '#fb7185', text: '#f7e6ec', sub: '#caa6b4', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(50,24,38,0.6)' },
+    { id: 'forest', grad: 'linear-gradient(165deg,#1f3a2c 0%,#16291f 60%,#0e1b15 100%)', accent: '#34d399', text: '#e4f3ea', sub: '#a6c4b3', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(22,41,31,0.6)' },
+    { id: 'amber',  grad: 'linear-gradient(165deg,#48331c 0%,#322312 60%,#21170c 100%)', accent: '#fbbf24', text: '#f6ecdc', sub: '#cbb89a', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(50,35,18,0.6)' },
+    { id: 'plum',   grad: 'linear-gradient(165deg,#3a2747 0%,#271830 60%,#190f20 100%)', accent: '#d8b4fe', text: '#f1e8f8', sub: '#bda6cb', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(39,24,48,0.6)' },
+    { id: 'mono',   grad: 'linear-gradient(165deg,#33343a 0%,#212227 60%,#161619 100%)', accent: '#cbd5e1', text: '#eceef2', sub: '#a7adba', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(33,34,39,0.6)' },
+    { id: 'sky',    grad: 'linear-gradient(165deg,#24364f 0%,#172435 60%,#0e1722 100%)', accent: '#7dd3fc', text: '#e6f1f9', sub: '#a6bdd0', tile: 'rgba(255,255,255,0.08)', border: 'rgba(255,255,255,0.12)', dock: 'rgba(23,36,53,0.6)' },
+];
+const hashStr = (s: string): number => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
+const paletteFor = (char: CharacterProfile | null): PhoneTheme => PHONE_PALETTES[char ? hashStr(char.id) % PHONE_PALETTES.length : 0];
+
+// ── 可检查的全套 App（每个 App 一类记录，统一走 LLM 取数） ──
+interface CatalogApp { key: string; type: string; name: string; Icon: React.FC<any>; tint: string; logPrefix: string; instruction?: string; cityHint?: boolean }
+const APP_CATALOG: CatalogApp[] = [
+    { key: 'chat',    type: 'chat',     name: '信息',   Icon: ChatCircleDots,      tint: '#34d399', logPrefix: '聊天软件' },
+    { key: 'call',    type: 'call',     name: '电话',   Icon: Phone,               tint: '#60a5fa', logPrefix: '通话记录' },
+    { key: 'taobao',  type: 'order',    name: '购物',   Icon: ShoppingBag,         tint: '#fb923c', logPrefix: '购物APP', cityHint: true },
+    { key: 'waimai',  type: 'delivery', name: '外卖',   Icon: Hamburger,           tint: '#f59e0b', logPrefix: '外卖APP', cityHint: true },
+    { key: 'social',  type: 'social',   name: '动态',   Icon: CircleNotch,         tint: '#f472b6', logPrefix: '朋友圈' },
+    { key: 'notes',   type: 'notes',    name: '备忘录', Icon: NotePencil,          tint: '#fbbf24', logPrefix: '备忘录',   instruction: '生成 3 条该角色备忘录/便签里的内容（待办、随手记、藏起来的心事、清单等，贴人设）。\n格式JSON数组: [{ "title": "便签标题", "detail": "内容" }]' },
+    { key: 'wallet',  type: 'wallet',   name: '钱包',   Icon: Wallet,              tint: '#4ade80', logPrefix: '钱包',     instruction: '生成该角色钱包里的账户余额 + 2~3 笔最近收支（金额必须符合人设身份）。\n格式JSON数组: [{ "title": "项目(如 账户余额/某笔支出)", "detail": "说明", "value": "金额(如 ¥1,280 / -¥68)" }]' },
+    { key: 'album',   type: 'album',    name: '相册',   Icon: ImageSquare,         tint: '#22d3ee', logPrefix: '相册',     instruction: '生成 3~4 条该角色相册里照片的文字描述（拍了什么、当时的场景与心情，贴人设）。\n格式JSON数组: [{ "title": "照片主题", "detail": "画面与心情描述" }]' },
+    { key: 'music',   type: 'music',    name: '音乐',   Icon: MusicNotes,          tint: '#a78bfa', logPrefix: '音乐',     instruction: '生成该角色最近在听的 3~4 首歌（歌名+歌手+为什么循环它，贴人设与近期心境）。\n格式JSON数组: [{ "title": "歌名 - 歌手", "detail": "为什么在听/循环了多少次" }]' },
+    { key: 'browser', type: 'browser',  name: '浏览',   Icon: GlobeHemisphereWest, tint: '#38bdf8', logPrefix: '浏览记录', instruction: '生成 3~4 条该角色最近的浏览器搜索/浏览记录（搜了什么，能侧面透出 TA 的关心或小秘密，贴人设）。\n格式JSON数组: [{ "title": "搜索词/网页标题", "detail": "备注" }]' },
+    { key: 'health',  type: 'health',   name: '健康',   Icon: Heartbeat,           tint: '#f87171', logPrefix: '健康',     instruction: '生成该角色今天的健康数据（步数、睡眠、心率等 3~4 项，数值贴人设作息）。\n格式JSON数组: [{ "title": "指标(如 今日步数)", "detail": "说明", "value": "数值" }]' },
+    { key: 'calendar',type: 'calendar', name: '日历',   Icon: CalendarBlank,       tint: '#fb7185', logPrefix: '日历',     instruction: '生成 3~4 条该角色日历上的日程/待办（贴人设的工作、约会、提醒）。\n格式JSON数组: [{ "title": "事项", "detail": "时间/地点/备注" }]' },
+];
+const catalogByType = (type: string): CatalogApp | undefined => APP_CATALOG.find(a => a.type === type);
 
 const TwemojiImg: React.FC<{ code: string; alt?: string; className?: string }> = ({ code, alt, className = 'w-4 h-4 inline-block' }) => (
   <img src={`https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/${code}.png`} alt={alt || ''} className={className} draggable={false} />
@@ -50,9 +86,12 @@ interface CheckPhoneProps {
     initialCharId?: string;
     /** 作为聊天内嵌浮层时的退出回调（替代 closeApp / 返回选择页） */
     onExit?: () => void;
+    /** 把翻到的内容「塞进剧情」：传入后每条记录会多一个「拿去对峙」按钮，
+     *  点了就把这条证据以用户口吻抛进聊天，让角色当场解释 / 狡辩 / 评价。 */
+    onConfront?: (framedText: string) => void;
 }
 
-const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
+const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfront }) => {
     const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, addToast, userProfile } = useOS();
     const [view, setView] = useState<'select' | 'phone'>(initialCharId ? 'phone' : 'select');
     // activeAppId: 'home' | 'chat_detail' | 'app_id'
@@ -75,10 +114,31 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
 
     // Debug Toggle
     const [showDebug, setShowDebug] = useState(false);
+    // AI「装点这台手机」：生成设备名 / 桌面副标 / 强调色，存进 phoneState.profile
+    const [isDecorating, setIsDecorating] = useState(false);
 
     // Derived state for evidence records
     const records = targetChar?.phoneState?.records || [];
     const customApps = targetChar?.phoneState?.customApps || [];
+    const phoneProfile: PhoneProfile = targetChar?.phoneState?.profile || {};
+
+    // 角色专属手机皮肤：确定性配色 + 可选 LLM 装点覆盖
+    const theme = useMemo<PhoneTheme>(() => {
+        const base = paletteFor(targetChar);
+        return phoneProfile.accent ? { ...base, accent: phoneProfile.accent } : base;
+    }, [targetChar?.id, phoneProfile.accent]);
+    const deviceName = phoneProfile.deviceName || (targetChar ? `${targetChar.name} 的手机` : '手机');
+    const tagline = phoneProfile.tagline || '一台属于 TA 的手机';
+
+    // 把一条记录框成「对峙台词」抛进剧情
+    const confrontWith = (record: PhoneEvidence) => {
+        if (!onConfront || !targetChar) return;
+        const appName = catalogByType(record.type)?.name || customApps.find(a => a.id === record.type)?.name || '手机';
+        const framed = record.type === 'chat'
+            ? `（我翻了你的手机，看到你和「${record.title}」的聊天：\n${record.detail}）\n——这是怎么回事？你跟我说清楚。`
+            : `（我翻了你的手机，看到${appName}里这条：「${record.title}」${record.detail ? ` — ${record.detail}` : ''}${record.value ? `（${record.value}）` : ''}）\n——你解释一下吧。`;
+        onConfront(framed);
+    };
 
     useEffect(() => {
         if (targetChar) {
@@ -259,8 +319,17 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
                     promptInstruction = `生成 2 条该角色的朋友圈/社交媒体动态。
     格式JSON数组: [{ "title": "时间/状态", "detail": "正文内容" }, ...]`;
                     logPrefix = "朋友圈";
+                } else {
+                    // 其余全套 App（备忘录 / 钱包 / 相册 / 音乐 / 浏览 / 健康 / 日历…）走目录里的取数指令
+                    const cat = catalogByType(type);
+                    if (cat?.instruction) {
+                        promptInstruction = `${cat.instruction}${cat.cityHint ? `\n${buildPhoneCityHint(targetChar)}` : ''}`;
+                        logPrefix = cat.logPrefix;
+                    }
                 }
             }
+
+            if (!promptInstruction) { setIsLoading(false); addToast('这个 App 暂不支持检查', 'info'); return; }
 
             const fullPrompt = `${context}\n\n### [Current Status]\n时间距离上次互动: ${timeGap}\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${promptInstruction}\n请根据[Current Status]和人设调整生成内容的时间戳和情绪。如果很久没聊天，记录可能是近期的独处状态；如果刚聊过，记录可能与聊天内容相关。`;
 
@@ -335,6 +404,53 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit }) => {
             addToast('解析失败，请重试', 'error');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // --- AI 装点这台手机：让设备名 / 桌面副标 / 强调色更贴角色 ---
+    const handleDecorate = async () => {
+        if (!targetChar || !apiConfig.apiKey) { addToast('配置错误', 'error'); return; }
+        setIsDecorating(true);
+        try {
+            const persona = [
+                `名字: ${targetChar.name}`,
+                targetChar.description ? `备注: ${String(targetChar.description).slice(0, 200)}` : '',
+                targetChar.systemPrompt ? `人设: ${String(targetChar.systemPrompt).slice(0, 800)}` : '',
+            ].filter(Boolean).join('\n');
+            const prompt = `根据下面这个角色的人设，为 TA 的手机设计一套贴人设的"桌面皮肤"。
+${persona}
+
+只输出一个 JSON 对象，不要任何其它文字：
+{"deviceName":"设备名(像 TA 会给自己手机起的名字，10字内，可带 TA 的名字)","tagline":"锁屏/桌面上的一句话副标(20字内，像 TA 的签名/心情)","accent":"一个最贴 TA 气质的强调色十六进制(如 #a78bfa)"}`;
+            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+            });
+            if (!res.ok) throw new Error(`API ${res.status}`);
+            let content = (await safeResponseJson(res)).choices?.[0]?.message?.content || '';
+            content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const s = content.indexOf('{'); const e = content.lastIndexOf('}');
+            if (s >= 0 && e > s) content = content.slice(s, e + 1);
+            const obj = JSON.parse(content);
+            const accent = typeof obj.accent === 'string' && /^#?[0-9a-fA-F]{6}$/.test(obj.accent.replace('#', '')) ? (obj.accent.startsWith('#') ? obj.accent : `#${obj.accent}`) : undefined;
+            const nextProfile: PhoneProfile = {
+                ...phoneProfile,
+                deviceName: typeof obj.deviceName === 'string' ? obj.deviceName.slice(0, 16) : phoneProfile.deviceName,
+                tagline: typeof obj.tagline === 'string' ? obj.tagline.slice(0, 30) : phoneProfile.tagline,
+                accent: accent || phoneProfile.accent,
+                generated: true,
+                generatedAt: Date.now(),
+            };
+            updateCharacter(targetChar.id, {
+                phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, profile: nextProfile },
+            });
+            addToast('已为 TA 的手机换上新皮肤', 'success');
+        } catch (err: any) {
+            console.error(err);
+            addToast('装点失败，请重试', 'error');
+        } finally {
+            setIsDecorating(false);
         }
     };
 
@@ -509,14 +625,24 @@ Format:
             </div>
 
             {/* 底部按钮 - 关键修复：移除复杂的 env() 计算，使用固定 padding */}
-            <div className="shrink-0 w-full p-4 bg-[#f7f7f7] border-t border-gray-200">
-                <button 
-                    onClick={handleContinueChat} 
+            <div className="shrink-0 w-full p-4 bg-[#f7f7f7] border-t border-gray-200 flex gap-2">
+                <button
+                    onClick={handleContinueChat}
                     disabled={isLoading}
-                    className="w-full py-3 bg-white border border-gray-300 rounded-xl text-sm font-bold text-slate-600 shadow-sm active:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-3 bg-white border border-gray-300 rounded-xl text-sm font-bold text-slate-600 shadow-sm active:bg-gray-50 transition-colors flex items-center justify-center gap-2"
                 >
                     {isLoading ? '对方正在输入...' : '偷看后续 / 拱火'}
                 </button>
+                {onConfront && (
+                    <button
+                        onClick={() => confrontWith(selectedChatRecord)}
+                        disabled={isLoading}
+                        className="shrink-0 px-4 py-3 rounded-xl text-sm font-bold text-white shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                        style={{ background: '#e26b84' }}
+                    >
+                        <Quotes size={14} weight="fill" /> 拿去对峙
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -545,6 +671,11 @@ Format:
                                     </div>
                                     {r.detail && <div className="text-[10px] text-slate-500 mt-1 italic truncate">"{r.detail}"</div>}
                                 </div>
+                                {onConfront && (
+                                    <button onClick={() => confrontWith(r)} title="拿去对峙" className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ color: '#e26b84', background: '#e26b8418' }}>
+                                        <Quotes size={13} weight="fill" />
+                                    </button>
+                                )}
                                 <div className="text-[10px] text-slate-300">{new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
                                 <button onClick={() => handleDeleteRecord(r)} className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                             </div>
@@ -562,37 +693,46 @@ Format:
 
     const renderGenericList = (appId: string, appName: string, customPrompt?: string) => {
         const list = records.filter(r => r.type === appId).sort((a,b) => b.timestamp - a.timestamp);
-        
+        const cat = catalogByType(appId);
+        const tint = cat?.tint || '#1f2937';
+
         return (
             <div className="absolute inset-0 w-full h-full flex flex-col bg-slate-50 z-10">
                 {renderHeader(appName, () => setActiveAppId('home'))}
-                
+
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar pb-24 overscroll-contain">
                     {list.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-2">
                             <Tray size={48} className="opacity-20 text-slate-400" />
-                            <span className="text-xs">暂无数据</span>
+                            <span className="text-xs">暂无数据，点下方刷新让 TA 的{appName}长出内容</span>
                         </div>
                     )}
                     {list.map(r => (
                         <div key={r.id} className="bg-white rounded-xl p-4 border border-slate-100 shadow-sm relative group animate-slide-up">
                             <div className="flex justify-between items-start mb-1">
                                 <span className="font-bold text-slate-700 text-sm line-clamp-1">{r.title}</span>
-                                {r.value && <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded">{r.value}</span>}
+                                {r.value && <span className="text-xs font-bold px-2 py-0.5 rounded" style={{ color: tint, background: `${tint}1a` }}>{r.value}</span>}
                             </div>
-                            <div className="text-xs text-slate-500 leading-relaxed">{r.detail}</div>
-                            <div className="text-[10px] text-slate-300 mt-2 text-right">{new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-                            
+                            <div className="text-xs text-slate-500 leading-relaxed whitespace-pre-wrap">{r.detail}</div>
+                            <div className="flex items-center justify-between mt-2">
+                                {onConfront ? (
+                                    <button onClick={() => confrontWith(r)} className="text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 active:scale-95 transition-transform" style={{ color: tint, background: `${tint}14` }}>
+                                        <Quotes size={11} weight="fill" /> 拿去对峙
+                                    </button>
+                                ) : <span />}
+                                <div className="text-[10px] text-slate-300">{new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+                            </div>
                             <button onClick={() => handleDeleteRecord(r)} className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-md">×</button>
                         </div>
                     ))}
                 </div>
 
                 <div className="absolute bottom-8 w-full flex justify-center pointer-events-none z-30">
-                    <button 
-                        disabled={isLoading} 
-                        onClick={() => handleGenerate(appId, customPrompt)} 
-                        className="pointer-events-auto bg-slate-800 text-white px-6 py-2.5 rounded-full shadow-xl font-bold text-xs flex items-center gap-2 active:scale-95 transition-transform hover:bg-slate-700"
+                    <button
+                        disabled={isLoading}
+                        onClick={() => handleGenerate(appId, customPrompt)}
+                        className="pointer-events-auto text-white px-6 py-2.5 rounded-full shadow-xl font-bold text-xs flex items-center gap-2 active:scale-95 transition-transform"
+                        style={{ background: tint }}
                     >
                         {isLoading ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>}
                         刷新数据
@@ -602,31 +742,30 @@ Format:
         );
     };
 
-    const ZenTile: React.FC<{
-        children: React.ReactNode;
+    // 桌面 App 图标：iOS 风格圆角方块，底色按 App 自己的 tint（千人千面靠角色配色 + 壁纸）
+    const Tile: React.FC<{
         label: string;
         onClick: () => void;
         onDelete?: () => void;
+        tint?: string;
         muted?: boolean;
-        tintColor?: string;
-    }> = ({ children, label, onClick, onDelete, muted, tintColor }) => (
-        <div className="flex flex-col items-center gap-2.5 relative group">
+        children: React.ReactNode;
+    }> = ({ label, onClick, onDelete, tint, muted, children }) => (
+        <div className="flex flex-col items-center gap-1.5 relative group">
             <button
                 onClick={onClick}
-                className={`w-14 h-14 rounded-xl flex items-center justify-center backdrop-blur-xl border transition-all active:scale-95 duration-300 relative overflow-hidden ${
-                    muted
-                        ? 'bg-[#191a1a]/50 border-[#484848]/20 hover:bg-[#252626]/50 text-[#acabaa]'
-                        : 'bg-[#252626]/50 border-[#484848]/25 hover:bg-[#2c2c2c]/70 text-[#e7e5e4]'
-                }`}
-                style={tintColor ? { boxShadow: `inset 0 0 18px 0 ${tintColor}33` } : undefined}
+                className="w-[54px] h-[54px] rounded-[16px] flex items-center justify-center transition-all active:scale-90 duration-200 relative overflow-hidden text-white shadow-[0_6px_16px_-6px_rgba(0,0,0,0.5)]"
+                style={muted
+                    ? { background: theme.tile, border: `1px solid ${theme.border}`, color: theme.sub }
+                    : { background: tint ? `linear-gradient(150deg, ${tint}, ${tint}cc)` : theme.tile, border: `1px solid rgba(255,255,255,0.18)` }}
             >
                 <span className="relative z-10 drop-shadow-sm">{children}</span>
             </button>
-            <span className="text-[9px] uppercase tracking-[0.18em] text-[#acabaa] font-medium leading-none">{label}</span>
+            <span className="text-[9px] tracking-wide font-medium leading-none truncate max-w-[58px] text-center" style={{ color: theme.sub }}>{label}</span>
             {onDelete && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                    className="absolute -top-1 -right-1 w-4 h-4 bg-[#484848] text-[#e7e5e4] rounded-full flex items-center justify-center text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-[#bb5551]"
+                    className="absolute -top-1.5 -right-0.5 w-4 h-4 bg-black/60 text-white rounded-full flex items-center justify-center text-[10px] leading-none opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-rose-500"
                 >×</button>
             )}
         </div>
@@ -634,28 +773,20 @@ Format:
 
     const renderDesktop = () => {
         const hasBg = !!targetChar?.dateBackground;
-        const charName = targetChar?.name || 'Digital Monolith';
+        const clock = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
         return (
-            <div className="absolute inset-0 flex flex-col z-0 overflow-hidden bg-[#0e0e0e]">
-                {/* Zen mesh background */}
-                <div
-                    className="absolute inset-0 pointer-events-none"
-                    style={{ background: 'radial-gradient(circle at 50% 40%, #1f2020 0%, #0e0e0e 75%)' }}
-                />
+            <div className="absolute inset-0 flex flex-col z-0 overflow-hidden" style={{ background: theme.grad }}>
+                {/* 壁纸：有约会底图就用它（角色专属），叠一层暗化保证图标可读 */}
                 {hasBg && (
-                    <div
-                        className="absolute inset-0 opacity-15 grayscale pointer-events-none"
-                        style={{ backgroundImage: `url(${targetChar!.dateBackground})`, backgroundSize: 'cover', backgroundPosition: 'center' }}
-                    />
+                    <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url(${targetChar!.dateBackground})`, backgroundSize: 'cover', backgroundPosition: 'center', opacity: 0.42 }} />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/50 pointer-events-none" />
-                <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent pointer-events-none z-20" />
+                <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.18), transparent 28%, transparent 60%, rgba(0,0,0,0.4))' }} />
 
                 {/* Status bar */}
-                <div className="h-8 flex justify-between px-6 items-center z-20 relative pt-3 text-[#c8c6c5]">
-                    <span className="text-[11px] font-semibold tracking-tight">9:41</span>
-                    <div className="flex gap-1.5 items-center">
+                <div className="h-8 flex justify-between px-6 items-center z-20 relative pt-3" style={{ color: theme.text }}>
+                    <span className="text-[12px] font-semibold tracking-tight tabular-nums">{clock}</span>
+                    <div className="flex gap-1.5 items-center opacity-90">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path d="M2 22h3V10H2v12zm6 0h3V6H8v16zm6 0h3V2h-3v20zm6 0h3v-8h-3v8z"/></svg>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M1.371 8.143c5.858-5.857 15.356-5.857 21.213 0a.75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.06 0c-4.98-4.979-13.053-4.979-18.032 0a.75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.182 3.182c4.1-4.1 10.749-4.1 14.85 0a.75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.062 0 8.25 8.25 0 0 0-11.667 0 .75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.204 3.182a6 6 0 0 1 8.486 0 .75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.061 0 3.75 3.75 0 0 0-5.304 0 .75.75 0 0 1-1.06 0l-.53-.53a.75.75 0 0 1 0-1.06Zm3.182 3.182a1.5 1.5 0 0 1 2.122 0 .75.75 0 0 1 0 1.061l-.53.53a.75.75 0 0 1-1.061 0l-.53-.53a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" /></svg>
                         <div className="w-4 h-2 border border-current rounded-[2px] relative"><div className="absolute left-0 top-0 bottom-0 bg-current w-3/4"></div></div>
@@ -663,67 +794,67 @@ Format:
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 px-6 pt-6 pb-28 z-10 overflow-y-auto no-scrollbar overscroll-none">
-                    {/* Header */}
-                    <div className="mb-8">
-                        <h1 className="text-lg font-bold tracking-tighter text-[#c8c6c5] leading-tight truncate">{charName}</h1>
-                        <p className="text-[10px] tracking-[0.25em] uppercase text-[#acabaa] mt-1">The Space Between</p>
+                <div className="flex-1 px-6 pt-5 pb-28 z-10 overflow-y-auto no-scrollbar overscroll-none">
+                    {/* Header：头像 + 设备名 + 副标 + 装点 */}
+                    <div className="mb-7 flex items-center gap-3">
+                        {targetChar?.avatar && (
+                            <img src={targetChar.avatar} className="w-12 h-12 rounded-2xl object-cover shrink-0 ring-1 ring-white/25 shadow-lg" alt="" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <h1 className="text-[18px] font-bold leading-tight truncate" style={{ color: theme.text }}>{deviceName}</h1>
+                            <p className="text-[11px] mt-0.5 truncate" style={{ color: theme.sub }}>{tagline}</p>
+                        </div>
+                        <button
+                            onClick={handleDecorate}
+                            disabled={isDecorating}
+                            title="让 TA 的桌面更贴人设"
+                            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform disabled:opacity-60"
+                            style={{ background: theme.tile, border: `1px solid ${theme.border}`, color: theme.accent }}
+                        >
+                            {isDecorating ? <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: `${theme.accent}55`, borderTopColor: theme.accent }} /> : <MagicWand size={18} weight="fill" />}
+                        </button>
                     </div>
 
-                    {/* Apps grid */}
-                    <div className="grid grid-cols-4 gap-y-6 gap-x-2 place-items-center content-start">
-                        <ZenTile label="Message" onClick={() => setActiveAppId('chat')}>
-                            <ChatCircleDots size={24} weight="light" />
-                        </ZenTile>
-                        <ZenTile label="Taobao" onClick={() => setActiveAppId('taobao')}>
-                            <ShoppingBag size={24} weight="light" />
-                        </ZenTile>
-                        <ZenTile label="Food" onClick={() => setActiveAppId('waimai')}>
-                            <Hamburger size={24} weight="light" />
-                        </ZenTile>
-                        <ZenTile label="Moments" onClick={() => setActiveAppId('social')}>
-                            <CircleNotch size={24} weight="light" />
-                        </ZenTile>
-
-                        {customApps.map(app => (
-                            <ZenTile
-                                key={app.id}
-                                label={app.name}
-                                onClick={() => setActiveAppId(app.id)}
-                                onDelete={() => handleDeleteApp(app.id)}
-                                tintColor={app.color}
-                            >
-                                <span className="text-xl grayscale-0">{app.icon}</span>
-                            </ZenTile>
+                    {/* Apps grid：全套可检查 App + 自定义 App + 安装 */}
+                    <div className="grid grid-cols-4 gap-y-5 gap-x-2 place-items-center content-start">
+                        {APP_CATALOG.map(app => (
+                            <Tile key={app.key} label={app.name} tint={app.tint} onClick={() => setActiveAppId(app.key)}>
+                                <app.Icon size={26} weight="fill" />
+                            </Tile>
                         ))}
 
-                        <ZenTile label="Add App" onClick={() => setShowCreateModal(true)} muted>
-                            <Plus size={22} weight="light" />
-                        </ZenTile>
+                        {customApps.map(app => (
+                            <Tile key={app.id} label={app.name} tint={app.color} onClick={() => setActiveAppId(app.id)} onDelete={() => handleDeleteApp(app.id)}>
+                                <span className="text-xl">{app.icon}</span>
+                            </Tile>
+                        ))}
 
-                        <ZenTile label="Debug" onClick={() => setShowDebug(!showDebug)} muted>
-                            <Wrench size={22} weight="light" />
-                        </ZenTile>
+                        <Tile label="安装" muted onClick={() => setShowCreateModal(true)}>
+                            <Plus size={24} weight="bold" />
+                        </Tile>
+                        <Tile label="Debug" muted onClick={() => setShowDebug(!showDebug)}>
+                            <Wrench size={22} weight="bold" />
+                        </Tile>
                     </div>
                 </div>
 
-                {/* Floating glass nav */}
+                {/* Dock */}
                 <nav className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] z-40">
-                    <div className="bg-[#252626]/70 backdrop-blur-xl rounded-2xl border border-[#484848]/30 shadow-[0_0_64px_rgba(0,0,0,0.25)] flex justify-around items-center px-4 py-3">
-                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
-                            <Phone size={22} weight="light" />
+                    <div className="backdrop-blur-xl rounded-[22px] flex justify-around items-center px-4 py-3" style={{ background: theme.dock, border: `1px solid ${theme.border}` }}>
+                        <button onClick={() => setActiveAppId('call')} className="flex items-center justify-center p-2.5 rounded-xl active:scale-90 duration-200" style={{ color: theme.sub }}>
+                            <Phone size={22} weight="fill" />
                         </button>
-                        <button onClick={() => setActiveAppId('chat')} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
-                            <ChatCircleDots size={22} weight="light" />
+                        <button onClick={() => setActiveAppId('chat')} className="flex items-center justify-center p-2.5 rounded-xl active:scale-90 duration-200" style={{ color: theme.sub }}>
+                            <ChatCircleDots size={22} weight="fill" />
                         </button>
-                        <button onClick={handleExitPhone} className="flex items-center justify-center bg-[#474646] text-[#f0fded] rounded-xl p-2.5 active:scale-90 duration-200" aria-label="断开连接">
-                            <SignOut size={22} weight="light" />
+                        <button onClick={handleExitPhone} className="flex items-center justify-center rounded-xl p-2.5 active:scale-90 duration-200 text-white" aria-label="断开连接" style={{ background: theme.accent }}>
+                            <SignOut size={22} weight="bold" />
                         </button>
-                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
-                            <Compass size={22} weight="light" />
+                        <button onClick={() => setActiveAppId('browser')} className="flex items-center justify-center p-2.5 rounded-xl active:scale-90 duration-200" style={{ color: theme.sub }}>
+                            <Compass size={22} weight="fill" />
                         </button>
-                        <button onClick={() => {}} className="flex items-center justify-center text-[#acabaa] p-2.5 hover:bg-[#1f2020] rounded-xl transition-all active:scale-90 duration-200">
-                            <GearSix size={22} weight="light" />
+                        <button onClick={() => setActiveAppId('album')} className="flex items-center justify-center p-2.5 rounded-xl active:scale-90 duration-200" style={{ color: theme.sub }}>
+                            <ImageSquare size={22} weight="fill" />
                         </button>
                     </div>
                 </nav>
@@ -766,21 +897,16 @@ Format:
         <div className="absolute inset-0 bg-slate-900 overflow-hidden font-sans overscroll-none">
             {showDebug && <LayoutInspector />}
             {activeAppId === 'home' ? renderDesktop() : (
-                <>
-                    {activeAppId === 'chat' && renderChatList()}
-                    {activeAppId === 'chat_detail' && renderChatDetail()}
-                    {activeAppId === 'taobao' && renderGenericList('order', 'Taobao')}
-                    {activeAppId === 'waimai' && renderGenericList('delivery', 'Food Delivery')}
-                    {activeAppId === 'social' && renderGenericList('social', 'Moments')}
-                    
-                    {/* Render Custom Apps */}
-                    {customApps.find(a => a.id === activeAppId) && (
-                        (() => {
-                            const app = customApps.find(a => a.id === activeAppId)!;
-                            return renderGenericList(app.id, app.name, app.prompt);
-                        })()
-                    )}
-                </>
+                (() => {
+                    if (activeAppId === 'chat') return renderChatList();
+                    if (activeAppId === 'chat_detail') return renderChatDetail();
+                    if (activeAppId === 'call') return renderCallList();
+                    const cat = APP_CATALOG.find(a => a.key === activeAppId);
+                    if (cat) return renderGenericList(cat.type, cat.name);
+                    const custom = customApps.find(a => a.id === activeAppId);
+                    if (custom) return renderGenericList(custom.id, custom.name, custom.prompt);
+                    return null;
+                })()
             )}
 
             {/* Create App Modal */}
