@@ -1,6 +1,6 @@
-# 回神 + 日程锚点协调
+# 回神 + 日程锚点 + 副 API + 生活侧写
 
-这份文档讲两件「让角色在长聊里更稳」的机制：**回神**（角色自我校准）和**日程锚点协调**（日程随聊天自动对齐）。改主聊天自我校准 / 日程随聊天联动前看这里。
+这份文档讲几件「让角色在长聊里更稳、更像自己」的机制：**回神**（角色自我校准）、**日程锚点协调**（日程随聊天自动对齐）、**副 API**（处理主聊天以外的辅助任务）、**角色生活侧写**（帮角色更了解自己）。改主聊天自我校准 / 日程联动 / 副 API / 生活侧写前看这里。
 
 > 配套的记忆侧「防复读」（召回疲劳 + 锚点节流）见 [`memory-system-overview.md`](./memory-system-overview.md) 的「召回疲劳 / 习惯化」一节。
 
@@ -51,9 +51,10 @@
 | 环节 | 位置 |
 |------|------|
 | 廉价信号闸 `chatHasScheduleSignal` | `utils/scheduleGenerator.ts`：关键词正则扫最近 8 条，命中才值得花 LLM |
-| 协调 `reconcileScheduleWithChat` | `utils/scheduleGenerator.ts`：与日程生成同源的 `apiConfig`，对照聊天产出协调后的完整日程；无需改动返回 `changed:false` |
-| 触发 | `apps/Chat.tsx`：`messages` 变化的 effect，过信号闸 + 每角色 8 分钟冷却（localStorage）后台跑 |
+| 协调 `reconcileScheduleWithChat` | `utils/scheduleGenerator.ts`：走**副 API**（`resolveAuxApi`，没开就回退主 API），对照聊天产出协调后的完整日程；无需改动返回 `changed:false` |
+| 触发 | `apps/Chat.tsx`：`messages` 变化的 effect，**需开启副 API**（`isAuxApiOn`）+ 过信号闸 + 每角色 8 分钟冷却（localStorage）后台跑 |
 | 注入 | `utils/context.ts` `buildScheduleInjection`：锚点单独提到最前（「今天你和对方约定/已定下的事」） |
+| 入口 | 聊天右上角设置 → `ConvoSettingsPanel`「TA 的日程表」（开关 + 翻开今日日程 + 副 API 状态提示） |
 
 ### 锚点标记
 
@@ -63,4 +64,26 @@
 
 - **角色自治优先**：没被聊天触及的时段原样保留，只动需要动的；用户不是日程主语。
 - **别把锚点变成另一种揪着不放**：注入文案明确要求「记着、围着它走，不用反复主动提起或催问」。
-- **成本可控**：信号闸（正则，0 成本）→ 命中 → 8 分钟冷却 → 才一次 LLM 调用；不每轮都调。
+- **成本可控 + 副 API 门控**：先 `isAuxApiOn` 闸（没开副 API 就完全不主动协调，仍可手动看/生成日程）→ 信号闸（正则，0 成本）→ 命中 → 8 分钟冷却 → 才一次副 API 调用；不每轮都调。
+
+---
+
+## 三、副 API + 角色生活侧写
+
+### 副 API（全局，在「文具盒 → 副线盒」配置）
+
+`AuxApiConfig { enabled, baseUrl, apiKey, model }`（OSContext，持久化 `os_aux_api_config`）。负责「主聊天以外」的辅助 LLM 任务——日程生成/协调、角色生活侧写（后续：约会世界引擎）。
+
+- 解析：`utils/auxApi.ts` `resolveAuxApi(aux, main)` —— 副 API 开且填齐就用副 API，否则回退主 `apiConfig`；`isAuxApiOn(aux)` 判断是否「真正可用」。
+- 消费方：`apps/Chat.tsx` 的日程生成/协调；`apps/Character.tsx` 的生活侧写。把主线（聊天）的额度与注意力让出来。
+
+### 角色生活侧写（剪影集 → 登场人物 → 底稿页）
+
+一份帮角色「更了解自己」的生活速写（日常节奏 / 习惯癖好 / 在意的事 / 与用户关系底色 / 情绪走向）。
+
+| 环节 | 位置 |
+|------|------|
+| 生成 `generateLifeProfile` | `utils/lifeProfile.ts`：副 API（回退主），依据人设 + 月度核心记忆 + 近期碎片，用**第二人称「你」**写 350-600 字 markdown |
+| 数据 | `CharacterProfile.lifeProfile { content, generatedAt, edited }`（手动改过 `edited=true`） |
+| 编辑 | `apps/Character.tsx` 底稿页「生活侧写」卡：✎ 写一份 / ↻ 重写 / 直接手写，改完随 formData 自动存 |
+| 注入 | `utils/context.ts` `buildCoreContext`：像「内在认知」一样垫在角色设定下方（### 你的生活侧写） |

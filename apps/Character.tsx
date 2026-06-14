@@ -28,6 +28,8 @@ import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
+import { generateLifeProfile } from '../utils/lifeProfile';
+import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
 
 // ── 黑白手账设计 token（与剪影集全家同一套语言） ───────────
@@ -120,7 +122,8 @@ const CharacterCard: React.FC<{
 
 /** onExit：剪影集（PersonaHubApp）嵌入时返回封面页；不传则关闭 App 回桌面（旧行为） */
 const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-  const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, auxApiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  const [isGeneratingLifeProfile, setIsGeneratingLifeProfile] = useState(false);
   const closeApp = onExit || closeAppOS;
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [detailTab, setDetailTab] = useState<'identity' | 'memory'>('identity');
@@ -318,6 +321,25 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           if (!prev) return null;
           return { ...prev, [field]: value };
       });
+  };
+
+  // 生活侧写：用副 API（没开就回退主 API）依据人设 + 记忆生成一份「帮 TA 更了解自己」的速写。
+  const handleGenerateLifeProfile = async () => {
+      if (!formData) return;
+      const api = resolveAuxApi(auxApiConfig, apiConfig);
+      if (!api.baseUrl || !api.model) { addToast('请先在「文具盒」配置 API（主线或副线）', 'error'); return; }
+      setIsGeneratingLifeProfile(true);
+      try {
+          const content = await generateLifeProfile(formData, userProfile, api);
+          if (!content) { addToast('侧写没写出来，待会儿再试试', 'error'); return; }
+          handleChange('lifeProfile', { content, generatedAt: Date.now(), edited: false });
+          addToast('生活侧写写好了', 'success');
+      } catch (e: any) {
+          console.warn('[LifeProfile] generate failed:', e?.message || e);
+          addToast('生成失败了，待会儿再试试', 'error');
+      } finally {
+          setIsGeneratingLifeProfile(false);
+      }
   };
 
   // 「扩展设定 (Worldbooks)」区块已从角色设置移除：
@@ -1091,6 +1113,30 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     style={RULED_BG}
                                     placeholder="在这个世界里，魔法是存在的…"
                                 />
+                           </div>
+
+                           {/* 生活侧写：帮 TA 更了解自己的生活速写（副 API 生成，可手动改） */}
+                           <div>
+                               <div className="flex items-center justify-between mb-1.5">
+                                   {fieldLabel('生活侧写（TA 更懂自己）', 'LIFE SKETCH')}
+                                   <button
+                                       onClick={handleGenerateLifeProfile}
+                                       disabled={isGeneratingLifeProfile}
+                                       className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] disabled:opacity-60 ${formData.lifeProfile?.content ? STICKER : INK_BTN}`}
+                                   >
+                                       {isGeneratingLifeProfile ? '执笔中…' : (formData.lifeProfile?.content ? '↻ 重新写一份' : '✎ 写一份侧写')}
+                                   </button>
+                               </div>
+                               <textarea
+                                    value={formData.lifeProfile?.content || ''}
+                                    onChange={(e) => handleChange('lifeProfile', { content: e.target.value, generatedAt: formData.lifeProfile?.generatedAt || Date.now(), edited: true })}
+                                    className="w-full h-44 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    style={RULED_BG}
+                                    placeholder="点右上「写一份侧写」，让 TA 照着人设和记忆把自己写下来——日常节奏、习惯癖好、在意的事、和你相处的样子…（也可以直接手写）"
+                                />
+                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                                   ✎ 这份侧写会像「内在认知」一样垫进 TA 的设定里，帮 TA 更稳地"像自己"。用副 API 跑（没开就走主线），改完自动存。
+                               </p>
                            </div>
 
                            {/* 对话示例（mes_example）—— SillyTavern 语义：说话风格示例，独立于角色描述。

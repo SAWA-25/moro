@@ -378,6 +378,18 @@ export interface APIConfig {
   temperature?: number;
 }
 
+/**
+ * 副 API（全局）：负责处理「主 API 聊天以外」的功能——日程生成/协调、角色生活侧写、
+ * （后续）约会世界引擎等后台/辅助 LLM 任务。在「文具盒」里配置，所有角色共用。
+ * 关闭或未填时，相关功能回退到主 apiConfig（见 utils/auxApi.ts resolveAuxApi）。
+ */
+export interface AuxApiConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface InstantPushConfig {
   enabled: boolean;
   workerUrl: string;        // https://your-instant.workers.dev
@@ -1863,6 +1875,17 @@ export interface CharacterProfile {
   // 自我领悟词条：消化过程中 self_room 反刍产生的常驻认知
   // 像情绪 buff 一样注入到 contextBuilder 的角色设定下方
   selfInsights?: string[];
+
+  /**
+   * 角色生活侧写：一份帮助角色「更了解自己」的生活速写（日常节奏、习惯癖好、在意的事、
+   * 与用户关系的底色……）。由副 API 依据人设 + 记忆生成，可手动编辑，注入 system prompt。
+   * 入口在 剪影集 → 登场人物 → 角色编辑器（底稿页）。
+   */
+  lifeProfile?: {
+    content: string;       // 侧写正文（markdown）
+    generatedAt: number;
+    edited?: boolean;      // 用户是否手动改过（改过则不被「重新生成」静默覆盖）
+  };
 
   /**
    * 回神校准：用户触发「回神」后，角色完成一次自我审视，得到一句校准方向。

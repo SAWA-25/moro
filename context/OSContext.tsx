@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
 import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
@@ -212,6 +212,9 @@ interface OSContextType {
   virtualTime: VirtualTime;
   apiConfig: APIConfig;
   updateApiConfig: (updates: Partial<APIConfig>) => void;
+  /** 副 API（全局）：处理主聊天以外的辅助 LLM 任务（日程、生活侧写……），在「文具盒」配置 */
+  auxApiConfig: AuxApiConfig;
+  updateAuxApiConfig: (updates: Partial<AuxApiConfig>) => void;
   isLocked: boolean;
   unlock: () => void;
   /** 一键锁屏：回到锁屏界面。不影响消息推送——主动消息调度 / SW / 通知都在锁屏下照常运行 */
@@ -373,6 +376,13 @@ const defaultApiConfig: APIConfig = {
   model: 'gpt-4o-mini',
   stream: false,
   temperature: 0.85,
+};
+
+const defaultAuxApiConfig: AuxApiConfig = {
+  enabled: false,
+  baseUrl: '',
+  apiKey: '',
+  model: '',
 };
 
 const generateAvatar = (seed: string) => {
@@ -639,6 +649,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const appHistoryRef = useRef<AppID[]>([]);
   const [theme, setTheme] = useState<OSTheme>(defaultTheme);
   const [apiConfig, setApiConfig] = useState<APIConfig>(defaultApiConfig);
+  const [auxApiConfig, setAuxApiConfig] = useState<AuxApiConfig>(defaultAuxApiConfig);
   const [isLocked, setIsLocked] = useState(true);
   
   const getRealTime = (): VirtualTime => {
@@ -938,6 +949,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         // ... (existing load logic)
         const savedThemeStr = localStorage.getItem('os_theme');
         const savedApi = localStorage.getItem('os_api_config');
+        const savedAuxApi = localStorage.getItem('os_aux_api_config');
         const savedModels = localStorage.getItem('os_available_models');
         const savedPresets = localStorage.getItem('os_api_presets');
         
@@ -997,6 +1009,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
         
         if (savedApi) setApiConfig(JSON.parse(savedApi));
+        if (savedAuxApi) { try { setAuxApiConfig({ ...defaultAuxApiConfig, ...JSON.parse(savedAuxApi) }); } catch { /* ignore */ } }
         if (savedModels) setAvailableModels(JSON.parse(savedModels));
         if (savedPresets) setApiPresets(JSON.parse(savedPresets));
 
@@ -2295,6 +2308,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     localStorage.setItem('os_theme', JSON.stringify(lsTheme));
   };
   const updateApiConfig = (updates: Partial<APIConfig>) => { const newConfig = { ...apiConfig, ...updates }; setApiConfig(newConfig); localStorage.setItem('os_api_config', JSON.stringify(newConfig)); };
+  const updateAuxApiConfig = (updates: Partial<AuxApiConfig>) => { const newConfig = { ...auxApiConfig, ...updates }; setAuxApiConfig(newConfig); localStorage.setItem('os_aux_api_config', JSON.stringify(newConfig)); };
   const updateRealtimeConfig = (updates: Partial<RealtimeConfig>) => { const newConfig = { ...realtimeConfig, ...updates }; setRealtimeConfig(newConfig); localStorage.setItem('os_realtime_config', JSON.stringify(newConfig)); };
 
   // Cloud Backup functions
@@ -3826,6 +3840,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     virtualTime,
     apiConfig,
     updateApiConfig,
+    auxApiConfig,
+    updateAuxApiConfig,
     isLocked,
     unlock,
     lock,

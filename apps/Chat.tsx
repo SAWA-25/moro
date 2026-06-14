@@ -7,6 +7,7 @@ import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
+import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
@@ -57,7 +58,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -823,9 +824,11 @@ const Chat: React.FC = () => {
     }, [activeCharacterId, char?.scheduleFeatureEnabled]);
 
     // 日程锚点：聊天里出现约定/变更时，自动协调今天的日程（让 char 的日程既自治、又随聊天对齐）
-    // 廉价信号闸（chatHasScheduleSignal）+ 每角色 8 分钟冷却，控制副 API 成本，不每轮都调。
+    // 「主动调整日程」需开启副 API（用户预期：开副 API 才让 TA 后台跑这件杂活）。
+    // 廉价信号闸（chatHasScheduleSignal）+ 每角色 8 分钟冷却，控制成本，不每轮都调。
     useEffect(() => {
-        if (!char || !apiConfig.apiKey || !isScheduleFeatureOn(char)) return;
+        if (!char || !isScheduleFeatureOn(char)) return;
+        if (!isAuxApiOn(auxApiConfig)) return;                 // 未开副 API：不主动协调（仍可手动看/生成日程）
         if (!scheduleData || isTyping) return;                 // 还没今日日程 / 回复进行中：先不打扰
         if (messages.length === 0 || !chatHasScheduleSignal(messages)) return;
 
@@ -845,18 +848,19 @@ const Chat: React.FC = () => {
         const targetCharId = char.id;
         const curChar = char;
         const curSchedule = scheduleData;
+        const auxApi = resolveAuxApi(auxApiConfig, apiConfig);
         let cancelled = false;
         (async () => {
             try {
                 const recent = await DB.getRecentMessagesByCharId(targetCharId, 50);
-                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, apiConfig);
+                const updated = await reconcileScheduleWithChat(curChar, userProfile, curSchedule, recent, auxApi);
                 if (!cancelled && updated) setScheduleData(updated);
             } catch (e) {
                 console.warn('[Schedule/Reconcile] effect failed:', e);
             }
         })();
         return () => { cancelled = true; };
-    }, [messages, char?.id, scheduleData?.id, isTyping]);
+    }, [messages, char?.id, scheduleData?.id, isTyping, auxApiConfig]);
 
     // Load all messages when history-manager modal opens
     useEffect(() => {
@@ -1748,7 +1752,7 @@ ${recent || '（你们还没怎么聊过）'}
         if (!targetChar || isScheduleGenerating) return;
         setIsScheduleGenerating(true);
         try {
-            const result = await generateDailyScheduleForChar(targetChar, userProfile, apiConfig, forceRegenerate);
+            const result = await generateDailyScheduleForChar(targetChar, userProfile, resolveAuxApi(auxApiConfig, apiConfig), forceRegenerate);
             if (result) setScheduleData(result);
         } catch (e) {
             console.error('[Schedule] Generation error:', e);
@@ -1768,7 +1772,7 @@ ${recent || '（你们还没怎么聊过）'}
         if (!isScheduleFeatureOn(updatedChar)) return;
         setIsScheduleGenerating(true);
         try {
-            const result = await generateDailyScheduleForChar(updatedChar, userProfile, apiConfig, true);
+            const result = await generateDailyScheduleForChar(updatedChar, userProfile, resolveAuxApi(auxApiConfig, apiConfig), true);
             if (result) setScheduleData(result);
         } catch (e) {
             console.error('[Schedule] Regeneration after style change failed:', e);
@@ -4029,6 +4033,7 @@ ${recent || '（你们还没怎么聊过）'}
                     onSaveCategoryVisibility={handleSaveCategoryVisibility}
                     onBgUpload={handleBgUpload}
                     onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
+                    onOpenSchedule={() => setModalType('schedule')}
                 />
             )}
 
