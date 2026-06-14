@@ -926,7 +926,7 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full bg-[#f2f0e9] flex flex-col relative text-[#1c1b1a]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+    <div className="h-full w-full bg-[#f2f0e9] flex flex-col relative text-[#1c1b1a]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)', paddingBottom: 'var(--safe-bottom)' }}>
 
       {/* GLOBAL PROGRESS OVERLAY */}
       {sysOperation.status === 'processing' && (

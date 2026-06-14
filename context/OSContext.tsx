@@ -2514,6 +2514,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memories: [],
       contextLimit: 500,
       emotionConfig: { enabled: true },
+      // 新建角色也要先加好友才能聊天（名册·新的朋友里通过验证）
+      friendStatus: 'pending',
     };
     setCharacters(prev => [...prev, newChar]);
     setActiveCharacterId(newChar.id);
@@ -2523,9 +2525,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    setCharacters(prev => [...prev.filter(c => c.id !== char.id), char]);
-    setActiveCharacterId(char.id);
-    await DB.saveCharacter(char);
+    // 导入的角色同样要先加好友才能聊天（除非该卡明确已是好友）
+    const imported: CharacterProfile = { ...char, friendStatus: char.friendStatus === 'friend' ? 'friend' : 'pending' };
+    setCharacters(prev => [...prev.filter(c => c.id !== imported.id), imported]);
+    setActiveCharacterId(imported.id);
+    await DB.saveCharacter(imported);
   };
   // DB 写入必须可 await：之前在 setCharacters updater 里 fire-and-forget 调 DB.saveCharacter，
   // 用户在 IDB 事务完成前关页/切页时更新会丢（角色资料"微信号/地区/签名"反复重新生成的根因）。
