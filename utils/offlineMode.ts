@@ -2,6 +2,7 @@ import { CharacterProfile, UserProfile, Message } from '../types';
 import { DB } from './db';
 import { ContextBuilder } from './context';
 import { safeResponseJson, extractContent } from './safeApi';
+import { RealtimeContextManager } from './realtimeContext';
 
 /**
  * 线下模式（自动线下）。
@@ -138,13 +139,21 @@ const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile
         .slice(-20)
         .map(m => `${m.role === 'user' ? userProfile.name : char.name}: ${String(m.content).slice(0, 200)}`)
         .join('\n');
+    // 实时感知·线下（会话设置）：开启后把当前真实时间告诉模型，让线下场景贴着现实钟点。
+    let clockBlock = '';
+    if (char.convoSettings?.realtimeClockOffline) {
+        try {
+            const t = RealtimeContextManager.getTimeContext();
+            clockBlock = `\n\n### [当前真实时间]\n现在是 ${t.dateStr} ${t.dayOfWeek} ${t.timeOfDay} ${t.timeStr}，这场见面就发生在此刻，请让环境、光线和你们的状态贴合这个时间。`;
+        } catch { /* 取时间失败时静默跳过 */ }
+    }
     return `${core}
 
 ### [最近的线上聊天]
 ${recentLines || '（你们还没怎么聊过）'}
 
 ### [线下模式]
-你们的对话已经发展到见面情境，现在切换到线下面对面模式。接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。`;
+你们的对话已经发展到见面情境，现在切换到线下面对面模式。接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。${clockBlock}`;
 };
 
 /** 线下开场：生成见面的开场情景（旁白 + 角色的第一句话/动作） */

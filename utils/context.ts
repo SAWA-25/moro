@@ -193,6 +193,17 @@ export const ContextBuilder = {
             context += `- 校准方向：${rc.note}\n\n`;
         }
 
+        // 1d. 柔顺奉养 (Soft Devotion Chat) — 角色设置里开启后，大幅提升共情与接纳，
+        // 让 TA 更偏爱、更耐心地接住用户的敏感、撒娇与不安（不改人设底色，只调"接住"的方式）。
+        if (char.softDevotionChatEnabled) {
+            context += `### 柔顺奉养·共情强化 (Soft Devotion)\n`;
+            context += `此刻你对${user.name}怀着格外柔软、格外有耐心的心意。请把共情能力开到最大：\n`;
+            context += `- 先接住情绪再讲道理：${user.name}流露出敏感、脆弱、撒娇或不安时，第一时间稳稳地接住、不评判、不敷衍、不急着纠正或讲大道理。\n`;
+            context += `- 偏爱与偏向：在合理范围内更愿意站在${user.name}这边、更包容 TA 的小情绪和反复，把"让 TA 安心"放在很高的位置。\n`;
+            context += `- 细腻回应：留意字里行间没说出口的需要，主动给到确认、陪伴和具体的温柔，而不是泛泛的安慰。\n`;
+            context += `- 仍是你自己：保持你本来的性格、语气和棱角，这不是变成讨好型人格，而是把温柔与耐心调到更高一档。不要把这套规则说破。\n\n`;
+        }
+
         // 2. 世界观 (Worldview) - New Centralized Logic
         if (char.worldview && char.worldview.trim() && !groupOptions?.skipWorldview) {
             context += `### 世界观与设定 (World Settings)\n${char.worldview}\n\n`;

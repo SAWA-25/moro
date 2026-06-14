@@ -761,11 +761,31 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         })()}
                     </Entry>
 
-                    <Entry
-                        mark="☘" title="TA 知道现在几点"
-                        note="往提示词里塞「距上次聊天过了多久」这类线索，让 TA 对时间更敏感、贴着现实的钟点过日子。"
-                        side={<CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />}
-                    />
+                    <Entry mark="☘" title="TA 对时间的感知" note="分「实时感知」（明确告诉 TA 现在几点）和「时间流逝感知」（让 TA 知道两次聊天/没跟进的约定隔了多久）。线上线下可分开开关。">
+                        <div className="space-y-3 pt-1">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>实时感知 · 线上</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>在线聊天里把「当前真实时间」（几号、星期几、几点、上午下午）明确告诉 TA。</p>
+                                </div>
+                                <CandyToggle candy="#9ec7e8" on={cs.realtimeClockOnline !== false} onToggle={() => updateConvo({ realtimeClockOnline: cs.realtimeClockOnline === false })} />
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>实时感知 · 线下</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>线下面对面（见面）模式里也把当前真实时间告诉 TA。线下多为架空场景，默认关。</p>
+                                </div>
+                                <CandyToggle candy="#9ec7e8" on={!!cs.realtimeClockOffline} onToggle={() => updateConvo({ realtimeClockOffline: !cs.realtimeClockOffline })} />
+                            </div>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>时间流逝感知</div>
+                                    <p className="text-[9.5px] leading-relaxed mt-0.5" style={{ color: PAPER_TONES.inkFaint }}>两次聊天之间、或有没跟进的约定时，让 TA 知道「隔了多久」——短暂停顿、久别都会被 TA 察觉并回应。</p>
+                                </div>
+                                <CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />
+                            </div>
+                        </div>
+                    </Entry>
 
                     <Entry
                         mark="☘" title="TA 的日程表"
