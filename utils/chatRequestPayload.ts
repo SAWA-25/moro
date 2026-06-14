@@ -407,6 +407,29 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         });
     }
 
+    // 思维链语言 reminder：钉在消息流最末尾（最高 salience）。reasoning 模型默认切
+    // 英文的坏习惯，靠 system prompt 中段的「语言铁律」常压不住——末尾 reminder 是和
+    // 上面双语 reminder 同样的兜底手法，紧贴生成位置，强制 thinking 跟随用户最近一条
+    // 消息的语言。放在双语 reminder 之后 → thinking 语言指令成为整条流的最后一句。
+    if (thinkingActive) {
+        let lastUserText = '';
+        for (let i = historyMsgs.length - 1; i >= 0; i--) {
+            if (historyMsgs[i]?.role !== 'user') continue;
+            const t = (historyMsgs[i].content || '').replace(/<[^>]+>/g, '').trim();
+            if (t) { lastUserText = t; break; }
+        }
+        const hanCount = (lastUserText.match(/[一-鿿㐀-䶿豈-﫿]/g) || []).length;
+        const latinCount = (lastUserText.match(/[A-Za-z]/g) || []).length;
+        // 有中文且不弱于英文，或整条没拉丁字母 → 判中文（应用主受众为中文）
+        const isZh = hanCount > 0 ? hanCount >= latinCount : latinCount === 0;
+        fullMessages.push({
+            role: 'system',
+            content: isZh
+                ? `[Reminder｜思维链语言（最高优先级）：你的 thinking / reasoning（<think> 标签内 / reasoning channel）必须从第一个字到最后一个字全程中文。绝对禁止默认切英文。哪怕句中有英文术语 / 代码 / 品牌名，原样嵌进中文即可，不要因此切语言。若 thinking 第一句冒出英文，立刻删掉用中文重写。]`
+                : `[Reminder｜Thinking-channel language (highest priority): Your thinking / reasoning (inside <think> tags / reasoning channel) MUST be written in the SAME language as my latest message above, character for character. Do not default to another language. If the first sentence of your thinking comes out in the wrong language, delete it and rewrite it in the correct one.]`,
+        });
+    }
+
     // 预设接管时核心 systemPrompt 不含世界书 / 用户档案（它们以 marker 消息注入）。
     // 返回值的 systemPrompt 字段还有两个消费者 —— 情绪评估和 Dev 调试查看器 ——
     // 它们吃的是单块文本，这里把拆出去的块拼回去，保证两边看到的"材料"不缺。
