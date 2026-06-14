@@ -1,5 +1,9 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { OSTheme } from '../../types';
+import { useOS } from '../../context/OSContext';
+import { processImage } from '../../utils/file';
+import { resolveAuxApi } from '../../utils/auxApi';
+import { generateInputAnimationSvg, inputAnimationSrc } from '../../utils/inputAnimationSvg';
 
 type Props = {
     theme: OSTheme;
@@ -342,6 +346,74 @@ const ChoiceGroup: React.FC<{
     </div>
 );
 
+/** 输入动效：给聊天输入栏贴一层会动的装饰 —— 上传图片 / 让 AI 写 SVG。 */
+const InputAnimationSection: React.FC<{ theme: OSTheme; updateTheme: (u: Partial<OSTheme>) => void }> = ({ theme, updateTheme }) => {
+    const { apiConfig, auxApiConfig, addToast } = useOS();
+    const fileRef = useRef<HTMLInputElement>(null);
+    const [prompt, setPrompt] = useState('');
+    const [busy, setBusy] = useState(false);
+    const anim = theme.chatInputAnimation;
+    const src = anim ? inputAnimationSrc(anim) : '';
+
+    const setAnim = (patch: Partial<NonNullable<OSTheme['chatInputAnimation']>>) => {
+        if (!theme.chatInputAnimation) return;
+        updateTheme({ chatInputAnimation: { ...theme.chatInputAnimation, ...patch } });
+    };
+
+    const onUpload = async (file?: File) => {
+        if (!file) return;
+        try {
+            const dataUrl = await processImage(file, { maxWidth: 400, quality: 0.85 });
+            updateTheme({ chatInputAnimation: { kind: 'image', data: dataUrl, position: anim?.position || 'corner', opacity: anim?.opacity ?? 0.9 } });
+            addToast('输入动效已设置', 'success');
+        } catch (e: any) { addToast(e?.message || '图片处理失败', 'error'); }
+    };
+
+    const onGenSvg = async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+            const svg = await generateInputAnimationSvg(resolveAuxApi(auxApiConfig, apiConfig), prompt);
+            updateTheme({ chatInputAnimation: { kind: 'svg', data: svg, position: anim?.position || 'corner', opacity: anim?.opacity ?? 0.9 } });
+            addToast('动效生成好啦', 'success');
+        } catch (e: any) { addToast(`生成失败：${e?.message || e}`, 'error'); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <section className={groupClass}>
+            <div className="mb-2 text-[10px] font-bold label-mono text-[#8b8996]">输入动效</div>
+            <p className="mb-3 text-[10px] leading-relaxed text-[#6b6b6b]">给聊天输入框贴一层会动的小装饰：上传一张图片（支持动图），或让 AI 现写一段 SVG 动画。</p>
+            {/* 预览 */}
+            <div className="relative mb-3 h-16 rounded-xl border-2 border-dashed border-[#2b2933]/30 bg-[#f4f2ed] overflow-hidden flex items-center justify-center">
+                {src ? <img src={src} alt="" className="max-h-12 max-w-none" style={{ opacity: anim?.opacity ?? 0.9 }} /> : <span className="text-[10px] text-[#8b8996]">还没设置动效</span>}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+                <button onClick={() => fileRef.current?.click()} className={cardButton(anim?.kind === 'image')}><div className="text-[11px] font-bold">上传图片</div></button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { void onUpload(e.target.files?.[0] || undefined); e.currentTarget.value = ''; }} />
+                {anim && <button onClick={() => updateTheme({ chatInputAnimation: undefined })} className={cardButton(false)}><div className="text-[11px] font-bold">清除</div></button>}
+            </div>
+            {/* AI 写 SVG */}
+            <div className="mt-3 flex gap-2 items-stretch">
+                <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="描述想要的动效，例：飘动的小爱心和星星" className="flex-1 min-w-0 rounded-lg border-2 border-[#2b2933]/30 bg-[#fbfaf7] px-3 py-2 text-[11px] outline-none focus:border-[#2b2933]" />
+                <button onClick={() => void onGenSvg()} disabled={busy} className="shrink-0 px-3 rounded-lg border-2 border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] text-[11px] font-bold disabled:opacity-50">{busy ? '生成中…' : '让 AI 写'}</button>
+            </div>
+            {/* 位置 + 透明度 */}
+            {anim && (
+                <>
+                    <div className="mt-4">
+                        <ChoiceGroup title="位置" items={[{ value: 'corner', label: '右上角' }, { value: 'top', label: '顶边' }, { value: 'background', label: '背景' }]} value={anim.position || 'corner'} onPick={(v) => setAnim({ position: v as NonNullable<OSTheme['chatInputAnimation']>['position'] })} />
+                    </div>
+                    <div className="mt-4">
+                        <div className="mb-2 text-[10px] font-bold label-mono text-[#8b8996]">透明度 {Math.round((anim.opacity ?? 0.9) * 100)}%</div>
+                        <input type="range" min={0.1} max={1} step={0.05} value={anim.opacity ?? 0.9} onChange={e => setAnim({ opacity: parseFloat(e.target.value) })} className="w-full" />
+                    </div>
+                </>
+            )}
+        </section>
+    );
+};
+
 export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onResetAllChrome, onOpenBubbleWorkshop }) => {
     const avatarShape = theme.chatAvatarShape || defaults.chatAvatarShape;
     const avatarSize = theme.chatAvatarSize || defaults.chatAvatarSize;
@@ -558,6 +630,8 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                     <ChoiceGroup title="发送按钮" items={choices.send} value={sendButtonStyle} onPick={(value) => updateTheme({ chatSendButtonStyle: value as OSTheme['chatSendButtonStyle'] })} />
                 </div>
             </section>
+
+            <InputAnimationSection theme={theme} updateTheme={updateTheme} />
 
             <section className={groupClass}>
                 <div className="mb-3">

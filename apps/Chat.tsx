@@ -3929,6 +3929,7 @@ ${recent || '（你们还没怎么聊过）'}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
                     chromeStyle={osTheme.chatChromeStyle}
                     inputPlaceholder={convo?.inputPlaceholderText}
+                    inputAnimation={osTheme.chatInputAnimation}
                 />
             </div>
 

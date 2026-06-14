@@ -260,6 +260,13 @@ export interface OSTheme {
   chatHeaderDensity?: 'compact' | 'default' | 'airy';
   chatStatusStyle?: 'subtle' | 'pill' | 'dot';
   chatSendButtonStyle?: 'circle' | 'pill' | 'minimal';
+  /** 聊天「输入动效」：在输入栏上叠一层装饰动画 —— 上传图片（含动图）或让 AI 写一段 SVG。 */
+  chatInputAnimation?: {
+    kind: 'image' | 'svg';
+    data: string;             // 图片 data URL，或 SVG 源码字符串
+    position?: 'corner' | 'top' | 'background';
+    opacity?: number;         // 0..1，默认 0.9
+  };
   /** Instant Push 用户气泡左侧的"准备中"圆点动画。默认开启。 */
   chatPendingIndicator?: boolean;
   /** 聊天「白框」自定义 CSS：作用于 .moro-chat-header / .moro-chat-inputbar / .moro-chat-root，
@@ -3327,4 +3334,64 @@ export interface CollectionItem {
   charIds?: string[];         // 关联角色（用于「我和 A 的记录」与转发措辞）
   cover?: string;             // emoji 或图片 URL
   collectedAt: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// 外卖 App（参考美团）：char 可以给 user 点单、user 也可以给 char 点单。
+// 店铺为本地生成（每次刷新 10+ 家，可进店点菜），订单可看配送进度、和骑手/商家聊天，
+// 付款支持自己付与代付，并与来往 App 联动（给某角色点单/代付会在该角色聊天里留消息）。
+// ──────────────────────────────────────────────────────────────────
+export interface TakeoutDish {
+  id: string;
+  name: string;
+  desc?: string;
+  price: number;
+  emoji?: string;
+  popular?: boolean;       // 招牌/热销
+}
+export interface TakeoutStore {
+  id: string;
+  name: string;
+  emoji: string;           // 店铺 logo（emoji）
+  category: string;        // 中餐 / 奶茶 / 快餐 / 甜品 …
+  rating: number;          // 4.x
+  monthlySales: number;    // 月售
+  deliveryMinutes: number; // 预计配送分钟
+  deliveryFee: number;
+  minOrder: number;        // 起送价
+  distanceKm: number;
+  promo?: string;          // 满减 / 首单优惠文案
+  dishes: TakeoutDish[];
+}
+export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
+export type TakeoutStatus = 'preparing' | 'delivering' | 'delivered' | 'cancelled';
+export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store'; text: string; at: number; }
+export interface TakeoutOrder {
+  id: string;
+  storeId: string;
+  storeName: string;
+  storeEmoji: string;
+  items: TakeoutOrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  packFee: number;
+  total: number;
+  /** 收货人：'me' = 用户本人，否则是 charId。 */
+  recipient: string;
+  /** 付款人：'me' = 用户自付，否则是某角色代付。 */
+  payer: string;
+  /** 主要关联角色 id（用于来往联动 / 列表展示）：recipient 或 payer 中那个角色。 */
+  charId?: string;
+  payStatus: 'unpaid' | 'paid';
+  /** 落库时的基础状态；展示进度时按时间实时推算（liveTakeoutStatus）。 */
+  status: TakeoutStatus;
+  riderName: string;
+  riderEmoji: string;
+  address: string;
+  note?: string;
+  placedAt: number;
+  etaAt: number;           // 预计送达时间戳
+  deliveredAt?: number;
+  chat: TakeoutChatMsg[];  // 和骑手/商家的对话
+  chatTarget?: 'rider' | 'store';
 }
