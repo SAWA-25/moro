@@ -29,6 +29,7 @@ import CharacterEntryTransition from '../components/chat/CharacterEntryTransitio
 import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
+import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
 import Modal from '../components/os/Modal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
@@ -101,7 +102,7 @@ const Chat: React.FC = () => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css' | 'tabloid'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
@@ -4104,7 +4105,13 @@ ${recent || '（你们还没怎么聊过）'}
                     onBgUpload={handleBgUpload}
                     onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
                     onOpenSchedule={() => setModalType('schedule')}
+                    onOpenTabloid={() => setModalType('tabloid')}
                 />
+            )}
+
+            {/* 回望小报（昨日来信 / 回望·周章 / 回望·月章） */}
+            {modalType === 'tabloid' && char && (
+                <TabloidModal char={char} isOpen onClose={() => setModalType('none')} />
             )}
 
             {/* 角色主页（微信好友资料页风格）：单击消息头像进入；角色设置入口移到 ··· / 朋友资料 */}

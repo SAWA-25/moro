@@ -57,6 +57,8 @@ interface ConvoSettingsPanelProps {
     onRemoveBg: () => void;
     // 日程表：翻开今日日程卡片（由 Chat 切到 schedule modal）
     onOpenSchedule: () => void;
+    // 回望小报：翻开「昨日来信 / 回望·周章 / 回望·月章」弹层
+    onOpenTabloid: () => void;
 }
 
 // ── 手账 UI 原子 ──────────────────────────────────────────────────────────
@@ -218,7 +220,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         onOpenHistoryManager, onClearHistory, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
         onOpenChromeCss, categories, emojiCounts, onSaveCategoryVisibility,
-        onBgUpload, onRemoveBg, onOpenSchedule,
+        onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
     } = props;
     const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp } = useOS();
 
@@ -785,6 +787,20 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                 <CandyToggle on={char.timeAwarenessEnabled !== false} onToggle={() => updateCharacter(char.id, { timeAwarenessEnabled: char.timeAwarenessEnabled === false })} />
                             </div>
                         </div>
+                    </Entry>
+
+                    <Entry
+                        mark="☘" title="回望小报"
+                        note="让 TA 当主笔，把过去一天/一周/一月你们之间的事，揉成一份俏皮的娱乐小报（昨日来信 / 回望·周章 / 回望·月章）。"
+                        side={<CandyToggle candy="#f0a0b8" on={!!cs.tabloidEnabled} onToggle={() => updateConvo({ tabloidEnabled: !cs.tabloidEnabled })} />}
+                    >
+                        {cs.tabloidEnabled && (
+                            <button
+                                onClick={onOpenTabloid}
+                                className="w-full py-2.5 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
+                                style={{ background: '#fff', border: '1.5px solid #e289a0', color: '#b04a66', boxShadow: '2px 2px 0 #f3cdd8', ...CUTE_STACK }}
+                            >翻开回望小报 →</button>
+                        )}
                     </Entry>
 
                     <Entry
