@@ -208,7 +208,7 @@ const SocialApp: React.FC = () => {
             if (!key) return;
             freq.set(key, (freq.get(key) || 0) + 1);
         }));
-        return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 16).map(([t]) => t);
+        return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 24).map(([t]) => t);
     }, [posts]);
 
     const [colA, colB] = useMemo(() => {
