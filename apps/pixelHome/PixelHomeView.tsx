@@ -25,9 +25,7 @@ import { DB } from '../../utils/db';
 
 // 内置角色的默认像素形象（用户未自定义时使用）
 const PIXEL_CHAR_BASE = ((import.meta as any).env?.BASE_URL ?? '/') + 'pixel-char/';
-const DEFAULT_CHAR_SPRITES: Record<string, string> = {
-  'preset-moro-v2': `${PIXEL_CHAR_BASE}moro.png`,
-};
+const DEFAULT_CHAR_SPRITES: Record<string, string> = {};
 
 interface Props {
   charId: string;
