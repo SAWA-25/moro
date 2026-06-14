@@ -11,7 +11,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { AppID } from '../../types';
+import { AppID, CharacterProfile } from '../../types';
 import { safeFetchJson } from '../../utils/safeApi';
 import {
     X, ArrowClockwise, Crosshair, Footprints, MapPin, Sparkle,
@@ -156,6 +156,15 @@ function freshState(): RoamState {
     };
 }
 
+/** 字母头像兜底（同 OSContext.generateAvatar 风格），给没有头像的街角 NPC 用。 */
+function roamAvatar(seed: string): string {
+    const colors = ['FF9AA2', 'FFB7B2', 'FFDAC1', 'E2F0CB', 'B5EAD7', 'C7CEEA', 'e2e8f0', 'fcd34d', 'fca5a5'];
+    const s = (seed || '?').trim() || '?';
+    const color = colors[(s.charCodeAt(0) || 0) % colors.length];
+    const letter = s.charAt(0).toUpperCase();
+    return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23${color}"/><text x="50" y="55" font-family="sans-serif" font-weight="bold" font-size="50" text-anchor="middle" dy=".3em" fill="white" opacity="0.9">${letter}</text></svg>`;
+}
+
 function makeStranger(): RoamPerson {
     const i = Math.floor(Math.random() * STRANGER_BLURBS.length);
     return {
@@ -203,7 +212,9 @@ const EncounterChat: React.FC<{
     onBack: () => void;
     onCollect: () => void;
     collected: boolean;
-}> = ({ thread, userName, userAvatar, onSend, isReplying, onBack, onCollect, collected }) => {
+    onAddToContacts: () => void;
+    inContacts: boolean;
+}> = ({ thread, userName, userAvatar, onSend, isReplying, onBack, onCollect, collected, onAddToContacts, inContacts }) => {
     const [draft, setDraft] = useState('');
     const endRef = useRef<HTMLDivElement>(null);
     useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [thread.msgs.length, isReplying]);
@@ -219,6 +230,18 @@ const EncounterChat: React.FC<{
                     <div className="font-hand truncate" style={{ fontSize: 16, fontWeight: 700, color: INK }}>{thread.name}</div>
                     <div className="font-hand" style={{ fontSize: 11, color: '#a79c8e' }}>{thread.kind === 'stranger' ? '萍水相逢' : '熟人'}</div>
                 </div>
+                {/* 加进往来：把这个街角偶遇的人变成可在名册里编辑人设的真实角色 */}
+                {thread.kind !== 'known' && (
+                    <button onClick={onAddToContacts} disabled={inContacts} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-hand mr-1"
+                        style={{
+                            fontSize: 12, fontWeight: 700,
+                            background: inContacts ? 'rgba(120,116,106,0.12)' : 'rgba(60,110,90,0.1)',
+                            color: inContacts ? '#a79c8e' : '#3c6e5a',
+                            border: `1px dashed ${inContacts ? 'rgba(167,162,151,0.5)' : 'rgba(60,110,90,0.4)'}`,
+                        }}>
+                        {inContacts ? '已在往来' : '加进往来'}
+                    </button>
+                )}
                 {thread.kind === 'stranger' && (
                     <button onClick={onCollect} disabled={collected} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-hand"
                         style={{
@@ -281,14 +304,88 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { apiConfig, characters, userProfile, setActiveCharacterId, openApp, addToast } = useOS();
+    const { apiConfig, characters, userProfile, setActiveCharacterId, openApp, addToast, importCharacter } = useOS();
     const api = apiConfig as unknown as Api;
+
+    // 把街角偶遇的人「加进往来」：用其人设造一个真实角色（addedToChat→直接进往来），
+    // 之后可在名册里改 TA 的人设。已有同名/同 id 角色则直接进聊天。
+    const roamCharId = (personId: string) => `roam-${personId}`;
+    const addPersonToContacts = async (thread: RoamThread) => {
+        if (thread.kind === 'known') { addToast('TA 已经在你的往来里了', 'info'); return; }
+        const id = roamCharId(thread.personId);
+        if (characters.some(c => c.id === id)) {
+            addToast(`${thread.name} 已在往来里`, 'info');
+            setActiveCharacterId(id); openApp(AppID.Chat);
+            return;
+        }
+        const newChar: CharacterProfile = {
+            id, name: thread.name,
+            avatar: thread.avatar || roamAvatar(thread.name),
+            description: (thread.persona || thread.emoji + ' 在街角偶遇的人').trim(),
+            systemPrompt: '',
+            memories: [],
+            contextLimit: 500,
+            addedToChat: true,
+            emotionConfig: { enabled: true },
+        } as CharacterProfile;
+        try {
+            await importCharacter(newChar);
+            addToast(`已把 ${thread.name} 加进往来，可在名册里改 TA 的人设`, 'success');
+        } catch { addToast('加入往来失败，再试试', 'error'); }
+    };
+
+    // 按世界观生成一个街角 NPC（可单方面认识已有角色），落到附近并直接开聊
+    async function spawnWorldviewNpc() {
+        const wv = worldviewText.trim();
+        if (!wv) { addToast('先写两句世界观吧（也可粘贴角色卡/世界书设定）', 'info'); return; }
+        if (!apiReady(api)) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
+        setGenBusy(true);
+        try {
+            const charNames = characters.map(c => c.name).filter(Boolean).slice(0, 14);
+            const sys = '你是为「街角漫游」造路人 NPC 的设定师。根据给定世界观，造一个贴合该世界、有血有肉的人。'
+                + '只输出一个 JSON 对象：{"name":"中文名/称呼","emoji":"一个emoji","blurb":"一句话街头印象(不超过20字)","persona":"2~4句人物小传：身份、性格、说话风格","knows":["可空；从给的角色名里挑0~2个该NPC单方面认识的人"]}。不要任何多余文字、不要代码块。';
+            const user = `世界观设定：\n${wv}\n\n`
+                + (charNames.length ? `这个世界里已经存在这些人（该 NPC 可能「单方面认识」其中 0~2 个——TA 知道对方、对方却不认识 TA）：${charNames.join('、')}\n\n` : '')
+                + '请生成一个会出现在这个世界街头的路人 NPC。';
+            const data = await safeFetchJson(
+                `${api.baseUrl.replace(/\/+$/, '')}/chat/completions`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.apiKey}` }, body: JSON.stringify({ model: api.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperature: 0.95, max_tokens: 600, stream: false }) },
+                2, 30000, { appName: '街角·漫游', purpose: '世界观 NPC 生成' },
+            );
+            const raw: string = data?.choices?.[0]?.message?.content || '';
+            let obj: any = null;
+            try { obj = JSON.parse(raw.replace(/```(?:json)?/gi, '').trim()); }
+            catch { const a = raw.indexOf('{'), b = raw.lastIndexOf('}'); if (a >= 0 && b > a) { try { obj = JSON.parse(raw.slice(a, b + 1)); } catch { /* ignore */ } } }
+            if (!obj?.name) throw new Error('生成结果无效，换个说法再试');
+            const knows: string[] = Array.isArray(obj.knows) ? obj.knows.filter((n: any) => typeof n === 'string' && n.trim()) : [];
+            const knowsLine = knows.length ? `\n（单方面认识：${knows.join('、')}——TA 知道这些人，但这些人未必认识 TA。）` : '';
+            const person: RoamPerson = {
+                id: 'wv-' + genId(), kind: 'stranger',
+                name: String(obj.name).slice(0, 20), emoji: String(obj.emoji || '🙂').slice(0, 4),
+                blurb: String(obj.blurb || '世界里的路人').slice(0, 30),
+                persona: `${String(obj.persona || '').slice(0, 400)}${knowsLine}\n（出自世界观：${wv.slice(0, 120)}）`,
+                x: rnd(12, 88), y: rnd(14, 80),
+            };
+            const opener = pick(['（注意到你）哦？新面孔。', '…你也是这个世界里的人吧。', '嗯，看你眼生。要聊两句吗？', '欸，你这个气场……有点意思。']);
+            const thread: RoamThread = { personId: person.id, name: person.name, emoji: person.emoji, avatar: person.avatar, kind: 'stranger', persona: person.persona, msgs: [{ id: genId(), role: 'them', text: opener, at: Date.now() }], lastAt: Date.now(), unread: false };
+            setState(s => ({ ...s, nearby: [person, ...s.nearby], threads: [thread, ...s.threads.filter(t => t.personId !== person.id)] }));
+            setShowWorldviewGen(false);
+            setActiveThreadId(person.id);
+            addToast(`${person.name} 出现在了街角`, 'success');
+        } catch (e: any) {
+            addToast('招人失败：' + (e?.message || e), 'error');
+        } finally { setGenBusy(false); }
+    }
 
     const [state, setState] = useState<RoamState>(() => loadRoam() || freshState());
     const [tab, setTab] = useState<TabId>('stroll');
     const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
     const [replyingThreadId, setReplyingThreadId] = useState<string | null>(null);
     const [showCompanionPick, setShowCompanionPick] = useState(false);
+    // 世界观招人：按用户写的世界观（或角色卡设定）生成一个贴合该世界的街角 NPC
+    const [showWorldviewGen, setShowWorldviewGen] = useState(false);
+    const [worldviewText, setWorldviewText] = useState('');
+    const [genBusy, setGenBusy] = useState(false);
 
     // 持久化
     useEffect(() => { saveRoam(state); }, [state]);
@@ -477,6 +574,7 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div className="flex items-center px-3 py-3 shrink-0 relative">
                 <button onClick={onClose} className="scrap-btn-paper flex items-center justify-center" style={{ width: 38, height: 38 }}><X size={18} weight="bold" /></button>
                 <h1 className="flex-1 text-center font-hand" style={{ fontSize: 24, fontWeight: 700, color: INK }}>出门逛逛</h1>
+                <button onClick={() => setShowWorldviewGen(true)} className="scrap-btn-paper flex items-center justify-center mr-2" style={{ width: 38, height: 38 }} title="按世界观招一个人"><Sparkle size={17} weight="bold" /></button>
                 <button onClick={() => refresh(false)} className="scrap-btn-paper flex items-center justify-center" style={{ width: 38, height: 38 }}><ArrowClockwise size={17} weight="bold" /></button>
                 <div className="lace-edge absolute left-0 right-0" style={{ bottom: -9 }} />
             </div>
@@ -788,7 +886,38 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                     onBack={() => setActiveThreadId(null)}
                     onCollect={() => collectPerson(activeThread.personId)}
                     collected={state.dexPeople.some(d => d.name === activeThread.name)}
+                    onAddToContacts={() => addPersonToContacts(activeThread)}
+                    inContacts={characters.some(c => c.id === roamCharId(activeThread.personId))}
                 />
+            )}
+
+            {/* 世界观招人：按世界观/角色卡设定生成一个贴合该世界的街角 NPC */}
+            {showWorldviewGen && (
+                <div className="absolute inset-0 z-40 flex items-end justify-center" style={{ background: 'rgba(40,36,30,0.45)' }} onClick={() => !genBusy && setShowWorldviewGen(false)}>
+                    <div className="roam-sheet w-full max-w-md rounded-t-[22px] p-4 pb-6" style={{ background: PAPER }} onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 mb-1">
+                            <Sparkle size={18} weight="bold" color={INK} />
+                            <div className="font-hand" style={{ fontSize: 17, fontWeight: 700, color: INK }}>按世界观招个人</div>
+                        </div>
+                        <div className="font-hand mb-2" style={{ fontSize: 12, color: '#a79c8e' }}>
+                            写下（或粘贴）一段世界观/设定，系统会造一个贴合这个世界的路人。TA 可能单方面认识你已有的某个角色。
+                        </div>
+                        <textarea
+                            value={worldviewText}
+                            onChange={e => setWorldviewText(e.target.value)}
+                            rows={5}
+                            placeholder="例：这是一座永远在下雨的蒸汽都市，街上有靠贩卖记忆为生的人……"
+                            className="w-full p-3 text-sm outline-none resize-none font-hand"
+                            style={{ background: '#fbfaf7', border: '1px dashed rgba(167,162,151,0.6)', color: INK }}
+                        />
+                        <div className="flex gap-2 mt-3">
+                            <button onClick={() => setShowWorldviewGen(false)} disabled={genBusy} className="scrap-btn-paper flex-1 py-2.5 font-hand" style={{ fontSize: 14, fontWeight: 700, color: '#a79c8e' }}>再想想</button>
+                            <button onClick={() => void spawnWorldviewNpc()} disabled={genBusy} className="flex-1 py-2.5 font-hand rounded-xl" style={{ fontSize: 14, fontWeight: 700, color: '#f4f1e8', background: INK, opacity: genBusy ? 0.6 : 1 }}>
+                                {genBusy ? '正在招人…' : '招一个'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
