@@ -661,7 +661,8 @@ export interface RoomTodo {
     id: string;
     charId: string;
     date: string;
-    items: { text: string; done: boolean }[];
+    /** byUser=true 表示这条是用户自己加进清单的（栖居志·今日清单自主勾画），会同步给角色 */
+    items: { text: string; done: boolean; byUser?: boolean }[];
     generatedAt: number;
 }
 
