@@ -657,6 +657,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [appearancePresets, setAppearancePresets] = useState<AppearancePreset[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [errorDialog, setErrorDialog] = useState<{ title: string; details: string } | null>(null);
+  // 报错弹窗自动消失计时器：避免错误通知长时间停驻（尤其 instant push「报错但消息其实已送达」
+  // 的双通道误报，见 docs/instant-push-dual-channel.md）。
+  const errorDialogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const [lastMsgTimestamp, setLastMsgTimestamp] = useState<number>(0);
   const [unreadMessages, setUnreadMessages] = useState<Record<string, number>>({});
@@ -1415,6 +1418,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const handler = (e: Event) => {
           const { charId, charName, body, bodies, count } = (e as CustomEvent).detail as { charId: string; charName: string; body?: string; bodies?: string[]; count?: number };
           setLastMsgTimestamp(Date.now());
+
+          // 消息真的到了 → 之前那条「发送失败 / Instant Push 报错」其实是双通道误报（SSE 断了
+          // 但 push 晚到，见 docs/instant-push-dual-channel.md）。立刻撤掉该报错弹窗，别让它停驻。
+          setErrorDialog(prev => {
+              if (prev && /Instant Push|发送失败|发送错误/.test(prev.title)) {
+                  if (errorDialogTimerRef.current) { clearTimeout(errorDialogTimerRef.current); errorDialogTimerRef.current = null; }
+                  return null;
+              }
+              return prev;
+          });
 
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
           const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
@@ -2551,8 +2564,16 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const removeCustomTheme = async (id: string) => { setCustomThemes(prev => prev.filter(t => t.id !== id)); await DB.deleteTheme(id); };
   const setCustomIcon = async (appId: string, iconUrl: string | undefined) => { setCustomIcons(prev => { const next = { ...prev }; if (iconUrl) next[appId] = iconUrl; else delete next[appId]; return next; }); if (iconUrl) { await DB.saveAsset(`icon_${appId}`, iconUrl); } else { await DB.deleteAsset(`icon_${appId}`); } };
   const addToast = (message: string, type: Toast['type'] = 'info') => { const id = Date.now().toString(); setToasts(prev => [...prev, { id, message, type }]); setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 3000); };
-  const showError = (title: string, details: string) => { setErrorDialog({ title, details }); };
-  const dismissError = () => { setErrorDialog(null); };
+  const showError = (title: string, details: string) => {
+    if (errorDialogTimerRef.current) { clearTimeout(errorDialogTimerRef.current); errorDialogTimerRef.current = null; }
+    setErrorDialog({ title, details });
+    // 自动消失：报错弹窗不再长时间停驻（仍保留「复制」按钮，这段时间足够手机用户复制原文）。
+    errorDialogTimerRef.current = setTimeout(() => { setErrorDialog(null); errorDialogTimerRef.current = null; }, 12000);
+  };
+  const dismissError = () => {
+    if (errorDialogTimerRef.current) { clearTimeout(errorDialogTimerRef.current); errorDialogTimerRef.current = null; }
+    setErrorDialog(null);
+  };
 
   // --- APPEARANCE PRESETS ---
   const saveAppearancePreset = async (name: string) => {

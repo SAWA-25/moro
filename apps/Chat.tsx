@@ -1227,6 +1227,8 @@ const Chat: React.FC = () => {
     // 查手机结束：记录已由覆盖层落库进上下文，这里刷新消息并让角色主动发消息收尾
     const handleCharPhoneCheckEnd = (exitMode: 'consent' | 'questions' | 'forced' | 'finished') => {
         setCharPhoneCheckActive(false);
+        // 查手机刚结束：刷新冷却时间戳，避免下一轮（概率路径或残留指令）立刻又发起查手机。
+        try { if (char?.id) localStorage.setItem(`moro_char_phone_check_last_${char.id}`, String(Date.now())); } catch { /* ignore */ }
         void reloadMessages(visibleCountRef.current);
         addToast(exitMode === 'forced' ? `你抢回了手机，${char?.name} 好像有话要说…` : `${char?.name} 把手机还给了你`, 'info');
         setTimeout(() => { triggerAI(messages); }, 800);
