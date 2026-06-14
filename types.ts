@@ -554,8 +554,10 @@ export interface CharacterBuff {
 export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
-  weatherApiKey: string;  // OpenWeatherMap API Key
-  weatherCity: string;    // 城市名
+  /** 取数方式：'geo'（默认，浏览器定位 + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
+  weatherMode?: 'geo' | 'manual';
+  weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
+  weatherCity: string;    // 城市名（仅 manual 模式用）
 
   // 新闻配置
   newsEnabled: boolean;

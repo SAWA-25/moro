@@ -13,7 +13,7 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { safeResponseJson } from '../utils/safeApi';
-import { NotionManager, FeishuManager } from '../utils/realtimeContext';
+import { NotionManager, FeishuManager, RealtimeContextManager } from '../utils/realtimeContext';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
 import { getMcdToken, setMcdToken as saveMcdToken, isMcdEnabled, setMcdEnabled as saveMcdEnabled, testMcdConnection, resetMcdSession } from '../utils/mcdMcpClient';
 import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, X } from '@phosphor-icons/react';
@@ -257,6 +257,7 @@ const Settings: React.FC = () => {
 
   // 实时感知配置的本地状态
   const [rtWeatherEnabled, setRtWeatherEnabled] = useState(realtimeConfig.weatherEnabled);
+  const [rtWeatherMode, setRtWeatherMode] = useState<'geo' | 'manual'>(realtimeConfig.weatherMode || 'geo');
   const [rtWeatherKey, setRtWeatherKey] = useState(realtimeConfig.weatherApiKey);
   const [rtWeatherCity, setRtWeatherCity] = useState(realtimeConfig.weatherCity);
   const [rtNewsEnabled, setRtNewsEnabled] = useState(realtimeConfig.newsEnabled);
@@ -772,6 +773,7 @@ const Settings: React.FC = () => {
   const handleSaveRealtimeConfig = () => {
       updateRealtimeConfig({
           weatherEnabled: rtWeatherEnabled,
+          weatherMode: rtWeatherMode,
           weatherApiKey: rtWeatherKey,
           weatherCity: rtWeatherCity,
           newsEnabled: rtNewsEnabled,
@@ -800,24 +802,31 @@ const Settings: React.FC = () => {
       setShowRealtimeModal(false);
   };
 
-  // 测试天气API连接
+  // 测试天气：走真实取数路径（geo=定位+Open-Meteo 免密钥；manual=OpenWeatherMap）
   const testWeatherApi = async () => {
-      if (!rtWeatherKey) {
-          setRtTestStatus('请先填写 API Key');
+      if (rtWeatherMode === 'manual' && !rtWeatherKey) {
+          setRtTestStatus('手填模式请先填写 API Key');
           return;
       }
-      setRtTestStatus('正在测试...');
+      setRtTestStatus(rtWeatherMode === 'geo' ? '正在定位并抬头看天…（首次可能要授权定位）' : '正在测试…');
       try {
-          const url = `https://api.openweathermap.org/data/2.5/weather?q=${rtWeatherCity}&appid=${rtWeatherKey}&units=metric&lang=zh_cn`;
-          const res = await fetch(url);
-          if (res.ok) {
-              const data = await safeResponseJson(res);
-              setRtTestStatus(`连接成功！${data.name}: ${data.weather[0]?.description}, ${Math.round(data.main.temp)}°C`);
+          RealtimeContextManager.clearCache(); // 强制重新取，别命中缓存
+          const weather = await RealtimeContextManager.fetchWeather({
+              ...realtimeConfig,
+              weatherEnabled: true,
+              weatherMode: rtWeatherMode,
+              weatherApiKey: rtWeatherKey,
+              weatherCity: rtWeatherCity,
+          });
+          if (weather) {
+              setRtTestStatus(`看到了！${weather.city}: ${weather.description}, ${weather.temp}°C（体感 ${weather.feelsLike}°C）`);
           } else {
-              setRtTestStatus(`连接失败: HTTP ${res.status}`);
+              setRtTestStatus(rtWeatherMode === 'geo'
+                  ? '没取到天气：可能拒绝了定位授权，或网络不通。可改用手填模式。'
+                  : '没取到天气：检查 API Key 与城市名（英文）是否正确。');
           }
       } catch (e: any) {
-          setRtTestStatus(`网络错误: ${e.message}`);
+          setRtTestStatus(`出错了: ${e?.message || e}`);
       }
   };
 
@@ -2263,14 +2272,33 @@ const Settings: React.FC = () => {
                   </div>
                   {rtWeatherEnabled && (
                       <div className="space-y-2">
-                          <div>
-                              <label className={LABEL}>OPENWEATHERMAP API KEY</label>
-                              <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className={`${FIELD} font-mono`} placeholder="获取: openweathermap.org" />
+                          {/* 取数方式：定位（免密钥）/ 手填 */}
+                          <div className="grid grid-cols-2 gap-2">
+                              <button
+                                  onClick={() => setRtWeatherMode('geo')}
+                                  className={`py-2 text-xs font-black border-2 ${rtWeatherMode === 'geo' ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-dashed border-[#1c1b1a]/30 text-[#1c1b1a]/50'}`}
+                              >📍 定位·实时（免密钥）</button>
+                              <button
+                                  onClick={() => setRtWeatherMode('manual')}
+                                  className={`py-2 text-xs font-black border-2 ${rtWeatherMode === 'manual' ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-dashed border-[#1c1b1a]/30 text-[#1c1b1a]/50'}`}
+                              >🔑 手填 Key</button>
                           </div>
-                          <div>
-                              <label className={LABEL}>CITY · 城市（英文）</label>
-                              <input type="text" value={rtWeatherCity} onChange={e => setRtWeatherCity(e.target.value)} className={FIELD} placeholder="Beijing, Shanghai, etc." />
-                          </div>
+                          {rtWeatherMode === 'geo' ? (
+                              <p className="text-xs text-[#1c1b1a]/60 leading-relaxed">
+                                  用浏览器定位取你所在地的实时天气（Open-Meteo，免密钥、不用申请）。首次会弹窗请求定位授权，允许即可；拒绝或定位失败时可切到「手填 Key」。
+                              </p>
+                          ) : (
+                              <>
+                                  <div>
+                                      <label className={LABEL}>OPENWEATHERMAP API KEY</label>
+                                      <input type="password" value={rtWeatherKey} onChange={e => setRtWeatherKey(e.target.value)} className={`${FIELD} font-mono`} placeholder="获取: openweathermap.org" />
+                                  </div>
+                                  <div>
+                                      <label className={LABEL}>CITY · 城市（英文）</label>
+                                      <input type="text" value={rtWeatherCity} onChange={e => setRtWeatherCity(e.target.value)} className={FIELD} placeholder="Beijing, Shanghai, etc." />
+                                  </div>
+                              </>
+                          )}
                           <button onClick={testWeatherApi} className={`w-full py-2 text-xs font-black text-[#1c1b1a] ${STICKER}`}>抬头看一眼天</button>
                       </div>
                   )}

@@ -5,8 +5,9 @@ import { AppID } from '../../types';
 
 /**
  * 桌面天气小组件（参照手帐桌面设计稿：浅灰圆角卡 + 大号温度 + 灰色天气图标）。
- * 数据走 系统设置 → 实时感知 的 OpenWeatherMap 配置（RealtimeContextManager 内置缓存）；
- * 未配置时显示占位云朵，点击直达系统设置。
+ * 数据走 文具盒 → 风向标（实时感知）的天气配置：默认「定位 + Open-Meteo」免密钥取
+ * 用户所在地实时天气，也兼容旧版手填 OpenWeatherMap Key（RealtimeContextManager 内置缓存）。
+ * 未开启时显示占位云朵，点击直达文具盒。
  */
 
 // OpenWeatherMap icon code 前缀 → 简笔天气图标
@@ -41,14 +42,16 @@ const WeatherGlyph: React.FC<{ icon?: string; className?: string }> = ({ icon = 
 const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentColor }) => {
     const { realtimeConfig, openApp } = useOS();
     const [weather, setWeather] = useState<WeatherData | null>(null);
-    const configured = !!(realtimeConfig.weatherEnabled && realtimeConfig.weatherApiKey);
+    // geo 模式免密钥；manual 模式仍需 Key
+    const mode = realtimeConfig.weatherMode || 'geo';
+    const configured = !!(realtimeConfig.weatherEnabled && (mode !== 'manual' || realtimeConfig.weatherApiKey));
 
     useEffect(() => {
         let alive = true;
         if (!configured) { setWeather(null); return; }
         RealtimeContextManager.fetchWeather(realtimeConfig).then(w => { if (alive) setWeather(w); });
         return () => { alive = false; };
-    }, [configured, realtimeConfig.weatherApiKey, realtimeConfig.weatherCity]);
+    }, [configured, mode, realtimeConfig.weatherApiKey, realtimeConfig.weatherCity]);
 
     // 天气描述：首字母大写的英文/中文描述（OpenWeatherMap zh_cn 直接给中文）
     const desc = weather?.description
