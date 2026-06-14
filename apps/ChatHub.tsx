@@ -527,6 +527,12 @@ const ChatHub: React.FC = () => {
 
     /** 进入与某角色的私聊 */
     const openPrivateChat = (charId: string) => {
+        // 打开过私聊即让该角色固定进入「往来」会话列表（兼容历史角色：老数据首次打开后
+        // 也会在往来出现），不必再走名册/添加好友。仅在未标记时写一次，避免重复落库。
+        const target = characters.find(c => c.id === charId);
+        if (target && !(target as any).addedToChat) {
+            void updateCharacter(charId, { addedToChat: true } as any);
+        }
         setActiveCharacterId(charId);
         openApp(AppID.Chat);
     };
@@ -548,7 +554,9 @@ const ChatHub: React.FC = () => {
             }
             for (const c of characters) {
                 const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
-                if (lastMsgs.length === 0) continue; // 没聊过的角色去「联系人」页找
+                // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
+                // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
+                if (lastMsgs.length === 0 && !(c as any).addedToChat) continue;
                 // 会话设置「备注名 / 会话头像」覆盖列表展示
                 items.push({
                     kind: 'char', id: c.id,
