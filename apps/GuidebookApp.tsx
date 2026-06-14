@@ -26,6 +26,7 @@ import {
     DiamondsFour,
     Cards,
 } from '@phosphor-icons/react';
+import { PaperBackdrop, WashiTape, Stamp, WASHI, INK, INK_SOFT, PAGE_BG, TAPE_STRIPES, type WashiColor } from './theater/scrapbook';
 
 // --- Helper: Generate ID ---
 const genId = () => Math.random().toString(36).slice(2, 10);
@@ -113,19 +114,53 @@ function useLongPress(callback: () => void, ms = 500) {
     return { onTouchStart: start, onTouchMove: move, onTouchEnd: end, onMouseDown: start, onMouseMove: move, onMouseUp: end };
 }
 
-// ========== THEMED UI COMPONENTS ==========
+// 选中项高亮（和纸琥珀色）/ 好感增减小章
+const chosenOptionStyle: React.CSSProperties = {
+    background: 'linear-gradient(135deg, rgba(245,228,190,0.9), rgba(238,216,170,0.8))',
+    border: `2px solid ${WASHI.amber.edge}`,
+    color: '#5a4a34',
+};
+const affinityChip = (d: number): React.CSSProperties =>
+    d > 0 ? { background: WASHI.sage.base, color: WASHI.sage.ink }
+        : d < 0 ? { background: 'rgba(214,150,140,0.55)', color: '#9c4f47' }
+            : { background: 'rgba(176,162,138,0.3)', color: INK_SOFT };
 
-// Pastel theme wrapper — warm neutral / dusty mauve
+// 设置区纸卡底
+const setupCardStyle: React.CSSProperties = {
+    background: 'rgba(255,253,247,0.85)',
+    border: '1px solid rgba(196,184,160,0.7)',
+    outline: '1px dashed rgba(176,162,138,0.4)',
+    outlineOffset: -5,
+    boxShadow: '0 10px 20px -16px rgba(70,62,48,0.4)',
+};
+// 纸面弹窗 / 底部抽屉底
+const paperDialogStyle: React.CSSProperties = {
+    background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)',
+    border: '1px solid rgba(196,184,160,0.85)',
+    borderRadius: 16,
+    boxShadow: '0 28px 50px -20px rgba(40,34,26,0.55)',
+    transform: 'rotate(-0.6deg)',
+};
+const sheetStyle: React.CSSProperties = {
+    background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)',
+    borderTop: '1px solid rgba(196,184,160,0.8)',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    boxShadow: '0 -22px 48px -20px rgba(40,34,26,0.5)',
+};
+
+// ========== 拼贴手账 UI 组件 ==========
+
+// 纸页外壳（牛皮纸 + 纸纹 + 角落胶带）
 const GameFrame: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <div className={`w-full h-full flex flex-col overflow-hidden ${className}`}
-        style={{
-            background: 'linear-gradient(180deg, #f0ebe8 0%, #ece6e9 30%, #e8e4ea 70%, #e5e0e3 100%)',
-        }}>
+    <div className={`relative w-full h-full flex flex-col overflow-hidden ${className}`}
+        style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG }}>
+        <PaperBackdrop />
         {children}
     </div>
 );
 
-// Header bar — notebook spine style (warm neutral)
+// 顶栏：胶带返回钮 + 拍立得小头像 + 标题 + 好感火漆章
 const GameHeader: React.FC<{
     title: string;
     subtitle?: string;
@@ -133,66 +168,65 @@ const GameHeader: React.FC<{
     affinity?: number | null;
     charAvatar?: string;
 }> = ({ title, subtitle, onBack, affinity, charAvatar }) => (
-    <div className="shrink-0 relative">
-        {/* Decorative spiral dots */}
-        <div className="absolute left-1 top-0 bottom-0 flex flex-col items-center justify-center gap-1.5 z-10">
-            {[0, 1, 2, 3, 4].map(i => (
-                <div key={i} className="w-2 h-2 rounded-full" style={{ background: 'rgba(180,165,170,0.4)', border: '1px solid rgba(160,145,150,0.2)' }} />
-            ))}
-        </div>
-        <div className="flex items-center gap-2.5 pl-5 pr-3 py-2.5"
-            style={{ background: 'linear-gradient(135deg, rgba(200,185,190,0.3) 0%, rgba(190,175,195,0.2) 100%)', borderBottom: '2px solid rgba(180,165,170,0.2)' }}>
-            <button onClick={onBack} className="w-7 h-7 rounded-full bg-white/60 flex items-center justify-center text-xs font-bold active:scale-90 transition-transform shadow-sm backdrop-blur-sm" style={{ color: '#9b8a8e' }}>
-                <ArrowLeft size={14} />
+    <div className="shrink-0 relative z-20 px-4 pt-2.5 pb-2.5">
+        <div className="flex items-center gap-2.5">
+            <button onClick={onBack} className="relative inline-flex items-center justify-center w-8 h-8 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 11px)', transform: 'rotate(-3deg)', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                <ArrowLeft size={15} weight="bold" className="relative z-10" />
             </button>
             {charAvatar && (
-                <img src={charAvatar} className="w-8 h-8 rounded-full object-cover shadow-md" style={{ boxShadow: '0 0 0 2px rgba(180,165,170,0.4)' }} />
+                <span className="relative shrink-0" style={{ transform: 'rotate(-3deg)' }}>
+                    <img src={charAvatar} className="w-9 h-9 object-cover" style={{ borderRadius: 4, border: '2px solid #fffdf8', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                </span>
             )}
             <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold truncate" style={{ color: '#5a4a50' }}>{title}</div>
-                {subtitle && <div className="text-[10px]" style={{ color: '#9b8a8e' }}>{subtitle}</div>}
+                <div className="text-sm font-black truncate" style={{ color: INK }}>{title}</div>
+                {subtitle && <div className="text-[10px] tracking-wide" style={{ color: INK_SOFT }}>{subtitle}</div>}
             </div>
             {affinity != null && (
-                <div className="px-2.5 py-1 rounded-full text-xs font-bold shadow-sm" style={{
-                    background: affinity >= 0
-                        ? 'linear-gradient(135deg, rgba(200,175,175,0.4), rgba(190,160,165,0.3))'
-                        : 'linear-gradient(135deg, rgba(170,175,200,0.4), rgba(160,165,190,0.3))',
-                    color: affinity >= 0 ? '#8b6a6e' : '#6a6e8b',
-                    border: affinity >= 0 ? '1px solid rgba(190,160,165,0.3)' : '1px solid rgba(160,165,190,0.3)',
+                <div className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-black" style={{
+                    background: affinity >= 0 ? WASHI.rose.base : WASHI.sky.base,
+                    color: affinity >= 0 ? WASHI.rose.ink : WASHI.sky.ink,
                 }}>
-                    <Heart size={10} weight="fill" className="mr-0.5" />{affinity}
+                    <Heart size={11} weight="fill" />{affinity}
                 </div>
             )}
         </div>
+        <div aria-hidden className="mt-2 h-px" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
     </div>
 );
 
-// Card wrapper — warm neutral
+// 纸卡（缝线奶白卡，保留 className/style/onClick 透传）
 const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: () => void; style?: React.CSSProperties }> = ({ children, className = '', onClick, style }) => (
     <div onClick={onClick}
-        className={`bg-white/70 backdrop-blur-sm rounded-2xl shadow-sm ${onClick ? 'active:scale-[0.98] cursor-pointer' : ''} transition-all ${className}`}
-        style={{ border: '1px solid rgba(200,185,190,0.3)', boxShadow: '0 2px 8px rgba(160,145,150,0.08), 0 1px 3px rgba(0,0,0,0.04)', ...style }}>
+        className={`relative ${onClick ? 'active:scale-[0.98] cursor-pointer' : ''} transition-all ${className}`}
+        style={{
+            background: 'linear-gradient(180deg, #fdfaf3, #f7f0e2)',
+            border: '1px solid rgba(196,184,160,0.7)',
+            outline: '1px dashed rgba(176,162,138,0.45)',
+            outlineOffset: '-5px',
+            borderRadius: 16,
+            boxShadow: '0 12px 24px -16px rgba(70,62,48,0.42), 0 2px 0 rgba(255,255,255,0.6) inset',
+            ...style,
+        }}>
         {children}
     </div>
 );
 
-// Stat bar (like HP/MP bar from reference)
+// 好感进度条（缝线针脚填充）
 const StatBar: React.FC<{ label: string; value: number; max?: number; color?: string }> = ({ label, value, max = 100, color = 'warm' }) => {
     const pct = Math.min(Math.max((value + 100) / 200 * 100, 0), 100);
-    const colorMap: Record<string, string> = {
-        warm: 'linear-gradient(90deg, #c9b1bd, #b8909a)',
-        blue: 'linear-gradient(90deg, #a0b0c8, #8a9ab8)',
-        green: 'linear-gradient(90deg, #a0c8b0, #8ab8a0)',
-        purple: 'linear-gradient(90deg, #b0a0c8, #9a8ab8)',
+    const fillMap: Record<string, string> = {
+        warm: WASHI.rose.base, blue: WASHI.sky.base, green: WASHI.sage.base, purple: WASHI.lilac.base,
     };
     return (
         <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold w-14 text-right shrink-0" style={{ color: '#8b7a7e' }}>{label}</span>
-            <div className="flex-1 h-3 rounded-full overflow-hidden shadow-inner" style={{ background: 'rgba(230,220,225,0.6)', border: '1px solid rgba(200,185,190,0.3)' }}>
+            <span className="text-[10px] font-black w-14 text-right shrink-0" style={{ color: INK_SOFT }}>{label}</span>
+            <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: 'rgba(176,162,138,0.28)', border: '1px solid rgba(196,184,160,0.6)' }}>
                 <div className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%`, background: colorMap[color] || colorMap.warm }} />
+                    style={{ width: `${pct}%`, background: fillMap[color] || fillMap.warm, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.25) 0 3px, transparent 3px 7px)' }} />
             </div>
-            <span className="text-[10px] font-mono font-bold w-8" style={{ color: '#8b7a7e' }}>{value}</span>
+            <span className="text-[10px] font-black w-8" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{value}</span>
         </div>
     );
 };
@@ -227,8 +261,8 @@ const TypewriterSegments: React.FC<{
                 <SegmentBubble key={i} seg={seg} charName={charName} />
             ))}
             {visibleCount < segments.length && (
-                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'rgba(140,125,130,0.7)' }}>
-                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#b8a0a8' }} />
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: INK_SOFT }}>
+                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#3a3630' }} />
                     <span>{segments[visibleCount]?.speaker === 'gm' ? 'GM' : charName} 正在说话...</span>
                 </div>
             )}
@@ -240,14 +274,14 @@ const TypewriterSegments: React.FC<{
 const SegmentBubble: React.FC<{ seg: { speaker: string; text: string }; charName: string }> = ({ seg, charName }) => (
     <div className="animate-fade-in">
         {seg.speaker === 'gm' ? (
-            <div className="rounded-xl px-3 py-2 shadow-sm" style={{ background: 'rgba(235,232,238,0.6)', border: '1px solid rgba(180,175,195,0.25)' }}>
-                <span className="text-[10px] font-bold mr-1.5 px-1.5 py-0.5 rounded" style={{ color: '#7a7590', background: 'rgba(180,175,195,0.2)' }}>GM</span>
-                <span className="text-xs leading-relaxed" style={{ color: '#5a5570' }}>{seg.text}</span>
+            <div className="rounded-xl px-3 py-2" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', border: '1px solid rgba(196,184,160,0.6)', boxShadow: '0 5px 11px -9px rgba(70,62,48,0.4)' }}>
+                <span className="text-[10px] font-black mr-1.5 px-1.5 py-0.5 rounded tracking-wider" style={{ fontFamily: 'var(--font-label)', color: '#fcf8ef', background: '#3a3630' }}>GM</span>
+                <span className="text-xs leading-relaxed" style={{ color: '#5b5346' }}>{seg.text}</span>
             </div>
         ) : (
-            <div className="rounded-xl px-3 py-2 shadow-sm ml-4" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.7), rgba(240,232,230,0.6))', border: '1px solid rgba(200,180,175,0.25)' }}>
-                <span className="text-[10px] font-bold mr-1.5 inline-flex items-center gap-0.5" style={{ color: '#9b7a7e' }}><Heart size={10} weight="fill" /> {charName}</span>
-                <span className="text-sm leading-relaxed" style={{ color: '#5a4a4e' }}>{seg.text}</span>
+            <div className="rounded-xl px-3 py-2 ml-4" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}`, boxShadow: '0 5px 11px -9px rgba(120,70,64,0.4)' }}>
+                <span className="text-[10px] font-black mr-1.5 inline-flex items-center gap-0.5" style={{ color: WASHI.rose.ink }}><Heart size={10} weight="fill" /> {charName}</span>
+                <span className="text-sm leading-relaxed" style={{ color: '#5a3a36' }}>{seg.text}</span>
             </div>
         )}
     </div>
@@ -272,130 +306,115 @@ const RoundDisplay: React.FC<{
             {...(onLongPress ? longPressHandlers : {})}
         >
             <Card className="p-3 space-y-2.5">
-                {/* Round header — tap to toggle expand */}
+                {/* 回合页眉 — 点一下展开 */}
                 <button className="w-full flex items-center gap-2" onClick={() => setExpanded(e => !e)}>
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] text-white font-bold shadow-sm" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                    <div className="w-6 h-6 rounded-[6px] flex items-center justify-center text-[10px] font-black" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                         {round.roundNumber}
                     </div>
-                    <div className="h-px flex-1" style={{ background: 'rgba(200,185,190,0.25)' }} />
-                    <div className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                        affinityDiff > 0 ? 'bg-emerald-100/60 text-emerald-600' : affinityDiff < 0 ? 'bg-red-100/60 text-red-500' : 'bg-gray-100 text-gray-500'
-                    }`}>
+                    <div className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
+                    <div className="text-xs font-black px-2 py-0.5 rounded-full" style={affinityChip(affinityDiff)}>
                         {affinityDiff >= 0 ? '+' : ''}{affinityDiff}
                     </div>
-                    <span className="text-[10px] shrink-0" style={{ color: 'rgba(160,145,150,0.5)' }}>{expanded ? <CaretUp size={12} /> : <CaretDown size={12} />}</span>
+                    <span className="text-[10px] shrink-0" style={{ color: INK_SOFT }}>{expanded ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />}</span>
                 </button>
 
-                {/* GM Narration — always visible */}
-                <div className="rounded-lg px-2.5 py-1.5" style={{ background: 'rgba(235,232,238,0.6)', border: '1px solid rgba(180,175,195,0.2)' }}>
-                    <span className="text-[9px] font-bold mr-1" style={{ color: '#7a7590' }}>GM</span>
-                    <span className="text-[11px]" style={{ color: '#5a5570' }}>{round.gmNarration}</span>
+                {/* GM 旁白 — 常驻 */}
+                <div className="rounded-lg px-2.5 py-1.5" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', border: '1px solid rgba(196,184,160,0.55)' }}>
+                    <span className="text-[9px] font-black mr-1 px-1 py-0.5 rounded tracking-wider" style={{ fontFamily: 'var(--font-label)', color: '#fcf8ef', background: '#3a3630' }}>GM</span>
+                    <span className="text-[11px]" style={{ color: '#5b5346' }}>{round.gmNarration}</span>
                 </div>
 
-                {/* Collapsed summary: chosen option + reaction */}
+                {/* 收起态：只显示被选中的那项 + 简短反应 */}
                 {!expanded && (
                     <div className="space-y-1.5">
-                        {/* Only show chosen option */}
-                        <div className="text-xs px-2.5 py-2 rounded-xl flex items-center gap-2"
-                            style={{
-                                background: 'linear-gradient(135deg, rgba(245,238,235,0.8), rgba(240,230,228,0.7))',
-                                border: '2px solid rgba(196,139,139,0.4)',
-                                color: '#5a4a4e',
-                            }}>
-                            <span className="w-5 h-5 rounded-full bg-white/80 flex items-center justify-center text-[10px] font-bold shrink-0" style={{ border: '1px solid rgba(200,185,190,0.3)' }}>
+                        <div className="text-xs px-2.5 py-2 rounded-xl flex items-center gap-2" style={chosenOptionStyle}>
+                            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: '#fffdf8', color: INK, border: '1px solid rgba(196,184,160,0.7)' }}>
                                 {String.fromCharCode(65 + round.charChoice)}
                             </span>
                             <span className="flex-1 truncate">{chosen?.text}</span>
-                            <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full font-bold shrink-0" style={{ background: '#b8909a' }}>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black shrink-0" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                                 <ArrowLeft size={10} className="inline" /> {charName}
                             </span>
-                            <span className={`text-[10px] font-mono font-bold shrink-0 ${(chosen?.affinity || 0) >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                            <span className="text-[10px] font-black shrink-0" style={{ fontFamily: 'var(--font-label)', color: (chosen?.affinity || 0) >= 0 ? WASHI.sage.ink : '#9c4f47' }}>
                                 {(chosen?.affinity || 0) >= 0 ? '+' : ''}{chosen?.affinity}
                             </span>
                         </div>
-                        {/* Brief reaction */}
-                        <div className="rounded-lg px-2.5 py-1.5" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.6), rgba(240,232,230,0.5))', border: '1px solid rgba(200,180,175,0.2)' }}>
-                            <span className="font-bold text-[11px] mr-1 inline-flex items-center gap-0.5" style={{ color: '#9b7a7e' }}><Heart size={11} weight="fill" /> {charName}</span>
-                            <span className="text-xs" style={{ color: '#5a4a4e' }}>{round.charReaction}</span>
+                        <div className="rounded-lg px-2.5 py-1.5" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
+                            <span className="font-black text-[11px] mr-1 inline-flex items-center gap-0.5" style={{ color: WASHI.rose.ink }}><Heart size={11} weight="fill" /> {charName}</span>
+                            <span className="text-xs" style={{ color: '#5a3a36' }}>{round.charReaction}</span>
                         </div>
                     </div>
                 )}
 
-                {/* Expanded: full details */}
+                {/* 展开态：完整细节 */}
                 {expanded && (
                     <>
-                        {/* Options */}
+                        {/* 选项 */}
                         <div className="space-y-1.5">
                             {round.options.map((opt, i) => (
                                 <div key={i} className="text-xs px-2.5 py-2 rounded-xl transition-all flex items-center gap-2"
-                                    style={i === round.charChoice ? {
-                                        background: 'linear-gradient(135deg, rgba(245,238,235,0.8), rgba(240,230,228,0.7))',
-                                        border: '2px solid rgba(196,139,139,0.4)',
-                                        color: '#5a4a4e',
-                                    } : {
-                                        background: 'rgba(255,255,255,0.5)',
-                                        border: '1px solid rgba(200,185,190,0.25)',
-                                        color: 'rgba(120,105,110,0.5)',
+                                    style={i === round.charChoice ? chosenOptionStyle : {
+                                        background: 'rgba(255,253,247,0.55)',
+                                        border: '1px dashed rgba(176,162,138,0.5)',
+                                        color: 'rgba(91,83,70,0.55)',
                                     }}>
-                                    <span className="w-5 h-5 rounded-full bg-white/80 flex items-center justify-center text-[10px] font-bold shrink-0" style={{ border: '1px solid rgba(200,185,190,0.3)' }}>
+                                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: '#fffdf8', color: INK, border: '1px solid rgba(196,184,160,0.7)' }}>
                                         {String.fromCharCode(65 + i)}
                                     </span>
                                     <span className="flex-1">{opt.text}</span>
                                     {i === round.charChoice && (
-                                        <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full font-bold shrink-0" style={{ background: '#b8909a' }}>
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black shrink-0" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                                             <ArrowLeft size={10} className="inline" /> {charName}
                                         </span>
                                     )}
-                                    <span className={`text-[10px] font-mono font-bold shrink-0 ${opt.affinity >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                                    <span className="text-[10px] font-black shrink-0" style={{ fontFamily: 'var(--font-label)', color: opt.affinity >= 0 ? WASHI.sage.ink : '#9c4f47' }}>
                                         {opt.affinity >= 0 ? '+' : ''}{opt.affinity}
                                     </span>
                                 </div>
                             ))}
                         </div>
 
-                        {/* Inner Thought (now includes prediction) */}
-                        <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(230,225,238,0.5)', border: '1px solid rgba(185,175,200,0.25)' }}>
-                            <div className="text-[9px] font-bold mb-0.5" style={{ color: '#8a80a0' }}>内心 OS &amp; 预判</div>
-                            <div className="text-[11px] italic leading-relaxed" style={{ color: '#6a6080' }}>{round.charInnerThought}</div>
+                        {/* 内心 OS & 预判 */}
+                        <div className="rounded-lg px-2.5 py-2" style={{ background: WASHI.lilac.base, border: `1px solid ${WASHI.lilac.edge}` }}>
+                            <div className="text-[9px] font-black mb-0.5" style={{ color: WASHI.lilac.ink }}>内心 OS &amp; 预判</div>
+                            <div className="text-[11px] italic leading-relaxed" style={{ color: '#5a4f70' }}>{round.charInnerThought}</div>
                         </div>
 
-                        {/* Score bar */}
+                        {/* 好感进度 */}
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px]" style={{ color: 'rgba(140,125,130,0.6)' }}>好感度</span>
-                            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(230,220,225,0.5)' }}>
-                                <div className={`h-full rounded-full transition-all duration-500 ${
-                                    affinityDiff > 0 ? 'bg-gradient-to-r from-emerald-300 to-emerald-400' : affinityDiff < 0 ? 'bg-gradient-to-r from-red-300 to-red-400' : 'bg-gray-300'
-                                }`} style={{ width: `${Math.min(Math.abs(affinityDiff) * 3, 100)}%` }} />
+                            <span className="text-[10px]" style={{ color: INK_SOFT }}>好感度</span>
+                            <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(176,162,138,0.28)' }}>
+                                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(Math.abs(affinityDiff) * 3, 100)}%`, background: affinityDiff >= 0 ? WASHI.sage.base : 'rgba(214,150,140,0.7)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.25) 0 3px, transparent 3px 7px)' }} />
                             </div>
-                            <span className="text-[10px] font-mono" style={{ color: 'rgba(140,125,130,0.5)' }}>{round.affinityBefore}<ArrowRight size={10} className="inline" />{round.affinityAfter}</span>
+                            <span className="text-[10px]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{round.affinityBefore}<ArrowRight size={10} className="inline" />{round.affinityAfter}</span>
                         </div>
 
-                        {/* Reaction */}
-                        <div className="rounded-lg px-2.5 py-2" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.6), rgba(240,232,230,0.5))', border: '1px solid rgba(200,180,175,0.2)' }}>
-                            <span className="font-bold text-[11px] mr-1 inline-flex items-center gap-0.5" style={{ color: '#9b7a7e' }}><Heart size={11} weight="fill" /> {charName}</span>
-                            <span className="text-xs" style={{ color: '#5a4a4e' }}>{round.charReaction}</span>
+                        {/* 反应 */}
+                        <div className="rounded-lg px-2.5 py-2" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
+                            <span className="font-black text-[11px] mr-1 inline-flex items-center gap-0.5" style={{ color: WASHI.rose.ink }}><Heart size={11} weight="fill" /> {charName}</span>
+                            <span className="text-xs" style={{ color: '#5a3a36' }}>{round.charReaction}</span>
                         </div>
 
-                        {/* Insight — char's reading of what user's scoring reveals */}
+                        {/* 关于你的发现 */}
                         {round.charInsight && (
-                            <div className="rounded-xl px-3 py-2.5" style={{ background: 'linear-gradient(135deg, rgba(220,235,248,0.55), rgba(210,228,245,0.45))', border: '1px solid rgba(160,190,220,0.35)' }}>
-                                <div className="text-[9px] font-bold mb-1 flex items-center gap-1" style={{ color: '#5a7a9e' }}>
+                            <div className="rounded-xl px-3 py-2.5" style={{ background: WASHI.sky.base, border: `1px solid ${WASHI.sky.edge}` }}>
+                                <div className="text-[9px] font-black mb-1 flex items-center gap-1" style={{ color: WASHI.sky.ink }}>
                                     <Diamond size={12} weight="fill" /> 关于你的发现
                                 </div>
-                                <div className="text-xs leading-relaxed italic" style={{ color: '#3a5a78' }}>
+                                <div className="text-xs leading-relaxed italic" style={{ color: '#3a5a72' }}>
                                     {round.charInsight}
                                 </div>
                             </div>
                         )}
 
-                        {/* Exploration */}
+                        {/* 深入探讨 */}
                         {round.charExploration && (
-                            <div className="rounded-xl px-3 py-2.5" style={{ background: 'linear-gradient(135deg, rgba(240,235,225,0.6), rgba(238,230,218,0.5))', border: '1px solid rgba(210,195,175,0.3)' }}>
-                                <div className="text-[9px] font-bold mb-1 flex items-center gap-1" style={{ color: '#a09070' }}>
+                            <div className="rounded-xl px-3 py-2.5" style={{ background: WASHI.butter.base, border: `1px solid ${WASHI.butter.edge}` }}>
+                                <div className="text-[9px] font-black mb-1 flex items-center gap-1" style={{ color: WASHI.butter.ink }}>
                                     <Sparkle size={12} weight="fill" /> 深入探讨
                                 </div>
-                                <div className="text-xs leading-relaxed" style={{ color: '#6a5a45' }}>
-                                    <span className="font-bold mr-1" style={{ color: '#8a7a60' }}>{charName}:</span>{round.charExploration}
+                                <div className="text-xs leading-relaxed" style={{ color: '#6a5a35' }}>
+                                    <span className="font-black mr-1" style={{ color: WASHI.butter.ink }}>{charName}:</span>{round.charExploration}
                                 </div>
                             </div>
                         )}
@@ -421,39 +440,38 @@ const EndCard: React.FC<{
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto no-scrollbar rounded-3xl shadow-xl"
-                style={{ background: 'linear-gradient(180deg, #f0ebe8 0%, #fff 20%, #ece6e9 100%)', border: '2px solid rgba(200,185,190,0.4)' }}>
-                {/* Header with character */}
-                <div className="text-center pt-5 pb-3 px-5 relative">
-                    {/* Decorative corners */}
-                    <div className="absolute top-2 left-3 text-lg" style={{ color: 'rgba(180,165,170,0.3)' }}><FlowerLotus size={18} /></div>
-                    <div className="absolute top-2 right-3 text-lg" style={{ color: 'rgba(180,165,170,0.3)' }}><FlowerLotus size={18} /></div>
-
+            <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.45)', backdropFilter: 'blur(3px)' }} onClick={onClose} />
+            <div className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto no-scrollbar animate-pop-in"
+                style={{ background: 'linear-gradient(180deg, #fdfaf3, #f4ecda)', border: '1px solid rgba(196,184,160,0.85)', outline: '1px dashed rgba(176,162,138,0.5)', outlineOffset: -6, borderRadius: 20, boxShadow: '0 32px 60px -22px rgba(40,34,26,0.6)', transform: 'rotate(-0.5deg)' }}>
+                <WashiTape color="rose" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-28 h-6 rounded-[2px] z-10" />
+                {/* 报告页眉：拍立得头像 */}
+                <div className="text-center pt-7 pb-3 px-5 relative">
                     {charAvatar ? (
-                        <img src={charAvatar} className="w-16 h-16 rounded-2xl object-cover shadow-lg mx-auto mb-2" style={{ boxShadow: '0 0 0 3px rgba(180,165,170,0.35), 0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <span className="inline-block p-1.5 pb-3 mb-2" style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', borderRadius: 6, boxShadow: '0 8px 16px -10px rgba(70,62,48,0.5)', transform: 'rotate(-2.5deg)' }}>
+                            <img src={charAvatar} className="w-16 h-16 object-cover" style={{ borderRadius: 3 }} />
+                        </span>
                     ) : (
-                        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-lg mx-auto mb-2" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)', boxShadow: '0 0 0 3px rgba(180,165,170,0.35)' }}>
+                        <div className="w-16 h-16 rounded-[6px] flex items-center justify-center text-2xl font-black mx-auto mb-2" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                             {charName[0]}
                         </div>
                     )}
-                    <div className="text-[10px] font-bold tracking-widest uppercase mb-1" style={{ color: '#9b8a8e' }}>攻略本 · 结算报告</div>
-                    <div className="text-xl font-black" style={{ color: '#5a4a50' }}>「{title}」</div>
+                    <div className="text-[10px] font-black tracking-[0.34em] uppercase mb-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>攻略本 · 结算报告</div>
+                    <div className="text-xl font-black" style={{ color: INK }}>「{title}」</div>
                 </div>
 
                 <div className="px-4 pb-4 space-y-3">
-                    {/* Stats */}
+                    {/* 数值 */}
                     <Card className="p-3">
                         <div className="flex items-center justify-between">
                             <div>
-                                <div className="text-sm font-bold" style={{ color: '#5a4a50' }}>{charName}</div>
-                                <div className="text-[10px]" style={{ color: '#9b8a8e' }}>{session.rounds.length} 回合</div>
+                                <div className="text-sm font-black" style={{ color: INK }}>{charName}</div>
+                                <div className="text-[10px]" style={{ color: INK_SOFT }}>{session.rounds.length} 回合</div>
                             </div>
                             <div className="text-right">
-                                <div className={`text-2xl font-black ${diff > 0 ? 'text-emerald-500' : diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                                <div className="text-2xl font-black" style={{ color: diff > 0 ? WASHI.sage.ink : diff < 0 ? '#9c4f47' : INK_SOFT }}>
                                     {finalAffinity}
                                 </div>
-                                <div className="text-[10px]" style={{ color: '#9b8a8e' }}>
+                                <div className="text-[10px]" style={{ color: INK_SOFT }}>
                                     {diff >= 0 ? '+' : ''}{diff} 从 {session.initialAffinity}
                                 </div>
                             </div>
@@ -461,51 +479,51 @@ const EndCard: React.FC<{
                         <StatBar label="好感度" value={finalAffinity} color="warm" />
                     </Card>
 
-                    {/* Verdict */}
+                    {/* 一句话判词 */}
                     <Card className="p-3">
-                        <div className="text-sm leading-relaxed italic" style={{ color: '#5a4a50' }}>
-                            "{charVerdict}"
+                        <div className="text-sm leading-relaxed italic" style={{ fontFamily: 'var(--font-display)', color: '#5b5346' }}>
+                            “{charVerdict}”
                         </div>
                     </Card>
 
-                    {/* Highlights */}
+                    {/* 名场面 */}
                     {highlights.length > 0 && (
                         <Card className="p-3 space-y-1.5">
-                            <div className="text-[10px] tracking-wider font-bold flex items-center gap-1" style={{ color: '#9b8a8e' }}>
+                            <div className="text-[10px] tracking-wider font-black flex items-center gap-1" style={{ color: WASHI.amber.ink }}>
                                 <Star size={12} weight="fill" /> 名场面
                             </div>
                             {highlights.map((h, i) => (
-                                <div key={i} className="text-xs flex gap-2 rounded-lg p-2" style={{ color: '#5a4a50', background: 'rgba(245,238,235,0.5)' }}>
-                                    <span className="shrink-0" style={{ color: '#b8909a' }}><CaretRight size={12} weight="bold" /></span>
+                                <div key={i} className="text-xs flex gap-2 rounded-lg p-2" style={{ color: '#5b5346', background: WASHI.butter.base }}>
+                                    <span className="shrink-0" style={{ color: WASHI.butter.ink }}><CaretRight size={12} weight="bold" /></span>
                                     <span>{h}</span>
                                 </div>
                             ))}
                         </Card>
                     )}
 
-                    {/* New Insight — the discovery of this session */}
+                    {/* 这局游戏让我发现的你 */}
                     {session.endCard?.charNewInsight && (
-                        <div className="rounded-2xl p-4" style={{ background: 'linear-gradient(135deg, rgba(215,230,248,0.65), rgba(200,220,245,0.5))', border: '1px solid rgba(150,185,225,0.4)' }}>
-                            <div className="text-[10px] font-bold flex items-center gap-1 mb-2" style={{ color: '#4a6a92' }}>
+                        <div className="rounded-2xl p-4" style={{ background: WASHI.sky.base, border: `1px solid ${WASHI.sky.edge}` }}>
+                            <div className="text-[10px] font-black flex items-center gap-1 mb-2" style={{ color: WASHI.sky.ink }}>
                                 <Diamond size={12} weight="fill" /> 这局游戏让我发现的你
                             </div>
-                            <div className="text-sm leading-relaxed italic" style={{ color: '#2a4a68' }}>
+                            <div className="text-sm leading-relaxed italic" style={{ color: '#2a4a62' }}>
                                 {session.endCard.charNewInsight}
                             </div>
                         </div>
                     )}
 
-                    {/* Character Summary */}
+                    {/* 真心话 */}
                     {charSummary && (
                         <button onClick={() => setExpanded(!expanded)} className="w-full text-left">
-                            <div className="rounded-2xl p-3 backdrop-blur-sm transition-all" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.6), rgba(235,228,238,0.5))', border: '1px solid rgba(200,185,190,0.25)' }}>
+                            <div className="rounded-2xl p-3 transition-all" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
                                 <div className="flex items-center justify-between mb-1">
-                                    <div className="text-[10px] font-bold flex items-center gap-1" style={{ color: '#9b7a7e' }}>
+                                    <div className="text-[10px] font-black flex items-center gap-1" style={{ color: WASHI.rose.ink }}>
                                         <Heart size={12} weight="fill" /> {charName}的真心话
                                     </div>
-                                    <span className="text-xs" style={{ color: '#b8a0a8' }}>{expanded ? <CaretUp size={12} /> : <CaretDown size={12} />}</span>
+                                    <span className="text-xs" style={{ color: WASHI.rose.ink }}>{expanded ? <CaretUp size={12} /> : <CaretDown size={12} />}</span>
                                 </div>
-                                <div className={`text-sm leading-relaxed ${expanded ? '' : 'line-clamp-2'}`} style={{ color: '#5a4a50' }}>
+                                <div className={`text-sm leading-relaxed ${expanded ? '' : 'line-clamp-2'}`} style={{ color: '#5a3a36' }}>
                                     {charSummary}
                                 </div>
                             </div>
@@ -513,15 +531,14 @@ const EndCard: React.FC<{
                     )}
                 </div>
 
-                {/* Actions */}
-                <div className="px-4 pb-4 pt-1 flex gap-2 sticky bottom-0"
-                    style={{ background: 'linear-gradient(0deg, #ece6e9 0%, transparent 100%)' }}>
+                {/* 操作 */}
+                <div className="px-4 pb-4 pt-1 flex gap-2 sticky bottom-0" style={{ background: 'linear-gradient(0deg, #f4ecda 30%, transparent 100%)' }}>
                     <button onClick={onClose}
-                        className="flex-1 py-2.5 bg-white/80 text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-sm" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                        className="flex-1 py-2.5 text-sm font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                         关闭
                     </button>
                     <button onClick={onSendToChat}
-                        className="flex-1 py-2.5 text-white text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                        className="flex-1 py-2.5 text-sm font-black rounded-full active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                         发送到聊天
                     </button>
                 </div>
@@ -547,36 +564,38 @@ const SessionCard: React.FC<{
             <div {...longPressHandlers}>
                 <div className="flex items-center gap-3">
                     {char?.avatar ? (
-                        <img src={char.avatar} className="w-11 h-11 rounded-xl object-cover shadow-sm" style={{ boxShadow: '0 0 0 2px rgba(200,185,190,0.4)' }} />
+                        <span className="shrink-0" style={{ transform: 'rotate(-2.5deg)' }}>
+                            <img src={char.avatar} className="w-11 h-11 object-cover" style={{ borderRadius: 4, border: '2px solid #fffdf8', boxShadow: '0 4px 9px -5px rgba(70,62,48,0.5)' }} />
+                        </span>
                     ) : (
-                        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shadow-sm" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                        <div className="w-11 h-11 rounded-[5px] flex items-center justify-center font-black shrink-0" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                             {char?.name?.[0] || '?'}
                         </div>
                     )}
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold truncate" style={{ color: '#5a4a50' }}>{char?.name || '???'}</span>
+                            <span className="text-sm font-black truncate" style={{ color: INK }}>{char?.name || '???'}</span>
                             {session.endCard && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: 'rgba(200,185,190,0.2)', color: '#8b6a6e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black" style={{ background: WASHI.amber.base, color: WASHI.amber.ink }}>
                                     「{session.endCard.title}」
                                 </span>
                             )}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px]" style={{ color: '#9b8a8e' }}>{fmtDate(session.createdAt)}</span>
-                            <span className="text-[10px]" style={{ color: '#c0b0b5' }}>·</span>
-                            <span className="text-[10px]" style={{ color: '#9b8a8e' }}>{session.rounds.length}回合</span>
-                            <span className="text-[10px]" style={{ color: '#c0b0b5' }}>·</span>
-                            <span className={`text-[10px] font-bold`} style={{ color: session.status === 'ended' ? '#9b8a8e' : '#b89a60' }}>
+                            <span className="text-[10px]" style={{ color: INK_SOFT }}>{fmtDate(session.createdAt)}</span>
+                            <span className="text-[10px]" style={{ color: '#c4b8a0' }}>·</span>
+                            <span className="text-[10px]" style={{ color: INK_SOFT }}>{session.rounds.length}回合</span>
+                            <span className="text-[10px]" style={{ color: '#c4b8a0' }}>·</span>
+                            <span className="text-[10px] font-black" style={{ color: session.status === 'ended' ? INK_SOFT : WASHI.amber.ink }}>
                                 {session.status === 'ended' ? '已结算' : '进行中'}
                             </span>
                         </div>
                     </div>
                     <div className="text-right shrink-0">
-                        <div className={`text-lg font-black ${diff > 0 ? 'text-emerald-500' : diff < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                        <div className="text-lg font-black" style={{ color: diff > 0 ? WASHI.sage.ink : diff < 0 ? '#9c4f47' : INK_SOFT }}>
                             {session.currentAffinity}
                         </div>
-                        <div className="text-[10px]" style={{ color: '#9b8a8e' }}>
+                        <div className="text-[10px]" style={{ color: INK_SOFT }}>
                             {diff >= 0 ? '+' : ''}{diff}
                         </div>
                     </div>
@@ -1066,145 +1085,63 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     if (view === 'lobby') {
         return (
             <GameFrame>
-                {/* Cinematic header - no standard GameHeader */}
-                <div className="shrink-0 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(30,20,40,0.85) 0%, rgba(60,30,50,0.7) 50%, rgba(40,20,50,0.85) 100%)' }}>
-                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px)' }} />
-                    <div className="flex items-center gap-3 px-4 py-3 relative z-10">
-                        <button onClick={exitApp} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs active:scale-90 transition-transform backdrop-blur-sm border border-white/10">
-                            <ArrowLeft size={14} />
+                {/* 顶栏：纸页页眉 */}
+                <div className="shrink-0 relative z-20 px-4 pt-2.5 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                        <button onClick={exitApp} className="relative inline-flex items-center justify-center w-8 h-8 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                            <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-3deg)', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                            <ArrowLeft size={15} weight="bold" className="relative z-10" />
                         </button>
                         <div className="flex-1">
-                            <div className="text-xs tracking-[0.3em] text-white/40 font-light" style={{ fontFamily: 'Georgia, serif' }}>CHARACTER SELECT</div>
-                            <div className="text-base font-bold text-white/90 tracking-wider mt-0.5">攻略本</div>
+                            <div className="text-[9px] tracking-[0.32em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>Guidebook · Casting</div>
+                            <div className="text-base font-black tracking-wide" style={{ color: INK }}>攻略本</div>
                         </div>
-                        <button onClick={() => setShowTutorial(true)} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/50 text-xs font-bold active:scale-90 transition-transform backdrop-blur-sm border border-white/10">
-                            ?
-                        </button>
+                        <button onClick={() => setShowTutorial(true)} className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black active:scale-90 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>?</button>
                     </div>
-                    {/* Decorative bottom line */}
-                    <div className="h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(244,143,177,0.4) 30%, rgba(167,139,250,0.4) 70%, transparent 100%)' }} />
+                    <div aria-hidden className="mt-2 h-px" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
                 </div>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar">
-                    {/* Title area */}
-                    <div className="px-5 pt-5 pb-2">
-                        <div className="text-[9px] tracking-[0.25em] text-pink-400/50 font-light mb-1" style={{ fontFamily: 'Georgia, serif' }}>— SELECT YOUR TARGET —</div>
-                        <div className="text-pink-700/70 text-xs">选择攻略你的角色</div>
+                    {/* 标题 */}
+                    <div className="px-5 pt-3 pb-1">
+                        <div className="text-[9px] tracking-[0.28em] uppercase mb-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>— Pick your lead —</div>
+                        <div className="text-[12px]" style={{ color: '#6b6456' }}>挑一位登场角色，开一局攻略</div>
                     </div>
 
-                    {/* Character Banners */}
-                    <div className="px-4 pb-3 space-y-3">
+                    {/* 登场角色卡 */}
+                    <div className="px-4 pt-3 pb-3 space-y-3.5">
                         {characters.map((c, idx) => {
                             const charSessions = savedSessions.filter(s => s.charId === c.id);
                             const lastSession = charSessions[0];
-                            const isEven = idx % 2 === 0;
+                            const tones: WashiColor[] = ['rose', 'amber', 'sage', 'sky', 'lilac', 'butter'];
+                            const tone = tones[idx % tones.length];
+                            const tilt = idx % 2 === 0 ? -0.7 : 0.8;
                             return (
-                                <button
-                                    key={c.id}
-                                    onClick={() => { setSelectedCharId(c.id); setView('setup'); }}
-                                    className="w-full block relative overflow-hidden active:scale-[0.97] transition-all duration-200 group"
-                                    style={{ borderRadius: '4px' }}
-                                >
-                                    {/* Banner container */}
-                                    <div className="relative h-[100px] overflow-hidden" style={{ borderRadius: '4px' }}>
-                                        {/* Background - avatar as cinematic crop or gradient */}
-                                        {c.avatar ? (
-                                            <img src={c.avatar}
-                                                className="absolute inset-0 w-full h-full object-cover"
-                                                style={{
-                                                    objectPosition: isEven ? 'center 20%' : 'center 30%',
-                                                    filter: 'brightness(0.7) contrast(1.1) saturate(1.2)',
-                                                }}
-                                            />
-                                        ) : (
-                                            <div className="absolute inset-0" style={{
-                                                background: `linear-gradient(${isEven ? '135deg' : '225deg'}, #4a1942 0%, #2d1b4e 40%, #1a1a2e 100%)`
-                                            }} />
-                                        )}
-
-                                        {/* Gradient overlays */}
-                                        <div className="absolute inset-0" style={{
-                                            background: isEven
-                                                ? 'linear-gradient(90deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.2) 40%, transparent 70%)'
-                                                : 'linear-gradient(270deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.2) 40%, transparent 70%)'
-                                        }} />
-                                        {/* Bottom vignette */}
-                                        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.4) 100%)' }} />
-
-                                        {/* Decorative scan line */}
-                                        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.5) 2px, rgba(255,255,255,0.5) 3px)' }} />
-
-                                        {/* Portrait avatar - opposite side of text */}
-                                        <div className={`absolute top-1/2 -translate-y-1/2 ${isEven ? 'right-3' : 'left-3'} z-10`}>
+                                <button key={c.id} onClick={() => { setSelectedCharId(c.id); setView('setup'); }} className="w-full block active:scale-[0.98] transition-transform">
+                                    <div className="relative flex items-center gap-3 p-3" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f7f0e2)', border: '1px solid rgba(196,184,160,0.7)', outline: '1px dashed rgba(176,162,138,0.45)', outlineOffset: -5, borderRadius: 14, boxShadow: '0 12px 24px -16px rgba(70,62,48,0.42)', transform: `rotate(${tilt}deg)` }}>
+                                        <WashiTape color={tone} rotate={-5} className="absolute -top-2.5 left-7 w-14 h-5 rounded-[2px] z-10" />
+                                        {/* 拍立得头像 */}
+                                        <span className="shrink-0" style={{ transform: 'rotate(-2.5deg)' }}>
                                             {c.avatar ? (
-                                                <div className="relative">
-                                                    <img src={c.avatar}
-                                                        className="w-[60px] h-[60px] rounded-full object-cover shadow-lg"
-                                                        style={{
-                                                            border: '2px solid rgba(255,255,255,0.2)',
-                                                            boxShadow: '0 4px 16px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.1)',
-                                                        }}
-                                                    />
-                                                    {/* Ring glow */}
-                                                    <div className="absolute inset-0 rounded-full" style={{
-                                                        boxShadow: '0 0 12px rgba(244,143,177,0.25), 0 0 4px rgba(167,139,250,0.15)',
-                                                    }} />
-                                                </div>
+                                                <span className="block p-1 pb-2" style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', borderRadius: 5, boxShadow: '0 5px 11px -7px rgba(70,62,48,0.5)' }}>
+                                                    <img src={c.avatar} className="w-[58px] h-[58px] object-cover" style={{ borderRadius: 3 }} />
+                                                </span>
                                             ) : (
-                                                <div className="w-[60px] h-[60px] rounded-full flex items-center justify-center text-white/70 text-xl font-bold shadow-lg"
-                                                    style={{
-                                                        background: 'linear-gradient(135deg, rgba(100,60,120,0.8) 0%, rgba(60,40,80,0.9) 100%)',
-                                                        border: '2px solid rgba(255,255,255,0.15)',
-                                                        boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-                                                    }}>
-                                                    {c.name[0]}
-                                                </div>
+                                                <span className="w-[58px] h-[58px] rounded-[5px] flex items-center justify-center text-xl font-black" style={{ background: '#3a3630', color: '#fcf8ef' }}>{c.name[0]}</span>
                                             )}
-                                        </div>
-
-                                        {/* Content overlay */}
-                                        <div className={`absolute inset-0 flex flex-col justify-end p-3 ${isEven ? 'items-start pr-20' : 'items-end text-right pl-20'}`}>
-                                            {/* Index number - decorative */}
-                                            <div className={`absolute top-2 ${isEven ? 'left-3' : 'right-3'} text-[10px] text-white/20 tracking-widest font-light`} style={{ fontFamily: 'monospace' }}>
-                                                {String(idx + 1).padStart(2, '0')}
-                                            </div>
-
-                                            {/* Name */}
-                                            <div className="text-white font-bold text-lg tracking-wide leading-tight" style={{ textShadow: '0 2px 12px rgba(0,0,0,0.5)' }}>
-                                                {c.name}
-                                            </div>
-
-                                            {/* Description line */}
-                                            <div className="text-white/50 text-[10px] mt-0.5 leading-tight max-w-[85%] truncate">
-                                                {c.description ? c.description.slice(0, 25) : '等待攻略…'}
-                                            </div>
-
-                                            {/* Session badge */}
+                                        </span>
+                                        <div className="flex-1 min-w-0 text-left">
+                                            <div className="text-[9px] tracking-widest" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>NO.{String(idx + 1).padStart(2, '0')}</div>
+                                            <div className="text-lg font-black tracking-wide leading-tight truncate" style={{ color: INK }}>{c.name}</div>
+                                            <div className="text-[10.5px] mt-0.5 leading-tight truncate" style={{ color: '#8b8576' }}>{c.description ? c.description.slice(0, 25) : '等待攻略…'}</div>
                                             {charSessions.length > 0 && (
-                                                <div className={`flex items-center gap-1.5 mt-1 ${isEven ? '' : 'flex-row-reverse'}`}>
-                                                    <div className="h-px w-3 bg-pink-300/40" />
-                                                    <span className="text-[8px] text-pink-200/50 tracking-wider">
-                                                        {charSessions.length}回攻略{lastSession?.endCard ? ` ·「${lastSession.endCard.title}」` : ''}
-                                                    </span>
-                                                </div>
+                                                <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full" style={{ background: WASHI[tone].base, color: WASHI[tone].ink }}>
+                                                    <span className="text-[8px] font-black tracking-wide">{charSessions.length}回攻略{lastSession?.endCard ? ` ·「${lastSession.endCard.title}」` : ''}</span>
+                                                </span>
                                             )}
                                         </div>
-
-                                        {/* Corner accent */}
-                                        <div className={`absolute top-0 ${isEven ? 'right-0' : 'left-0'}`}>
-                                            <div className="w-6 h-6 border-t border-r border-white/15" style={{ borderRadius: '0 4px 0 0' }} />
-                                        </div>
-
-                                        {/* Hover/active glow */}
-                                        <div className="absolute inset-0 bg-pink-400/0 group-active:bg-pink-400/10 transition-colors duration-200" style={{ borderRadius: '4px' }} />
+                                        <CaretRight size={16} weight="bold" className="shrink-0" style={{ color: INK_SOFT }} />
                                     </div>
-
-                                    {/* Thin accent line under each card */}
-                                    <div className="h-[2px] mt-0.5" style={{
-                                        background: isEven
-                                            ? 'linear-gradient(90deg, rgba(244,143,177,0.5) 0%, rgba(167,139,250,0.3) 50%, transparent 100%)'
-                                            : 'linear-gradient(270deg, rgba(244,143,177,0.5) 0%, rgba(167,139,250,0.3) 50%, transparent 100%)'
-                                    }} />
                                 </button>
                             );
                         })}
@@ -1212,21 +1149,19 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                     {characters.length === 0 && (
                         <div className="text-center py-16 px-6">
-                            <div className="text-[10px] tracking-[0.3em] mb-2" style={{ fontFamily: 'Georgia, serif', color: 'rgba(180,165,170,0.3)' }}>NO CHARACTERS FOUND</div>
-                            <div className="text-xs" style={{ color: 'rgba(160,145,150,0.5)' }}>还没有角色，先去创建一个吧</div>
+                            <div className="text-3xl mb-2 select-none">🎭</div>
+                            <div className="text-xs" style={{ color: INK_SOFT }}>还没有角色，先去创建一个吧</div>
                         </div>
                     )}
 
-                    {/* Session History - collapsible section */}
+                    {/* 历史存档 */}
                     {savedSessions.length > 0 && (
                         <div className="px-4 pb-4 mt-2">
-                            {/* Section divider */}
                             <div className="flex items-center gap-2 mb-3 px-1">
-                                <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(244,143,177,0.25) 50%, transparent 100%)' }} />
-                                <span className="text-[8px] tracking-[0.3em] text-pink-400/40" style={{ fontFamily: 'Georgia, serif' }}>HISTORY</span>
-                                <div className="h-px flex-1" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(244,143,177,0.25) 50%, transparent 100%)' }} />
+                                <span className="text-[8px] tracking-[0.3em] px-2 py-0.5 rounded-[3px]" style={{ fontFamily: 'var(--font-label)', background: '#3a3630', color: '#fcf8ef' }}>HISTORY</span>
+                                <div className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-2.5">
                                 {savedSessions.map(s => (
                                     <SessionCard
                                         key={s.id}
@@ -1241,38 +1176,36 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     )}
                 </div>
 
-                {/* Tutorial Modal */}
+                {/* 玩法说明 */}
                 {showTutorial && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
-                        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowTutorial(false)} />
-                        <div className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl" style={{ background: 'linear-gradient(160deg, #2a1a2e 0%, #1a1228 60%, #221530 100%)', border: '1px solid rgba(244,143,177,0.15)' }}>
-                            {/* Header */}
-                            <div className="px-5 pt-5 pb-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                <div className="text-[9px] tracking-[0.3em] text-pink-400/50 mb-1" style={{ fontFamily: 'Georgia, serif' }}>HOW TO PLAY</div>
-                                <div className="text-lg font-bold text-white/90">攻略本 · 玩法说明</div>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-5 animate-fade-in">
+                        <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.45)', backdropFilter: 'blur(3px)' }} onClick={() => setShowTutorial(false)} />
+                        <div className="relative w-full max-w-sm overflow-hidden animate-pop-in" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f4ecda)', border: '1px solid rgba(196,184,160,0.85)', outline: '1px dashed rgba(176,162,138,0.5)', outlineOffset: -6, borderRadius: 20, boxShadow: '0 32px 60px -22px rgba(40,34,26,0.6)', transform: 'rotate(-0.5deg)' }}>
+                            <WashiTape color="sky" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-28 h-6 rounded-[2px] z-10" />
+                            <div className="px-5 pt-7 pb-2">
+                                <div className="text-[9px] tracking-[0.3em] uppercase mb-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>How to Play</div>
+                                <div className="text-lg font-black" style={{ color: INK }}>攻略本 · 玩法说明</div>
                             </div>
-                            {/* Content */}
-                            <div className="px-5 py-4 space-y-3.5 max-h-[65vh] overflow-y-auto no-scrollbar">
+                            <div className="px-5 py-3 space-y-3 max-h-[60vh] overflow-y-auto no-scrollbar">
                                 {[
-                                    { icon: <Sparkle size={14} weight="fill" />, title: '基本概念', desc: '你是出题人，角色是答题者。每回合你设计三个行为选项（含好感度分值），AI角色会根据自己的性格选一个——你需要猜到她会选哪个！' },
-                                    { icon: <Heart size={14} weight="fill" />, title: '好感度系统', desc: '每个选项对应一个分值（可以是负数）。角色选择后，分值累加到当前好感度。结局好坏取决于最终好感度。' },
-                                    { icon: <FlowerLotus size={14} weight="fill" />, title: 'AI 一键填入', desc: '不知道出什么题？点"AI 一键填入"，AI会根据当前剧情自动帮你生成三个选项和分值，你可以直接用或者修改。' },
-                                    { icon: <Star size={14} weight="fill" />, title: '点击选项快速编辑', desc: '游戏过程中，点击任意选项（A/B/C）可以在弹出框里快速编辑内容和分值，手机党友好！' },
-                                    { icon: <DiamondsFour size={14} weight="fill" />, title: '幻想场景', desc: '开始时可以设定一个场景背景（比如异世界冒险、校园日常），AI会据此生成开场白并保持世界观一致。' },
-                                    { icon: <Cards size={14} weight="fill" />, title: '结算卡片', desc: '游戏结束后生成结算卡，包含角色的真实评语和本局高光时刻，还可以发送到聊天。' },
+                                    { icon: <Sparkle size={15} weight="fill" />, color: 'amber' as WashiColor, title: '基本概念', desc: '你是出题人，角色是答题者。每回合你设计三个行为选项（含好感度分值），AI角色会根据自己的性格选一个——你需要猜到她会选哪个！' },
+                                    { icon: <Heart size={15} weight="fill" />, color: 'rose' as WashiColor, title: '好感度系统', desc: '每个选项对应一个分值（可以是负数）。角色选择后，分值累加到当前好感度。结局好坏取决于最终好感度。' },
+                                    { icon: <FlowerLotus size={15} weight="fill" />, color: 'sage' as WashiColor, title: 'AI 一键填入', desc: '不知道出什么题？点"AI 一键填入"，AI会根据当前剧情自动帮你生成三个选项和分值，你可以直接用或者修改。' },
+                                    { icon: <Star size={15} weight="fill" />, color: 'butter' as WashiColor, title: '点击选项快速编辑', desc: '游戏过程中，点击任意选项（A/B/C）可以在弹出框里快速编辑内容和分值，手机党友好！' },
+                                    { icon: <DiamondsFour size={15} weight="fill" />, color: 'sky' as WashiColor, title: '幻想场景', desc: '开始时可以设定一个场景背景（比如异世界冒险、校园日常），AI会据此生成开场白并保持世界观一致。' },
+                                    { icon: <Cards size={15} weight="fill" />, color: 'lilac' as WashiColor, title: '结算卡片', desc: '游戏结束后生成结算卡，包含角色的真实评语和本局高光时刻，还可以发送到聊天。' },
                                 ].map((item, i) => (
                                     <div key={i} className="flex gap-3">
-                                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5" style={{ background: 'rgba(244,143,177,0.15)', color: '#f48fb1' }}>{item.icon}</div>
+                                        <Stamp color={item.color} size={30} className="mt-0.5">{item.icon}</Stamp>
                                         <div>
-                                            <div className="text-xs font-bold text-white/80 mb-0.5">{item.title}</div>
-                                            <div className="text-[11px] leading-relaxed text-white/45">{item.desc}</div>
+                                            <div className="text-xs font-black mb-0.5" style={{ color: INK }}>{item.title}</div>
+                                            <div className="text-[11px] leading-relaxed" style={{ color: '#6b6456' }}>{item.desc}</div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                            {/* Close */}
-                            <div className="px-5 pb-5 pt-3">
-                                <button onClick={() => setShowTutorial(false)} className="w-full py-2.5 rounded-2xl text-sm font-bold active:scale-95 transition-transform" style={{ background: 'linear-gradient(135deg, rgba(244,143,177,0.25), rgba(167,139,250,0.2))', color: '#f48fb1', border: '1px solid rgba(244,143,177,0.2)' }}>
+                            <div className="px-5 pb-5 pt-2">
+                                <button onClick={() => setShowTutorial(false)} className="w-full py-2.5 rounded-full text-sm font-black active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                                     明白了！开始攻略 <ArrowRight size={14} className="inline" />
                                 </button>
                             </div>
@@ -1280,17 +1213,20 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </div>
                 )}
 
-                {/* Delete Confirm */}
+                {/* 撕掉记录确认 */}
                 {deleteSessionId && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                        <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setDeleteSessionId(null)} />
-                        <Card className="relative p-5 max-w-xs w-full space-y-3">
-                            <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>删除这条记录？</div>
-                            <div className="flex gap-2">
-                                <button onClick={() => setDeleteSessionId(null)} className="flex-1 py-2.5 bg-white/80 text-xs font-bold rounded-xl active:scale-95 transition-transform" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>取消</button>
-                                <button onClick={() => handleDeleteSession(deleteSessionId)} className="flex-1 py-2.5 bg-red-400 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform shadow-sm">删除</button>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in">
+                        <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.4)', backdropFilter: 'blur(3px)' }} onClick={() => setDeleteSessionId(null)} />
+                        <div className="relative w-full max-w-xs animate-pop-in" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', border: '1px solid rgba(196,184,160,0.85)', borderRadius: 16, boxShadow: '0 28px 50px -20px rgba(40,34,26,0.55)', transform: 'rotate(-0.6deg)' }}>
+                            <WashiTape color="rose" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-5 rounded-[2px] z-10" />
+                            <div className="px-5 pt-6 pb-5 space-y-3">
+                                <div className="font-black text-sm text-center" style={{ color: INK }}>撕掉这张记录？</div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setDeleteSessionId(null)} className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>取消</button>
+                                    <button onClick={() => handleDeleteSession(deleteSessionId)} className="flex-1 py-2.5 text-white text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#b3564e' }}>撕掉</button>
+                                </div>
                             </div>
-                        </Card>
+                        </div>
                     </div>
                 )}
             </GameFrame>
@@ -1302,147 +1238,108 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         const setupChar = characters.find(c => c.id === selectedCharId);
         return (
             <GameFrame>
-                {/* Cinematic header matching lobby style */}
-                <div className="shrink-0 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, rgba(30,20,40,0.85) 0%, rgba(60,30,50,0.7) 50%, rgba(40,20,50,0.85) 100%)' }}>
-                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.03) 3px, rgba(255,255,255,0.03) 4px)' }} />
-                    <div className="flex items-center gap-3 px-4 py-3 relative z-10">
-                        <button onClick={backToLobby} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 text-xs active:scale-90 transition-transform backdrop-blur-sm border border-white/10">
-                            <ArrowLeft size={14} />
+                {/* 顶栏 */}
+                <div className="shrink-0 relative z-20 px-4 pt-2.5 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                        <button onClick={backToLobby} className="relative inline-flex items-center justify-center w-8 h-8 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                            <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-3deg)', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                            <ArrowLeft size={15} weight="bold" className="relative z-10" />
                         </button>
                         <div className="flex-1">
-                            <div className="text-xs tracking-[0.3em] text-white/40 font-light" style={{ fontFamily: 'Georgia, serif' }}>GAME SETUP</div>
-                            <div className="text-base font-bold text-white/90 tracking-wider mt-0.5">新游戏</div>
+                            <div className="text-[9px] tracking-[0.32em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>New Game</div>
+                            <div className="text-base font-black tracking-wide" style={{ color: INK }}>新游戏</div>
                         </div>
                     </div>
-                    <div className="h-px" style={{ background: 'linear-gradient(90deg, transparent 0%, rgba(196,139,139,0.4) 30%, rgba(185,163,187,0.4) 70%, transparent 100%)' }} />
+                    <div aria-hidden className="mt-2 h-px" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
                 </div>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar">
-                    {/* Character Showcase Banner */}
+                    {/* 登场角色条 */}
                     {setupChar && (
-                        <div className="mx-4 mt-4 relative overflow-hidden" style={{ borderRadius: '16px' }}>
-                            <div className="relative h-[88px] overflow-hidden" style={{ borderRadius: '16px' }}>
-                                {/* Background - avatar cinematic crop */}
+                        <div className="mx-4 mt-4 relative flex items-center gap-3 p-3" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f7f0e2)', border: '1px solid rgba(196,184,160,0.7)', outline: '1px dashed rgba(176,162,138,0.45)', outlineOffset: -5, borderRadius: 14, boxShadow: '0 12px 24px -16px rgba(70,62,48,0.42)', transform: 'rotate(-0.6deg)' }}>
+                            <WashiTape color="rose" rotate={-5} className="absolute -top-2.5 left-7 w-16 h-5 rounded-[2px] z-10" />
+                            <span className="shrink-0" style={{ transform: 'rotate(-2.5deg)' }}>
                                 {setupChar.avatar ? (
-                                    <img src={setupChar.avatar}
-                                        className="absolute inset-0 w-full h-full object-cover"
-                                        style={{ objectPosition: 'center 25%', filter: 'brightness(0.6) contrast(1.1) saturate(1.3) blur(1px)' }}
-                                    />
+                                    <span className="block p-1 pb-2" style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', borderRadius: 5, boxShadow: '0 5px 11px -7px rgba(70,62,48,0.5)' }}>
+                                        <img src={setupChar.avatar} className="w-14 h-14 object-cover" style={{ borderRadius: 3 }} />
+                                    </span>
                                 ) : (
-                                    <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, #4a1942 0%, #2d1b4e 40%, #1a1a2e 100%)' }} />
+                                    <span className="w-14 h-14 rounded-[5px] flex items-center justify-center text-xl font-black" style={{ background: '#3a3630', color: '#fcf8ef' }}>{setupChar.name[0]}</span>
                                 )}
-                                {/* Overlay gradient */}
-                                <div className="absolute inset-0" style={{ background: 'linear-gradient(90deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.3) 100%)' }} />
-                                <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.4) 100%)' }} />
-
-                                {/* Content */}
-                                <div className="absolute inset-0 flex items-center gap-3 px-4">
-                                    {/* Portrait */}
-                                    {setupChar.avatar ? (
-                                        <img src={setupChar.avatar} className="w-14 h-14 rounded-full object-cover shrink-0 shadow-lg"
-                                            style={{ border: '2px solid rgba(255,255,255,0.25)', boxShadow: '0 4px 16px rgba(0,0,0,0.3), 0 0 12px rgba(196,139,139,0.2)' }} />
-                                    ) : (
-                                        <div className="w-14 h-14 rounded-full flex items-center justify-center text-white/70 text-xl font-bold shrink-0 shadow-lg"
-                                            style={{ background: 'linear-gradient(135deg, rgba(100,60,120,0.8), rgba(60,40,80,0.9))', border: '2px solid rgba(255,255,255,0.15)' }}>
-                                            {setupChar.name[0]}
-                                        </div>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-[9px] tracking-[0.2em] text-pink-200/40" style={{ fontFamily: 'Georgia, serif' }}>TARGET</div>
-                                        <div className="text-white font-bold text-lg tracking-wide" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.4)' }}>
-                                            {setupChar.name}
-                                        </div>
-                                        <div className="text-white/40 text-[10px] truncate mt-0.5">
-                                            {setupChar.description ? setupChar.description.slice(0, 30) : '准备被攻略…'}
-                                        </div>
-                                    </div>
-                                </div>
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[9px] tracking-[0.24em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>TARGET · 攻略对象</div>
+                                <div className="font-black text-lg tracking-wide" style={{ color: INK }}>{setupChar.name}</div>
+                                <div className="text-[10px] truncate mt-0.5" style={{ color: '#8b8576' }}>{setupChar.description ? setupChar.description.slice(0, 30) : '准备被攻略…'}</div>
                             </div>
-                            {/* Accent line */}
-                            <div className="h-[2px]" style={{ background: 'linear-gradient(90deg, rgba(196,139,139,0.5) 0%, rgba(185,163,187,0.4) 50%, transparent 100%)' }} />
                         </div>
                     )}
 
-                    {/* Settings Area - Morandi dusty pink palette */}
+                    {/* 设置区 */}
                     <div className="px-4 pt-4 pb-3 space-y-3">
-                        {/* Initial Affinity */}
-                        <div className="relative rounded-2xl overflow-hidden" style={{ background: 'rgba(245,238,235,0.7)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(200,180,175,0.25)' }}>
+                        {/* 初始好感度 */}
+                        <div className="relative rounded-2xl" style={setupCardStyle}>
                             <div className="p-3.5 space-y-2.5">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5">
-                                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" style={{ background: 'linear-gradient(135deg, #d4a0a0, #c48b8b)', color: 'white' }}><Heart size={12} weight="fill" /></div>
-                                        <span className="text-xs font-bold" style={{ color: '#8b6f6f' }}>初始好感度</span>
+                                        <Stamp color="rose" size={22}><Heart size={12} weight="fill" /></Stamp>
+                                        <span className="text-xs font-black" style={{ color: INK }}>初始好感度</span>
                                     </div>
-                                    <div className="px-2.5 py-0.5 rounded-full text-xs font-bold" style={{ color: '#9b7a7a', background: 'rgba(212,160,160,0.15)', border: '1px solid rgba(200,180,175,0.2)' }}>
+                                    <div className="px-2.5 py-0.5 rounded-full text-xs font-black" style={{ color: WASHI.rose.ink, background: WASHI.rose.base }}>
                                         {initialAffinity}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2.5">
                                     <div className="flex-1 relative h-7 flex items-center">
-                                        {/* Track background */}
-                                        <div className="absolute inset-x-0 h-2 rounded-full" style={{ background: 'rgba(212,180,175,0.25)', top: '50%', transform: 'translateY(-50%)' }} />
-                                        {/* Fill */}
+                                        <div className="absolute inset-x-0 h-2 rounded-full" style={{ background: 'rgba(176,162,138,0.28)', top: '50%', transform: 'translateY(-50%)' }} />
                                         <div className="absolute h-2 rounded-full" style={{
-                                            background: 'linear-gradient(90deg, #c9b1bd, #c48b8b)',
-                                            width: `${(initialAffinity + 100) / 200 * 100}%`,
-                                            top: '50%', transform: 'translateY(-50%)',
+                                            background: WASHI.rose.base, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.25) 0 3px, transparent 3px 7px)',
+                                            width: `${(initialAffinity + 100) / 200 * 100}%`, top: '50%', transform: 'translateY(-50%)',
                                         }} />
                                         <input type="range" min={-100} max={100} value={initialAffinity}
                                             onChange={e => setInitialAffinity(Number(e.target.value))}
                                             className="absolute inset-0 w-full opacity-0 cursor-pointer" style={{ zIndex: 2 }} />
-                                        {/* Thumb */}
-                                        <div className="absolute w-5 h-5 rounded-full bg-white pointer-events-none" style={{
-                                            left: `calc(${(initialAffinity + 100) / 200 * 100}% - 10px)`,
-                                            top: '50%', transform: 'translateY(-50%)',
-                                            border: '2.5px solid #c48b8b',
-                                            boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-                                            zIndex: 1,
+                                        <div className="absolute w-5 h-5 rounded-full pointer-events-none" style={{
+                                            left: `calc(${(initialAffinity + 100) / 200 * 100}% - 10px)`, top: '50%', transform: 'translateY(-50%)',
+                                            background: '#fffdf8', border: '2.5px solid #3a3630', boxShadow: '0 2px 5px rgba(70,62,48,0.3)', zIndex: 1,
                                         }} />
                                     </div>
                                     <input type="number" value={initialAffinity}
                                         onChange={e => setInitialAffinity(Number(e.target.value))}
-                                        className="w-14 rounded-xl px-2 py-1.5 text-center text-xs font-bold focus:outline-none"
-                                        style={{ color: '#8b6f6f', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(200,180,175,0.2)' }} />
+                                        className="w-14 rounded-xl px-2 py-1.5 text-center text-xs font-black focus:outline-none"
+                                        style={{ color: INK, background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)' }} />
                                 </div>
-                                <div className="text-[9px]" style={{ color: 'rgba(160,130,130,0.5)' }}>支持负数，随便填（角色会看到并做出反应）</div>
+                                <div className="text-[9px]" style={{ color: INK_SOFT }}>支持负数，随便填（角色会看到并做出反应）</div>
                             </div>
                         </div>
 
-                        {/* Max Rounds */}
-                        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(245,238,235,0.7)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(200,180,175,0.25)' }}>
+                        {/* 回合数 */}
+                        <div className="rounded-2xl" style={setupCardStyle}>
                             <div className="p-3 space-y-2">
                                 <div className="flex items-center gap-1.5">
-                                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" style={{ background: 'linear-gradient(135deg, #c9b1bd, #b89aaa)', color: 'white' }}><Sparkle size={12} weight="fill" /></div>
-                                    <span className="text-xs font-bold" style={{ color: '#8b6f6f' }}>回合数</span>
+                                    <Stamp color="amber" size={22}><Sparkle size={12} weight="fill" /></Stamp>
+                                    <span className="text-xs font-black" style={{ color: INK }}>回合数</span>
                                 </div>
                                 <div className="grid grid-cols-4 gap-1.5">
                                     {[3, 5, 8, 10].map(n => (
                                         <button key={n} onClick={() => setMaxRounds(n)}
-                                            className="py-2 rounded-xl text-xs transition-all active:scale-90"
-                                            style={maxRounds === n ? {
-                                                background: 'linear-gradient(135deg, #c9a0a0, #b88a8a)',
-                                                color: 'white',
-                                                fontWeight: 700,
-                                                boxShadow: '0 2px 6px rgba(180,130,130,0.2)',
-                                            } : {
-                                                background: 'rgba(255,255,255,0.5)',
-                                                color: 'rgba(160,130,130,0.6)',
-                                                border: '1px solid rgba(200,180,175,0.2)',
-                                            }}>{n}</button>
+                                            className="py-2 rounded-xl text-xs font-black transition-all active:scale-90"
+                                            style={maxRounds === n
+                                                ? { background: '#3a3630', color: '#fcf8ef', boxShadow: '0 6px 12px -8px rgba(58,54,48,0.6)' }
+                                                : { background: 'rgba(255,253,247,0.7)', color: INK_SOFT, border: '1px solid rgba(196,184,160,0.7)' }}>{n}</button>
                                     ))}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Fantasy Scenario / World Setting */}
-                        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(245,238,235,0.7)', backdropFilter: 'blur(8px)', border: '1.5px solid rgba(200,180,175,0.25)' }}>
+                        {/* 幻想场景 */}
+                        <div className="rounded-2xl" style={setupCardStyle}>
                             <div className="p-3.5 space-y-2.5">
                                 <div className="flex items-center gap-1.5">
-                                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" style={{ background: 'linear-gradient(135deg, #c5b8c9, #b5a3bb)', color: 'white' }}><FlowerLotus size={12} weight="fill" /></div>
-                                    <span className="text-xs font-bold" style={{ color: '#8b6f6f' }}>幻想场景</span>
-                                    <span className="text-[9px] ml-0.5" style={{ color: 'rgba(160,130,130,0.4)' }}>选一个或自己写</span>
+                                    <Stamp color="lilac" size={22}><FlowerLotus size={12} weight="fill" /></Stamp>
+                                    <span className="text-xs font-black" style={{ color: INK }}>幻想场景</span>
+                                    <span className="text-[9px] ml-0.5" style={{ color: INK_SOFT }}>选一个或自己写</span>
                                 </div>
-                                {/* Fantasy Presets */}
                                 <div className="grid grid-cols-3 gap-1.5">
                                     {[
                                         { label: '游戏世界', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f3ae.png', value: '你们在一起玩的游戏世界里冒险（RPG/开放世界），角色用游戏内的方式攻略用户' },
@@ -1453,56 +1350,43 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                         { label: '自由想象', icon: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f52e.png', value: '' },
                                     ].map(preset => (
                                         <button key={preset.label} onClick={() => setScenarioHint(preset.value)}
-                                            className="py-2 px-1 rounded-xl text-[10px] transition-all active:scale-90 text-center leading-tight"
-                                            style={scenarioHint === preset.value && preset.value ? {
-                                                background: 'linear-gradient(135deg, #c9a0a0, #b88a8a)',
-                                                color: 'white',
-                                                fontWeight: 700,
-                                                boxShadow: '0 2px 6px rgba(180,130,130,0.2)',
-                                            } : {
-                                                background: 'rgba(255,255,255,0.5)',
-                                                color: 'rgba(120,100,100,0.6)',
-                                                border: '1px solid rgba(200,180,175,0.2)',
-                                            }}>
+                                            className="py-2 px-1 rounded-xl text-[10px] font-bold transition-all active:scale-90 text-center leading-tight"
+                                            style={scenarioHint === preset.value && preset.value
+                                                ? { background: '#3a3630', color: '#fcf8ef', boxShadow: '0 6px 12px -8px rgba(58,54,48,0.6)' }
+                                                : { background: 'rgba(255,253,247,0.7)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.7)' }}>
                                             <img src={preset.icon} className="w-4 h-4 inline" alt="" />{' '}{preset.label}
                                         </button>
                                     ))}
                                 </div>
                                 <input type="text" value={scenarioHint} onChange={e => setScenarioHint(e.target.value)}
                                     placeholder="自由描述: 在某个游戏里/小说背景/咖啡馆偶遇/雨天同伞..."
-                                    className="w-full rounded-xl px-3 py-2.5 text-xs focus:outline-none placeholder-stone-300"
-                                    style={{ color: '#6b5555', background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(200,180,175,0.2)' }}
+                                    className="w-full rounded-xl px-3 py-2.5 text-xs focus:outline-none"
+                                    style={{ color: INK, background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)' }}
                                     />
-                                <div className="text-[9px]" style={{ color: 'rgba(160,130,130,0.4)' }}>大胆设想！这是游戏，不用拘束于现实</div>
+                                <div className="text-[9px]" style={{ color: INK_SOFT }}>大胆设想！这是游戏，不用拘束于现实</div>
                             </div>
                         </div>
 
                         {error && (
-                            <div className="rounded-2xl p-3 text-xs" style={{ color: '#a06060', background: 'rgba(240,220,220,0.6)', border: '1px solid rgba(200,160,160,0.3)' }}>
+                            <div className="rounded-2xl p-3 text-xs" style={{ color: '#8a5a52', background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
                                 {error}
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Start Button - Morandi rose */}
+                {/* 开始 */}
                 <div className="p-4 shrink-0">
                     <button onClick={handleStartGame} disabled={!selectedCharId || isLoading}
-                        className="w-full py-3.5 font-bold text-sm tracking-wider active:scale-[0.97] transition-all disabled:opacity-40"
-                        style={{
-                            background: 'linear-gradient(135deg, #c9a0a0 0%, #b88a8a 50%, #a07878 100%)',
-                            color: 'white',
-                            borderRadius: '16px',
-                            boxShadow: '0 4px 16px rgba(180,130,130,0.3), 0 2px 6px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.15)',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                        }}>
+                        className="w-full py-3.5 font-black text-sm tracking-wider active:scale-[0.97] transition-all disabled:opacity-40 rounded-full"
+                        style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -5, boxShadow: '0 14px 26px -14px rgba(58,54,48,0.6)' }}>
                         {isLoading ? (
                             <span className="flex items-center justify-center gap-2">
                                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                 生成开场白...
                             </span>
                         ) : (
-                            <span>开始游戏</span>
+                            <span>✎ 开始游戏</span>
                         )}
                     </button>
                 </div>
@@ -1524,7 +1408,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 <TypewriterSegments segments={openingSegments} charName={selectedChar?.name || '???'} onDone={handleOpeningDone} />
                 <div className="p-4 shrink-0">
                     <button onClick={handleOpeningDone}
-                        className="w-full py-2.5 bg-white/70 text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-sm" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                        className="w-full py-2.5 text-sm font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                         跳过 <ArrowRight size={14} className="inline" />
                     </button>
                 </div>
@@ -1563,9 +1447,9 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             <SegmentBubble key={i} seg={seg} charName={charName} />
                         ))}
                         <div className="flex items-center gap-2 my-2">
-                            <div className="h-px flex-1" style={{ background: 'rgba(200,185,190,0.25)' }} />
-                            <span className="text-[10px] font-bold" style={{ color: 'rgba(160,145,150,0.5)' }}>游戏开始</span>
-                            <div className="h-px flex-1" style={{ background: 'rgba(200,185,190,0.25)' }} />
+                            <div className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
+                            <span className="text-[9px] font-black tracking-[0.2em] px-2 py-0.5 rounded-[3px]" style={{ fontFamily: 'var(--font-label)', background: '#3a3630', color: '#fcf8ef' }}>游戏开始</span>
+                            <div className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(150,140,120,0.5) 0 5px, transparent 5px 10px)' }} />
                         </div>
                     </div>
                 )}
@@ -1585,111 +1469,111 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 {/* End card inline for replay */}
                 {isReplay && session?.endCard && (
                     <Card className="p-4 space-y-3 mt-2">
+                        <WashiTape color="amber" rotate={-5} className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-20 h-5 rounded-[2px] z-10" />
                         <div className="text-center">
-                            <div className="text-[10px] tracking-wider font-bold mb-1 flex items-center justify-center gap-1" style={{ color: '#9b8a8e' }}><Sparkle size={12} weight="fill" /> 结算 <Sparkle size={12} weight="fill" /></div>
-                            <div className="text-lg font-black" style={{ color: '#5a4a50' }}>「{session.endCard.title}」</div>
+                            <div className="text-[10px] tracking-[0.3em] font-black mb-1 flex items-center justify-center gap-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}><Sparkle size={12} weight="fill" /> 结算 <Sparkle size={12} weight="fill" /></div>
+                            <div className="text-lg font-black" style={{ color: INK }}>「{session.endCard.title}」</div>
                         </div>
-                        <div className="text-sm italic text-center rounded-xl p-2" style={{ color: '#5a4a50', background: 'rgba(245,238,235,0.5)' }}>
-                            "{session.endCard.charVerdict}"
+                        <div className="text-sm italic text-center rounded-xl p-2" style={{ fontFamily: 'var(--font-display)', color: '#5b5346', background: WASHI.butter.base }}>
+                            “{session.endCard.charVerdict}”
                         </div>
                         {session.endCard.highlights.map((h, i) => (
-                            <div key={i} className="text-xs flex gap-2 rounded-lg p-2" style={{ color: '#5a4a50', background: 'rgba(245,238,235,0.3)' }}>
-                                <span className="shrink-0" style={{ color: '#b8909a' }}><CaretRight size={12} weight="bold" /></span><span>{h}</span>
+                            <div key={i} className="text-xs flex gap-2 rounded-lg p-2" style={{ color: '#5b5346', background: 'rgba(245,236,218,0.6)' }}>
+                                <span className="shrink-0" style={{ color: WASHI.amber.ink }}><CaretRight size={12} weight="bold" /></span><span>{h}</span>
                             </div>
                         ))}
                         {session.endCard.charSummary && (
-                            <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,238,235,0.5), rgba(235,228,238,0.4))', border: '1px solid rgba(200,185,190,0.2)' }}>
-                                <div className="text-[10px] font-bold mb-1 flex items-center gap-1" style={{ color: '#9b7a7e' }}>
+                            <div className="rounded-xl p-3" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
+                                <div className="text-[10px] font-black mb-1 flex items-center gap-1" style={{ color: WASHI.rose.ink }}>
                                     <Heart size={12} weight="fill" /> {charName}的真心话
                                 </div>
-                                <div className="text-sm leading-relaxed" style={{ color: '#5a4a50' }}>{session.endCard.charSummary}</div>
+                                <div className="text-sm leading-relaxed" style={{ color: '#5a3a36' }}>{session.endCard.charSummary}</div>
                             </div>
                         )}
                     </Card>
                 )}
 
-                {/* Loading */}
+                {/* 思考中 */}
                 {isLoading && (
-                    <div className="flex items-center gap-2 text-xs" style={{ color: 'rgba(140,125,130,0.7)' }}>
-                        <div className="w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(200,185,190,0.3)', borderTopColor: '#b8909a' }} />
+                    <div className="flex items-center gap-2 text-xs" style={{ color: INK_SOFT }}>
+                        <div className="w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid rgba(176,162,138,0.35)', borderTopColor: '#3a3630' }} />
                         <span>{charName} 正在思考...</span>
                     </div>
                 )}
 
                 {error && (
-                    <Card className="p-3" style={{ border: '1px solid rgba(200,160,160,0.3)', background: 'rgba(250,240,240,0.6)' }}>
-                        <div className="text-red-500 text-xs">{error}</div>
+                    <Card className="p-3" style={{ border: `1px solid ${WASHI.rose.edge}`, background: WASHI.rose.base }}>
+                        <div className="text-xs" style={{ color: '#8a5a52' }}>{error}</div>
                     </Card>
                 )}
             </div>
 
-            {/* Input Area (playing only) */}
+            {/* 出题面板（仅进行中） */}
             {!isReplay && session?.status === 'playing' && !isLoading && (
-                <div className="shrink-0"
-                    style={{ background: 'linear-gradient(0deg, rgba(240,235,232,0.95) 0%, rgba(236,230,233,0.9) 100%)', borderTop: '2px solid rgba(200,185,190,0.15)' }}>
+                <div className="shrink-0 relative z-10"
+                    style={{ background: 'linear-gradient(0deg, #f3ecdb 0%, #efe6d2 100%)', borderTop: '1px dashed rgba(150,140,120,0.5)' }}>
 
-                    {/* Collapse toggle bar */}
+                    {/* 折叠条 */}
                     <button onClick={() => setInputCollapsed(c => !c)}
-                        className="w-full flex items-center justify-center gap-1.5 py-2 active:bg-white/30 transition-colors"
-                        style={{ borderBottom: inputCollapsed ? 'none' : '1px solid rgba(200,185,190,0.1)' }}>
-                        <span className="text-[10px] font-bold" style={{ color: '#9b8a8e' }}>
-                            {inputCollapsed ? '展开编辑面板' : '收起编辑面板'}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 active:bg-black/5 transition-colors">
+                        <span className="text-[10px] font-black" style={{ color: '#6b6456' }}>
+                            {inputCollapsed ? '展开出题本' : '收起出题本'}
                         </span>
-                        <span className="text-[10px]" style={{ color: 'rgba(160,145,150,0.5)' }}>
-                            {inputCollapsed ? <CaretUp size={12} /> : <CaretDown size={12} />}
+                        <span className="text-[10px]" style={{ color: INK_SOFT }}>
+                            {inputCollapsed ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />}
                         </span>
                     </button>
 
                     {!inputCollapsed && (
                         <div className="p-3 pt-1.5 space-y-2.5">
-                            {/* Tappable scenario row */}
+                            {/* 场景行 */}
                             <button onClick={() => { setEditingScenario(true); setEditScenarioText(roundScenario); }}
-                                className="w-full flex gap-2 items-start active:scale-[0.98] transition-transform"
-                                style={{ background: 'rgba(255,255,255,0.7)', border: '1px dashed rgba(200,185,190,0.3)', borderRadius: '12px', padding: '8px 10px' }}>
-                                <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px] shrink-0 mt-0.5" style={{ background: 'rgba(200,185,190,0.2)', color: '#9b8a8e' }}><FlowerLotus size={12} /></span>
-                                <span className="flex-1 text-left text-xs leading-relaxed truncate" style={{ color: roundScenario ? '#5a4a50' : 'rgba(160,140,145,0.5)' }}>
+                                className="w-full flex gap-2 items-center active:scale-[0.98] transition-transform"
+                                style={{ background: '#fffdf8', border: '1px dashed rgba(176,162,138,0.6)', borderRadius: '12px', padding: '8px 10px' }}>
+                                <Stamp color="lilac" size={22}><FlowerLotus size={12} weight="fill" /></Stamp>
+                                <span className="flex-1 text-left text-xs leading-relaxed truncate" style={{ color: roundScenario ? INK : INK_SOFT }}>
                                     {roundScenario || '场景描述 (可选，留空由GM发挥)'}
                                 </span>
-                                <span className="text-[10px] shrink-0 mt-0.5" style={{ color: 'rgba(160,140,145,0.5)' }}><PencilSimple size={12} /></span>
+                                <span className="text-[10px] shrink-0" style={{ color: INK_SOFT }}><PencilSimple size={12} /></span>
                             </button>
 
-                            {/* Tappable option rows */}
+                            {/* 三个选项行 */}
                             {[0, 1, 2].map(i => (
                                 <button key={i} onClick={() => { setEditingOptIdx(i); setEditOptText(optionTexts[i]); setEditOptScore(String(optionScores[i])); }}
-                                    className="w-full flex gap-2 items-start active:scale-[0.98] transition-transform"
-                                    style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(200,185,190,0.3)', borderRadius: '12px', padding: '8px 10px' }}>
-                                    <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] text-white font-bold shrink-0 shadow-sm mt-0.5" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                                    className="w-full flex gap-2 items-center active:scale-[0.98] transition-transform"
+                                    style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.7)', borderRadius: '12px', padding: '8px 10px' }}>
+                                    <span className="w-6 h-6 rounded-[6px] flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                                         {String.fromCharCode(65 + i)}
                                     </span>
-                                    <span className="flex-1 text-left text-xs leading-relaxed truncate" style={{ color: optionTexts[i] ? '#5a4a50' : 'rgba(160,140,145,0.5)' }}>
+                                    <span className="flex-1 text-left text-xs leading-relaxed truncate" style={{ color: optionTexts[i] ? INK : INK_SOFT }}>
                                         {optionTexts[i] || `${charName}的行为${String.fromCharCode(65 + i)}...`}
                                     </span>
-                                    <span className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded-lg" style={{ color: optionScores[i] >= 0 ? '#7a5a5e' : '#5a5a7a', background: optionScores[i] >= 0 ? 'rgba(200,170,175,0.2)' : 'rgba(170,170,200,0.2)' }}>
+                                    <span className="text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded-lg" style={optionScores[i] >= 0 ? { color: WASHI.sage.ink, background: WASHI.sage.base } : { color: '#9c4f47', background: 'rgba(214,150,140,0.4)' }}>
                                         {optionScores[i] >= 0 ? '+' : ''}{optionScores[i]}
                                     </span>
-                                    <span className="text-[10px] shrink-0" style={{ color: 'rgba(160,140,145,0.5)' }}><PencilSimple size={12} /></span>
+                                    <span className="text-[10px] shrink-0" style={{ color: INK_SOFT }}><PencilSimple size={12} /></span>
                                 </button>
                             ))}
 
-                            {/* Direction hint for GM */}
+                            {/* 给 GM 的方向提示 */}
                             <input type="text" value={nextDirectionHint} onChange={e => setNextDirectionHint(e.target.value)}
                                 placeholder="接下来对GM的剧情方向指导 (选填)"
                                 className="w-full rounded-xl px-3 py-2 text-[11px] focus:outline-none"
-                                style={{ background: 'rgba(255,255,255,0.5)', border: '1px dashed rgba(200,185,190,0.3)', color: '#5a4a50' }} />
+                                style={{ background: '#fffdf8', border: '1px dashed rgba(176,162,138,0.6)', color: INK }} />
 
                             <div className="flex gap-2">
                                 <button onClick={handleAIAssist} disabled={isLoading}
-                                    className="flex-1 py-2 bg-white/70 text-xs font-bold rounded-xl active:scale-95 transition-transform shadow-sm" style={{ color: '#9b8a8e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                                    className="flex-1 py-2 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                                     <Sparkle size={12} weight="fill" className="inline" /> AI 一键填入
                                 </button>
                                 <button onClick={handleSubmitRound} disabled={isLoading || optionTexts.some(t => !t.trim())}
-                                    className="flex-1 py-2 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50 shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                                    className="flex-1 py-2 text-xs font-black rounded-full active:scale-95 transition-transform disabled:opacity-50" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                                     提交本回合
                                 </button>
                             </div>
 
                             <button onClick={handleEndGame} disabled={isLoading || !session.rounds.length}
-                                className="w-full py-2 bg-white/50 text-xs rounded-xl active:scale-95 transition-transform disabled:opacity-30" style={{ color: '#9b8a8e', border: '1px solid rgba(200,185,190,0.2)' }}>
+                                className="w-full py-2 text-xs font-bold rounded-full active:scale-95 transition-transform disabled:opacity-30" style={{ background: 'transparent', color: '#6b6456', border: '1px dashed rgba(150,140,120,0.6)' }}>
                                 就到这吧 · 生成结算卡片
                             </button>
                         </div>
@@ -1697,11 +1581,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
             )}
 
-            {/* Replay footer */}
+            {/* 回放页脚 */}
             {isReplay && (
-                <div className="shrink-0 p-3" style={{ background: 'linear-gradient(0deg, rgba(236,230,233,0.9) 0%, transparent 100%)' }}>
+                <div className="shrink-0 p-3" style={{ background: 'linear-gradient(0deg, #efe6d2 0%, transparent 100%)' }}>
                     <button onClick={backToLobby}
-                        className="w-full py-2.5 bg-white/70 text-sm font-bold rounded-xl active:scale-95 transition-transform shadow-sm" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                        className="w-full py-2.5 text-sm font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                         返回列表
                     </button>
                 </div>
@@ -1718,43 +1602,47 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 />
             )}
 
-            {/* Exceed Warning */}
+            {/* 回合数已满 */}
             {showExceedWarning && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowExceedWarning(false)} />
-                    <Card className="relative p-5 max-w-xs w-full space-y-3">
-                        <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>已达到预设回合数 ({session?.maxRounds})</div>
-                        <div className="text-xs text-center" style={{ color: '#9b8a8e' }}>要继续玩还是结算？</div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setShowExceedWarning(false)}
-                                className="flex-1 py-2.5 bg-white/80 text-xs font-bold rounded-xl active:scale-95 transition-transform" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
-                                继续玩！
-                            </button>
-                            <button onClick={handleEndGame}
-                                className="flex-1 py-2.5 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
-                                结算
-                            </button>
+                <div className="fixed inset-0 z-40 flex items-center justify-center p-6 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.4)', backdropFilter: 'blur(3px)' }} onClick={() => setShowExceedWarning(false)} />
+                    <div className="relative w-full max-w-xs animate-pop-in" style={paperDialogStyle}>
+                        <WashiTape color="amber" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-24 h-5 rounded-[2px] z-10" />
+                        <div className="px-5 pt-6 pb-5 space-y-3">
+                            <div className="font-black text-sm text-center" style={{ color: INK }}>已达到预设回合数 ({session?.maxRounds})</div>
+                            <div className="text-xs text-center" style={{ color: '#6b6456' }}>要继续玩还是结算？</div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowExceedWarning(false)}
+                                    className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
+                                    继续玩！
+                                </button>
+                                <button onClick={handleEndGame}
+                                    className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
+                                    结算
+                                </button>
+                            </div>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
-            {/* Option Edit Overlay */}
+            {/* 选项编辑（底部抽屉） */}
             {editingOptIdx !== null && (
-                <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditingOptIdx(null)} />
-                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
-                        <div className="px-5 pt-5 pb-3" style={{ borderBottom: '1px solid rgba(200,185,190,0.15)' }}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4 animate-fade-in" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.42)', backdropFilter: 'blur(3px)' }} onClick={() => setEditingOptIdx(null)} />
+                    <div className="relative w-full max-w-md overflow-hidden animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" style={sheetStyle}>
+                        <div className="flex justify-center pt-2.5"><WashiTape color="rose" rotate={-2} className="w-16 h-2.5 rounded-full" /></div>
+                        <div className="px-5 pt-3 pb-2">
                             <div className="flex items-center gap-2">
-                                <span className="w-7 h-7 rounded-xl flex items-center justify-center text-sm text-white font-bold shadow-sm" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                                <span className="w-7 h-7 rounded-[7px] flex items-center justify-center text-sm font-black" style={{ background: '#3a3630', color: '#fcf8ef' }}>
                                     {editingOptIdx !== null ? String.fromCharCode(65 + editingOptIdx) : ''}
                                 </span>
-                                <span className="text-sm font-bold" style={{ color: '#5a4a50' }}>编辑选项</span>
+                                <span className="text-sm font-black" style={{ color: INK }}>编辑选项</span>
                             </div>
                         </div>
-                        <div className="px-5 py-4 space-y-3">
+                        <div className="px-5 py-2 space-y-3">
                             <div>
-                                <div className="text-[10px] font-bold mb-1.5" style={{ color: '#9b8a8e' }}>选项内容</div>
+                                <div className="text-[10px] font-black mb-1.5" style={{ color: INK_SOFT }}>选项内容</div>
                                 <textarea
                                     autoFocus
                                     value={editOptText}
@@ -1762,11 +1650,11 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     rows={8}
                                     placeholder={`${charName}的行为...`}
                                     className="w-full rounded-2xl px-3.5 py-3 text-sm focus:outline-none resize-none"
-                                    style={{ background: 'rgba(255,255,255,0.8)', border: '1.5px solid rgba(200,185,190,0.4)', color: '#5a4a50', lineHeight: '1.8' }}
+                                    style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', color: INK, lineHeight: '1.8' }}
                                 />
                             </div>
                             <div>
-                                <div className="text-[10px] font-bold mb-1.5" style={{ color: '#9b8a8e' }}>好感度变化（支持负数）</div>
+                                <div className="text-[10px] font-black mb-1.5" style={{ color: INK_SOFT }}>好感度变化（支持负数）</div>
                                 <input
                                     type="text" inputMode="numeric"
                                     value={editOptScore}
@@ -1776,14 +1664,14 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                         if (v === '' || v === '-' || /^-?\d*$/.test(v)) setEditOptScore(v);
                                     }}
                                     placeholder="0"
-                                    className="w-full rounded-2xl px-3 py-2.5 text-sm text-center font-bold focus:outline-none"
-                                    style={{ background: 'rgba(255,255,255,0.8)', border: '1.5px solid rgba(200,185,190,0.4)', color: '#5a4a50' }}
+                                    className="w-full rounded-2xl px-3 py-2.5 text-sm text-center font-black focus:outline-none"
+                                    style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', color: INK }}
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-2 px-5 pb-5">
+                        <div className="flex gap-2 px-5 pb-5 pt-1">
                             <button onClick={() => setEditingOptIdx(null)}
-                                className="flex-1 py-2.5 bg-white/80 text-xs font-bold rounded-2xl active:scale-95 transition-transform" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                                className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                                 取消
                             </button>
                             <button onClick={() => {
@@ -1792,7 +1680,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 const s = [...optionScores]; s[editingOptIdx] = Number(editOptScore) || 0; setOptionScores(s);
                                 setEditingOptIdx(null);
                             }}
-                                className="flex-1 py-2.5 text-white text-xs font-bold rounded-2xl active:scale-95 transition-transform shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                                className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                                 确认
                             </button>
                         </div>
@@ -1800,19 +1688,20 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
             )}
 
-            {/* Scenario Edit Overlay */}
+            {/* 场景编辑（底部抽屉） */}
             {editingScenario && (
-                <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setEditingScenario(false)} />
-                    <div className="relative w-full max-w-md rounded-3xl overflow-hidden shadow-2xl max-h-[85vh] overflow-y-auto" style={{ background: 'linear-gradient(160deg, #f5f0ee 0%, #ece6e9 100%)', border: '1px solid rgba(200,185,190,0.3)' }}>
-                        <div className="px-5 pt-5 pb-3" style={{ borderBottom: '1px solid rgba(200,185,190,0.15)' }}>
+                <div className="fixed inset-0 z-50 flex items-end justify-center p-3 pb-4 animate-fade-in" style={{ paddingBottom: `calc(1rem + var(--safe-bottom))` }}>
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.42)', backdropFilter: 'blur(3px)' }} onClick={() => setEditingScenario(false)} />
+                    <div className="relative w-full max-w-md overflow-hidden animate-slide-up max-h-[85vh] overflow-y-auto no-scrollbar" style={sheetStyle}>
+                        <div className="flex justify-center pt-2.5"><WashiTape color="lilac" rotate={-2} className="w-16 h-2.5 rounded-full" /></div>
+                        <div className="px-5 pt-3 pb-2">
                             <div className="flex items-center gap-2">
-                                <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] shrink-0" style={{ background: 'rgba(200,185,190,0.2)', color: '#9b8a8e' }}><FlowerLotus size={12} /></span>
-                                <span className="text-sm font-bold" style={{ color: '#5a4a50' }}>编辑场景描述</span>
+                                <Stamp color="lilac" size={24}><FlowerLotus size={13} weight="fill" /></Stamp>
+                                <span className="text-sm font-black" style={{ color: INK }}>编辑场景描述</span>
                             </div>
                         </div>
-                        <div className="px-5 py-4">
-                            <div className="text-[10px] font-bold mb-1.5" style={{ color: '#9b8a8e' }}>GM 会在这个场景基础上展开叙事 (留空则由GM自由发挥)</div>
+                        <div className="px-5 py-2">
+                            <div className="text-[10px] font-black mb-1.5" style={{ color: INK_SOFT }}>GM 会在这个场景基础上展开叙事 (留空则由GM自由发挥)</div>
                             <textarea
                                 autoFocus
                                 value={editScenarioText}
@@ -1820,16 +1709,16 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 rows={10}
                                 placeholder="比如: 雨天在咖啡馆偶遇 / 一起被困在电梯里 / 在图书馆发现对方的秘密日记..."
                                 className="w-full rounded-2xl px-3.5 py-3 text-sm focus:outline-none resize-none"
-                                style={{ background: 'rgba(255,255,255,0.8)', border: '1.5px solid rgba(200,185,190,0.4)', color: '#5a4a50', lineHeight: '1.8' }}
+                                style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', color: INK, lineHeight: '1.8' }}
                             />
                         </div>
-                        <div className="flex gap-2 px-5 pb-5">
+                        <div className="flex gap-2 px-5 pb-5 pt-1">
                             <button onClick={() => setEditingScenario(false)}
-                                className="flex-1 py-2.5 bg-white/80 text-xs font-bold rounded-2xl active:scale-95 transition-transform" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
+                                className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
                                 取消
                             </button>
                             <button onClick={() => { setRoundScenario(editScenarioText); setEditingScenario(false); }}
-                                className="flex-1 py-2.5 text-white text-xs font-bold rounded-2xl active:scale-95 transition-transform shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
+                                className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                                 确认
                             </button>
                         </div>
@@ -1837,56 +1726,51 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
             )}
 
-            {/* Exit Confirm */}
+            {/* 退出确认 */}
             {showExitConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowExitConfirm(false)} />
-                    <Card className="relative p-5 max-w-xs w-full space-y-3">
-                        <div className="font-bold text-sm text-center" style={{ color: '#5a4a50' }}>退出游戏？</div>
-                        <div className="text-xs text-center" style={{ color: '#9b8a8e' }}>进度已自动保存，下次可以继续</div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setShowExitConfirm(false)}
-                                className="flex-1 py-2.5 bg-white/80 text-xs font-bold rounded-xl active:scale-95 transition-transform" style={{ color: '#8b7a7e', border: '1px solid rgba(200,185,190,0.3)' }}>
-                                继续玩
-                            </button>
-                            <button onClick={() => { setShowExitConfirm(false); backToLobby(); }}
-                                className="flex-1 py-2.5 text-white text-xs font-bold rounded-xl active:scale-95 transition-transform shadow-md" style={{ background: 'linear-gradient(135deg, #b8909a, #a07880)' }}>
-                                退出
-                            </button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.4)', backdropFilter: 'blur(3px)' }} onClick={() => setShowExitConfirm(false)} />
+                    <div className="relative w-full max-w-xs animate-pop-in" style={paperDialogStyle}>
+                        <WashiTape color="sage" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-24 h-5 rounded-[2px] z-10" />
+                        <div className="px-5 pt-6 pb-5 space-y-3">
+                            <div className="font-black text-sm text-center" style={{ color: INK }}>退出游戏？</div>
+                            <div className="text-xs text-center" style={{ color: '#6b6456' }}>进度已自动夹进本子，下次翻开还在</div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowExitConfirm(false)}
+                                    className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
+                                    继续玩
+                                </button>
+                                <button onClick={() => { setShowExitConfirm(false); backToLobby(); }}
+                                    className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
+                                    退出
+                                </button>
+                            </div>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
-            {/* Round Context Menu */}
+            {/* 回合长按菜单 */}
             {contextMenuRound !== null && (
-                <div className="fixed inset-0 z-40 flex items-end justify-center p-4 pb-8" style={{ paddingBottom: `calc(2rem + var(--safe-bottom))` }}>
-                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setContextMenuRound(null)} />
-                    <Card className="relative w-full max-w-sm overflow-hidden">
-                        <div className="text-center text-xs py-2" style={{ color: '#9b8a8e', borderBottom: '1px solid rgba(200,185,190,0.2)' }}>
+                <div className="fixed inset-0 z-40 flex items-end justify-center p-4 pb-8 animate-fade-in" style={{ paddingBottom: `calc(2rem + var(--safe-bottom))` }}>
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.4)', backdropFilter: 'blur(3px)' }} onClick={() => setContextMenuRound(null)} />
+                    <div className="relative w-full max-w-sm overflow-hidden animate-slide-up" style={{ ...paperDialogStyle, transform: 'none' }}>
+                        <WashiTape color="lilac" rotate={-3} className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-5 rounded-[2px] z-10" />
+                        <div className="text-center text-[11px] font-black py-3 pt-5" style={{ color: INK_SOFT, borderBottom: '1px dashed rgba(176,162,138,0.5)' }}>
                             第 {(session?.rounds[contextMenuRound]?.roundNumber) || '?'} 回合
                         </div>
-                        <button
-                            onClick={() => handleRegenerateFrom(contextMenuRound)}
-                            className="w-full py-3.5 text-sm font-bold transition-colors" style={{ color: '#5a4a50' }}
-                        >
+                        <button onClick={() => handleRegenerateFrom(contextMenuRound)} className="w-full py-3.5 text-sm font-black transition-colors active:bg-black/5" style={{ color: INK }}>
                             从这里重新生成
                         </button>
-                        <div className="h-px" style={{ background: 'rgba(200,185,190,0.2)' }} />
-                        <button
-                            onClick={() => handleDeleteFrom(contextMenuRound)}
-                            className="w-full py-3.5 text-sm text-red-400 font-bold transition-colors"
-                        >
-                            删除此回合及之后的内容
+                        <div className="h-px mx-4" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(176,162,138,0.5) 0 5px, transparent 5px 10px)' }} />
+                        <button onClick={() => handleDeleteFrom(contextMenuRound)} className="w-full py-3.5 text-sm font-black transition-colors active:bg-black/5" style={{ color: '#b3564e' }}>
+                            撕掉此回合及之后的内容
                         </button>
-                        <div className="h-px" style={{ background: 'rgba(200,185,190,0.2)' }} />
-                        <button
-                            onClick={() => setContextMenuRound(null)}
-                            className="w-full py-3 text-sm transition-colors" style={{ color: '#9b8a8e' }}
-                        >
+                        <div className="h-px mx-4" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(176,162,138,0.5) 0 5px, transparent 5px 10px)' }} />
+                        <button onClick={() => setContextMenuRound(null)} className="w-full py-3 text-sm font-bold transition-colors active:bg-black/5" style={{ color: INK_SOFT }}>
                             取消
                         </button>
-                    </Card>
+                    </div>
                 </div>
             )}
         </GameFrame>

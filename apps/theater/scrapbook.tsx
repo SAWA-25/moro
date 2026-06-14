@@ -42,8 +42,21 @@ export const WASHI: Record<WashiColor, { base: string; edge: string; ink: string
     ink:    { base: 'rgba(58,54,48,0.92)',    edge: 'rgba(255,255,255,0.35)', ink: '#fcf8ef' },
 };
 
-const TAPE_STRIPES =
+export const TAPE_STRIPES =
     'repeating-linear-gradient(90deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 11px)';
+
+/** 纸纹噪点 + 角落随手贴胶带（满屏 App 通用底层，绝对定位铺满父容器） */
+export const PaperBackdrop: React.FC<{ corners?: boolean }> = ({ corners = true }) => (
+    <>
+        <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-multiply" style={{ backgroundImage: GRAIN, backgroundSize: '140px 140px', opacity: 0.05 }} />
+        {corners && (
+            <>
+                <div aria-hidden className="pointer-events-none absolute -top-3 -left-6 w-24 h-7 rotate-[-18deg] opacity-70" style={{ backgroundColor: WASHI.amber.base, backgroundImage: TAPE_STRIPES }} />
+                <div aria-hidden className="pointer-events-none absolute -bottom-3 -right-7 w-24 h-7 rotate-[-15deg] opacity-60" style={{ backgroundColor: WASHI.sage.base, backgroundImage: TAPE_STRIPES }} />
+            </>
+        )}
+    </>
+);
 
 // ── 满屏纸页外壳 ─────────────────────────────────────────────
 export const PaperShell: React.FC<{
@@ -55,10 +68,7 @@ export const PaperShell: React.FC<{
         className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`}
         style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG, ...style }}
     >
-        <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-multiply" style={{ backgroundImage: GRAIN, backgroundSize: '140px 140px', opacity: 0.05 }} />
-        {/* 角落随手贴：左上/右下两道淡淡的胶带，撑出拼贴边界 */}
-        <div aria-hidden className="pointer-events-none absolute -top-3 -left-6 w-24 h-7 rotate-[-18deg] opacity-70" style={{ backgroundColor: WASHI.amber.base, backgroundImage: TAPE_STRIPES }} />
-        <div aria-hidden className="pointer-events-none absolute -bottom-3 -right-7 w-24 h-7 rotate-[-15deg] opacity-60" style={{ backgroundColor: WASHI.sage.base, backgroundImage: TAPE_STRIPES }} />
+        <PaperBackdrop />
         {children}
     </div>
 );
