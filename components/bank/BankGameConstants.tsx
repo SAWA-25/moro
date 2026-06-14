@@ -82,6 +82,35 @@ export const idleRatePerHour = (appeal: number, level: number): number =>
 export const idleCap = (appeal: number, level: number): number =>
     idleRatePerHour(appeal, level) * IDLE_CAP_HOURS;
 
+// --- 天气 / 限时事件（经营变数）---------------------------------------------
+// 每隔约 4 小时随机切换一种天气/事件，影响客流(营业人数)与挂机产出，给经营加变数。
+export interface WeatherDef {
+    id: string; label: string; emoji: string;
+    trafficMult: number;  // 客流倍率（营业人数）
+    idleMult: number;     // 挂机产出倍率
+    tipBias: number;      // 额外小费倾向（0~1，加到给小费概率上）
+    note: string;
+    weight: number;       // 随机权重
+}
+export const WEATHER_TYPES: WeatherDef[] = [
+    { id: 'sunny', label: '晴天', emoji: '☀️', trafficMult: 1.05, idleMult: 1.05, tipBias: 0, note: '阳光正好，生意不错', weight: 30 },
+    { id: 'cloudy', label: '阴天', emoji: '⛅', trafficMult: 0.9, idleMult: 1, tipBias: 0, note: '不温不火的一天', weight: 20 },
+    { id: 'rain', label: '雨天', emoji: '🌧️', trafficMult: 0.7, idleMult: 0.9, tipBias: 0.12, note: '雨天客人少，但来的都想多坐会儿', weight: 18 },
+    { id: 'weekend', label: '周末', emoji: '🛍️', trafficMult: 1.25, idleMult: 1.15, tipBias: 0, note: '逛街的人多，客流旺', weight: 17 },
+    { id: 'festival', label: '节日', emoji: '🎉', trafficMult: 1.45, idleMult: 1.3, tipBias: 0.05, note: '节日气氛拉满，人气爆棚！', weight: 9 },
+    { id: 'snow', label: '下雪', emoji: '❄️', trafficMult: 0.8, idleMult: 0.95, tipBias: 0.15, note: '下雪天，热饮格外好卖', weight: 6 },
+];
+export const WEATHER_DURATION_MS = 4 * 60 * 60 * 1000; // 每段天气约 4 小时
+export const getWeatherDef = (id?: string): WeatherDef =>
+    WEATHER_TYPES.find(w => w.id === id) || WEATHER_TYPES[0];
+/** 按权重随机一种天气 id */
+export const rollWeatherId = (): string => {
+    const total = WEATHER_TYPES.reduce((s, w) => s + w.weight, 0);
+    let r = Math.random() * total;
+    for (const w of WEATHER_TYPES) { if ((r -= w.weight) <= 0) return w.id; }
+    return WEATHER_TYPES[0].id;
+};
+
 // 营业时光顾的 NPC 顾客池（emoji 头像，无需网络）
 export const NPC_CUSTOMERS: { name: string; avatar: string }[] = [
     { name: '上班族小林', avatar: '🧑‍💼' },

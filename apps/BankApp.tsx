@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, idleCap } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -62,19 +62,39 @@ const isDeadImg = (u?: string | null): boolean =>
 // 营业冷却：每 3 小时可「营业」一轮赚一笔进钱包
 const BUSINESS_COOLDOWN_MS = 3 * 60 * 60 * 1000;
 
-// 挂机营业额结算（纯函数）：把「锚点→现在」流逝的时间折算成待收营业额（有店员才产出，封顶）。
-// 锚点 lastAccrualAt 只在真正入账时前移，所以不足 1 元的零头会保留到下次，不丢。
-const accrueShopIdle = (shop: { staff: { id: string }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number }, now: number): { pendingRevenue: number; lastAccrualAt: number } => {
+// 当前每小时挂机产出：基础(人气×等级) × 天气倍率 × 雇员/精力加成（有店员才产出）。
+type IdleShopShape = { staff: { id: string; fatigue?: number }[]; appeal?: number; shopLevel?: number; pendingRevenue?: number; lastAccrualAt?: number; weather?: { id: string; until: number } };
+const computeIdleRatePerHour = (shop: IdleShopShape): number => {
+    const n = shop.staff?.length || 0;
+    if (n === 0) return 0;
     const level = shop.shopLevel || 1;
     const appeal = shop.appeal || 100;
-    const rate = (shop.staff?.length || 0) > 0 ? idleRatePerHour(appeal, level) : 0;
-    const cap = idleCap(appeal, level);
+    const weatherMult = getWeatherDef(shop.weather?.id).idleMult;
+    // 雇员加速挂机：人越多产出越高，且全员越精神(疲劳越低)越高效
+    const avgEnergy = shop.staff.reduce((s, x) => s + (100 - (x.fatigue || 0)), 0) / n / 100;
+    const staffMult = (1 + 0.1 * (n - 1)) * (0.6 + 0.4 * Math.max(0, Math.min(1, avgEnergy)));
+    return Math.max(1, Math.floor(idleRatePerHour(appeal, level) * weatherMult * staffMult));
+};
+/** 当前挂机上限（攒满约 IDLE_CAP_HOURS 小时） */
+const idleCapNow = (shop: IdleShopShape): number => computeIdleRatePerHour(shop) * IDLE_CAP_HOURS;
+
+// 挂机营业额结算（纯函数）：把「锚点→现在」流逝的时间折算成待收营业额（封顶）。
+// 锚点 lastAccrualAt 只在真正入账时前移，所以不足 1 元的零头会保留到下次，不丢。
+const accrueShopIdle = (shop: IdleShopShape, now: number): { pendingRevenue: number; lastAccrualAt: number } => {
+    const rate = computeIdleRatePerHour(shop);
+    const cap = rate * IDLE_CAP_HOURS;
     const last = shop.lastAccrualAt || now;
     const gained = Math.max(0, Math.floor(rate * ((now - last) / 3600000)));
     const pending = Math.min(cap, Math.max(0, shop.pendingRevenue || 0) + gained);
-    // 只有真正入账（pending 变大）才把锚点前移；否则保留旧锚点让零头继续累积
     const advanced = pending > Math.max(0, shop.pendingRevenue || 0) ? now : last;
     return { pendingRevenue: pending, lastAccrualAt: advanced };
+};
+
+// 天气：到期或缺失就随机切一种（约 4 小时一段）
+const ensureWeather = (shop: { weather?: { id: string; until: number } }, now: number): { id: string; until: number } => {
+    const w = shop.weather;
+    if (w && w.until > now) return w;
+    return { id: rollWeatherId(), until: now + WEATHER_DURATION_MS };
 };
 
 // 手账风弹窗壳 + 输入样式（替代共享 Modal，统一拼贴手账观感）
@@ -151,17 +171,28 @@ const BankApp: React.FC = () => {
         loadData();
     }, []);
 
-    // 挂机营业额随时间累计：每 30s 把流逝时间折算进 pendingRevenue（仅在金额变化时落库）
+    // 挂机营业额累计 + 天气轮换：每 30s 折算待收金币、到点换天气（仅在有变化时落库）
     useEffect(() => {
         const t = window.setInterval(() => {
             const cur = stateRef.current;
-            if (!cur?.shop || (cur.shop.staff?.length || 0) === 0) return;
-            const idle = accrueShopIdle(cur.shop, Date.now());
-            if (idle.pendingRevenue !== Math.max(0, cur.shop.pendingRevenue || 0)) {
-                const ns = { ...cur, shop: { ...cur.shop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+            if (!cur?.shop) return;
+            const now = Date.now();
+            const weather = ensureWeather(cur.shop, now);
+            const weatherChanged = weather.id !== cur.shop.weather?.id || weather.until !== cur.shop.weather?.until;
+            const baseShop = weatherChanged ? { ...cur.shop, weather } : cur.shop;
+            const idle = (baseShop.staff?.length || 0) > 0
+                ? accrueShopIdle(baseShop, now)
+                : { pendingRevenue: baseShop.pendingRevenue || 0, lastAccrualAt: baseShop.lastAccrualAt || now };
+            const pendingChanged = idle.pendingRevenue !== Math.max(0, cur.shop.pendingRevenue || 0);
+            if (weatherChanged || pendingChanged) {
+                const ns = { ...cur, shop: { ...baseShop, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
                 stateRef.current = ns;
                 setState(ns);
                 void DB.saveBankState(ns);
+                if (weatherChanged && cur.shop.weather) {
+                    const w = getWeatherDef(weather.id);
+                    addToast(`${w.emoji} 天气转${w.label} —— ${w.note}`, 'info');
+                }
             }
         }, 30000);
         return () => window.clearInterval(t);
@@ -397,9 +428,12 @@ const BankApp: React.FC = () => {
         const spent = todayTx.reduce((sum, t) => sum + t.amount, 0);
         const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
 
-        // 挂机营业额：把离店期间流逝的时间折算成待收金币（基于刚算好的 appeal/等级/店员）
-        const idle = accrueShopIdle({ ...currentState.shop, appeal }, Date.now());
-        const finalState = { ...currentState, todaySpent: spent, shop: { ...currentState.shop, appeal, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
+        // 挂机营业额 + 天气：先定天气（影响挂机产出），再按离店时长折算待收金币
+        const nowTs = Date.now();
+        const weather = ensureWeather(currentState.shop, nowTs);
+        const shopWithWeather = { ...currentState.shop, appeal, weather };
+        const idle = accrueShopIdle(shopWithWeather, nowTs);
+        const finalState = { ...currentState, todaySpent: spent, shop: { ...shopWithWeather, pendingRevenue: idle.pendingRevenue, lastAccrualAt: idle.lastAccrualAt } };
         stateRef.current = finalState;
         setState(finalState);
         setTransactions(txs.sort((a,b) => b.timestamp - a.timestamp));
@@ -1037,10 +1071,11 @@ ${JSON.stringify(list, null, 2)}
         const levelBonusPct = shopLevelBonusPct(level); // 店铺档次溢价，与口碑加成叠加
         const energetic = staff.filter(s => s.fatigue < 90).length;
         const tiredFactor = energetic === 0 ? 0.5 : 1; // 全员疲惫，客流减半
+        const weather = getWeatherDef(cur.shop.weather?.id); // 天气：影响客流与小费
 
-        // 客流：基础随人气波动，外加店铺等级带来的额外客人；等级越高客流上限越大
+        // 客流：基础随人气波动 × 天气倍率，外加店铺等级带来的额外客人；等级越高客流上限越大
         const customerCount = Math.max(2, Math.min(8 + level,
-            Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor) + 1 + shopLevelExtraCustomers(level)));
+            Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor * weather.trafficMult) + 1 + shopLevelExtraCustomers(level)));
 
         const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
         let base = 0, tips = 0, lostSales = 0, regularVisits = 0;
@@ -1084,8 +1119,8 @@ ${JSON.stringify(list, null, 2)}
             const price = recipePrice(p);
             base += price;
 
-            // 小费：常客/VIP 给得更勤更多
-            const tipChance = isVip ? 1 : isRegular ? 0.7 : 0.45;
+            // 小费：常客/VIP 给得更勤更多；天气也影响给小费倾向（雨雪天更愿意多给）
+            const tipChance = (isVip ? 1 : isRegular ? 0.7 : 0.45) + weather.tipBias;
             const tipMult = isVip ? 1.6 : isRegular ? 1.3 : 1;
             if (Math.random() < tipChance) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2) * tipMult));
 
@@ -1157,6 +1192,7 @@ ${JSON.stringify(list, null, 2)}
             lostSales,
             loyaltyEvents,
             regularVisits,
+            weather: { emoji: weather.emoji, label: weather.label, note: weather.note },
         });
 
         // 客户评价交给 AI 后台润色：把模板评价改写得更多样、有个性，并据此微调星级（影响口碑）。
@@ -1283,13 +1319,23 @@ ${JSON.stringify(list, null, 2)}
                     {(() => {
                         const pending = Math.floor(state.shop.pendingRevenue || 0);
                         if (pending < 1) return null;
-                        const full = pending >= idleCap(state.shop.appeal || 100, state.shop.shopLevel || 1);
+                        const full = pending >= idleCapNow(state.shop);
                         return (
                             <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 bottom-[60px] z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
                                 <span className="text-sm">💰</span>
                                 <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
                                 {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
                             </button>
+                        );
+                    })()}
+                    {/* 天气/事件 */}
+                    {(() => {
+                        const w = getWeatherDef(state.shop.weather?.id);
+                        return (
+                            <div className="absolute right-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }} title={w.note}>
+                                <span className="text-sm">{w.emoji}</span>
+                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{w.label}</span>
+                            </div>
                         );
                     })()}
                     </>

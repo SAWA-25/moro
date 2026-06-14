@@ -5,8 +5,16 @@ import {
 } from '../../types';
 import {
     ROOM_LAYOUTS, WALLPAPER_PRESETS, FLOOR_PRESETS, STICKER_LIBRARY, INITIAL_DOLLHOUSE,
-    CUSTOMER_QUIPS, STAFF_QUIPS, PET_QUIPS
+    CUSTOMER_QUIPS, STAFF_QUIPS, PET_QUIPS, getWeatherDef
 } from './BankGameConstants';
+
+// 天气给主店铺叠一层很淡的色调，烘托氛围（晴/周末不染色）
+const WEATHER_TINT: Record<string, string> = {
+    rain: 'linear-gradient(180deg, rgba(70,100,140,0.13), rgba(70,100,140,0.04))',
+    snow: 'linear-gradient(180deg, rgba(180,200,220,0.17), rgba(180,200,220,0.05))',
+    cloudy: 'linear-gradient(180deg, rgba(120,120,130,0.10), transparent)',
+    festival: 'linear-gradient(180deg, rgba(255,160,120,0.10), rgba(255,200,150,0.04))',
+};
 import BankAssetIcon, { isBankAssetUrl } from './BankAssetIcon';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
@@ -1045,6 +1053,11 @@ const BankDollhouse: React.FC<Props> = ({
 
                     {/* 默认咖啡店布景：仅主店铺、且无自定义全屋贴图时显示（纯展示、不写存档） */}
                     {!locked && room.id === MAIN_ROOM_ID && !roomTexture && <CafeBackdrop />}
+
+                    {/* 天气色调（仅主店铺，很淡） */}
+                    {!locked && room.id === MAIN_ROOM_ID && WEATHER_TINT[getWeatherDef(shopState.weather?.id).id] && (
+                        <div className="absolute inset-0 z-[6] pointer-events-none" style={{ background: WEATHER_TINT[getWeatherDef(shopState.weather?.id).id] }} aria-hidden />
+                    )}
 
                     {/* 擦吧台攒 AP：吧台一带的可点区域（演员在其上、装修/摆件不受影响） */}
                     {!locked && room.id === MAIN_ROOM_ID && !roomTexture && onWipeCounter && !editMode && !placingFurniture && (
