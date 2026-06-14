@@ -10,10 +10,10 @@ import { safeResponseJson, extractContent } from './safeApi';
  * 评论后帖子作者（角色或 NPC）会回一条评论。
  */
 
-export const FEED_BATCH_SIZE = 16;
+export const FEED_BATCH_SIZE = 20;
 
 /** 每条帖子展示/保留的评论上限（生成时截断） */
-export const FEED_COMMENTS_PER_POST = 30;
+export const FEED_COMMENTS_PER_POST = 40;
 
 /**
  * 热门话题池：小红书常见的话题/圈子。每次刷新随机抽一小撮喂给模型，
@@ -35,6 +35,12 @@ export const FEED_TOPIC_POOL: string[] = [
     '咖啡日记', '美式上瘾', '面包控', '甜品', '火锅自由', '家常菜', '小众旅行地', '机票捡漏', '酒店测评', '特种兵旅游',
     // 颜值 / 学习
     '伪素颜', '早C晚A', '香水分享', '健身打卡', '普拉提', '学习搭子', '通勤穿搭', '职场穿搭', '考研倒计时',
+    // 数码 / 职场 / 母婴 / 更多圈子
+    '数码好物', '电子榨菜', '机械键盘', 'ipad生产力', '打工人午餐', '工位改造', '裸辞', 'gap year', '搞副业',
+    '理财日记', '基金定投', '记账', '考证打卡', '雅思备考', '留学日记', '相亲奇遇', '恋爱脑自救', '分手疗愈',
+    '母婴日常', '辅食记录', '幼儿园那些事', '老破小爆改', '宿舍改造', '化妆教程', '美甲分享', '医美避雷',
+    '骨折现场', '钓鱼佬', '飞盘', '滑雪', '陆冲', '飞盘搭子', 'livehouse', '音乐节', '脱口秀开放麦', '剧本杀',
+    '盘串', '多肉爆崽', '阳台种菜', '咖啡拉花', '手冲', '威士忌', '精酿', '夜跑', '早八人', '熬夜冠军',
 ];
 
 /** 从话题池里随机抽 n 个不重复话题 */
@@ -62,6 +68,8 @@ const callLlm = async (apiConfig: APIConfig, systemPrompt: string, userMessage: 
                 { role: 'user', content: userMessage },
             ],
             temperature: 0.9,
+            // 帖子多 + 每帖评论多，给足额度，避免默认 max_tokens 截断导致 JSON 解析失败
+            max_tokens: 8000,
             stream: false,
         }),
     });
@@ -101,8 +109,8 @@ const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfi
         const handle = c.socialProfile?.handle ? `（账号名也可用 ${c.socialProfile.handle}）` : '';
         return `${i + 1}. 「${c.name}」${handle}：${persona || '（无人设描述）'}`;
     }).join('\n');
-    const topics = pickTopics(14);
-    const charPostCount = chars.length ? Math.min(chars.length, 5) : 0;
+    const topics = pickTopics(22);
+    const charPostCount = chars.length ? Math.min(chars.length, 7) : 0;
     return `你是小红书信息流生成器，为一个虚拟手机系统生成一批逼真的小红书帖子。
 
 ## 可发帖的角色（用户认识的人，帖子要完全符合各自人设、生活背景与口吻）
@@ -115,10 +123,10 @@ ${charLines || '（本批没有角色，全部生成 NPC 帖）'}
 ${topics.join('、')}
 
 ## 要求
-- 一次生成 ${FEED_BATCH_SIZE} 条帖子：其中角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 必须与角色名完全一致，isCharacter=true，不要重复同一个角色超过 2 条）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨等，isCharacter=false，昵称要像真实小红书用户）。
-- 帖子题材要拉开差距、尽量覆盖不同话题：日常碎片、美食探店、穿搭、旅行、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、攻略测评等，文风像真实小红书（口语化、带 emoji、适当换行）。
-- title ≤ 20 字；body 80~300 字；tags 3~6 个（不带 # 号，尽量贴合上面的话题或题材，方便聚合）；likes 为 0~9999 的整数，分布要自然（大多数几十到几百，偶有爆款上千）。
-- 每条帖子带 5~10 条评论（author 为虚构昵称，content 口语化、有互动感，可以有人附和、提问、玩梗、抬杠；likes 0~500）。
+- 一次生成 ${FEED_BATCH_SIZE} 条帖子：其中角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 必须与角色名完全一致，isCharacter=true，不要重复同一个角色超过 3 条）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨等，isCharacter=false，昵称要像真实小红书用户）。
+- 帖子题材要拉开差距、尽量覆盖更多不同话题/圈子：日常碎片、美食探店、穿搭、旅行、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、数码测评、母婴、职场、恋爱情感、运动户外等，文风像真实小红书（口语化、带 emoji、适当换行）。
+- title ≤ 20 字；body 80~300 字；tags 4~8 个（不带 # 号，尽量贴合上面的话题或题材，方便聚合成圈）；likes 为 0~9999 的整数，分布要自然（大多数几十到几百，偶有爆款上千）。
+- 每条帖子带 8~16 条评论（让热门帖更有「评论区」氛围）：author 为虚构昵称，content 口语化、有互动感，可以有人附和、提问、玩梗、抬杠、盖楼；其中可有 1~2 条「热评」likes 偏高（几十到几百），其余 likes 0~500。
 - 只输出 JSON 数组，不要任何解释或围栏外文字。格式：
 [{"author":"昵称","isCharacter":false,"title":"…","body":"…","tags":["…"],"likes":123,"comments":[{"author":"…","content":"…","likes":3}]}]`;
 };
@@ -170,7 +178,7 @@ export const generateFeedBatch = async (
             authorAvatar: matched?.avatar,
             title: String(p?.title || '').slice(0, 40) || '（无标题）',
             body: String(p?.body || '').slice(0, 2000),
-            tags: Array.isArray(p?.tags) ? p.tags.slice(0, 6).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean) : [],
+            tags: Array.isArray(p?.tags) ? p.tags.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean) : [],
             coverUrl: pickCover(),
             likes: Math.max(0, Math.floor(Number(p?.likes) || 0)),
             favs: Math.floor(Math.max(0, Math.floor(Number(p?.likes) || 0)) * (0.1 + Math.random() * 0.3)),
