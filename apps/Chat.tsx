@@ -1437,17 +1437,32 @@ ${recent || '（你们相处了很久）'}
         setTimeout(() => { triggerAI(messages); }, 800);
     };
 
-    // ── 已读回执：聊天页打开着时，把当前可见的角色消息标记为已读（Telegram 式双勾）──
+    // ── 已读回执：聊天页打开着时实时翻转双勾（Telegram 式）──
+    //  · 角色消息：用户正在看 → 标记为已读（清未读态）。
+    //  · 用户消息：其后只要出现过角色消息（= 角色已回复 = 已读），就把「已发出」升级为
+    //    「已读」。这一步覆盖所有回复路径——同步回复(useChatAI)、后台 instant push、主动
+    //    消息——保证不论角色的回复怎么来的，打开着的聊天页里用户消息的双勾都实时翻转，
+    //    而不是只在本端 useChatAI 走完同步流程时才更新。
     useEffect(() => {
         if (!char) return;
-        const unread = messages.filter(m => m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read');
-        if (unread.length === 0) return;
+        const assistantUnread = messages.filter(m => m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read');
+        let lastAssistantIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const mm = messages[i];
+            if (mm.role === 'assistant' && !mm.groupId) { lastAssistantIdx = i; break; }
+        }
+        // 仅升级「排在最后一条角色消息之前、状态为 sent」的用户消息（之后新发的待回复消息不动）
+        const userToRead = lastAssistantIdx < 0 ? [] : messages
+            .slice(0, lastAssistantIdx)
+            .filter(m => m.role === 'user' && !m.groupId && m.metadata?.msgStatus === 'sent');
+        if (assistantUnread.length === 0 && userToRead.length === 0) return;
+        const idSet = new Set<number>([...assistantUnread.map(m => m.id), ...userToRead.map(m => m.id)]);
         let cancelled = false;
         void (async () => {
             try {
-                await DB.setMessagesStatus(unread.map(m => m.id), 'read');
+                await DB.setMessagesStatus([...idSet], 'read');
                 if (cancelled) return;
-                setMessages(prev => prev.map(m => (m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read')
+                setMessages(prev => prev.map(m => idSet.has(m.id)
                     ? { ...m, metadata: { ...(m.metadata || {}), msgStatus: 'read' } }
                     : m));
             } catch { /* 回执写入失败不影响消息本体 */ }
