@@ -1295,6 +1295,15 @@ export const DB = {
           req.onerror = () => reject(req.error);
       });
   },
+  getTakeoutOrder: async (id: string): Promise<TakeoutOrder | null> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readonly');
+          const req = tx.objectStore(STORE_TAKEOUT_ORDERS).get(id);
+          req.onsuccess = () => resolve((req.result as TakeoutOrder) || null);
+          req.onerror = () => reject(req.error);
+      });
+  },
   saveTakeoutOrder: async (order: TakeoutOrder): Promise<void> => {
       const db = await openDB();
       const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readwrite');

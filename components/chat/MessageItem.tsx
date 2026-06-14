@@ -1,10 +1,11 @@
 
 
 
-import React, { useRef, useState } from 'react';
-import { Message, ChatTheme } from '../../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { Message, ChatTheme, TakeoutOrder } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
-import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
+import { liveTakeoutStatus, STATUS_LABEL, etaText, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
+import { DB } from '../../utils/db';
 import McdCard from './McdCard';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
@@ -32,6 +33,87 @@ const MsgStatusTicks: React.FC<{ status: string }> = ({ status }) => {
                 {isRead && <path d="M7 5.5 L10 8.5 L15.5 1.5" />}
             </svg>
         </span>
+    );
+};
+
+/**
+ * 聊天里的「外卖订单小票」卡片（实时随订单状态更新）。
+ * 自带 10s 计时 + 监听 TAKEOUT_UPDATED_EVENT，从 DB 拉最新订单，状态/ETA 跟现实同步刷新；
+ * DB 里查不到（旧消息）时回退到落库时的快照。点开看详情。
+ */
+const TakeoutCardView: React.FC<{
+    m: Message;
+    charName: string;
+    commonLayout: (content: React.ReactNode) => JSX.Element;
+    onOpen?: (m: Message) => void;
+}> = ({ m, charName, commonLayout, onOpen }) => {
+    const snap: any = m.metadata?.takeout || {};
+    const orderId: string | undefined = m.metadata?.takeoutOrderId || snap.takeoutOrderId;
+    const [order, setOrder] = useState<TakeoutOrder | null>(null);
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        let alive = true;
+        const load = async () => { if (!orderId) return; try { const o = await DB.getTakeoutOrder(orderId); if (alive && o) setOrder(o); } catch { /* ignore */ } };
+        void load();
+        const timer = setInterval(() => setTick(t => t + 1), 10000);
+        const onUpd = () => void load();
+        if (typeof window !== 'undefined') window.addEventListener(TAKEOUT_UPDATED_EVENT, onUpd);
+        return () => { alive = false; clearInterval(timer); if (typeof window !== 'undefined') window.removeEventListener(TAKEOUT_UPDATED_EVENT, onUpd); };
+    }, [orderId]);
+
+    const now = Date.now();
+    const items: { name: string; qty: number; emoji?: string }[] = order?.items || snap.items || [];
+    const total = order?.total ?? snap.total;
+    const etaAt = order?.etaAt ?? snap.etaAt ?? 0;
+    const placedAt = order?.placedAt ?? snap.placedAt ?? 0;
+    const deliveredAt = order?.deliveredAt ?? snap.deliveredAt;
+    const faux = { status: order?.status || 'preparing', deliveredAt, etaAt, placedAt } as any;
+    const st = liveTakeoutStatus(faux, now);
+    const stColor = st === 'delivered' ? '#3a9d52' : st === 'arrived' ? '#c47d12' : '#FF5339';
+    const eta = etaText(faux, now);
+    const initiatedBy = order?.initiatedBy || snap.initiatedBy;
+    const recipientLabel = snap.recipientLabel || '我';
+    const headline = initiatedBy === 'char'
+        ? `${charName} 给${recipientLabel === '我' ? '你' : recipientLabel}点了外卖`
+        : `${recipientLabel === '我' ? '给自己' : `送给 ${recipientLabel}`}的外卖`;
+    const reviewed = !!order?.review;
+
+    return commonLayout(
+        <div
+            onClick={() => onOpen?.(m)}
+            className="w-64 bg-white rounded-[1.4rem] overflow-hidden relative transition-transform border border-orange-100 shadow-[0_14px_28px_-18px_rgba(255,83,57,0.45)] active:scale-[0.98] cursor-pointer"
+        >
+            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
+                <span className="text-[12px] font-black text-white tracking-wide">🛵 外卖订单</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90" style={{ color: stColor }}>{STATUS_LABEL[st]}</span>
+            </div>
+            <div className="px-4 pt-3 pb-3.5">
+                <div className="text-[12px] text-slate-400 mb-1">{headline}</div>
+                <div className="text-[13px] font-black text-slate-800 truncate mb-2">{snap.storeEmoji} {snap.storeName}</div>
+                <div className="space-y-0.5 mb-2">
+                    {items.slice(0, 4).map((it, i) => (
+                        <div key={i} className="flex items-center justify-between text-[12px] text-slate-600">
+                            <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
+                            <span className="text-slate-400 shrink-0 ml-2">×{it.qty}</span>
+                        </div>
+                    ))}
+                    {items.length > 4 && <div className="text-[11px] text-slate-400">…等 {items.length} 样</div>}
+                </div>
+                {/* 实时配送进度条 */}
+                {st !== 'delivered' && (
+                    <div className="mb-2">
+                        <div className="h-1 rounded-full bg-orange-100 overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: st === 'arrived' ? '100%' : st === 'delivering' ? '66%' : '30%', background: stColor }} />
+                        </div>
+                        <div className="text-[10.5px] mt-1 font-bold" style={{ color: stColor }}>{eta}</div>
+                    </div>
+                )}
+                <div className="flex items-center justify-between border-t border-dashed border-slate-200 pt-2">
+                    <span className="text-[10.5px] text-slate-400">{st === 'delivered' ? (reviewed ? '已评价 · 点开看' : '点开看详情/评价') : `${snap.payLabel || ''} · 点开看详情`}</span>
+                    <span className="text-[14px] font-black" style={{ color: '#FF5339' }}>¥{total}</span>
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -2219,42 +2301,8 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'takeout_card') {
-        // 外卖订单小票（聊天里：角色/用户为对方点外卖）。点开看具体内容。
-        const t = m.metadata?.takeout || {};
-        const items: { name: string; qty: number; emoji?: string }[] = Array.isArray(t.items) ? t.items : [];
-        const st = liveTakeoutStatus({ status: 'preparing', deliveredAt: t.deliveredAt, etaAt: t.etaAt || 0, placedAt: t.placedAt || 0 } as any);
-        const stColor = st === 'delivered' ? '#3a9d52' : st === 'arrived' ? '#c47d12' : '#FF5339';
-        const headline = t.initiatedBy === 'char'
-            ? `${charName} 给${t.recipientLabel === '我' ? '你' : t.recipientLabel}点了外卖`
-            : `${t.recipientLabel === '我' ? '给自己' : `送给 ${t.recipientLabel}`}的外卖`;
-        return commonLayout(
-            <div
-                onClick={() => onOpenTakeoutCard?.(m)}
-                className="w-64 bg-white rounded-[1.4rem] overflow-hidden relative transition-transform border border-orange-100 shadow-[0_14px_28px_-18px_rgba(255,83,57,0.45)] active:scale-[0.98] cursor-pointer"
-            >
-                <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
-                    <span className="text-[12px] font-black text-white tracking-wide">🛵 外卖订单</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90" style={{ color: stColor }}>{STATUS_LABEL[st]}</span>
-                </div>
-                <div className="px-4 pt-3 pb-3.5">
-                    <div className="text-[12px] text-slate-400 mb-1">{headline}</div>
-                    <div className="text-[13px] font-black text-slate-800 truncate mb-2">{t.storeEmoji} {t.storeName}</div>
-                    <div className="space-y-0.5 mb-2">
-                        {items.slice(0, 4).map((it, i) => (
-                            <div key={i} className="flex items-center justify-between text-[12px] text-slate-600">
-                                <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
-                                <span className="text-slate-400 shrink-0 ml-2">×{it.qty}</span>
-                            </div>
-                        ))}
-                        {items.length > 4 && <div className="text-[11px] text-slate-400">…等 {items.length} 样</div>}
-                    </div>
-                    <div className="flex items-center justify-between border-t border-dashed border-slate-200 pt-2">
-                        <span className="text-[10.5px] text-slate-400">{t.payLabel} · 点开看详情</span>
-                        <span className="text-[14px] font-black" style={{ color: '#FF5339' }}>¥{t.total}</span>
-                    </div>
-                </div>
-            </div>
-        );
+        // 外卖订单小票（实时随订单状态更新）。点开看具体内容/评价。
+        return <TakeoutCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenTakeoutCard} />;
     }
 
     if (m.type === 'proposal_card') {

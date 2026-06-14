@@ -3499,6 +3499,17 @@ export interface TakeoutStore {
   dishes: TakeoutDish[];
 }
 export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
+/** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
+export interface TakeoutReviewReply { name: string; emoji: string; text: string; at: number; isMerchant?: boolean; }
+/** 用户对某单的评价 */
+export interface TakeoutReview {
+  rating: number;       // 1~5 星
+  text?: string;
+  tags?: string[];      // 快捷标签（如「分量足」「送得快」）
+  at: number;
+  likes?: number;       // 其它食客点的「有用」数
+  replies?: TakeoutReviewReply[];  // 商家 / 其它食客的评论
+}
 /**
  * 配送状态：
  * - preparing 商家备餐中 / delivering 骑手配送中（按时间实时推算）
@@ -3542,4 +3553,6 @@ export interface TakeoutOrder {
   cardPosted?: boolean;
   /** 给角色点的单：到时角色已在聊天里对收到外卖做出反应，避免重复触发。 */
   reactionPosted?: boolean;
+  /** 用户对本单的评价（送达后可评价；含商家/其它食客的评论）。 */
+  review?: TakeoutReview;
 }
