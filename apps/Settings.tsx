@@ -20,6 +20,8 @@ import { Sun, Newspaper, NotePencil, Notebook, Book, ForkKnife, X } from '@phosp
 import { loadPushConfig, savePushConfig, registerScheduleOnWorker, startHeartbeat, stopHeartbeat, isPushConfigAvailable, ensureSubscribed, sendTestPush, getPushDiagnostics, resetSubscription, deepResetSubscription, type PushDiagnostics } from '../utils/proactivePushConfig';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { InstantPushSettingsModal } from '../components/settings/InstantPushSettingsModal';
+import { isBackgroundReplyNotifyEnabled, setBackgroundReplyNotify } from '../utils/backgroundReply';
+import { getNotifyPermission, requestNotifyPermission, type NotifyPermission } from '../utils/browserNotify';
 import { PushVapidSettingsModal } from '../components/settings/PushVapidSettingsModal';
 import VersionInfo from '../components/settings/VersionInfo';
 import { isPushVapidReady } from '../utils/pushVapid';
@@ -315,6 +317,9 @@ const Settings: React.FC = () => {
   const [ppZombieStreak, setPpZombieStreak] = useState(0);
   const [showInstantModal, setShowInstantModal] = useState(false);
   const [showVapidModal, setShowVapidModal] = useState(false);
+  // 自律代理 · 后台回复通知（普通聊天发出后切后台，回复完成进系统通知栏）
+  const [bgReplyNotify, setBgReplyNotifyState] = useState(isBackgroundReplyNotifyEnabled());
+  const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>(getNotifyPermission());
   const [vapidReadyTick, setVapidReadyTick] = useState(0); // 关闭 VAPID 弹窗后刷新顶层徽标
 
   // 模型选择 Modal 的过滤 + 公共前缀（memo 掉，避免每次 Settings 重渲染都重算）
@@ -1599,6 +1604,50 @@ const Settings: React.FC = () => {
                 </div>
             </div>
         </SectionCard>
+
+        {/* ───────── 系统通知 · 后台回复通知 ───────── */}
+        <section className="relative bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 pt-5 rotate-[0.3deg]">
+            <Tape className="-top-2.5 left-6 rotate-[-2deg]" />
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                    <div className="label-mono text-[9px] text-[#1c1b1a]/45">SYSTEM NOTIFY</div>
+                    <h2 className="text-base font-black text-[#1c1b1a] tracking-wide leading-tight">系统通知</h2>
+                </div>
+                <span className={`shrink-0 label-mono text-[9px] px-2 py-1 border-2 rotate-[2deg] ${notifyPerm === 'granted' ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-dashed border-[#1c1b1a]/50 text-[#1c1b1a]/60'}`}>
+                    {notifyPerm === 'granted' ? '已允许' : notifyPerm === 'denied' ? '被拒绝' : '未授权'}
+                </span>
+            </div>
+            <p className="text-base text-[#1c1b1a]/55 mb-2 leading-snug" style={HAND_CN}>✎ 发完消息切后台，回复好了到通知栏喊你</p>
+
+            {notifyPerm !== 'granted' && (
+                <button
+                    type="button"
+                    onClick={async () => {
+                        const p = await requestNotifyPermission();
+                        setNotifyPerm(p);
+                        if (p === 'granted') addToast('系统通知已开启', 'success');
+                        else if (p === 'denied') addToast('通知权限被拒绝，请到浏览器站点设置里手动开启', 'error');
+                    }}
+                    className={`w-full py-2.5 text-xs font-black mb-3 ${INK_BTN}`}
+                >
+                    {notifyPerm === 'denied' ? '权限被拒绝（去浏览器站点设置开启）' : '开启系统通知权限 →'}
+                </button>
+            )}
+
+            <div className="flex items-center justify-between border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2.5 gap-3">
+                <div className="min-w-0">
+                    <p className="text-[11px] text-[#1c1b1a] font-bold">后台回复通知</p>
+                    <p className="text-[10px] text-[#1c1b1a]/50 leading-snug">普通聊天发出后切后台，回复完成时尝试进入系统通知栏。生成期间靠 keep-alive 保活，副 API / 日程 / 状态栏 / 心声 / 记忆照常跑，无需悬浮窗。</p>
+                </div>
+                <InkSwitch
+                    on={bgReplyNotify}
+                    onChange={(v) => { setBgReplyNotifyState(v); setBackgroundReplyNotify(v); }}
+                />
+            </div>
+            <p className="text-[10px] text-[#1c1b1a]/45 mt-2 leading-relaxed">
+                网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。
+            </p>
+        </section>
 
         {/* ───────── 邮戳凭据 (VAPID) ───────── */}
         {/* VAPID 公私钥, 与 Proactive / Instant Push 共用一份 — 独立成块, 避免再被当成 */}

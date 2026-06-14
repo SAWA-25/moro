@@ -7,6 +7,7 @@ import { ProactiveChat } from '../utils/proactiveChat';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
+import { isBackgroundReplyNotifyEnabled } from '../utils/backgroundReply';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
 import { VR_DEFAULT_INTERVAL_MIN } from '../utils/vrWorld/constants';
@@ -1286,32 +1287,47 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
           const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
           const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
+          const isVisible = document.visibilityState === 'visible';
+          // 「后台回复通知」（自律代理）：普通聊天发出后切后台，回复落定时若页面仍不可见，
+          // 就算用户「停留」在该角色聊天页，也要把回复送进系统通知栏——这正是 task 的核心诉求。
+          const allowBgReplyNotify = isBackgroundReplyNotifyEnabled();
+
+          // 正盯着该角色聊天页（可见）→ 消息已实时呈现，什么都不做。
+          // 在该聊天页但切了后台、又没开「后台回复通知」→ 维持旧行为，不打扰。
+          if (isChattingWithThisChar && (isVisible || !allowBgReplyNotify)) return;
+
+          const preview = (body || `${charName} sent a proactive message`).replace(/\s+/g, ' ').trim() || `${charName} sent a proactive message`;
+
+          // 未读红点 / toast / 离开期间计数：仅当用户不在该角色聊天页时统计
+          // （在该聊天页只是切了后台时，回前台会自动 reloadMessages 并标记已读，不重复累未读）。
           if (!isChattingWithThisChar) {
-              const isVisible = document.visibilityState === 'visible';
               if (isVisible) {
                   addToast(`${charName} 主动发来了消息`, 'success');
               } else {
                   awayProactiveCount += inc;
               }
               setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
-              const preview = (body || `${charName} sent a proactive message`).replace(/\s+/g, ' ').trim() || `${charName} sent a proactive message`;
-              void sendProactiveNativeNotification(charId, charName, preview);
+          }
 
-              // Web Notification —— 走 Service Worker 的 showNotification（和"测试推送"
-              // 同一条链路）。页面级 `new Notification(...)` 在标签后台 / PWA / 移动端会
-              // 静默失败，必须走 SW registration 才稳定。
-              if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
-                  const char = characters.find(c => c.id === charId);
-                  navigator.serviceWorker.ready.then(reg => {
-                      reg.showNotification(charName, {
-                          body: preview,
-                          icon: char?.avatar || './icons/icon-192.png',
-                          badge: './icons/icon-192.png',
-                          tag: `proactive-${charId}`,
-                          data: { charId, kind: 'proactive-1.0' },
-                      }).catch(() => { /* notification failed */ });
-                  }).catch(() => { /* SW not ready */ });
-              }
+          // 系统通知 / 原生通知：
+          //  - 不在该聊天页：保持原有行为（permission 允许就发，桌面端即使可见也露出）。
+          //  - 在该聊天页但页面已切后台 + 开了后台回复通知：把回复送进系统通知栏。
+          void sendProactiveNativeNotification(charId, charName, preview);
+
+          // Web Notification —— 走 Service Worker 的 showNotification（和"测试推送"
+          // 同一条链路）。页面级 `new Notification(...)` 在标签后台 / PWA / 移动端会
+          // 静默失败，必须走 SW registration 才稳定。
+          if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator && window.Notification && Notification.permission === 'granted') {
+              const char = characters.find(c => c.id === charId);
+              navigator.serviceWorker.ready.then(reg => {
+                  reg.showNotification(charName, {
+                      body: preview,
+                      icon: char?.avatar || './icons/icon-192.png',
+                      badge: './icons/icon-192.png',
+                      tag: `proactive-${charId}`,
+                      data: { charId, kind: 'proactive-1.0' },
+                  }).catch(() => { /* notification failed */ });
+              }).catch(() => { /* SW not ready */ });
           }
       };
 
