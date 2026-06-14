@@ -1824,6 +1824,14 @@ export interface CharacterProfile {
   blacklisted?: boolean;
   /** 用户拉黑角色的时刻——此后角色发来的消息气泡旁带红色感叹号 */
   blacklistedAt?: number;
+  /** 被用户拉黑后的「解除拉黑验证」申诉状态：角色会主动发来验证消息求解封，
+   *  用户可同意（解除拉黑）或拒绝；拒绝后角色会在 nextAt 之后再发，直到用户同意。 */
+  unblockAppeal?: {
+      active: boolean;        // 拉黑期间是否仍在申诉（同意/移出黑名单后置 false）
+      awaiting: boolean;      // 已发出一条申诉、正等用户处理（true 时不再发新的）
+      nextAt: number;         // 下一次可发申诉的时间戳
+      rejectedCount: number;  // 被拒次数（影响措辞与下次间隔）
+  };
 
   /** 角色拉黑用户（AI 输出 [[BLOCK_USER]] 触发）：active 期间用户无法发消息，
    *  到 unblockAt（随机 30 分钟 ~ 24 小时）自动解除，或通过好友验证提前拉回 */

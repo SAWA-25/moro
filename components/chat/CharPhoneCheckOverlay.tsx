@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID } from '../../types';
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
+import { initUnblockAppeal } from '../../utils/unblockAppeal';
 import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
 import { useOS } from '../../context/OSContext';
 import AppIcon from '../os/AppIcon';
@@ -352,7 +353,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                     } as any);
                     log(`在与「${target.name}」的对话里，以${userProfile.name}的名义回复了：「${act.content}」`);
                 } else if ((act.type === 'block' || act.type === 'delete') && target && target.id !== char.id) {
-                    await updateCharacter(target.id, { blacklisted: true, blacklistedAt: Date.now() });
+                    await updateCharacter(target.id, { blacklisted: true, blacklistedAt: Date.now(), unblockAppeal: initUnblockAppeal() });
                     log(act.type === 'block'
                         ? `把「${target.name}」拉黑了`
                         : `想把「${target.name}」删掉，最终把对方加入了黑名单（删好友按拉黑执行）`);

@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
+import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
 import ProposalOverlay from '../components/chat/ProposalOverlay';
 import { processImage } from '../utils/file';
@@ -1470,6 +1471,31 @@ ${recent || '（你们相处了很久）'}
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, char?.id]);
+
+    // ── 解除拉黑申诉：角色被拉黑后发来求解封验证消息，用户在此同意 / 拒绝 ──
+    const acceptUnblockAppeal = async (msgId: number) => {
+        if (!char) return;
+        const now = Date.now();
+        await DB.updateMessageMetadata(msgId, (prev: any) => ({ ...(prev || {}), unblockAppeal: { ...(prev?.unblockAppeal || {}), status: 'accepted' } }));
+        await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `你同意了「${char.name}」的解除拉黑申请，你们可以继续聊天了`, timestamp: now });
+        await updateCharacter(char.id, {
+            blacklisted: false, blacklistedAt: undefined,
+            unblockAppeal: { active: false, awaiting: false, nextAt: 0, rejectedCount: char.unblockAppeal?.rejectedCount || 0 },
+        });
+        addToast(`已解除对 ${char.name} 的拉黑`, 'success');
+        await reloadMessages(visibleCountRef.current);
+    };
+    const rejectUnblockAppeal = async (msgId: number) => {
+        if (!char) return;
+        const rejectedCount = (char.unblockAppeal?.rejectedCount || 0) + 1;
+        await DB.updateMessageMetadata(msgId, (prev: any) => ({ ...(prev || {}), unblockAppeal: { ...(prev?.unblockAppeal || {}), status: 'rejected' } }));
+        // 拒绝 → 解除 awaiting、排下一次申诉时间，角色到点会再发，直到用户同意
+        await updateCharacter(char.id, {
+            unblockAppeal: { active: true, awaiting: false, rejectedCount, nextAt: Date.now() + nextAppealDelayMs(rejectedCount) },
+        });
+        addToast('已拒绝。对方可能过会儿还会再来申请', 'info');
+        await reloadMessages(visibleCountRef.current);
+    };
 
     // ── 语音通话：用户主动拨打 → 角色按人设 + 当前剧情决定接不接 → 接通则跳转电话 App ──
     const startVoiceCall = async () => {
@@ -4190,17 +4216,38 @@ ${recent || '（你们还没怎么聊过）'}
                         </button>
                     </div>
                 )}
-                {!charBlockedUser && userBlockedChar && char && (
-                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs">
-                        <span className="text-slate-500 font-bold truncate">你已将 {char.name} 加入黑名单，无法发送消息</span>
-                        <button
-                            onClick={() => { updateCharacter(char.id, { blacklisted: false, blacklistedAt: undefined }); addToast(`已将 ${char.name} 移出黑名单`, 'success'); }}
-                            className="px-2.5 py-1 bg-slate-600 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
-                        >
-                            解除拉黑
-                        </button>
-                    </div>
-                )}
+                {!charBlockedUser && userBlockedChar && char && (() => {
+                    // 有未处理的「解除拉黑申诉」→ 顶出同意/拒绝决定条；否则是普通拉黑提示条
+                    const pendingAppeal = [...messages].reverse().find(m => m.metadata?.unblockAppeal?.status === 'pending');
+                    if (pendingAppeal) {
+                        return (
+                            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs">
+                                <span className="text-amber-700 font-bold truncate">{char.name} 申请解除拉黑，是否同意？</span>
+                                <div className="flex gap-1.5 shrink-0">
+                                    <button
+                                        onClick={() => void rejectUnblockAppeal(pendingAppeal.id)}
+                                        className="px-2.5 py-1 bg-white border border-amber-200 text-amber-600 rounded-full text-[11px] font-bold active:scale-95"
+                                    >拒绝</button>
+                                    <button
+                                        onClick={() => void acceptUnblockAppeal(pendingAppeal.id)}
+                                        className="px-2.5 py-1 bg-emerald-500 text-white rounded-full text-[11px] font-bold active:scale-95"
+                                    >同意</button>
+                                </div>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs">
+                            <span className="text-slate-500 font-bold truncate">你已将 {char.name} 加入黑名单，无法发送消息</span>
+                            <button
+                                onClick={() => { updateCharacter(char.id, { blacklisted: false, blacklistedAt: undefined, unblockAppeal: { active: false, awaiting: false, nextAt: 0, rejectedCount: 0 } }); addToast(`已将 ${char.name} 移出黑名单`, 'success'); }}
+                                className="px-2.5 py-1 bg-slate-600 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
+                            >
+                                解除拉黑
+                            </button>
+                        </div>
+                    );
+                })()}
 
                 <ChatInputArea
                     input={input} setInput={handleInputChange}
