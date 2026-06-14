@@ -133,11 +133,16 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 
 ### 第一部分：日程表（用于UI卡片展示）
 
-生成 5-7 个时间段，从早到晚。每个时段：
+生成 7-9 个时间段，覆盖一整天（清晨、上午、午间、下午、傍晚、夜里都要有，别只排白天）。每个时段：
 - startTime: "HH:MM"
+- endTime: "HH:MM"（这个时段大概到几点，合理即可）
 - activity: 活动名（2-6字）
 - description: 一句话描述（可以带动作质感、物件、感官细节）
 - emoji: 一个匹配的emoji
+- location: 此刻人在哪儿（如"家里书桌""通勤地铁""楼下咖啡店"；想不出可省略）
+- mood: 这个时段的情绪基调（2-4字，如"松弛""专注""烦躁""犯困""期待"）
+- energy: 此刻的精力 1-5（1=困乏没电，5=满电）
+- innerThought: 一句此刻的内心碎念（≤20字，第一人称，口语）
 
 #### 关键要求
 
@@ -187,7 +192,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 请以JSON格式输出：
 {
   "slots": [
-    { "startTime": "08:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃" },
+    { "startTime": "08:00", "endTime": "09:00", "activity": "活动名称", "description": "简短描述", "emoji": "🏃", "location": "河边", "mood": "松弛", "energy": 4, "innerThought": "风有点凉，正好醒神" },
     ...
   ],
   "flowNarrative": {
@@ -225,11 +230,15 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 
 ### 第一部分：思绪时间线（用于UI卡片展示）
 
-生成 5-7 个时间段，代表角色一天中不同时刻的内心状态。每个时段：
+生成 7-9 个时间段，代表角色一天中不同时刻的内心状态（清晨到深夜都要有起伏）。每个时段：
 - startTime: "HH:MM"
+- endTime: "HH:MM"（这段状态大概持续到几点）
 - activity: 状态名（2-6字，如"回想昨天的对话""发呆""整理想法""想找你聊天"）
 - description: 一句话描述此刻在想什么
 - emoji: 一个匹配的emoji
+- mood: 此刻的情绪基调（2-4字，如"平静""怅然""好奇""惦记"）
+- energy: 此刻的"清醒/活跃度" 1-5（1=昏沉走神，5=思绪清亮）
+- innerThought: 一句此刻冒出来的念头（≤20字，第一人称）
 
 **可以做的事**（基于真实能力）：回想和用户的对话、整理之前聊过的话题、琢磨某个问题、等待用户、感到无聊、想念用户、发呆、反思自己说过的话、对某个话题产生好奇、期待下次聊天
 **不能做的事**（会构成谎言）：出门、吃东西、运动、搜索网页（除非真的有这个功能）、和别人见面、任何物理世界的活动
@@ -259,7 +268,7 @@ ${chatHistoryBlock ? `**重要：上面给了你最近和「${user.name}」的�
 请以JSON格式输出：
 {
   "slots": [
-    { "startTime": "08:00", "activity": "状态名", "description": "简短描述", "emoji": "💭" },
+    { "startTime": "08:00", "endTime": "09:30", "activity": "状态名", "description": "简短描述", "emoji": "💭", "mood": "平静", "energy": 3, "innerThought": "又想起你昨天那句话" },
     ...
   ],
   "flowNarrative": {
@@ -369,10 +378,13 @@ export async function generateDailyScheduleForChar(
         }
         const slots: ScheduleSlot[] = (parsed.slots || []).map((s: any) => ({
             startTime: s.startTime || '00:00',
+            endTime: s.endTime || undefined,
             activity: s.activity || '',
             description: s.description,
             emoji: s.emoji,
             location: s.location,
+            mood: typeof s.mood === 'string' ? s.mood.slice(0, 8) : undefined,
+            energy: typeof s.energy === 'number' ? Math.max(1, Math.min(5, Math.round(s.energy))) : undefined,
             innerThought: s.innerThought,
         })).filter((s: ScheduleSlot) => s.activity);
 
@@ -511,12 +523,12 @@ ${chatBlock}
 6. **没有任何需要落地的约定/变更**就返回 {"changed": false}。不要为了改而改。
 
 ## 输出（仅 JSON）
-若有变化，返回**协调后完整的日程**（5-8 个时段，从早到晚，包含未改动的原时段）：
+若有变化，返回**协调后完整的日程**（7-9 个时段，从早到晚，包含未改动的原时段）：
 {
   "changed": true,
   "reason": "一句话说明这次为什么调整（如：聊天里约好今晚八点一起看电影）",
   "slots": [
-    { "startTime": "HH:MM", "activity": "活动名(2-6字)", "description": "一句话", "emoji": "🎬", "location": "可选", "anchored": true }
+    { "startTime": "HH:MM", "endTime": "HH:MM", "activity": "活动名(2-6字)", "description": "一句话", "emoji": "🎬", "location": "可选", "mood": "期待", "energy": 4, "anchored": true }
   ]
 }
 若无需变化：{"changed": false}
@@ -554,10 +566,13 @@ ${chatBlock}
             const anchored = s.anchored === true;
             const slot: ScheduleSlot = {
                 startTime: s.startTime || '00:00',
+                endTime: s.endTime || undefined,
                 activity: s.activity || '',
                 description: s.description,
                 emoji: s.emoji,
                 location: s.location,
+                mood: typeof s.mood === 'string' ? s.mood.slice(0, 8) : undefined,
+                energy: typeof s.energy === 'number' ? Math.max(1, Math.min(5, Math.round(s.energy))) : undefined,
                 innerThought: s.innerThought,
                 source: anchored ? 'chat' : 'self',
                 anchored,
