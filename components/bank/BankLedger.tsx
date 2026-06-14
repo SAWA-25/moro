@@ -28,10 +28,14 @@ const todayStr = () => new Date().toISOString().split('T')[0];
 
 const avatarNode = (c?: CharacterProfile, size = 28) => {
     const cls = 'rounded-full object-cover shrink-0';
-    if (c?.avatar?.startsWith('http') || c?.avatar?.startsWith('data:')) {
-        return <img src={c.avatar} className={cls} style={{ width: size, height: size }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />;
+    const a = c?.avatar;
+    // 头像可能是 http/data/blob 链接，也可能是本地资源路径（如 Moro 的 /moro-avatars/calm.jpg）。
+    // 只判 http/data 会把本地路径当成 emoji 文本渲染 → 头像失效，这里补上 / 与 blob: 前缀。
+    const isImg = !!a && (/^https?:\/\//i.test(a) || a.startsWith('data:') || a.startsWith('blob:') || a.startsWith('/'));
+    if (isImg) {
+        return <img src={a} className={cls} style={{ width: size, height: size }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />;
     }
-    return <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: size, height: size, background: '#F0E2CC', fontSize: size * 0.5 }}>{c?.avatar || '🙂'}</span>;
+    return <span className="rounded-full flex items-center justify-center shrink-0" style={{ width: size, height: size, background: '#F0E2CC', fontSize: size * 0.5 }}>{a || '🙂'}</span>;
 };
 
 async function llmOnce(apiConfig: APIConfig, system: string, user: string, temp = 0.85): Promise<string> {

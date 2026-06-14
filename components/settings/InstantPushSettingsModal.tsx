@@ -18,8 +18,7 @@ import {
   markWorkerBuildSeen,
 } from '../WorkerUpdateReminderEvent';
 import { INSTANT_WORKER_VERSION } from '../../utils/instantWorkerVersion';
-import { FAQ_TARGET_SECTION_KEY, CHANGELOG_2026_05_27 } from '../UpdateNotificationEvent';
-import { InstantPushConfig, AppID } from '../../types';
+import { InstantPushConfig } from '../../types';
 
 interface InstantPushSettingsModalProps {
   open: boolean;
@@ -33,7 +32,7 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
   onClose,
   onOpenVapid,
 }) => {
-  const { apiConfig, addToast, openApp } = useOS();
+  const { apiConfig, addToast } = useOS();
 
   const [workerUrl, setWorkerUrl] = useState('');
   const [clientToken, setClientToken] = useState('');
@@ -154,14 +153,6 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
       setVersionCheck('stale');
       setVersionCheckDetail(result.error ?? '未知错误');
     }
-  };
-
-  const handleOpenTutorial = () => {
-    try {
-      sessionStorage.setItem(FAQ_TARGET_SECTION_KEY, CHANGELOG_2026_05_27);
-    } catch { /* ignore */ }
-    openApp(AppID.FAQ);
-    onClose();
   };
 
   const handleOpenCF = () => {
@@ -299,19 +290,6 @@ export const InstantPushSettingsModal: React.FC<InstantPushSettingsModalProps> =
       }
     >
       <div className="space-y-5 text-sm">
-
-        {/* 顶部教程入口 — 打开面板第一眼就能看到，方便第一次自己配的用户 */}
-        <button
-          type="button"
-          onClick={handleOpenTutorial}
-          className="w-full flex items-center gap-3 rounded-2xl p-3 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 hover:from-rose-100 hover:to-amber-100 text-left transition-colors"
-        >
-          <span className="flex-1 min-w-0">
-            <span className="block text-[12px] font-bold text-rose-600">第一次配置？先看视频教程</span>
-            <span className="block text-[11px] text-slate-500">跟着视频一步步点，大概十分钟搞定</span>
-          </span>
-          <span className="shrink-0 text-rose-500 font-bold text-sm">看教程 →</span>
-        </button>
 
         {/* VAPID 状态横条 */}
         <div className={`rounded-2xl p-3 border ${vapidReady ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>

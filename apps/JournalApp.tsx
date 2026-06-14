@@ -13,7 +13,6 @@ import { Sparkle, Archive } from '@phosphor-icons/react';
 import { getDiaryDateStr, callDiaryLLM } from './diaryShared';
 
 // 拼贴手账重制：界面文案 / 布局 / 按键全部原创，功能、数据模型、LLM 契约、score_card 结构均不变。
-const INTRO_SEEN_KEY = 'journal_app_intro_seen_v5';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -77,15 +76,6 @@ const JournalApp: React.FC<JournalAppProps> = ({ tabSwitcher }) => {
     const [diaries, setDiaries] = useState<DiaryEntry[]>([]);
     const [currentEntry, setCurrentEntry] = useState<DiaryEntry | null>(null);
     const [selectedDate, setSelectedDate] = useState<string>(getLocalDateStr());
-
-    // Onboarding popup (一次性)
-    const [showIntro, setShowIntro] = useState<boolean>(() => {
-        try { return !localStorage.getItem(INTRO_SEEN_KEY); } catch { return false; }
-    });
-    const dismissIntro = () => {
-        try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch {}
-        setShowIntro(false);
-    };
 
     // Editor State
     const [isThinking, setIsThinking] = useState(false);
@@ -759,31 +749,6 @@ ${charPart}
         );
     };
 
-    // 一次性弹窗:讲清楚新版对页信笺的行为变化(自动同步 / 归档移到列表 / 宫殿入向量)
-    const introModal = showIntro ? (
-        <Modal
-            isOpen={showIntro}
-            title="对页信笺 · 翻新了"
-            onClose={dismissIntro}
-            footer={
-                <button onClick={dismissIntro} className="scrap-btn w-full py-3 font-bold">
-                    翻开本子
-                </button>
-            }
-        >
-            <div className="space-y-3 text-sm text-[#4a463f] leading-relaxed">
-                <p className="font-hand text-xl text-[#b03a34]">几处变化，先看一眼：</p>
-                <div className="rounded-2xl bg-[#faf6ee] border border-[#ece4d3] px-4 py-3 space-y-2" style={{ outline: '1px dashed rgba(167,162,151,0.4)', outlineOffset: '-5px' }}>
-                    <p><span className="font-bold text-[#b03a34]">① 自动塞进聊天：</span> 角色回了你的日记后，会自动变成一张漂亮卡片出现在和 TA 的聊天里 —— 不用再手动发送。之后你在本子里改字 / 撕页，聊天里那张卡片也跟着同步。</p>
-                    <p><span className="font-bold text-[#b03a34]">② 单页不进记忆：</span> 如果你只是单方面写给角色看（没让 TA 回），这一页就不会进入任何记忆，照旧存着即可。</p>
-                    <p><span className="font-bold text-[#b03a34]">③ 新页不用管收纳：</span> 这次翻新<b>之后</b>新写的页走的就是上面"自动塞进聊天"那条线 —— 卡片落到聊天后，chatapp 的日度归档 / 回忆标本馆管线会像处理别的消息一样顺手收掉，不需要也<b>不该</b>再手动收一次。所以新页看不到收纳入口，这是故意的。</p>
-                    <p><span className="font-bold text-[#b03a34]">④ 老页还能手动收：</span> 翻新<b>之前</b>留下、且角色回过的老页，<b>点进那一页，右上角会有一枚"收进记忆"的印</b>，按一下就行 —— 没开回忆标本馆的角色走主 API 出散文式总结写进往事柜，开了的走副 API 一次抽多条结构化记忆，标本入向量库 + 同一组内容也 bullet 化写进往事柜，和 chatapp 自动归档一模一样。</p>
-                </div>
-                <p className="font-hand text-base text-[#a79c8e]">这张小纸条只出现一次。</p>
-            </div>
-        </Modal>
-    ) : null;
-
     // 归档结果弹窗: 让用户清楚知道生成了哪些内容、被送去了哪里
     const archiveResultModal = archiveResult ? (() => {
         const p = archiveResult.palace;
@@ -901,7 +866,6 @@ ${charPart}
     if (mode === 'select') {
         return (
             <div className="h-full w-full flex flex-col font-light" style={{ background: '#f4f2ed', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.06) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
-                {introModal}
                 {archiveResultModal}
                 {/* 牛皮纸页眉 + 蕾丝下边 */}
                 <div className="relative pt-12 pb-3 px-5 shrink-0 z-20 box-border" style={{ background: '#efe9dc', borderBottom: '1px solid rgba(180,172,156,0.5)' }}>
@@ -946,7 +910,6 @@ ${charPart}
     if (mode === 'calendar' && selectedChar) {
         return (
             <div className="h-full w-full flex flex-col font-light relative" style={{ background: '#f4f2ed', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.06) 1px, transparent 0)', backgroundSize: '16px 16px' }}>
-                {introModal}
                 {archiveResultModal}
                 {/* 墨色封面页眉：拍立得头像 + 手写名字 */}
                 <div className="relative pt-12 pb-7 px-5 shrink-0 z-20" style={{ background: '#2b2933' }}>
@@ -1046,7 +1009,6 @@ ${charPart}
     // --- WRITE MODE ---
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: '#26241f', backgroundImage: "url('https://www.transparenttextures.com/patterns/cardboard-flat.png')" }}>
-            {introModal}
             {archiveResultModal}
 
             {/* Editor Header（书桌上方工具条） */}

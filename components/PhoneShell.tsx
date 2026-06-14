@@ -68,7 +68,6 @@ const RoomApp = lazyApp(() => import('../apps/RoomApp'));
 const CheckPhone = lazyApp(() => import('../apps/CheckPhone'));
 const SocialApp = lazyApp(() => import('../apps/SocialApp'));
 const StudyApp = lazyApp(() => import('../apps/StudyApp'));
-const FAQApp = lazyApp(() => import('../apps/FAQApp'));
 const GameApp = lazyApp(() => import('../apps/GameApp'));
 const WorldbookApp = lazyApp(() => import('../apps/WorldbookApp'));
 const NovelApp = lazyApp(() => import('../apps/NovelApp'));
@@ -102,7 +101,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   Chat, Character, ChatHub, SocialApp, RoomApp, Settings, Appearance,
   CheckPhone, DiaryApp, ScheduleApp, MusicApp, CallApp, PhoneApp, Gallery, DateApp,
   StudyApp, GameApp, NovelApp, BankApp, WorldbookApp, PresetApp, PersonaHubApp, MemoryPalaceApp, HandbookApp,
-  VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, FAQApp, HotNewsApp,
+  VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
 ];
@@ -115,7 +114,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Gallery]: Gallery, [AppID.Date]: DateApp,
   [AppID.Journal]: DiaryApp, [AppID.Schedule]: ScheduleApp, [AppID.Room]: RoomApp,
   [AppID.CheckPhone]: CheckPhone, [AppID.Social]: SocialApp, [AppID.Study]: StudyApp,
-  [AppID.FAQ]: FAQApp, [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
+  [AppID.Game]: GameApp, [AppID.Worldbook]: WorldbookApp,
   [AppID.Novel]: NovelApp, [AppID.Bank]: BankApp, [AppID.XhsStock]: XhsStockApp,
   [AppID.XhsFreeRoam]: XhsFreeRoamApp, [AppID.Browser]: BrowserApp, [AppID.Songwriting]: SongwritingApp,
   [AppID.Music]: MusicApp, [AppID.Call]: CallApp, [AppID.Phone]: PhoneApp,
@@ -470,26 +469,23 @@ const PhoneShell: React.FC = () => {
     openApp(AppID.Settings);
   };
 
-  // 版本更新公告弹窗（彼方等）已按需求移除，不再在解锁后强制弹出
-  const showUpdateNotification = false;
-
   // 520 特别活动弹窗（2026-05-20 当天，且没被 dismiss / completed）
   // 一次性：用户点过任何按钮就标记 dismissed，下次刷新不再出现；
   // API 配置改成弹窗内嵌，配完直接进活动，不再需要把弹窗暂存让位给 Settings。
   const [showLike520Popup, setShowLike520Popup] = useState(false);
   useEffect(() => {
-    if (showDisclaimer || showImportRecoveryPrompt || showUpdateNotification) return;
+    if (showDisclaimer || showImportRecoveryPrompt) return;
     if (!isDataLoaded) return;
     if (shouldShowLike520Popup()) setShowLike520Popup(true);
-  }, [showDisclaimer, showImportRecoveryPrompt, showUpdateNotification, isDataLoaded]);
+  }, [showDisclaimer, showImportRecoveryPrompt, isDataLoaded]);
 
   // Worker 后端更新提醒 — 只对启用了 Instant Push 的用户弹，且当前 worker 版本未确认过
   const [showWorkerUpdateReminder, setShowWorkerUpdateReminder] = useState(false);
   useEffect(() => {
-    if (showDisclaimer || showImportRecoveryPrompt || showUpdateNotification || showLike520Popup) return;
+    if (showDisclaimer || showImportRecoveryPrompt || showLike520Popup) return;
     if (!isDataLoaded) return;
     if (shouldShowWorkerUpdateReminder()) setShowWorkerUpdateReminder(true);
-  }, [showDisclaimer, showImportRecoveryPrompt, showUpdateNotification, showLike520Popup, isDataLoaded]);
+  }, [showDisclaimer, showImportRecoveryPrompt, showLike520Popup, isDataLoaded]);
 
   // Capacitor Native Handling
   useEffect(() => {
@@ -599,9 +595,8 @@ const PhoneShell: React.FC = () => {
       case AppID.Room: return <RoomApp />; 
       case AppID.CheckPhone: return <CheckPhone />;
       case AppID.Social: return <SocialApp />;
-      case AppID.Study: return <StudyApp />; 
-      case AppID.FAQ: return <FAQApp />; 
-      case AppID.Game: return <GameApp />; 
+      case AppID.Study: return <StudyApp />;
+      case AppID.Game: return <GameApp />;
       case AppID.Worldbook: return <WorldbookApp />;
       case AppID.Presets: return <PresetApp />;
       case AppID.Personas: return <PersonaHubApp />;
@@ -739,14 +734,14 @@ const PhoneShell: React.FC = () => {
        )}
 
        {/* 520 特别活动弹窗（2026-05-20 当天，一次性） */}
-       {!showDisclaimer && !showImportRecoveryPrompt && !showUpdateNotification && showLike520Popup && (
+       {!showDisclaimer && !showImportRecoveryPrompt && showLike520Popup && (
          <Like520Controller
            onClose={() => setShowLike520Popup(false)}
          />
        )}
 
        {/* Worker 后端更新提醒（仅启用 Instant Push 的用户，每个 worker 版本一次） */}
-       {!showDisclaimer && !showImportRecoveryPrompt && !showUpdateNotification && !showLike520Popup && showWorkerUpdateReminder && (
+       {!showDisclaimer && !showImportRecoveryPrompt && !showLike520Popup && showWorkerUpdateReminder && (
          <WorkerUpdateReminderController
            onClose={() => setShowWorkerUpdateReminder(false)}
          />

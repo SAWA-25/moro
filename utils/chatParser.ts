@@ -97,11 +97,27 @@ export const ChatParser = {
             content = content.replace('[[ACTION:POKE]]', '').trim();
         }
 
-        // TRANSFER
+        // TRANSFER / REDPACKET —— 角色给用户转账 / 发红包。
+        // 落库即标记 status:'pending' + 24h expiresAt：UI 上用户需点开「收款」弹窗才进余额；
+        // 超 24h 未领由聊天页判定为 expired，并让角色对此有反应（见 Chat.tsx 过期检测）。
+        const CLAIM_WINDOW_MS = 24 * 60 * 60 * 1000;
         const transferMatch = content.match(/\[\[ACTION:TRANSFER:(\d+)\]\]/);
         if (transferMatch) {
-            await DB.saveMessage({ charId, role: 'assistant', type: 'transfer', content: '[转账]', metadata: { amount: transferMatch[1] } });
+            await DB.saveMessage({
+                charId, role: 'assistant', type: 'transfer', content: '[转账]',
+                metadata: { amount: transferMatch[1], status: 'pending', expiresAt: Date.now() + CLAIM_WINDOW_MS },
+            });
             content = content.replace(transferMatch[0], '').trim();
+        }
+        // 红包：[[ACTION:REDPACKET:100]] 或带祝福语 [[ACTION:REDPACKET:100|新年快乐]]
+        const redpacketMatch = content.match(/\[\[ACTION:REDPACKET:(\d+)(?:\|([^\]]*))?\]\]/);
+        if (redpacketMatch) {
+            const rpNote = (redpacketMatch[2] || '').trim();
+            await DB.saveMessage({
+                charId, role: 'assistant', type: 'transfer', content: '[红包]',
+                metadata: { amount: redpacketMatch[1], kind: 'redpacket', ...(rpNote ? { note: rpNote } : {}), status: 'pending', expiresAt: Date.now() + CLAIM_WINDOW_MS },
+            });
+            content = content.replace(redpacketMatch[0], '').trim();
         }
 
         // MUSIC_ACTION — char 对 user 正在听的歌表态（只处理第一次出现，每条消息最多一次插卡）

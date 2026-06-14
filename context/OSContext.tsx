@@ -528,72 +528,12 @@ Moro 是小手机的内置猫娘AI。
   bubbleStyle: 'default', // Or specific theme ID if we had one
   contextLimit: 1000,
   
-  // Default Room Config
+  // Default Room Config —— 默认 Moro 的专属家具已移除（栖居志两个模式不再自带默认 Moro 布置），
+  // 进房时与其它角色一样走通用默认家具。
   roomConfig: {
       wallImage: 'https://sharkpan.xyz/f/NdJyhv/b.png', // Updated Background
       floorImage: 'repeating-linear-gradient(90deg, #e7e5e4 0px, #e7e5e4 20px, #d6d3d1 21px)',
-      items: [
-        {
-            id: "item-1768927221380",
-            name: "Moro床",
-            type: "furniture",
-            image: "https://sharkpan.xyz/f/A3XeUZ/BED.png",
-            x: 78.45852578067732,
-            y: 97.38889754570907,
-            scale: 2.4,
-            rotation: 0,
-            isInteractive: true,
-            descriptionPrompt: "看起来很好睡的猫窝（确信）。"
-        },
-        {
-            id: "item-1768927255102",
-            name: "Moro电脑桌",
-            type: "furniture",
-            image: "https://sharkpan.xyz/f/G5n3Ul/DNZ.png",
-            x: 28.853756791175588,
-            y: 69.9444485439727,
-            scale: 2.4,
-            rotation: 0,
-            isInteractive: true,
-            descriptionPrompt: "硬核的电脑桌，上面大概运行着什么毁灭世界的程序。"
-        },
-        {
-            id: "item-1768927271632",
-            name: "Moro垃圾桶",
-            type: "furniture",
-            image: "https://sharkpan.xyz/f/75Nvsj/LJT.png",
-            x: 10.276680026943646,
-            y: 80.49999880981437,
-            scale: 0.9,
-            rotation: 0,
-            isInteractive: true,
-            descriptionPrompt: "不要乱翻垃圾桶！"
-        },
-        {
-            id: "item-1768927286526",
-            name: "Moro洞洞板",
-            type: "furniture",
-            image: "https://sharkpan.xyz/f/85K5ij/DDB.png",
-            x: 32.608697687684455,
-            y: 48.72222587415929,
-            scale: 2.6,
-            rotation: 0,
-            isInteractive: true,
-            descriptionPrompt: "收纳着各种奇奇怪怪的黑客工具和猫咪周边的洞洞板。"
-        },
-        {
-            id: "item-1768927303472",
-            name: "Moro书柜",
-            type: "furniture",
-            image: "https://sharkpan.xyz/f/zlpWS5/SG.png",
-            x: 79.84189945375853,
-            y: 68.94444543117953,
-            scale: 2,
-            rotation: 0,
-            isInteractive: true,
-            descriptionPrompt: "塞满了技术书籍和漫画书的柜子。"
-        }
-      ]
+      items: []
   },
   
   memories: [], // Start fresh

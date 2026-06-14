@@ -3860,7 +3860,7 @@ export const Like520Controller: React.FC<Like520ControllerProps> = ({ onClose, i
                                         onClick={() => { setCharId(c.id); setStage('session'); }}
                                         className="flex flex-col items-center gap-2 p-3 bg-[#FFF8F1] rounded-2xl border border-[#FCEDD9] active:scale-95 transition-transform"
                                     >
-                                        {c.avatar?.startsWith('http') || c.avatar?.startsWith('data:') ? (
+                                        {(c.avatar && (/^https?:\/\//i.test(c.avatar) || c.avatar.startsWith('data:') || c.avatar.startsWith('blob:') || c.avatar.startsWith('/'))) ? (
                                             <img src={c.avatar} alt={c.name} className="w-12 h-12 rounded-full object-cover" />
                                         ) : (
                                             <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center text-2xl">
