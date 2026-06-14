@@ -8,7 +8,7 @@ import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousPr
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
-import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint } from '../utils/takeout';
+import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated } from '../utils/takeout';
 import { isBackgroundReplyNotifyEnabled } from '../utils/backgroundReply';
 import { VRScheduler } from '../utils/vrWorld/scheduler';
 import { runVRSession } from '../utils/vrWorld/runSession';
@@ -1452,6 +1452,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               order.cardPosted = true;
               await DB.saveTakeoutOrder(order);
               await postTakeoutPlacedToChat(order, nameOf);
+              notifyTakeoutUpdated();
               bumpUnread(d.charId);
               addToast(`${char.name} 给你点了份外卖`, 'success');
           } catch { /* ignore */ }
@@ -2149,6 +2150,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   if (!char) continue;
                   // 签收 + 打标，避免重复反应
                   await DB.saveTakeoutOrder({ ...o, status: 'delivered', deliveredAt: now, reactionPosted: true }).catch(() => {});
+                  notifyTakeoutUpdated();
                   // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）
                   updateCharacter(o.charId, { affection: applyAffectionDelta(char.affection, 2) });
                   if (char.charBlock?.active || char.blacklisted) continue; // 拉黑期间不反应

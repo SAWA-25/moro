@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
-import { AppID, CharacterProfile } from '../../types';
+import { AppID, CharacterProfile, TakeoutOrder } from '../../types';
 import { playRingtone } from '../../utils/ringtone';
+import { liveTakeoutStatus, STATUS_LABEL, etaText, pickActiveOrders, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
 
 /**
  * 灵动岛（Dynamic Island）：悬浮在状态栏中央的黑色胶囊。
@@ -179,6 +180,24 @@ const DynamicIsland: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [expanded, totalUnread]);
 
+    // ── 外卖 Live Activity：进行中的订单实时显示在灵动岛下方 ──
+    const [takeoutOrders, setTakeoutOrders] = useState<TakeoutOrder[]>([]);
+    const [, setIslandTick] = useState(0);
+    useEffect(() => {
+        let alive = true;
+        const load = async () => { try { const all = await DB.getTakeoutOrders(); if (alive) setTakeoutOrders(all); } catch { /* ignore */ } };
+        void load();
+        const timer = window.setInterval(() => { setIslandTick(t => t + 1); void load(); }, 10000);
+        const onUpd = () => void load();
+        window.addEventListener(TAKEOUT_UPDATED_EVENT, onUpd);
+        return () => { alive = false; window.clearInterval(timer); window.removeEventListener(TAKEOUT_UPDATED_EVENT, onUpd); };
+    }, []);
+    const activeTakeout = useMemo(() => pickActiveOrders(takeoutOrders), [takeoutOrders]);
+    const liveOrder = activeTakeout[0] || null;
+    const liveStatus = liveOrder ? liveTakeoutStatus(liveOrder) : null;
+    const liveStColor = liveStatus === 'arrived' ? '#ffcf6b' : '#ffd161';
+    const showTakeoutLive = !!liveOrder && !notice && !expanded;
+
     const jumpToChat = (charId: string) => {
         setExpanded(false);
         setActiveCharacterId(charId);
@@ -273,6 +292,28 @@ const DynamicIsland: React.FC = () => {
                     )}
                 </button>
             </div>
+
+            {/* 外卖 Live Activity：进行中的订单胶囊（点开进外卖 App） */}
+            {showTakeoutLive && liveOrder && (
+                <div className="absolute left-1/2 -translate-x-1/2 z-[57]" style={{ top: 'calc(max(6px, var(--safe-top)) + 2.05rem)' }}>
+                    <button
+                        onClick={() => openApp(AppID.Takeout)}
+                        className="flex items-center gap-2 rounded-full shadow-lg select-none pl-2 pr-3.5 py-1.5"
+                        style={{ background: '#1a1206', color: '#ffe7ad', maxWidth: '80vw', boxShadow: '0 8px 20px -8px rgba(0,0,0,0.55)', animation: 'islandDrop 240ms ease-out both' }}
+                        aria-label="外卖配送进度"
+                    >
+                        <span className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[15px] shrink-0" style={{ background: 'rgba(255,209,97,0.18)' }}>{liveOrder.riderEmoji || '🛵'}</span>
+                        <span className="flex flex-col items-start min-w-0 text-left leading-tight">
+                            <span className="text-[10px] font-bold whitespace-nowrap max-w-[200px] truncate">
+                                {liveOrder.storeName}{activeTakeout.length > 1 ? ` 等${activeTakeout.length}单` : ''} · {liveStatus ? STATUS_LABEL[liveStatus] : ''}
+                            </span>
+                            <span className="text-[10px] opacity-75 whitespace-nowrap max-w-[200px] truncate">{etaText(liveOrder)}</span>
+                        </span>
+                        {/* 跑动的小进度点 */}
+                        <span className="ml-0.5 w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: liveStColor, boxShadow: `0 0 6px ${liveStColor}` }} />
+                    </button>
+                </div>
+            )}
 
             {/* 下滑通知面板 */}
             {expanded && (

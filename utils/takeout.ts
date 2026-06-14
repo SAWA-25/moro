@@ -34,6 +34,12 @@ const SEEDS: StoreSeed[] = [
     { name: '深夜食堂·宵夜', emoji: '🍜', category: '夜宵', dishes: [['小龙虾(1斤)', 68, '🦞'], ['炒花甲', 32, '🐚'], ['烤生蚝(6只)', 36, '🦪'], ['啤酒鸭', 42, '🦆'], ['泡面加蛋', 12, '🍜'], ['冰镇西瓜', 10, '🍉']] },
     { name: '轻食主义沙拉', emoji: '🥗', category: '轻食沙拉', dishes: [['鸡胸藜麦碗', 28, '🥗'], ['牛油果沙拉', 26, '🥑'], ['低脂鸡卷', 22, '🌯'], ['希腊酸奶杯', 16, '🥛'], ['果蔬汁', 14, '🥤']] },
     { name: '兰州牛肉面馆', emoji: '🍜', category: '中餐', dishes: [['牛肉拉面', 18, '🍜'], ['加牛肉', 10, '🥩'], ['凉拌牛肚', 16, '🥗'], ['茶叶蛋', 3, '🥚'], ['八宝茶', 8, '🍵']] },
+    { name: '元气早餐铺', emoji: '🥟', category: '早餐', dishes: [['小笼包(6只)', 14, '🥟'], ['豆浆', 4, '🥛'], ['茶叶蛋', 3, '🥚'], ['手抓饼加蛋', 9, '🫓'], ['皮蛋瘦肉粥', 10, '🥣'], ['煎饺(8只)', 13, '🥟'], ['豆腐脑', 6, '🍮']] },
+    { name: '城南粥铺', emoji: '🥣', category: '早餐', dishes: [['皮蛋瘦肉粥', 12, '🥣'], ['南瓜小米粥', 10, '🎃'], ['油条(2根)', 6, '🥖'], ['咸鸭蛋', 4, '🥚'], ['烧麦(4只)', 12, '🥟'], ['豆浆', 4, '🥛']] },
+    { name: 'Bella 意式餐厅', emoji: '🍝', category: '西餐', dishes: [['番茄肉酱意面', 38, '🍝'], ['玛格丽特披萨', 52, '🍕'], ['黑椒牛排', 78, '🥩'], ['凯撒沙拉', 28, '🥗'], ['蘑菇浓汤', 18, '🥣'], ['提拉米苏', 26, '🍰'], ['气泡水', 12, '🥤']] },
+    { name: '老城牛排杯', emoji: '🥩', category: '西餐', dishes: [['黑椒牛排杯', 26, '🥩'], ['奥尔良鸡排饭', 24, '🍗'], ['薯条', 10, '🍟'], ['玉米浓汤', 8, '🌽'], ['可乐', 6, '🥤']] },
+    { name: '热辣麻辣烫', emoji: '🥘', category: '麻辣烫', dishes: [['招牌麻辣烫(自选)', 32, '🥘'], ['加宽粉', 5, '🍜'], ['加午餐肉', 6, '🥓'], ['加鹌鹑蛋', 5, '🥚'], ['麻酱小料', 3, '🥜'], ['酸梅汤', 8, '🥤']] },
+    { name: '夜市铁板烧', emoji: '🍢', category: '夜宵', dishes: [['铁板鱿鱼', 22, '🦑'], ['铁板土豆', 12, '🥔'], ['烤面筋(5串)', 15, '🍢'], ['炒粉', 16, '🍜'], ['冰可乐', 6, '🥤']] },
 ];
 
 const RIDER_NAMES = ['小袋', '阿强', '风一样的张师傅', '老李', '小跑', '闪电侠', '阿杰', '骑行的小王', '飞毛腿', '可靠的赵哥'];
@@ -290,4 +296,82 @@ export function consumeTakeoutIntent(): TakeoutIntent | null {
         if (raw) { localStorage.removeItem(INTENT_KEY); return JSON.parse(raw) as TakeoutIntent; }
     } catch { /* ignore */ }
     return null;
+}
+
+// ── 实时联动：订单变化广播（小票 / 灵动岛即时刷新） ─────────────────
+/** 订单发生变化（下单 / 送达 / 评价…）时广播，供聊天小票与灵动岛即时刷新。 */
+export const TAKEOUT_UPDATED_EVENT = 'moro-takeout-updated';
+export function notifyTakeoutUpdated(): void {
+    try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(TAKEOUT_UPDATED_EVENT)); } catch { /* ignore */ }
+}
+
+/** 进行中的订单（备餐 / 配送 / 待收货），按最快送达排序——灵动岛 Live Activity 用。 */
+export function pickActiveOrders(orders: TakeoutOrder[], now = Date.now()): TakeoutOrder[] {
+    return orders
+        .filter(o => o.status !== 'cancelled' && !o.deliveredAt)
+        .sort((a, b) => a.etaAt - b.etaAt);
+}
+
+// ── 外卖评价 + 其它 NPC 评论 ───────────────────────────────────────
+export interface StoreNpcReview { id: string; name: string; emoji: string; rating: number; text: string; date: string; likes: number; reply?: string; }
+
+const REVIEWER_NAMES = ['吃货小分队', '匿名食客', '楼下的老王', '减脂中的喵', '深夜放毒', '加班狗本狗', '带饭星人', '嘴刁的猫', '干饭人', '隔壁老张', '美食侦探', '一只柯基', '打工不易', '学生党一枚', '宝妈日常', '路过的猫', '挑食小公主', '夜跑选手'];
+const REVIEWER_EMOJIS = ['🦊', '🐱', '🐻', '🐼', '🐯', '🐰', '🐧', '🐸', '🐵', '🦝', '🐶', '🦦', '🐹', '🦉'];
+const REVIEW_POS = ['分量很足，味道在线，会回购！', '送得比预计还快，包装也干净👍', '点了好多次了，稳定发挥～', '性价比真的高，学生党友好', '热乎乎的，骑手小哥人很好', '招牌名不虚传，绝了', '第一次点就爱上了，下次还来', '汤底很鲜，一滴不剩', '老板很实在，给的料超多'];
+const REVIEW_MID = ['味道还行，就是配送有点慢', '分量一般般，凑合吃', '中规中矩，不难吃也不惊艳', '包装有点简陋，味道还可以', '正常发挥吧，没踩雷'];
+const REVIEW_NEG = ['等了好久才送到，凉了…', '和图片差距有点大', '有点咸了，下次得备注少盐', '分量缩水，性价比一般'];
+const REPLY_DINER_POS = ['同感！我也常点这家', '马住，下次试试', '哈哈哈被你种草了', '+1，他家招牌真的可以', '看饿了…'];
+const REPLY_DINER_NEG = ['我也遇到过送得慢…', '可能高峰期人手不够吧', '备注少盐会好很多'];
+const REPLY_MERCHANT_POS = ['感谢支持，欢迎下次再来呀～', '谢谢喜欢！我们会继续努力🧡', '老顾客了，给您加了份小料～'];
+const REPLY_MERCHANT_NEG = ['抱歉让您久等了，已反馈给配送，下次一定更快🙏', '非常抱歉口味没达预期，欢迎备注，我们改进！'];
+
+const hashStr = (s: string): number => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+const mulberry32 = (a: number) => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+
+/** 为店铺生成稳定的 NPC 评价（按店名做种子，同店每次进来一致）。 */
+export function generateStoreReviews(storeName: string, baseRating = 4.5, count = 8): StoreNpcReview[] {
+    const rnd = mulberry32(hashStr(storeName));
+    const pickR = <T,>(arr: T[]) => arr[Math.floor(rnd() * arr.length)];
+    const out: StoreNpcReview[] = [];
+    const n = 5 + Math.floor(rnd() * (count - 4));
+    for (let i = 0; i < n; i++) {
+        const roll = rnd();
+        // 评分向店铺整体评分靠拢：大多 4~5 星，偶有 3 星，极少 2 星
+        const rating = roll > 0.82 ? 3 : roll > 0.96 ? 2 : (baseRating >= 4.6 ? 5 : (rnd() > 0.4 ? 5 : 4));
+        const text = rating >= 4 ? pickR(REVIEW_POS) : rating === 3 ? pickR(REVIEW_MID) : pickR(REVIEW_NEG);
+        const daysAgo = 1 + Math.floor(rnd() * 60);
+        const d = new Date(Date.now() - daysAgo * 86400000);
+        const review: StoreNpcReview = {
+            id: `npcr_${hashStr(storeName)}_${i}`,
+            name: pickR(REVIEWER_NAMES),
+            emoji: pickR(REVIEWER_EMOJIS),
+            rating,
+            text,
+            date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
+            likes: Math.floor(rnd() * 48),
+        };
+        if (rnd() > 0.55) review.reply = rating >= 4 ? pickR(REPLY_MERCHANT_POS) : pickR(REPLY_MERCHANT_NEG);
+        out.push(review);
+    }
+    return out.sort((a, b) => b.likes - a.likes);
+}
+
+const QUICK_TAGS_POS = ['分量足', '送得快', '味道赞', '包装好', '性价比高', '会回购'];
+const QUICK_TAGS_NEG = ['送得慢', '偏咸', '分量少', '包装一般', '与图不符'];
+/** 评价时可选的快捷标签（按打分给正/负面）。 */
+export function reviewQuickTags(rating: number): string[] { return rating >= 4 ? QUICK_TAGS_POS : rating === 3 ? [...QUICK_TAGS_POS.slice(0, 3), ...QUICK_TAGS_NEG.slice(0, 2)] : QUICK_TAGS_NEG; }
+
+/** 用户发表评价后，生成商家 + 其它食客的「评论」（其它 npc 评论）。 */
+export function generateReviewReplies(rating: number, text: string, storeName: string): import('../types').TakeoutReviewReply[] {
+    const rnd = mulberry32(hashStr(storeName + text + rating));
+    const pickR = <T,>(arr: T[]) => arr[Math.floor(rnd() * arr.length)];
+    const replies: import('../types').TakeoutReviewReply[] = [];
+    // 商家几乎必回
+    replies.push({ name: storeName, emoji: '🏪', text: rating >= 4 ? pickR(REPLY_MERCHANT_POS) : pickR(REPLY_MERCHANT_NEG), at: Date.now(), isMerchant: true });
+    // 1~2 条其它食客
+    const extra = 1 + Math.floor(rnd() * 2);
+    for (let i = 0; i < extra; i++) {
+        replies.push({ name: pickR(REVIEWER_NAMES), emoji: pickR(REVIEWER_EMOJIS), text: rating >= 4 ? pickR(REPLY_DINER_POS) : pickR(REPLY_DINER_NEG), at: Date.now() + i + 1 });
+    }
+    return replies;
 }

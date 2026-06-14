@@ -13,11 +13,20 @@
 
 `runProactive` 新增第二参 `opts.customHint`：传了就用它当 hint，并跳过「主动消息开关 / 随机模式近期已回复 / 生活事件」等限制（事件驱动的即时反应）。
 
-## 2. 聊天回形针「点外卖」+ 外卖订单小票
+## 2. 聊天回形针「点外卖」+ 外卖订单小票（实时 + 灵动岛）
 
 - 回形针「特别通道」加了 **点外卖**（`components/chat/ChatInputArea.tsx` → `onPanelAction('takeout')`）。Chat 里 `handlePanelAction('takeout')` 用 `setTakeoutIntent({recipientCharId})` 存一次性意图后 `openApp(Takeout)`；`TakeoutApp` 挂载时 `consumeTakeoutIntent()` 预设收货角色。
-- 下单（关联角色时）会在聊天里生成 **外卖订单小票卡片**：`utils/takeout.ts:postTakeoutPlacedToChat` 落一条 `type:'takeout_card'` 消息（角色为用户点 = assistant 侧；用户为角色点 = user 侧）。渲染在 `components/chat/MessageItem.tsx`。
-- 点小票 → `Chat.tsx:handleOpenTakeoutCard` 弹详情弹窗（看具体内容 / 跳外卖看进度）。
+- 下单（关联角色时）在聊天里生成 **外卖订单小票卡片**：`utils/takeout.ts:postTakeoutPlacedToChat` 落 `type:'takeout_card'` 消息（角色为用户点 = assistant 侧；用户为角色点 = user 侧）。
+- **小票实时更新**：`components/chat/MessageItem.tsx:TakeoutCardView` 自带 10s 计时 + 监听 `TAKEOUT_UPDATED_EVENT`，从 DB（`DB.getTakeoutOrder`）拉最新订单，状态/ETA/进度条跟现实同步刷新；查不到回退快照。点小票 → `Chat.tsx:handleOpenTakeoutCard` 弹详情。
+- **灵动岛 Live Activity**：`components/os/DynamicIsland.tsx` 在有进行中订单（`pickActiveOrders`）时，于胶囊下方显示一枚骑手胶囊（店名 + 状态 + ETA + 跑动进度点），点开进外卖 App；送达/确认后自动消失。
+- 订单变化用 `notifyTakeoutUpdated()` 广播（下单 / 送达 / 评价 / 角色代点），小票与灵动岛即时刷新。
+
+## 2b. 外卖 App 丰富化 + 评价 + 其它 NPC 评论
+
+- 更多店铺品类与菜品（早餐 / 西餐 / 麻辣烫 等，`SEEDS` + `CATS`）。
+- **店铺评价**：店铺详情页底部「大家的评价」展示按店名稳定生成的 NPC 评价（`generateStoreReviews`：评分向店铺整体分靠拢、含商家回复、点赞数）。
+- **订单评价**：送达后（仅自己那份）可「评价此单」——星级 + 快捷标签（`reviewQuickTags`）+ 文字，存 `TakeoutOrder.review`。
+- **其它 NPC 评论**：发表评价后 `generateReviewReplies` 生成商家回复 + 1~2 条其它食客评论，挂在 `review.replies`，在订单详情里展示。
 
 ## 3. 聊天设置「角色主动为用户点外卖」开关
 
