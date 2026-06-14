@@ -3245,3 +3245,49 @@ export interface LifeSimState {
     worldInventory?: Record<string, number>;
     worldGold?: number;
 }
+
+// ─── 街角 · 约会世界引擎 (Date World Engine) ──────────────────────────
+// char 带着 user 在不同场景里溜达的日常陪伴向约会。副 API 当世界引擎做场景调度，
+// 支持内置/自定义场景、多世界线分支、话/动作分输入、氛围 BGM、每 20 轮总结隐藏上文。
+
+/** 约会场景（内置或自定义） */
+export interface DateScene {
+  id: string;
+  name: string;        // "海边栈道"
+  emoji: string;       // "🌊"
+  vibe: string;        // 基调/氛围（喂世界引擎 + BGM 生成）
+  opening: string;     // 开场旁白
+  builtin?: boolean;
+}
+
+export type DateRole = 'user' | 'char' | 'world';
+
+/** 约会里的一条消息：user(话+动作) / char(回应) / world(世界引擎旁白·场景调度) */
+export interface DateMessage {
+  id: string;
+  role: DateRole;
+  speech?: string;     // 说的话
+  action?: string;     // 做的动作 / 旁白
+  ts: number;
+}
+
+/** 一条世界线（一个剧情分支）。多世界线 = 同角色下多条 DateWorldline。 */
+export interface DateWorldline {
+  id: string;
+  charId: string;
+  sceneId: string;
+  sceneName: string;
+  sceneEmoji: string;
+  vibe: string;            // 当前氛围关键词（随剧情更新，喂 BGM）
+  title: string;           // 世界线标题（自动取，用户可改）
+  createdAt: number;
+  updatedAt: number;
+  turnCount: number;       // 已进行回合数（用于 20 轮总结）
+  messages: DateMessage[]; // 当前可见消息（总结隐藏后只保留 mark 之后的）
+  recap?: string;          // 截至 recapTurnMark 的剧情总结（隐藏上文后注入世界引擎）
+  recapTurnMark?: number;
+  parentId?: string;       // 从哪条世界线分叉来
+  forkedAtTurn?: number;
+  bgmAssetKey?: string;    // 已生成的专属 BGM 资源 key（minimaxMusic 缓存）
+  bgmVibe?: string;        // 生成该 BGM 时的氛围
+}

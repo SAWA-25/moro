@@ -21,6 +21,7 @@
 | **Instant Push 通道** | [`docs/instant-push-branch-notes.md`](./docs/instant-push-branch-notes.md)、[`worker/instant-push/README.md`](./worker/instant-push/README.md) | LLM-driven Web Push、worker 端 agentic loop / reasoning / 副作用 directive |
 | **角色离线自主生活 + 离线弹窗授权** | [`docs/autonomous-life.md`](./docs/autonomous-life.md) | 来往·让角色离线时「过自己的日子」（主动消息从生活取材、不围着用户转）、离线动态回顾时间线、浏览器通知授权（Chrome/Edge）。改主动消息 / 离线推送 / 角色日常前必读 |
 | **角色真实城市系统** | [`docs/char-city.md`](./docs/char-city.md) | 真实/架空城市选择 + 原型城市 + 虚拟程度、实时天气按角色城市取、查手机外卖彩蛋（真实本地店）。改角色城市 / 实时接地前看 |
+| **街角·约会世界引擎** | [`docs/date-world-engine.md`](./docs/date-world-engine.md) | 街角（LifeSim）里 char 带 user 约会：副 API 世界引擎做场景调度、内置/自定义场景、多世界线分支、话/动作分输入、MiniMax 氛围 BGM、角色台词语音、每 20 回合总结隐藏上文。改约会前必读 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、Instant Push Phase 2、sfworker 清单），动后端 / 加功能前先扫一遍。
