@@ -1818,6 +1818,9 @@ export interface CharacterProfile {
 
   /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
   starredFriend?: boolean;
+  /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。
+   *  让角色创建/导入后无需先「添加好友」即可在往来直接出现并开聊。 */
+  addedToChat?: boolean;
   blacklisted?: boolean;
   /** 用户拉黑角色的时刻——此后角色发来的消息气泡旁带红色感叹号 */
   blacklistedAt?: number;
