@@ -102,7 +102,6 @@ const ROOM_THEME: Record<VRRoomId, { tape: string; sticker: string; ink: string;
     gym:        { tape: 'rgba(140,200,160,.6)',  sticker: '🎮', ink: '#2f6b46', paper: '#e1f0e3' },
     postoffice: { tape: 'rgba(212,182,132,.62)', sticker: '✉️', ink: '#7a5a2b', paper: '#f1e6cf' },
     theater:    { tape: 'rgba(206,150,200,.56)', sticker: '🎭', ink: '#6b3a66', paper: '#f1e0ee' },
-    cafe:       { tape: 'rgba(214,170,120,.58)', sticker: '🥟', ink: '#6e4a2a', paper: '#efe2cf' },
 };
 const roomTheme = (id: VRRoomId) => ROOM_THEME[id] || ROOM_THEME.plaza;
 // 由字符串确定性地取一个便签色 / 一个小倾角，让每张拼贴卡都歪一点、颜色各异
@@ -181,7 +180,6 @@ const ROOM_SLOTS: Record<VRRoomId, { x: number; y: number }[]> = {
     gym:       [{ x: 26, y: 74 }, { x: 50, y: 80 }, { x: 74, y: 74 }, { x: 38, y: 66 }, { x: 62, y: 66 }],
     postoffice:[{ x: 28, y: 76 }, { x: 52, y: 78 }, { x: 72, y: 72 }, { x: 42, y: 68 }],
     theater:   [{ x: 30, y: 80 }, { x: 70, y: 80 }, { x: 50, y: 84 }, { x: 40, y: 72 }, { x: 60, y: 72 }],
-    cafe:      [{ x: 30, y: 74 }, { x: 54, y: 78 }, { x: 70, y: 72 }],
 };
 
 const IDLE_QUIPS: Record<VRRoomId, string[]> = {
@@ -192,7 +190,6 @@ const IDLE_QUIPS: Record<VRRoomId, string[]> = {
     gym: ['活动一下', '再来一组！', '伸个懒腰', '热身中'],
     postoffice: ['给谁写封信呢', '封口、寄出', '翻翻信格', '写点心里话'],
     theater: ['对台词…', '再走一遍', '背词中', '候场'],
-    cafe: ['', '', '', ''],
 };
 
 const VRWorldApp: React.FC = () => {
@@ -857,7 +854,7 @@ const WorldView: React.FC<{
         else shownIds.forEach(id => n.add(id));
         return n;
     });
-    // 房间分页：每页 6 间，第 2 页放"开发中"的糯米鸡研发中心等
+    // 房间分页：每页 6 间
     const ROOMS_PER_PAGE = 6;
     const [roomPage, setRoomPage] = useState(0);
     const roomTotalPages = Math.max(1, Math.ceil(VR_ROOMS.length / ROOMS_PER_PAGE));
@@ -2385,7 +2382,7 @@ const ChibiEditor: React.FC<{
     onClose: () => void;
     onSave: (chibi: ChibiSave, looks: ChibiSave[]) => void;
 }> = ({ char, onClose, onSave }) => (
-    <ChibiAtelier mode="char" name={char.name} isMoro={(char.name || '').toLowerCase().includes('moro')}
+    <ChibiAtelier mode="char" name={char.name} isMoro={false}
         draftKey={`vr_${char.id}`} existing={char.vrState?.chibi} existingLooks={char.vrState?.chibiLooks}
         blurb="这个小人会站在页外的各个房间里。能换五官衣服、挑姿势、贴贴纸，还能存好几套随时换。"
         saveLabel={`保存形象${char.vrState?.enabled ? '' : ' 并接入'}`}

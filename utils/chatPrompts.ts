@@ -368,7 +368,7 @@ export const ChatPrompts = {
             const uv = userProfile?.vrState;
             if (uv?.enabled) {
                 const VR_ROOM_NAMES: Record<string, string> = {
-                    library: '图书馆', music: '听歌房', guestbook: '留言簿', gym: '娱乐室', postoffice: '邮局', cafe: '糯米鸡研发中心',
+                    library: '图书馆', music: '听歌房', guestbook: '留言簿', gym: '娱乐室', postoffice: '邮局',
                 };
                 const roomName = VR_ROOM_NAMES[uv.currentRoom || ''] || '彼方';
                 const act = (uv.activity || '').trim();

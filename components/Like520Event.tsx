@@ -103,20 +103,6 @@ const TUCAO_OPTIONS: { key: Like520TucaoKey; label: string }[] = [
 ];
 
 // ============================================================
-// Moro 识别（专属预设）
-// ============================================================
-
-const isMoroChar = (char: CharacterProfile): boolean => {
-    return (char.name || '').toLowerCase().includes('moro');
-};
-
-const moroPresets = (): Record<string, string> => ({
-    skin: 'skin_1',
-    fronthair: 'fronthair_99',
-    eyes: 'eyes_99',
-});
-
-// ============================================================
 // iframe 捏脸 wrapper
 // ============================================================
 
@@ -3416,8 +3402,8 @@ export const Like520Session: React.FC<SessionProps> = ({ charId, onClose }) => {
                     <CreatorIframe
                         mode="char"
                         charName={char.name}
-                        presets={isMoroChar(char) ? moroPresets() : undefined}
-                        isMoro={isMoroChar(char)}
+                        presets={undefined}
+                        isMoro={false}
                         onConfirm={handleCharChibiConfirm}
                     />
                 </div>
