@@ -1817,6 +1817,13 @@ export interface CharacterProfile {
   /** 真实城市系统：真实/架空城市选择 + 实时信息接地（见 utils/charCity.ts） */
   cityConfig?: CharCityConfig;
 
+  /**
+   * 好友状态：'pending' = 还没加好友（不论被创建还是被导入的角色，都要先在「名册·新的朋友」
+   * 通过好友验证才能聊天）；'friend' = 已是好友。
+   * 旧数据没有该字段时按「已是好友」处理（向后兼容，不影响存量角色）。
+   */
+  friendStatus?: 'pending' | 'friend';
+
   /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
   starredFriend?: boolean;
   /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。

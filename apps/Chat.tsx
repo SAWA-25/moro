@@ -968,6 +968,12 @@ const Chat: React.FC = () => {
     const handleSendText = async (customContent?: string, customType?: MessageType, metadata?: any) => {
         if (!char || (!input.trim() && !customContent)) return;
 
+        // 还没加好友：先通过好友验证才能聊天（不论被创建还是被导入的角色）
+        if (char.friendStatus === 'pending') {
+            addToast('先通过好友验证才能和 TA 聊天', 'info');
+            return;
+        }
+
         // 拉黑拦截：任意一方拉黑期间私聊都发不出去
         if (char.charBlock?.active) {
             addToast('你已被对方拉黑，消息无法送达', 'error');
@@ -2335,16 +2341,36 @@ ${recent || '（你们还没怎么聊过）'}
             const allIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
             await DB.clearMessages(char.id);
             discardVoiceForMessages(allIds);
+            // 彻底清空：连同本会话沉淀的关系痕迹一并清掉 ——
+            // 偷看心声历史、好感/心情、关系/婚姻、以及 TA 对你的备注（及其历史/动机）。
+            try { await DB.clearInnerVoicesByCharId(char.id); } catch { /* ignore */ }
+            const cs = char.convoSettings || {};
+            // 全部清除：连同本会话沉淀的关系痕迹与情绪 / 日程一并抹掉（否则残留会污染下一轮 prompt）——
+            // 好感/心情/关系/婚姻、情绪 buff、TA 对你的备注（及历史/动机）、偷看心声历史、日程。
+            await updateCharacter(char.id, {
+                affection: undefined,
+                currentMood: undefined,
+                relationship: undefined,
+                marriage: undefined,
+                activeBuffs: [],
+                buffInjection: '',
+                convoSettings: {
+                    ...cs,
+                    userNickname: undefined,
+                    userRemarkMotivation: undefined,
+                    userRemarkUpdatedAt: undefined,
+                    userRemarkHistory: undefined,
+                },
+            });
+            try { await DB.deleteDailySchedulesByChar(char.id); } catch { /* ignore */ }
+            setScheduleData(null);
+            setInnerVoiceHistory([]);
+            setInnerVoiceCurrent(null);
             setMessages([]);
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            // 全部清除：连角色的情绪（心情 / buff）与日程一并抹掉 —— 只有勾选「留最近10条」时才保留。
-            // 否则清空后旧心情/日程还残留会污染下一轮 prompt，与「全部清除」语义不符。
-            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '' });
-            await DB.deleteDailySchedulesByChar(char.id);
-            setScheduleData(null);
-            addToast('已清空（含心情与日程）', 'success');
+            addToast('已清空（含好感 / 关系 / 备注 / 心情 / 日程）', 'success');
         }
         setModalType('none');
     };
@@ -3505,6 +3531,17 @@ ${recent || '（你们还没怎么聊过）'}
                          </div>
                      </div>
                  </div>
+             )}
+
+             {/* 还没加好友：拦在聊天前的「添加好友」验证 */}
+             {char && char.friendStatus === 'pending' && (
+                 <FriendVerifyModal
+                     char={char}
+                     isOpen
+                     mode="add"
+                     onClose={closeApp}
+                     onAccepted={() => reloadMessages(visibleCountRef.current)}
+                 />
              )}
 
              {/* 浪漫求婚界面 */}

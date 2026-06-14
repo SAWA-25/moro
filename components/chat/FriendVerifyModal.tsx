@@ -18,6 +18,11 @@ interface FriendVerifyModalProps {
     onClose: () => void;
     /** 验证通过（角色把用户拉回）后回调：宿主刷新消息 / 进入会话 */
     onAccepted?: () => void;
+    /**
+     * 'reblock'：角色把用户拉黑后重新申请（默认）。
+     * 'add'：初次添加好友（不论被创建还是被导入的角色，都要先加好友才能聊天）。
+     */
+    mode?: 'reblock' | 'add';
 }
 
 const safeParseObject = (input: string): any => {
@@ -76,7 +81,8 @@ const coerceVerifyResult = (raw: string): { accept: boolean; reply: string } | n
     return null;
 };
 
-const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onClose, onAccepted }) => {
+const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onClose, onAccepted, mode = 'reblock' }) => {
+    const isAdd = mode === 'add';
     const { apiConfig, auxApiConfig, userProfile, updateCharacter, addToast } = useOS();
     // 好友验证是「聊天以外的辅助决策」→ 走副 API（未配置副 API 时 resolveAuxApi 回退主 API）
     const api = resolveAuxApi(auxApiConfig, apiConfig);
@@ -91,6 +97,15 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
     const handleSend = async () => {
         const verifyText = text.trim();
         if (!verifyText) { addToast('先写一句验证消息吧', 'info'); return; }
+        // 初次加好友且没配 API（含副 API 回退后仍无）：直接通过（新朋友默认接受），避免被卡在「无法聊天」
+        if (isAdd && (!api?.baseUrl || !api?.apiKey)) {
+            const now = Date.now();
+            updateCharacter(char.id, { friendStatus: 'friend', addedToChat: true, ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}) } as any);
+            await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `[好友申请] ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
+            await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `你和「${char.name}」成为了好友，开始聊天吧`, timestamp: now + 1 });
+            setReply(''); setPhase('accepted'); onAccepted?.();
+            return;
+        }
         if (!api?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setPhase('sending');
         try {
@@ -105,7 +120,17 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
                 ? `${Math.max(1, Math.round((Date.now() - char.charBlock.blockedAt) / 60000))} 分钟前`
                 : '不久前';
 
-            const prompt = `你正在扮演「${char.name}」。
+            const prompt = isAdd
+                ? `你正在扮演「${char.name}」。
+人设：${String(char.description || '').slice(0, 800)}
+
+情境：${userName} 想加你为好友，附上的验证消息是：
+「${verifyText}」
+${historyText ? `\n（你们之前有过这些交流：\n${historyText}）\n` : ''}
+请按你的性格决定是否通过这次好友申请。一般来说，对没有恶意、正常打招呼的人你会通过；除非你的人设极度孤僻、警惕或对方说了让你反感的话，才会拒绝。
+只输出一个 JSON 对象，不要任何其它文字：
+{"accept": true 或 false, "reply": "通过时对${userName}说的第一句招呼（拒绝时说明原因，可留空）"}`
+                : `你正在扮演「${char.name}」。
 人设：${String(char.description || '').slice(0, 800)}
 
 情境：你在 ${blockedAgo} 因为不愉快把 ${userName} 拉黑了。拉黑前你们最近的聊天片段：
@@ -145,20 +170,30 @@ ${historyText || '（没有可用的聊天记录）'}
 
             const replyText = String(parsed.reply || '').trim();
             setReply(replyText);
+            const now = Date.now();
 
             if (parsed.accept) {
-                if (char.charBlock) {
-                    updateCharacter(char.id, { charBlock: { ...char.charBlock, active: false } });
-                }
-                const now = Date.now();
-                await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `[好友验证] ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
-                await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `「${char.name}」通过了你的好友验证，你们可以继续聊天了`, timestamp: now + 1 });
+                // 通过：加为好友（并进入往来列表）/ 解除角色对用户的拉黑 / 顺带解除用户对角色的拉黑
+                updateCharacter(char.id, {
+                    friendStatus: 'friend',
+                    addedToChat: true,
+                    ...(char.charBlock ? { charBlock: { ...char.charBlock, active: false } } : {}),
+                    ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}),
+                } as any);
+                await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `${isAdd ? '[好友申请]' : '[好友验证]'} ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
+                await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: isAdd ? `你和「${char.name}」成为了好友，开始聊天吧` : `「${char.name}」通过了你的好友验证，你们可以继续聊天了`, timestamp: now + 1 });
                 if (replyText) {
                     await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: replyText, timestamp: now + 2 });
                 }
                 setPhase('accepted');
                 onAccepted?.();
             } else {
+                // 拒绝：把验证申请与角色的回应也落库，确保用户「收得到」角色的验证消息
+                // （修复：角色拒绝/被拉黑状态下，用户看不到角色那条验证回应）
+                await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `${isAdd ? '[好友申请]' : '[好友验证]'} ${verifyText}`, timestamp: now, metadata: { friendVerify: true, hidden: true } });
+                if (replyText) {
+                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: replyText, timestamp: now + 2, metadata: { friendVerifyReply: true } });
+                }
                 setPhase('rejected');
             }
         } catch (e: any) {
@@ -169,7 +204,7 @@ ${historyText || '（没有可用的聊天记录）'}
     };
 
     return (
-        <Modal isOpen={isOpen} title="好友验证" onClose={onClose} footer={
+        <Modal isOpen={isOpen} title={isAdd ? '添加好友' : '好友验证'} onClose={onClose} footer={
             phase === 'input' || phase === 'sending' ? (
                 <>
                     <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
@@ -192,7 +227,7 @@ ${historyText || '（没有可用的聊天记录）'}
                     <img src={char.avatar} alt={char.name} className="w-11 h-11 rounded-xl object-cover shrink-0" />
                     <div className="min-w-0">
                         <div className="text-sm font-bold text-slate-700 truncate">{char.name}</div>
-                        <div className="text-[11px] text-red-400">对方把你拉黑了，需要发送好友验证</div>
+                        <div className={`text-[11px] ${isAdd ? 'text-violet-400' : 'text-red-400'}`}>{isAdd ? '通过好友验证后才能开始聊天' : '对方把你拉黑了，需要发送好友验证'}</div>
                     </div>
                 </div>
 
@@ -201,21 +236,21 @@ ${historyText || '（没有可用的聊天记录）'}
                         value={text}
                         onChange={e => setText(e.target.value)}
                         disabled={phase === 'sending'}
-                        placeholder={`和 ${char.name} 说点什么…（解释、道歉、撒娇都行，能不能拉回就看 TA 的心情了）`}
+                        placeholder={isAdd ? `跟 ${char.name} 打个招呼吧（通过验证就能开始聊天）` : `和 ${char.name} 说点什么…（解释、道歉、撒娇都行，能不能拉回就看 TA 的心情了）`}
                         className="w-full h-24 bg-slate-50 rounded-2xl p-3 text-sm resize-none border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
                     />
                 )}
 
                 {phase === 'accepted' && (
                     <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-1.5">
-                        <div className="text-sm font-bold text-emerald-600">✓ {char.name} 通过了你的好友验证</div>
+                        <div className="text-sm font-bold text-emerald-600">✓ {isAdd ? `你和 ${char.name} 成为了好友` : `${char.name} 通过了你的好友验证`}</div>
                         {reply && <div className="text-[12px] text-slate-600 leading-relaxed">{char.name}：{reply}</div>}
                     </div>
                 )}
 
                 {phase === 'rejected' && (
                     <div className="bg-red-50 border border-red-100 rounded-2xl p-4 space-y-1.5">
-                        <div className="text-sm font-bold text-red-500">对方拒绝了你的好友验证</div>
+                        <div className="text-sm font-bold text-red-500">{isAdd ? '对方暂时没有通过你的好友申请' : '对方拒绝了你的好友验证'}</div>
                         <div className="text-[12px] text-slate-600 leading-relaxed">
                             {reply ? `${char.name}：${reply}` : `${char.name} 没有任何回应…`}
                         </div>

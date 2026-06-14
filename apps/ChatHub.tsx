@@ -12,7 +12,7 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, UserPlus, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
@@ -346,8 +346,10 @@ const ChatHub: React.FC = () => {
     const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
-    // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
+    // 加好友 / 好友验证弹窗：'add' = 初次加好友（pending），'reblock' = 被角色拉黑后重新申请
     const [verifyCharId, setVerifyCharId] = useState<string | null>(null);
+    const [verifyMode, setVerifyMode] = useState<'add' | 'reblock'>('reblock');
+    const startVerify = (charId: string, mode: 'add' | 'reblock') => { setVerifyMode(mode); setVerifyCharId(charId); };
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
     const [editContent, setEditContent] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
@@ -527,10 +529,13 @@ const ChatHub: React.FC = () => {
 
     /** 进入与某角色的私聊 */
     const openPrivateChat = (charId: string) => {
-        // 打开过私聊即让该角色固定进入「往来」会话列表（兼容历史角色：老数据首次打开后
-        // 也会在往来出现），不必再走名册/添加好友。仅在未标记时写一次，避免重复落库。
-        const target = characters.find(c => c.id === charId);
-        if (target && !(target as any).addedToChat) {
+        const c = characters.find(x => x.id === charId);
+        // 还没加好友 → 先走「添加好友」验证，通过后才能聊天
+        if (c?.friendStatus === 'pending') { startVerify(charId, 'add'); return; }
+        // 角色把你拉黑了 → 先走「好友验证」重新申请
+        if (c?.charBlock?.active) { startVerify(charId, 'reblock'); return; }
+        // 打开过私聊即让该角色固定进入「往来」会话列表（好友才会走到这里）。
+        if (c && !(c as any).addedToChat) {
             void updateCharacter(charId, { addedToChat: true } as any);
         }
         setActiveCharacterId(charId);
@@ -1839,9 +1844,50 @@ ${attachedImagesNote}
                 )}
 
                 {/* ── 联系人 tab：全部角色 ── */}
-                {hubTab === 'contacts' && (
+                {hubTab === 'contacts' && (() => {
+                    // 新的朋友：待加好友(pending) / 把你拉黑的角色(charBlock) / 你拉黑的角色(blacklisted)
+                    const pending = characters.filter(c => c.friendStatus === 'pending');
+                    const blockedByChar = characters.filter(c => c.friendStatus !== 'pending' && c.charBlock?.active);
+                    const blacklisted = characters.filter(c => c.friendStatus !== 'pending' && !c.charBlock?.active && c.blacklisted);
+                    const newFriends = [...pending, ...blockedByChar, ...blacklisted];
+                    const friendList = characters.filter(c => c.friendStatus !== 'pending' && !c.charBlock?.active && !c.blacklisted);
+                    const newFriendKind = (c: typeof characters[number]): 'pending' | 'reblock' | 'blacklist' =>
+                        c.friendStatus === 'pending' ? 'pending' : c.charBlock?.active ? 'reblock' : 'blacklist';
+                    return (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
-                        {characters.map(c => (
+                        {/* 新的朋友（收录好友验证） */}
+                        {newFriends.length > 0 && (
+                            <div className="mb-1">
+                                <div className="text-[11px] font-bold text-slate-400 px-1 pb-1.5 flex items-center gap-1.5">
+                                    <UserPlus size={13} weight="bold" /> 新的朋友
+                                </div>
+                                <div className="space-y-2">
+                                    {newFriends.map(c => {
+                                        const kind = newFriendKind(c);
+                                        const badge = kind === 'pending' ? { t: '待验证', cls: 'bg-violet-50 text-violet-400 border-violet-100' }
+                                            : kind === 'reblock' ? { t: '把你拉黑了', cls: 'bg-red-50 text-red-400 border-red-100' }
+                                            : { t: '你拉黑了 TA', cls: 'bg-slate-100 text-slate-400 border-slate-200' };
+                                        return (
+                                            <div key={c.id} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3">
+                                                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className={`w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0 ${kind !== 'pending' ? 'grayscale' : ''}`} />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
+                                                    <span className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border font-bold ${badge.cls}`}>{badge.t}</span>
+                                                </div>
+                                                {kind === 'blacklist' ? (
+                                                    <button onClick={() => { updateCharacter(c.id, { blacklisted: false, blacklistedAt: undefined }); addToast(`已把 ${c.name} 移出黑名单`, 'success'); }} className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-[#2b2933] text-white active:scale-95 transition shrink-0">解除拉黑</button>
+                                                ) : (
+                                                    <button onClick={() => startVerify(c.id, kind === 'pending' ? 'add' : 'reblock')} className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-[#2b2933] text-white active:scale-95 transition shrink-0">{kind === 'pending' ? '加好友' : '验证'}</button>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="border-b border-dashed border-[#d9d4c8] my-3" />
+                            </div>
+                        )}
+                        {/* 好友 */}
+                        {friendList.map(c => (
                             <div key={c.id} onClick={() => openPrivateChat(c.id)} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
@@ -1860,8 +1906,12 @@ ${attachedImagesNote}
                         {characters.length === 0 && (
                             <div className="text-center text-slate-400 text-xs py-10">还没有角色</div>
                         )}
+                        {characters.length > 0 && friendList.length === 0 && newFriends.length === 0 && (
+                            <div className="text-center text-slate-400 text-xs py-10">还没有角色</div>
+                        )}
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* ── 朋友圈 tab：内嵌完整朋友圈（与独立 朋友圈 App 共用 MomentsFeed） ── */}
                 {hubTab === 'moments' && (
@@ -1966,21 +2016,24 @@ ${attachedImagesNote}
                 <Modal isOpen={modalType === 'add-friend'} title="选择要添加的角色" onClose={() => setModalType('none')}>
                     <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
                         {characters.map(c => {
+                            const isPending = c.friendStatus === 'pending';
                             const blockedByChar = !!c.charBlock?.active;
+                            const tag = isPending ? { t: '待验证 · 加好友', cls: 'bg-violet-50 text-violet-400 border-violet-100' }
+                                : blockedByChar ? { t: '已把你拉黑 · 需验证', cls: 'bg-red-50 text-red-400 border-red-100' } : null;
                             return (
                                 <button
                                     key={c.id}
                                     onClick={() => {
                                         setModalType('none');
-                                        if (blockedByChar) setVerifyCharId(c.id);
-                                        else openPrivateChat(c.id);
+                                        // openPrivateChat 会按 pending / charBlock 自动转到对应验证流程
+                                        openPrivateChat(c.id);
                                     }}
                                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-slate-400 hover:bg-[#f7f4ee] active:scale-[0.98] transition-all"
                                 >
                                     <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${blockedByChar ? 'grayscale' : ''}`} />
                                     <span className="text-sm text-slate-700 font-medium truncate flex-1">{c.name}</span>
-                                    {blockedByChar && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已把你拉黑 · 需验证</span>
+                                    {tag && (
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${tag.cls}`}>{tag.t}</span>
                                     )}
                                 </button>
                             );
@@ -1999,8 +2052,9 @@ ${attachedImagesNote}
                         <FriendVerifyModal
                             char={vc}
                             isOpen
+                            mode={verifyMode}
                             onClose={() => setVerifyCharId(null)}
-                            onAccepted={() => { setVerifyCharId(null); openPrivateChat(vc.id); }}
+                            onAccepted={() => { const id = vc.id; setVerifyCharId(null); setActiveCharacterId(id); openApp(AppID.Chat); }}
                         />
                     );
                 })()}
