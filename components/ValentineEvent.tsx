@@ -24,18 +24,6 @@ import { Like520Session, isLike520EventAvailable, isLike520Past, LIKE520_RECORD_
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT, tinyRotate } from '../apps/almanac/handbookKit';
 
-// ============================================================
-// 情人节立绘 Sprite 映射 (占位 emoji，等图片整理好后替换为图床URL)
-// ============================================================
-const VALENTINE_SPRITES: Record<string, string> = {
-    happy:   'https://sharkpan.xyz/f/m3adhW/Vha.png',
-    sad:     'https://sharkpan.xyz/f/BZgDfa/Vsad.png',
-    normal:  'https://sharkpan.xyz/f/4rzdtj/VNormal.png',
-    angry:   'https://sharkpan.xyz/f/NdlVfv/VAn.png',
-    shy:     'https://sharkpan.xyz/f/VyontY/Vshy.png',
-    love:    'https://sharkpan.xyz/f/xl8muX/VBl.png',
-};
-
 // 头像兜底：http/data/blob 链接或本地资源路径（如 Moro 的 /moro-avatars/calm.jpg）按图片渲染，
 // 其余（emoji）按文字渲染。只判 http/data 会把本地路径当成 emoji 文本 → 头像失效。
 const isImageAvatar = (a?: string): boolean =>
@@ -125,11 +113,7 @@ const isMoroChar = (char?: CharacterProfile): boolean => {
 
 /** 获取角色实际可用的表情列表（用于 prompt） */
 const getAvailableEmotions = (char: CharacterProfile): string[] => {
-    if (isMoroChar(char)) {
-        // Moro 使用情人节专属表情
-        return Object.keys(VALENTINE_SPRITES);
-    }
-    // 其他角色：从 sprites 配置 + customDateSprites 获取实际可用表情
+    // 所有角色（含 Moro）一律从自身 sprites 配置 + customDateSprites 取实际可用表情
     const REQUIRED = ['normal', 'happy', 'angry', 'sad', 'shy'];
     const custom = char.customDateSprites || [];
     const available = [...REQUIRED, ...custom];
@@ -143,29 +127,10 @@ const getAvailableEmotions = (char: CharacterProfile): string[] => {
 /** 获取情绪对应的立绘 */
 const getSpriteForEmotion = (emotion: string, char?: CharacterProfile): { type: 'image' | 'emoji', value: string } => {
     if (!char) {
-        return { type: 'emoji', value: VALENTINE_SPRITES['normal'] };
+        return { type: 'emoji', value: '💝' };
     }
 
-    const isMoro = isMoroChar(char);
-
-    if (isMoro) {
-        // Moro: 优先情人节专属立绘占位，未来会替换为图床URL
-        const valentineMap: Record<string, string> = {
-            happy: 'happy', sad: 'sad', normal: 'normal',
-            angry: 'angry', shy: 'shy', love: 'love',
-            upset: 'angry', excited: 'happy', bliss: 'love',
-            embarrassed: 'shy', joyful: 'happy', tender: 'love',
-        };
-        const mapped = valentineMap[emotion] || 'normal';
-        const spriteUrl = VALENTINE_SPRITES[mapped];
-        // 当占位emoji被替换为URL后，这里会自动识别为 image 类型
-        if (spriteUrl && (spriteUrl.startsWith('http') || spriteUrl.startsWith('data:'))) {
-            return { type: 'image', value: spriteUrl };
-        }
-        return { type: 'emoji', value: spriteUrl || VALENTINE_SPRITES['normal'] };
-    }
-
-    // 非 Moro 角色：使用角色自己的见面立绘（和 DateApp 一致）
+    // 所有角色（含 Moro）使用自己的见面立绘（和 DateApp 一致）；Moro 即其本地表情头像
     if (char.sprites) {
         const sprite = char.sprites[emotion] || char.sprites['normal'];
         if (sprite) {
