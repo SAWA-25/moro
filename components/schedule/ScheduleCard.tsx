@@ -280,6 +280,11 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                                         <span className={`text-xs font-mono font-bold ${isPast ? 'opacity-30' : isCurrent ? 'opacity-100' : 'opacity-60'}`}>
                                             {slot.startTime}
                                         </span>
+                                        {slot.endTime && (
+                                            <span className={`text-[8px] font-mono leading-none mt-0.5 ${isPast ? 'opacity-20' : 'opacity-35'}`}>
+                                                ~{slot.endTime}
+                                            </span>
+                                        )}
                                         {isCurrent && (
                                             <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 animate-pulse" style={{ background: accentHsl, color: cardBg }}>
                                                 NOW
@@ -309,6 +314,26 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                                         </div>
                                         {slot.description && (
                                             <p className="text-[11px] opacity-50 mt-0.5 leading-tight">{slot.description}</p>
+                                        )}
+                                        {/* 节点元信息：地点 / 情绪 / 精力 */}
+                                        {(slot.location || slot.mood || typeof slot.energy === 'number') && (
+                                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                                                {slot.location && (
+                                                    <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 opacity-65">📍 {slot.location}</span>
+                                                )}
+                                                {slot.mood && (
+                                                    <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 opacity-65">{slot.mood}</span>
+                                                )}
+                                                {typeof slot.energy === 'number' && slot.energy > 0 && (
+                                                    <span className="text-[9px] font-mono tracking-tighter opacity-45" title={`精力 ${slot.energy}/5`}>
+                                                        {'●'.repeat(Math.min(5, slot.energy))}{'○'.repeat(Math.max(0, 5 - slot.energy))}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {/* 当前时段：露出一句此刻的心里话 */}
+                                        {isCurrent && slot.innerThought && (
+                                            <p className="text-[10.5px] italic opacity-50 mt-1 leading-snug">「{slot.innerThought}」</p>
                                         )}
                                     </div>
                                 </div>

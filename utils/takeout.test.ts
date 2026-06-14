@@ -1,0 +1,101 @@
+import { describe, it, expect } from 'vitest';
+import { generateStores, rollOrderIssues, resolveComplaint, PACK_FEE } from './takeout';
+import type { TakeoutOrder, TakeoutOrderItem } from '../types';
+
+const items: TakeoutOrderItem[] = [
+    { dishId: 'd1', name: '招牌牛肉堡', price: 24, qty: 1 },
+    { dishId: 'd2', name: '薯条', price: 12, qty: 2 },
+];
+const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+
+const mkOrder = (over: Partial<TakeoutOrder>): TakeoutOrder => ({
+    id: 'o1', storeId: 's1', storeName: '某店', storeEmoji: '🍔', items,
+    subtotal, deliveryFee: 3, packFee: PACK_FEE, total: subtotal + 3 + PACK_FEE,
+    recipient: 'me', payer: 'me', payStatus: 'paid', status: 'delivered',
+    riderName: '小袋', riderEmoji: '🛵', address: '某地', placedAt: 0, etaAt: 1, chat: [],
+    ...over,
+});
+
+describe('外卖店铺生成', () => {
+    it('每家都带 0~1 的隐藏良心值，且数量足够', () => {
+        const stores = generateStores(12);
+        expect(stores.length).toBeGreaterThanOrEqual(10);
+        for (const s of stores) {
+            expect(s.integrity).toBeGreaterThanOrEqual(0);
+            expect(s.integrity).toBeLessThanOrEqual(1);
+            expect(s.dishes.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('批量生成里既有良心店也有黑心店（现实分布）', () => {
+        const many = Array.from({ length: 40 }, () => generateStores(12)).flat();
+        const good = many.filter(s => (s.integrity ?? 1) >= 0.8).length;
+        const bad = many.filter(s => (s.integrity ?? 1) < 0.5).length;
+        expect(good).toBeGreaterThan(0);
+        expect(bad).toBeGreaterThan(0);
+        // 黑心店应是少数派，而非遍地
+        expect(bad).toBeLessThan(many.length / 2);
+    });
+
+    it('黑心店会露出红旗或用夸张促销，良心高分店不挂警告', () => {
+        const many = Array.from({ length: 60 }, () => generateStores(12)).flat();
+        const withWarning = many.filter(s => s.warning).length;
+        expect(withWarning).toBeGreaterThan(0);
+        // 顶级良心店（>=0.9）不该挂「差评」类警告
+        const topGoodWarned = many.filter(s => (s.integrity ?? 0) >= 0.9 && s.warning).length;
+        expect(topGoodWarned).toBe(0);
+    });
+});
+
+describe('黑心商家 / 坏骑手 事故掷点', () => {
+    it('良心满分店 + 多次下单，事故明显比黑心店少', () => {
+        const N = 200;
+        const goodIssues = Array.from({ length: N }, () => rollOrderIssues({ integrity: 1 }, items, subtotal, 3).incidents.length).reduce((a, b) => a + b, 0);
+        const badIssues = Array.from({ length: N }, () => rollOrderIssues({ integrity: 0.18 }, items, subtotal, 3).incidents.length).reduce((a, b) => a + b, 0);
+        expect(badIssues).toBeGreaterThan(goodIssues * 2);
+    });
+
+    it('强制砍单只发生在黑心店', () => {
+        const N = 300;
+        const goodCancel = Array.from({ length: N }, () => rollOrderIssues({ integrity: 0.95 }, items, subtotal, 3).forceCancel).filter(Boolean).length;
+        const badCancel = Array.from({ length: N }, () => rollOrderIssues({ integrity: 0.18 }, items, subtotal, 3).forceCancel).filter(Boolean).length;
+        expect(goodCancel).toBe(0);
+        expect(badCancel).toBeGreaterThan(0);
+    });
+
+    it('骑手靠谱度落在 0~1，且事故有责任方与建议赔付', () => {
+        for (let i = 0; i < 50; i++) {
+            const roll = rollOrderIssues({ integrity: 0.3 }, items, subtotal, 3);
+            expect(roll.riderReliability).toBeGreaterThanOrEqual(0);
+            expect(roll.riderReliability).toBeLessThanOrEqual(1);
+            for (const inc of roll.incidents) {
+                expect(['store', 'rider']).toContain(inc.by);
+                expect(inc.suggestedRefund).toBeGreaterThanOrEqual(0);
+            }
+        }
+    });
+});
+
+describe('投诉售后核定', () => {
+    it('赔付不超过订单实付，且有结案文案与客服消息', () => {
+        const order = mkOrder({
+            incidents: [
+                { kind: 'foreign_object', by: 'store', title: '吃出异物', detail: 'x', suggestedRefund: 9999 },
+            ],
+        });
+        const { refund, outcome, supportMessages } = resolveComplaint(order);
+        expect(refund).toBeLessThanOrEqual(order.total);
+        expect(refund).toBeGreaterThan(0);
+        expect(outcome).toBeTruthy();
+        expect(supportMessages.length).toBeGreaterThanOrEqual(2);
+        expect(supportMessages.every(m => m.role === 'support')).toBe(true);
+    });
+
+    it('纯添堵类（建议赔付 0）也给善意补偿', () => {
+        const order = mkOrder({
+            incidents: [{ kind: 'left_at_door', by: 'rider', title: '未送上门', detail: 'x', suggestedRefund: 0 }],
+        });
+        const { refund } = resolveComplaint(order);
+        expect(refund).toBeGreaterThan(0);
+    });
+});

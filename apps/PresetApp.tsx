@@ -34,8 +34,9 @@ import {
     importTavernPreset,
 } from '../utils/presets';
 import { setPresetRegexScripts } from '../utils/regex/store';
-import { PLACEMENT_LABELS } from '../utils/regex/engine';
-import type { PresetPrompt, PresetPromptOrderEntry, TavernPreset } from '../types';
+import { PLACEMENT_LABELS, createEmptyRegexScript } from '../utils/regex/engine';
+import RegexEditor from '../components/regex/RegexEditor';
+import type { PresetPrompt, PresetPromptOrderEntry, RegexScriptData, TavernPreset } from '../types';
 import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
     List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X, Scissors,
@@ -284,7 +285,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 // 主组件
 
 const PresetApp: React.FC = () => {
-    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig } = useOS();
+    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig, userProfile } = useOS();
     const [presets, setPresets] = useState<TavernPreset[]>([]);
     const [activeId, setActiveId] = useState<string | null>(PresetRuntime.getActiveId());
     const [enabled, setEnabled] = useState(PresetRuntime.isEnabled());
@@ -293,6 +294,9 @@ const PresetApp: React.FC = () => {
     const [showParams, setShowParams] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showInsert, setShowInsert] = useState(false);
+    // 随字版正则补丁的编辑弹层（缝纫台），与补丁铺共用同一个 RegexEditor
+    const [editingRegex, setEditingRegex] = useState<RegexScriptData | null>(null);
+    const [editingRegexIsNew, setEditingRegexIsNew] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // 拖拽排序状态
@@ -531,6 +535,34 @@ const PresetApp: React.FC = () => {
         mutateActive(d => {
             d.regexScripts = (d.regexScripts ?? []).filter(s => s.id !== id);
         });
+    };
+
+    // 新缝一条 / 拆开重缝（与补丁铺共用 RegexEditor）。缝牢后写回 active.regexScripts，
+    // 经 mutateActive → persistPreset → setPresets 触发 active 引用更新，上面那条
+    // useEffect([enabled, active]) 立刻把改动推进运行时缓存，聊天与气泡渲染即时生效。
+    const openNewPresetRegex = () => {
+        if (!active) return;
+        setEditingRegex(createEmptyRegexScript());
+        setEditingRegexIsNew(true);
+    };
+
+    const openEditPresetRegex = (s: RegexScriptData) => {
+        setEditingRegex({ ...s, trimStrings: [...(s.trimStrings || [])], placement: [...(s.placement || [])] });
+        setEditingRegexIsNew(false);
+    };
+
+    const savePresetRegex = () => {
+        if (!editingRegex) return;
+        if (!editingRegex.findRegex.trim()) { addToast('还没写要找的线头（查找正则不能为空）', 'error'); return; }
+        const named = { ...editingRegex, scriptName: editingRegex.scriptName.trim() || '没名字的补丁' };
+        mutateActive(d => {
+            const list = d.regexScripts ?? [];
+            d.regexScripts = list.some(s => s.id === named.id)
+                ? list.map(s => (s.id === named.id ? named : s))
+                : [...list, named];
+        });
+        setEditingRegex(null);
+        addToast('补丁缝牢了', 'success');
     };
 
     // ── 拖拽排序（pointer events，手机 / 桌面通吃） ──────
@@ -859,19 +891,20 @@ const PresetApp: React.FC = () => {
                             @深度插进聊天历史（和酒馆的 In-Chat 注入一致）。
                         </p>
 
-                        {/* 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域） */}
-                        {presetRegex.length > 0 && (
-                            <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
-                                <Tape className="-top-2.5 left-8 rotate-[3deg] w-12" />
-                                <div className="flex items-end justify-between">
-                                    <span className="label-mono text-[8px] text-[#1c1b1a]/45 flex items-center gap-1">
-                                        <Scissors size={11} weight="bold" /> PRESET PATCHES / 随字版的补丁
-                                    </span>
-                                    <span className="label-mono text-[8px] text-[#1c1b1a]/35">{presetRegex.length} 条</span>
-                                </div>
-                                <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>
-                                    这些正则补丁跟着这副字版走（酒馆 extensions.regex_scripts）：只有选中本字版、且印坊开印时才生效，执行顺序排在补丁铺「满铺通用」之后、角色「只缝给 TA」之前。
-                                </p>
+                        {/* 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域）：
+                            随字版走，可在这里直接增/删/改/启停（与补丁铺共用缝纫台）。 */}
+                        <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                            <Tape className="-top-2.5 left-8 rotate-[3deg] w-12" />
+                            <div className="flex items-end justify-between">
+                                <span className="label-mono text-[8px] text-[#1c1b1a]/45 flex items-center gap-1">
+                                    <Scissors size={11} weight="bold" /> PRESET PATCHES / 随字版的补丁
+                                </span>
+                                <span className="label-mono text-[8px] text-[#1c1b1a]/35">{presetRegex.length} 条</span>
+                            </div>
+                            <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>
+                                这些正则补丁跟着这副字版走（酒馆 extensions.regex_scripts）：只有选中本字版、且印坊开印时才生效，执行顺序排在补丁铺「满铺通用」之后、角色「只缝给 TA」之前。点一条即可拆开重缝。
+                            </p>
+                            {presetRegex.length > 0 && (
                                 <div className="space-y-2">
                                     {presetRegex.map(s => {
                                         const places = (s.placement || []).map(p => PLACEMENT_LABELS[p]).filter(Boolean).join(' · ');
@@ -882,13 +915,14 @@ const PresetApp: React.FC = () => {
                                                 className={`flex items-center gap-2 border-2 border-[#1c1b1a]/40 px-2 py-2 bg-white ${s.disabled ? 'opacity-45' : ''}`}
                                             >
                                                 <Scissors size={14} weight="bold" className="shrink-0 text-[#1c1b1a]/55" />
-                                                <div className="flex-1 min-w-0">
+                                                <button onClick={() => openEditPresetRegex(s)} className="flex-1 min-w-0 text-left" title="拆开重缝这条补丁">
                                                     <div className={`text-sm font-black truncate ${s.disabled ? 'line-through decoration-2' : ''}`}>{s.scriptName}</div>
+                                                    <div className="label-mono text-[9px] text-[#1c1b1a]/40 truncate">{s.findRegex}</div>
                                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                                         <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#1c1b1a]/70">{scope}</span>
                                                         {places && <span className="label-mono text-[8px] text-[#1c1b1a]/40 truncate">{places}</span>}
                                                     </div>
-                                                </div>
+                                                </button>
                                                 <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#1c1b1a]/40 hover:text-[#1c1b1a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
                                                     <Trash size={14} weight="bold" />
                                                 </button>
@@ -897,8 +931,14 @@ const PresetApp: React.FC = () => {
                                         );
                                     })}
                                 </div>
-                            </div>
-                        )}
+                            )}
+                            <button
+                                onClick={openNewPresetRegex}
+                                className={`w-full py-2 text-[10px] font-black flex items-center justify-center gap-1.5 ${STICKER}`}
+                            >
+                                <Scissors size={13} weight="bold" /> 给这副字版缝一条补丁
+                            </button>
+                        </div>
                     </>
                 )}
             </div>
@@ -910,6 +950,20 @@ const PresetApp: React.FC = () => {
                     onSave={handleSavePrompt}
                     onDelete={!editingPrompt.system_prompt && !editingPrompt.marker ? () => handleDeletePrompt(editingPrompt.identifier) : undefined}
                     onClose={() => setEditingId(null)}
+                />
+            )}
+
+            {/* 随字版正则补丁的缝纫台（与补丁铺共用 RegexEditor） */}
+            {editingRegex && (
+                <RegexEditor
+                    script={editingRegex}
+                    isNew={editingRegexIsNew}
+                    userName={userProfile?.name || 'User'}
+                    charName={'{{char}}'}
+                    eyebrow={{ neu: 'NEW PRESET PATCH', old: 'RE-STITCH PRESET' }}
+                    onChange={setEditingRegex}
+                    onSave={savePresetRegex}
+                    onClose={() => setEditingRegex(null)}
                 />
             )}
 

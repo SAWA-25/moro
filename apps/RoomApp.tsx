@@ -258,6 +258,7 @@ const RoomApp: React.FC = () => {
     
     // Extended State
     const [todaysTodo, setTodaysTodo] = useState<RoomTodo | null>(null);
+    const [newTodoText, setNewTodoText] = useState('');  // 今日清单·自主添条输入
     const [notebookEntries, setNotebookEntries] = useState<RoomNote[]>([]);
     const [showSidebar, setShowSidebar] = useState(false);
     const [activePanel, setActivePanel] = useState<'todo' | 'notebook' | 'schedule'>('todo');
@@ -725,10 +726,41 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
     const handleToggleTodo = async (index: number) => {
         if (!todaysTodo) return;
         const newItems = [...todaysTodo.items];
-        newItems[index].done = !newItems[index].done;
+        const nowDone = !newItems[index].done;
+        newItems[index] = { ...newItems[index], done: nowDone };
         const newTodo = { ...todaysTodo, items: newItems };
         setTodaysTodo(newTodo);
         await DB.saveRoomTodo(newTodo);
+        // 自动同步角色：用户帮 TA 把某条划掉时，往聊天落一条系统消息，让角色知道
+        if (nowDone && char) {
+            const uname = userProfile?.name || '用户';
+            try {
+                await DB.saveMessage({
+                    charId: char.id, role: 'system', type: 'text',
+                    content: `[系统: ${uname} 帮 ${char.name} 把今日清单里的「${newItems[index].text}」划掉了]`,
+                });
+            } catch { /* 同步失败不影响勾选 */ }
+        }
+    };
+
+    // 自主勾画：用户给今日清单自己添一条，并同步给角色
+    const handleAddTodo = async () => {
+        const text = newTodoText.trim();
+        if (!text || !char) return;
+        const today = todaysTodo?.date || new Date().toISOString().split('T')[0];
+        const base: RoomTodo = todaysTodo || { id: `${char.id}_${today}`, charId: char.id, date: today, items: [], generatedAt: Date.now() };
+        const newTodo: RoomTodo = { ...base, items: [...base.items, { text, done: false, byUser: true }] };
+        setTodaysTodo(newTodo);
+        setNewTodoText('');
+        await DB.saveRoomTodo(newTodo);
+        const uname = userProfile?.name || '用户';
+        try {
+            await DB.saveMessage({
+                charId: char.id, role: 'system', type: 'text',
+                content: `[系统: ${uname} 给 ${char.name} 的今日清单添了一条：「${text}」，希望 TA 今天能做到]`,
+            });
+        } catch { /* 同步失败不影响添加 */ }
+        addToast('加好了，已同步给 TA', 'success');
     };
 
     // --- Deletion Handlers (Point 5) ---
@@ -1247,9 +1279,20 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                     <button onClick={() => handleDeleteTodo(idx)} className="text-[#9b958a] hover:text-[#1c1a17] px-1 opacity-0 group-hover:opacity-100 transition-opacity"><I.close size={14} /></button>
                                 </li>
                             ))}</ul> : <div className="text-center py-10 text-[#9b958a] text-xs">正在列单子…</div>}
-                            <div className="mt-6 p-4 border-2 border-[#1c1a17] bg-[#fbf9f3] text-xs text-[#2b2823] leading-relaxed relative shadow-[3px_3px_0_#1c1a17]">
+                            {/* 自主勾画：用户也能给清单添一条（同步给角色） */}
+                            <div className="flex items-center gap-2 mt-2">
+                                <input
+                                    value={newTodoText}
+                                    onChange={e => setNewTodoText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') void handleAddTodo(); }}
+                                    placeholder={`给 ${char?.name || 'TA'} 添一件今天想让 TA 做的事…`}
+                                    className="flex-1 bg-[#fbf9f3] border-2 border-[#1c1a17] px-3 py-2 text-sm text-[#2b2823] outline-none placeholder:text-[#9b958a] shadow-[2px_2px_0_#1c1a17] focus:translate-x-[1px] focus:translate-y-[1px] focus:shadow-none transition-all"
+                                />
+                                <button onClick={() => void handleAddTodo()} disabled={!newTodoText.trim()} className="px-3 py-2 border-2 border-[#1c1a17] bg-[#1c1a17] text-[#f4f1e8] font-bold text-xs shadow-[2px_2px_0_#1c1a17] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all disabled:opacity-40">添一条</button>
+                            </div>
+                            <div className="mt-4 p-4 border-2 border-[#1c1a17] bg-[#fbf9f3] text-xs text-[#2b2823] leading-relaxed relative shadow-[3px_3px_0_#1c1a17]">
                                 <span className="absolute -top-3 left-4 text-[#1c1a17]"><I.pin size={22} /></span>
-                                这是 {char?.name} 今天给自己列的单子。你帮不上手，但可以盯着 TA 一条条划掉哦。
+                                这是 {char?.name} 今天给自己列的单子。你也能帮 TA 勾掉、或自己添一条——这些都会同步给 TA。
                             </div>
                         </div>
                     )}

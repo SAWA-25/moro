@@ -9,6 +9,7 @@ import MomentCard from './MomentCard';
 import MomentPublish, { MomentPublishData } from './MomentPublish';
 import { generateCharacterMoments, generateCommentReplies, generateReactions, ReactionOp } from './momentsGen';
 import { MOMENTS_COVER_KEY, newId } from './momentsUtils';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 export interface MomentsFeedProps {
     /** 嵌入聊天 App 的「朋友圈」标签页时为 true：不渲染自己的返回按钮/safe-top，让外层容器管理 */
@@ -25,7 +26,10 @@ export interface MomentsFeedProps {
 
 /** 「此刻」动态簿（原创手帐拼贴风）：纸面页眉（拍立得封面 + 用户名片 + 贴纸按钮）+ 纸卡动态流 + 发布 + 角色互动 */
 const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandlerRef }) => {
-    const { characters, apiConfig, addToast, userProfile } = useOS();
+    const { characters, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 朋友圈生成/评论/互动是「聊天以外的辅助任务」→ 走副 API（未配置则回退主 API）。
+    // 用 {...apiConfig, ...aux} 保留 APIConfig 形状，只替换 baseUrl/apiKey/model 三件套。
+    const genApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     const [posts, setPosts] = useState<SocialPost[]>([]);
     const [view, setView] = useState<'feed' | 'publish'>('feed');
@@ -143,12 +147,12 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
 
     const handleRefresh = async () => {
         if (isRefreshing) return;
-        if (!apiConfig.apiKey) { addToast('请先配置 API Key', 'error'); return; }
+        if (!genApi.apiKey) { addToast('请先配置 API Key', 'error'); return; }
         if (characters.length === 0) { addToast('还没有角色，先去创建一个吧', 'info'); return; }
         setIsRefreshing(true);
         try {
             const fresh = await generateCharacterMoments({
-                apiConfig, characters, userProfile, feed: postsRef.current,
+                apiConfig: genApi, characters, userProfile, feed: postsRef.current,
             });
             if (fresh.length === 0) {
                 addToast('这一轮大家都没贴新瞬间', 'info');
@@ -192,7 +196,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         addToast('贴出去了', 'success');
 
         // 公开动态 → 异步角色反应轮
-        if (data.visibility === 'public' && apiConfig.apiKey && characters.length > 0) {
+        if (data.visibility === 'public' && genApi.apiKey && characters.length > 0) {
             triggerReactions(post);
         }
     };
@@ -201,7 +205,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         markReacting(post.id, true);
         try {
             const ops = await generateReactions({
-                apiConfig, characters, userProfile, post, feed: postsRef.current,
+                apiConfig: genApi, characters, userProfile, post, feed: postsRef.current,
             });
             applyReactionOps(ops);
         } catch (e: any) {
@@ -245,12 +249,12 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         setCommentDraft(null);
 
         // 异步：角色回应用户的评论
-        if (updated.visibility !== 'private' && apiConfig.apiKey && characters.length > 0) {
+        if (updated.visibility !== 'private' && genApi.apiKey && characters.length > 0) {
             (async () => {
                 markReacting(updated.id, true);
                 try {
                     const replies = await generateCommentReplies({
-                        apiConfig, characters, userProfile, post: updated, userComment: comment,
+                        apiConfig: genApi, characters, userProfile, post: updated, userComment: comment,
                     });
                     if (replies.length > 0) {
                         applyReactionOps(replies.map(r => ({ type: 'comment' as const, postId: updated.id, comment: r })));

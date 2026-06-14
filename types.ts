@@ -554,8 +554,10 @@ export interface CharacterBuff {
 export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
-  weatherApiKey: string;  // OpenWeatherMap API Key
-  weatherCity: string;    // 城市名
+  /** 取数方式：'geo'（默认，浏览器定位 + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
+  weatherMode?: 'geo' | 'manual';
+  weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
+  weatherCity: string;    // 城市名（仅 manual 模式用）
 
   // 新闻配置
   newsEnabled: boolean;
@@ -659,7 +661,8 @@ export interface RoomTodo {
     id: string;
     charId: string;
     date: string;
-    items: { text: string; done: boolean }[];
+    /** byUser=true 表示这条是用户自己加进清单的（栖居志·今日清单自主勾画），会同步给角色 */
+    items: { text: string; done: boolean; byUser?: boolean }[];
     generatedAt: number;
 }
 
@@ -674,10 +677,15 @@ export interface RoomNote {
 
 export interface ScheduleSlot {
     startTime: string;    // "08:00"
+    endTime?: string;     // "09:00" 该时段大致结束时间（可选，仅展示用）
     activity: string;     // "晨跑"
     description?: string; // "在河边慢跑"
     emoji?: string;       // "🏃"
     location?: string;    // "河边"
+    /** 该时段的情绪基调（2-4字，如"松弛""专注""烦躁""期待"），用于卡片小标签 */
+    mood?: string;
+    /** 该时段的能量水平 1-5（1 困乏 / 5 满电），用于卡片小指示 */
+    energy?: number;
     innerThought?: string; // 该时段的内心独白，生成时由AI写好，运行时直接注入
     /**
      * 日程锚点来源：
@@ -1818,9 +1826,20 @@ export interface CharacterProfile {
 
   /** 朋友设置（角色主页右上角 ··· 进入）：星标朋友 / 黑名单 */
   starredFriend?: boolean;
+  /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。
+   *  让角色创建/导入后无需先「添加好友」即可在往来直接出现并开聊。 */
+  addedToChat?: boolean;
   blacklisted?: boolean;
   /** 用户拉黑角色的时刻——此后角色发来的消息气泡旁带红色感叹号 */
   blacklistedAt?: number;
+  /** 被用户拉黑后的「解除拉黑验证」申诉状态：角色会主动发来验证消息求解封，
+   *  用户可同意（解除拉黑）或拒绝；拒绝后角色会在 nextAt 之后再发，直到用户同意。 */
+  unblockAppeal?: {
+      active: boolean;        // 拉黑期间是否仍在申诉（同意/移出黑名单后置 false）
+      awaiting: boolean;      // 已发出一条申诉、正等用户处理（true 时不再发新的）
+      nextAt: number;         // 下一次可发申诉的时间戳
+      rejectedCount: number;  // 被拒次数（影响措辞与下次间隔）
+  };
 
   /** 角色拉黑用户（AI 输出 [[BLOCK_USER]] 触发）：active 期间用户无法发消息，
    *  到 unblockAt（随机 30 分钟 ~ 24 小时）自动解除，或通过好友验证提前拉回 */
@@ -3504,6 +3523,17 @@ export interface TakeoutStore {
   distanceKm: number;
   promo?: string;          // 满减 / 首单优惠文案
   dishes: TakeoutDish[];
+  /** AI 生成的店铺简介 / 招牌一句话（参照真实外卖店的「店铺公告」）。 */
+  blurb?: string;
+  /**
+   * 隐藏的「良心值」0~1：越低越黑心（分量不足、卫生差、图文不符、强制砍单的概率越高）。
+   * 现实里下单前看不见，只用于下单后掷配送事件；UI 不直接展示。
+   */
+  integrity?: number;
+  /** 现实里看得见的红旗提示（如「近期卫生差评多·谨慎下单」）。黑心店里有一部分会亮明，正常店为空。 */
+  warning?: string;
+  /** AI 生成标记（用于「AI 现搓的店」徽标）。 */
+  aiGenerated?: boolean;
 }
 export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
 /** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
@@ -3525,7 +3555,39 @@ export interface TakeoutReview {
  * - cancelled 已取消
  */
 export type TakeoutStatus = 'preparing' | 'delivering' | 'arrived' | 'delivered' | 'cancelled';
-export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store'; text: string; at: number; }
+export interface TakeoutChatMsg { role: 'user' | 'rider' | 'store' | 'support'; text: string; at: number; }
+
+/** 黑心商家 / 坏骑手会触发的现实化配送事故种类。 */
+export type TakeoutIncidentKind =
+  | 'short_weight'    // 缺斤少两 / 分量明显不足
+  | 'missing_item'    // 漏发餐品
+  | 'wrong_item'      // 送错餐 / 上错菜
+  | 'foreign_object'  // 餐里有异物（头发、塑料…）
+  | 'cold_food'       // 餐品冰凉坨成一团
+  | 'spilled'         // 撒漏 / 包装破损汤汁洒光
+  | 'severe_late'     // 严重超时
+  | 'rider_ate'       // 骑手偷吃 / 动过餐
+  | 'left_at_door'    // 不打电话直接丢门口（甚至放错地方）
+  | 'fake_photo'      // 图文严重不符（卖家秀 vs 买家秀）
+  | 'force_cancel';   // 商家收了钱迟迟不接单 / 强制砍单
+
+/** 一桩配送事故；下单时按良心值/骑手靠谱度掷出，送达后暴露给用户。 */
+export interface TakeoutIncident {
+  kind: TakeoutIncidentKind;
+  by: 'store' | 'rider';   // 责任方
+  title: string;           // 短标题「缺斤少两」
+  detail: string;          // 现实化描述
+  suggestedRefund: number; // 合理赔付金额（投诉成立后退回钱包）
+}
+
+/** 投诉 / 售后处理状态。 */
+export interface TakeoutComplaint {
+  filed: boolean;          // 已发起投诉
+  resolved: boolean;       // 平台已结案
+  outcome?: string;        // 结案结论文案
+  refunded: number;        // 本次投诉退回金额
+}
+
 export interface TakeoutOrder {
   id: string;
   storeId: string;
@@ -3552,8 +3614,16 @@ export interface TakeoutOrder {
   placedAt: number;
   etaAt: number;           // 预计送达时间戳
   deliveredAt?: number;
-  chat: TakeoutChatMsg[];  // 和骑手/商家的对话
-  chatTarget?: 'rider' | 'store';
+  chat: TakeoutChatMsg[];  // 和骑手/商家/平台客服的对话
+  chatTarget?: 'rider' | 'store' | 'support';
+  /** 隐藏的骑手靠谱度 0~1：越低越容易超时/撒漏/偷吃/不送上门。 */
+  riderReliability?: number;
+  /** 下单时掷出、送达后暴露的配送事故（黑心商家 / 坏骑手）。 */
+  incidents?: TakeoutIncident[];
+  /** 投诉 / 售后。 */
+  complaint?: TakeoutComplaint;
+  /** 强制砍单的店铺：被商家单方面取消（钱已退回钱包）。 */
+  cancelledByStore?: boolean;
   /** 发起方：用户在外卖 App / 聊天回形针点的 = 'user'；角色主动为用户点的 = 'char'。 */
   initiatedBy?: 'user' | 'char';
   /** 是否已在该角色聊天里生成「外卖订单小票」卡片（避免重复生成）。 */

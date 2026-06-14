@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots } from '@phosphor-icons/react';
+import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots, BookBookmark } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
 import ReflectionApp from './theater/ReflectionApp';
 import TalkTherapyApp from './theater/TalkTherapyApp';
+import ExtraApp from './theater/ExtraApp';
 
 /**
  * 小剧场：原「攻略本」（galgame 恋爱攻略，apps/GuidebookApp.tsx）与「TRPG」（跑团
@@ -19,13 +20,14 @@ import TalkTherapyApp from './theater/TalkTherapyApp';
 
 const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk'>('home');
+    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra'>('home');
 
     if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
     if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
     if (section === 'trajectory') return <TrajectoryApp onExit={() => setSection('home')} />;
     if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
     if (section === 'talk') return <TalkTherapyApp onExit={() => setSection('home')} />;
+    if (section === 'extra') return <ExtraApp onExit={() => setSection('home')} />;
 
     return (
         <div
@@ -77,6 +79,20 @@ const TheaterApp: React.FC = () => {
                     </div>
                     <div className="text-[11px] text-white/55 mt-3 leading-relaxed">和角色玩一局 galgame：定场景、挑选项、攒好感度，结局生成攻略结算卡。</div>
                     <Heart size={64} weight="fill" className="absolute -bottom-3 -right-2 text-rose-300/10 rotate-[12deg]" />
+                </button>
+
+                {/* 番外 */}
+                <button
+                    onClick={() => setSection('extra')}
+                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-amber-300/15 bg-gradient-to-br from-amber-500/15 to-rose-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
+                >
+                    <div className="text-[9px] tracking-[0.3em] text-amber-200/70 font-mono mb-2">SIDE STORY — 番外篇</div>
+                    <div className="flex items-center gap-2.5">
+                        <BookBookmark size={26} weight="bold" className="text-amber-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-amber-50">番外</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">挑个角色一起做问卷（恋爱相性100问 / MBTI / 性癖测试 / 价值观…想要啥写啥，一题一题答到底），或生成贴吧帖、聊天记录、热梗等主题番外。</div>
+                    <BookBookmark size={64} weight="fill" className="absolute -bottom-3 -right-2 text-amber-300/10 rotate-[10deg]" />
                 </button>
 
                 {/* 谈心 */}

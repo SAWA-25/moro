@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
+import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
 import ProposalOverlay from '../components/chat/ProposalOverlay';
 import { processImage } from '../utils/file';
@@ -1443,17 +1444,32 @@ ${recent || '（你们相处了很久）'}
         setTimeout(() => { triggerAI(messages); }, 800);
     };
 
-    // ── 已读回执：聊天页打开着时，把当前可见的角色消息标记为已读（Telegram 式双勾）──
+    // ── 已读回执：聊天页打开着时实时翻转双勾（Telegram 式）──
+    //  · 角色消息：用户正在看 → 标记为已读（清未读态）。
+    //  · 用户消息：其后只要出现过角色消息（= 角色已回复 = 已读），就把「已发出」升级为
+    //    「已读」。这一步覆盖所有回复路径——同步回复(useChatAI)、后台 instant push、主动
+    //    消息——保证不论角色的回复怎么来的，打开着的聊天页里用户消息的双勾都实时翻转，
+    //    而不是只在本端 useChatAI 走完同步流程时才更新。
     useEffect(() => {
         if (!char) return;
-        const unread = messages.filter(m => m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read');
-        if (unread.length === 0) return;
+        const assistantUnread = messages.filter(m => m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read');
+        let lastAssistantIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const mm = messages[i];
+            if (mm.role === 'assistant' && !mm.groupId) { lastAssistantIdx = i; break; }
+        }
+        // 仅升级「排在最后一条角色消息之前、状态为 sent」的用户消息（之后新发的待回复消息不动）
+        const userToRead = lastAssistantIdx < 0 ? [] : messages
+            .slice(0, lastAssistantIdx)
+            .filter(m => m.role === 'user' && !m.groupId && m.metadata?.msgStatus === 'sent');
+        if (assistantUnread.length === 0 && userToRead.length === 0) return;
+        const idSet = new Set<number>([...assistantUnread.map(m => m.id), ...userToRead.map(m => m.id)]);
         let cancelled = false;
         void (async () => {
             try {
-                await DB.setMessagesStatus(unread.map(m => m.id), 'read');
+                await DB.setMessagesStatus([...idSet], 'read');
                 if (cancelled) return;
-                setMessages(prev => prev.map(m => (m.role === 'assistant' && !m.groupId && m.metadata?.msgStatus !== 'read')
+                setMessages(prev => prev.map(m => idSet.has(m.id)
                     ? { ...m, metadata: { ...(m.metadata || {}), msgStatus: 'read' } }
                     : m));
             } catch { /* 回执写入失败不影响消息本体 */ }
@@ -1462,6 +1478,31 @@ ${recent || '（你们相处了很久）'}
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, char?.id]);
 
+    // ── 解除拉黑申诉：角色被拉黑后发来求解封验证消息，用户在此同意 / 拒绝 ──
+    const acceptUnblockAppeal = async (msgId: number) => {
+        if (!char) return;
+        const now = Date.now();
+        await DB.updateMessageMetadata(msgId, (prev: any) => ({ ...(prev || {}), unblockAppeal: { ...(prev?.unblockAppeal || {}), status: 'accepted' } }));
+        await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `你同意了「${char.name}」的解除拉黑申请，你们可以继续聊天了`, timestamp: now });
+        await updateCharacter(char.id, {
+            blacklisted: false, blacklistedAt: undefined,
+            unblockAppeal: { active: false, awaiting: false, nextAt: 0, rejectedCount: char.unblockAppeal?.rejectedCount || 0 },
+        });
+        addToast(`已解除对 ${char.name} 的拉黑`, 'success');
+        await reloadMessages(visibleCountRef.current);
+    };
+    const rejectUnblockAppeal = async (msgId: number) => {
+        if (!char) return;
+        const rejectedCount = (char.unblockAppeal?.rejectedCount || 0) + 1;
+        await DB.updateMessageMetadata(msgId, (prev: any) => ({ ...(prev || {}), unblockAppeal: { ...(prev?.unblockAppeal || {}), status: 'rejected' } }));
+        // 拒绝 → 解除 awaiting、排下一次申诉时间，角色到点会再发，直到用户同意
+        await updateCharacter(char.id, {
+            unblockAppeal: { active: true, awaiting: false, rejectedCount, nextAt: Date.now() + nextAppealDelayMs(rejectedCount) },
+        });
+        addToast('已拒绝。对方可能过会儿还会再来申请', 'info');
+        await reloadMessages(visibleCountRef.current);
+    };
+
     // ── 语音通话：用户主动拨打 → 角色按人设 + 当前剧情决定接不接 → 接通则跳转电话 App ──
     const startVoiceCall = async () => {
         if (!char) return;
@@ -1469,7 +1510,9 @@ ${recent || '（你们相处了很久）'}
             addToast(char.charBlock?.active ? '你已被对方拉黑，无法拨打' : '你已将对方拉黑，无法拨打', 'error');
             return;
         }
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        // 来电「接不接」是聊天以外的辅助决策 → 走副 API（未配置时回退主 API）
+        const callApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!callApi.baseUrl || !callApi.apiKey) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setShowPanel('none');
         voiceCallCancelRef.current = false;
         setVoiceCallPhase('dialing');
@@ -1487,11 +1530,11 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 只输出一行 JSON，不要任何其他内容：{"answer": true 或 false, "reason": "你做这个决定时的内心想法（一句话）"}`;
             // 决策请求与最短响铃时间并行：让"正在呼叫"至少停留一会儿，更像真的在拨号
             const minRing = new Promise(r => setTimeout(r, 2500));
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${callApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${callApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: callApi.model,
                     messages: [{ role: 'user', content: prompt }],
                     temperature: 0.9,
                 }),
@@ -1696,6 +1739,18 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             }
         }
     };
+
+    // 群聊「回形针」深链：群聊里对某成员发起单聊专属功能（拨过去 / 翻手机 / 回个神 / 今日作息…）时，
+    // ChatHub 把动作名写进 localStorage 再深链跳到该成员单聊，这里读出来复用 handlePanelAction 执行。
+    useEffect(() => {
+        let action: string | null = null;
+        try { action = localStorage.getItem('moro_chat_pending_action'); } catch { /* ignore */ }
+        if (!action) return;
+        try { localStorage.removeItem('moro_chat_pending_action'); } catch { /* ignore */ }
+        const t = setTimeout(() => handlePanelAction(action!), 80);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeCharacterId]);
 
     // --- 语音消息：录音结束后落库发送（转写文字进 metadata，AI 上下文可读）---
     const handleSendVoice = async (audio: string, durationSec: number, transcript: string) => {
@@ -2290,11 +2345,15 @@ ${recent || '（你们还没怎么聊过）'}
             // 偷看心声历史、好感/心情、关系/婚姻、以及 TA 对你的备注（及其历史/动机）。
             try { await DB.clearInnerVoicesByCharId(char.id); } catch { /* ignore */ }
             const cs = char.convoSettings || {};
-            updateCharacter(char.id, {
+            // 全部清除：连同本会话沉淀的关系痕迹与情绪 / 日程一并抹掉（否则残留会污染下一轮 prompt）——
+            // 好感/心情/关系/婚姻、情绪 buff、TA 对你的备注（及历史/动机）、偷看心声历史、日程。
+            await updateCharacter(char.id, {
                 affection: undefined,
                 currentMood: undefined,
                 relationship: undefined,
                 marriage: undefined,
+                activeBuffs: [],
+                buffInjection: '',
                 convoSettings: {
                     ...cs,
                     userNickname: undefined,
@@ -2303,13 +2362,15 @@ ${recent || '（你们还没怎么聊过）'}
                     userRemarkHistory: undefined,
                 },
             });
+            try { await DB.deleteDailySchedulesByChar(char.id); } catch { /* ignore */ }
+            setScheduleData(null);
             setInnerVoiceHistory([]);
             setInnerVoiceCurrent(null);
             setMessages([]);
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            addToast('已清空（含好感 / 关系 / 备注）', 'success');
+            addToast('已清空（含好感 / 关系 / 备注 / 心情 / 日程）', 'success');
         }
         setModalType('none');
     };
@@ -4194,17 +4255,38 @@ ${recent || '（你们还没怎么聊过）'}
                         </button>
                     </div>
                 )}
-                {!charBlockedUser && userBlockedChar && char && (
-                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs">
-                        <span className="text-slate-500 font-bold truncate">你已将 {char.name} 加入黑名单，无法发送消息</span>
-                        <button
-                            onClick={() => { updateCharacter(char.id, { blacklisted: false, blacklistedAt: undefined }); addToast(`已将 ${char.name} 移出黑名单`, 'success'); }}
-                            className="px-2.5 py-1 bg-slate-600 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
-                        >
-                            解除拉黑
-                        </button>
-                    </div>
-                )}
+                {!charBlockedUser && userBlockedChar && char && (() => {
+                    // 有未处理的「解除拉黑申诉」→ 顶出同意/拒绝决定条；否则是普通拉黑提示条
+                    const pendingAppeal = [...messages].reverse().find(m => m.metadata?.unblockAppeal?.status === 'pending');
+                    if (pendingAppeal) {
+                        return (
+                            <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs">
+                                <span className="text-amber-700 font-bold truncate">{char.name} 申请解除拉黑，是否同意？</span>
+                                <div className="flex gap-1.5 shrink-0">
+                                    <button
+                                        onClick={() => void rejectUnblockAppeal(pendingAppeal.id)}
+                                        className="px-2.5 py-1 bg-white border border-amber-200 text-amber-600 rounded-full text-[11px] font-bold active:scale-95"
+                                    >拒绝</button>
+                                    <button
+                                        onClick={() => void acceptUnblockAppeal(pendingAppeal.id)}
+                                        className="px-2.5 py-1 bg-emerald-500 text-white rounded-full text-[11px] font-bold active:scale-95"
+                                    >同意</button>
+                                </div>
+                            </div>
+                        );
+                    }
+                    return (
+                        <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs">
+                            <span className="text-slate-500 font-bold truncate">你已将 {char.name} 加入黑名单，无法发送消息</span>
+                            <button
+                                onClick={() => { updateCharacter(char.id, { blacklisted: false, blacklistedAt: undefined, unblockAppeal: { active: false, awaiting: false, nextAt: 0, rejectedCount: 0 } }); addToast(`已将 ${char.name} 移出黑名单`, 'success'); }}
+                                className="px-2.5 py-1 bg-slate-600 text-white rounded-full text-[11px] font-bold active:scale-95 shrink-0"
+                            >
+                                解除拉黑
+                            </button>
+                        </div>
+                    );
+                })()}
 
                 <ChatInputArea
                     input={input} setInput={handleInputChange}

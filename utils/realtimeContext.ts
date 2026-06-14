@@ -31,8 +31,14 @@ export interface SearchResult {
 export interface RealtimeConfig {
     // 天气配置
     weatherEnabled: boolean;
-    weatherApiKey: string;  // OpenWeatherMap API Key
-    weatherCity: string;    // 城市名 (如 "Beijing" 或 "Shanghai")
+    /**
+     * 取数方式：
+     * - 'geo'（默认）：浏览器定位 + Open-Meteo（免密钥、实时取用户所在地天气）
+     * - 'manual'：旧版手填 OpenWeatherMap Key + 城市名
+     */
+    weatherMode?: 'geo' | 'manual';
+    weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
+    weatherCity: string;    // 城市名 (如 "Beijing" 或 "Shanghai")，仅 manual 模式用
 
     // 新闻配置
     newsEnabled: boolean;
@@ -70,6 +76,7 @@ export interface RealtimeConfig {
 // 默认配置
 export const defaultRealtimeConfig: RealtimeConfig = {
     weatherEnabled: false,
+    weatherMode: 'geo',
     weatherApiKey: '',
     weatherCity: 'Beijing',
     newsEnabled: false,
@@ -86,6 +93,137 @@ export const defaultRealtimeConfig: RealtimeConfig = {
 // 缓存
 let weatherCache: { data: WeatherData | null; timestamp: number } = { data: null, timestamp: 0 };
 let newsCache: { data: NewsItem[]; timestamp: number } = { data: [], timestamp: 0 };
+
+// ── 天气取数实现（定位 + 免密钥 Open-Meteo，兼容旧版 OpenWeatherMap） ──────────
+
+// WMO weather code → 中文描述 + OpenWeatherMap 风格 icon code（复用桌面组件已有的图标映射）
+const WMO_WEATHER: Record<number, { desc: string; icon: string }> = {
+    0: { desc: '晴', icon: '01d' }, 1: { desc: '大致晴朗', icon: '02d' }, 2: { desc: '多云', icon: '03d' }, 3: { desc: '阴', icon: '04d' },
+    45: { desc: '雾', icon: '50d' }, 48: { desc: '雾凇', icon: '50d' },
+    51: { desc: '毛毛雨', icon: '09d' }, 53: { desc: '小雨', icon: '09d' }, 55: { desc: '中雨', icon: '09d' },
+    56: { desc: '冻毛毛雨', icon: '09d' }, 57: { desc: '冻雨', icon: '09d' },
+    61: { desc: '小雨', icon: '10d' }, 63: { desc: '中雨', icon: '10d' }, 65: { desc: '大雨', icon: '10d' },
+    66: { desc: '冻雨', icon: '10d' }, 67: { desc: '强冻雨', icon: '10d' },
+    71: { desc: '小雪', icon: '13d' }, 73: { desc: '中雪', icon: '13d' }, 75: { desc: '大雪', icon: '13d' }, 77: { desc: '雪粒', icon: '13d' },
+    80: { desc: '阵雨', icon: '09d' }, 81: { desc: '强阵雨', icon: '10d' }, 82: { desc: '暴雨', icon: '10d' },
+    85: { desc: '阵雪', icon: '13d' }, 86: { desc: '强阵雪', icon: '13d' },
+    95: { desc: '雷阵雨', icon: '11d' }, 96: { desc: '雷阵雨伴冰雹', icon: '11d' }, 99: { desc: '强雷暴伴冰雹', icon: '11d' },
+};
+
+const GEO_CACHE_KEY = 'moro_weather_geo';
+
+const readCachedGeo = (): { lat: number; lon: number; ts: number } | null => {
+    try {
+        const raw = localStorage.getItem(GEO_CACHE_KEY);
+        if (!raw) return null;
+        const o = JSON.parse(raw);
+        if (typeof o?.lat === 'number' && typeof o?.lon === 'number') return o;
+    } catch { /* ignore */ }
+    return null;
+};
+
+/** 免密钥 IP 定位兜底（没有浏览器定位权限/拒绝授权时，给一个城市级的大致坐标）。 */
+const ipGeolocate = async (): Promise<{ lat: number; lon: number } | null> => {
+    try {
+        const r = await fetch('https://get.geojs.io/v1/ip/geo.json');
+        if (r.ok) {
+            const d = await safeResponseJson(r);
+            const lat = parseFloat(d?.latitude), lon = parseFloat(d?.longitude);
+            if (isFinite(lat) && isFinite(lon)) {
+                try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
+                return { lat, lon };
+            }
+        }
+    } catch { /* ignore */ }
+    return null;
+};
+
+/** 仅浏览器定位：成功缓存坐标；拒绝/超时/不支持返回 null（不在此处兜底）。 */
+const browserGeoPosition = (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
+    return new Promise(resolve => {
+        if (typeof navigator === 'undefined' || !navigator.geolocation) { resolve(null); return; }
+        let settled = false;
+        const done = (v: { lat: number; lon: number } | null) => { if (!settled) { settled = true; resolve(v); } };
+        const fallbackTimer = setTimeout(() => done(null), 12000);
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                clearTimeout(fallbackTimer);
+                const lat = pos.coords.latitude, lon = pos.coords.longitude;
+                try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ lat, lon, ts: Date.now() })); } catch { /* ignore */ }
+                done({ lat, lon });
+            },
+            () => { clearTimeout(fallbackTimer); done(null); },
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: Math.max(maxAgeMs, 600000) },
+        );
+    });
+};
+
+/** 取坐标（全程免密钥）：浏览器定位 → 上次缓存 → IP 定位兜底。三者皆失败才 null。
+ *  这样天气不依赖任何 API Key，也不强制定位授权——拒绝授权时仍能按 IP 取到本地实时天气。 */
+const getGeoPosition = async (maxAgeMs: number): Promise<{ lat: number; lon: number } | null> => {
+    const browser = await browserGeoPosition(maxAgeMs);
+    if (browser) return browser;
+    const cached = readCachedGeoCoords();
+    if (cached) return cached;
+    return await ipGeolocate();
+};
+
+const readCachedGeoCoords = (): { lat: number; lon: number } | null => {
+    const c = readCachedGeo();
+    return c ? { lat: c.lat, lon: c.lon } : null;
+};
+
+/** 反向地理编码取城市名（免密钥 BigDataCloud）；失败给通用名，不阻塞天气。 */
+const reverseGeocodeCity = async (lat: number, lon: number): Promise<string> => {
+    try {
+        const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh`;
+        const r = await fetch(url);
+        if (r.ok) {
+            const d = await safeResponseJson(r);
+            return (d.city || d.locality || d.principalSubdivision || d.countryName || '当前位置').toString();
+        }
+    } catch { /* ignore */ }
+    return '当前位置';
+};
+
+/** 定位 + Open-Meteo（免密钥）取实时天气 */
+const fetchWeatherByGeolocation = async (cacheMs: number): Promise<WeatherData | null> => {
+    const pos = await getGeoPosition(cacheMs);
+    if (!pos) return null;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${pos.lat}&longitude=${pos.lon}`
+        + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code&timezone=auto`;
+    const r = await fetch(url);
+    if (!r.ok) { console.error('Open-Meteo error:', r.status); return null; }
+    const d = await safeResponseJson(r);
+    const cur = d?.current;
+    if (!cur) return null;
+    const wmo = WMO_WEATHER[Number(cur.weather_code)] || { desc: '未知', icon: '03d' };
+    const city = await reverseGeocodeCity(pos.lat, pos.lon);
+    return {
+        temp: Math.round(Number(cur.temperature_2m)),
+        feelsLike: Math.round(Number(cur.apparent_temperature ?? cur.temperature_2m)),
+        humidity: Math.round(Number(cur.relative_humidity_2m) || 0),
+        description: wmo.desc,
+        icon: wmo.icon,
+        city,
+    };
+};
+
+/** 旧版 OpenWeatherMap（手填 Key + 城市） */
+const fetchWeatherOpenWeatherMap = async (config: RealtimeConfig): Promise<WeatherData | null> => {
+    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(config.weatherCity)}&appid=${config.weatherApiKey}&units=metric&lang=zh_cn`;
+    const response = await fetch(url);
+    if (!response.ok) { console.error('Weather API error:', response.status); return null; }
+    const data = await safeResponseJson(response);
+    return {
+        temp: Math.round(data.main.temp),
+        feelsLike: Math.round(data.main.feels_like),
+        humidity: data.main.humidity,
+        description: data.weather[0]?.description || '未知',
+        icon: data.weather[0]?.icon || '01d',
+        city: data.name,
+    };
+};
 
 // 特殊日期表
 const SPECIAL_DATES: Record<string, string> = {
@@ -109,49 +247,39 @@ const SPECIAL_DATES: Record<string, string> = {
 export const RealtimeContextManager = {
 
     /**
-     * 获取天气信息
+     * 获取天气信息。
+     * 默认走「定位 + Open-Meteo」（免密钥，实时取用户所在地天气）；
+     * weatherMode==='manual' 时回退到旧版 OpenWeatherMap（手填 Key + 城市）。
      */
     fetchWeather: async (config: RealtimeConfig): Promise<WeatherData | null> => {
-        if (!config.weatherEnabled || !config.weatherApiKey) {
-            return null;
-        }
+        if (!config.weatherEnabled) return null;
 
         const now = Date.now();
-        const cacheMs = config.cacheMinutes * 60 * 1000;
+        const cacheMs = (config.cacheMinutes || 30) * 60 * 1000;
 
         // 检查缓存
         if (weatherCache.data && (now - weatherCache.timestamp) < cacheMs) {
             return weatherCache.data;
         }
 
+        const mode = config.weatherMode || 'geo';
+        let weather: WeatherData | null = null;
         try {
-            const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(config.weatherCity)}&appid=${config.weatherApiKey}&units=metric&lang=zh_cn`;
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                console.error('Weather API error:', response.status);
-                return null;
+            if (mode === 'manual' && config.weatherApiKey) {
+                weather = await fetchWeatherOpenWeatherMap(config);
+            } else {
+                // 定位 + 免密钥 Open-Meteo（无定位权限时若配了 Key 再回退 OWM）
+                weather = await fetchWeatherByGeolocation(cacheMs);
+                if (!weather && config.weatherApiKey) {
+                    weather = await fetchWeatherOpenWeatherMap(config);
+                }
             }
-
-            const data = await safeResponseJson(response);
-
-            const weather: WeatherData = {
-                temp: Math.round(data.main.temp),
-                feelsLike: Math.round(data.main.feels_like),
-                humidity: data.main.humidity,
-                description: data.weather[0]?.description || '未知',
-                icon: data.weather[0]?.icon || '01d',
-                city: data.name
-            };
-
-            // 更新缓存
-            weatherCache = { data: weather, timestamp: now };
-
-            return weather;
         } catch (e) {
             console.error('Failed to fetch weather:', e);
-            return null;
         }
+
+        if (weather) weatherCache = { data: weather, timestamp: now };
+        return weather;
     },
 
     // hot_news（orz.ai）平台 key → 中文展示名。用于 source 标注，让提示词读起来自然。
@@ -530,8 +658,8 @@ export const RealtimeContextManager = {
             parts.push(`🎉 今日特殊: ${specialDates.join('、')}`);
         }
 
-        // 3. 天气信息
-        if (config.weatherEnabled && config.weatherApiKey) {
+        // 3. 天气信息（geo 模式免密钥；fetchWeather 内部拿不到数据会返回 null）
+        if (config.weatherEnabled) {
             const weather = await RealtimeContextManager.fetchWeather(config);
             if (weather) {
                 parts.push('');

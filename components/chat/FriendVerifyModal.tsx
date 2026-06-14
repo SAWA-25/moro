@@ -4,6 +4,7 @@ import { CharacterProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 /**
  * 好友验证（被角色拉黑后重新申请加好友）。
@@ -82,7 +83,9 @@ const coerceVerifyResult = (raw: string): { accept: boolean; reply: string } | n
 
 const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onClose, onAccepted, mode = 'reblock' }) => {
     const isAdd = mode === 'add';
-    const { apiConfig, userProfile, updateCharacter, addToast } = useOS();
+    const { apiConfig, auxApiConfig, userProfile, updateCharacter, addToast } = useOS();
+    // 好友验证是「聊天以外的辅助决策」→ 走副 API（未配置副 API 时 resolveAuxApi 回退主 API）
+    const api = resolveAuxApi(auxApiConfig, apiConfig);
     const [text, setText] = useState('');
     const [phase, setPhase] = useState<'input' | 'sending' | 'accepted' | 'rejected'>('input');
     const [reply, setReply] = useState('');
@@ -94,16 +97,16 @@ const FriendVerifyModal: React.FC<FriendVerifyModalProps> = ({ char, isOpen, onC
     const handleSend = async () => {
         const verifyText = text.trim();
         if (!verifyText) { addToast('先写一句验证消息吧', 'info'); return; }
-        // 初次加好友且没配 API：直接通过（新朋友默认接受），避免没配 API 时被卡在「无法聊天」
-        if (isAdd && (!apiConfig?.baseUrl || !apiConfig?.apiKey)) {
+        // 初次加好友且没配 API（含副 API 回退后仍无）：直接通过（新朋友默认接受），避免被卡在「无法聊天」
+        if (isAdd && (!api?.baseUrl || !api?.apiKey)) {
             const now = Date.now();
-            updateCharacter(char.id, { friendStatus: 'friend', ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}) });
+            updateCharacter(char.id, { friendStatus: 'friend', addedToChat: true, ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}) } as any);
             await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `[好友申请] ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
             await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `你和「${char.name}」成为了好友，开始聊天吧`, timestamp: now + 1 });
             setReply(''); setPhase('accepted'); onAccepted?.();
             return;
         }
-        if (!apiConfig?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
+        if (!api?.baseUrl) { addToast('请先在「文具盒」里配置 API', 'error'); return; }
         setPhase('sending');
         try {
             const userName = userProfile?.name || '用户';
@@ -143,11 +146,11 @@ ${historyText || '（没有可用的聊天记录）'}
             // max_tokens 给足：推理模型的思考过程也计入 completion tokens，
             // 300 会被截断导致 JSON 不完整（「验证结果解析失败」的主因之一）
             const callOnce = async (extraInstruction?: string): Promise<{ accept: boolean; reply: string } | null> => {
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                const response = await fetch(`${api.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
                     body: JSON.stringify({
-                        model: apiConfig.model,
+                        model: api.model,
                         messages: [{ role: 'user', content: extraInstruction ? `${prompt}\n\n${extraInstruction}` : prompt }],
                         temperature: 0.85,
                         max_tokens: 2000,
@@ -170,12 +173,13 @@ ${historyText || '（没有可用的聊天记录）'}
             const now = Date.now();
 
             if (parsed.accept) {
-                // 通过：加为好友 / 解除角色对用户的拉黑 / 顺带解除用户对角色的拉黑
+                // 通过：加为好友（并进入往来列表）/ 解除角色对用户的拉黑 / 顺带解除用户对角色的拉黑
                 updateCharacter(char.id, {
                     friendStatus: 'friend',
+                    addedToChat: true,
                     ...(char.charBlock ? { charBlock: { ...char.charBlock, active: false } } : {}),
                     ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}),
-                });
+                } as any);
                 await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `${isAdd ? '[好友申请]' : '[好友验证]'} ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
                 await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: isAdd ? `你和「${char.name}」成为了好友，开始聊天吧` : `「${char.name}」通过了你的好友验证，你们可以继续聊天了`, timestamp: now + 1 });
                 if (replyText) {

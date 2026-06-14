@@ -389,6 +389,56 @@ const WIDGET_LABELS: Record<string, string> = {
     imgtl: '小组件图',
     imgtr: '小组件图',
     imgwide: '宽幅图',
+    text: '文字',
+};
+
+/** 文字小组件：桌面上一块可自定义文字的便签。轻点编辑（非编辑模式时），内容本地持久化。
+ *  尺寸可在「主题 → 桌面小组件」里像别的组件一样改（横版/竖版/方形）。 */
+const TEXT_WIDGET_KEY = 'moro_text_widget_v1';
+const DesktopTextWidget: React.FC<{ contentColor: string; editMode: boolean }> = ({ contentColor, editMode }) => {
+    const [text, setText] = useState<string>(() => {
+        try { const v = localStorage.getItem(TEXT_WIDGET_KEY); return v != null ? v : '轻点编辑\n写点什么…'; } catch { return '轻点编辑'; }
+    });
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState(text);
+    const save = () => {
+        setText(draft);
+        try { localStorage.setItem(TEXT_WIDGET_KEY, draft); } catch { /* ignore */ }
+        setEditing(false);
+    };
+    return (
+        <>
+            <button
+                onClick={() => { if (!editMode) { setDraft(text); setEditing(true); } }}
+                className="moro-widget-text w-full h-full glass-card rounded-[1.5rem] p-3 flex items-center justify-center text-center overflow-hidden active:scale-[0.98] transition-transform"
+                style={{ color: contentColor }}
+                aria-label="文字小组件"
+            >
+                <span className="text-[13px] font-semibold leading-snug whitespace-pre-wrap break-words line-clamp-6" style={{ fontFamily: 'var(--font-hand)', textShadow: '0 1px 8px rgba(30,48,80,0.18)' }}>
+                    {text || '轻点编辑'}
+                </span>
+            </button>
+            {editing && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-6" style={{ background: 'rgba(20,18,28,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setEditing(false)}>
+                    <div className="w-full max-w-sm bg-white rounded-3xl p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="text-sm font-bold text-slate-800 mb-2">文字小组件</div>
+                        <textarea
+                            value={draft}
+                            onChange={e => setDraft(e.target.value)}
+                            rows={4}
+                            autoFocus
+                            placeholder="写点什么放在桌面上…（待办、暗号、给自己的话）"
+                            className="w-full bg-slate-50 rounded-2xl p-3 text-sm text-slate-700 outline-none border border-slate-200 focus:border-violet-300 resize-none"
+                        />
+                        <div className="flex gap-2 mt-3">
+                            <button onClick={() => setEditing(false)} className="flex-1 py-2.5 rounded-2xl bg-slate-100 text-slate-500 text-sm font-bold active:scale-95">取消</button>
+                            <button onClick={save} className="flex-1 py-2.5 rounded-2xl bg-violet-500 text-white text-sm font-bold active:scale-95 shadow-lg">保存</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
 };
 
 // --- Main Launcher ---
@@ -472,6 +522,7 @@ const Launcher: React.FC = () => {
         { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
         { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
         { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 4 },
+        { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
         ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
         ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
         ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
@@ -804,6 +855,8 @@ const Launcher: React.FC = () => {
               );
           case 'music':
               return <NowPlayingSquareWidget contentColor={contentColor} />;
+          case 'text':
+              return <DesktopTextWidget contentColor={contentColor} editMode={editMode} />;
           case 'image':
               return (
                   <DesktopSquareImage

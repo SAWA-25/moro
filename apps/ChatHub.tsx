@@ -9,8 +9,10 @@ import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
 import { processImage } from '../utils/file';
+import { generateImage } from '../utils/imageGen';
+import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, UserPlus } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, UserPlus, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
@@ -180,12 +182,41 @@ const GroupMessageItem = React.memo(({
                     <div className="w-60 bg-[#fb923c] text-white p-3 rounded-xl flex items-center gap-3 shadow-md relative overflow-hidden active:scale-95 transition-transform">
                         <div className="absolute -right-2 -top-2 text-white/20"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.324.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
                         <div className="bg-white/20 p-2 rounded-full shrink-0"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 7.5a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Z" /><path fillRule="evenodd" d="M1.5 4.875C1.5 3.839 2.34 3 3.375 3h17.25c1.035 0 1.875.84 1.875 1.875v9.75c0 1.036-.84 1.875-1.875 1.875H3.375A1.875 1.875 0 0 1 1.5 14.625v-9.75ZM8.25 9.75a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0ZM18.75 9a.75.75 0 0 0-.75.75v.008c0 .414.336.75.75.75h.008a.75.75 0 0 0 .75-.75V9.75a.75.75 0 0 0-.75-.75h-.008ZM4.5 9.75A.75.75 0 0 1 5.25 9h.008a.75.75 0 0 1 .75.75v.008a.75.75 0 0 1-.75-.75H5.25a.75.75 0 0 1-.75-.75V9.75Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
-                        <div className="z-10">
-                            <div className="font-bold text-sm tracking-wide">一点心意</div>
-                            <div className="text-[10px] opacity-90">随信附上 · Moro Pay</div>
+                        <div className="z-10 min-w-0">
+                            <div className="font-bold text-sm tracking-wide truncate">{(msg.metadata as any)?.note || '一点心意'}</div>
+                            <div className="text-[10px] opacity-90">{(msg.metadata as any)?.amount ? `¥${(msg.metadata as any).amount} · ` : ''}随信附上 · Moro Pay</div>
                         </div>
                     </div>
                 );
+            case 'voice': {
+                const meta = (msg.metadata as any) || {};
+                const dur = meta.durationSec ? `${meta.durationSec}"` : '语音';
+                const playVoice = () => { try { if (meta.voiceAudio) void new Audio(meta.voiceAudio).play(); } catch { /* ignore */ } };
+                return (
+                    <div className={`px-3.5 py-2.5 rounded-[18px] shadow-sm flex flex-col gap-1 max-w-[220px] ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm'}`}>
+                        <button onClick={playVoice} className="flex items-center gap-2 active:opacity-70">
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0"><path d="M8 5v14l11-7z" /></svg>
+                            <span className="flex items-end gap-0.5 h-4">{[6, 11, 7, 13, 8].map((h, i) => (<span key={i} className="w-0.5 rounded-full bg-current opacity-70" style={{ height: h }} />))}</span>
+                            <span className="text-[11px] opacity-80 tabular-nums">{dur}</span>
+                        </button>
+                        {meta.transcript && <span className={`text-[11px] leading-snug ${isUser ? 'text-white/60' : 'text-slate-400'}`}>{meta.transcript}</span>}
+                    </div>
+                );
+            }
+            case 'location': {
+                const meta = (msg.metadata as any) || {};
+                return (
+                    <div className="w-56 rounded-2xl overflow-hidden shadow-sm border border-slate-100 bg-white active:scale-95 transition-transform">
+                        <div className="h-20 bg-gradient-to-br from-sky-100 to-emerald-100 flex items-center justify-center">
+                            <svg viewBox="0 0 24 24" fill="#10b981" className="w-8 h-8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" /></svg>
+                        </div>
+                        <div className="p-2.5">
+                            <div className="text-[13px] font-bold text-slate-800 truncate">{msg.content}</div>
+                            {meta.address && <div className="text-[11px] text-slate-400 truncate mt-0.5">{meta.address}</div>}
+                        </div>
+                    </div>
+                );
+            }
             default:
                 return (
                     <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
@@ -252,7 +283,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime, adjustUserBalance } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -276,6 +307,7 @@ const ChatHub: React.FC = () => {
         last?: Message;
         dissolved?: boolean;
         memberCount?: number;
+        starred?: boolean;
     }>>([]);
     // 成员资料页（点头像进入）
     const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
@@ -349,7 +381,19 @@ const ChatHub: React.FC = () => {
     const [tempOwnerId, setTempOwnerId] = useState<string>('user');
     const [tempAdminIds, setTempAdminIds] = useState<Set<string>>(new Set());
     const [transferAmount, setTransferAmount] = useState('');
-    
+    const [transferNote, setTransferNote] = useState('');
+    // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
+    const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
+    // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
+    const [memberPicker, setMemberPicker] = useState<{ action: string; title: string; hint?: string } | null>(null);
+    const [locName, setLocName] = useState('');
+    const [locDetail, setLocDetail] = useState('');
+    const [imgPrompt, setImgPrompt] = useState('');
+    const [imgModel, setImgModel] = useState(() => { try { return localStorage.getItem('moro_image_gen_model') || ''; } catch { return ''; } });
+    const [imgPreview, setImgPreview] = useState<string | null>(null);
+    const [imgBusy, setImgBusy] = useState(false);
+    const [sysCmd, setSysCmd] = useState('');
+
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -490,6 +534,10 @@ const ChatHub: React.FC = () => {
         if (c?.friendStatus === 'pending') { startVerify(charId, 'add'); return; }
         // 角色把你拉黑了 → 先走「好友验证」重新申请
         if (c?.charBlock?.active) { startVerify(charId, 'reblock'); return; }
+        // 打开过私聊即让该角色固定进入「往来」会话列表（好友才会走到这里）。
+        if (c && !(c as any).addedToChat) {
+            void updateCharacter(charId, { addedToChat: true } as any);
+        }
         setActiveCharacterId(charId);
         openApp(AppID.Chat);
     };
@@ -511,16 +559,23 @@ const ChatHub: React.FC = () => {
             }
             for (const c of characters) {
                 const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
-                if (lastMsgs.length === 0) continue; // 没聊过的角色去「联系人」页找
+                // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
+                // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
+                if (lastMsgs.length === 0 && !(c as any).addedToChat) continue;
                 // 会话设置「备注名 / 会话头像」覆盖列表展示
                 items.push({
                     kind: 'char', id: c.id,
                     name: c.convoSettings?.remarkName?.trim() || c.name,
                     avatar: c.convoSettings?.charAvatarOverride || c.avatar,
                     last: lastMsgs[lastMsgs.length - 1],
+                    starred: !!c.starredFriend,
                 });
             }
-            items.sort((a, b) => (b.last?.timestamp || 0) - (a.last?.timestamp || 0));
+            // 星标置顶：先按星标（星标的排前面），同组内再按最后一条消息时间倒序。
+            items.sort((a, b) => {
+                if (!!a.starred !== !!b.starred) return a.starred ? -1 : 1;
+                return (b.last?.timestamp || 0) - (a.last?.timestamp || 0);
+            });
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
@@ -1037,6 +1092,113 @@ ${logText.substring(0, 10000)}
             addToast('图片发送失败', 'error');
         }
     };
+
+    // ───────────── 群聊版「回形针」：与单聊同一套功能 ─────────────
+    const wallet = Math.round((userProfile.balance || 0) * 100) / 100;
+
+    // 留个声：录音完成 → 落库为 voice 消息（转写进 metadata，导演上下文可读）
+    const voice = useVoiceRecorder({
+        onComplete: (audio, durationSec, transcript) => { void handleSendMessage('[语音消息]', 'voice', { voiceAudio: audio, durationSec, transcript }); },
+        onDenied: () => addToast('无法访问麦克风，请检查浏览器权限', 'error'),
+    });
+
+    // 寄零花（钱包实扣）：校验金额 → adjustUserBalance(-amt) → 红包消息
+    const sendGroupTransfer = () => {
+        const amt = Math.round(parseFloat(transferAmount) * 100) / 100;
+        if (!amt || amt <= 0) { addToast('填个金额吧', 'info'); return; }
+        if (amt > wallet) { addToast(`钱包余额不足（¥${wallet}）`, 'error'); return; }
+        adjustUserBalance(-amt);
+        void handleSendMessage(`[红包] ${amt} Credits`, 'transfer', { amount: amt, note: transferNote.trim() || undefined });
+        setModalType('none'); setTransferAmount(''); setTransferNote('');
+    };
+
+    // 落脚点：分享一个地点
+    const sendGroupLocation = () => {
+        const name = locName.trim();
+        if (!name) { addToast('填一下地点名称', 'info'); return; }
+        void handleSendMessage(name, 'location', { address: locDetail.trim() || undefined });
+        setActionModal('none'); setLocName(''); setLocDetail('');
+    };
+
+    // 画一张：AI 生图 → 预览 → 发送
+    const genGroupImage = async () => {
+        const prompt = imgPrompt.trim();
+        if (!prompt) { addToast('描述一下想画什么', 'info'); return; }
+        setImgBusy(true);
+        try {
+            try { localStorage.setItem('moro_image_gen_model', imgModel.trim()); } catch { /* ignore */ }
+            const dataUri = await generateImage(prompt, apiConfig, imgModel);
+            setImgPreview(dataUri);
+        } catch (e: any) { addToast(e?.message || 'AI 画图失败', 'error'); }
+        finally { setImgBusy(false); }
+    };
+    const sendGroupImage = () => {
+        if (!imgPreview) return;
+        void handleSendMessage(imgPreview, 'image', { aiGenerated: true, genPrompt: imgPrompt.trim() });
+        setActionModal('none'); setImgPreview(null); setImgPrompt('');
+    };
+
+    // 幕后指令：写一条 OOC 导演指令（系统消息），成员们据此演
+    const sendGroupSystemCmd = () => {
+        const text = sysCmd.trim();
+        if (!text) { addToast('写点什么吧', 'info'); return; }
+        void handleSendMessage(`[幕后指令] ${text}`, 'system');
+        setActionModal('none'); setSysCmd('');
+    };
+
+    // 装订成册：把群聊「现在就」整理进群记忆宫殿
+    const archiveGroupMemory = async () => {
+        if (!activeGroup || isSummarizing) return;
+        const members = characters.filter(c => activeGroup.members.includes(c.id));
+        setShowActions(false);
+        setIsSummarizing(true);
+        setSummaryProgress('整理群记忆中…');
+        try {
+            const res = await processGroupNewMessages(activeGroup, members, userProfile.name, (s) => setSummaryProgress(s));
+            if (!res || res.reason === 'no_config' || res.reason === 'no_enabled_member') addToast('先给群成员开启记忆宫殿再装订哦', 'info');
+            else if (res.reason) addToast('暂时没有需要装订的新内容', 'info');
+            else addToast(`已装订 ${res.stored} 条群记忆`, 'success');
+        } catch { addToast('装订失败，稍后再试', 'error'); }
+        finally { setIsSummarizing(false); setSummaryProgress(''); }
+    };
+
+    // 重写一遍：撤掉上一轮成员们的发言，重新让导演接话
+    const rerollDirector = async () => {
+        if (!activeGroup || isTyping) return;
+        setShowActions(false);
+        const all = await DB.getGroupMessages(activeGroup.id);
+        let lastUserIdx = -1;
+        for (let i = all.length - 1; i >= 0; i--) { if (all[i].charId === 'user' && all[i].role === 'user') { lastUserIdx = i; break; } }
+        const tail = all.slice(lastUserIdx + 1).filter(m => m.charId !== 'user' && m.role !== 'system' && m.type !== 'system');
+        if (tail.length === 0) { addToast('还没有可重写的成员发言', 'info'); return; }
+        await DB.deleteMessages(tail.map(m => m.id));
+        const remain = await DB.getGroupMessages(activeGroup.id);
+        setMessages(remain);
+        await triggerDirector(remain);
+    };
+
+    // 碰一碰：群里选个成员戳一戳（复用已有的 handlePokeMember）
+    // 单聊专属功能在群里：先选「对谁？」→ 把动作写进 localStorage 深链到该成员单聊执行
+    const routeToMemberAction = (charId: string, action: string) => {
+        if (action === 'poke') { void handlePokeMember(charId); setMemberPicker(null); setShowActions(false); return; }
+        try { localStorage.setItem('moro_chat_pending_action', action); } catch { /* ignore */ }
+        setMemberPicker(null);
+        setShowActions(false);
+        setActiveCharacterId(charId);
+        openApp(AppID.Chat);
+    };
+    const openMemberPicker = (action: string, title: string, hint?: string) => { setShowActions(false); setMemberPicker({ action, title, hint }); };
+
+    // 文具盒纸条按钮（与单聊 ActionStrip 同款样式）
+    const strip = (icon: React.ReactNode, label: string, hint: string, onClick: () => void, opts?: { ink?: boolean; disabled?: boolean }) => (
+        <button onClick={onClick} disabled={opts?.disabled} className={`stationery-strip ${opts?.ink ? 'stationery-strip-ink' : ''} ${opts?.disabled ? 'opacity-40' : ''}`}>
+            <div className="stamp-box">{icon}</div>
+            <div className="flex-1 min-w-0 text-left">
+                <div className={`text-[12px] font-bold tracking-wide truncate ${opts?.ink ? 'text-white' : 'text-slate-700'}`}>{label}</div>
+                <div className={`text-[9px] mt-0.5 truncate ${opts?.ink ? 'text-white/60' : 'text-slate-400'}`}>{hint}</div>
+            </div>
+        </button>
+    );
 
     // --- Logic: AI Director (The Core Logic) ---
 
@@ -1658,11 +1820,14 @@ ${attachedImagesNote}
                                 <div
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
-                                    className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]"
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-amber-50/60' : ''}`}
                                 >
                                     <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                        <div className="font-bold text-slate-700 truncate text-sm">{cv.name}</div>
+                                        <div className="flex items-center gap-1">
+                                            {cv.starred && <span className="text-amber-400 text-[12px] shrink-0" title="已星标置顶">★</span>}
+                                            <span className="font-bold text-slate-700 truncate text-sm">{cv.name}</span>
+                                        </div>
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
                                     </div>
                                     <span className="text-[9px] text-slate-300 shrink-0">{formatConvoTime(cv.last?.timestamp)}</span>
@@ -2047,6 +2212,16 @@ ${attachedImagesNote}
             <div className="bg-[#faf9f6] border-t border-dashed border-[#d9d4c8] pb-safe shrink-0 z-40 relative">
                 {activeGroup?.dissolved ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-medium">此群聊已被解散，仅可查看历史消息</div>
+                ) : voice.isRecording ? (
+                    <div className="p-3 flex items-center gap-3">
+                        <button onClick={() => voice.stopRecording(false)} className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center active:scale-90 transition shrink-0" title="取消"><Trash size={20} weight="bold" /></button>
+                        <div className="flex-1 min-w-0 bg-white rounded-xl border border-rose-200 px-3 py-2 flex items-center gap-2">
+                            <Microphone size={16} weight="fill" className="text-rose-500 shrink-0" />
+                            <span className="text-[13px] font-bold text-rose-500 tabular-nums shrink-0">{voice.recordSecs}s</span>
+                            <span className="text-[12px] text-slate-400 truncate">{voice.liveTranscript || '正在录音…'}</span>
+                        </div>
+                        <button onClick={() => voice.stopRecording(true)} className="h-10 px-4 rounded-xl bg-[#2b2933] text-white font-bold text-sm shrink-0 active:scale-95 transition flex items-center gap-1"><StopCircle size={18} weight="fill" />发送</button>
+                    </div>
                 ) : selectionMode ? (
                     <div className="p-3 flex justify-center bg-white">
                         <button
@@ -2114,27 +2289,40 @@ ${attachedImagesNote}
                     </div>
                 )}
 
-                {/* --- 文具盒抽屉（与单聊同一套纸条按钮） --- */}
+                {/* --- 文具盒抽屉（与单聊同一套纸条按钮，全功能移植到群聊） --- */}
                 {showActions && (
                     <div className="h-64 bg-[#faf9f6] scrap-panel border-t border-dashed border-[#d9d4c8] px-4 py-4 animate-slide-up overflow-y-auto no-scrollbar">
                         <div className="stationery-grid grid grid-cols-2 gap-x-3 gap-y-2.5">
+                            {/* 寄给大家：直接发进群 */}
                             <div className="drawer-tag col-span-2"><span>寄 给 大 家</span></div>
-                            <button onClick={() => fileInputRef.current?.click()} className="stationery-strip">
-                                <div className="stamp-box"><ImageSquare size={20} weight="bold" /></div>
-                                <div className="flex-1 min-w-0 text-left">
-                                    <div className="text-[12px] font-bold tracking-wide text-slate-700">贴照片</div>
-                                    <div className="text-[9px] mt-0.5 text-slate-400 truncate">从相册挑一张寄去</div>
-                                </div>
-                            </button>
+                            {strip(<ImageSquare size={20} weight="bold" />, '贴照片', '从相册挑一张寄去', () => fileInputRef.current?.click())}
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                            {strip(<Coins size={20} weight="bold" />, '寄零花', '塞红包·按钱包余额实扣', () => setModalType('transfer'))}
+                            {strip(<CassetteTape size={20} weight="bold" />, '留个声', '录一段语音发群里', () => { setShowActions(false); void voice.startRecording(); })}
+                            {strip(<MapTrifold size={20} weight="bold" />, '落脚点', '分享一个地点', () => setActionModal('location'))}
+                            {strip(<PaintBrush size={20} weight="bold" />, '画一张', 'AI 现画一张图', () => setActionModal('image-gen'))}
+                            {strip(<HandTap size={20} weight="bold" />, '碰一碰', '戳一戳某位群友', () => openMemberPicker('poke', '戳一戳谁？'))}
 
-                            <button onClick={() => setModalType('transfer')} className="stationery-strip">
-                                <div className="stamp-box"><Coins size={20} weight="bold" /></div>
-                                <div className="flex-1 min-w-0 text-left">
-                                    <div className="text-[12px] font-bold tracking-wide text-slate-700">寄零花</div>
-                                    <div className="text-[9px] mt-0.5 text-slate-400 truncate">给群里塞点心意</div>
-                                </div>
-                            </button>
+                            {/* 群友互动：单聊专属功能，先选「对谁」再深链到该成员单聊 */}
+                            <div className="drawer-tag col-span-2"><span>找 个 群 友</span></div>
+                            {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '给某位群友打电话', () => openMemberPicker('voice-call', '给谁打电话？'))}
+                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '约某位群友线下见', () => openMemberPicker('offline-date', '约谁见面？'))}
+                            {strip(<Detective size={20} weight="bold" />, '翻翻手机', '翻某位群友的手机', () => openMemberPicker('check-phone', '翻谁的手机？'))}
+                            {strip(<EnvelopeOpen size={20} weight="bold" />, '悄悄来信', '设置某位群友主动找你', () => openMemberPicker('proactive', '让谁悄悄来信？'))}
+                            {strip(<Scroll size={20} weight="bold" />, 'TA 的日常', '看某位群友离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
+
+                            {/* 这本群录 */}
+                            <div className="drawer-tag col-span-2"><span>这 本 群 录</span></div>
+                            {strip(<BookBookmark size={20} weight="bold" />, isSummarizing ? '装订中…' : '装订成册', '把群聊整理进群记忆', () => void archiveGroupMemory(), { disabled: isSummarizing })}
+                            {strip(<Eraser size={20} weight="bold" />, '重写一遍', '撤掉上一轮重新接话', () => void rerollDirector(), { disabled: isTyping })}
+                            {strip(<Wind size={20} weight="bold" />, '回个神', '帮某位群友自我校准', () => openMemberPicker('recenter', '帮谁回个神？'))}
+                            {strip(<CalendarCheck size={20} weight="bold" />, '今日作息', '看某位群友的作息', () => openMemberPicker('schedule', '看谁的作息？'))}
+
+                            {/* 特别通道 */}
+                            <div className="drawer-tag col-span-2"><span>特 别 通 道</span></div>
+                            {strip(<Hamburger size={20} weight="bold" />, '麦麦点单', '找某位群友一起点麦麦', () => openMemberPicker('mcd-request', '和谁一起点？'))}
+                            {strip(<Lightbulb size={20} weight="bold" />, '看看思绪', '调某位群友的思考展示', () => openMemberPicker('thinking-settings', '看谁的思绪？'))}
+                            {strip(<Scroll size={20} weight="bold" />, '幕后指令', '给成员们一条 OOC 指令', () => setActionModal('system-cmd'), { ink: true })}
                         </div>
                     </div>
                 )}
@@ -2322,12 +2510,56 @@ ${attachedImagesNote}
                 />
             </Modal>
 
-            {/* Transfer Modal */}
-            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={() => setModalType('none')} footer={<button onClick={() => { handleSendMessage(`[红包] ${transferAmount} Credits`, 'transfer', { amount: transferAmount }); setModalType('none'); }} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">塞进红包</button>}>
+            {/* Transfer Modal —— 钱包实扣 */}
+            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={() => { setModalType('none'); setTransferNote(''); }} footer={<button onClick={sendGroupTransfer} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">塞进红包</button>}>
                 <div className="space-y-4">
-                    <div className="text-center py-4 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
+                    <div className="text-center py-2 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
                     <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="金额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                    <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                    <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1 text-slate-400"><Wallet size={13} weight="fill" />钱包余额 ¥{wallet}</div>
                 </div>
+            </Modal>
+
+            {/* 落脚点 / 位置分享 */}
+            <Modal isOpen={actionModal === 'location'} title="分享落脚点" onClose={() => setActionModal('none')} footer={<button onClick={sendGroupLocation} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">寄出位置</button>}>
+                <div className="space-y-3">
+                    <input value={locName} onChange={e => setLocName(e.target.value)} placeholder="地点名称，如「街角咖啡馆」" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                    <input value={locDetail} onChange={e => setLocDetail(e.target.value)} placeholder="详细地址（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                </div>
+            </Modal>
+
+            {/* 画一张 / AI 生图 */}
+            <Modal isOpen={actionModal === 'image-gen'} title="AI 画一张" onClose={() => { setActionModal('none'); setImgPreview(null); }} footer={imgPreview ? <button onClick={sendGroupImage} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">寄进群里</button> : <button onClick={() => void genGroupImage()} disabled={imgBusy} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg disabled:opacity-50">{imgBusy ? '正在画…' : '开始画'}</button>}>
+                <div className="space-y-3">
+                    <textarea value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} placeholder="描述想画的画面…" rows={3} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none resize-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                    <input value={imgModel} onChange={e => setImgModel(e.target.value)} placeholder="生图模型（选填）" className="w-full px-4 py-2.5 bg-slate-100 rounded-2xl text-xs outline-none text-slate-600 placeholder:text-slate-300" />
+                    {imgPreview && <img src={imgPreview} className="w-full rounded-2xl border border-slate-200" alt="preview" />}
+                </div>
+            </Modal>
+
+            {/* 幕后指令 / OOC */}
+            <Modal isOpen={actionModal === 'system-cmd'} title="幕后指令" onClose={() => setActionModal('none')} footer={<button onClick={sendGroupSystemCmd} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">下达指令</button>}>
+                <div className="space-y-2">
+                    <p className="text-[12px] text-slate-400">以「导演/旁白」身份给群成员一条幕后指令（作为系统提示出现在群里，成员据此演）。</p>
+                    <textarea value={sysCmd} onChange={e => setSysCmd(e.target.value)} placeholder="如：突然停电了，大家摸黑找蜡烛…" rows={3} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none resize-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                </div>
+            </Modal>
+
+            {/* 成员选择器：单聊专属功能在群里选「对谁」 */}
+            <Modal isOpen={!!memberPicker} title={memberPicker?.title || '选择成员'} onClose={() => setMemberPicker(null)}>
+                {memberPicker && (
+                    <div className="space-y-1.5">
+                        {memberPicker.hint && <p className="text-[12px] text-slate-400 mb-1">{memberPicker.hint}</p>}
+                        {(activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)) : []).map(c => (
+                            <button key={c.id} onClick={() => routeToMemberAction(c.id, memberPicker.action)} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 active:scale-[0.98] transition text-left">
+                                <img src={c.avatar} className="w-10 h-10 rounded-full object-cover border border-slate-100 shrink-0" alt={c.name} />
+                                <span className="flex-1 min-w-0 text-sm font-bold text-slate-700 truncate">{displayNameOf(activeGroup!, c.id)}</span>
+                                <span className="text-slate-300">›</span>
+                            </button>
+                        ))}
+                        {activeGroup && characters.filter(c => activeGroup.members.includes(c.id)).length === 0 && <div className="text-center text-xs text-slate-400 py-8">这个群还没有成员</div>}
+                    </div>
+                )}
             </Modal>
 
             {/* 成员资料 Modal —— 点头像进入；管理员/群主多出禁言、头衔、移除 */}

@@ -1931,6 +1931,29 @@ export const DB = {
       transaction.objectStore(STORE_DAILY_SCHEDULE).put(schedule);
   },
 
+  /** 删除某角色的全部每日日程（清空聊天记录·全部清除时连日程一并抹掉） */
+  deleteDailySchedulesByChar: async (charId: string): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          if (!db.objectStoreNames.contains(STORE_DAILY_SCHEDULE)) { resolve(); return; }
+          const transaction = db.transaction(STORE_DAILY_SCHEDULE, 'readwrite');
+          const store = transaction.objectStore(STORE_DAILY_SCHEDULE);
+          const req = store.openCursor();
+          req.onsuccess = () => {
+              const cursor = req.result;
+              if (cursor) {
+                  const val = cursor.value as DailySchedule;
+                  if (val?.charId === charId || (typeof cursor.key === 'string' && cursor.key.startsWith(`${charId}_`))) {
+                      cursor.delete();
+                  }
+                  cursor.continue();
+              }
+          };
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+      });
+  },
+
   // ─── 热点快照 (分时段，全角色共享) ───
   getHotNewsSnapshot: async (id: string): Promise<HotNewsSnapshot | null> => {
       const db = await openDB();

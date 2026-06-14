@@ -6,6 +6,8 @@ import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorag
 import { ProactiveChat } from '../utils/proactiveChat';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
+import { isAppealDue, generateUnblockAppeal } from '../utils/unblockAppeal';
+import { resolveAuxApi } from '../utils/auxApi';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
 import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated } from '../utils/takeout';
@@ -157,6 +159,7 @@ const loadJSZip = async (): Promise<JSZipCtorLike> => {
 // 默认实时配置
 const defaultRealtimeConfig: RealtimeConfig = {
   weatherEnabled: false,
+  weatherMode: 'geo',
   weatherApiKey: '',
   weatherCity: 'Beijing',
   newsEnabled: false,
@@ -686,6 +689,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const schedulerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const interceptorsInitialized = useRef(false);
+  // 解除拉黑申诉：每个角色同一时刻只生成一条，避免 5s 调度循环里重复触发 API
+  const appealInFlightRef = useRef<Set<string>>(new Set());
   
   // Back Handler Ref
   const backHandlerRef = useRef<(() => boolean) | null>(null);
@@ -1252,6 +1257,36 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               } catch (e) { /* notification failed */ }
                           }
                       }
+                  }
+
+                  // ── 解除拉黑申诉：被拉黑的角色到点主动发来「求解封」验证消息 ──
+                  // 异步生成（不阻塞调度循环），每角色同一时刻只一条；生成后落库 + 标记
+                  // awaiting（等用户在聊天页同意/拒绝）+ 计未读，复用主动消息那套通知。
+                  if (isAppealDue(char) && !appealInFlightRef.current.has(char.id)) {
+                      appealInFlightRef.current.add(char.id);
+                      void (async () => {
+                          try {
+                              const api = resolveAuxApi(auxApiConfig, apiConfig);
+                              const text = await generateUnblockAppeal({ char, userProfile: userProfileRef.current, api });
+                              // 二次确认：生成期间用户可能已解封 / 已有待处理申诉
+                              const fresh = charactersRef.current.find(c => c.id === char.id) || char;
+                              if (!fresh.blacklisted || !fresh.unblockAppeal?.active || fresh.unblockAppeal?.awaiting) return;
+                              const now = Date.now();
+                              await DB.saveMessage({
+                                  charId: char.id, role: 'assistant', type: 'text', content: text, timestamp: now,
+                                  metadata: { unblockAppeal: { status: 'pending', rejectedCount: fresh.unblockAppeal.rejectedCount || 0 } },
+                              });
+                              await updateCharacter(char.id, { unblockAppeal: { ...fresh.unblockAppeal, awaiting: true } });
+                              const chatting = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === char.id;
+                              setLastMsgTimestamp(now);
+                              if (!chatting) {
+                                  setUnreadMessages(prev => ({ ...prev, [char.id]: (prev[char.id] || 0) + 1 }));
+                                  addToast(`${char.name} 申请解除拉黑`, 'info');
+                              }
+                          } catch { /* 生成失败下次再试 */ } finally {
+                              appealInFlightRef.current.delete(char.id);
+                          }
+                      })();
                   }
               } catch (e) { /* schedule check failed */ }
           }
@@ -2514,7 +2549,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memories: [],
       contextLimit: 500,
       emotionConfig: { enabled: true },
-      // 新建角色也要先加好友才能聊天（名册·新的朋友里通过验证）
+      // 新建角色也要先加好友才能聊天（名册·新的朋友里通过验证），加好友后才进「往来」
       friendStatus: 'pending',
     };
     setCharacters(prev => [...prev, newChar]);
@@ -2525,8 +2560,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    // 导入的角色同样要先加好友才能聊天（除非该卡明确已是好友）
-    const imported: CharacterProfile = { ...char, friendStatus: char.friendStatus === 'friend' ? 'friend' : 'pending' };
+    // 导入的角色同样要先加好友才能聊天（除非该卡明确已是好友）；加好友后才进「往来」
+    const imported: CharacterProfile = char.friendStatus === 'friend'
+        ? { ...char, addedToChat: char.addedToChat ?? true }
+        : { ...char, friendStatus: 'pending' };
     setCharacters(prev => [...prev.filter(c => c.id !== imported.id), imported]);
     setActiveCharacterId(imported.id);
     await DB.saveCharacter(imported);

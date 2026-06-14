@@ -21,7 +21,7 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 
 | 文件 | 职责 |
 |------|------|
-| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除）、随字版的正则补丁（停用/拆除） |
+| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除）、随字版的正则补丁（新增/编辑/启停/拆除，复用 `components/regex/RegexEditor.tsx` 缝纫台） |
 | `utils/presets.ts` | 导入导出（含 `extensions.regex_scripts` 解析/写回）、运行时组装（`applyPresetToMessages`）、采样参数（`getPresetGenParams`）、`PresetRuntime` 开关读写、`refreshPresetRegexCache`（预热预设正则缓存） |
 | `utils/presets.test.ts` | 导入映射 / 组装语义（含 @Depth 注入次序）/ 预设自带正则往返的单测 |
 | `types.ts` | `TavernPreset`（含 `regexScripts`）/ `PresetPrompt` / `PresetPromptOrderCharacter`（字段名与 ST 对齐，snake_case） |
@@ -89,15 +89,26 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 - **只跟着这副字版走**：仅当本预设被激活、且印坊开印（`os_preset_enabled`）时生效。
   执行顺序排在补丁铺「满铺通用」（全局）之后、角色「只缝给 TA」（局部）之前 —— 对齐
   ST `getRegexScripts` 的 GLOBAL→PRESET→SCOPED。
-- **运行时缓存**：聊天管线四个挂载点是同步的、取不到 async 的激活预设，所以
-  `utils/regex/store.ts` 维持一份模块级 `presetCache`（`setPresetRegexScripts` 写、
-  `getPresetRegexScripts` 读、`collectRegexScripts` 合并）。缓存刷新三处：App 启动
+- **运行时缓存（含 localStorage 持久化）**：聊天管线四个挂载点是同步的、取不到 async 的
+  激活预设，所以 `utils/regex/store.ts` 把激活预设正则**持久化到 localStorage
+  （`moro_preset_regex_scripts`）+ 懒预热**进模块级 `presetCache`（`setPresetRegexScripts` 写库
+  +写 LS、`getPresetRegexScripts` 读、`collectRegexScripts` 合并）。这一步是「**预设正则在聊天
+  界面不生效**」的修复关键：早期 `presetCache` 只活内存、靠异步 `refreshPresetRegexCache`
+  填充，刷新页面后第一帧 / 离线推送在预热完成前落库时缓存为空，显示层 markdownOnly 脚本
+  命不中（伪 XML 如 `<Human_inputs>` 露在气泡里）、AI 输出落库的「改原文」脚本也漏掉。改成
+  与全局脚本同款持久化后，**首帧即可同步命中**。LS 写入三处保持同步：App 启动
   （`refreshPresetRegexCache`，OSContext）、每次发送（`buildChatRequestPayload` 复用
   已 await 的激活预设，免再读库）、活字盘里选预设 / 开关印坊 / 改动正则（即时反映到
-  聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染）。
-- **管理**：活字盘激活字版下方的「随字版的补丁」区可逐条停用 / 拆除（只动这副字版，
-  不碰补丁铺里的通用补丁）。没有 ST 的「预设脚本需授权」弹窗 —— 随预设导入直接生效
-  （与角色卡正则「随卡直接生效」一致）。
+  聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染 / 重复写 LS）。
+- **管理**：活字盘激活字版下方的「随字版的补丁」区可逐条**新增 / 编辑 / 启停 / 拆除**
+  （点一条即打开与补丁铺同一套缝纫台 `components/regex/RegexEditor.tsx`；只动这副字版，
+  不碰补丁铺里的通用补丁）。改动经 `mutateActive` 落库并触发 `setPresetRegexScripts`，
+  即时反映到聊天与气泡渲染（见下「运行时缓存」与刷新指纹）。没有 ST 的「预设脚本需授权」
+  弹窗 —— 随预设导入直接生效（与角色卡正则「随卡直接生效」一致）。
+- **改了就生效**：`utils/regex/store.ts` 的缓存刷新指纹（`presetCacheSignature`）覆盖
+  **全部影响执行/显示的字段**（placement / markdownOnly / promptOnly / trimStrings /
+  substituteRegex / 深度 / runOnEdit，而非只看 find/replace）—— 否则在活字盘里只改
+  placement、只勾「只改显示」等会因指纹不变被早退跳过，出现「编辑了却不替换」。
 - **往返**：`exportTavernPreset` 把 `preset.regexScripts` 写回
   `extensions.regex_scripts`（权威源，覆盖 raw 里可能过期的副本；清空后连旧副本一并
   抹掉），导出物可拿回酒馆继续用。

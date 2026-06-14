@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CharacterProfile } from '../../types';
 import { DB } from '../../utils/db';
 import { useOS } from '../../context/OSContext';
+import { initUnblockAppeal } from '../../utils/unblockAppeal';
 
 /**
  * 角色档案页（原创手帐拼贴风）：
@@ -107,8 +108,14 @@ const FriendSettingsPage: React.FC<{
                         label="加入黑名单"
                         toggle={<ToggleSwitch on={!!char.blacklisted} onToggle={() => {
                             const next = !char.blacklisted;
-                            // blacklistedAt 标记拉黑时刻：此后角色发来的消息气泡旁带红色感叹号
-                            updateCharacter(char.id, { blacklisted: next, blacklistedAt: next ? Date.now() : undefined });
+                            // blacklistedAt 标记拉黑时刻：此后角色发来的消息气泡旁带红色感叹号。
+                            // 拉黑同时开启「解除拉黑申诉」：角色稍后会主动发来求解封的验证消息；
+                            // 移出黑名单则停止申诉。
+                            updateCharacter(char.id, {
+                                blacklisted: next,
+                                blacklistedAt: next ? Date.now() : undefined,
+                                unblockAppeal: next ? initUnblockAppeal() : { active: false, awaiting: false, nextAt: 0, rejectedCount: 0 },
+                            });
                             addToast(next ? `已将 ${char.name} 加入黑名单` : `已将 ${char.name} 移出黑名单`, 'info');
                         }} />}
                     />
