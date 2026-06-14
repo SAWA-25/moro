@@ -93,10 +93,14 @@ function buildPersona(char: CharacterProfile): string {
 export async function resolveFirstMet(charId: string, fallback: number): Promise<number> {
     try {
         const msgs = await DB.getMessagesByCharId(charId);
-        const stamps = msgs
-            .filter(m => m.role !== 'system' && typeof m.timestamp === 'number' && m.timestamp > 0)
-            .map(m => m.timestamp);
-        if (stamps.length) return Math.min(...stamps);
+        // 用循环求最小值，别用 Math.min(...stamps)——消息可能上万条，展开会爆调用栈。
+        let min = Infinity;
+        for (const m of msgs) {
+            if (m.role !== 'system' && typeof m.timestamp === 'number' && m.timestamp > 0 && m.timestamp < min) {
+                min = m.timestamp;
+            }
+        }
+        if (min !== Infinity) return min;
     } catch { /* ignore */ }
     return fallback;
 }
