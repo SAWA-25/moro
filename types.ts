@@ -1533,6 +1533,8 @@ export interface BankShopState {
     pendingRevenue?: number;
     /** 上次把流逝时间折算成 pendingRevenue 的锚点时间戳。 */
     lastAccrualAt?: number;
+    /** 当前天气/限时事件（影响客流与挂机产出），到期后随机切换。 */
+    weather?: { id: string; until: number };
 }
 
 export interface BankFullState {

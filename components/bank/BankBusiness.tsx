@@ -25,6 +25,7 @@ export interface BusinessResult {
     lostSales?: number;      // 因缺货空手而归的客人数（提示去进货）
     loyaltyEvents?: { name: string; tier: 'regular' | 'vip' }[]; // 本轮晋升的常客 / VIP
     regularVisits?: number;  // 本轮回头光顾的常客人次
+    weather?: { emoji: string; label: string; note: string }; // 本轮天气/事件
 }
 
 const isUrl = (v?: string) => !!v && (v.startsWith('http') || v.startsWith('data:'));
@@ -65,6 +66,7 @@ export const BusinessResultModal: React.FC<{
                     </div>
                 </div>
                 <div className="text-[11px] opacity-85 mt-2">接待了 {result.customerCount} 位客人 · 含小费 {currency}{result.tips}{result.repBonusPct > 0 ? ` · 口碑加成 +${result.repBonusPct}%` : ''}{result.levelBonusPct && result.levelBonusPct > 0 ? ` · Lv.${result.shopLevel} 档次 +${result.levelBonusPct}%` : ''}</div>
+                {result.weather && <div className="text-[11px] opacity-85 mt-1">{result.weather.emoji} {result.weather.label} · {result.weather.note}</div>}
             </div>
             {/* 缺货流失提示 */}
             {!!result.lostSales && result.lostSales > 0 && (
