@@ -17,6 +17,7 @@ import CharacterProfilePage from '../components/character/CharacterProfilePage';
 import CheckPhone from './CheckPhone';
 import CharPhoneCheckOverlay from '../components/chat/CharPhoneCheckOverlay';
 import OfflineModeModal from '../components/chat/OfflineModeModal';
+import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
@@ -69,6 +70,8 @@ const Chat: React.FC = () => {
         } catch { return 0; }
     }, []);
     const [messages, setMessages] = useState<Message[]>([]);
+    // 行动选择器：点最后一轮 user 头像后弹出（生成可编辑的「接下来说点啥」选项）。纯手动，无开关。
+    const [showActionSelector, setShowActionSelector] = useState(false);
     // Instant Push 路径："准备中"三个点 = 消息正在拼接+发送; 消失 = SSE POST 已排进
     // 浏览器网络栈. 页面关闭时会主动 abort SSE, 让 worker 尽量走 Web Push fallback。
     const [instantSendingActive, setInstantSendingActive] = useState(false);
@@ -2633,6 +2636,14 @@ ${recent || '（你们还没怎么聊过）'}
 
     const collapsedCount = Math.max(0, totalMsgCount - displayMessages.length);
 
+    // 行动选择器入口：最后一条 user 消息的 id（点它的头像可生成「接下来说点啥」选项）。
+    const lastUserMsgId = useMemo(() => {
+        for (let i = displayMessages.length - 1; i >= 0; i--) {
+            if (displayMessages[i].role === 'user') return displayMessages[i].id;
+        }
+        return null;
+    }, [displayMessages]);
+
     // 稳定的思维链配置对象：只在角色/样式变化时重建，避免每次渲染新建对象击穿 MessageItem.memo。
     const thinkingChainOptions = useMemo(() => ({
         styleId: (char as any)?.thinkingChainStyle || 'echo',
@@ -3739,6 +3750,8 @@ ${recent || '（你们还没怎么聊过）'}
                             onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
                             blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
                             onClaimTransfer={handleClaimRequest}
+                            isLastUserMsg={m.role === 'user' && m.id === lastUserMsgId}
+                            onUserAvatarClick={() => setShowActionSelector(true)}
                         />
                         </div>
                     );
@@ -3916,6 +3929,7 @@ ${recent || '（你们还没怎么聊过）'}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
                     chromeStyle={osTheme.chatChromeStyle}
                     inputPlaceholder={convo?.inputPlaceholderText}
+                    inputAnimation={osTheme.chatInputAnimation}
                 />
             </div>
 
@@ -4253,6 +4267,19 @@ ${recent || '（你们还没怎么聊过）'}
                     apiConfig={apiConfig}
                     addToast={addToast}
                     onEnd={handleOfflineEnd}
+                />
+            )}
+
+            {/* 行动选择器：点最后一轮 user 头像后弹出 */}
+            {showActionSelector && char && (
+                <UserActionSelectorModal
+                    char={char}
+                    userProfile={userProfile}
+                    recent={messages}
+                    api={resolveAuxApi(auxApiConfig, apiConfig)}
+                    addToast={addToast}
+                    onClose={() => setShowActionSelector(false)}
+                    onSend={(text) => { void handleSendText(text); }}
                 />
             )}
 

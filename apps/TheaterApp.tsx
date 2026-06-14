@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users } from '@phosphor-icons/react';
+import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
 import ReflectionApp from './theater/ReflectionApp';
+import TalkTherapyApp from './theater/TalkTherapyApp';
 
 /**
  * 小剧场：原「攻略本」（galgame 恋爱攻略，apps/GuidebookApp.tsx）与「TRPG」（跑团
@@ -18,12 +19,13 @@ import ReflectionApp from './theater/ReflectionApp';
 
 const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection'>('home');
+    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk'>('home');
 
     if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
     if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
     if (section === 'trajectory') return <TrajectoryApp onExit={() => setSection('home')} />;
     if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
+    if (section === 'talk') return <TalkTherapyApp onExit={() => setSection('home')} />;
 
     return (
         <div
@@ -75,6 +77,20 @@ const TheaterApp: React.FC = () => {
                     </div>
                     <div className="text-[11px] text-white/55 mt-3 leading-relaxed">和角色玩一局 galgame：定场景、挑选项、攒好感度，结局生成攻略结算卡。</div>
                     <Heart size={64} weight="fill" className="absolute -bottom-3 -right-2 text-rose-300/10 rotate-[12deg]" />
+                </button>
+
+                {/* 谈心 */}
+                <button
+                    onClick={() => setSection('talk')}
+                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-pink-300/15 bg-gradient-to-br from-pink-500/15 to-violet-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
+                >
+                    <div className="text-[9px] tracking-[0.3em] text-pink-200/70 font-mono mb-2">HEART-TO-HEART — 好好被听一次</div>
+                    <div className="flex items-center gap-2.5">
+                        <ChatCircleDots size={26} weight="bold" className="text-pink-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-pink-50">谈心</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">心里堵得慌时，找个角色把话放下来。这里只负责好好听你说、轻轻抱住你——一个被美化过的、安全的安慰角落。</div>
+                    <Heart size={64} weight="fill" className="absolute -bottom-3 -right-2 text-pink-300/10 rotate-[10deg]" />
                 </button>
 
                 {/* TRPG */}
