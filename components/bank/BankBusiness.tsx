@@ -25,6 +25,7 @@ export interface BusinessResult {
     lostSales?: number;      // 因缺货空手而归的客人数（提示去进货）
     loyaltyEvents?: { name: string; tier: 'regular' | 'vip' }[]; // 本轮晋升的常客 / VIP
     regularVisits?: number;  // 本轮回头光顾的常客人次
+    mishaps?: number;        // 店员失误次数（累了会手忙脚乱）
     weather?: { emoji: string; label: string; note: string }; // 本轮天气/事件
 }
 
@@ -73,6 +74,13 @@ export const BusinessResultModal: React.FC<{
                 <div className="px-5 py-2.5 flex items-center gap-2 text-[12px] font-bold" style={{ background: '#FFF3E0', color: '#E67E22' }}>
                     <span>⚠️</span>
                     <span>{result.lostSales} 位客人没买到就走了 —— 货不够卖，记得去「经营」进货</span>
+                </div>
+            )}
+            {/* 店员失误提示 */}
+            {!!result.mishaps && result.mishaps > 0 && (
+                <div className="px-5 py-2.5 flex items-center gap-2 text-[12px] font-bold" style={{ background: '#FDECEA', color: '#C0392B' }}>
+                    <span>😵‍💫</span>
+                    <span>店员手忙脚乱 {result.mishaps} 次 —— 太累了，记得让店员「休息」一下</span>
                 </div>
             )}
             {/* 回头客 / VIP */}

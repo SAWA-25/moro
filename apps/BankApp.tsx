@@ -11,7 +11,7 @@ import BankGameMenu from '../components/bank/BankGameMenu';
 import BankAnalytics from '../components/bank/BankAnalytics';
 import BankLedger from '../components/bank/BankLedger';
 import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } from '../components/bank/BankBusiness';
-import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
+import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, buildMishapText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
 import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
@@ -1072,13 +1072,16 @@ ${JSON.stringify(list, null, 2)}
         const energetic = staff.filter(s => s.fatigue < 90).length;
         const tiredFactor = energetic === 0 ? 0.5 : 1; // 全员疲惫，客流减半
         const weather = getWeatherDef(cur.shop.weather?.id); // 天气：影响客流与小费
+        // 店员会失误：越累越容易手忙脚乱（出错/上错单），丢小费 + 招差评，提醒你让店员歇歇
+        const avgFatigue = staff.reduce((s, x) => s + x.fatigue, 0) / Math.max(1, staff.length);
+        const fumbleChance = Math.min(0.3, Math.max(0, (avgFatigue - 40) / 100 * 0.5));
 
         // 客流：基础随人气波动 × 天气倍率，外加店铺等级带来的额外客人；等级越高客流上限越大
         const customerCount = Math.max(2, Math.min(8 + level,
             Math.round((appeal / 90) * (0.8 + Math.random() * 0.5) * tiredFactor * weather.trafficMult) + 1 + shopLevelExtraCustomers(level)));
 
         const itemMap = new Map<string, { name: string; icon: string; qty: number; subtotal: number }>();
-        let base = 0, tips = 0, lostSales = 0, regularVisits = 0;
+        let base = 0, tips = 0, lostSales = 0, regularVisits = 0, mishaps = 0;
         const newReviews: ShopReview[] = [];
         const usedNpc = new Set<string>();
         const regulars: Record<string, ShopRegular> = { ...(cur.shop.regulars || {}) };
@@ -1118,30 +1121,44 @@ ${JSON.stringify(list, null, 2)}
             stockLeft[p.id] = (stockLeft[p.id] || 0) - 1;
             const price = recipePrice(p);
             base += price;
+            const fumbled = Math.random() < fumbleChance; // 店员手忙脚乱：照付钱，但没小费 + 招差评
+            if (fumbled) mishaps++;
 
-            // 小费：常客/VIP 给得更勤更多；天气也影响给小费倾向（雨雪天更愿意多给）
-            const tipChance = (isVip ? 1 : isRegular ? 0.7 : 0.45) + weather.tipBias;
-            const tipMult = isVip ? 1.6 : isRegular ? 1.3 : 1;
-            if (Math.random() < tipChance) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2) * tipMult));
+            // 小费：失误就别想要小费了；否则常客/VIP/天气加成
+            if (!fumbled) {
+                const tipChance = (isVip ? 1 : isRegular ? 0.7 : 0.45) + weather.tipBias;
+                const tipMult = isVip ? 1.6 : isRegular ? 1.3 : 1;
+                if (Math.random() < tipChance) tips += Math.max(1, Math.round(price * (0.1 + Math.random() * 0.2) * tipMult));
+            }
 
             const ex = itemMap.get(p.id);
             if (ex) { ex.qty++; ex.subtotal += price; } else itemMap.set(p.id, { name: p.name, icon: p.icon, qty: 1, subtotal: price });
 
-            // 留评：常客更爱留评，且评分更高更稳
-            const reviewChance = isRegular ? 0.5 : 0.35;
-            if (Math.random() < reviewChance) {
-                let rating = 4 + (Math.random() < 0.5 ? 1 : 0);
-                if (energetic === 0) rating -= 2;
-                else if (avgRep < 3.5 && Math.random() < 0.4) rating -= 1;
-                if (Math.random() < 0.08) rating -= 2; // 偶发差评
-                if (isVip) rating = Math.max(rating, 4) + (Math.random() < 0.5 ? 1 : 0);
-                else if (isRegular) rating = Math.max(rating, 4);
-                rating = Math.max(1, Math.min(5, rating));
+            if (fumbled) {
+                // 失误必留差评（吐槽手忙脚乱 / 等太久）
+                const rating = Math.random() < 0.4 ? 1 : 2;
                 newReviews.push({
                     id: `rev-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
-                    authorName: who.name, avatar: who.avatar, rating, text: buildReviewText(rating, p.name),
+                    authorName: who.name, avatar: who.avatar, rating, text: buildMishapText(p.name),
                     productName: p.name, ts: Date.now(), isNpc: who.isNpc,
                 });
+            } else {
+                // 留评：常客更爱留评，且评分更高更稳
+                const reviewChance = isRegular ? 0.5 : 0.35;
+                if (Math.random() < reviewChance) {
+                    let rating = 4 + (Math.random() < 0.5 ? 1 : 0);
+                    if (energetic === 0) rating -= 2;
+                    else if (avgRep < 3.5 && Math.random() < 0.4) rating -= 1;
+                    if (Math.random() < 0.08) rating -= 2; // 偶发差评
+                    if (isVip) rating = Math.max(rating, 4) + (Math.random() < 0.5 ? 1 : 0);
+                    else if (isRegular) rating = Math.max(rating, 4);
+                    rating = Math.max(1, Math.min(5, rating));
+                    newReviews.push({
+                        id: `rev-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+                        authorName: who.name, avatar: who.avatar, rating, text: buildReviewText(rating, p.name),
+                        productName: p.name, ts: Date.now(), isNpc: who.isNpc,
+                    });
+                }
             }
 
             // 累计到访 + 晋升检测（常客 / VIP）
@@ -1192,6 +1209,7 @@ ${JSON.stringify(list, null, 2)}
             lostSales,
             loyaltyEvents,
             regularVisits,
+            mishaps,
             weather: { emoji: weather.emoji, label: weather.label, note: weather.note },
         });
 

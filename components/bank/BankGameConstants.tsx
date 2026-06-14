@@ -184,6 +184,10 @@ export const buildReviewText = (rating: number, productName: string): string => 
     return pick(pool).replace('{p}', productName);
 };
 
+/** 店员失误时的吐槽文案（{p}=点的商品） */
+export const buildMishapText = (productName: string): string =>
+    pick(MISHAP_REVIEWS).replace('{p}', productName);
+
 export const AVAILABLE_STAFF: Omit<ShopStaff, 'hireDate' | 'fatigue'>[] = [
     { id: 'staff-dog-01', name: '柴犬服务生', avatar: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f436.png', role: 'waiter', maxFatigue: 120 },
     { id: 'staff-bear-01', name: '棕熊大厨', avatar: 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f43b.png', role: 'chef', maxFatigue: 150 },
