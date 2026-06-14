@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowBendUpRight, BookBookmark, CalendarCheck, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
+import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 
@@ -757,6 +757,11 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             {/* 翻翻手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
                             <ActionStrip label="翻翻手机" hint="偷偷看一眼 TA 的屏幕" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
                                 <Detective className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            {/* 拍张照：用 TA 的手机拍一张此刻寄给 TA 看，一起讨论 */}
+                            <ActionStrip label="拍张照" hint="用 TA 的手机拍下此刻" dark={isDiscordStyle} onClick={() => onPanelAction('camera')}>
+                                <Camera className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             <ActionStrip label="悄悄来信" hint="让 TA 时不时主动找你" dark={isDiscordStyle} active={isProactiveActive} onClick={() => onPanelAction('proactive')}>
