@@ -19,7 +19,8 @@ const SYSTEM = [
     '2. 几条之间方向/语气要拉开差距：可以有顺着聊的、有岔开话题的、有调侃的、有走心的、有提问的、有发起邀约的等等，别都一个味儿。',
     '3. 紧扣最近的聊天内容与气氛，自然承接，不要答非所问。',
     '4. 不要旁白、不要解释、不要引号，只输出内容本身。',
-    '只输出一个 JSON 字符串数组，例如：["……","……","……","……"]，不要任何额外文字。',
+    '5. 必须给满我要求的条数（不少于 4 条），宁可多想几条也别偷懒少给。',
+    '只输出一个 JSON 字符串数组，例如：["……","……","……","……","……","……"]，不要任何额外文字。',
 ].join('\n');
 
 /** 从模型输出里宽松抠出字符串数组；失败时按行兜底。 */
@@ -34,7 +35,16 @@ function parseActions(raw: string): string[] {
         try {
             const arr = JSON.parse(body.slice(start, end + 1));
             if (Array.isArray(arr)) {
-                return arr.map(x => String(x).trim()).filter(Boolean);
+                return arr
+                    .map(x => {
+                        // 兼容模型偶尔吐出对象 {text:"…"} / {content:"…"} 的情况
+                        if (x && typeof x === 'object') {
+                            const v = (x as any).text ?? (x as any).content ?? (x as any).message ?? '';
+                            return String(v).trim();
+                        }
+                        return String(x).trim();
+                    })
+                    .filter(Boolean);
             }
         } catch { /* 落到按行兜底 */ }
     }
@@ -53,7 +63,7 @@ function recentTranscript(recent: Message[], charName: string, userName: string)
         .join('\n');
 }
 
-/** 生成若干条「我接下来可以发的话」候选（默认 4 条）。 */
+/** 生成若干条「我接下来可以发的话」候选（默认 6 条，至少 4 条）。 */
 export async function suggestUserActions(args: {
     api: ResolvedApi;
     char: CharacterProfile;
@@ -62,7 +72,7 @@ export async function suggestUserActions(args: {
     count?: number;
     signal?: AbortSignal;
 }): Promise<string[]> {
-    const { api, char, userProfile, recent, count = 4, signal } = args;
+    const { api, char, userProfile, recent, count = 6, signal } = args;
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
     const userName = (userProfile.name || '').trim() || '我';

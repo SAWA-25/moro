@@ -200,6 +200,17 @@ const SocialApp: React.FC = () => {
             p.tags.some(t => t.toLowerCase().includes(kw)));
     }, [posts, keyword]);
 
+    // 热门话题：从当前簿子里的 tags 统计高频话题，做成可点的筛选条
+    const topicChips = useMemo(() => {
+        const freq = new Map<string, number>();
+        posts.forEach(p => p.tags.forEach(t => {
+            const key = (t || '').trim();
+            if (!key) return;
+            freq.set(key, (freq.get(key) || 0) + 1);
+        }));
+        return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 16).map(([t]) => t);
+    }, [posts]);
+
     const [colA, colB] = useMemo(() => {
         const a: XhsFeedPost[] = []; const b: XhsFeedPost[] = [];
         visible.forEach((p, i) => (i % 2 === 0 ? a : b).push(p));
@@ -370,6 +381,29 @@ const SocialApp: React.FC = () => {
                     <Broom className="w-4 h-4" weight="bold" />
                 </button>
             </div>
+
+            {/* 热门话题条：从簿子里的标签聚出话题，点一下按话题翻找 */}
+            {topicChips.length > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0 overflow-x-auto no-scrollbar">
+                    <span className="text-[10px] font-bold text-[#8b8996] label-mono shrink-0 mr-0.5">话题</span>
+                    {keyword && (
+                        <button onClick={() => { setKeyword(''); setSearchInput(''); }}
+                            className="shrink-0 text-[11px] font-bold px-2 py-1 border-2 border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                            ✕ 全部
+                        </button>
+                    )}
+                    {topicChips.map(t => {
+                        const active = keyword.trim().toLowerCase() === t.toLowerCase();
+                        return (
+                            <button key={t}
+                                onClick={() => { const next = active ? '' : t; setKeyword(next); setSearchInput(next); }}
+                                className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${active ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
+                                #{t}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-4 pb-10">
                 {!loaded ? (

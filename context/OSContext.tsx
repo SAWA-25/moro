@@ -157,6 +157,7 @@ const loadJSZip = async (): Promise<JSZipCtorLike> => {
 // 默认实时配置
 const defaultRealtimeConfig: RealtimeConfig = {
   weatherEnabled: false,
+  weatherMode: 'geo',
   weatherApiKey: '',
   weatherCity: 'Beijing',
   newsEnabled: false,

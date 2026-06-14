@@ -5,9 +5,22 @@ import { suggestUserActions } from '../../utils/userActionSuggest';
 
 /**
  * 行动选择器弹窗（来往·聊天）。
- * 点最后一轮的 user 头像后弹出：根据最近上下文生成 4 条「接下来可以发的话」，
+ * 点最后一轮的 user 头像后弹出：根据最近上下文生成若干条「接下来可以发的话」，
  * 用户可自由编辑 / 删除 / 添加，挑一条发出去。纯手动触发，无开关。
+ * 目标 6 条、保底至少 4 条：模型少给或失败时用空槽补齐，绝不出现只剩一条/空白的情况。
  */
+
+/** 目标候选条数（向模型多要几条，方向更分散） */
+const TARGET_COUNT = 6;
+/** 无论如何都至少展示这么多条（不足用空槽补齐，供用户自己写） */
+const MIN_OPTIONS = 4;
+
+/** 把候选补齐到至少 MIN_OPTIONS 条（用空字符串占位）。 */
+function padOptions(acts: string[]): string[] {
+    const out = [...acts];
+    while (out.length < MIN_OPTIONS) out.push('');
+    return out;
+}
 
 interface Props {
     char: CharacterProfile;
@@ -28,12 +41,14 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
     const generate = async () => {
         setLoading(true);
         try {
-            const acts = await suggestUserActions({ api, char, userProfile, recent, count: 4 });
-            setOptions(acts.length ? acts : ['', '', '', '']);
+            const acts = await suggestUserActions({ api, char, userProfile, recent, count: TARGET_COUNT });
+            // 保底至少 MIN_OPTIONS 条：模型少给就用空槽补齐
+            setOptions(padOptions(acts));
             if (!acts.length) addToast('没想出来，自己写两句吧～', 'info');
         } catch (e: any) {
             addToast(`想词失败：${e?.message || e}`, 'error');
-            setOptions(prev => (prev.length ? prev : ['']));
+            // 失败也保证至少 MIN_OPTIONS 个空槽，保留用户已编辑过的内容
+            setOptions(prev => padOptions(prev.filter(o => o.trim())));
         } finally {
             setLoading(false);
         }

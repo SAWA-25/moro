@@ -554,8 +554,10 @@ export interface CharacterBuff {
 export interface RealtimeConfig {
   // 天气配置
   weatherEnabled: boolean;
-  weatherApiKey: string;  // OpenWeatherMap API Key
-  weatherCity: string;    // 城市名
+  /** 取数方式：'geo'（默认，浏览器定位 + Open-Meteo 免密钥）/ 'manual'（旧版手填 OpenWeatherMap Key + 城市） */
+  weatherMode?: 'geo' | 'manual';
+  weatherApiKey: string;  // OpenWeatherMap API Key（仅 manual 模式需要）
+  weatherCity: string;    // 城市名（仅 manual 模式用）
 
   // 新闻配置
   newsEnabled: boolean;
@@ -674,10 +676,15 @@ export interface RoomNote {
 
 export interface ScheduleSlot {
     startTime: string;    // "08:00"
+    endTime?: string;     // "09:00" 该时段大致结束时间（可选，仅展示用）
     activity: string;     // "晨跑"
     description?: string; // "在河边慢跑"
     emoji?: string;       // "🏃"
     location?: string;    // "河边"
+    /** 该时段的情绪基调（2-4字，如"松弛""专注""烦躁""期待"），用于卡片小标签 */
+    mood?: string;
+    /** 该时段的能量水平 1-5（1 困乏 / 5 满电），用于卡片小指示 */
+    energy?: number;
     innerThought?: string; // 该时段的内心独白，生成时由AI写好，运行时直接注入
     /**
      * 日程锚点来源：
