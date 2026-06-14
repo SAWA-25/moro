@@ -60,6 +60,7 @@ import LifeSimSettingsPanel from './lifesim/LifeSimSettingsPanel';
 import NPCEditorPanel from './lifesim/NPCEditorPanel';
 import ResetCityDialog from './lifesim/ResetCityDialog';
 import RoamView from './lifesim/RoamView';
+import DateView from './lifesim/DateView';
 
 // ── 常量 ────────────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ const LifeSimApp: React.FC = () => {
     const [editingNpc, setEditingNpc] = useState<SimNPC | null>(null);
     const [isResetting, setIsResetting] = useState(false);
     const [showRoam, setShowRoam] = useState(false);
+    const [showDate, setShowDate] = useState(false);
 
     const [activeTab, setActiveTab] = useState<'npcs'|'drama'|'relations'>('npcs');
     const [actionPanel, setActionPanel] = useState<'none'|'stir'|'add'>('none');
@@ -921,6 +923,11 @@ const LifeSimApp: React.FC = () => {
                             style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                             <MapTrifold size={16} weight="bold" />
                         </button>
+                        <button onClick={() => setShowDate(true)} title="带 TA 去约会"
+                            className="scrap-btn-paper flex items-center justify-center"
+                            style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+                            <HeartHalf size={16} weight="bold" />
+                        </button>
                         <button onClick={() => setShowSettings(true)} title="设定" className="scrap-btn-paper flex items-center justify-center relative"
                             style={{ width: 40, height: 40, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                             <GearSix size={16} weight="bold" />
@@ -1173,6 +1180,9 @@ const LifeSimApp: React.FC = () => {
 
             {/* ── 漫游系统 ── */}
             {showRoam && <RoamView onClose={() => setShowRoam(false)} />}
+
+            {/* ── 约会世界引擎 ── */}
+            {showDate && <DateView onClose={() => setShowDate(false)} />}
         </div>
     );
 };
