@@ -1,6 +1,7 @@
 
 import { useState, useRef, useEffect, MutableRefObject } from 'react';
-import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff } from '../types';
+import { CharacterProfile, UserProfile, Message, Emoji, EmojiCategory, GroupProfile, RealtimeConfig, CharacterBuff, AuxApiConfig } from '../types';
+import { resolveAuxApi } from '../utils/auxApi';
 import { DB } from '../utils/db';
 import { ChatPrompts } from '../utils/chatPrompts';
 import { safeFetchJson, safeResponseJson } from '../utils/safeApi';
@@ -319,6 +320,8 @@ interface UseChatAIProps {
     char: CharacterProfile | undefined;
     userProfile: UserProfile;
     apiConfig: any;
+    /** 副 API（聊天以外的辅助任务，如后台情绪评估）。缺省时回落主 API。 */
+    auxApiConfig?: AuxApiConfig;
     groups: GroupProfile[];
     emojis: Emoji[];
     categories: EmojiCategory[];
@@ -339,6 +342,7 @@ export const useChatAI = ({
     char,
     userProfile,
     apiConfig,
+    auxApiConfig,
     groups,
     emojis,
     categories,
@@ -419,11 +423,11 @@ export const useChatAI = ({
     // 用 ref 包高频变化的依赖 (music / userProfile / 等), 不在 dep 数组里 → effect 只在 char.id 变时
     // 重建 listener (切角色), 避免 music 每秒 tick 一次都 remove+addEventListener.
     const emotionEvalDepsRef = useRef({
-        userProfile, groups, emojis, categories, realtimeConfig, apiConfig,
+        userProfile, groups, emojis, categories, realtimeConfig, apiConfig, auxApiConfig,
         translationConfig, music, mcdMiniAppRef, evolvedNarrative,
     });
     emotionEvalDepsRef.current = {
-        userProfile, groups, emojis, categories, realtimeConfig, apiConfig,
+        userProfile, groups, emojis, categories, realtimeConfig, apiConfig, auxApiConfig,
         translationConfig, music, mcdMiniAppRef, evolvedNarrative,
     };
 
@@ -444,9 +448,10 @@ export const useChatAI = ({
                 try { await ActiveMsgStore.clearPendingEmotionEval(charIdAtMount); } catch { /* ignore */ }
                 return;
             }
+            // 后台情绪评估属「聊天以外」的辅助任务：角色自带情绪 API 优先，否则走副 API（回落主 API）
             const emotionApi = (char.emotionConfig.api?.baseUrl)
                 ? char.emotionConfig.api
-                : { baseUrl: deps.apiConfig.baseUrl, apiKey: deps.apiConfig.apiKey, model: deps.apiConfig.model };
+                : resolveAuxApi(deps.auxApiConfig, deps.apiConfig);
 
             try {
                 // 重新从 DB 拉 history (push msg 此刻已经在 DB 里, activeMsgRuntime 在 dispatch
@@ -702,7 +707,7 @@ export const useChatAI = ({
             const emotionApi = emotionEvalEnabled
                 ? ((char.emotionConfig!.api?.baseUrl)
                     ? char.emotionConfig!.api!
-                    : { baseUrl: apiConfig.baseUrl, apiKey: apiConfig.apiKey, model: apiConfig.model })
+                    : resolveAuxApi(auxApiConfig, apiConfig))
                 : null;
             if (emotionEvalEnabled && !instantOn && emotionApi) {
                 setEmotionStatus('evaluating');
