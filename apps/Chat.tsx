@@ -968,12 +968,6 @@ const Chat: React.FC = () => {
     const handleSendText = async (customContent?: string, customType?: MessageType, metadata?: any) => {
         if (!char || (!input.trim() && !customContent)) return;
 
-        // 还没加好友：先通过好友验证才能聊天（不论被创建还是被导入的角色）
-        if (char.friendStatus === 'pending') {
-            addToast('先通过好友验证才能和 TA 聊天', 'info');
-            return;
-        }
-
         // 拉黑拦截：任意一方拉黑期间私聊都发不出去
         if (char.charBlock?.active) {
             addToast('你已被对方拉黑，消息无法送达', 'error');
@@ -3531,17 +3525,6 @@ ${recent || '（你们还没怎么聊过）'}
                          </div>
                      </div>
                  </div>
-             )}
-
-             {/* 还没加好友：拦在聊天前的「添加好友」验证 */}
-             {char && char.friendStatus === 'pending' && (
-                 <FriendVerifyModal
-                     char={char}
-                     isOpen
-                     mode="add"
-                     onClose={closeApp}
-                     onAccepted={() => reloadMessages(visibleCountRef.current)}
-                 />
              )}
 
              {/* 浪漫求婚界面 */}

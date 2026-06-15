@@ -326,8 +326,6 @@ const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             memories: [],
             contextLimit: 500,
             addedToChat: true,
-            // 用户点「把 TA 加进往来」本身就是加好友动作 → 直接成为好友，不再走名册验证
-            friendStatus: 'friend',
             emotionConfig: { enabled: true },
         } as CharacterProfile;
         try {

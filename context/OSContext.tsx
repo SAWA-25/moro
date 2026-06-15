@@ -2549,8 +2549,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memories: [],
       contextLimit: 500,
       emotionConfig: { enabled: true },
-      // 新建角色也要先加好友才能聊天（名册·新的朋友里通过验证），加好友后才进「往来」
-      friendStatus: 'pending',
+      // 新建即视为已加入「往来」：直接在往来开聊，无需先「添加好友」
+      addedToChat: true,
     };
     setCharacters(prev => [...prev, newChar]);
     setActiveCharacterId(newChar.id);
@@ -2560,10 +2560,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    // 导入的角色同样要先加好友才能聊天（除非该卡明确已是好友）；加好友后才进「往来」
-    const imported: CharacterProfile = char.friendStatus === 'friend'
-        ? { ...char, addedToChat: char.addedToChat ?? true }
-        : { ...char, friendStatus: 'pending' };
+    // 导入即视为已加入「往来」：导入后无需「添加好友」即可在往来直接开聊
+    const imported: CharacterProfile = { ...char, addedToChat: char.addedToChat ?? true };
     setCharacters(prev => [...prev.filter(c => c.id !== imported.id), imported]);
     setActiveCharacterId(imported.id);
     await DB.saveCharacter(imported);
