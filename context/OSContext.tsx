@@ -2560,8 +2560,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    // 导入即视为已加入「往来」：导入后无需「添加好友」即可在往来直接开聊
-    const withChat: CharacterProfile = { ...char, addedToChat: char.addedToChat ?? true };
+    // 导入即视为已加入「往来」：强制置 true，导入后无需「添加好友」即可在往来直接开聊
+    // （不沿用卡里可能带的 addedToChat:false，保证任何导入都直接出现在往来）
+    const withChat: CharacterProfile = { ...char, addedToChat: true };
     setCharacters(prev => [...prev.filter(c => c.id !== withChat.id), withChat]);
     setActiveCharacterId(withChat.id);
     await DB.saveCharacter(withChat);
