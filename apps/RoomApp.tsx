@@ -300,6 +300,12 @@ const RoomApp: React.FC = () => {
 
     const char = characters.find(c => c.id === activeCharacterId);
 
+    // 让定时器 / 自主逻辑总能读到最新的 char 与今日清单，避免闭包过期
+    const charRef = useRef<CharacterProfile | undefined>(char);
+    useEffect(() => { charRef.current = char; }, [char]);
+    const todaysTodoRef = useRef<RoomTodo | null>(todaysTodo);
+    useEffect(() => { todaysTodoRef.current = todaysTodo; }, [todaysTodo]);
+
     // Custom Item Library State (new: unified with visibility)
     type CustomAsset = { id: string; name: string; image: string; defaultScale: number; description?: string; visibility: 'public' | 'character'; assignedCharIds?: string[] };
     const [allCustomAssets, setAllCustomAssets] = useState<CustomAsset[]>([]);
@@ -724,12 +730,94 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
 
     const handleToggleTodo = async (index: number) => {
         if (!todaysTodo) return;
-        const newItems = [...todaysTodo.items];
-        newItems[index].done = !newItems[index].done;
+        const newItems = todaysTodo.items.map(i => ({ ...i }));
+        const becameDone = !newItems[index].done;
+        newItems[index].done = becameDone;
         const newTodo = { ...todaysTodo, items: newItems };
         setTodaysTodo(newTodo);
         await DB.saveRoomTodo(newTodo);
+        // 自动同步角色：用户帮忙勾掉时，写进 TA 的上下文（撤销不记）
+        if (becameDone && char) await syncTodoToCharacter(char, [newItems[index].text], false);
     };
+
+    /** 把「完成清单项」同步进角色的聊天上下文（系统消息），让 TA 之后聊天能记得自己做过 */
+    const syncTodoToCharacter = async (c: CharacterProfile, doneTexts: string[], autonomous: boolean) => {
+        if (!c || !doneTexts.length) return;
+        const list = doneTexts.join('、');
+        const content = autonomous
+            ? `[系统: ${c.name} 在今日清单上划掉了：${list}]`
+            : `[系统: ${userProfile.name} 替 ${c.name} 在今日清单上勾掉了：${list}]`;
+        try {
+            const recent = await DB.getMessagesByCharId(c.id);
+            const dup = recent.slice(-30).some(m => m.role === 'system' && m.content === content);
+            if (!dup) await DB.saveMessage({ charId: c.id, role: 'system', type: 'text', content });
+        } catch { /* ignore */ }
+    };
+
+    /**
+     * 角色「自主勾画」：按一天的时间推进，把到点该做完的清单项从前往后划掉，并同步给角色。
+     * 进房间时把清单追平到此刻；之后定时器每隔一阵继续推进，让你能「盯着 TA 一条条划掉」。
+     */
+    const autoAdvanceTodo = async () => {
+        const c = charRef.current;
+        const todo = todaysTodoRef.current;
+        if (!c || !todo || !todo.items.length) return;
+        if (todo.date !== getVirtualDay()) return; // 只推进今天的单子
+        const now = new Date();
+        const minutes = now.getHours() * 60 + now.getMinutes();
+        const WAKE = 8 * 60, SLEEP = 22 * 60; // 一天的劳作窗口
+        const frac = Math.max(0, Math.min(1, (minutes - WAKE) / (SLEEP - WAKE)));
+        const expectedDone = Math.floor(frac * todo.items.length);
+        const currentDone = todo.items.filter(i => i.done).length;
+        if (expectedDone <= currentDone) return;
+        const newItems = todo.items.map(i => ({ ...i }));
+        const justDone: string[] = [];
+        let done = currentDone;
+        for (let i = 0; i < newItems.length && done < expectedDone; i++) {
+            if (!newItems[i].done) { newItems[i].done = true; justDone.push(newItems[i].text); done++; }
+        }
+        if (!justDone.length) return;
+        const newTodo = { ...todo, items: newItems };
+        setTodaysTodo(newTodo);
+        todaysTodoRef.current = newTodo;
+        await DB.saveRoomTodo(newTodo);
+        // 正看着的话，轻轻冒个泡
+        setAiBubble({ text: `把「${justDone[justDone.length - 1]}」划掉了 ✓`, visible: true });
+        await syncTodoToCharacter(c, justDone, true);
+    };
+
+    /** 用户给角色的单子添一条「心愿」（也会同步给角色） */
+    const [newTodoText, setNewTodoText] = useState('');
+    const handleAddTodo = async () => {
+        const text = newTodoText.trim();
+        if (!text || !char) return;
+        const base: RoomTodo = todaysTodo || {
+            id: `${char.id}_${getVirtualDay()}`,
+            charId: char.id,
+            date: getVirtualDay(),
+            items: [],
+            generatedAt: Date.now(),
+        };
+        const newTodo = { ...base, items: [...base.items, { text, done: false }] };
+        setTodaysTodo(newTodo);
+        setNewTodoText('');
+        await DB.saveRoomTodo(newTodo);
+        try {
+            await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `[系统: ${userProfile.name} 往 ${char.name} 的今日清单里添了一条心愿：${text}]` });
+        } catch { /* ignore */ }
+        addToast('添上了，看 TA 什么时候划掉', 'success');
+    };
+
+    // 进房间后：先把清单追平到此刻，并每隔一阵自主划掉到点的项
+    useEffect(() => {
+        if (viewState !== 'room') return;
+        let alive = true;
+        const tick = () => { if (alive) void autoAdvanceTodo(); };
+        const t0 = setTimeout(tick, 1200);            // 进来稍等一下再追平
+        const iv = setInterval(tick, 90 * 1000);      // 之后每 90s 推进一次
+        return () => { alive = false; clearTimeout(t0); clearInterval(iv); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewState]);
 
     // --- Deletion Handlers (Point 5) ---
     const handleDeleteTodo = async (index: number) => {
@@ -1247,9 +1335,20 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
                                     <button onClick={() => handleDeleteTodo(idx)} className="text-[#9b958a] hover:text-[#1c1a17] px-1 opacity-0 group-hover:opacity-100 transition-opacity"><I.close size={14} /></button>
                                 </li>
                             ))}</ul> : <div className="text-center py-10 text-[#9b958a] text-xs">正在列单子…</div>}
+                            {/* 给 TA 添一条心愿 */}
+                            <div className="flex items-center gap-2 pt-1">
+                                <input
+                                    value={newTodoText}
+                                    onChange={e => setNewTodoText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') handleAddTodo(); }}
+                                    placeholder="替 TA 添一条心愿…"
+                                    className="flex-1 min-w-0 bg-transparent border-b-2 border-dashed border-[#1c1a17]/40 text-sm py-1.5 outline-none placeholder:text-[#9b958a] text-[#2b2823]"
+                                />
+                                <button onClick={handleAddTodo} disabled={!newTodoText.trim()} className="shrink-0 px-3 py-1.5 border-2 border-[#1c1a17] bg-[#fbf9f3] text-[#1c1a17] text-xs font-bold shadow-[2px_2px_0_#1c1a17] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all disabled:opacity-30">添上</button>
+                            </div>
                             <div className="mt-6 p-4 border-2 border-[#1c1a17] bg-[#fbf9f3] text-xs text-[#2b2823] leading-relaxed relative shadow-[3px_3px_0_#1c1a17]">
                                 <span className="absolute -top-3 left-4 text-[#1c1a17]"><I.pin size={22} /></span>
-                                这是 {char?.name} 今天给自己列的单子。你帮不上手，但可以盯着 TA 一条条划掉哦。
+                                这是 {char?.name} 今天给自己列的单子。TA 会随着一天过去，自己一条条划掉（也会记进 TA 心里）；你可以盯着看，也能替 TA 勾一笔、或添一条心愿。
                             </div>
                         </div>
                     )}
