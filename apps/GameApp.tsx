@@ -6,60 +6,52 @@ import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, Ga
 import { ContextBuilder } from '../utils/context';
 import { extractContent, extractJson } from '../utils/safeApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import Modal from '../components/os/Modal';
-import { Planet, RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
+import { RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
+import { PaperBackdrop, WashiTape, Stamp, WASHI, INK, INK_SOFT, PAGE_BG, TAPE_STRIPES, type WashiColor } from './theater/scrapbook';
 
-// --- Themes Configuration (Enhanced) ---
+// --- 主题配置（拼贴手账纸面版）---
+// 四个世界主题仍可选（是功能），但统一落到牛皮纸拼贴：各主题只在「重点墨色 / 卡片纸色 /
+// 选项纸条色 / 字体」上区分气质，整体都是纸。原暗色沉浸主题整体退役。
 const GAME_THEMES: Record<GameTheme, { bg: string, text: string, accent: string, font: string, border: string, cardBg: string, gradient: string, optionNormal: string, optionChaotic: string, optionEvil: string }> = {
     fantasy: {
-        bg: 'bg-[#1a120b]',
-        text: 'text-[#e5e5e5]',
-        accent: 'text-[#fbbf24]',
-        font: 'font-serif',
-        border: 'border-[#78350f]',
-        cardBg: 'bg-[#2a2018]',
-        gradient: 'from-[#451a03] to-[#1a120b]',
-        optionNormal: 'bg-[#451a03] border-[#78350f] text-[#fbbf24]',
-        optionChaotic: 'bg-[#78350f] border-[#b45309] text-[#fcd34d]',
-        optionEvil: 'bg-[#3f0f0f] border-[#7f1d1d] text-[#fca5a5]'
+        bg: '', text: 'text-[#3a3630]', accent: 'text-[#9a6f2e]', font: 'font-serif',
+        border: 'border-[#d8c098]', cardBg: 'bg-[#fdf8ec]',
+        gradient: 'from-[#f6e9c8] to-[#efe0c0]',
+        optionNormal: 'bg-[#fdf8ec] border-[#d8c098] text-[#6b5a35]',
+        optionChaotic: 'bg-[#f3e6c0] border-[#cdb079] text-[#8a6f24]',
+        optionEvil: 'bg-[#f0dcd6] border-[#dcb8ae] text-[#9c4f47]'
     },
     cyber: {
-        bg: 'bg-[#020617]',
-        text: 'text-[#94a3b8]',
-        accent: 'text-[#22d3ee]',
-        font: 'font-mono',
-        border: 'border-[#1e293b]',
-        cardBg: 'bg-[#0f172a]/80',
-        gradient: 'from-[#0f172a] to-[#020617]',
-        optionNormal: 'bg-[#0f172a] border-[#1e293b] text-[#22d3ee]',
-        optionChaotic: 'bg-[#1e1b4b] border-[#4338ca] text-[#a78bfa]',
-        optionEvil: 'bg-[#450a0a] border-[#7f1d1d] text-[#fca5a5]'
+        bg: '', text: 'text-[#3a3630]', accent: 'text-[#2f6f7a]', font: 'font-mono',
+        border: 'border-[#b8cdd6]', cardBg: 'bg-[#f3f8f9]',
+        gradient: 'from-[#e2eef2] to-[#d6e6ee]',
+        optionNormal: 'bg-[#f3f8f9] border-[#b8cdd6] text-[#3f6781]',
+        optionChaotic: 'bg-[#e7e2f2] border-[#bcaed8] text-[#6b5285]',
+        optionEvil: 'bg-[#f0dcd6] border-[#dcb8ae] text-[#9c4f47]'
     },
     horror: {
-        bg: 'bg-[#0f0000]',
-        text: 'text-[#d4d4d8]',
-        accent: 'text-[#ef4444]',
-        font: 'font-serif',
-        border: 'border-[#450a0a]',
-        cardBg: 'bg-[#2b0e0e]',
-        gradient: 'from-[#450a0a] to-[#000000]',
-        optionNormal: 'bg-[#2b0e0e] border-[#450a0a] text-[#d4d4d8]',
-        optionChaotic: 'bg-[#3f1d1d] border-[#7f1d1d] text-[#fda4af]',
-        optionEvil: 'bg-[#450a0a] border-[#991b1b] text-[#ef4444]'
+        bg: '', text: 'text-[#3a3630]', accent: 'text-[#9c4f47]', font: 'font-serif',
+        border: 'border-[#dcc0b8]', cardBg: 'bg-[#fbf1ee]',
+        gradient: 'from-[#f2e2dc] to-[#ecd6ce]',
+        optionNormal: 'bg-[#fbf1ee] border-[#dcc0b8] text-[#6b4a44]',
+        optionChaotic: 'bg-[#f3e0d0] border-[#d8b89a] text-[#8a5a2e]',
+        optionEvil: 'bg-[#f0d6d0] border-[#d8a89e] text-[#9c4f47]'
     },
     modern: {
-        bg: 'bg-slate-50',
-        text: 'text-slate-700',
-        accent: 'text-blue-600',
-        font: 'font-sans',
-        border: 'border-slate-200',
-        cardBg: 'bg-white',
-        gradient: 'from-slate-100 to-white',
-        optionNormal: 'bg-white border-slate-200 text-slate-600',
-        optionChaotic: 'bg-yellow-50 border-yellow-200 text-yellow-700',
-        optionEvil: 'bg-red-50 border-red-200 text-red-700'
+        bg: '', text: 'text-[#3a3630]', accent: 'text-[#4a6781]', font: 'font-sans',
+        border: 'border-[#cdd2d8]', cardBg: 'bg-[#f6f8fa]',
+        gradient: 'from-[#e8edf2] to-[#dce4ec]',
+        optionNormal: 'bg-[#f6f8fa] border-[#cdd2d8] text-[#4a5a6b]',
+        optionChaotic: 'bg-[#f3ecd8] border-[#d8caa0] text-[#8a6f24]',
+        optionEvil: 'bg-[#f0dcd6] border-[#dcb8ae] text-[#9c4f47]'
     }
 };
+
+// 纸面弹窗 / 底部抽屉 / 输入 / 工具条 通用样式
+const paperDialogStyle: React.CSSProperties = { background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', border: '1px solid rgba(196,184,160,0.85)', borderRadius: 16, boxShadow: '0 28px 50px -20px rgba(40,34,26,0.55)', transform: 'rotate(-0.6deg)' };
+const sheetStyle: React.CSSProperties = { background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', borderTopLeftRadius: 22, borderTopRightRadius: 22, borderTop: '1px solid rgba(196,184,160,0.8)', boxShadow: '0 -22px 48px -20px rgba(40,34,26,0.5)' };
+const gameInputStyle: React.CSSProperties = { background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', color: INK };
+const barStyle: React.CSSProperties = { background: 'rgba(243,236,219,0.94)', backdropFilter: 'blur(8px)', borderTop: '1px dashed rgba(150,140,120,0.55)' };
 
 // 每累积这么多条「未归档日志」就触发一次自动总结
 const AUTO_SUMMARY_THRESHOLD = 20;
@@ -1174,35 +1166,40 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
     // 1. Lobby View (Redesigned)
     if (view === 'lobby') {
         return (
-            <div className="h-full w-full bg-[#0a0a0a] flex flex-col font-sans relative overflow-hidden">
-                {/* Ambient Background */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-900/50 to-black z-0"></div>
-                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
+            <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG }}>
+                <PaperBackdrop />
 
-                {/* Header */}
-                <div className="h-20 flex items-end justify-between px-6 pb-4 shrink-0 z-10">
-                    <button onClick={exitApp} className="p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                {/* 顶栏 */}
+                <div className="h-16 flex items-end justify-between px-5 pb-3 shrink-0 z-20 relative">
+                    <button onClick={exitApp} className="relative inline-flex items-center justify-center w-9 h-9 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                        <span aria-hidden className="absolute inset-0 rounded-[7px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-3deg)', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 relative z-10"><path d="M15 18l-6-6 6-6" /></svg>
                     </button>
-                    <span className="font-black tracking-[0.2em] text-xl text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">TRPG ADVENTURE</span>
-                    <button onClick={() => setView('create')} className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white border border-white/10 shadow-lg active:scale-95 transition-all hover:bg-white/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    <div className="text-center -mb-0.5">
+                        <span className="font-black tracking-[0.1em] text-lg" style={{ color: INK }}>跑团本</span>
+                        <div className="text-[8px] tracking-[0.4em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>TRPG Adventure</div>
+                    </div>
+                    <button onClick={() => setView('create')} className="w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-all" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4, boxShadow: '0 8px 16px -8px rgba(58,54,48,0.6)' }}>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     </button>
                 </div>
 
-                {/* Games Grid */}
-                <div className="px-6 pt-6 pb-2 flex-1 overflow-y-auto no-scrollbar z-10 space-y-4">
+                {/* 存档列表 */}
+                <div className="px-5 pt-4 pb-2 flex-1 overflow-y-auto no-scrollbar z-10 space-y-4">
                     {games.length === 0 && (
-                        <div className="flex flex-col items-center justify-center h-64 text-slate-500 gap-4">
-                            <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/5 animate-pulse"><Planet size={48} className="text-indigo-400" /></div>
-                            <p className="text-xs tracking-widest uppercase">No Active Adventures</p>
+                        <div className="flex flex-col items-center justify-center h-64 gap-4" style={{ color: INK_SOFT }}>
+                            <div className="text-5xl select-none">🎲</div>
+                            <p className="text-xs tracking-widest" style={{ fontFamily: 'var(--font-label)' }}>还没有冒险 · 翻开新的一页</p>
                         </div>
                     )}
                     {games.length > 0 && (
-                        <p className="text-[10px] text-white/30 tracking-widest uppercase text-center -mt-2">长按卡片可删除</p>
+                        <p className="text-[10px] tracking-widest text-center -mt-1" style={{ color: INK_SOFT }}>长按卡片可撕掉</p>
                     )}
-                    {games.slice(lobbyPage * LOBBY_PAGE_SIZE, lobbyPage * LOBBY_PAGE_SIZE + LOBBY_PAGE_SIZE).map(g => {
+                    {games.slice(lobbyPage * LOBBY_PAGE_SIZE, lobbyPage * LOBBY_PAGE_SIZE + LOBBY_PAGE_SIZE).map((g, gi) => {
                         const themeStyle = GAME_THEMES[g.theme] || GAME_THEMES.fantasy;
+                        const toneMap: Record<string, WashiColor> = { fantasy: 'amber', cyber: 'sky', horror: 'rose', modern: 'sage' };
+                        const tone = toneMap[g.theme] || 'amber';
+                        const tilt = gi % 2 === 0 ? -0.6 : 0.7;
                         return (
                             <div
                                 key={g.id}
@@ -1212,36 +1209,36 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                 onPointerLeave={cancelLongPress}
                                 onPointerCancel={cancelLongPress}
                                 onContextMenu={(e) => e.preventDefault()}
-                                className={`relative overflow-hidden rounded-2xl p-5 cursor-pointer group active:scale-[0.98] transition-all border border-white/5 hover:border-white/20 shadow-lg select-none`}
+                                className="relative overflow-hidden p-5 cursor-pointer group active:scale-[0.98] transition-all select-none"
+                                style={{ background: 'linear-gradient(180deg,#fdfaf3,#f7f0e2)', border: '1px solid rgba(196,184,160,0.7)', outline: '1px dashed rgba(176,162,138,0.45)', outlineOffset: -5, borderRadius: 16, boxShadow: '0 14px 26px -16px rgba(70,62,48,0.45)', transform: `rotate(${tilt}deg)` }}
                             >
-                                {/* Card Background */}
-                                <div className={`absolute inset-0 bg-gradient-to-br ${themeStyle.gradient} opacity-80 group-hover:opacity-100 transition-opacity`}></div>
-                                <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-                                
+                                <div className={`absolute inset-0 bg-gradient-to-br ${themeStyle.gradient} opacity-50`}></div>
+                                <WashiTape color={tone} rotate={-5} className="absolute -top-2.5 left-8 w-16 h-5 rounded-[2px] z-10" />
+
                                 <div className="relative z-10 flex flex-col gap-2">
-                                    <div className="flex justify-between items-start">
-                                        <h3 className={`font-bold text-lg text-white leading-tight drop-shadow-md font-serif`}>{g.title}</h3>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded border border-white/20 text-white/80 uppercase font-mono tracking-wider bg-black/20`}>{g.theme}</span>
+                                    <div className="flex justify-between items-start gap-2">
+                                        <h3 className="font-black text-lg leading-tight" style={{ color: INK }}>{g.title}</h3>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-black shrink-0" style={{ fontFamily: 'var(--font-label)', background: WASHI[tone].base, color: WASHI[tone].ink }}>{g.theme}</span>
                                     </div>
-                                    
-                                    <p className="text-xs text-white/60 line-clamp-2 leading-relaxed italic font-serif border-l-2 border-white/20 pl-2">
-                                        "{g.worldSetting}"
+
+                                    <p className="text-xs line-clamp-2 leading-relaxed italic pl-2" style={{ color: '#6b6456', borderLeft: '2px solid rgba(176,162,138,0.6)' }}>
+                                        “{g.worldSetting}”
                                     </p>
-                                    
-                                    <div className="flex justify-between items-end mt-2 pt-2 border-t border-white/10">
+
+                                    <div className="flex justify-between items-end mt-2 pt-2" style={{ borderTop: '1px dashed rgba(176,162,138,0.5)' }}>
                                         <div className="flex -space-x-2">
                                             {characters.filter(c => g.playerCharIds.includes(c.id)).map(c => (
-                                                <img key={c.id} src={c.avatar} className="w-8 h-8 rounded-full border-2 border-black/50 object-cover shadow-sm" />
+                                                <img key={c.id} src={c.avatar} className="w-8 h-8 rounded-full object-cover" style={{ border: '2px solid #fffdf8', boxShadow: '0 2px 4px rgba(70,62,48,0.3)' }} />
                                             ))}
                                         </div>
-                                        <div className="text-[10px] text-white/40 font-mono">
+                                        <div className="text-[10px]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>
                                             {new Date(g.lastPlayedAt).toLocaleDateString()}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Delete Button */}
-                                <button onClick={(e) => handleDeleteGame(e, g.id)} className="absolute top-2 right-2 p-2 text-white/20 hover:text-red-400 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {/* 撕掉 */}
+                                <button onClick={(e) => handleDeleteGame(e, g.id)} className="absolute top-2 right-2 p-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: '#b3564e' }}>
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" /></svg>
                                 </button>
                             </div>
@@ -1249,7 +1246,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                     })}
                 </div>
 
-                {/* Pager (每页 5 条) */}
+                {/* 翻页（每页 5 条） */}
                 {games.length > LOBBY_PAGE_SIZE && (() => {
                     const totalPages = Math.ceil(games.length / LOBBY_PAGE_SIZE);
                     return (
@@ -1257,81 +1254,97 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             <button
                                 onClick={() => setLobbyPage(p => Math.max(0, p - 1))}
                                 disabled={lobbyPage === 0}
-                                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/70 active:scale-95 transition-all disabled:opacity-25 hover:bg-white/10"
+                                className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-all disabled:opacity-25"
+                                style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.4} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                             </button>
                             <div className="flex items-center gap-1.5">
                                 {Array.from({ length: totalPages }).map((_, i) => (
                                     <button
                                         key={i}
                                         onClick={() => setLobbyPage(i)}
-                                        className={`rounded-full transition-all ${i === lobbyPage ? 'w-5 h-1.5 bg-purple-400' : 'w-1.5 h-1.5 bg-white/25 hover:bg-white/40'}`}
+                                        className="rounded-full transition-all"
+                                        style={i === lobbyPage ? { width: 20, height: 6, background: '#3a3630' } : { width: 6, height: 6, background: 'rgba(176,162,138,0.5)' }}
                                     />
                                 ))}
                             </div>
                             <button
                                 onClick={() => setLobbyPage(p => Math.min(totalPages - 1, p + 1))}
                                 disabled={lobbyPage >= totalPages - 1}
-                                className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/70 active:scale-95 transition-all disabled:opacity-25 hover:bg-white/10"
+                                className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-all disabled:opacity-25"
+                                style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.4} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                             </button>
                         </div>
                     );
                 })()}
 
-                {/* Delete Save Confirm Modal (lobby) */}
-                <Modal isOpen={!!deleteConfirmId} title="删除存档" onClose={() => setDeleteConfirmId(null)} footer={
-                    <div className="flex gap-3 w-full">
-                        <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
-                        <button onClick={confirmDeleteGame} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">删除</button>
+                {/* 撕掉存档确认（大厅） */}
+                {deleteConfirmId && (
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 animate-fade-in">
+                        <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.42)', backdropFilter: 'blur(3px)' }} onClick={() => setDeleteConfirmId(null)} />
+                        <div className="relative w-full max-w-xs animate-pop-in" style={paperDialogStyle}>
+                            <WashiTape color="rose" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-5 rounded-[2px] z-10" />
+                            <div className="px-5 pt-6 pb-5 space-y-3">
+                                <div className="font-black text-sm text-center" style={{ color: INK }}>撕掉这个存档？</div>
+                                <div className="text-xs text-center" style={{ color: '#8a5a52' }}>撕掉就找不回来了。</div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>取消</button>
+                                    <button onClick={confirmDeleteGame} className="flex-1 py-2.5 text-white text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#b3564e' }}>撕掉</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                }>
-                    <p className="text-sm text-slate-600 text-center py-4">确定要删除这个存档吗？<br/><span className="text-xs text-red-400 mt-1 block">此操作不可恢复。</span></p>
-                </Modal>
+                )}
             </div>
         );
     }
 
     // 2. Create View
     if (view === 'create') {
-        const THEME_META: Record<GameTheme, { label: string; en: string; gradient: string }> = {
-            fantasy: { label: '奇幻', en: 'FANTASY', gradient: 'from-amber-700 to-orange-900' },
-            cyber: { label: '赛博', en: 'CYBER', gradient: 'from-cyan-600 to-indigo-900' },
-            horror: { label: '恐怖', en: 'HORROR', gradient: 'from-red-800 to-black' },
-            modern: { label: '现代', en: 'MODERN', gradient: 'from-sky-500 to-slate-700' },
+        const THEME_META: Record<GameTheme, { label: string; en: string; emoji: string; tone: WashiColor }> = {
+            fantasy: { label: '奇幻', en: 'FANTASY', emoji: '🏰', tone: 'amber' },
+            cyber: { label: '赛博', en: 'CYBER', emoji: '🤖', tone: 'sky' },
+            horror: { label: '恐怖', en: 'HORROR', emoji: '🩸', tone: 'rose' },
+            modern: { label: '现代', en: 'MODERN', emoji: '🏙️', tone: 'sage' },
         };
         const canStart = newTitle.trim() && newWorld.trim() && selectedPlayers.size > 0;
         return (
-            <div className="h-full w-full bg-[#0a0a0a] text-white flex flex-col font-sans relative overflow-hidden">
-                {/* Ambient Background */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/30 via-slate-900/40 to-black z-0"></div>
-                <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/stardust.png")' }}></div>
+            <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ paddingTop: 'var(--safe-top)', color: INK, background: PAGE_BG }}>
+                <PaperBackdrop />
 
-                {/* Header */}
-                <div className="h-20 flex items-end px-5 pb-4 shrink-0 z-10">
-                    <button onClick={() => setView('lobby')} className="p-2 -ml-2 rounded-full text-white/70 hover:bg-white/10 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg></button>
-                    <span className="font-black tracking-[0.15em] text-base ml-1 mb-1 text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-500">创建新世界</span>
+                {/* 顶栏 */}
+                <div className="h-16 flex items-end px-4 pb-3 shrink-0 z-20 relative gap-2">
+                    <button onClick={() => setView('lobby')} className="relative inline-flex items-center justify-center w-9 h-9 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                        <span aria-hidden className="absolute inset-0 rounded-[7px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-3deg)', boxShadow: '0 3px 7px -3px rgba(70,62,48,0.5)' }} />
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 relative z-10"><path d="M15 18l-6-6 6-6" /></svg>
+                    </button>
+                    <div className="mb-0.5">
+                        <span className="font-black tracking-[0.08em] text-base" style={{ color: INK }}>开一桌新团</span>
+                        <div className="text-[8px] tracking-[0.4em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>New World</div>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-5 z-10 no-scrollbar">
                     {/* 剧本标题 */}
                     <div>
-                        <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2">剧本标题</label>
-                        <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-white/25 focus:border-purple-400/60 focus:bg-white/10 outline-none transition-all" placeholder="例如：勇者斗恶龙" />
+                        <label className="text-[11px] font-black uppercase tracking-wider block mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>剧本标题</label>
+                        <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full rounded-2xl px-4 py-3.5 text-sm outline-none transition-all" style={gameInputStyle} placeholder="例如：勇者斗恶龙" />
                     </div>
 
                     {/* 世界观设定 */}
                     <div>
-                        <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2">世界观设定 (Lore)</label>
-                        <textarea value={newWorld} onChange={e => setNewWorld(e.target.value)} className="w-full h-36 bg-white/5 border border-white/10 rounded-2xl px-4 py-3.5 text-sm leading-relaxed text-white placeholder-white/25 focus:border-purple-400/60 focus:bg-white/10 outline-none resize-none transition-all" placeholder="描述你的世界... 没思路的话，用下方 AI 帮你生成" />
+                        <label className="text-[11px] font-black uppercase tracking-wider block mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>世界观设定 (Lore)</label>
+                        <textarea value={newWorld} onChange={e => setNewWorld(e.target.value)} className="w-full h-36 rounded-2xl px-4 py-3.5 text-sm leading-relaxed outline-none resize-none transition-all" style={gameInputStyle} placeholder="描述你的世界... 没思路的话，用下方 AI 帮你生成" />
 
                         {/* AI 世界观生成面板 */}
-                        <div className="mt-3 rounded-2xl p-4 bg-gradient-to-br from-purple-500/10 to-pink-500/5 border border-purple-400/20 backdrop-blur-sm">
+                        <div className="relative mt-3 rounded-2xl p-4" style={{ background: 'linear-gradient(180deg,#fdfaf3,#f5eedd)', border: '1px solid rgba(196,184,160,0.7)', outline: '1px dashed rgba(176,162,138,0.45)', outlineOffset: -5, boxShadow: '0 10px 20px -16px rgba(70,62,48,0.4)' }}>
+                            <WashiTape color="lilac" rotate={-5} className="absolute -top-2.5 left-6 w-16 h-5 rounded-[2px] z-10" />
                             <div className="flex items-center gap-2 mb-3">
-                                <span className="w-1 h-3.5 rounded-full bg-gradient-to-b from-purple-400 to-pink-400"></span>
-                                <span className="text-xs font-bold text-purple-200">没思路？让 AI 帮你写</span>
+                                <Stamp color="lilac" size={22}>✦</Stamp>
+                                <span className="text-xs font-black" style={{ color: INK }}>没思路？让 AI 帮你写</span>
                             </div>
 
                             {/* 风格选择 */}
@@ -1340,7 +1353,10 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                     <button
                                         key={s}
                                         onClick={() => setWorldStyle(s)}
-                                        className={`px-1 py-1.5 rounded-lg text-[10px] font-medium border transition-all active:scale-95 ${worldStyle === s ? 'bg-purple-500 text-white border-purple-400 shadow-lg shadow-purple-500/30' : 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10'}`}
+                                        className="px-1 py-1.5 rounded-lg text-[10px] font-black border transition-all active:scale-95"
+                                        style={worldStyle === s
+                                            ? { background: '#3a3630', color: '#fcf8ef', borderColor: '#3a3630' }
+                                            : { background: 'rgba(255,253,247,0.7)', color: '#6b6456', borderColor: 'rgba(196,184,160,0.7)' }}
                                     >{s}</button>
                                 ))}
                             </div>
@@ -1349,32 +1365,37 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             <input
                                 value={worldIdea}
                                 onChange={e => setWorldIdea(e.target.value)}
-                                className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder-white/25 focus:border-purple-400/60 outline-none transition-all mb-3"
+                                className="w-full rounded-xl px-3 py-2.5 text-xs outline-none transition-all mb-3"
+                                style={gameInputStyle}
                                 placeholder="再补充点想法？(可选，如：主角是失忆的赏金猎人)"
                             />
 
                             <button
                                 onClick={handleGenerateWorld}
                                 disabled={isGeneratingWorld}
-                                className="w-full text-xs font-bold py-2.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-60 shadow-lg shadow-purple-500/20"
+                                className="w-full text-xs font-black py-2.5 rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-60"
+                                style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}
                             >
-                                {isGeneratingWorld ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> 正在生成「{worldStyle}」世界...</> : <>生成世界观</>}
+                                {isGeneratingWorld ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> 正在生成「{worldStyle}」世界...</> : <>✎ 生成世界观</>}
                             </button>
                         </div>
                     </div>
 
-                    {/* 画风主题 */}
+                    {/* 世界封面 */}
                     <div>
-                        <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2">画风主题</label>
+                        <label className="text-[11px] font-black uppercase tracking-wider block mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>世界封面</label>
                         <div className="grid grid-cols-4 gap-2">
                             {(['fantasy', 'cyber', 'horror', 'modern'] as GameTheme[]).map(t => {
                                 const meta = THEME_META[t];
                                 const active = newTheme === t;
                                 return (
-                                    <button key={t} onClick={() => setNewTheme(t)} className={`relative overflow-hidden rounded-xl py-4 flex flex-col items-center gap-0.5 border transition-all active:scale-95 ${active ? 'border-white/60 ring-1 ring-white/40' : 'border-white/10'}`}>
-                                        <div className={`absolute inset-0 bg-gradient-to-br ${meta.gradient} ${active ? 'opacity-90' : 'opacity-40'} transition-opacity`}></div>
-                                        <span className="relative text-sm font-bold tracking-wide">{meta.label}</span>
-                                        <span className="relative text-[8px] font-mono tracking-[0.2em] opacity-70">{meta.en}</span>
+                                    <button key={t} onClick={() => setNewTheme(t)} className="relative overflow-hidden rounded-xl py-3.5 flex flex-col items-center gap-0.5 transition-all active:scale-95"
+                                        style={active
+                                            ? { background: WASHI[meta.tone].base, border: '2px solid #3a3630', boxShadow: '0 8px 16px -10px rgba(58,54,48,0.5)' }
+                                            : { background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(196,184,160,0.7)' }}>
+                                        <span className="text-lg leading-none select-none">{meta.emoji}</span>
+                                        <span className="text-sm font-black tracking-wide" style={{ color: active ? WASHI[meta.tone].ink : INK }}>{meta.label}</span>
+                                        <span className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{meta.en}</span>
                                     </button>
                                 );
                             })}
@@ -1383,76 +1404,83 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
                     {/* 玩法设置 */}
                     <div>
-                        <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2">玩法设置</label>
-                        <div className="rounded-2xl border border-white/10 bg-white/5 divide-y divide-white/10">
+                        <label className="text-[11px] font-black uppercase tracking-wider block mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>玩法设置</label>
+                        <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(196,184,160,0.7)' }}>
                             {/* 骰子开关 */}
                             <div className="flex items-center justify-between p-4">
                                 <div className="flex flex-col">
-                                    <span className="text-sm font-medium flex items-center gap-1.5"><DiceFive size={16} weight="fill" /> 骰子判定 (D20)</span>
-                                    <span className="text-[10px] text-white/40 mt-0.5">{newDiceDisabled ? '已关闭：行动默认直接成功' : '开启：每次行动自动骰点定成败'}</span>
+                                    <span className="text-sm font-black flex items-center gap-1.5" style={{ color: INK }}><DiceFive size={16} weight="fill" /> 骰子判定 (D20)</span>
+                                    <span className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>{newDiceDisabled ? '已关闭：行动默认直接成功' : '开启：每次行动自动骰点定成败'}</span>
                                 </div>
                                 <button
                                     onClick={() => setNewDiceDisabled(v => !v)}
                                     role="switch"
                                     aria-checked={!newDiceDisabled}
-                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${newDiceDisabled ? 'bg-white/15' : 'bg-emerald-500'}`}
+                                    className="relative w-12 h-6 rounded-full transition-colors shrink-0"
+                                    style={{ background: newDiceDisabled ? 'rgba(176,162,138,0.45)' : '#8a9a62' }}
                                 >
-                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${newDiceDisabled ? '' : 'translate-x-6'}`}></span>
+                                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full shadow transition-transform ${newDiceDisabled ? '' : 'translate-x-6'}`} style={{ background: '#fffdf8' }}></span>
                                 </button>
                             </div>
+
+                            <div className="h-px mx-4" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(176,162,138,0.5) 0 5px, transparent 5px 10px)' }} />
 
                             {/* 归档模式 */}
                             <div className="p-4">
                                 <div className="flex items-center gap-1.5 mb-2.5">
-                                    <span className="text-sm font-medium">归档模式</span>
-                                    <button onClick={() => setShowArchiveHelp(v => !v)} className="w-4 h-4 rounded-full border border-white/30 text-white/50 text-[10px] leading-none flex items-center justify-center hover:bg-white/10 transition-colors">?</button>
+                                    <span className="text-sm font-black" style={{ color: INK }}>归档模式</span>
+                                    <button onClick={() => setShowArchiveHelp(v => !v)} className="w-4 h-4 rounded-full text-[10px] leading-none flex items-center justify-center transition-colors" style={{ border: '1px solid rgba(150,140,120,0.6)', color: INK_SOFT }}>?</button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
                                         onClick={() => setNewArchiveMode('auto')}
-                                        className={`rounded-xl p-2.5 text-left border transition-all active:scale-95 ${newArchiveMode === 'auto' ? 'border-purple-400 bg-purple-500/15' : 'border-white/10 bg-white/5'}`}
+                                        className="rounded-xl p-2.5 text-left transition-all active:scale-95"
+                                        style={newArchiveMode === 'auto' ? { border: '2px solid #3a3630', background: WASHI.sage.base } : { border: '1px solid rgba(196,184,160,0.7)', background: 'rgba(255,253,247,0.6)' }}
                                     >
-                                        <div className="text-xs font-bold">自动归档</div>
-                                        <div className="text-[9px] text-white/40 mt-0.5 leading-snug">满20条总结，并同步进角色聊天</div>
+                                        <div className="text-xs font-black" style={{ color: INK }}>自动归档</div>
+                                        <div className="text-[9px] mt-0.5 leading-snug" style={{ color: INK_SOFT }}>满20条总结，并同步进角色聊天</div>
                                     </button>
                                     <button
                                         onClick={() => setNewArchiveMode('manual')}
-                                        className={`rounded-xl p-2.5 text-left border transition-all active:scale-95 ${newArchiveMode === 'manual' ? 'border-purple-400 bg-purple-500/15' : 'border-white/10 bg-white/5'}`}
+                                        className="rounded-xl p-2.5 text-left transition-all active:scale-95"
+                                        style={newArchiveMode === 'manual' ? { border: '2px solid #3a3630', background: WASHI.sage.base } : { border: '1px solid rgba(196,184,160,0.7)', background: 'rgba(255,253,247,0.6)' }}
                                     >
-                                        <div className="text-xs font-bold">手动归档</div>
-                                        <div className="text-[9px] text-white/40 mt-0.5 leading-snug">满20条总结，但不进角色聊天</div>
+                                        <div className="text-xs font-black" style={{ color: INK }}>手动归档</div>
+                                        <div className="text-[9px] mt-0.5 leading-snug" style={{ color: INK_SOFT }}>满20条总结，但不进角色聊天</div>
                                     </button>
                                 </div>
                                 {showArchiveHelp && (
-                                    <div className="mt-2.5 text-[10px] text-white/50 leading-relaxed bg-black/30 rounded-xl p-3 space-y-1.5 border border-white/10">
-                                        <p>两种模式都会<b className="text-white/70">每满 20 条剧情自动总结一次</b>，总结都会一直保留在游戏的前情提要里、并送进 GM 的上下文。区别只在于：</p>
-                                        <p><b className="text-purple-300">自动归档</b>：每次总结会<b className="text-white/70">立即同步到参与角色的聊天 App</b>（角色会"记得"和你跑过团）。</p>
-                                        <p><b className="text-purple-300">手动归档</b>：自动总结<b className="text-white/70">不会</b>打扰角色的聊天，只有你在菜单里点「归档记忆并退出」时，才把整段经历送进角色聊天。</p>
+                                    <div className="mt-2.5 text-[10px] leading-relaxed rounded-xl p-3 space-y-1.5" style={{ color: '#6b6456', background: 'rgba(244,236,219,0.8)', border: '1px dashed rgba(176,162,138,0.6)' }}>
+                                        <p>两种模式都会<b style={{ color: INK }}>每满 20 条剧情自动总结一次</b>，总结都会一直保留在游戏的前情提要里、并送进 GM 的上下文。区别只在于：</p>
+                                        <p><b style={{ color: WASHI.sage.ink }}>自动归档</b>：每次总结会<b style={{ color: INK }}>立即同步到参与角色的聊天 App</b>（角色会"记得"和你跑过团）。</p>
+                                        <p><b style={{ color: WASHI.sage.ink }}>手动归档</b>：自动总结<b style={{ color: INK }}>不会</b>打扰角色的聊天，只有你在菜单里点「归档记忆并退出」时，才把整段经历送进角色聊天。</p>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {/* 邀请玩家 */}
+                    {/* 邀请队友 */}
                     <div>
-                        <label className="text-[11px] font-bold text-white/40 uppercase tracking-wider block mb-2 flex items-center justify-between">
+                        <label className="text-[11px] font-black uppercase tracking-wider mb-2 flex items-center justify-between" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>
                             <span>邀请队友</span>
-                            {selectedPlayers.size > 0 && <span className="text-purple-300 normal-case font-mono">已选 {selectedPlayers.size} 人</span>}
+                            {selectedPlayers.size > 0 && <span className="normal-case" style={{ color: WASHI.sage.ink }}>已选 {selectedPlayers.size} 人</span>}
                         </label>
                         {characters.length === 0 ? (
-                            <p className="text-xs text-white/30 py-4 text-center bg-white/5 rounded-xl border border-white/10">还没有角色，先去创建角色吧</p>
+                            <p className="text-xs py-4 text-center rounded-xl" style={{ color: INK_SOFT, background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(196,184,160,0.7)' }}>还没有角色，先去创建角色吧</p>
                         ) : (
                             <div className="grid grid-cols-4 gap-3">
-                                {characters.map(c => {
+                                {characters.map((c, ci) => {
                                     const sel = selectedPlayers.has(c.id);
                                     return (
-                                        <div key={c.id} onClick={() => { const s = new Set(selectedPlayers); if(s.has(c.id)) s.delete(c.id); else s.add(c.id); setSelectedPlayers(s); }} className={`flex flex-col items-center p-2 rounded-2xl border cursor-pointer transition-all active:scale-95 ${sel ? 'border-purple-400 bg-purple-500/15' : 'border-white/5 hover:bg-white/5'}`}>
-                                            <div className="relative">
-                                                <img src={c.avatar} className={`w-12 h-12 rounded-full object-cover transition-all ${sel ? 'ring-2 ring-purple-400 ring-offset-2 ring-offset-[#0a0a0a]' : 'opacity-80'}`} />
-                                                {sel && <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center border-2 border-[#0a0a0a]"><svg viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 text-white"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" /></svg></div>}
+                                        <div key={c.id} onClick={() => { const s = new Set(selectedPlayers); if (s.has(c.id)) s.delete(c.id); else s.add(c.id); setSelectedPlayers(s); }} className="flex flex-col items-center p-1.5 rounded-2xl cursor-pointer transition-all active:scale-95" style={sel ? { border: '2px solid #3a3630', background: WASHI.sage.base } : { border: '1px solid rgba(196,184,160,0.55)' }}>
+                                            <div className="relative" style={{ transform: `rotate(${ci % 2 ? 2 : -2}deg)` }}>
+                                                <span className="block p-1 pb-1.5" style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', borderRadius: 5, boxShadow: '0 4px 9px -6px rgba(70,62,48,0.5)' }}>
+                                                    <img src={c.avatar} className="w-11 h-11 object-cover" style={{ borderRadius: 3 }} />
+                                                </span>
+                                                {sel && <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: '#3a3630', border: '2px solid #fcf8ef' }}><svg viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5" style={{ color: '#fcf8ef' }}><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" /></svg></div>}
                                             </div>
-                                            <span className={`text-[9px] mt-2 truncate w-full text-center font-medium ${sel ? 'text-purple-200' : 'text-white/50'}`}>{c.name}</span>
+                                            <span className="text-[9px] mt-1.5 truncate w-full text-center font-black" style={{ color: sel ? WASHI.sage.ink : '#6b6456' }}>{c.name}</span>
                                         </div>
                                     );
                                 })}
@@ -1462,11 +1490,12 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                 </div>
 
                 {/* 底部开始按钮 */}
-                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t border-white/5 bg-black/40 backdrop-blur-md z-10">
+                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] z-10" style={barStyle}>
                     <button
                         onClick={handleCreateGame}
                         disabled={isCreating || !canStart}
-                        className={`w-full py-3.5 font-bold rounded-2xl shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${canStart ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-purple-500/30' : 'bg-white/10 text-white/30'}`}
+                        className="w-full py-3.5 font-black rounded-full active:scale-95 transition-all flex items-center justify-center gap-2"
+                        style={canStart ? { background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -5, boxShadow: '0 14px 26px -14px rgba(58,54,48,0.6)' } : { background: 'rgba(176,162,138,0.3)', color: INK_SOFT }}
                     >
                         {isCreating ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> 生成序章...</> : <><RocketLaunch size={18} /> 开始冒险</>}
                     </button>
@@ -1482,83 +1511,84 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
     // [FIX] Changed from absolute inset-0 to h-full relative to fix overscroll and height layout issues
     return (
-        <div className={`h-full w-full relative flex flex-col ${theme.bg} ${theme.text} ${theme.font} transition-colors duration-500 overflow-hidden`}>
-            
-            {/* Header */}
-            <div className={`h-20 flex items-end justify-between px-4 pb-3 border-b ${theme.border} shrink-0 bg-opacity-90 backdrop-blur z-20 relative`}>
+        <div className={`h-full w-full relative flex flex-col ${theme.bg} ${theme.text} ${theme.font} transition-colors duration-500 overflow-hidden`} style={{ paddingTop: 'var(--safe-top)', background: PAGE_BG }}>
+            <PaperBackdrop />
+
+            {/* 顶栏 */}
+            <div className="h-16 flex items-end justify-between px-4 pb-2.5 shrink-0 z-20 relative" style={{ borderBottom: '1px dashed rgba(150,140,120,0.55)', background: 'rgba(243,236,219,0.55)' }}>
                 <div className="flex items-center gap-2">
-                    <button onClick={handleLeave} className={`p-2 -ml-2 rounded hover:bg-white/10 active:scale-95 transition-transform`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                    <button onClick={handleLeave} className="relative inline-flex items-center justify-center w-9 h-9 active:scale-90 transition-transform" style={{ color: '#5b4d3a' }}>
+                        <span aria-hidden className="absolute inset-0 rounded-[7px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-3deg)' }} />
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 relative z-10"><path d="M15 18l-6-6 6-6" /></svg>
                     </button>
                     <div className="flex flex-col mb-0.5">
-                        <span className="font-bold text-sm tracking-wide line-clamp-1 max-w-[150px]">{activeGame.title}</span>
+                        <span className="font-black text-sm tracking-wide line-clamp-1 max-w-[150px]" style={{ color: INK }}>{activeGame.title}</span>
                         <div className="flex items-center gap-2">
-                            <span className="text-[9px] opacity-60 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                            <span className="text-[9px] flex items-center gap-1" style={{ color: INK_SOFT }}>
+                                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#7a9a5a' }}></span>
                                 {activeGame.status.location}
                             </span>
-                            {lastTokenUsage && <span className="text-[8px] opacity-40 font-mono inline-flex items-center gap-0.5" title={`Prompt: ${lastTokenUsage.prompt || '?'} | Completion: ${lastTokenUsage.completion || '?'} | Total session: ${totalTokensUsed}`}><Lightning size={10} weight="fill" />{lastTokenUsage.prompt || '?'}/{lastTokenUsage.completion || '?'} (∑{totalTokensUsed})</span>}
+                            {lastTokenUsage && <span className="text-[8px] inline-flex items-center gap-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT, opacity: 0.7 }} title={`Prompt: ${lastTokenUsage.prompt || '?'} | Completion: ${lastTokenUsage.completion || '?'} | Total session: ${totalTokensUsed}`}><Lightning size={10} weight="fill" />{lastTokenUsage.prompt || '?'}/{lastTokenUsage.completion || '?'} (∑{totalTokensUsed})</span>}
                         </div>
                     </div>
                 </div>
-                
+
                 <div className="flex gap-1 mb-1">
-                    {/* Toggle Party HUD */}
-                    <button onClick={() => setShowParty(!showParty)} className={`p-2 rounded hover:bg-white/10 active:scale-95 transition-transform ${showParty ? theme.accent : 'opacity-50'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
+                    {/* 队伍 HUD 开关 */}
+                    <button onClick={() => setShowParty(!showParty)} className={`p-2 rounded-lg active:scale-95 transition-transform ${showParty ? theme.accent : ''}`} style={{ color: showParty ? undefined : INK_SOFT }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
                     </button>
-                    <button onClick={() => setShowSystemMenu(true)} className={`p-2 -mr-2 rounded hover:bg-white/10 active:scale-95 transition-transform`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+                    <button onClick={() => setShowSystemMenu(true)} className="p-2 -mr-2 rounded-lg active:scale-95 transition-transform" style={{ color: INK_SOFT }}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
                     </button>
                 </div>
             </div>
 
             {/* --- NEW: Party HUD (Collapsible) --- */}
             {showParty && (
-                <div className={`flex gap-4 p-3 overflow-x-auto no-scrollbar border-b ${theme.border} bg-black/20 backdrop-blur-sm z-10 shrink-0 animate-slide-down`}>
-                    {/* User Avatar */}
+                <div className="flex gap-4 p-3 overflow-x-auto no-scrollbar z-10 shrink-0 animate-slide-down" style={{ borderBottom: '1px dashed rgba(150,140,120,0.55)', background: 'rgba(243,236,219,0.5)' }}>
+                    {/* 用户头像 */}
                     <div className="relative group shrink-0">
-                        <img src={userProfile.avatar} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover shadow-sm" />
-                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-black/60 text-white text-[8px] px-1.5 rounded-full backdrop-blur-sm whitespace-nowrap">YOU</div>
+                        <img src={userProfile.avatar} className="w-10 h-10 rounded-full object-cover" style={{ border: '2px solid #fffdf8', boxShadow: '0 2px 5px rgba(70,62,48,0.3)' }} />
+                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] px-1.5 rounded-full whitespace-nowrap font-black" style={{ background: '#3a3630', color: '#fcf8ef' }}>YOU</div>
                     </div>
-                    {/* Teammates */}
+                    {/* 队友 */}
                     {activePlayers.map(p => (
                         <div key={p.id} className="relative group shrink-0 cursor-pointer active:scale-95 transition-transform">
-                            <img src={p.avatar} className="w-10 h-10 rounded-full border-2 border-white/20 object-cover shadow-sm group-hover:border-white/50 transition-colors" />
-                            <div className="absolute inset-0 rounded-full ring-2 ring-transparent group-hover:ring-green-400/50 transition-all"></div>
-                            {/* Simple Status Indicator (Green Dot) */}
-                            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-black/50 shadow-sm animate-pulse"></div>
+                            <img src={p.avatar} className="w-10 h-10 rounded-full object-cover" style={{ border: '2px solid #fffdf8', boxShadow: '0 2px 5px rgba(70,62,48,0.3)' }} />
+                            <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: '#7a9a5a', border: '2px solid #fffdf8' }}></div>
                         </div>
                     ))}
                 </div>
             )}
 
-            {/* Stats HUD */}
-            <div className={`px-4 py-2 border-b ${theme.border} bg-black/10 backdrop-blur-sm z-10 shrink-0`}>
+            {/* 状态条 HUD */}
+            <div className="px-4 py-2 z-10 shrink-0" style={{ borderBottom: '1px dashed rgba(150,140,120,0.55)', background: 'rgba(243,236,219,0.4)' }}>
                 <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col items-center bg-red-500/20 rounded p-1 border border-red-500/30">
-                        <span className="text-[8px] text-red-300 font-bold uppercase">HP (生命)</span>
-                        <span className="text-xs font-mono font-bold text-red-100">{activeGame.status.health || 100}</span>
+                    <div className="flex flex-col items-center rounded-lg p-1" style={{ background: WASHI.rose.base, border: `1px solid ${WASHI.rose.edge}` }}>
+                        <span className="text-[8px] font-black uppercase" style={{ color: WASHI.rose.ink }}>HP (生命)</span>
+                        <span className="text-xs font-black" style={{ fontFamily: 'var(--font-label)', color: '#5a3a36' }}>{activeGame.status.health || 100}</span>
                     </div>
                     <div
                         onClick={toggleSanityLock}
-                        className={`flex flex-col items-center bg-blue-500/20 rounded p-1 border cursor-pointer active:scale-95 transition-all ${sanityLocked ? 'border-blue-400 ring-1 ring-blue-400/50' : 'border-blue-500/30'}`}
+                        className="flex flex-col items-center rounded-lg p-1 cursor-pointer active:scale-95 transition-all"
+                        style={sanityLocked ? { background: WASHI.sky.base, border: '2px solid ' + WASHI.sky.ink } : { background: WASHI.sky.base, border: `1px solid ${WASHI.sky.edge}` }}
                     >
-                        <span className="text-[8px] text-blue-300 font-bold uppercase flex items-center gap-1">
-                            SAN (理智) {sanityLocked && <LockSimple size={10} weight="fill" className="text-blue-400 inline" />}
+                        <span className="text-[8px] font-black uppercase flex items-center gap-1" style={{ color: WASHI.sky.ink }}>
+                            SAN (理智) {sanityLocked && <LockSimple size={10} weight="fill" className="inline" />}
                         </span>
-                        <span className="text-xs font-mono font-bold text-blue-100">{activeGame.status.sanity || 100}</span>
+                        <span className="text-xs font-black" style={{ fontFamily: 'var(--font-label)', color: '#3a5a72' }}>{activeGame.status.sanity || 100}</span>
                     </div>
-                    <div className="flex flex-col items-center bg-yellow-500/20 rounded p-1 border border-yellow-500/30">
-                        <span className="text-[8px] text-yellow-300 font-bold uppercase">GOLD (金币)</span>
-                        <span className="text-xs font-mono font-bold text-yellow-100">{activeGame.status.gold || 0}</span>
+                    <div className="flex flex-col items-center rounded-lg p-1" style={{ background: WASHI.butter.base, border: `1px solid ${WASHI.butter.edge}` }}>
+                        <span className="text-[8px] font-black uppercase" style={{ color: WASHI.butter.ink }}>GOLD (金币)</span>
+                        <span className="text-xs font-black" style={{ fontFamily: 'var(--font-label)', color: '#6a5a35' }}>{activeGame.status.gold || 0}</span>
                     </div>
                 </div>
-                {/* Token Statistics */}
+                {/* Token 统计 */}
                 {lastTokenUsage && (
-                    <div className="mt-1.5 flex items-center justify-between bg-white/5 rounded px-2 py-1 border border-white/10">
-                        <span className="text-[8px] text-white/40 font-mono inline-flex items-center gap-0.5"><Lightning size={10} weight="fill" /> 上下文: {lastTokenUsage.prompt ?? '?'} | 回复: {lastTokenUsage.completion ?? '?'} | 本次: {lastTokenUsage.total}</span>
-                        <span className="text-[8px] text-white/40 font-mono">∑ {totalTokensUsed}</span>
+                    <div className="mt-1.5 flex items-center justify-between rounded px-2 py-1" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(196,184,160,0.6)' }}>
+                        <span className="text-[8px] inline-flex items-center gap-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}><Lightning size={10} weight="fill" /> 上下文: {lastTokenUsage.prompt ?? '?'} | 回复: {lastTokenUsage.completion ?? '?'} | 本次: {lastTokenUsage.total}</span>
+                        <span className="text-[8px]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>∑ {totalTokensUsed}</span>
                     </div>
                 )}
             </div>
@@ -1652,7 +1682,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                         inner = (
                             <div className="flex flex-col items-center my-4 animate-fade-in gap-1 group">
                                 <span className="text-[10px] opacity-50 border-b border-dashed border-current pb-0.5 font-mono">{log.content}</span>
-                                <button onClick={() => handleRollbackLog(i)} className="text-[9px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:underline">回退到此处</button>
+                                <button onClick={() => handleRollbackLog(i)} className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity hover:underline" style={{ color: '#b3564e' }}>回退到此处</button>
                             </div>
                         );
                     } else if (isGM) {
@@ -1662,7 +1692,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                     <div className="absolute -top-3 left-4 bg-inherit px-2 text-[10px] font-bold uppercase tracking-widest opacity-80 border border-inherit rounded">Game Master</div>
                                     <GameMarkdown content={log.content} theme={theme} customStyle={uiSettings} />
                                 </div>
-                                <button onClick={() => handleRollbackLog(i)} className="absolute top-2 right-2 text-[9px] bg-red-900/50 text-red-200 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-800">Rollback</button>
+                                <button onClick={() => handleRollbackLog(i)} className="absolute top-2 right-2 text-[9px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(179,86,78,0.16)', color: '#b3564e' }}>回退</button>
                             </div>
                         );
                     } else if (isCharacter && charInfo) {
@@ -1674,7 +1704,7 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                     <div className={`px-4 py-2 rounded-2xl rounded-tl-none text-sm ${theme.cardBg} border ${theme.border} shadow-sm relative`}>
                                         <GameMarkdown content={log.content} theme={theme} customStyle={uiSettings} />
                                     </div>
-                                    <button onClick={() => handleRollbackLog(i)} className="self-start mt-1 text-[9px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:underline">回退</button>
+                                    <button onClick={() => handleRollbackLog(i)} className="self-start mt-1 text-[9px] opacity-0 group-hover:opacity-100 transition-opacity hover:underline" style={{ color: '#b3564e' }}>回退</button>
                                 </div>
                             </div>
                         );
@@ -1685,15 +1715,15 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className={`text-[10px] font-bold opacity-60`}>{log.speakerName}</span>
                                     {log.diceRoll && (
-                                        <span className="text-[10px] bg-white/20 px-1.5 rounded text-yellow-500 font-mono">
+                                        <span className="text-[10px] px-1.5 rounded font-black" style={{ fontFamily: 'var(--font-label)', background: WASHI.butter.base, color: WASHI.butter.ink }}>
                                             <DiceFive size={12} weight="fill" className="inline" /> {log.diceRoll.result}
                                         </span>
                                     )}
                                 </div>
-                                <div className={`px-4 py-2 rounded-2xl rounded-tr-none text-sm bg-orange-600 text-white shadow-md max-w-[85%]`}>
+                                <div className="px-4 py-2 rounded-2xl rounded-tr-none text-sm max-w-[85%]" style={{ background: '#3a3630', color: '#fcf8ef', boxShadow: '0 6px 12px -8px rgba(58,54,48,0.5)' }}>
                                     {log.content}
                                 </div>
-                                <button onClick={() => handleRollbackLog(i)} className="mt-1 text-[9px] text-red-400 opacity-0 group-hover:opacity-100 transition-opacity hover:underline">回退</button>
+                                <button onClick={() => handleRollbackLog(i)} className="mt-1 text-[9px] opacity-0 group-hover:opacity-100 transition-opacity hover:underline" style={{ color: '#b3564e' }}>回退</button>
                             </div>
                         );
                     }
@@ -1708,10 +1738,10 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             onPointerCancel={cancelLogPress}
                             onClick={() => { if (selectMode) toggleSelectLog(log.id); }}
                             onContextMenu={(e) => { if (selectMode) e.preventDefault(); }}
-                            className={`relative ${selectMode ? `cursor-pointer rounded-xl px-1 transition-all ${selected ? 'ring-2 ring-purple-400 bg-purple-500/10' : 'hover:bg-white/[0.03]'}` : ''}`}
+                            className={`relative ${selectMode ? `cursor-pointer rounded-xl px-1 transition-all ${selected ? 'ring-2 ring-[#3a3630] bg-[#f3e6c0]/70' : 'hover:bg-black/[0.03]'}` : ''}`}
                         >
                             {selectMode && (
-                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'bg-purple-500 border-purple-400' : 'border-white/40 bg-black/40'}`}>
+                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'bg-[#3a3630] border-[#3a3630]' : 'border-[#b0a28a] bg-[#fffdf8]'}`}>
                                     {selected && <svg viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0l-3.5-3.5a1 1 0 1 1 1.4-1.4l2.8 2.79 6.8-6.79a1 1 0 0 1 1.4 0Z" clipRule="evenodd"/></svg>}
                                 </div>
                             )}
@@ -1728,13 +1758,14 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
             {/* 多选转发操作栏 */}
             {selectMode && (
-                <div className={`p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t ${theme.border} bg-black/50 backdrop-blur shrink-0 z-20 flex items-center gap-3 animate-slide-down`}>
-                    <button onClick={exitSelectMode} className="px-4 h-11 rounded-xl border border-white/15 text-sm font-bold text-white/70 active:scale-95 transition-transform">取消</button>
-                    <span className="text-xs text-white/50 flex-1 text-center">已选 {selectedLogIds.size} 条 · 长按可多选剧情</span>
+                <div className="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shrink-0 z-20 flex items-center gap-3 animate-slide-down" style={barStyle}>
+                    <button onClick={exitSelectMode} className="px-4 h-11 rounded-full text-sm font-black active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>取消</button>
+                    <span className="text-xs flex-1 text-center" style={{ color: INK_SOFT }}>已选 {selectedLogIds.size} 条 · 长按可多选剧情</span>
                     <button
                         onClick={handleForwardToChat}
                         disabled={selectedLogIds.size === 0 || isForwarding}
-                        className="px-5 h-11 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-bold active:scale-95 transition-transform disabled:opacity-40 flex items-center gap-2 shadow-lg shadow-purple-500/20"
+                        className="px-5 h-11 rounded-full text-sm font-black active:scale-95 transition-transform disabled:opacity-40 flex items-center gap-2"
+                        style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}
                     >
                         {isForwarding ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> 转发中...</> : '转发到聊天'}
                     </button>
@@ -1743,9 +1774,9 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
 
             {/* Controls */}
             {/* Added pb-[env(safe-area-inset-bottom)] to ensure content clears home bar on full screen devices */}
-            <div className={`p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] border-t ${theme.border} bg-opacity-90 backdrop-blur shrink-0 z-20 transition-colors duration-500 ${selectMode ? 'hidden' : ''}`}>
-                
-                {/* AI Suggested Options Area */}
+            <div className={`p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shrink-0 z-20 transition-colors duration-500 ${selectMode ? 'hidden' : ''}`} style={barStyle}>
+
+                {/* AI 推荐行动 */}
                 {activeGame.suggestedActions && activeGame.suggestedActions.length > 0 && !isTyping && (
                     <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar pb-1">
                         {activeGame.suggestedActions.map((opt, idx) => {
@@ -1775,132 +1806,134 @@ Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆
                             {!activeGame.diceDisabled && lastRoll !== null && <span className="font-mono font-bold no-underline">上次 {lastRoll}</span>}
                         </span>
                         {['调查', '攻击', '交涉', '潜行', '逃跑'].map(action => (
-                            <button key={action} disabled={isTyping} onClick={() => handleAction(action)} className={`flex-1 px-3 py-2 rounded border ${theme.border} hover:bg-white/10 text-xs font-bold transition-colors active:scale-95 disabled:opacity-40`}>{action}</button>
+                            <button key={action} disabled={isTyping} onClick={() => handleAction(action)} className="flex-1 px-3 py-2 rounded-lg text-xs font-black transition-colors active:scale-95 disabled:opacity-40" style={{ background: 'rgba(255,253,247,0.9)', color: '#5b5346', border: '1px solid rgba(196,184,160,0.7)' }}>{action}</button>
                         ))}
                     </div>
                 )}
 
                 <div className="flex gap-2 items-end">
                     {/* Toggle Tools Button */}
-                    <button 
+                    <button
                         onClick={() => setShowTools(!showTools)}
-                        className={`p-3 h-12 rounded-xl border ${theme.border} hover:bg-white/10 active:scale-95 transition-transform flex items-center justify-center ${showTools ? 'bg-white/20' : ''}`}
+                        className="p-3 h-12 rounded-xl active:scale-95 transition-transform flex items-center justify-center"
+                        style={showTools ? { background: '#3a3630', color: '#fcf8ef' } : { background: 'rgba(255,253,247,0.9)', color: '#5b5346', border: '1px solid rgba(196,184,160,0.7)' }}
                     >
                         <Toolbox size={22} />
                     </button>
 
-                    {/* Reroll Button (Context Sensitive) */}
+                    {/* 重掷上一轮 */}
                     {!isTyping && activeGame.logs.length > 0 && (
-                        <button 
+                        <button
                             onClick={handleReroll}
-                            className={`p-3 h-12 rounded-xl border ${theme.border} hover:bg-white/10 active:scale-95 transition-transform flex items-center justify-center`}
+                            className="p-3 h-12 rounded-xl active:scale-95 transition-transform flex items-center justify-center"
+                            style={{ background: 'rgba(255,253,247,0.9)', color: '#5b5346', border: '1px solid rgba(196,184,160,0.7)' }}
                             title="重新生成上一轮"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 opacity-70"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
                         </button>
                     )}
 
-                    <textarea 
-                        value={userInput} 
-                        onChange={e => setUserInput(e.target.value)} 
-                        // Removed onKeyDown Enter submission
-                        placeholder="你打算做什么..." 
-                        className={`flex-1 bg-black/20 border ${theme.border} rounded-xl px-3 py-3 outline-none text-sm placeholder-opacity-30 placeholder-current resize-none h-12 leading-tight focus:bg-black/40 transition-colors`}
+                    <textarea
+                        value={userInput}
+                        onChange={e => setUserInput(e.target.value)}
+                        placeholder="你打算做什么..."
+                        className="flex-1 rounded-xl px-3 py-3 outline-none text-sm resize-none h-12 leading-tight transition-colors"
+                        style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.8)', color: INK }}
                     />
-                    <button onClick={() => handleAction(userInput)} className={`${theme.accent} font-bold text-sm px-4 h-12 bg-white/10 rounded-xl hover:bg-white/20 active:scale-95 transition-all flex items-center justify-center`}>
+                    <button onClick={() => handleAction(userInput)} className="font-bold text-sm px-4 h-12 rounded-xl active:scale-95 transition-all flex items-center justify-center" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" /></svg>
                     </button>
                 </div>
             </div>
 
-            {/* System Menu Modal */}
-            <Modal isOpen={showSystemMenu} title="系统菜单" onClose={() => setShowSystemMenu(false)}>
-                <div className="space-y-4">
-                    {/* UI Settings */}
-                    <div className="bg-slate-100 p-3 rounded-xl">
-                        <label className="text-xs text-slate-500 font-bold mb-3 block border-b border-slate-200 pb-1">阅读设置 (Display)</label>
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs text-slate-400 w-8">字号</span>
-                                <input 
-                                    type="range" 
-                                    min="12" 
-                                    max="24" 
-                                    step="1"
-                                    value={uiSettings.fontSize} 
-                                    onChange={e => setUiSettings({...uiSettings, fontSize: parseInt(e.target.value)})} 
-                                    className="flex-1 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-orange-500" 
-                                />
-                                <span className="text-xs font-mono text-slate-600 w-6 text-right">{uiSettings.fontSize}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs text-slate-400 w-8">颜色</span>
-                                <input 
-                                    type="color" 
-                                    value={uiSettings.color || '#e5e5e5'} 
-                                    onChange={e => setUiSettings({...uiSettings, color: e.target.value})} 
-                                    className="w-full h-8 rounded cursor-pointer bg-white border border-slate-200 p-0.5" 
-                                />
-                            </div>
-                            <button onClick={() => setUiSettings({ fontSize: 14, color: '' })} className="w-full py-1.5 bg-white border border-slate-200 text-slate-500 text-xs rounded-lg active:scale-95 transition-transform">恢复默认</button>
+            {/* 系统菜单 */}
+            {showSystemMenu && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.45)', backdropFilter: 'blur(3px)' }} onClick={() => setShowSystemMenu(false)} />
+                    <div className="relative w-full max-w-sm max-h-[82vh] overflow-y-auto no-scrollbar animate-pop-in" style={paperDialogStyle}>
+                        <WashiTape color="sage" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-24 h-6 rounded-[2px] z-10" />
+                        <div className="px-5 pt-7 pb-2 text-center">
+                            <div className="text-[9px] tracking-[0.3em] uppercase mb-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>Menu</div>
+                            <h3 className="text-lg font-black" style={{ color: INK }}>系统菜单</h3>
                         </div>
-                    </div>
-
-                    {/* 玩法设置 */}
-                    <div className="bg-slate-100 p-3 rounded-xl">
-                        <label className="text-xs text-slate-500 font-bold mb-3 block border-b border-slate-200 pb-1">玩法设置 (Gameplay)</label>
-                        <div className="flex items-center justify-between">
-                            <div className="flex flex-col">
-                                <span className="text-sm text-slate-700 font-medium flex items-center gap-1.5"><DiceFive size={16} weight="fill" /> 骰子判定 (D20)</span>
-                                <span className="text-[10px] text-slate-400 mt-0.5">关闭后，每次行动不再自动骰点</span>
+                        <div className="px-5 pb-5 space-y-4">
+                            {/* 阅读设置 */}
+                            <div className="p-3 rounded-xl" style={{ background: 'rgba(244,236,219,0.8)', border: '1px solid rgba(196,184,160,0.6)' }}>
+                                <label className="text-xs font-black mb-3 block pb-1" style={{ color: INK, borderBottom: '1px dashed rgba(176,162,138,0.6)' }}>阅读设置 (Display)</label>
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs w-8" style={{ color: INK_SOFT }}>字号</span>
+                                        <input type="range" min="12" max="24" step="1" value={uiSettings.fontSize} onChange={e => setUiSettings({ ...uiSettings, fontSize: parseInt(e.target.value) })} className="flex-1 h-1.5 rounded-lg appearance-none cursor-pointer" style={{ background: 'rgba(176,162,138,0.4)', accentColor: '#3a3630' }} />
+                                        <span className="text-xs w-6 text-right" style={{ fontFamily: 'var(--font-label)', color: INK }}>{uiSettings.fontSize}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs w-8" style={{ color: INK_SOFT }}>颜色</span>
+                                        <input type="color" value={uiSettings.color || '#3a3630'} onChange={e => setUiSettings({ ...uiSettings, color: e.target.value })} className="w-full h-8 rounded cursor-pointer p-0.5" style={{ background: '#fffdf8', border: '1px solid rgba(196,184,160,0.7)' }} />
+                                    </div>
+                                    <button onClick={() => setUiSettings({ fontSize: 14, color: '' })} className="w-full py-1.5 text-xs rounded-lg active:scale-95 transition-transform" style={{ background: '#fffdf8', color: '#6b6456', border: '1px solid rgba(196,184,160,0.7)' }}>恢复默认</button>
+                                </div>
                             </div>
-                            <button
-                                onClick={toggleDice}
-                                role="switch"
-                                aria-checked={!activeGame.diceDisabled}
-                                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${activeGame.diceDisabled ? 'bg-slate-300' : 'bg-emerald-500'}`}
-                            >
-                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${activeGame.diceDisabled ? '' : 'translate-x-6'}`}></span>
+
+                            {/* 玩法设置 */}
+                            <div className="p-3 rounded-xl" style={{ background: 'rgba(244,236,219,0.8)', border: '1px solid rgba(196,184,160,0.6)' }}>
+                                <label className="text-xs font-black mb-3 block pb-1" style={{ color: INK, borderBottom: '1px dashed rgba(176,162,138,0.6)' }}>玩法设置 (Gameplay)</label>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-black flex items-center gap-1.5" style={{ color: INK }}><DiceFive size={16} weight="fill" /> 骰子判定 (D20)</span>
+                                        <span className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>关闭后，每次行动不再自动骰点</span>
+                                    </div>
+                                    <button onClick={toggleDice} role="switch" aria-checked={!activeGame.diceDisabled} className="relative w-12 h-6 rounded-full transition-colors shrink-0" style={{ background: activeGame.diceDisabled ? 'rgba(176,162,138,0.45)' : '#8a9a62' }}>
+                                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full shadow transition-transform ${activeGame.diceDisabled ? '' : 'translate-x-6'}`} style={{ background: '#fffdf8' }}></span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <button onClick={handleArchiveAndQuit} className="w-full py-3 font-black rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2" style={{ background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
+                                <FloppyDisk size={18} /> 归档记忆并退出
+                            </button>
+                            <button onClick={handleRestart} className="w-full py-3 font-black rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2" style={{ background: WASHI.amber.base, color: WASHI.amber.ink, border: `1px solid ${WASHI.amber.edge}` }}>
+                                <ArrowsClockwise size={18} /> 重置当前游戏
+                            </button>
+                            <button onClick={handleLeave} className="w-full py-3 font-black rounded-full active:scale-95 transition-transform flex items-center justify-center gap-2" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>
+                                <DoorOpen size={18} /> 暂时离开 (不归档)
                             </button>
                         </div>
                     </div>
-
-                    <button onClick={handleArchiveAndQuit} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
-                        <FloppyDisk size={18} /> 归档记忆并退出
-                    </button>
-                    <button onClick={handleRestart} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2">
-                        <ArrowsClockwise size={18} /> 重置当前游戏
-                    </button>
-                    <button onClick={handleLeave} className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl flex items-center justify-center gap-2">
-                        <DoorOpen size={18} /> 暂时离开 (不归档)
-                    </button>
-                </div>
-            </Modal>
-
-            {/* Delete Save Confirm Modal */}
-            <Modal isOpen={!!deleteConfirmId} title="删除存档" onClose={() => setDeleteConfirmId(null)} footer={
-                <div className="flex gap-3 w-full">
-                    <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
-                    <button onClick={confirmDeleteGame} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">删除</button>
-                </div>
-            }>
-                <p className="text-sm text-slate-600 text-center py-4">确定要删除这个存档吗？<br/><span className="text-xs text-red-400 mt-1 block">此操作不可恢复。</span></p>
-            </Modal>
-
-            {/* Archive Overlay */}
-            {isArchiving && (
-                <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center text-white flex-col gap-4 animate-fade-in">
-                    <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-xs tracking-widest font-mono">正在传递记忆...</span>
                 </div>
             )}
 
-            {/* Auto-Summary Overlay (每 20 条自动总结的全屏反馈) */}
+            {/* 撕掉存档确认 */}
+            {deleteConfirmId && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(46,40,32,0.42)', backdropFilter: 'blur(3px)' }} onClick={() => setDeleteConfirmId(null)} />
+                    <div className="relative w-full max-w-xs animate-pop-in" style={paperDialogStyle}>
+                        <WashiTape color="rose" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-5 rounded-[2px] z-10" />
+                        <div className="px-5 pt-6 pb-5 space-y-3">
+                            <div className="font-black text-sm text-center" style={{ color: INK }}>撕掉这个存档？</div>
+                            <div className="text-xs text-center" style={{ color: '#8a5a52' }}>撕掉就找不回来了。</div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setDeleteConfirmId(null)} className="flex-1 py-2.5 text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.96)', color: '#6b6456', border: '1px solid rgba(196,184,160,0.85)' }}>取消</button>
+                                <button onClick={confirmDeleteGame} className="flex-1 py-2.5 text-white text-xs font-black rounded-full active:scale-95 transition-transform" style={{ background: '#b3564e' }}>撕掉</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 归档遮罩 */}
+            {isArchiving && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center flex-col gap-4 animate-fade-in" style={{ background: 'rgba(46,40,32,0.8)', color: '#fcf8ef' }}>
+                    <div className="w-8 h-8 rounded-full animate-spin" style={{ border: '4px solid rgba(232,196,134,0.4)', borderTopColor: 'transparent' }}></div>
+                    <span className="text-xs tracking-widest" style={{ fontFamily: 'var(--font-label)' }}>正在把这段经历夹进记忆…</span>
+                </div>
+            )}
+
+            {/* 自动总结遮罩（每 20 条） */}
             {isSummarizing && (
-                <div className="absolute inset-0 bg-black/85 z-50 flex items-center justify-center text-white flex-col gap-5 animate-fade-in px-8 text-center">
-                    <div className="w-10 h-10 border-4 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                <div className="absolute inset-0 z-50 flex items-center justify-center flex-col gap-5 animate-fade-in px-8 text-center" style={{ background: 'rgba(46,40,32,0.85)', color: '#fcf8ef' }}>
+                    <div className="w-10 h-10 rounded-full animate-spin" style={{ border: '4px solid rgba(194,172,214,0.45)', borderTopColor: 'transparent' }}></div>
                     <span className="text-sm tracking-widest font-bold">正在总结前文内容…</span>
-                    <span className="text-[11px] opacity-50 font-mono leading-relaxed">归档剧情 · 提炼起因经过结果 · 记录人物关系变化</span>
+                    <span className="text-[11px] opacity-60 leading-relaxed" style={{ fontFamily: 'var(--font-label)' }}>归档剧情 · 提炼起因经过结果 · 记录人物关系变化</span>
                 </div>
             )}
         </div>
