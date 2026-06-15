@@ -286,9 +286,11 @@ export interface OSTheme {
    *  moro-character-card / moro-app-tile / moro-dock / moro-status-bar / moro-lock-screen 等）做全局美化。
    *  在「主题 → 自定义 CSS」编辑，实时生效。 */
   globalCustomCss?: string;
-  /** 桌面小组件自定义（key = widget id：clock / character / schedule / music / image / imgtl / imgtr / imgwide）。
+  /** 桌面小组件自定义（key = widget id：clock / character / schedule / music / image / imgtl / imgtr / imgwide / text）。
    *  在「主题 → 桌面小组件」编辑：隐藏（删除）、改网格尺寸（横版/竖版/方形）、注入小组件自定义 CSS。 */
   desktopWidgetPrefs?: Record<string, DesktopWidgetPref>;
+  /** 文字小组件内容（桌面便签）：标题 + 正文，点小组件即可编辑。 */
+  textWidget?: { title?: string; body?: string };
   /** 灵动岛样式自定义（背景 / 文字色 / 圆角 / 自定义 CSS），在「主题 → 灵动岛」编辑。 */
   dynamicIslandStyle?: DynamicIslandStyle;
   /** 锁屏样式自定义（专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS），在「主题 → 锁屏」编辑。 */

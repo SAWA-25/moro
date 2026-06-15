@@ -720,6 +720,7 @@ const DESKTOP_WIDGET_DEFS: { id: string; label: string; defaultW: number; defaul
     { id: 'schedule', label: '日程卡', defaultW: 4, defaultH: 5, desc: '角色今日日程' },
     { id: 'music', label: '音乐卡', defaultW: 2, defaultH: 4, desc: '正在播放' },
     { id: 'image', label: '方图卡', defaultW: 2, defaultH: 4, desc: '自定义图片格' },
+    { id: 'text', label: '文字便签', defaultW: 4, defaultH: 3, desc: '点一下就地写字贴桌面' },
 ];
 
 const WIDGET_SIZE_PRESETS: { label: string; w: number; h: number }[] = [

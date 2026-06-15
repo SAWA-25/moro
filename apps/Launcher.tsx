@@ -8,6 +8,7 @@ import { CharacterProfile, Anniversary, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
+import TextWidget from '../components/os/TextWidget';
 
 // --- Isolated Components to prevent full re-renders ---
 
@@ -341,7 +342,7 @@ const loadStoredDeskOrder = (): string[] => {
 
 /** 首次使用（没存过布局）的默认顺序：复刻旧版「时钟+聊天卡+8 图标 / 日程+音乐+方图」分页 */
 const buildDefaultKeys = (appKeys: string[], widgetKeys: Set<string>): string[] => {
-    const mid = ['widget:schedule', 'widget:music', 'widget:image', 'widget:imgtl', 'widget:imgtr', 'widget:imgwide']
+    const mid = ['widget:schedule', 'widget:music', 'widget:text', 'widget:image', 'widget:imgtl', 'widget:imgtr', 'widget:imgwide']
         .filter(k => widgetKeys.has(k));
     return ['widget:clock', 'widget:weather', 'widget:character', ...appKeys.slice(0, 8), ...mid, ...appKeys.slice(8)];
 };
@@ -389,12 +390,16 @@ const WIDGET_LABELS: Record<string, string> = {
     imgtl: '小组件图',
     imgtr: '小组件图',
     imgwide: '宽幅图',
+    text: '文字便签',
 };
+
+// 桌面整理态下，点小组件右下角句柄循环切换的尺寸预设（列 × 行）
+const WIDGET_SIZE_PRESETS: Array<[number, number]> = [[2, 3], [2, 4], [2, 6], [4, 2], [4, 3], [4, 5]];
 
 // --- Main Launcher ---
 
 const Launcher: React.FC = () => {
-  const { openApp, characters, activeCharacterId, theme, lastMsgTimestamp, isDataLoaded, unreadMessages } = useOS();
+  const { openApp, characters, activeCharacterId, theme, updateTheme, lastMsgTimestamp, isDataLoaded, unreadMessages } = useOS();
 
   // Local state for widget data to prevent context trashing
   const [widgetChar, setWidgetChar] = useState<CharacterProfile | null>(null);
@@ -472,6 +477,7 @@ const Launcher: React.FC = () => {
         { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
         { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
         { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 4 },
+        { key: 'widget:text', kind: 'widget', id: 'text', w: 4, h: 3 },
         ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
         ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
         ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
@@ -540,7 +546,7 @@ const Launcher: React.FC = () => {
           e.stopPropagation();
           beginItemDrag(key, e.clientX, e.clientY);
       } else {
-          // 长按 450ms 进入编辑模式并直接拎起该项；中途移动超过阈值视为滑动翻页，取消长按
+          // 长按 260ms 进入编辑模式并直接拎起该项（更快上手）；中途移动超过阈值视为滑动翻页，取消长按
           if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
           longPressTimer.current = window.setTimeout(() => {
               longPressTimer.current = null;
@@ -548,7 +554,7 @@ const Launcher: React.FC = () => {
               editModeRef.current = true;
               try { (navigator as any).vibrate?.(10); } catch {}
               beginItemDrag(key, lastPointerPos.current.x, lastPointerPos.current.y);
-          }, 450);
+          }, 260);
       }
   }, [beginItemDrag]);
 
@@ -762,6 +768,17 @@ const Launcher: React.FC = () => {
   const draggingApp = draggingItem?.kind === 'app' ? gridApps.find(a => a.id === draggingItem.id) : null;
 
   // 渲染单个桌面项内容（位置由外层 grid 决定）
+  // 整理态：点小组件右下角句柄循环改尺寸（写入 theme.desktopWidgetPrefs，自动重新装箱）
+  const cycleWidgetSize = (item: DeskItem) => {
+      const prefs = { ...(theme.desktopWidgetPrefs || {}) };
+      const cur = prefs[item.id] || {};
+      const idx = WIDGET_SIZE_PRESETS.findIndex(([w, h]) => w === item.w && h === item.h);
+      const [w, h] = WIDGET_SIZE_PRESETS[(idx + 1) % WIDGET_SIZE_PRESETS.length];
+      prefs[item.id] = { ...cur, w, h };
+      updateTheme({ desktopWidgetPrefs: prefs });
+      try { (navigator as any).vibrate?.(8); } catch {}
+  };
+
   const renderDeskItem = (item: DeskItem) => {
       if (item.kind === 'app') {
           const app = gridApps.find(a => a.id === item.id);
@@ -804,6 +821,8 @@ const Launcher: React.FC = () => {
               );
           case 'music':
               return <NowPlayingSquareWidget contentColor={contentColor} />;
+          case 'text':
+              return <TextWidget contentColor={contentColor} />;
           case 'image':
               return (
                   <DesktopSquareImage
@@ -953,6 +972,15 @@ const Launcher: React.FC = () => {
                               }}
                           >
                               {renderDeskItem(item)}
+                              {editMode && item.kind === 'widget' && (
+                                  <button
+                                      onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                      onPointerUp={(e) => { e.stopPropagation(); cycleWidgetSize(item); }}
+                                      className="absolute bottom-1 right-1 z-[60] w-6 h-6 rounded-full bg-[#2c2a35] text-white text-[12px] leading-none flex items-center justify-center shadow-lg active:scale-90"
+                                      style={{ touchAction: 'none' }}
+                                      title="改尺寸"
+                                  >⤢</button>
+                              )}
                           </div>
                       ))}
                   </div>
