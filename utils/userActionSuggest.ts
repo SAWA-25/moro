@@ -41,7 +41,7 @@ function stripLabel(input: string): string {
         /^(casual|playful|serious|flirty|teasing|caring|sincere|funny|warm|sweet|cool|honest|direct|soft)\b\s*[:：/／-]?\s*/i,
         /^(语气|方向|风格|选项|路线|类型|方案)\s*[0-9一二三四五六七八九十]*\s*[)）.、:：/／-]\s*/,   // 语气1： 方向二、
         /^[【\[（(][^】\]）)]{0,12}[】\]）)]\s*/,                                          // 【调侃】[走心]（提问）
-        /^\d+\s*[).、:：/／-]\s*/,                                                         // 1) 2. 3、
+        /^\d{1,2}\s*[.)、）]\s+/,                                                          // 1. 2) 3、（仅列表序号，不吃「12:30」这类时间）
     ];
     let changed = true;
     while (changed) {

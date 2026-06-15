@@ -78,7 +78,33 @@ const callLlm = async (apiConfig: APIConfig, systemPrompt: string, userMessage: 
     return (extractContent(data) || '').trim();
 };
 
-/** 剥离 ```json 围栏后解析 JSON；失败时尝试截取首个 [ … ] 区间再解析 */
+/** 从一段文本里逐个抠出「完整的」顶层 {…} 对象（正确处理字符串/转义），丢弃被截断的最后一个。 */
+const salvageObjects = (s: string): any[] => {
+    const out: any[] = [];
+    let depth = 0, startIdx = -1, inStr = false, esc = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (ch === '\\') esc = true;
+            else if (ch === '"') inStr = false;
+            continue;
+        }
+        if (ch === '"') { inStr = true; continue; }
+        if (ch === '{') { if (depth === 0) startIdx = i; depth++; }
+        else if (ch === '}') {
+            if (depth > 0) depth--;
+            if (depth === 0 && startIdx >= 0) {
+                try { out.push(JSON.parse(s.slice(startIdx, i + 1))); } catch { /* 跳过坏对象 */ }
+                startIdx = -1;
+            }
+        }
+    }
+    return out;
+};
+
+/** 剥离 ```json 围栏后解析 JSON；失败时截取首个 [ … ] 区间再解析；仍失败则按完整对象兜底打捞
+ *  （帖子多/评论多时一旦被 max_tokens 截断，整批 JSON 不再合法——兜底能保住已完成的那部分帖子）。 */
 const parseJsonLoose = (raw: string): any => {
     let text = raw.replace(/```(?:json)?/gi, '').trim();
     try { return JSON.parse(text); } catch { /* fallthrough */ }
@@ -86,6 +112,10 @@ const parseJsonLoose = (raw: string): any => {
     const end = text.lastIndexOf(']');
     if (start >= 0 && end > start) {
         try { return JSON.parse(text.slice(start, end + 1)); } catch { /* fallthrough */ }
+    }
+    if (start >= 0) {
+        const objs = salvageObjects(text.slice(start + 1));
+        if (objs.length) return objs;
     }
     throw new Error('生成结果不是合法 JSON');
 };
