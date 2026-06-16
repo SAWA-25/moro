@@ -559,7 +559,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             autoCorrect="on"
                             autoCapitalize="sentences"
                             className={`flex-1 min-w-0 bg-transparent px-4 py-3 ${useIOSStandaloneInputFix ? 'text-[16px]' : 'text-[15px]'} resize-none max-h-24 no-scrollbar ${isDiscordStyle ? 'text-white placeholder:text-slate-500' : isPixelStyle ? 'text-[#6a4c35] placeholder:text-[#9b8677]' : ''}`} 
-                            placeholder={inputPlaceholder || '说点什么…'}
+                            placeholder={inputPlaceholder || 'ʕ•ﻌ•ʔ 说点什么…'}
                             style={{ height: 'auto' }} 
                         />
                         {/* 输入框内右侧：回形针 = 别上点什么（文具盒功能面板） */}

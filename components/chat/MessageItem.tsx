@@ -851,7 +851,7 @@ interface MessageItemProps {
     avatarShape?: 'circle' | 'rounded' | 'square';
     avatarSize?: 'small' | 'medium' | 'large';
     avatarMode?: 'grouped' | 'every_message';
-    bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios';
+    bubbleVariant?: 'modern' | 'flat' | 'outline' | 'shadow' | 'wechat' | 'ios' | 'plain';
     messageSpacing?: 'compact' | 'default' | 'spacious';
     showTimestamp?: 'always' | 'hover' | 'never';
     /** Instant Push 准备中：在用户气泡左侧渲染 dot pulse */
@@ -965,6 +965,8 @@ const MessageItem = React.memo(({
     };
 
     const styleConfig = isUser ? activeTheme.user : activeTheme.ai;
+    // 极简「此刻」皮肤：纯浅灰胶囊气泡、无描边无阴影；昵称标签 + 时间戳移到该组消息上方；隐藏对方逐条头像
+    const isPlainBubble = bubbleVariant === 'plain';
     const [showVoiceText, setShowVoiceText] = useState(false);
 
     const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1422,8 +1424,8 @@ const MessageItem = React.memo(({
                     );
                 })()}
 
-                {/* Avatar - Absolute Positioned */}
-                {!isUser && (
+                {/* Avatar - Absolute Positioned（极简皮肤：对方不逐条显示头像，改用上方昵称标签） */}
+                {!isUser && !isPlainBubble && (
                     <div
                         className={`absolute bottom-[1.25rem] ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'z-10 cursor-pointer' : 'z-0'} ${selectionMode ? 'left-14' : 'left-3'} transition-all duration-300`}
                         onClick={handleAvatarClick}
@@ -1450,10 +1452,17 @@ const MessageItem = React.memo(({
                     Added explicit margins to clear absolute avatars.
                 */}
                 <div
-                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? 'ml-12' : 'mr-12'}`}
+                    className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[72%] min-w-0 ${!isUser ? (isPlainBubble ? 'ml-1' : 'ml-12') : 'mr-12'}`}
                     style={canSwipeReply ? { transform: `translateX(${swipeX}px)`, transition: swipeActive.current ? 'none' : 'transform 0.22s cubic-bezier(0.22,1,0.36,1)' } : undefined}
                     {...interactionProps}
                 >
+                    {/* 极简皮肤：该组消息上方的「昵称标签 + 时间戳」（对方）/「时间戳」（我方） */}
+                    {isPlainBubble && isFirstInGroup && showTimestamp !== 'never' && (
+                        <div className="flex items-center gap-1.5 mb-1 px-0.5">
+                            {!isUser && <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{charName}</span>}
+                            <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>
+                        </div>
+                    )}
                     {!isUser && m.metadata?.thinkingChain && (
                         <div className={`relative w-full ${selectionMode ? 'pl-7' : ''}`}>
                             {selectionMode && onToggleThinkingSelect && (
@@ -1479,9 +1488,10 @@ const MessageItem = React.memo(({
                     <div className={selectionMode ? 'pointer-events-none' : ''}>
                         {content}
                     </div>
-                    {((isLastInGroup && showTimestamp !== 'never') || msgStatus) && (
+                    {/* 时间戳：极简皮肤已挪到组上方，这里只在非极简时保留组下方时间；读取回执 ticks 两种皮肤都保留 */}
+                    {(((isLastInGroup && showTimestamp !== 'never') && !isPlainBubble) || msgStatus) && (
                         <div className="flex items-center gap-1 px-1 mt-1">
-                            {isLastInGroup && showTimestamp !== 'never' && (
+                            {isLastInGroup && showTimestamp !== 'never' && !isPlainBubble && (
                                 <span className={`text-[9px] text-slate-400/80 font-medium ${showTimestamp === 'hover' ? 'opacity-0 group-hover:opacity-100 transition-opacity' : ''}`}>{formatTime(m.timestamp)}</span>
                             )}
                             {msgStatus && <MsgStatusTicks status={msgStatus} />}
@@ -2466,6 +2476,7 @@ const MessageItem = React.memo(({
         ...(bubbleVariant === 'flat' ? { boxShadow: 'none' } : {}),
         ...(bubbleVariant === 'wechat' ? { boxShadow: 'none', border: '1px solid rgba(15,23,42,0.08)' } : {}),
         ...(bubbleVariant === 'ios' ? { boxShadow: '0 10px 24px rgba(148,163,184,0.16)', border: '1px solid rgba(255,255,255,0.75)', backdropFilter: 'blur(12px)' } : {}),
+        ...(bubbleVariant === 'plain' ? { boxShadow: 'none', border: 'none' } : {}),
     };
 
     // --- Inline formatting parser: code → bold → italic → plain ---
@@ -2672,7 +2683,7 @@ const MessageItem = React.memo(({
     return commonLayout(
         <div className={isVoiceOnlyMsg
             ? 'relative animate-fade-in'
-            : `relative ${bubbleVariant === 'flat' || bubbleVariant === 'outline' || bubbleVariant === 'wechat' ? '' : 'shadow-sm '}px-5 py-3 animate-fade-in ${bubbleVariant === 'outline' ? '' : 'border border-black/5 '}active:scale-[0.98] transition-transform overflow-visible ${isUser ? 'moro-bubble-user' : 'moro-bubble-ai'}`}
+            : `relative ${bubbleVariant === 'flat' || bubbleVariant === 'outline' || bubbleVariant === 'wechat' || bubbleVariant === 'plain' ? '' : 'shadow-sm '}px-5 py-3 animate-fade-in ${bubbleVariant === 'outline' || bubbleVariant === 'plain' ? '' : 'border border-black/5 '}active:scale-[0.98] transition-transform overflow-visible ${isUser ? 'moro-bubble-user' : 'moro-bubble-ai'}`}
             style={isVoiceOnlyMsg ? undefined : containerStyle}>
 
             {/* Layer 1: Background Image with Independent Opacity */}
