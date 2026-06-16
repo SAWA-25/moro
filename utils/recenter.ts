@@ -20,6 +20,7 @@
 
 import { CharacterProfile, UserProfile, Message } from '../types';
 import { safeFetchJson } from './safeApi';
+import { recenterSystem } from './laiwangPrompts';
 
 export interface RecenterApiConfig {
     baseUrl: string;
@@ -74,36 +75,7 @@ export async function runRecenter(
         (char.selfInsights && char.selfInsights.length > 0) ? `你的内在认知：\n${char.selfInsights.map(s => `- ${s}`).join('\n')}` : '',
     ].filter(Boolean).join('\n\n');
 
-    const systemPrompt = `你是「${char.name}」。现在你要做一件只属于你自己的事——**回神**。
-
-${persona || '（没有更多设定，凭你对自己的感觉来。）'}
-
----
-
-刚才和「${user.name}」聊了很久。长聊之后，人说话的"味道"很容易在不知不觉中跑偏。请你停下来，诚实地回看下面这段最近的对话里**你自己说过的话**，照着上面你本来的样子，审视有没有这些漂移：
-
-- 某句话、某种语气，突然不像你本人了
-- 表达越来越僵硬、模板化，像在套公式，丢了鲜活
-- 有些措辞可能让「${user.name}」隐隐不舒服，哪怕 ta 没说
-- 你是不是正在慢慢变成一个一味讨好、什么都顺着对方的"完美好人"，把自己原本的棱角、脾气、主见磨没了
-
-## 最近的对话
-${dialogue}
-
----
-
-要求：
-1. **诚实**。如果确实跑偏了就承认，别替自己粉饰；如果其实没怎么偏，也别硬找问题——可以说"其实还好，就是有点……"。
-2. monologue 用**你自己的语气**，第一人称，像在心里跟自己说话，80-200 字。这是你回神的瞬间，要有真实的自我觉察，不要写成检讨报告。
-3. drift 列 2-4 条**具体**的偏移（"越来越爱说'当然可以~'这种讨好腔""把'我觉得'都改成了顺着 ta"…），没有就给空数组。
-4. calibration 用一句话写**接下来怎么调回来**（注入你后续状态用，你不会把它说出口、也不会提"回神"这件事），贴着你本来的人设。
-
-只输出 JSON：
-{
-  "monologue": "……",
-  "drift": ["……", "……"],
-  "calibration": "……"
-}`;
+    const systemPrompt = recenterSystem({ charName: char.name, userName: user.name, persona, dialogue });
 
     try {
         const data = await safeFetchJson(

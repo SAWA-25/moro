@@ -17,6 +17,7 @@
 
 import { CharacterProfile, CharLifeEvent } from '../types';
 import { DB } from './db';
+import { AUTONOMOUS_SINGLE_SYSTEM, AUTONOMOUS_BATCH_SYSTEM, autonomousProactiveHint } from './laiwangPrompts';
 
 export interface LifeApi {
   baseUrl: string;
@@ -286,14 +287,8 @@ function draftToEvent(
 
 // ── 对外：推进一格生活（proactive 触发时调用）──────────────────────
 
-const SINGLE_SYSTEM = [
-  '你在扮演一个有自己独立生活的真人，不是助手、也不是在跟谁聊天。',
-  '现在要描述这个人此刻正在经历的一件真实小事——TA 没有在跟任何人说话，就是在过自己的日子：',
-  '上班/上学、通勤、做饭吃饭、买东西、追剧刷手机、运动、和朋友/家人在一起、发呆、emo、睡觉……都可以。',
-  '要贴合 TA 的人设、当前时间和作息，并和「最近经历」连贯（像同一天里自然往下走，有节奏有起伏）。',
-  '只输出一个 JSON 对象，不要任何额外解释：',
-  '{"activity":"一句话，TA此刻在做什么（第一人称或客观皆可，简短具体）","mood":"当下心情，一两个词或emoji","location":"在哪（可省略）","summary":"一句更口语的话，像随手记的一条状态"}',
-].join('\n');
+// 文案见 utils/laiwangPrompts.ts → [3] 自主生活
+const SINGLE_SYSTEM = AUTONOMOUS_SINGLE_SYSTEM;
 
 /**
  * 让角色的生活往前走一格：生成一条 CharLifeEvent，落库、修剪，返回该事件。
@@ -351,14 +346,8 @@ function planCatchupCount(gapMs: number): number {
   return Math.max(1, Math.min(CATCHUP_MAX_EVENTS, byTime));
 }
 
-const BATCH_SYSTEM = [
-  '你在扮演一个有自己独立生活的真人。这段时间没人陪 TA，TA 一个人过自己的日子。',
-  '要按时间先后，列出 TA 在给定时间段里依次经历的若干件真实小事，像一段流水账：',
-  '有日常（吃饭通勤上班追剧）、也可以有点小起伏（遇到点事、心情变化、想起某人），贴合人设与作息，前后连贯。',
-  '不要写成给谁的汇报，就是 TA 自己的生活轨迹。',
-  '只输出一个 JSON 数组，按时间从早到晚排列，不要任何额外解释：',
-  '[{"activity":"做了什么（简短具体）","mood":"心情（可省略）","location":"在哪（可省略）","summary":"一句口语状态"}]',
-].join('\n');
+// 文案见 utils/laiwangPrompts.ts → [3] 自主生活
+const BATCH_SYSTEM = AUTONOMOUS_BATCH_SYSTEM;
 
 /**
  * 补齐用户离线期间角色的生活：一次 LLM 调用生成多条事件，时间戳均匀铺在
@@ -448,18 +437,6 @@ export function buildAutonomousProactiveHint(args: {
   const gapNote = timeSinceUser
     ? `${userName}已经 ${timeSinceUser} 没找你了，但你有你自己的生活，不必一直围着 ${userName} 转。`
     : '';
-  return (
-    `[系统提示（非${userName}发言）：现在是 ${timeStr}。` +
-    `你此刻正在过自己的生活：${event.activity}${where}${mood}。` +
-    `${gapNote}` +
-    `这是一次你想主动给 ${userName} 发消息的机会——但不要像在汇报近况、也不要一上来就问“在吗/你在干嘛”。` +
-    `就像真人忽然想分享：把你正在经历 / 刚刚发生的这件事随手讲给 ${userName} 听，` +
-    `比如吐槽、随手一拍、突然的感想、或顺口提一句。也完全可以只说你自己的事，不一定要扯到 ${userName} 身上。` +
-    `一两句话，口语、自然、有你自己的性格。` +
-    (randomMode ? `（这是随机触发：热络还是高冷、要不要发，都按你的性子来，不用迎合。）` : '') +
-    (proactiveCallAllowed
-      ? `（如果这件事你更想用声音说、或此刻就是想听到 ${userName} 的声音，可以直接打语音电话——在回复最末尾单独输出 [[CALL_USER]]，前面可带一两句拨号前的话。是否打完全由人设和当下心情决定。）`
-      : '') +
-    `]`
-  );
+  // 文案见 utils/laiwangPrompts.ts → [3] 自主生活
+  return autonomousProactiveHint({ userName, timeStr, activity: event.activity, where, mood, gapNote, randomMode, proactiveCallAllowed });
 }

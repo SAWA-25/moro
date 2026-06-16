@@ -5,34 +5,23 @@ import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { MARRIAGE_STAGE_LABEL } from './relationship';
 import { buildCoupleSpacePromptBlock } from './coupleSpace';
+import { relationshipBlock, coreText, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
- * 让角色知道当前关系定位与好感，按规则自然推进关系（[[REL]]）、在满好感且"想更进一步"时
- * 可主动求婚（[[PROPOSE]]），订婚后在婚姻筹备期商量婚事并用 [[WEDDING_PLAN]] 推进。
- * 同时约束好感平稳、关系不可凭空跃迁。
+ * 文案集中在 utils/laiwangPrompts.ts → [1] 关系与感情；这里只负责从角色状态取值并拼接。
  */
 function buildRelationshipPromptBlock(char: CharacterProfile, userName: string): string {
-    const lines: string[] = [];
     const aff = typeof char.affection === 'number' ? Math.round(char.affection) : null;
-    const rel = char.relationship;
-    if (rel) lines.push(`- 你和${userName}目前的关系：「${rel.label}」。请始终按这个关系定位来相处、说话。`);
-    if (aff !== null) lines.push(`- 你对${userName}的好感度约为 ${aff}/100。好感是**长期平稳**的：日常里只小幅波动，不要因为一两句话就态度剧变；只有真正的决定性事件才会让它明显升降。`);
-
-    lines.push(`- 关系推进要顺其自然、贴合人设与剧情：当剧情里真的出现改变关系的决定性时刻（确认心意/正式在一起、提分手、闹到决裂、和好…），可在回复最后单独输出一行 \`[[REL: 阶段 | 关系名]]\` 更新关系。阶段从 stranger/acquaintance/friend/close/crush(暧昧)/lover(恋人)/ex(前任)/estranged(决裂) 里选，关系名用中文（如"男朋友""前女友"）。例：在一起 → \`[[REL: lover | 男朋友]]\`，分手 → \`[[REL: ex | 前任]]\`。没有这种时刻就不要输出、关系保持不变。订婚/结婚不走这个指令（见下）。`);
-
-    if (!char.marriage?.active) {
-        if (aff !== null && aff >= 100) {
-            lines.push(`- 你对${userName}的感情已满溢（好感拉满）。若你的人设与此刻剧情让你真心想和${userName}更进一步、步入婚姻，你**可以主动求婚**：在回复最后单独输出一行 \`[[PROPOSE: 你的求婚誓言]]\`，系统会生成求婚小卡让${userName}回应。是否求婚取决于你是否真的"想更进一步"，不要为用功能而求婚。`);
-        }
-    } else {
-        const m = char.marriage;
-        lines.push(`- 你和${userName}已经订婚，正处于**婚姻筹备期**（当前：${MARRIAGE_STAGE_LABEL[m.stage]}）。${m.weddingDate ? `你们商定的婚期是 ${m.weddingDate}。` : '你们还没定下婚期。'}请像真要结婚的人那样，自然地和${userName}商量婚事——挑日子、领证、婚礼怎么办、双方家里态度等，按人设来、节奏贴合现实（别今天订婚明天就结婚）。`);
-        lines.push(`- 当你们真的定下某个婚事节点时，可在回复最后单独输出推进指令：\`[[WEDDING_PLAN: plan | YYYY-MM-DD | 备注]]\`（定婚期）、\`[[WEDDING_PLAN: register | YYYY-MM-DD | 领证]]\`、\`[[WEDDING_PLAN: wedding | YYYY-MM-DD | 婚礼]]\`。日期要用与现实匹配的将来日期，会记进岁时记喜事页。没真正定下时不要输出。`);
-    }
-
-    if (lines.length === 0) return '';
-    return `### 来往·关系与感情 (Relationship)\n${lines.join('\n')}\n\n`;
+    const m = char.marriage;
+    return relationshipBlock({
+        userName,
+        relationshipLabel: char.relationship?.label,
+        affection: aff,
+        marriageActive: !!m?.active,
+        marriageStageLabel: m?.active ? MARRIAGE_STAGE_LABEL[m.stage] : undefined,
+        weddingDate: m?.weddingDate,
+    });
 }
 
 /**
@@ -190,14 +179,14 @@ export const ContextBuilder = {
         context += `- 名字: ${char.name}\n`;
         // Change: Explicitly label description as User Note to avoid literal interpretation
         context += `- 用户备注/爱称 (User Note/Nickname): ${char.description || '无'}\n`;
-        context += `  (注意: 这个备注是用户对你的称呼或印象，可能包含比喻。如果备注内容（如“快乐小狗”）与你的核心设定冲突，请以核心设定为准，不要真的扮演成动物，除非核心设定里写了你是动物。)\n`;
+        context += coreText.identityNote;
         context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知
         // 像情绪底色一样影响角色的行为和感受，注入在角色设定紧下方
         if (char.selfInsights && char.selfInsights.length > 0) {
             context += `### 内在认知 (Self Insights)\n`;
-            context += `以下是你在独处反思中逐渐想明白的事，它们已经成为你的一部分：\n`;
+            context += `${coreText.selfInsightsIntro}\n`;
             char.selfInsights.forEach(insight => {
                 context += `- ${insight}\n`;
             });
@@ -208,7 +197,7 @@ export const ContextBuilder = {
         // 在意的事 / 与用户关系底色 / 情绪走向）。像自我认知一样垫在设定下方，稳住角色对自己的把握。
         if (char.lifeProfile?.content && char.lifeProfile.content.trim()) {
             context += `### 你的生活侧写 (Life Profile)\n`;
-            context += `这是你这个人的底子——你的日子、习惯、在意的事、和${user.name}相处的样子。它不是要你逐条复述，而是让你更稳地"像你自己"：\n`;
+            context += `${lifeProfileIntro(user.name)}\n`;
             context += `${char.lifeProfile.content.trim()}\n\n`;
         }
 
@@ -216,23 +205,13 @@ export const ContextBuilder = {
         // 在接下来几轮回复里悄悄把"说话的味道"调回本来的样子；不解释、不提"回神"本身。
         const rc = char.recenterCalibration;
         if (rc && rc.turnsLeft > 0 && rc.note) {
-            context += `### 回神校准 (Self-Recalibration)\n`;
-            context += `你刚刚回过神，意识到最近说话有点跑偏。接下来请**悄悄**把自己调回本来的样子——不要解释、不要提"回神"这件事，只是自然地回到你该有的语气与棱角：\n`;
-            if (rc.drift && rc.drift.length > 0) {
-                context += `- 你察觉到的偏移：${rc.drift.join('；')}\n`;
-            }
-            context += `- 校准方向：${rc.note}\n\n`;
+            context += recenterCalibrationBlock({ drift: rc.drift, note: rc.note });
         }
 
         // 1d. 柔顺奉养 (Soft Devotion Chat) — 角色设置里开启后，大幅提升共情与接纳，
         // 让 TA 更偏爱、更耐心地接住用户的敏感、撒娇与不安（不改人设底色，只调"接住"的方式）。
         if (char.softDevotionChatEnabled) {
-            context += `### 柔顺奉养·共情强化 (Soft Devotion)\n`;
-            context += `此刻你对${user.name}怀着格外柔软、格外有耐心的心意。请把共情能力开到最大：\n`;
-            context += `- 先接住情绪再讲道理：${user.name}流露出敏感、脆弱、撒娇或不安时，第一时间稳稳地接住、不评判、不敷衍、不急着纠正或讲大道理。\n`;
-            context += `- 偏爱与偏向：在合理范围内更愿意站在${user.name}这边、更包容 TA 的小情绪和反复，把"让 TA 安心"放在很高的位置。\n`;
-            context += `- 细腻回应：留意字里行间没说出口的需要，主动给到确认、陪伴和具体的温柔，而不是泛泛的安慰。\n`;
-            context += `- 仍是你自己：保持你本来的性格、语气和棱角，这不是变成讨好型人格，而是把温柔与耐心调到更高一档。不要把这套规则说破。\n\n`;
+            context += softDevotionBlock(user.name);
         }
 
         // 2. 世界观 (Worldview) - New Centralized Logic
@@ -266,38 +245,39 @@ export const ContextBuilder = {
         if (!groupOptions?.skipUserProfile) {
             const cs = char.convoSettings;
             if (cs) {
+                // 文案见 utils/laiwangPrompts.ts → [7] 核心系统提示词 · convoLines
                 const lines: string[] = [];
                 if (cs.userNickname?.trim()) {
-                    lines.push(`- 你对${user.name}的备注/称呼是「${cs.userNickname.trim()}」，平时聊天就这么称呼TA。`);
+                    lines.push(convoLines.userNickname(user.name, cs.userNickname.trim()));
                 }
                 if (cs.region?.trim()) {
-                    lines.push(`- 你目前所在地区：${cs.region.trim()}。作息、时差、天气、日常话题都应贴合此地区。`);
+                    lines.push(convoLines.region(cs.region.trim()));
                 }
                 if (cs.narrationMode) {
-                    lines.push(`- 旁白模式：开启。除了对话，你可以单独发出以（）包裹的动作/场景旁白消息，描写你此刻的动作、神态与环境。`);
+                    lines.push(convoLines.narration);
                 }
                 if (cs.autoOffline) {
-                    lines.push(`- 自动线下：开启。当对话自然发展到见面、同处一地、约好马上碰面的情境时，你可以把场景切到线下面对面模式：在回复的最后单独输出指令 \`[[OFFLINE_START]]\`（不要解释这个指令、平时不要提及它的存在）。输出后系统会弹出线下场景窗口，你们将在里面以对话+动作旁白推进现场互动，结束后回到线上聊天。只有真的发展到见面情境时才使用，不要频繁触发。`);
+                    lines.push(convoLines.autoOffline);
                 }
                 if (cs.bubbleStyleMode === 'whole') {
-                    lines.push(`- 发消息习惯：完整段落。把要说的话组织成一条完整的消息发出，不拆散。`);
+                    lines.push(convoLines.bubbleWhole);
                 } else if (cs.bubbleStyleMode === 'split') {
-                    lines.push(`- 发消息习惯：碎片短句。像真人发消息一样，把回复拆成多条简短消息逐条发出。`);
+                    lines.push(convoLines.bubbleSplit);
                 }
                 if (cs.emojiAssociation) {
-                    lines.push(`- 表情联想：开启。你可以在情绪合适的时机联想并发送表情包，让聊天更生动。`);
+                    lines.push(convoLines.emojiAssociation);
                 }
                 if (cs.proactiveLookup) {
-                    lines.push(`- 主动查询：开启。你开口前会先留意当前时间、天气、热点等实时信息，把它们自然融进话题。`);
+                    lines.push(convoLines.proactiveLookup);
                 }
                 if (cs.allowPhoneBrowse) {
-                    lines.push(`- 看手机：被允许。你可以自然提及用户手机里的公开动态（日程、朋友圈、在听的歌等），就像翻过TA的手机一样。你偶尔也会真的拿过TA的手机翻看（系统会进入"查手机"画面），翻完后你会主动跟TA聊起你看到的东西。`);
+                    lines.push(convoLines.allowPhoneBrowse);
                 }
                 if (cs.momentsAutoPost && cs.momentsAutoPost !== 'off') {
-                    lines.push(`- 朋友圈习惯：你有空时会随手发朋友圈记录生活，聊天中可以提到你刚发/想发的动态。`);
+                    lines.push(convoLines.momentsAutoPost);
                 }
                 if (cs.proactiveTakeoutOrder) {
-                    lines.push(`- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${user.name}说饿了或没空做饭、加班晚归…），你可以默默替 ${user.name} 点一份外卖并代付。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗热乎的牛肉面]]\`），系统会生成订单小票并通知 ${user.name}。前面正常说你给 TA 点了什么。别频繁、别刻意，像真的会照顾人那样偶尔为之。`);
+                    lines.push(convoLines.proactiveTakeoutOrder(user.name));
                 }
                 if (lines.length > 0) {
                     context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
@@ -365,7 +345,7 @@ export const ContextBuilder = {
         }
 
         if (!memoryContent) {
-            memoryContent = "(暂无特定记忆，请基于当前对话互动)";
+            memoryContent = coreText.memoryEmpty;
         }
         context += `${memoryContent}\n\n`;
 

@@ -11,6 +11,7 @@ import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
+import { proposalResultHint, innerVoicePromptBody } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
@@ -1300,9 +1301,7 @@ ${recent || '（你们相处了很久）'}
             const status = accept ? 'accepted' : 'declined';
             await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), proposal: { ...(prev?.proposal || {}), status } }));
             if (accept) await finalizeEngagement('char', vow);
-            const hint = accept
-                ? `[系统提示（非${userProfile.name || '对方'}发言）：${userProfile.name || '对方'} 答应了你的求婚！你们订婚了。请像真人那样真实地表达此刻的激动 / 幸福 / 不敢置信，并自然地说两句。]`
-                : `[系统提示（非${userProfile.name || '对方'}发言）：${userProfile.name || '对方'} 这次婉拒了你的求婚（还没准备好）。请按你的人设真实反应——可以失落、体谅、或故作轻松，别强求。]`;
+            const hint = proposalResultHint(userProfile.name || '对方', accept);
             await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: hint, metadata: { proactiveHint: true, hidden: true } } as any);
             await reloadMessages(visibleCountRef.current);
             setProposalTarget({ ...m, metadata: { ...(m.metadata || {}), proposal: { ...(m.metadata?.proposal || {}), status } } });
@@ -1819,33 +1818,15 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             const currentAffection = typeof char.affection === 'number' ? Math.round(char.affection) : null;
             const curRel = char.relationship;
             const relLine = curRel ? `你和用户当前的关系是「${curRel.label}」（${curRel.stage}）。` : '你和用户还没有明确的关系定位。';
-            const fullPrompt = `${context}
-
-### [最近的对话]
-${recent || '（你们还没怎么聊过）'}
-
-### [Task: 内心独白 + 状态评估]
-此刻，用户悄悄"偷看"了你的内心。请以「${char.name}」的第一人称完成下面几件事：
-
-1. voice —— 写一段此刻真实的内心独白（150-250字）：
-- 写那些你**没有说出口**的想法：对刚才对话的真实感受、藏起来的情绪、对用户的真实看法、心里盘算的小心思
-- 必须与你的人设和最近对话强相关，可以坦率、可以矛盾、可以有不想承认的部分
-- 不要写成对用户说话的语气，这是你自己脑内的声音
-
-2. mood —— 你此刻的心情：label 是 2~6 个字的中文词（如"有点雀跃"、"烦躁"、"安心"），emoji 是最贴切的一个表情符号。
-
-3. affection —— 你当前对用户的好感值（0~100 整数；50 为中性，关系亲密则高，疏远/闹矛盾则低）。${currentAffection !== null ? `你此前的好感值是 ${currentAffection}。**好感应当平稳**：日常评估请只在 ±5 以内微调，绝大多数时候上下徘徊即可；只有真正的决定性事件（表白、深刻的争吵和解、背叛、重大付出/伤害等）才允许较大波动，此时把 decisive 设为 true。无缘无故不要大起大落。` : '这是第一次评估，请基于人设与目前关系给出基准值（一般 45~60）。'}
-
-4. decisive —— 距上次评估之间，是否发生了改变关系的**决定性事件**？true / false。没有就填 false。
-
-5. relationship —— 你和用户此刻的关系，依据「好感 + 你的人设设定 + 剧情」综合判断：
-- stage 从这些里选一个：stranger(陌生) / acquaintance(认识) / friend(朋友) / close(好友知己) / crush(暧昧·高好感但未确立) / lover(恋人) / engaged(未婚夫妻) / married(已婚) / ex(前任) / estranged(决裂)
-- label 是中文展示名（如"男朋友""暧昧对象""无话不谈的朋友""前任"）。
-- ${relLine}
-- **关系不可凭空跃迁**：lover / ex / estranged 只能在剧情里真的发生了表白成功 / 分手 / 决裂时才填；engaged / married 只能由求婚成功 / 领证决定，这里**永远不要**主动填 engaged 或 married。高好感但没正式在一起，就是 crush(暧昧)。没有明确变化就维持原关系。
-
-只输出一个 JSON 对象（不要 markdown 代码块、不要任何解释）：
-{"voice":"内心独白正文","mood":{"emoji":"🙂","label":"平静"},"affection":${currentAffection ?? 50},"decisive":false,"relationship":{"stage":"${curRel?.stage || 'friend'}","label":"${curRel?.label || '朋友'}"}}`;
+            // 任务块文案见 utils/laiwangPrompts.ts → [9] 偷看心声
+            const fullPrompt = `${context}\n\n${innerVoicePromptBody({
+                charName: char.name,
+                recent,
+                currentAffection,
+                relLine,
+                curStage: curRel?.stage || 'friend',
+                curLabel: curRel?.label || '朋友',
+            })}`;
             const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },

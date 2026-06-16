@@ -10,20 +10,10 @@
 import { CharacterProfile, UserProfile, Message } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { safeResponseJson, extractContent, extractJson } from './safeApi';
+import { USER_ACTION_SUGGEST_SYSTEM, userActionSuggestUserPrompt } from './laiwangPrompts';
 
-const SYSTEM = [
-    '你是“替我想想接下来怎么接话”的助手。下面给你一段两个人的聊天记录，',
-    '请站在【我】（user）的角度，想出几条「我接下来可以发给对方的话 / 可以做的小动作」，供我挑选。',
-    '要求：',
-    '1. 用第一人称、口语，像我自己会打出来的微信消息；每条简短（一般不超过 25 字）。',
-    '2. 几条之间方向/语气要拉开差距：可以有顺着聊的、有岔开话题的、有调侃的、有走心的、有提问的、有发起邀约的等等，别都一个味儿。',
-    '3. 紧扣最近的聊天内容与气氛，自然承接，不要答非所问。',
-    '4. 每条只写「我会打出来的那句话本身」。严禁加任何标签 / 前缀 / 说明，',
-    '   尤其不要写 “Tone 1: Casual/”“*Tone 2: Playful/”“语气X：”“【调侃】”“风格：走心” 这类语气或方向标注，',
-    '   也不要旁白、解释、引号、星号、Markdown、序号。语言跟随聊天记录（中文聊天就全中文）。',
-    '5. 必须给满我要求的条数（不少于 4 条），宁可多想几条也别偷懒少给。',
-    '只输出一个 JSON 字符串数组，每个元素就是纯粹的一句话，例如：["在干嘛呀","你是不是在忙","刚才那事我想了想……"]，不要任何额外文字。',
-].join('\n');
+// 文案见 utils/laiwangPrompts.ts → [6] 行动建议
+const SYSTEM = USER_ACTION_SUGGEST_SYSTEM;
 
 /**
  * 剥掉模型偶尔泄漏在每条候选开头的「语气/方向标签」前缀。
@@ -124,15 +114,7 @@ async function requestActionsOnce(args: {
 }): Promise<string[]> {
     const { api, char, userName, transcript, count, avoid, signal } = args;
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    const userMsg = [
-        `对方是「${char.name}」，我是「${userName}」。`,
-        '',
-        '最近的聊天：',
-        transcript || '（你们还没怎么聊过，给我几条自然的开场/搭话）',
-        '',
-        avoid.length ? `已经有这些了，请换一批别重复：${avoid.map(a => `「${a}」`).join('、')}` : '',
-        `请给我 ${count} 条接下来可以发的话（JSON 字符串数组，务必给满 ${count} 条）。`,
-    ].filter(Boolean).join('\n');
+    const userMsg = userActionSuggestUserPrompt({ charName: char.name, userName, transcript, count, avoid });
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
