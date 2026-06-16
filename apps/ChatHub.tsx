@@ -12,8 +12,9 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
+import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
@@ -285,7 +286,7 @@ const GroupMessageItem = React.memo(({
 const ChatHub: React.FC = () => {
     const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime, adjustUserBalance } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
-    const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments'>(() => {
+    const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
         try {
             if (localStorage.getItem('moro_chathub_open_tab') === 'moments') {
@@ -1728,9 +1729,9 @@ ${attachedImagesNote}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                     </button>
-                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '往来' : hubTab === 'contacts' ? '名册' : '此刻'}</span>
+                    <span className="font-medium text-slate-700 text-lg tracking-wide pl-2">{hubTab === 'chats' ? '往来' : hubTab === 'contacts' ? '名册' : hubTab === 'couple' ? '情侣空间' : '此刻'}</span>
                     <div className="flex-1"></div>
-                    {hubTab !== 'moments' && (
+                    {hubTab !== 'moments' && hubTab !== 'couple' && (
                         <div className="relative">
                             <button onClick={() => setShowPlusMenu(v => !v)} className="p-2 -mr-2 text-[#2b2933] scrap-btn-paper transition-colors" title="添加">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
@@ -1870,9 +1871,16 @@ ${attachedImagesNote}
                     </div>
                 )}
 
-                {/* ── 底部导航：聊天 / 联系人 / 朋友圈 ── */}
+                {/* ── 情侣空间 tab：参考 QQ 情侣空间（恋爱天数 / 亲密度 / 动态 / 纪念日 / 相册 / 约定 / 悄悄话） ── */}
+                {hubTab === 'couple' && (
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <CoupleSpace />
+                    </div>
+                )}
+
+                {/* ── 底部导航：往来 / 名册 / 此刻 / 情侣空间 ── */}
                 <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-dashed border-[#d9d4c8] pb-safe">
-                    <div className="grid grid-cols-3">
+                    <div className="grid grid-cols-4">
                         <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">往来</span>
@@ -1884,6 +1892,10 @@ ${attachedImagesNote}
                         <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
                             <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
                             <span className="text-[10px] font-bold">此刻</span>
+                        </button>
+                        <button onClick={() => setHubTab('couple')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'couple' ? 'text-pink-500' : 'text-slate-400'}`}>
+                            <Heart size={22} weight={hubTab === 'couple' ? 'fill' : 'regular'} className={hubTab === 'couple' ? 'text-pink-500' : ''} />
+                            <span className="text-[10px] font-bold">情侣空间</span>
                         </button>
                     </div>
                 </div>
