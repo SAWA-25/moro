@@ -109,28 +109,30 @@ function recentTranscript(recent: Message[], charName: string, userName: string)
         .join('\n');
 }
 
-/** 生成若干条「我接下来可以发的话」候选（默认 6 条，至少 4 条）。 */
-export async function suggestUserActions(args: {
+/** 保底真实候选条数：少于这个数就再要一轮补齐（与 UI 的 MIN_OPTIONS 对齐）。 */
+const MIN_REQUIRED = 4;
+
+/** 单次向模型要候选并解析（内部用，suggestUserActions 负责补齐到 MIN_REQUIRED）。 */
+async function requestActionsOnce(args: {
     api: ResolvedApi;
     char: CharacterProfile;
-    userProfile: UserProfile;
-    recent: Message[];
-    count?: number;
+    userName: string;
+    transcript: string;
+    count: number;
+    avoid: string[];
     signal?: AbortSignal;
 }): Promise<string[]> {
-    const { api, char, userProfile, recent, count = 6, signal } = args;
+    const { api, char, userName, transcript, count, avoid, signal } = args;
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
-    const userName = (userProfile.name || '').trim() || '我';
-    const transcript = recentTranscript(recent, char.name, userName);
     const userMsg = [
         `对方是「${char.name}」，我是「${userName}」。`,
         '',
         '最近的聊天：',
         transcript || '（你们还没怎么聊过，给我几条自然的开场/搭话）',
         '',
-        `请给我 ${count} 条接下来可以发的话（JSON 字符串数组）。`,
-    ].join('\n');
+        avoid.length ? `已经有这些了，请换一批别重复：${avoid.map(a => `「${a}」`).join('、')}` : '',
+        `请给我 ${count} 条接下来可以发的话（JSON 字符串数组，务必给满 ${count} 条）。`,
+    ].filter(Boolean).join('\n');
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -146,16 +148,58 @@ export async function suggestUserActions(args: {
     });
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await safeResponseJson(res);
-    const actions = parseActions(extractContent(data) || '');
-    // 去重 + 截断
+    return parseActions(extractContent(data) || '');
+}
+
+/**
+ * 生成若干条「我接下来可以发的话」候选（默认目标 6 条，**保底至少 4 条真候选**）。
+ * 单轮模型少给 / 截断时，自动再要一轮补齐到 MIN_REQUIRED，避免出现「只有两条 + 两个空槽」。
+ */
+export async function suggestUserActions(args: {
+    api: ResolvedApi;
+    char: CharacterProfile;
+    userProfile: UserProfile;
+    recent: Message[];
+    count?: number;
+    signal?: AbortSignal;
+}): Promise<string[]> {
+    const { api, char, userProfile, recent, count = 6, signal } = args;
+    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
+    const userName = (userProfile.name || '').trim() || '我';
+    const transcript = recentTranscript(recent, char.name, userName);
+
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const a of actions) {
-        const t = a.trim();
-        if (!t || seen.has(t)) continue;
-        seen.add(t);
-        out.push(t);
-        if (out.length >= count) break;
+    const target = Math.max(count, MIN_REQUIRED);
+    // 第一轮要满 target；只有「还没到保底 MIN_REQUIRED」时才补轮（最多再补 2 轮），
+    // 避免为了凑满 6 条无限要——到 4 条即可收手，剩下交给 UI 的空槽。
+    const MAX_ROUNDS = 3;
+    let lastErr: any = null;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+        // 第一轮无条件要；之后只在「不足保底」时继续补
+        if (round > 0 && out.length >= MIN_REQUIRED) break;
+        const need = Math.max(target - out.length, MIN_REQUIRED);
+        try {
+            const actions = await requestActionsOnce({
+                api, char, userName, transcript, count: need, avoid: out, signal,
+            });
+            const before = out.length;
+            for (const a of actions) {
+                const t = a.trim();
+                if (!t || seen.has(t)) continue;
+                seen.add(t);
+                out.push(t);
+                if (out.length >= target) break;
+            }
+            // 这一轮一条新的都没补进来：再要也多半还是空，收手
+            if (out.length === before) break;
+        } catch (e) {
+            lastErr = e;
+            break; // 网络/接口错误：把已有的返回（可能为空，调用方兜底）
+        }
     }
+    // 一条都没有且确实报错过 → 把错误抛给调用方（保留它的 toast 文案）
+    if (out.length === 0 && lastErr) throw lastErr;
     return out;
 }

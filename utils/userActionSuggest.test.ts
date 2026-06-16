@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { parseActions } from './userActionSuggest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { parseActions, suggestUserActions } from './userActionSuggest';
 
 describe('parseActions —— 帮 user 回复候选解析', () => {
     it('正常 JSON 数组', () => {
@@ -50,5 +50,51 @@ describe('parseActions —— 帮 user 回复候选解析', () => {
 
     it('空输入返回空数组', () => {
         expect(parseActions('')).toEqual([]);
+    });
+});
+
+describe('suggestUserActions —— 保底至少 4 条（不足自动补轮）', () => {
+    const api = { baseUrl: 'https://x.test/v1', apiKey: 'k', model: 'm' };
+    const char: any = { id: 'c', name: '流浪者', description: '' };
+    const userProfile: any = { name: '我', avatar: '', bio: '' };
+    const recent: any[] = [{ id: 1, role: 'user', type: 'text', content: '在吗', timestamp: 0 }];
+
+    afterEach(() => vi.restoreAllMocks());
+
+    const mockReplies = (...batches: string[][]) => {
+        let i = 0;
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            const arr = batches[Math.min(i, batches.length - 1)];
+            i++;
+            const payload = JSON.stringify({ choices: [{ message: { content: JSON.stringify(arr) } }] });
+            return {
+                ok: true,
+                text: async () => payload,
+                json: async () => JSON.parse(payload),
+            } as any;
+        }));
+    };
+
+    it('第一轮只给 2 条 → 自动再要一轮补到 ≥4', async () => {
+        mockReplies(['被你看穿了', '你怎么知道的'], ['那我先撤了', '逗你的啦', '不理我啦']);
+        const out = await suggestUserActions({ api, char, userProfile, recent });
+        expect(out.length).toBeGreaterThanOrEqual(4);
+        // 不重复
+        expect(new Set(out).size).toBe(out.length);
+    });
+
+    it('第一轮就给满 6 条 → 不再补轮（只调用一次 fetch）', async () => {
+        mockReplies(['a', 'b', 'c', 'd', 'e', 'f']);
+        const out = await suggestUserActions({ api, char, userProfile, recent });
+        expect(out).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+        expect((globalThis.fetch as any).mock.calls.length).toBe(1);
+    });
+
+    it('模型每轮都只给同样 2 条 → 补轮后去重无新增即收手，返回这 2 条（不死循环）', async () => {
+        mockReplies(['就这两条', '没别的了']);
+        const out = await suggestUserActions({ api, char, userProfile, recent });
+        expect(out).toEqual(['就这两条', '没别的了']);
+        // 第一轮 + 至多一轮补（发现没新增即停）
+        expect((globalThis.fetch as any).mock.calls.length).toBeLessThanOrEqual(2);
     });
 });
