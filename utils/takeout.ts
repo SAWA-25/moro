@@ -17,6 +17,7 @@ import {
 import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
 import { safeResponseJson, extractContent, safeFetchJson, extractJson } from './safeApi';
+import { takeoutReceivedHint } from './laiwangPrompts';
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -477,8 +478,8 @@ export async function postTakeoutDeliveredToChat(order: TakeoutOrder): Promise<v
  * 让角色像真人收到对方送来的外卖那样在聊天里自然反应。
  */
 export function buildTakeoutReceivedHint(order: TakeoutOrder, userName: string): string {
-    const items = itemsText(order);
-    return `[系统提示（非${userName}发言）：${userName}之前在「${order.storeName}」给你点的外卖（${items}）刚刚送到你这边，你签收了。请像真人收到对方专门送来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、边吃边说味道、或调侃${userName}怎么知道你想吃这个。一两句话就好，别像在汇报。]`;
+    // 文案见 utils/laiwangPrompts.ts → [8] takeoutReceivedHint
+    return takeoutReceivedHint(userName, order.storeName, itemsText(order));
 }
 
 // ── 角色主动为用户点外卖（由聊天指令触发，需会话设置开关打开） ──────

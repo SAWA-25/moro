@@ -26,6 +26,7 @@
 | **情侣空间（QQ 式）** | [`docs/couple-space.md`](./docs/couple-space.md) | 来往·情侣空间：聊天列表底栏「此刻」旁的入口、绑定另一半、恋爱天数/亲密度、情侣动态留言板、纪念日倒计时、九宫格相册、每日互动（亲亲抱抱牵手送礼）、约定任务、悄悄话信箱；数据注入聊天上下文 + 角色主动发动态/回留言/互动。改情侣空间前必读 |
 | **聊天界面·极简皮肤** | [`docs/chat-minimal-skin.md`](./docs/chat-minimal-skin.md) | 私聊默认观感：浅灰白 #EDEDED 背景、白色悬浮圆角顶栏 + 居中头像、纯浅灰无描边软胶囊气泡（新增 `bubbleVariant:'plain'`，昵称标签 + 时间戳移到该组上方）、长句拆短气泡、顶/底状态签名、颜文字占位符 + 爱心发送键。改聊天界面默认样式 / 气泡变体前必读 |
 | **小剧场·占卜 + 番外仿真图文 + 牌面美化** | [`docs/divination-and-faux.md`](./docs/divination-and-faux.md) | 占卜（塔罗78/雷诺曼36/六爻金钱卦/梅花易数，抽牌起卦 + 手动/API 解牌走世界书）、番外仿真图文（仿微信聊天截图/朋友圈/小红书/匿名论坛）、主题 App「牌面」美化（牌背/边框/风格）。改占卜引擎 / 牌库 / 番外仿真渲染前必读 |
+| **来往 Prompt 中心** | [`docs/laiwang-prompts.md`](./docs/laiwang-prompts.md) | 改聊天 AI 的说话规则/语气/指令前必读。`utils/laiwangPrompts.ts` 是来往全部 prompt 文案的唯一可改处（关系/情侣空间/自主生活/回神/思考链/行动建议/核心系统提示/主动消息/偷看心声 分区注释），各功能从它 import、改了即生效 |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、Instant Push Phase 2、sfworker 清单），动后端 / 加功能前先扫一遍。

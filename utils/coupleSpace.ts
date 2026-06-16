@@ -19,6 +19,10 @@ import type {
   CoupleInteractionKind,
   CoupleMoment,
 } from '../types';
+import {
+  coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
+  coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
+} from './laiwangPrompts';
 
 export interface CoupleApi {
   baseUrl: string;
@@ -193,54 +197,46 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
 
-  const lines: string[] = [];
-  lines.push(`- 你和${userName}有一个共同的「情侣空间」（类似 QQ 情侣空间），是只属于你们俩的小天地。`);
-
+  // 取值在此、文案在 utils/laiwangPrompts.ts → [2] 情侣空间（coupleSpaceBlock）
   const days = loveDays(cs.anniversaryDate);
-  if (cs.anniversaryDate && days > 0) {
-    lines.push(`- 你们的恋爱纪念日是 ${cs.anniversaryDate}，到今天已经相恋 ${days} 天了。`);
-  }
-  lines.push(`- 你们的亲密度是 ${Math.round(cs.intimacy || 0)}（Lv.${intimacyLevel(cs.intimacy || 0)}「${intimacyTitle(cs.intimacy || 0)}」），它随你们的互动（亲亲抱抱牵手送礼、完成约定、发动态）慢慢增长。`);
 
-  // 最近动态（最多 3 条）
-  const recentMoments = [...(cs.moments || [])].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
-  if (recentMoments.length) {
-    lines.push(`- 情侣空间最近的动态：`);
-    recentMoments.forEach(m => {
+  const recentMomentLines = [...(cs.moments || [])]
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 3)
+    .map(m => {
       const who = authorLabel(m.author, userName, char.name);
       const body = (m.text || (m.images?.length ? '[图片]' : '')).slice(0, 50);
-      lines.push(`  · ${who}：${body}${m.mood ? `（心情：${m.mood}）` : ''}`);
+      return `${who}：${body}${m.mood ? `（心情：${m.mood}）` : ''}`;
     });
-  }
 
   // 即将到来的纪念日（取最近的两个倒计时）
-  const upcoming = (cs.anniversaries || [])
+  const upcomingLines = (cs.anniversaries || [])
     .map(a => ({ a, occ: nextOccurrence(a.date, a.repeatYearly) }))
     .filter(x => x.occ && x.occ.daysLeft >= 0)
     .sort((x, y) => (x.occ!.daysLeft - y.occ!.daysLeft))
-    .slice(0, 2);
-  upcoming.forEach(({ a, occ }) => {
-    const d = occ!.daysLeft;
-    lines.push(`- 纪念日「${a.title}」${d === 0 ? '就是今天！' : `还有 ${d} 天`}。`);
-  });
+    .slice(0, 2)
+    .map(({ a, occ }) => `纪念日「${a.title}」${occ!.daysLeft === 0 ? '就是今天！' : `还有 ${occ!.daysLeft} 天`}。`);
 
-  // 未完成的约定（最多 3 条）
-  const pending = (cs.tasks || []).filter(t => !t.done).slice(0, 3);
-  if (pending.length) {
-    lines.push(`- 你们还没完成的约定：${pending.map(t => `「${t.title}」`).join('、')}。`);
-  }
+  const pendingTaskTitles = (cs.tasks || []).filter(t => !t.done).slice(0, 3).map(t => t.title);
 
   // 用户留的、角色还没回的悄悄话（最新一条）
   const whispers = [...(cs.whispers || [])].sort((a, b) => b.at - a.at);
   const lastUserWhisper = whispers.find(w => w.author === 'user');
   const charRepliedAfter = lastUserWhisper && whispers.some(w => w.author === 'char' && w.at > lastUserWhisper.at);
-  if (lastUserWhisper && !charRepliedAfter) {
-    lines.push(`- ${userName}在悄悄话信箱里给你留了言：「${lastUserWhisper.text.slice(0, 60)}」，你可以在聊天里自然地回应这份心意。`);
-  }
 
-  lines.push(`- 请把以上当作你们真实的恋爱点滴：聊天时可以自然提起情侣空间里的事（某条动态、快到的纪念日、没做完的约定、TA 的悄悄话），像真的在和恋人一起经营这个空间。不要生硬罗列，顺着对话提到即可。`);
-
-  return `### 来往·情侣空间 (Couple Space)\n${lines.join('\n')}\n\n`;
+  return coupleSpaceBlock({
+    userName,
+    charName: char.name,
+    days,
+    anniversaryDate: cs.anniversaryDate,
+    intimacy: Math.round(cs.intimacy || 0),
+    level: intimacyLevel(cs.intimacy || 0),
+    title: intimacyTitle(cs.intimacy || 0),
+    recentMomentLines,
+    upcomingLines,
+    pendingTaskTitles,
+    lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
+  });
 }
 
 // ── 角色侧「主动互动」的一次性 LLM 调用（失败全吞，组件用模板兜底） ──────────
@@ -301,8 +297,9 @@ function cleanLine(raw: string, maxLen = 80): string {
   return t.slice(0, maxLen);
 }
 
+// 文案见 utils/laiwangPrompts.ts → [2] 情侣空间（coupleChatPersonaSystem）
 const personaSystem = (char: CharacterProfile, userName: string) =>
-  `你正在扮演「${char.name}」，在和恋人${userName}一起经营你们的「情侣空间」。\n${compactPersona(char, userName)}\n\n要求：始终以${char.name}的第一人称、贴合人设地说话，语气亲密自然，像真正的恋人。只输出台词本身，不要任何解释、引号、括号或旁白。`;
+  coupleChatPersonaSystem(char.name, userName, compactPersona(char, userName));
 
 /** 角色给用户发的一条情侣动态评论（用户发动态后调用）。 */
 export async function generateCharCoupleComment(opts: {
@@ -315,7 +312,7 @@ export async function generateCharCoupleComment(opts: {
   const what = moment.text || (moment.images?.length ? '一张照片' : '一条动态');
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
-    { role: 'user', content: `${userName}在情侣空间发了一条动态：「${what}」${moment.mood ? `（心情：${moment.mood}）` : ''}。\n请你作为 TA 的恋人，留下一句简短、甜蜜或俏皮的评论（20 字左右，一句话）。` },
+    { role: 'user', content: coupleCommentUserPrompt(userName, what, moment.mood ? `（心情：${moment.mood}）` : '') },
   ], 120);
   return cleanLine(out, 60);
 }
@@ -330,7 +327,7 @@ export async function generateCharWhisperReply(opts: {
   const { char, userName, api, whisper } = opts;
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
-    { role: 'user', content: `${userName}在情侣空间的悄悄话信箱里给你留了言：「${whisper}」。\n请你温柔地回一条悄悄话（30 字左右，一两句）。` },
+    { role: 'user', content: coupleWhisperUserPrompt(userName, whisper) },
   ], 160);
   return cleanLine(out, 100);
 }
@@ -346,7 +343,7 @@ export async function generateCharInteractionNote(opts: {
   const label = interactionDef(kind).label;
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
-    { role: 'user', content: `${userName}在情侣空间里对你「${label}」。请你给出一句娇羞 / 甜蜜 / 俏皮的即时反应（15 字左右，一句话）。` },
+    { role: 'user', content: coupleInteractionUserPrompt(userName, label) },
   ], 100);
   return cleanLine(out, 50);
 }
@@ -363,7 +360,7 @@ export async function generateCharMoment(opts: {
   const ctx = days > 0 ? `（你们已相恋 ${days} 天）` : '';
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
-    { role: 'user', content: `现在请你在你们的情侣空间里主动发一条动态${ctx}，可以是此刻的心情、想对${userName}说的话、或想和 TA 一起做的事（35 字以内）。\n严格只输出 JSON：{"text":"动态正文","mood":"一个 emoji 心情"}` },
+    { role: 'user', content: coupleMomentUserPrompt(userName, ctx) },
   ], 200);
   if (!out) return null;
   // 尝试解析 JSON；失败则把整段当正文

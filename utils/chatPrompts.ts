@@ -12,6 +12,7 @@ import { getWeatherCity } from './charCity';
 import { isScheduleFeatureOn } from './scheduleGenerator';
 import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
+import { timeGapHint } from './laiwangPrompts';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -57,24 +58,9 @@ export const ChatPrompts = {
         return `${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
     },
 
-    // 格式化时间差提示
-    getTimeGapHint: (lastMsg: Message | undefined, currentTimestamp: number): string => {
-        if (!lastMsg) return '';
-        const diffMs = currentTimestamp - lastMsg.timestamp;
-        const diffMins = Math.floor(diffMs / (1000 * 60));
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const currentHour = new Date(currentTimestamp).getHours();
-        const isNight = currentHour >= 23 || currentHour <= 6;
-        if (diffMins < 10) return ''; 
-        if (diffMins < 60) return `[系统提示: 距离上一条消息: ${diffMins} 分钟。短暂的停顿。]`;
-        if (diffHours < 6) {
-            if (isNight) return `[系统提示: 距离上一条消息: ${diffHours} 小时。现在是深夜/清晨。沉默是正常的（正在睡觉）。]`;
-            return `[系统提示: 距离上一条消息: ${diffHours} 小时。用户离开了一会儿。]`;
-        }
-        if (diffHours < 24) return `[系统提示: 距离上一条消息: ${diffHours} 小时。很长的间隔。]`;
-        const days = Math.floor(diffHours / 24);
-        return `[系统提示: 距离上一条消息: ${days} 天。用户消失了很久。请根据你们的关系做出反应（想念、生气、担心或冷漠）。]`;
-    },
+    // 格式化时间差提示（文案见 utils/laiwangPrompts.ts → [8] timeGapHint）
+    getTimeGapHint: (lastMsg: Message | undefined, currentTimestamp: number): string =>
+        timeGapHint(lastMsg?.timestamp, currentTimestamp),
 
     // 构建表情包上下文
     buildEmojiContext: (emojis: Emoji[], categories: EmojiCategory[]) => {

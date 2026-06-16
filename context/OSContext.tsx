@@ -5,6 +5,7 @@ import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
+import { proactiveFallbackHint } from '../utils/laiwangPrompts';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
 import { isAppealDue, generateUnblockAppeal } from '../utils/unblockAppeal';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -1796,7 +1797,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   ? customHint
                   : lifeEvent
                   ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed })
-                  : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}${pCfg?.randomMode ? `（这是随机触发的一次机会：发什么、用什么语气、热络还是高冷，完全按你自己的性格来，不用迎合。）` : ''}${proactiveCallAllowed ? `（你也可以不发文字、直接给${userName}打语音电话——如果你此刻更想听到${userName}的声音，或这件事按你的性格更适合在电话里说。想打电话就在回复的最末尾单独输出 [[CALL_USER]]；前面可以带一两句拨号前发的消息，也可以什么都不发直接打。是否打电话完全由你的人设和当前剧情决定，不要为了用功能而用。）` : ''}]`;
+                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: !!(timeSinceUser && parseInt(timeSinceUser) > 2), randomMode: pCfg?.randomMode, proactiveCallAllowed });
 
               await DB.saveMessage({
                   charId,
