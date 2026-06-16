@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots, BookBookmark } from '@phosphor-icons/react';
+import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots, BookBookmark, MagicWand } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
 import ReflectionApp from './theater/ReflectionApp';
 import TalkTherapyApp from './theater/TalkTherapyApp';
 import ExtraApp from './theater/ExtraApp';
+import DivinationApp from './theater/DivinationApp';
 
 /**
  * 小剧场：原「攻略本」（galgame 恋爱攻略，apps/GuidebookApp.tsx）与「TRPG」（跑团
@@ -20,7 +21,7 @@ import ExtraApp from './theater/ExtraApp';
 
 const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra'>('home');
+    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination'>('home');
 
     if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
     if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
@@ -28,6 +29,7 @@ const TheaterApp: React.FC = () => {
     if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
     if (section === 'talk') return <TalkTherapyApp onExit={() => setSection('home')} />;
     if (section === 'extra') return <ExtraApp onExit={() => setSection('home')} />;
+    if (section === 'divination') return <DivinationApp onExit={() => setSection('home')} />;
 
     return (
         <div
@@ -93,6 +95,20 @@ const TheaterApp: React.FC = () => {
                     </div>
                     <div className="text-[11px] text-white/55 mt-3 leading-relaxed">挑个角色一起做问卷（恋爱相性100问 / MBTI / 性癖测试 / 价值观…想要啥写啥，一题一题答到底），或生成贴吧帖、聊天记录、热梗等主题番外。</div>
                     <BookBookmark size={64} weight="fill" className="absolute -bottom-3 -right-2 text-amber-300/10 rotate-[10deg]" />
+                </button>
+
+                {/* 占卜 */}
+                <button
+                    onClick={() => setSection('divination')}
+                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-violet-300/15 bg-gradient-to-br from-violet-500/15 to-indigo-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
+                >
+                    <div className="text-[9px] tracking-[0.3em] text-violet-200/70 font-mono mb-2">DIVINATION — 占一卦</div>
+                    <div className="flex items-center gap-2.5">
+                        <MagicWand size={26} weight="bold" className="text-violet-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-violet-50">占卜</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">挑个角色一起占卜：塔罗(78) / 雷诺曼(36) / 六爻金钱卦 / 梅花易数。抽牌起卦后可自己解，或让 TA 结合世界书以本人口吻为你解读。</div>
+                    <Sparkle size={64} weight="fill" className="absolute -bottom-3 -right-2 text-violet-300/10 rotate-[12deg]" />
                 </button>
 
                 {/* 谈心 */}

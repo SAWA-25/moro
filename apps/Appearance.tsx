@@ -1011,6 +1011,93 @@ const DesktopLockEditor: React.FC<{
     );
 };
 
+// ── 占卜牌面美化（小剧场·占卜读 theme.tarotSkin 渲染牌面）──────────────────
+const TAROT_FRAMES: { id: 'none' | 'gold' | 'ink' | 'film'; label: string }[] = [
+    { id: 'none', label: '无边' },
+    { id: 'gold', label: '描金' },
+    { id: 'ink', label: '水墨' },
+    { id: 'film', label: '胶片' },
+];
+const TAROT_STYLES: { id: 'classic' | 'minimal' | 'mystic'; label: string }[] = [
+    { id: 'classic', label: '古典' },
+    { id: 'minimal', label: '极简' },
+    { id: 'mystic', label: '神秘' },
+];
+
+const TarotSkinEditor: React.FC<{
+    theme: OSTheme;
+    updateTheme: (u: Partial<OSTheme>) => void;
+    addToast: (msg: string, type?: Toast['type']) => void;
+}> = ({ theme, updateTheme, addToast }) => {
+    const skin = theme.tarotSkin || {};
+    const backInputRef = useRef<HTMLInputElement>(null);
+    const set = (patch: Partial<NonNullable<OSTheme['tarotSkin']>>) => updateTheme({ tarotSkin: { ...skin, ...patch } });
+
+    const handleBack = async (file?: File) => {
+        if (!file) return;
+        try {
+            const dataUrl = await processImage(file, { maxWidth: 720, quality: 0.85 });
+            set({ cardBack: dataUrl });
+            addToast('牌背换好了', 'success');
+        } catch { addToast('图片没读进来', 'error'); }
+        if (backInputRef.current) backInputRef.current.value = '';
+    };
+
+    const sectionCls = 'bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]';
+    const chip = (active: boolean) => `px-3 py-1.5 text-xs font-bold border-2 border-[#2b2933] transition-all ${active ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933] shadow-[2px_2px_0_#2b2933]'}`;
+
+    return (
+        <>
+            <section className={sectionCls}>
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">牌面美化</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-3">小剧场 → 占卜里抽出的塔罗 / 雷诺曼牌面会套用这里的边框与风格；牌背图用于未翻开 / 未导入牌库时的占位。</p>
+                <div className="flex items-end gap-4">
+                    {/* 牌面预览 */}
+                    <div className={`w-24 aspect-[2/3] overflow-hidden bg-gradient-to-br from-indigo-900/80 to-violet-900/60 relative ${
+                        skin.frame === 'gold' ? 'border-2 border-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.4)]' :
+                        skin.frame === 'ink' ? 'border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.5)]' :
+                        skin.frame === 'film' ? 'border-2 border-white shadow-lg' : 'border border-white/30'
+                    } ${skin.renderStyle === 'mystic' ? 'rounded-xl ring-1 ring-violet-300/40' : skin.renderStyle === 'minimal' ? 'rounded-md' : 'rounded-lg'}`}>
+                        {skin.cardBack
+                            ? <img src={skin.cardBack} className="w-full h-full object-cover" alt="牌背" />
+                            : <div className="w-full h-full flex items-center justify-center text-3xl">🔮</div>}
+                    </div>
+                    <div className="text-[10px] text-[#6b6b6b] leading-relaxed">这是牌面预览。<br />换牌背 / 边框 / 风格都会实时反映。</div>
+                </div>
+            </section>
+
+            <section className={sectionCls}>
+                <h3 className="text-sm font-bold text-[#2b2933] mb-2">牌背图</h3>
+                <input ref={backInputRef} type="file" accept="image/*" className="hidden" onChange={e => void handleBack(e.target.files?.[0])} />
+                <div className="flex gap-2">
+                    <button onClick={() => backInputRef.current?.click()} className="px-3 py-2 text-xs font-bold border-2 border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] shadow-[2px_2px_0_rgba(43,41,51,0.35)] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all">上传牌背图</button>
+                    {skin.cardBack && (
+                        <button onClick={() => set({ cardBack: undefined })} className="px-3 py-2 text-xs font-bold border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] shadow-[2px_2px_0_#2b2933] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all">清除</button>
+                    )}
+                </div>
+            </section>
+
+            <section className={sectionCls}>
+                <h3 className="text-sm font-bold text-[#2b2933] mb-2">边框</h3>
+                <div className="flex flex-wrap gap-2">
+                    {TAROT_FRAMES.map(f => (
+                        <button key={f.id} onClick={() => set({ frame: f.id })} className={chip((skin.frame || 'none') === f.id)}>{f.label}</button>
+                    ))}
+                </div>
+            </section>
+
+            <section className={sectionCls}>
+                <h3 className="text-sm font-bold text-[#2b2933] mb-2">渲染风格</h3>
+                <div className="flex flex-wrap gap-2">
+                    {TAROT_STYLES.map(s => (
+                        <button key={s.id} onClick={() => set({ renderStyle: s.id })} className={chip((skin.renderStyle || 'classic') === s.id)}>{s.label}</button>
+                    ))}
+                </div>
+            </section>
+        </>
+    );
+};
+
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter } = useOS();
   // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
@@ -1023,7 +1110,7 @@ const Appearance: React.FC = () => {
     });
     addToast(n ? `撕掉了 ${n} 处白框手写码` : '没有要撕的白框手写码', n ? 'success' : 'info');
   };
-  const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'>('theme');
+  const [activeTab, setActiveTab] = useState<'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'tarot'>('theme');
   // 气泡工坊全屏编辑器：原独立 tab 已并入「聊天界面」页，从那里的入口卡打开
   const [showBubbleWorkshop, setShowBubbleWorkshop] = useState(false);
   const wallpaperInputRef = useRef<HTMLInputElement>(null);
@@ -1220,12 +1307,13 @@ const Appearance: React.FC = () => {
       return <ThemeMaker embedded onRequestClose={() => { setShowBubbleWorkshop(false); setActiveTab('chat'); }} />;
   }
 
-  const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css'; label: string }[] = [
+  const TABS: { id: 'theme' | 'desktop' | 'icons' | 'presets' | 'chat' | 'css' | 'tarot'; label: string }[] = [
       { id: 'theme', label: '调色页' },
       { id: 'desktop', label: '桌面页' },
       { id: 'chat', label: '对话页' },
       { id: 'css', label: '手写码' },
       { id: 'icons', label: '图标贴' },
+      { id: 'tarot', label: '牌面' },
       { id: 'presets', label: '存档册' },
   ];
 
@@ -1818,6 +1906,8 @@ const Appearance: React.FC = () => {
             <ModularChatAppearanceEditor theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} onOpenBubbleWorkshop={() => setShowBubbleWorkshop(true)} />
         ) : activeTab === 'css' ? (
             <CustomCssStudio theme={theme} updateTheme={updateTheme} onResetAllChrome={resetAllChromeCss} addToast={addToast} />
+        ) : activeTab === 'tarot' ? (
+            <TarotSkinEditor theme={theme} updateTheme={updateTheme} addToast={addToast} />
         ) : null}
       </div>
     </div>

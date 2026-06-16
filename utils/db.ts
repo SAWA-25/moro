@@ -9,12 +9,12 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    TalkSession, CollectionItem, TakeoutOrder
+    TalkSession, CollectionItem, TakeoutOrder, DivinationCard
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 71; // Bumped: v71 新增 takeout_orders（外卖 App 订单）
+const DB_VERSION = 72; // Bumped: v72 新增 divination_cards（小剧场·占卜牌库）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -73,6 +73,7 @@ const STORE_CHAR_LIFE_EVENTS = 'char_life_events'; // 来往·角色离线自主
 const STORE_TALK_SESSIONS = 'talk_sessions';      // 小剧场·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/小剧场内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
+const STORE_DIVINATION_CARDS = 'divination_cards'; // 小剧场·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 const API_CALL_LOG_MAX_AGE_MS = 5 * 24 * 60 * 60 * 1000;
@@ -610,6 +611,12 @@ export const openDB = (): Promise<IDBDatabase> => {
           const toStore = db.createObjectStore(STORE_TAKEOUT_ORDERS, { keyPath: 'id' });
           toStore.createIndex('placedAt', 'placedAt', { unique: false });
           toStore.createIndex('charId', 'charId', { unique: false });
+      }
+
+      // ─── v72: 小剧场·占卜牌库 ───
+      if (!db.objectStoreNames.contains(STORE_DIVINATION_CARDS)) {
+          const dcStore = db.createObjectStore(STORE_DIVINATION_CARDS, { keyPath: 'id' });
+          dcStore.createIndex('deck', 'deck', { unique: false });
       }
     };
   });
@@ -1317,6 +1324,53 @@ export const DB = {
       const db = await openDB();
       const tx = db.transaction(STORE_TAKEOUT_ORDERS, 'readwrite');
       tx.objectStore(STORE_TAKEOUT_ORDERS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  // ── 小剧场·占卜牌库 ──────────────────────────────────────────────
+  getDivinationCards: async (deck?: 'tarot' | 'lenormand'): Promise<DivinationCard[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_DIVINATION_CARDS, 'readonly');
+          const req = tx.objectStore(STORE_DIVINATION_CARDS).getAll();
+          req.onsuccess = () => {
+              let list = (req.result as DivinationCard[]) || [];
+              if (deck) list = list.filter(c => c.deck === deck);
+              resolve(list.sort((a, b) => a.index - b.index));
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+  saveDivinationCard: async (card: DivinationCard): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_DIVINATION_CARDS, 'readwrite');
+      tx.objectStore(STORE_DIVINATION_CARDS).put(card);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  /** 批量入库（导入整副牌时一次写完，单事务）。 */
+  bulkSaveDivinationCards: async (cards: DivinationCard[]): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_DIVINATION_CARDS, 'readwrite');
+      const store = tx.objectStore(STORE_DIVINATION_CARDS);
+      for (const c of cards) store.put(c);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  /** 清空某一副牌（重新导入前用）。 */
+  deleteDivinationDeck: async (deck: 'tarot' | 'lenormand'): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_DIVINATION_CARDS, 'readwrite');
+      const store = tx.objectStore(STORE_DIVINATION_CARDS);
+      const req = store.index('deck').getAllKeys(deck);
+      req.onsuccess = () => { for (const k of (req.result as IDBValidKey[])) store.delete(k); };
       return new Promise((resolve, reject) => {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);

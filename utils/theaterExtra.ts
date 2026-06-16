@@ -11,7 +11,7 @@
 
 import type { CharacterProfile, UserProfile } from '../types';
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent } from './safeApi';
+import { safeResponseJson, extractContent, extractJson } from './safeApi';
 
 async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }): Promise<string> {
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
@@ -109,3 +109,62 @@ export async function genExtraPiece(args: {
     }
     return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 1400, signal })) || '（这次没生成出来，换个说法再试试）';
 }
+
+// ── 仿真图文番外（结构化 JSON，UI 渲染成仿微信/朋友圈/小红书/论坛） ──────────────
+
+export type FauxKind = 'wechat' | 'moments' | 'xhs' | 'forum';
+
+/** 仿真番外结果：解析成功给 data，失败给 fallbackText（UI 退回纯文本展示）。 */
+export interface FauxResult {
+    kind: FauxKind;
+    data: any | null;
+    fallbackText: string;
+}
+
+function personaPair(char: CharacterProfile, userProfile: UserProfile): string {
+    const userName = (userProfile?.name || '').trim() || '我';
+    return `角色「${char.name}」人设：${String(char.description || '').slice(0, 600)}\n`
+        + `用户「${userName}」：${String(userProfile?.bio || '').slice(0, 200) || '（无额外设定）'}`;
+}
+
+/**
+ * 生成一段仿真图文番外，返回结构化 JSON（供 UI 仿真渲染）。
+ * 失败或解析不出 JSON 时，data=null + fallbackText 原文，UI 退回纯文本。
+ */
+export async function genFauxPiece(args: {
+    api: ResolvedApi; kind: FauxKind; char: CharacterProfile; userProfile: UserProfile; keyword?: string; signal?: AbortSignal;
+}): Promise<FauxResult> {
+    const { api, kind, char, userProfile, keyword, signal } = args;
+    const userName = (userProfile?.name || '').trim() || '我';
+    const persona = personaPair(char, userProfile);
+    const topic = keyword?.trim();
+
+    let sys = '', user = '';
+    if (kind === 'wechat') {
+        sys = '你在写一段“捡到手机看到的微信聊天记录”——极度真实、接地气、有生活质感的中文对话。'
+            + '口语化、有错字感的随意、有表情符号/语气词、有时间跳跃、有日常细节和小情绪。不要旁白、不要解释。'
+            + '严格只输出 JSON：{"contactName":"对方备注名","messages":[{"from":"user"|"char","text":"...","time":"14:23"}]}。'
+            + 'from=user 是机主（你/我），from=char 是对方角色。20~36 条，长短交错。';
+        user = `${persona}\n机主=${userName}，对方=${char.name}。\n聊天主题/关键词：${topic || '日常拌嘴与想念，藏着没说出口的在意'}\n生成这段微信聊天记录 JSON。`;
+    } else if (kind === 'moments') {
+        sys = '你在仿写一条微信朋友圈。真实、有梗、有细节。严格只输出 JSON：'
+            + '{"author":"发圈人","text":"正文","images":2,"time":"刚刚/今天 12:30","likes":["昵称1","昵称2"],"comments":[{"name":"昵称","text":"评论"}]}。'
+            + 'images 是配图数量(0~9)，likes 是点赞昵称数组，comments 是评论。中文。';
+        user = `${persona}\n以「${topic || `${char.name}`}」为主题，发圈人可以是 ${char.name} 或 ${userName}，深扒一点两人之间的八卦/暗流。生成朋友圈 JSON。`;
+    } else if (kind === 'xhs') {
+        sys = '你在仿写一篇小红书图文笔记，图文并茂、有网感、标题党一点。严格只输出 JSON：'
+            + '{"title":"标题(带emoji)","body":"正文(可含换行与小标题)","images":3,"tags":["话题1","话题2"],"author":"作者昵称","likes":1234,"comments":[{"name":"昵称","text":"评论"}]}。'
+            + 'images 是配图数量(1~9)。中文。';
+        user = `${persona}\n以「${topic || `深扒 ${char.name}`}」为主题写一篇小红书，可带 ${userName} 视角的八卦/爆料口吻。生成 JSON。`;
+    } else {
+        sys = '你在仿写一个匿名论坛帖（贴吧/虎扑/校园墙风格），楼主 + 多层跟帖，抖机灵、阴阳、热心、吃瓜都要有。严格只输出 JSON：'
+            + '{"board":"板块名","title":"帖子标题","op":{"floor":"楼主","text":"..."},"replies":[{"floor":"1L","text":"..."}]}。'
+            + '6~12 层回复。中文。';
+        user = `${persona}\n以「${topic || `关于 ${char.name} 的瓜`}」开个匿名帖，深扒 ${char.name} 与 ${userName} 的八卦。生成 JSON。`;
+    }
+
+    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 1800, signal });
+    const data = extractJson(raw);
+    return { kind, data: data ?? null, fallbackText: raw || '（这次没生成出来，换个关键词再试试）' };
+}
+

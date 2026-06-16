@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { ArrowLeft, Sparkle, ListChecks, ChatsCircle, Fire, NotePencil, ArrowClockwise, PaperPlaneTilt } from '@phosphor-icons/react';
+import { ArrowLeft, Sparkle, ListChecks, ChatsCircle, Fire, NotePencil, ArrowClockwise, PaperPlaneTilt, WechatLogo, Camera, Megaphone, ImagesSquare } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { DB } from '../../utils/db';
 import {
-    inferQuestionCount, genNextQuestion, genCharAnswer, genExtraPiece, type ExtraKind,
+    inferQuestionCount, genNextQuestion, genCharAnswer, genExtraPiece, genFauxPiece,
+    type ExtraKind, type FauxKind, type FauxResult,
 } from '../../utils/theaterExtra';
+import { WeChatScreenshot, MomentsCard, XhsCard, ForumThread } from '../../components/theater/faux/FauxRenderers';
 
 /**
  * 小剧场·番外：选一个角色一起做「番外」。
@@ -16,10 +18,17 @@ import {
 
 interface Props { onExit: () => void; }
 
-type Mode = 'home' | 'quiz' | 'piece';
+type Mode = 'home' | 'quiz' | 'piece' | 'faux';
 interface QA { question: string; charAnswer: string; userAnswer: string }
 
 const QUIZ_PRESETS = ['恋爱相性100问', 'MBTI 测试问卷', '性癖测试问卷50问', '价值观问卷', '无厘头问卷50题', '灵魂拷问36问'];
+
+const FAUX_TABS: { kind: FauxKind; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
+    { kind: 'wechat', label: '微信聊天', icon: <WechatLogo size={18} weight="fill" />, hint: '仿“捡手机”看到的、极真实接地气的 user×char 微信聊天记录', ph: '聊天关键词（如：深夜报备 / 吵架冷战 / 出差想你）' },
+    { kind: 'moments', label: '朋友圈', icon: <Camera size={18} weight="bold" />, hint: '一条仿微信朋友圈，配图 + 点赞 + 评论，藏点两人的暗流', ph: '想发什么内容？（留空＝深扒两人近况）' },
+    { kind: 'xhs', label: '小红书', icon: <ImagesSquare size={18} weight="bold" />, hint: '图文并茂的小红书笔记，标题党 + 话题 + 评论', ph: '笔记主题（如：深扒我对象 / 和 TA 的100件小事）' },
+    { kind: 'forum', label: '匿名论坛', icon: <Megaphone size={18} weight="bold" />, hint: '匿名帖 + 多层跟帖吃瓜，深扒 char×user 的八卦', ph: '想开什么帖？（留空＝关于 TA 的瓜）' },
+];
 
 const PIECE_TABS: { kind: ExtraKind; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
     { kind: 'tieba', label: '贴吧帖', icon: <ChatsCircle size={18} weight="bold" />, hint: '以 TA 为话题的求助/讨论帖 + 网友回复', ph: '想发什么帖？（如：求助 TA 最近好奇怪 / 这角色到底什么来头）' },
@@ -51,6 +60,34 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const [pieceKind, setPieceKind] = useState<ExtraKind>('tieba');
     const [piecePrompt, setPiecePrompt] = useState('');
     const [piece, setPiece] = useState('');
+
+    // ── 仿真图文状态 ──
+    const [fauxKind, setFauxKind] = useState<FauxKind>('wechat');
+    const [fauxKeyword, setFauxKeyword] = useState('');
+    const [fauxResult, setFauxResult] = useState<FauxResult | null>(null);
+
+    const runFaux = async () => {
+        if (!char) { addToast('先选一个角色', 'info'); return; }
+        if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
+        setBusy(true); setFauxResult(null);
+        try {
+            const out = await genFauxPiece({ api, kind: fauxKind, char, userProfile, keyword: fauxKeyword.trim() || undefined });
+            setFauxResult(out);
+        } catch (e: any) { addToast('生成失败：' + (e?.message || e), 'error'); } finally { setBusy(false); }
+    };
+
+    const exportFauxToChat = async () => {
+        if (!char || !fauxResult) return;
+        const tab = FAUX_TABS.find(t => t.kind === fauxKind);
+        // 发到聊天用文字摘要（仿真 UI 只在 app 内看；聊天里落可读文本）
+        const summary = fauxResult.data
+            ? JSON.stringify(fauxResult.data, null, 2)
+            : fauxResult.fallbackText;
+        try {
+            await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `【番外·${tab?.label || ''}】\n${summary}`, timestamp: Date.now() });
+            addToast(`已发到与 ${char.name} 的聊天`, 'success');
+        } catch { addToast('发送失败', 'error'); }
+    };
 
     const resetQuiz = () => { setItems([]); setIdx(0); setAnswerInput(''); setFinished(false); setTopic(''); };
 
@@ -230,6 +267,56 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         );
     }
 
+    // ============ 仿真图文番外（微信/朋友圈/小红书/论坛） ============
+    if (mode === 'faux') {
+        const tab = FAUX_TABS.find(t => t.kind === fauxKind)!;
+        const d = fauxResult?.data;
+        return (
+            <div className="absolute inset-0 flex flex-col bg-[#14101c] text-white animate-fade-in overflow-hidden" style={{ paddingTop: 'var(--safe-top)' }}>
+                <Header title="仿真图文" back={() => { setFauxResult(null); setMode('home'); }} />
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 space-y-4 z-10">
+                    <CharPicker />
+                    <div className="grid grid-cols-4 gap-2">
+                        {FAUX_TABS.map(t => (
+                            <button key={t.kind} onClick={() => { setFauxKind(t.kind); setFauxResult(null); }}
+                                className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl border transition-all ${fauxKind === t.kind ? 'border-amber-300/60 bg-amber-300/10 text-amber-100' : 'border-white/10 bg-white/[0.03] text-white/60'}`}>
+                                {t.icon}<span className="text-[10px] font-bold">{t.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <div className="text-[11px] text-white/45 px-1">{tab.hint}</div>
+                    <textarea value={fauxKeyword} onChange={e => setFauxKeyword(e.target.value)} placeholder={tab.ph}
+                        rows={2} className="w-full bg-black/30 rounded-xl px-3 py-2.5 text-sm outline-none border border-white/10 focus:border-amber-300/40 resize-none" />
+                    <button onClick={() => void runFaux()} disabled={busy}
+                        className="w-full py-2.5 rounded-xl text-sm font-black bg-amber-300/90 text-[#14101c] active:scale-95 disabled:opacity-50">
+                        {busy ? '生成中…' : '生成仿真图文'}
+                    </button>
+
+                    {fauxResult && (
+                        <div className="space-y-3">
+                            {/* 仿真渲染；解析失败回退纯文本 */}
+                            {d && fauxKind === 'wechat' && <WeChatScreenshot data={d} charAvatar={char?.avatar} userAvatar={userProfile?.avatar} />}
+                            {d && fauxKind === 'moments' && <MomentsCard data={d} avatar={char?.avatar} />}
+                            {d && fauxKind === 'xhs' && <XhsCard data={d} />}
+                            {d && fauxKind === 'forum' && <ForumThread data={d} />}
+                            {!d && (
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-[13px] text-white/80 leading-relaxed whitespace-pre-wrap">
+                                    <div className="text-[10px] text-amber-200/60 mb-1.5">（这次没解析成结构化，先看文字稿）</div>
+                                    {fauxResult.fallbackText}
+                                </div>
+                            )}
+                            <div className="text-center text-[10px] text-white/35">长按 / 用手机系统截屏即可保存这张图</div>
+                            <div className="flex gap-2">
+                                <button onClick={() => void runFaux()} className="flex-1 py-2 rounded-xl text-[12px] font-bold bg-white/10 active:scale-95 inline-flex items-center justify-center gap-1.5"><ArrowClockwise size={14} weight="bold" />再生成</button>
+                                <button onClick={() => void exportFauxToChat()} className="flex-1 py-2 rounded-xl text-[12px] font-bold bg-amber-300/90 text-[#14101c] active:scale-95 inline-flex items-center justify-center gap-1.5"><PaperPlaneTilt size={14} weight="bold" />发到聊天</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     // ============ 一次性番外（贴吧/聊天记录/热梗/自定义） ============
     if (mode === 'piece') {
         const tab = PIECE_TABS.find(t => t.kind === pieceKind)!;
@@ -297,6 +384,16 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         <div className="text-3xl font-black tracking-wide text-rose-50">番外工坊</div>
                     </div>
                     <div className="text-[11px] text-white/55 mt-3 leading-relaxed">求助贴吧帖、群聊天记录、把 TA 套进热梗…围绕角色一键生成一段主题番外，可发回聊天。</div>
+                </button>
+
+                <button onClick={() => { setMode('faux'); }}
+                    className="relative w-full text-left rounded-3xl px-7 py-8 overflow-hidden border border-emerald-300/15 bg-gradient-to-br from-emerald-500/15 to-teal-500/[0.07] active:scale-[0.98] transition-transform shadow-lg">
+                    <div className="text-[9px] tracking-[0.3em] text-emerald-200/70 font-mono mb-2">FAUX — 仿真图文</div>
+                    <div className="flex items-center gap-2.5">
+                        <ImagesSquare size={26} weight="bold" className="text-emerald-200/90" />
+                        <div className="text-3xl font-black tracking-wide text-emerald-50">仿真图文</div>
+                    </div>
+                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">仿“捡手机”的微信聊天记录、朋友圈、小红书图文、匿名论坛吃瓜帖——图文并茂、深扒你和 TA 的八卦，截屏即可保存。</div>
                 </button>
             </div>
         </div>

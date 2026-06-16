@@ -295,6 +295,12 @@ export interface OSTheme {
   dynamicIslandStyle?: DynamicIslandStyle;
   /** 锁屏样式自定义（专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS），在「主题 → 锁屏」编辑。 */
   lockScreenStyle?: LockScreenStyle;
+  /** 占卜牌面美化（小剧场·占卜读这里渲染牌面）：牌背图 / 边框风格 / 渲染风格。 */
+  tarotSkin?: {
+    cardBack?: string;                                  // 牌背图 dataURL（牌面未翻开 / 占位时显示）
+    frame?: 'none' | 'gold' | 'ink' | 'film';           // 边框：无 / 描金 / 水墨 / 胶片
+    renderStyle?: 'classic' | 'minimal' | 'mystic';     // 渲染风格：古典 / 极简 / 神秘
+  };
 }
 
 /** 单个桌面小组件的自定义项 */
@@ -2291,6 +2297,63 @@ export interface XhsStockImage {
     addedAt: number;       // timestamp
     usedCount: number;     // 被使用次数
     lastUsedAt?: number;   // 上次使用时间
+}
+
+// ── 占卜（小剧场·占卜）─────────────────────────────────────────────────────
+/** 一张导入的占卜牌图。塔罗按 index 0~77、雷诺曼按 index 1~36 对应文件名。 */
+export interface DivinationCard {
+    id: string;            // `${deck}_${index}`
+    deck: 'tarot' | 'lenormand';
+    index: number;         // 塔罗 0~77 / 雷诺曼 1~36
+    dataUrl: string;       // 压缩后的本地图（dataURL，存 IndexedDB）
+    addedAt: number;
+}
+
+/** 一次占卜记录（可选持久化，便于「发到聊天」与回看）。 */
+export interface DivinationSession {
+    id: string;
+    charId?: string;       // 一起占卜的角色（可空）
+    kind: 'tarot' | 'lenormand' | 'liuyao' | 'meihua';
+    question: string;
+    /** engines 产出的牌面/卦象摘要文字 */
+    readingText: string;
+    /** 解读：手动写的或 API 生成的 */
+    interpretation?: string;
+    interpretedBy?: 'manual' | 'ai';
+    createdAt: number;
+}
+
+// ── 番外仿真图文（小剧场·番外）结构化数据 ───────────────────────────────────
+/** 仿微信聊天截图 */
+export interface FauxWeChat {
+    contactName: string;
+    messages: { from: 'user' | 'char'; text: string; time?: string }[];
+}
+/** 仿微信朋友圈 */
+export interface FauxMoments {
+    author: string;
+    text: string;
+    images?: number;          // 占位图数量（仿真灰块）
+    time: string;
+    likes: string[];
+    comments: { name: string; text: string }[];
+}
+/** 仿小红书图文笔记 */
+export interface FauxXhs {
+    title: string;
+    body: string;
+    images?: number;          // 占位图数量
+    tags: string[];
+    author: string;
+    likes: number;
+    comments: { name: string; text: string }[];
+}
+/** 仿匿名论坛帖 */
+export interface FauxForum {
+    board: string;
+    title: string;
+    op: { floor: string; text: string };
+    replies: { floor: string; text: string }[];
 }
 
 export interface GalleryImage {
