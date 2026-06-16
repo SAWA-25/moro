@@ -9,7 +9,7 @@
 
 import { CharacterProfile, UserProfile, Message } from '../types';
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent } from './safeApi';
+import { safeResponseJson, extractContent, extractJson } from './safeApi';
 
 const SYSTEM = [
     '你是“替我想想接下来怎么接话”的助手。下面给你一段两个人的聊天记录，',
@@ -54,36 +54,51 @@ function stripLabel(input: string): string {
     return t.replace(/^["'“”]+/, '').replace(/["'“”]+$/, '').trim();
 }
 
-/** 从模型输出里宽松抠出字符串数组；失败时按行兜底。 */
-function parseActions(raw: string): string[] {
+/** 从模型输出里宽松抠出字符串数组；JSON 截断 / 失败时尽力打捞，再按行兜底。
+ *  exported 供单测（修复「```json / [ / 半截串」漏成选项的 bug）。 */
+export function parseActions(raw: string): string[] {
     if (!raw) return [];
     const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
     const body = (fenced ? fenced[1] : raw).trim();
-    // 1) 优先按 JSON 数组解析
-    const start = body.indexOf('[');
-    const end = body.lastIndexOf(']');
-    if (start >= 0 && end > start) {
-        try {
-            const arr = JSON.parse(body.slice(start, end + 1));
-            if (Array.isArray(arr)) {
-                return arr
-                    .map(x => {
-                        // 兼容模型偶尔吐出对象 {text:"…"} / {content:"…"} 的情况
-                        if (x && typeof x === 'object') {
-                            const v = (x as any).text ?? (x as any).content ?? (x as any).message ?? '';
-                            return stripLabel(String(v));
-                        }
-                        return stripLabel(String(x));
-                    })
-                    .filter(Boolean);
+
+    const fromArray = (arr: any[]): string[] => arr
+        .map(x => {
+            // 兼容模型偶尔吐出对象 {text:"…"} / {content:"…"} 的情况
+            if (x && typeof x === 'object') {
+                const v = (x as any).text ?? (x as any).content ?? (x as any).message ?? '';
+                return stripLabel(String(v));
             }
-        } catch { /* 落到按行兜底 */ }
+            return stripLabel(String(x));
+        })
+        .filter(Boolean);
+
+    // 1) 优先用通用 JSON 容错解析（处理 ```fence```、尾逗号、单引号、未转义内引号等）
+    const parsed = extractJson(body);
+    if (Array.isArray(parsed)) return fromArray(parsed);
+
+    // 2) JSON 被 max_tokens 截断（缺收尾 ]）时，打捞数组里已完整的字符串元素，
+    //    丢掉最后那截没闭合的半句——避免把 ```json、[、半截串当成选项漏出来。
+    const start = body.indexOf('[');
+    if (start >= 0) {
+        const slice = body.slice(start + 1);
+        const salvaged: string[] = [];
+        // 逐个匹配「成对引号」的字符串字面量（允许 \" 转义），未闭合的尾串自然不被匹配
+        const re = /"((?:[^"\\]|\\.)*)"/g;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(slice)) !== null) {
+            try { salvaged.push(stripLabel(JSON.parse(`"${m[1]}"`))); }
+            catch { salvaged.push(stripLabel(m[1])); }
+        }
+        const cleaned = salvaged.filter(Boolean);
+        if (cleaned.length) return cleaned;
     }
-    // 2) 兜底：按行拆，去掉序号 / 引号 / 项目符号 / 泄漏的语气标签
+
+    // 3) 最后兜底：按行拆，去掉序号 / 引号 / 项目符号 / 泄漏标签 / JSON 残骸
     return body
         .split(/\r?\n/)
         .map(l => stripLabel(l))
-        .filter(Boolean);
+        .map(l => l.replace(/^```(?:json)?$/i, '').replace(/^[\[\]{},]+$/g, '').trim())
+        .filter(l => l && !/^```/.test(l));
 }
 
 function recentTranscript(recent: Message[], charName: string, userName: string): string {
@@ -124,7 +139,7 @@ export async function suggestUserActions(args: {
             model: api.model,
             messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
             temperature: 1.0,
-            max_tokens: 400,
+            max_tokens: 1000,
             stream: false,
         }),
         signal,

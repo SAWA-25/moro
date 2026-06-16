@@ -33,6 +33,35 @@ interface Props {
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
 
+/** 自适应高度的多行文本框：value 变化（含程序化填入候选）时自动撑高，不再截断长消息。 */
+const AutoGrowTextarea: React.FC<{
+    value: string;
+    onChange: (v: string) => void;
+    placeholder?: string;
+}> = ({ value, onChange, placeholder }) => {
+    const ref = useRef<HTMLTextAreaElement>(null);
+    const resize = () => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+    };
+    // value 每次变化（生成候选、再想一组、编辑）都重新量高度
+    useEffect(() => { resize(); }, [value]);
+    return (
+        <textarea
+            ref={ref}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            rows={1}
+            placeholder={placeholder}
+            className="flex-1 min-w-0 bg-transparent text-[13.5px] leading-relaxed text-slate-700 outline-none resize-none placeholder:text-slate-300 py-1"
+            style={{ minHeight: 24 }}
+            onInput={resize}
+        />
+    );
+};
+
 const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, api, onClose, onSend, addToast }) => {
     const [options, setOptions] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
@@ -121,14 +150,10 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                                 style={{ borderColor: '#eef0f3' }}
                             >
                                 <span className="mt-1.5 w-5 h-5 shrink-0 rounded-full bg-white text-pink-400 text-[10px] font-bold flex items-center justify-center ring-1 ring-pink-100">{i + 1}</span>
-                                <textarea
+                                <AutoGrowTextarea
                                     value={opt}
-                                    onChange={e => updateOption(i, e.target.value)}
-                                    rows={1}
+                                    onChange={val => updateOption(i, val)}
                                     placeholder="自己写点什么…"
-                                    className="flex-1 min-w-0 bg-transparent text-[13.5px] leading-relaxed text-slate-700 outline-none resize-none placeholder:text-slate-300 py-1"
-                                    style={{ minHeight: 24 }}
-                                    onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px`; }}
                                 />
                                 <div className="flex items-center gap-1 shrink-0 self-center">
                                     <button
