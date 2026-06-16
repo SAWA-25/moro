@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CaretLeft, DotsThreeVertical, GearSix } from '@phosphor-icons/react';
+import { CaretLeft, DotsThreeVertical, GearSix, List } from '@phosphor-icons/react';
 import { CharacterBuff, CharacterProfile } from '../../types';
 
 interface TokenBreakdown {
@@ -180,6 +180,10 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const isDarkHeader = headerStyle === 'discord';
     const isPixelHeader = headerStyle === 'pixel';
     const useCenteredLayout = headerAlign === 'center';
+    const isMinimalHeader = headerStyle === 'minimal';
+    // 极简皮肤：居中头像下沉、压在白色顶栏下边缘（参考设计），并省去顶栏内角色名
+    // （昵称改由消息气泡上方的标签承载；切到其它顶栏风格即恢复显示名字）
+    const sinkAvatar = useCenteredLayout && isMinimalHeader;
     const avatarRadiusClass = avatarShape === 'square' ? 'rounded-sm' : avatarShape === 'rounded' ? 'rounded-xl' : 'rounded-full';
     const buffChipStyle = (buff: CharacterBuff): React.CSSProperties =>
         ({ color: buff.color || '#db2777', borderColor: `${buff.color || '#db2777'}40`, background: `${buff.color || '#db2777'}10` });
@@ -307,18 +311,38 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
         ? (e: React.MouseEvent) => { e.stopPropagation(); onAvatarClick(); }
         : undefined;
 
-    const renderCenteredInfo = () => (
-        <div className="flex w-full min-w-0 max-w-full flex-col items-center text-center">
-            {/* 大头像居中（黑白手帐式）：白描边 + 柔影，是顶栏的视觉主角 */}
-            <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-14 h-14 object-cover ${avatarRadiusClass} ring-[3px] ring-white shadow-[0_10px_24px_-10px_rgba(50,48,60,0.4)] ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
-            <div className={`moro-chat-name mt-1.5 text-[15px] font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
-            {buffs.length > 0 && (
-                <div className="mt-1 min-h-[18px] w-full">
-                    {renderBuffRow(true)}
+    const renderCenteredInfo = () => {
+        // 极简皮肤：只留一枚大头像，下沉到顶栏下边缘并叠出白卡之外（参考设计）；有情绪 buff 时把 buff 行放在头像上方的空白处，避免被下沉头像挤占。
+        if (sinkAvatar) {
+            return (
+                <div className="relative w-full flex flex-col items-center justify-end">
+                    {buffs.length > 0 && (
+                        <div className="w-full mb-1">
+                            {renderBuffRow(true)}
+                        </div>
+                    )}
+                    <img
+                        src={activeCharacter.avatar}
+                        onClick={handleAvatarClick}
+                        className={`moro-chat-avatar w-16 h-16 object-cover ${avatarRadiusClass} ring-[3px] ring-white shadow-[0_12px_26px_-8px_rgba(50,48,60,0.45)] translate-y-[26px] ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`}
+                        alt="avatar"
+                    />
                 </div>
-            )}
-        </div>
-    );
+            );
+        }
+        return (
+            <div className="flex w-full min-w-0 max-w-full flex-col items-center text-center">
+                {/* 大头像居中（黑白手帐式）：白描边 + 柔影，是顶栏的视觉主角 */}
+                <img src={activeCharacter.avatar} onClick={handleAvatarClick} className={`moro-chat-avatar w-14 h-14 object-cover ${avatarRadiusClass} ring-[3px] ring-white shadow-[0_10px_24px_-10px_rgba(50,48,60,0.4)] ${handleAvatarClick ? 'cursor-pointer active:scale-95 transition-transform' : ''}`} alt="avatar" />
+                <div className={`moro-chat-name mt-1.5 text-[15px] font-bold ${primaryTextClass}`}>{activeCharacter.name}</div>
+                {buffs.length > 0 && (
+                    <div className="mt-1 min-h-[18px] w-full">
+                        {renderBuffRow(true)}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const renderStandardInfo = () => (
         <>
@@ -400,7 +424,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                     )}
                     {onOpenSettings && (
                         <button onClick={onOpenSettings} className={`moro-chat-settings absolute right-0 bottom-2 p-2 ${iconButtonClass}`} title="聊天设置">
-                            <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                            {isMinimalHeader ? <List className="w-5 h-5" weight="bold" /> : <DotsThreeVertical className="w-5 h-5" weight="bold" />}
                         </button>
                     )}
                 </div>
@@ -421,7 +445,7 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                     )}
                     {onOpenSettings && (
                         <button onClick={onOpenSettings} className={`moro-chat-settings p-2 -mr-2 ${iconButtonClass}`} title="聊天设置">
-                            <DotsThreeVertical className="w-5 h-5" weight="bold" />
+                            {isMinimalHeader ? <List className="w-5 h-5" weight="bold" /> : <DotsThreeVertical className="w-5 h-5" weight="bold" />}
                         </button>
                     )}
                 </div>
