@@ -4,6 +4,7 @@ import { buildCityPromptBlock } from './charCity';
 import { getFlowNarrativeKey, isScheduleFeatureOn } from './scheduleGenerator';
 import { WorldbookRuntime } from './worldbookRuntime';
 import { MARRIAGE_STAGE_LABEL } from './relationship';
+import { buildCoupleSpacePromptBlock } from './coupleSpace';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -309,6 +310,9 @@ export const ContextBuilder = {
 
             // 来往·关系 / 好感 / 婚事 状态 + 规则（指导角色如何"自然地"推进关系，并约束乱跳）
             context += buildRelationshipPromptBlock(char, user.name);
+
+            // 来往·情侣空间状态（恋爱天数 / 亲密度 / 动态 / 约定 / 悄悄话），让角色据此扮演
+            context += buildCoupleSpacePromptBlock(char, user.name);
         }
 
         // 5. 记忆库 (Memory Bank)

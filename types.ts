@@ -1947,6 +1947,9 @@ export interface CharacterProfile {
   relationship?: RelationshipState;
   /** 婚姻状态（求婚成功后进入「婚姻筹备期」，落入岁时记·喜事页） */
   marriage?: MarriageState;
+  /** 来往·情侣空间（参考 QQ 情侣空间）：恋爱天数 / 亲密度 / 情侣动态 / 纪念日 / 相册 / 约定 / 悄悄话。
+   *  挂在角色上（每个角色一份），由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文。 */
+  coupleSpace?: CoupleSpace;
   emotionConfig?: {
     enabled: boolean;
     api?: {
@@ -2129,6 +2132,104 @@ export interface MarriageState {
   /** 领证时间戳 */
   registeredAt?: number;
   milestones: MarriageMilestone[];
+}
+
+// ── 来往·情侣空间（QQ 情侣空间移植） ────────────────────────────────────────
+/** 情侣动态 / 留言板的一条评论。 */
+export interface CoupleComment {
+  id: string;
+  author: 'user' | 'char';
+  text: string;
+  at: number;
+}
+
+/** 情侣动态（留言板）：双方可发文字 / 心情 / 图片，按时间倒序展示，可点赞 + 评论。 */
+export interface CoupleMoment {
+  id: string;
+  author: 'user' | 'char';
+  text?: string;
+  /** 心情（emoji + 文字，可选） */
+  mood?: string;
+  /** 图片（base64 data url），九宫格展示 */
+  images?: string[];
+  createdAt: number;
+  /** 点赞：双方各自是否赞过 */
+  likedByUser?: boolean;
+  likedByChar?: boolean;
+  comments: CoupleComment[];
+}
+
+/** 纪念日 / 生日 / 约定日：自动倒计时提醒。 */
+export interface CoupleAnniversary {
+  id: string;
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  kind: 'love' | 'birthday' | 'promise' | 'custom';
+  /** 是否每年重复（生日 / 周年）：倒计时取「下一次」 */
+  repeatYearly?: boolean;
+  createdAt: number;
+}
+
+/** 情侣相册照片（九宫格展示）。 */
+export interface CouplePhoto {
+  id: string;
+  url: string;        // base64 data url
+  caption?: string;
+  addedBy: 'user' | 'char';
+  at: number;
+}
+
+/** 情侣任务 / 约定（完成打勾 + 加亲密度）。 */
+export interface CoupleTask {
+  id: string;
+  title: string;
+  done: boolean;
+  by?: 'user' | 'char';
+  createdAt: number;
+  doneAt?: number;
+}
+
+/** 悄悄话 / 留言信箱：一条私密留言。 */
+export interface CoupleWhisper {
+  id: string;
+  author: 'user' | 'char';
+  text: string;
+  at: number;
+}
+
+/** 每日互动类型：亲一下 / 抱一下 / 牵手 / 送礼物。 */
+export type CoupleInteractionKind = 'kiss' | 'hug' | 'hold' | 'gift';
+
+/** 每日互动记录（一键互动触发动画 / 文字反馈并加亲密度）。 */
+export interface CoupleInteraction {
+  id: string;
+  kind: CoupleInteractionKind;
+  by: 'user' | 'char';
+  /** 对方的一句反馈文字（角色侧由 LLM 生成；兜底用模板） */
+  note?: string;
+  at: number;
+}
+
+/**
+ * 来往·情侣空间（参考 QQ 情侣空间）。挂在 CharacterProfile 上（每个角色一份），
+ * 由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文，
+ * 让角色「知道」恋爱天数 / 亲密度 / 最近动态 / 待办约定 / 悄悄话，据此扮演 + 主动互动。
+ */
+export interface CoupleSpace {
+  /** 在一起纪念日（YYYY-MM-DD）：计算「已相恋 X 天」 */
+  anniversaryDate?: string;
+  /** 亲密度（随互动增长，0 起、无上限；UI 按每 100 一级展示进度条） */
+  intimacy: number;
+  moments: CoupleMoment[];
+  anniversaries: CoupleAnniversary[];
+  photos: CouplePhoto[];
+  tasks: CoupleTask[];
+  whispers: CoupleWhisper[];
+  /** 最近的每日互动记录（保留若干条） */
+  interactions: CoupleInteraction[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**
