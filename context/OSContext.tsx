@@ -22,6 +22,7 @@ import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
+import { resolveAuxApi } from '../utils/auxApi';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import { refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';
@@ -1676,6 +1677,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   charactersRef.current = characters;
   const apiConfigRef = useRef(apiConfig);
   apiConfigRef.current = apiConfig;
+  const auxApiConfigRef = useRef(auxApiConfig);
+  auxApiConfigRef.current = auxApiConfig;
 
   // Keep the MiniMax endpoint module in sync with the user's region choice
   // so every minimaxFetch() call reads the latest preference.
@@ -1837,9 +1840,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 3c. 情绪评估 fire-and-forget — 与主 API 并行，沿用 useChatAI 的 API 选择逻辑：
               //     角色专属情绪 API > 主 apiConfig（与记忆宫殿副 API 完全独立）
               if (!payload.flags.promptBuildSkipped && !isEmotionEvalSkipped() && isScheduleFeatureOn(char) && char.emotionConfig?.enabled) {
+                  // 后台情绪评估走辅助任务通道：角色自带情绪 API 优先，否则副 API（回落主 API）
                   const emotionApi = (char.emotionConfig.api?.baseUrl)
                       ? char.emotionConfig.api
-                      : { baseUrl: apiConfigRef.current.baseUrl, apiKey: apiConfigRef.current.apiKey, model: apiConfigRef.current.model };
+                      : resolveAuxApi(auxApiConfigRef.current, apiConfigRef.current);
                   if (emotionApi.baseUrl && currentUserProfile) {
                       evaluateEmotionBackground(char, currentUserProfile, systemPrompt, apiMessages, emotionApi)
                           .then((innerState) => {

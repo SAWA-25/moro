@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { AppID, XhsFeedPost } from '../types';
 import { DB } from '../utils/db';
 import { generateFeedBatch, generateAuthorReply, FEED_BATCH_SIZE } from '../utils/xhsFeed';
+import { resolveAuxApi } from '../utils/auxApi';
 
 /**
  * 见闻簿 App —— 本地生成信息流版（黑白拼贴手账皮肤）。
@@ -67,8 +68,10 @@ const PostCard: React.FC<{ post: XhsFeedPost; onClick: () => void }> = ({ post, 
 );
 
 const SocialApp: React.FC = () => {
-    const { closeApp, openApp, addToast, apiConfig, characters, userProfile } = useOS();
-    const apiReady = !!apiConfig?.baseUrl && !!apiConfig?.model;
+    const { closeApp, openApp, addToast, apiConfig, auxApiConfig, characters, userProfile } = useOS();
+    // 见闻簿是「聊天以外」的辅助功能：走副 API（未配置时回落主 API）
+    const feedApi = resolveAuxApi(auxApiConfig, apiConfig);
+    const apiReady = !!feedApi?.baseUrl && !!feedApi?.model;
 
     const [posts, setPosts] = useState<XhsFeedPost[]>([]);
     const [loaded, setLoaded] = useState(false);
@@ -104,7 +107,7 @@ const SocialApp: React.FC = () => {
         setGenerating(true);
         try {
             const stock = await DB.getXhsStockImages().catch(() => []);
-            const batch = await generateFeedBatch(apiConfig, characters, userProfile, stock);
+            const batch = await generateFeedBatch(feedApi, characters, userProfile, stock);
             await DB.saveXhsFeedPosts(batch);
             setPosts(prev => [...batch, ...prev]);
             addToast(`又剪了 ${batch.length} 张贴上`, 'success');
@@ -148,7 +151,7 @@ const SocialApp: React.FC = () => {
             setReplying(true);
             try {
                 const authorChar = detail.charId ? characters.find(c => c.id === detail.charId) : undefined;
-                const reply = await generateAuthorReply(apiConfig, detail, text, userProfile, authorChar);
+                const reply = await generateAuthorReply(feedApi, detail, text, userProfile, authorChar);
                 patchPost(detail.id, cur => ({ comments: [...cur.comments, reply] }));
             } catch { /* 回批失败不打扰 */ } finally {
                 setReplying(false);

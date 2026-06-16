@@ -346,6 +346,7 @@ const Chat: React.FC = () => {
         char,
         userProfile,
         apiConfig,
+        auxApiConfig,
         groups,
         emojis: aiVisibleEmojis,
         categories: visibleCategories,
