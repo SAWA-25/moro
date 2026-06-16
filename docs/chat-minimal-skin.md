@@ -11,7 +11,7 @@
 | 观感点 | 由谁实现 | 默认值 |
 |--------|----------|--------|
 | 背景 #EDEDED 纯色 | `apps/Chat.tsx` `chatRootClass`（`chromeStyle==='soft'`）| `bg-[#ededed]`（原 `#fafafa`）|
-| 白色悬浮圆角顶栏 + 居中头像 + 细线灰图标 | `components/chat/ChatHeaderShell.tsx`（`headerStyle==='minimal'` + `headerAlign==='center'`）| 已是默认 |
+| 白色悬浮圆角顶栏 + 居中头像（下沉叠在下边缘）+ 细线灰图标 + 右侧 ☰ | `components/chat/ChatHeaderShell.tsx`（`headerStyle==='minimal'` + `headerAlign==='center'`）| 已是默认 |
 | 顶部状态签名（顶栏上方居中小灰字）| `ConvoSettings.headerDecorText` → `ChatHeaderShell` `decorText` | 用户自定义（每会话）|
 | 日期分割「🤍 Today 22:28 💬」| `apps/Chat.tsx` 消息流时间分割线 | 已有爱心 + 对话气泡图标 |
 | 纯浅灰胶囊气泡·无描边无阴影 | `components/chat/MessageItem.tsx` 新增 `bubbleVariant: 'plain'` | 默认（`osTheme.chatBubbleStyle \|\| 'plain'`）|
@@ -37,4 +37,11 @@
 - `chatBackgroundStyle`：`plain` / `grid` / `paper` / `mesh`，或给角色单设 `char.chatBackground` 背景图。
 - 顶 / 底状态签名：聊天设置面板的「顶栏文案 / 底部文案」（`headerDecorText` / `footerDecorText`）。
 
-> 注：顶栏右侧目前是齿轮（聊天设置）+ ⋮（更多），非参考图的单个 ☰；头像为顶栏内居中（未做「压在顶栏下边缘」的下沉叠放）。两处是与参考图的细微差异，不影响整体观感，后续可按需细化。
+## 顶栏极简化细节（`ChatHeaderShell.tsx`）
+
+对齐参考图，仅在 `headerStyle==='minimal'`（默认）下生效，其它顶栏风格不变：
+
+- **右侧单个 ☰**：菜单按钮图标由 `DotsThreeVertical`（⋮）换成 `List`（☰）。Chat.tsx 只传 `onOpenSettings`（聊天设置），故右侧本就是单个按钮。
+- **居中头像下沉叠放**：`sinkAvatar = useCenteredLayout && headerStyle==='minimal'`。此时只渲染一枚大头像（`w-16`），用 `translate-y-[26px]` 把它压到白色顶栏下边缘、叠出卡片之外（transform 不影响布局、不会撑高顶栏；根容器 `overflow-hidden` 只裁屏幕边缘，卡片内的上下叠放不受影响）。
+- **省去顶栏内角色名**：下沉布局里不再显示 `activeCharacter.name`（参考图顶栏无名字）；昵称改由消息气泡上方的标签承载。若有情绪 buff，则把 buff 行放到头像上方空白处保留显示。
+- 想恢复「顶栏显示名字 / 非下沉头像」：把 `osTheme.chatHeaderStyle` 从 `minimal` 切到 `default`/`wechat` 等，或 `chatHeaderAlign` 改 `left`。
