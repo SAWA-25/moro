@@ -22,7 +22,6 @@ import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
-import { resolveAuxApi } from '../utils/auxApi';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
 import { refreshPresetRegexCache } from '../utils/presets';
 import { extractHtmlBlocks } from '../utils/htmlPrompt';

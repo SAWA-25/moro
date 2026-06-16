@@ -4,6 +4,7 @@ import { RegexScriptData } from '../types';
 import {
     PLACEMENT_LABELS,
     createEmptyRegexScript,
+    looksLikeWrapMisconfig,
 } from '../utils/regex/engine';
 import {
     getGlobalRegexScripts,
@@ -82,6 +83,14 @@ const RegexApp: React.FC = () => {
 
     const handleToggle = (script: RegexScriptData) => {
         void persist(scripts.map(s => s.id === script.id ? { ...s, disabled: !s.disabled } : s));
+    };
+
+    /** 「误配置一键修」：检测到 USER_INPUT + 看起来在包裹但没勾 promptOnly 时，
+     *  让用户一键把 promptOnly 设成 true（同 ST：只改寄给 LLM 的提示词，不动原文）。 */
+    const handleFixWrapMisconfig = (script: RegexScriptData) => {
+        if (!window.confirm(`把「${script.scriptName || '没名字的补丁'}」改成只动寄出的信？\n\n（勾上 promptOnly：包裹只在发给 LLM 时生效，聊天原文和气泡都不再被改写）`)) return;
+        void persist(scripts.map(s => s.id === script.id ? { ...s, promptOnly: true } : s));
+        addToast('改好了：现在只动寄出的信', 'success');
     };
 
     const handleDelete = (script: RegexScriptData) => {
@@ -261,6 +270,15 @@ const RegexApp: React.FC = () => {
                                 <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/60">
                                     深度 {script.minDepth ?? '∞'}~{script.maxDepth ?? '∞'}
                                 </span>
+                            )}
+                            {looksLikeWrapMisconfig(script) && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleFixWrapMisconfig(script); }}
+                                    title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
+                                    className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#1c1b1a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+                                >
+                                    ⚠ 像在改原文？一键改成只动寄出的信
+                                </button>
                             )}
                         </div>
                     </div>

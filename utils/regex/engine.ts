@@ -281,3 +281,20 @@ export function normalizeRegexScript(raw: any): RegexScriptData | null {
         maxDepth: num(raw.maxDepth),
     };
 }
+
+/**
+ * 检测「这条脚本看起来是想包裹/标注用户消息但配错了」的常见误配置：
+ * - placement 含 USER_INPUT
+ * - 同时 !markdownOnly && !promptOnly（ST 语义 = 直接改原文 → 包裹会落库）
+ * - replaceString 比 findRegex 字面长（启发：在加文本/包裹，不是在删文本）
+ *
+ * 命中 = 多半是预设作者笔误，本意应是 promptOnly=true（只改寄出的信）。
+ * 补丁铺 / 活字盘的卡片上据此显示一个徽章 + 一键修正。
+ */
+export function looksLikeWrapMisconfig(s: RegexScriptData): boolean {
+    if (!s || s.disabled) return false;
+    if (!Array.isArray(s.placement) || !s.placement.includes(regex_placement.USER_INPUT)) return false;
+    if (s.markdownOnly || s.promptOnly) return false;
+    if (typeof s.replaceString !== 'string' || typeof s.findRegex !== 'string') return false;
+    return s.replaceString.length > s.findRegex.length;
+}

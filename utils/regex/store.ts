@@ -15,7 +15,7 @@
  */
 
 import { CharacterProfile, RegexScriptData } from '../../types';
-import { getRegexedString, getScriptFindRegex, normalizeRegexScript, regex_placement, RegexApplyParams } from './engine';
+import { getRegexedString, getScriptFindRegex, normalizeRegexScript, regex_placement, substitute_find_regex, RegexApplyParams } from './engine';
 
 const LS_KEY = 'moro_global_regex_scripts';
 
@@ -84,11 +84,50 @@ export const setPresetRegexScripts = (scripts: RegexScriptData[] | null | undefi
     }
 };
 
-/** 全局（在前）+ 预设自带（居中）+ 角色局部（在后）合并，含禁用项（engine 内部跳过 disabled）。
- *  顺序与 ST getRegexScripts 一致：GLOBAL → PRESET → SCOPED。 */
+// ── 内置显示层剥离脚本（防御预设作者把「Human_inputs 包裹」配成改原文）─────────
+//
+// SillyTavern 社区里有一类预设脚本爱给用户消息加 `<Human_inputs>…</Human_inputs>`
+// 之类的「提示词工程包裹」标签——本意是「只改寄出给 LLM 的提示词」（promptOnly=true）。
+// 但常被作者错配成 placement=[USER_INPUT] + promptOnly=false + markdownOnly=false：
+// ST 语义这叫「直接改原文」，于是包裹就落库了，历史气泡里全是 <Human_inputs>。
+//
+// 这里追加一组内置 markdownOnly 显示层脚本，对配对出现的包裹标签做透明剥离：
+// 只动渲染、不动落库原文（开印停印都生效，没法关；想看见原文进编辑态即可）。
+// 只剥「开 + 对应闭」的配对，不剥裸单 tag，避免误伤用户真的发了一段 XML 教学。
+const stripPairScript = (id: string, openTag: string, closeTag: string): RegexScriptData => ({
+    id: `__builtin_strip_${id}`,
+    scriptName: `内置剥离 ${openTag}…${closeTag}`,
+    // 注意 [\s\S] 跨行匹配 + 非贪婪 + 不捕获组：只把包裹本身剥掉，里头内容保留
+    findRegex: `/${openTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*([\\s\\S]*?)\\s*${closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/g`,
+    replaceString: '$1',
+    trimStrings: [],
+    placement: [regex_placement.USER_INPUT, regex_placement.AI_OUTPUT],
+    disabled: false,
+    markdownOnly: true,  // 只动气泡渲染，不动落库 / 不动发给 LLM 的 prompt
+    promptOnly: false,
+    runOnEdit: false,
+    substituteRegex: substitute_find_regex.NONE,
+    minDepth: null,
+    maxDepth: null,
+});
+
+const BUILTIN_DISPLAY_STRIPS: RegexScriptData[] = [
+    // 用户消息包裹
+    stripPairScript('human_inputs', '<Human_inputs>', '</Human_inputs>'),
+    stripPairScript('user_input', '<user_input>', '</user_input>'),
+    stripPairScript('user_cap', '<User>', '</User>'),
+    // AI 回复包裹
+    stripPairScript('assistant_response', '<Assistant_response>', '</Assistant_response>'),
+    stripPairScript('assistant_output', '<assistant_output>', '</assistant_output>'),
+    stripPairScript('assistant_cap', '<Assistant>', '</Assistant>'),
+];
+
+/** 全局（在前）+ 预设自带（居中）+ 角色局部（在后）+ 内置剥离（兜底）合并，含禁用项
+ *  （engine 内部跳过 disabled）。顺序与 ST getRegexScripts 一致：GLOBAL → PRESET → SCOPED；
+ *  内置剥离脚本追加在尾部、只在显示层（markdownOnly）生效，详见上方 BUILTIN_DISPLAY_STRIPS。 */
 export const collectRegexScripts = (char?: CharacterProfile | null): RegexScriptData[] => {
     const scoped = Array.isArray(char?.regexScripts) ? char!.regexScripts! : [];
-    return [...getGlobalRegexScripts(), ...presetCache, ...scoped];
+    return [...getGlobalRegexScripts(), ...presetCache, ...scoped, ...BUILTIN_DISPLAY_STRIPS];
 };
 
 export interface ApplyRegexOptions extends Omit<RegexApplyParams, 'charName'> {
@@ -105,7 +144,15 @@ export const applyRegexToText = (
     try {
         const scripts = collectRegexScripts(char);
         if (scripts.length === 0) return text;
-        return getRegexedString(text, placement, scripts, { userName, charName: char?.name, ...params });
+        const out = getRegexedString(text, placement, scripts, { userName, charName: char?.name, ...params });
+        // Dev-only 调试钩子：浏览器控制台敲 `window.__moroDebugRegex = true` 后，每次
+        // 正则入口都会 console.debug 一行命中摘要（placement / 脚本数 / 前后 30 字）。
+        // 便于排查「脚本没生效」「包裹没剥干净」之类的疑似问题（详见 docs/dev-debug.md）。
+        if (typeof window !== 'undefined' && (window as any).__moroDebugRegex && out !== text) {
+            const preview = (s: string) => s.length > 30 ? s.slice(0, 30) + '…' : s;
+            console.debug('[Regex]', { placement, scripts: scripts.length, in: preview(text), out: preview(out), isMarkdown: !!params.isMarkdown, isPrompt: !!params.isPrompt });
+        }
+        return out;
     } catch (e) {
         console.warn('[Regex] 执行失败，返回原文:', e);
         return text;
@@ -120,10 +167,13 @@ export const applyRegexToText = (
 // HTML 也就渲染不出来。这里把「显示层脚本能匹配到的整段」找出来，交给
 // applyAssistantPostProcessing 当作富块整块保护（不拆泡、不被 sanitize 误伤）。
 
-/** 当前对 AI 输出生效的显示层（markdownOnly）脚本 */
+/** 当前对 AI 输出生效的显示层（markdownOnly）脚本。
+ *  排除内置剥离脚本：它们做的是「擦掉包裹标签」而不是「美化整段」，
+ *  不该把命中区间当 rich-block 整块保护（否则反而阻碍正常拆泡）。 */
 const collectDisplayScripts = (char?: CharacterProfile | null): RegexScriptData[] =>
     collectRegexScripts(char).filter(s =>
         s && !s.disabled && s.markdownOnly
+        && !s.id.startsWith('__builtin_strip_')
         && Array.isArray(s.placement) && s.placement.includes(regex_placement.AI_OUTPUT));
 
 /**

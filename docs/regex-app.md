@@ -62,6 +62,25 @@ iframe 渲染（脚本可执行，详见 `utils/chatRichContent.ts` 头注）。
 - 没有 ST 的「角色卡脚本需用户授权」弹窗：随卡导入的脚本直接生效，
   可在正则 App「角色」标签里逐条停用/删除。预设自带正则同理 —— 随预设导入直接生效
   （无 ST 的 `preset_allowed_regex` 授权门），在活字盘「随字版的补丁」区逐条新增/编辑/停用/拆除
+- **内置显示层剥离 + 误配置徽章**（防御预设作者把「`<Human_inputs>` 包裹」配成改原文）：
+
+  - `utils/regex/store.ts` 的 `BUILTIN_DISPLAY_STRIPS` 是一组 `markdownOnly=true` 的内置脚本，
+    透明剥离 6 对 LLM 提示词工程包裹标签的「配对」出现：
+    `<Human_inputs>…</Human_inputs>` / `<user_input>…</user_input>` / `<User>…</User>` /
+    `<Assistant_response>…</Assistant_response>` / `<assistant_output>…</assistant_output>` /
+    `<Assistant>…</Assistant>`。只动气泡渲染、不动落库原文、不动发给 LLM 的 prompt；
+    用户脚本先执行，内置脚本最后兜底（不会与用户的同名替换抢手）。只剥配对，不剥裸单 tag，
+    避免误伤用户真发的 XML 教学。被排除在 `findDisplayRegexSpans` 的分泡保护之外，
+    不会把命中区间当 rich-block 阻碍正常拆泡
+  - `utils/regex/engine.looksLikeWrapMisconfig` 启发：`placement.includes(USER_INPUT)` +
+    `!markdownOnly && !promptOnly` + `replaceString.length > findRegex.length` → 多半是
+    预设作者把「包裹」配成了「改原文」（ST/Moro 语义都会落库）。命中时补丁铺
+    （`apps/RegexApp.tsx`）和活字盘（`apps/PresetApp.tsx`）的卡片上显示「⚠ 像在改原文？一键改」
+    黄色徽章，点击 → confirm → `promptOnly` 置 true
+  - Dev 调试：浏览器控制台 `window.__moroDebugRegex = true`，之后每次正则入口
+    （USER_INPUT / AI_OUTPUT 落库前、prompt 组装、气泡渲染）有命中改写时
+    `console.debug` 一行 `{ placement, scripts, in, out, isMarkdown, isPrompt }`，
+    用于排查「脚本没生效 / 包裹没剥干净」类问题（更全的调试约定见 `docs/dev-debug.md`）
 
 ## 界面命名（黑白拼贴手账重构）
 

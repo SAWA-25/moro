@@ -34,7 +34,7 @@ import {
     importTavernPreset,
 } from '../utils/presets';
 import { setPresetRegexScripts } from '../utils/regex/store';
-import { PLACEMENT_LABELS, createEmptyRegexScript } from '../utils/regex/engine';
+import { PLACEMENT_LABELS, createEmptyRegexScript, looksLikeWrapMisconfig } from '../utils/regex/engine';
 import RegexEditor from '../components/regex/RegexEditor';
 import type { PresetPrompt, PresetPromptOrderEntry, RegexScriptData, TavernPreset } from '../types';
 import {
@@ -530,6 +530,18 @@ const PresetApp: React.FC = () => {
         });
     };
 
+    /** 「误配置一键修」：USER_INPUT + 看起来在包裹但没勾 promptOnly → 一键改成 promptOnly=true。
+     *  详见 utils/regex/engine.looksLikeWrapMisconfig 的启发式 */
+    const fixPresetRegexWrap = (id: string) => {
+        const target = (active?.regexScripts ?? []).find(s => s.id === id);
+        if (!target) return;
+        if (!window.confirm(`把「${target.scriptName || '没名字的补丁'}」改成只动寄出的信？\n\n（勾上 promptOnly：包裹只在发给 LLM 时生效，聊天原文和气泡都不再被改写）`)) return;
+        mutateActive(d => {
+            d.regexScripts = (d.regexScripts ?? []).map(s => (s.id === id ? { ...s, promptOnly: true } : s));
+        });
+        addToast('改好了：现在只动寄出的信', 'success');
+    };
+
     const deletePresetRegex = (id: string) => {
         if (!window.confirm('把这条随字版的正则补丁拆掉？（只动这副字版，不影响补丁铺里的通用补丁）')) return;
         mutateActive(d => {
@@ -921,6 +933,18 @@ const PresetApp: React.FC = () => {
                                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                                         <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#1c1b1a]/70">{scope}</span>
                                                         {places && <span className="label-mono text-[8px] text-[#1c1b1a]/40 truncate">{places}</span>}
+                                                        {looksLikeWrapMisconfig(s) && (
+                                                            <span
+                                                                role="button"
+                                                                tabIndex={0}
+                                                                onClick={(e) => { e.stopPropagation(); fixPresetRegexWrap(s.id); }}
+                                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); fixPresetRegexWrap(s.id); } }}
+                                                                title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
+                                                                className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#1c1b1a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+                                                            >
+                                                                ⚠ 像在改原文？一键改
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </button>
                                                 <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#1c1b1a]/40 hover:text-[#1c1b1a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
