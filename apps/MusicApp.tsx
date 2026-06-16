@@ -11,7 +11,6 @@ import {
 } from './music/MusicUI';
 import NeteaseProfilePage from './music/NeteaseProfilePage';
 import CharVisitPage from './music/CharVisitPage';
-import { discussMusic, type ListenMsg, type ListenAction } from '../utils/listenTogether';
 
 // ------------------------- 工具 -------------------------
 const fmtTime = (s: number) => {
@@ -21,18 +20,18 @@ const fmtTime = (s: number) => {
   return `${m}:${ss.toString().padStart(2, '0')}`;
 };
 
-type View = 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'listen_together';
+type View = 'search' | 'settings' | 'player' | 'profile' | 'visit_char';
 
 // ========================= 主组件 =========================
 const MusicApp: React.FC = () => {
-  const { closeApp, addToast, characters, userProfile, apiConfig } = useOS();
+  const { closeApp, addToast, characters, userProfile } = useOS();
   const {
     cfg, setCfg,
     current, playing, progress, duration, loadingSong,
     lyric, tlyric, activeLyricIdx,
     profile, playSong, togglePlay, nextSong, prevSong, seek,
     liked, toggleLike, setToastHandler,
-    listeningTogetherWith, addListeningPartner, removeListeningPartner,
+    listeningTogetherWith, removeListeningPartner,
     addLocalSong, removeLocalSong, localAlbumSongs,
     playMode, setPlayMode,
     regeneratingId, regeneratingStatus,
@@ -103,125 +102,6 @@ const MusicApp: React.FC = () => {
   const [results, setResults] = useState<Song[]>([]);
   const [searching, setSearching] = useState(false);
   const lyricBoxRef = useRef<HTMLDivElement | null>(null);
-
-  // ── 一起听歌 ──
-  const [listenCharId, setListenCharId] = useState<string | null>(null);
-  const [listenMsgs, setListenMsgs] = useState<ListenMsg[]>([]);
-  const [listenInput, setListenInput] = useState('');
-  const [listenBusy, setListenBusy] = useState(false);
-  const [showListenPicker, setShowListenPicker] = useState(false);
-  const listenScrollRef = useRef<HTMLDivElement | null>(null);
-  const listenChar = useMemo(() => characters.find(c => c.id === listenCharId) || null, [characters, listenCharId]);
-  // 标记「这次换歌是角色自己发起的」，避免 song_changed 监听重复发评论
-  const charInitiatedRef = useRef(false);
-  const lastSongIdRef = useRef<number | null>(null);
-
-  const lyricSnippet = useMemo(() => {
-    if (activeLyricIdx < 0 || !lyric.length) return '';
-    return lyric.slice(Math.max(0, activeLyricIdx - 1), activeLyricIdx + 2).map(l => l.text).filter(Boolean).join(' / ');
-  }, [lyric, activeLyricIdx]);
-
-  // 执行角色的音乐动作（换歌 / 暂停 / 继续 / 下一首）
-  const executeListenAction = useCallback(async (action: ListenAction): Promise<string | null> => {
-    if (action.kind === 'pause') { if (playing) togglePlay(); return '⏸ 暂停了'; }
-    if (action.kind === 'resume') { if (!playing) togglePlay(); return '▶️ 继续播放'; }
-    if (action.kind === 'next') { nextSong(); return '⏭ 切到了下一首'; }
-    if (action.kind === 'change_song') {
-      charInitiatedRef.current = true;
-      // 先搜真实歌曲，搜不到再从角色歌单 / 一起写的歌 / 当前队列兜底
-      try {
-        const r = await musicApi.search(cfg, action.query);
-        const s = (r?.result?.songs || [])[0];
-        if (s) {
-          const song: Song = {
-            id: s.id, name: s.name,
-            artists: (s.ar || s.artists || []).map((a: any) => a.name).join(' / '),
-            album: s.al?.name || s.album?.name || '', albumPic: toHttps(s.al?.picUrl || s.album?.picUrl || ''),
-            duration: (s.dt || s.duration || 0) / 1000, fee: s.fee ?? 0,
-          };
-          await playSong(song, { alsoSetQueue: true });
-          return `🎵 换成了《${song.name}》`;
-        }
-      } catch { /* 搜索失败走兜底 */ }
-      const fb = listenChar?.musicProfile?.playlists.flatMap(p => p.songs)[0] || localAlbumSongs[0];
-      if (fb) { await playSong(fb, { alsoSetQueue: true }); return `🎵 换成了《${fb.name}》`; }
-      charInitiatedRef.current = false;
-      return null;
-    }
-    return null;
-  }, [playing, togglePlay, nextSong, cfg, playSong, listenChar, localAlbumSongs]);
-
-  // 跑一轮「角色就音乐说话 + 可能动作」
-  const runDiscuss = useCallback(async (trigger: 'enter' | 'song_changed' | 'take_over' | 'user', userMsg?: string) => {
-    const char = characters.find(c => c.id === listenCharId);
-    if (!char || listenBusy) return;
-    setListenBusy(true);
-    try {
-      const song = current ? { name: current.name, artists: current.artists } : null;
-      const { reply, action } = await discussMusic({
-        char, user: userProfile, api: apiConfig, song, playing, lyricSnippet,
-        history: listenMsgs, userMsg, trigger,
-      });
-      let actionNote: string | null = null;
-      if (action.kind !== 'none') actionNote = await executeListenAction(action);
-      setListenMsgs(prev => [...prev, { role: 'char', text: reply, action: actionNote ? action : undefined, at: Date.now() }]);
-    } finally {
-      setListenBusy(false);
-    }
-  }, [characters, listenCharId, listenBusy, current, userProfile, apiConfig, playing, lyricSnippet, listenMsgs, executeListenAction]);
-
-  const greetPendingRef = useRef(false);
-  const enterListenTogether = useCallback((charId: string) => {
-    setListenCharId(charId);
-    setListenMsgs([]);
-    addListeningPartner(charId);
-    setShowListenPicker(false);
-    setView('listen_together');
-    lastSongIdRef.current = current?.id ?? null;
-    greetPendingRef.current = true;
-  }, [addListeningPartner, current]);
-
-  // 进入一起听后由角色先开口（用最新的 runDiscoss 闭包，避免 stale state）
-  useEffect(() => {
-    if (view !== 'listen_together' || !listenCharId || !greetPendingRef.current || listenBusy) return;
-    greetPendingRef.current = false;
-    void runDiscuss('enter');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, listenCharId, listenBusy]);
-
-  const exitListenTogether = useCallback(() => {
-    if (listenCharId) removeListeningPartner(listenCharId);
-    setListenCharId(null);
-    setView('profile');
-  }, [listenCharId, removeListeningPartner]);
-
-  const sendListenMsg = useCallback(() => {
-    const t = listenInput.trim();
-    if (!t || listenBusy) return;
-    setListenInput('');
-    setListenMsgs(prev => [...prev, { role: 'user', text: t, at: Date.now() }]);
-    void runDiscuss('user', t);
-  }, [listenInput, listenBusy, runDiscuss]);
-
-  // 歌曲自然切换（非角色发起）时，角色随口评一句新歌
-  useEffect(() => {
-    if (view !== 'listen_together' || !listenCharId) return;
-    const id = current?.id ?? null;
-    if (id === lastSongIdRef.current) return;
-    lastSongIdRef.current = id;
-    if (charInitiatedRef.current) { charInitiatedRef.current = false; return; } // 角色自己换的，executeListenAction 已出过话
-    if (!id) return;
-    const t = setTimeout(() => { void runDiscuss('song_changed'); }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id, view, listenCharId]);
-
-  // 新消息滚到底
-  useEffect(() => {
-    if (view !== 'listen_together') return;
-    const box = listenScrollRef.current;
-    if (box) box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
-  }, [listenMsgs, listenBusy, view]);
 
   // 歌词自动滚动：把 current line 对齐到滚动容器视觉中心
   // 注意 offsetTop 依赖 offsetParent，容器没 position:relative 时会跨到祖先节点、值偏大，
@@ -542,17 +422,6 @@ const MusicApp: React.FC = () => {
             <PlayControls playing={playing} loading={loadingSong} onPrev={prevSong} onToggle={togglePlay} onNext={nextSong} />
           </div>
 
-          {/* 喊角色一起听 */}
-          <div className="shrink-0 mt-3 flex justify-center">
-            <button
-              onClick={() => { if (companions[0]) enterListenTogether(companions[0].id); else setShowListenPicker(true); }}
-              className="px-4 py-2 rounded-full text-[12px] font-bold active:scale-95 transition flex items-center gap-1.5"
-              style={{ background: `${C.lavender}2e`, color: C.primary, border: `1px solid ${C.glow}55` }}
-            >
-              🎧 {companions[0] ? `和 ${companions[0].name} 一起听` : '喊 TA 一起听'}
-            </button>
-          </div>
-
           <div className="shrink-0 mt-3 w-full">
             <SubActions
               liked={liked}
@@ -670,7 +539,6 @@ const MusicApp: React.FC = () => {
           onOpenSearch={() => setView('search')}
           onOpenSettings={() => setView('settings')}
           onVisitChar={id => { setVisitCharId(id); setView('visit_char'); }}
-          onListenTogether={() => { if (companions[0]) enterListenTogether(companions[0].id); else setShowListenPicker(true); }}
         />
       )}
       {/* 手动对轴 modal — 全屏覆盖，不开新 view */}
@@ -842,83 +710,6 @@ const MusicApp: React.FC = () => {
           onBack={() => { setView('profile'); setVisitCharId(null); }}
           onOpenPlayer={() => setView('player')}
         />
-      )}
-
-      {view === 'listen_together' && listenChar && (
-        <div className="flex flex-col h-full relative" style={{ background: `linear-gradient(180deg, #ffffff 0%, ${C.bg} 55%, ${C.bgDeep} 100%)` }}>
-          <BokehBg />
-          <MizuHeader title="一起听" onBack={exitListenTogether} />
-          {/* 正在播放条 */}
-          <div className="relative z-10 mx-4 mt-1 rounded-2xl p-3 flex items-center gap-3" style={{ background: 'rgba(255,255,255,0.66)', border: `1px solid ${C.glow}55`, backdropFilter: 'blur(6px)' }}>
-            <img src={current?.albumPic || listenChar.avatar} alt="" className={`w-12 h-12 rounded-full object-cover border-2 border-white shadow ${playing ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold truncate" style={{ color: C.primary }}>{current?.name || '还没开始放歌'}</div>
-              <div className="text-[10px] truncate" style={{ color: C.muted }}>{current?.artists || `和 ${listenChar.name} 一起挑一首吧`}</div>
-            </div>
-            <button onClick={togglePlay} className="w-9 h-9 rounded-full flex items-center justify-center text-white active:scale-90 transition" style={{ background: C.primary }}>
-              {playing ? <PauseIcon size={16} weight="fill" /> : <PlayIcon size={16} weight="fill" />}
-            </button>
-            <button onClick={() => nextSong()} className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition" style={{ background: 'rgba(0,0,0,0.05)', color: C.primary }} title="下一首">
-              <span className="text-[15px]">⏭</span>
-            </button>
-          </div>
-
-          {/* 讨论区 */}
-          <div ref={listenScrollRef} className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-3 space-y-3 relative z-10">
-            <div className="text-center text-[11px]" style={{ color: C.faint }}>🎧 你正在和 {listenChar.name} 一起听歌，聊聊这首歌吧</div>
-            {listenMsgs.map((m, i) => m.role === 'user' ? (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[78%] px-3 py-2 rounded-2xl rounded-tr-md text-[13px] text-white" style={{ background: C.primary }}>{m.text}</div>
-              </div>
-            ) : (
-              <div key={i} className="flex justify-start items-end gap-2">
-                <img src={listenChar.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
-                <div className="max-w-[78%]">
-                  <div className="px-3 py-2 rounded-2xl rounded-tl-md text-[13px]" style={{ background: '#fff', color: C.primary, border: `1px solid ${C.glow}44` }}>{m.text}</div>
-                  {m.action && m.action.kind !== 'none' && (
-                    <div className="mt-1 inline-block text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${C.lavender}33`, color: C.primary }}>
-                      {m.action.kind === 'change_song' ? `🎵 ${m.action.query}` : m.action.kind === 'pause' ? '⏸ 暂停了音乐' : m.action.kind === 'resume' ? '▶️ 继续播放' : '⏭ 下一首'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-            {listenBusy && <div className="flex items-center gap-2 text-[11px]" style={{ color: C.muted }}><img src={listenChar.avatar} alt="" className="w-6 h-6 rounded-full object-cover" /> {listenChar.name} 正在听…</div>}
-          </div>
-
-          {/* 输入 + 交给 TA 挑 */}
-          <div className="relative z-10 px-3 py-2.5 flex items-center gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 10px)', borderTop: `1px solid ${C.glow}33` }}>
-            <button onClick={() => void runDiscuss('take_over')} disabled={listenBusy} className="shrink-0 px-3 py-2 rounded-full text-[12px] font-bold active:scale-95 transition disabled:opacity-50" style={{ background: `${C.lavender}33`, color: C.primary }} title="让 TA 来挑歌/安排">🎲 TA 来挑</button>
-            <input value={listenInput} onChange={e => setListenInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') sendListenMsg(); }} placeholder={`和 ${listenChar.name} 聊聊这首歌…`} className="flex-1 min-w-0 rounded-full px-3.5 py-2 text-[13px] outline-none" style={{ background: '#fff', border: `1px solid ${C.glow}55` }} disabled={listenBusy} />
-            <button onClick={sendListenMsg} disabled={listenBusy || !listenInput.trim()} className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white active:scale-90 transition disabled:opacity-40" style={{ background: C.primary }}>↑</button>
-          </div>
-        </div>
-      )}
-
-      {/* 一起听·选角色 */}
-      {showListenPicker && (
-        <div className="absolute inset-0 z-[80] flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setShowListenPicker(false)}>
-          <div className="w-full bg-white rounded-t-3xl p-5" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }} onClick={e => e.stopPropagation()}>
-            <div className="text-center text-[15px] font-black mb-1" style={{ color: C.primary }}>和谁一起听？</div>
-            <div className="text-center text-[11px] text-slate-400 mb-3">TA 会和你聊这首歌，也可能主动换歌、暂停</div>
-            {characters.length === 0 ? (
-              <div className="text-center text-[12px] text-slate-400 py-6">还没有角色，先去捏一个吧～</div>
-            ) : (
-              <div className="max-h-[46vh] overflow-y-auto no-scrollbar space-y-1.5">
-                {characters.map(c => (
-                  <button key={c.id} onClick={() => enterListenTogether(c.id)} className="w-full flex items-center gap-3 p-2.5 rounded-2xl active:scale-[0.98] transition text-left hover:bg-slate-50">
-                    <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-bold text-slate-800 truncate">{c.name}</div>
-                      {c.musicProfile?.bio && <div className="text-[11px] text-slate-400 truncate">{c.musicProfile.bio}</div>}
-                    </div>
-                    <span className="text-[16px]">🎧</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       )}
     </div>
   );

@@ -2549,7 +2549,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       memories: [],
       contextLimit: 500,
       emotionConfig: { enabled: true },
-      // 新建即视为已加入「往来」：直接在往来开聊，无需先「添加好友」
+      // 新建即视为已加入「往来」：无需再去名册「添加好友」就能在往来直接开聊
       addedToChat: true,
     };
     setCharacters(prev => [...prev, newChar]);
@@ -2560,11 +2560,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // window.location.reload() —— 既会整页重启，又会顺手创建一个空白 New Character。
   // 现在直接把完整角色写进 state + DB，导入即生效，不再刷新。
   const importCharacter = async (char: CharacterProfile) => {
-    // 导入即视为已加入「往来」：导入后无需「添加好友」即可在往来直接开聊
-    const imported: CharacterProfile = { ...char, addedToChat: char.addedToChat ?? true };
-    setCharacters(prev => [...prev.filter(c => c.id !== imported.id), imported]);
-    setActiveCharacterId(imported.id);
-    await DB.saveCharacter(imported);
+    // 导入即视为已加入「往来」：强制置 true，导入后无需「添加好友」即可在往来直接开聊
+    // （不沿用卡里可能带的 addedToChat:false，保证任何导入都直接出现在往来）
+    const withChat: CharacterProfile = { ...char, addedToChat: true };
+    setCharacters(prev => [...prev.filter(c => c.id !== withChat.id), withChat]);
+    setActiveCharacterId(withChat.id);
+    await DB.saveCharacter(withChat);
   };
   // DB 写入必须可 await：之前在 setCharacters updater 里 fire-and-forget 调 DB.saveCharacter，
   // 用户在 IDB 事务完成前关页/切页时更新会丢（角色资料"微信号/地区/签名"反复重新生成的根因）。

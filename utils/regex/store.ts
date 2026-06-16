@@ -50,19 +50,11 @@ export const saveGlobalRegexScripts = (scripts: RegexScriptData[]): void => {
 //
 // 预设 JSON 的 extensions.regex_scripts 导入时挂到 preset.regexScripts 上，只有该
 // 预设被激活、且印坊开印时才生效。聊天管线四个挂载点都是同步的（collectRegexScripts
-// 不能 await IndexedDB 里的激活预设）。
-//
-// 关键修复：原本预设正则只活在内存里，靠异步 refreshPresetRegexCache（启动读 IndexedDB）
-// / chatRequestPayload（发送时）填充。于是「刷新页面后第一帧」「离线推送在预热完成前落库」
-// 这些窗口里 presetCache 是空的 —— 显示层 markdownOnly 脚本无从命中（伪 XML 如
-// <Human_inputs> 照样露在气泡里），AI 输出落库的「改原文」脚本也漏掉、标签被永久写进库。
-// 这正是「全局正则生效、预设正则不生效」的根因（SillyTavern 预设常驻内存，没这个空窗）。
-// 改成与全局脚本（moro_global_regex_scripts）同款的 localStorage 持久化 + 懒预热：上一会话
-// 激活预设的正则同步落 LS，下次首帧就能同步读到，彻底消除异步空窗。LS 与激活态由 LS 写入
-// 三处（refreshPresetRegexCache / chatRequestPayload / 活字盘开关）保持同步，不会留陈旧脚本。
-const PRESET_LS_KEY = 'moro_preset_regex_scripts';
-// presetCache === null 表示「还没从 localStorage 预热过」（区别于「预热过、确实是空」的 []）。
-let presetCache: RegexScriptData[] | null = null;
+// 不能 await IndexedDB 里的激活预设），所以这里维持一份模块级缓存 —— 与 globalCache
+// 同款手法。缓存由 presets.ts 的 refreshPresetRegexCache（App 启动）、
+// chatRequestPayload（每次发送，复用已取到的激活预设）、活字盘（选预设 / 开关 /
+// 改动正则时即时反映）三处刷新。
+let presetCache: RegexScriptData[] = [];
 let presetCacheSig = '';
 
 /** 缓存内容指纹：只在「真正影响执行/显示」的字段变化时才广播刷新（见 setPresetRegexScripts） */
@@ -73,42 +65,20 @@ const presetCacheSignature = (scripts: RegexScriptData[]): string =>
         s.trimStrings, s.substituteRegex, s.minDepth ?? null, s.maxDepth ?? null,
     ])).join('|');
 
-/** 首次访问时从 localStorage 同步预热（与 globalCache 同款懒加载），保证首帧就拿得到。 */
-const ensurePresetCache = (): RegexScriptData[] => {
-    if (presetCache !== null) return presetCache;
-    try {
-        const raw = localStorage.getItem(PRESET_LS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        presetCache = Array.isArray(parsed)
-            ? parsed.map(normalizeRegexScript).filter((s): s is RegexScriptData => !!s)
-            : [];
-    } catch {
-        presetCache = [];
-    }
-    presetCacheSig = presetCacheSignature(presetCache);
-    return presetCache;
-};
-
 /** 当前生效的「预设自带正则」（无激活预设 / 印坊歇业时为空数组） */
-export const getPresetRegexScripts = (): RegexScriptData[] => ensurePresetCache();
+export const getPresetRegexScripts = (): RegexScriptData[] => presetCache;
 
 /**
  * 设置当前生效的「预设自带正则」。传 null/空 = 没有激活预设或预设没带正则。
- * 仅在内容指纹变化时更新、落 localStorage 并广播 REGEX_SCRIPTS_UPDATED_EVENT ——
- * chatRequestPayload 每次发送都会调用本函数（传入新对象引用），靠指纹去重避免每条消息都
- * 触发气泡层重渲染 / 重复写 LS。
+ * 仅在内容指纹变化时更新并广播 REGEX_SCRIPTS_UPDATED_EVENT —— chatRequestPayload
+ * 每次发送都会调用本函数（传入新对象引用），靠指纹去重避免每条消息都触发气泡层重渲染。
  */
 export const setPresetRegexScripts = (scripts: RegexScriptData[] | null | undefined): void => {
-    ensurePresetCache();   // 先按 LS 现状把 sig 初始化好，避免首次写入被误判为「没变化」
     const next = Array.isArray(scripts) ? scripts.filter((s): s is RegexScriptData => !!s) : [];
     const sig = presetCacheSignature(next);
     if (sig === presetCacheSig) return;
     presetCache = next;
     presetCacheSig = sig;
-    try {
-        if (next.length > 0) localStorage.setItem(PRESET_LS_KEY, JSON.stringify(next));
-        else localStorage.removeItem(PRESET_LS_KEY);
-    } catch { /* ignore quota */ }
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(REGEX_SCRIPTS_UPDATED_EVENT));
     }
@@ -118,7 +88,7 @@ export const setPresetRegexScripts = (scripts: RegexScriptData[] | null | undefi
  *  顺序与 ST getRegexScripts 一致：GLOBAL → PRESET → SCOPED。 */
 export const collectRegexScripts = (char?: CharacterProfile | null): RegexScriptData[] => {
     const scoped = Array.isArray(char?.regexScripts) ? char!.regexScripts! : [];
-    return [...getGlobalRegexScripts(), ...ensurePresetCache(), ...scoped];
+    return [...getGlobalRegexScripts(), ...presetCache, ...scoped];
 };
 
 export interface ApplyRegexOptions extends Omit<RegexApplyParams, 'charName'> {

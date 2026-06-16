@@ -21,16 +21,14 @@ const MONTHS_CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'
 const WEEK_CN = ['日', '一', '二', '三', '四', '五', '六'];
 
 const AlmanacApp: React.FC = () => {
-    const { closeApp, characters } = useOS();
+    const { closeApp } = useOS();
     const [section, setSection] = useState<'home' | 'schedule' | 'moments' | 'calendar' | 'collection' | 'wedding'>('home');
-    // 喜事页：只有在有角色求婚成功（进入婚姻筹备期）后才出现此栏目
-    const hasWedding = characters.some(c => c.marriage?.active);
 
     if (section === 'schedule') return <ScheduleApp onExit={() => setSection('home')} />;
     if (section === 'moments') return <SpecialMomentsApp onExit={() => setSection('home')} />;
     if (section === 'calendar') return <AlmanacCalendar onExit={() => setSection('home')} />;
     if (section === 'collection') return <CollectionHall onExit={() => setSection('home')} />;
-    if (section === 'wedding' && hasWedding) return <WeddingSection onExit={() => setSection('home')} />;
+    if (section === 'wedding') return <WeddingSection onExit={() => setSection('home')} />;
 
     const now = new Date();
 
@@ -121,8 +119,7 @@ const AlmanacApp: React.FC = () => {
                             </div>
                         </PaperNote>
 
-                        {/* 喜事（婚姻筹备期）：仅在有角色求婚成功后出现 */}
-                        {hasWedding && (
+                        {/* 喜事（婚姻筹备期，新增）*/}
                         <PaperNote rotate={-1.1} bg="#fdf0f4" className="px-5 py-5" onClick={() => setSection('wedding')}>
                             <WashiTape className="-top-2 right-9" color="rgba(231,150,180,0.66)" rotate={11} width={76} />
                             <div className="absolute top-3 right-4">
@@ -139,7 +136,6 @@ const AlmanacApp: React.FC = () => {
                                 求婚成功后的婚姻筹备期都收在这里：订婚日、商定的婚期、领证与婚礼，一步步记下来。
                             </div>
                         </PaperNote>
-                        )}
 
                         {/* 特别时光 */}
                         <PaperNote rotate={-0.8} bg="#fbf0f1" className="px-5 py-5" onClick={() => setSection('moments')}>

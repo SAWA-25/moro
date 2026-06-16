@@ -89,17 +89,12 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 - **只跟着这副字版走**：仅当本预设被激活、且印坊开印（`os_preset_enabled`）时生效。
   执行顺序排在补丁铺「满铺通用」（全局）之后、角色「只缝给 TA」（局部）之前 —— 对齐
   ST `getRegexScripts` 的 GLOBAL→PRESET→SCOPED。
-- **运行时缓存（含 localStorage 持久化）**：聊天管线四个挂载点是同步的、取不到 async 的
-  激活预设，所以 `utils/regex/store.ts` 把激活预设正则**持久化到 localStorage
-  （`moro_preset_regex_scripts`）+ 懒预热**进模块级 `presetCache`（`setPresetRegexScripts` 写库
-  +写 LS、`getPresetRegexScripts` 读、`collectRegexScripts` 合并）。这一步是「**预设正则在聊天
-  界面不生效**」的修复关键：早期 `presetCache` 只活内存、靠异步 `refreshPresetRegexCache`
-  填充，刷新页面后第一帧 / 离线推送在预热完成前落库时缓存为空，显示层 markdownOnly 脚本
-  命不中（伪 XML 如 `<Human_inputs>` 露在气泡里）、AI 输出落库的「改原文」脚本也漏掉。改成
-  与全局脚本同款持久化后，**首帧即可同步命中**。LS 写入三处保持同步：App 启动
+- **运行时缓存**：聊天管线四个挂载点是同步的、取不到 async 的激活预设，所以
+  `utils/regex/store.ts` 维持一份模块级 `presetCache`（`setPresetRegexScripts` 写、
+  `getPresetRegexScripts` 读、`collectRegexScripts` 合并）。缓存刷新三处：App 启动
   （`refreshPresetRegexCache`，OSContext）、每次发送（`buildChatRequestPayload` 复用
   已 await 的激活预设，免再读库）、活字盘里选预设 / 开关印坊 / 改动正则（即时反映到
-  聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染 / 重复写 LS）。
+  聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染）。
 - **管理**：活字盘激活字版下方的「随字版的补丁」区可逐条**新增 / 编辑 / 启停 / 拆除**
   （点一条即打开与补丁铺同一套缝纫台 `components/regex/RegexEditor.tsx`；只动这副字版，
   不碰补丁铺里的通用补丁）。改动经 `mutateActive` 落库并触发 `setPresetRegexScripts`，

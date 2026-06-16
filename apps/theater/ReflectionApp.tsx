@@ -1,22 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../../context/OSContext';
-import { ArrowsClockwise } from '@phosphor-icons/react';
+import { Users, Sparkle, MoonStars, ArrowsClockwise } from '@phosphor-icons/react';
 import {
     CharTrajectory,
+    TrajectoryNode,
     ReflectionScene,
     loadOrGenerateTrajectory,
     generateReflection,
     nodeWhen,
 } from '../../utils/theaterTimeline';
-import { Shell, CharPicker, ErrorNote } from './TrajectoryApp';
-import { PaperCard, WashiTape, WASHI, INK, INK_SOFT } from './scrapbook';
+import { Shell, CharPicker } from './TrajectoryApp';
 
 /**
  * 小剧场·对影：同一个人，在不同时间里的相逢。
  * 看见 TA 并不是突然变成今天的样子；也看见某个人，真的让命运偏离过原本的方向。
  * 举杯邀明月，对影成几人。—— 联动「轨迹」的时间节点。
- *
- * 界面＝拼贴手账「双重曝光」：从旧时间线里挑两张剪贴，叫两个 TA 在同一页照面。
  */
 
 interface Props { onExit: () => void; }
@@ -89,19 +87,15 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
     // ── 角色选择页 ──
     if (!selectedCharId) {
         return (
-            <Shell onBack={onExit} title="对影" en="REFLECTION">
-                <div className="px-7 pt-3 pb-6">
-                    <PaperCard tilt={0.6} tape="butter" className="px-6 py-6">
-                        <div className="text-2xl mb-2 select-none">🌙🍶</div>
-                        <p className="text-[13px] leading-relaxed" style={{ color: '#6b6456' }}>
-                            同一个人，在不同时间里的相逢。<br />
-                            看见 TA 并非突然变成今天的样子，<br />
-                            也看见——是谁让命运偏离过原本的方向。
-                        </p>
-                        <p className="text-[12.5px] mt-2.5" style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', color: '#8a7c5e' }}>
-                            举杯邀明月，对影成几人。
-                        </p>
-                    </PaperCard>
+            <Shell onBack={onExit} title="对影">
+                <div className="px-6 pt-2 pb-5 text-center">
+                    <Users size={30} weight="duotone" className="mx-auto text-amber-200/80 mb-3" />
+                    <p className="text-[13px] leading-relaxed text-white/55">
+                        同一个人，在不同时间里的相逢。<br />
+                        看见 TA 并非突然变成今天的样子，<br />
+                        也看见——是谁让命运偏离过原本的方向。<br />
+                        <span className="text-white/40 italic">举杯邀明月，对影成几人。</span>
+                    </p>
                 </div>
                 <CharPicker characters={characters} onPick={setSelectedCharId} />
             </Shell>
@@ -109,42 +103,49 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
     }
 
     return (
-        <Shell onBack={() => { setSelectedCharId(''); setTrajectory(null); setScene(null); }} title={selectedChar?.name || '对影'} en="REFLECTION">
+        <Shell onBack={() => { setSelectedCharId(''); setTrajectory(null); setScene(null); }} title={selectedChar?.name || '对影'}>
             {loadingTraj && (
                 <div className="flex flex-col items-center justify-center py-24 text-center px-8">
-                    <div className="text-3xl mb-4 select-none animate-pulse">🌙</div>
-                    <p className="text-[13px]" style={{ color: '#6b6456' }}>正在翻出 {selectedChar?.name} 走过的那条路…</p>
+                    <MoonStars size={32} weight="duotone" className="text-amber-200/80 animate-pulse mb-4" />
+                    <p className="text-[13px] text-white/60">正在翻出 {selectedChar?.name} 走过的那条路…</p>
                 </div>
             )}
 
-            {!loadingTraj && error && <ErrorNote text={error} onRetry={apiReady ? () => void loadTraj() : undefined} />}
+            {!loadingTraj && error && (
+                <div className="mx-6 mt-6 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-5 py-4 text-center">
+                    <p className="text-[12px] text-rose-100/80 leading-relaxed">{error}</p>
+                    {apiReady && <button onClick={() => void loadTraj()} className="mt-3 px-4 py-1.5 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/15 text-white/75 active:scale-95 transition">再试一次</button>}
+                </div>
+            )}
 
             {!loadingTraj && !error && trajectory && (
-                <div className="px-5 pb-14">
+                <div className="px-5 pb-12">
                     {/* 节点挑选 */}
-                    <div className="pt-3 pb-3">
-                        <p className="text-[12px] leading-relaxed mb-3 px-1" style={{ color: '#6b6456' }}>
-                            从 TA 的轨迹里挑 <span className="font-black px-1 rounded" style={{ background: WASHI.amber.base, color: WASHI.amber.ink }}>两个时刻</span>，让那两个 TA 在此刻照面。
+                    <div className="pt-2 pb-3">
+                        <p className="text-[11px] text-white/45 leading-relaxed mb-3 px-1">
+                            从 TA 的轨迹里挑 <span className="text-amber-200/90 font-bold">两个时刻</span>，让那两个 TA 在此刻相逢。
                         </p>
-                        <div className="space-y-2.5">
-                            {trajectory.nodes.map((node, i) => {
+                        <div className="space-y-2">
+                            {trajectory.nodes.map(node => {
                                 const idx = pick.indexOf(node.id);
                                 const selected = idx >= 0;
                                 return (
-                                    <PaperCard key={node.id} onClick={() => togglePick(node.id)} tilt={i % 2 ? 0.5 : -0.5}
-                                        className="px-3.5 py-2.5 flex items-start gap-2.5"
-                                        style={selected ? { background: 'linear-gradient(180deg,#fff6e2,#f6e9c8)', borderColor: WASHI.amber.edge } : undefined}>
-                                        <span className="mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black" style={selected ? { background: '#3a3630', color: '#fcf8ef' } : { background: 'rgba(176,162,138,0.3)', color: INK_SOFT }}>
+                                    <button
+                                        key={node.id}
+                                        onClick={() => togglePick(node.id)}
+                                        className={`w-full text-left rounded-xl px-3.5 py-2.5 border transition-all flex items-start gap-2.5 ${selected ? 'border-amber-300/40 bg-amber-400/[0.12]' : 'border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.05]'}`}
+                                    >
+                                        <span className={`mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black ${selected ? 'bg-amber-300 text-[#14101c]' : 'bg-white/10 text-white/40'}`}>
                                             {selected ? (idx + 1) : ''}
                                         </span>
                                         <span className="min-w-0 flex-1">
                                             <span className="flex items-center justify-between gap-2">
-                                                <span className="text-[12.5px] font-black truncate" style={{ color: INK }}>{node.title}</span>
-                                                <span className="text-[9px] shrink-0" style={{ color: INK_SOFT }}>{nodeWhen(node, trajectory.firstMetTs)}</span>
+                                                <span className="text-[12.5px] font-bold text-white/85 truncate">{node.title}</span>
+                                                <span className="text-[9px] text-white/35 shrink-0">{nodeWhen(node, trajectory.firstMetTs)}</span>
                                             </span>
-                                            <span className="block text-[11px] line-clamp-1 mt-0.5" style={{ color: '#8b8576' }}>{node.scene}</span>
+                                            <span className="block text-[11px] text-white/45 line-clamp-1 mt-0.5">{node.scene}</span>
                                         </span>
-                                    </PaperCard>
+                                    </button>
                                 );
                             })}
                         </div>
@@ -152,12 +153,9 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
                         <button
                             disabled={pick.length !== 2 || generating}
                             onClick={doGenerate}
-                            className="mt-5 w-full py-3 rounded-full text-[13px] font-black tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-45"
-                            style={pick.length === 2 && !generating
-                                ? { background: '#3a3630', color: '#fcf8ef', outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4, boxShadow: '0 12px 22px -12px rgba(58,54,48,0.6)' }
-                                : { background: 'rgba(255,253,247,0.9)', color: INK_SOFT, border: '1px dashed rgba(150,140,120,0.6)' }}
+                            className={`mt-4 w-full py-3 rounded-2xl text-[13px] font-black tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${pick.length === 2 && !generating ? 'bg-gradient-to-r from-amber-300 to-rose-300 text-[#14101c] shadow-lg shadow-amber-500/20' : 'bg-white/[0.06] text-white/30'}`}
                         >
-                            {generating ? <><span className="animate-pulse">✶</span> 两个 TA 正在照面…</> : <>🌗 对影成几人</>}
+                            {generating ? <><Sparkle size={15} weight="fill" className="animate-pulse" /> 两个 TA 正在照面…</> : <><Users size={15} weight="bold" /> 对影成几人</>}
                         </button>
                     </div>
 
@@ -170,24 +168,22 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
 };
 
 const ReflectionView: React.FC<{ scene: ReflectionScene; onRegen: () => void; regenerating: boolean }> = ({ scene, onRegen, regenerating }) => (
-    <PaperCard tilt={-0.5} className="mt-6 px-5 py-6 relative overflow-hidden animate-fade-in">
-        <WashiTape color="lilac" rotate={-6} className="absolute -top-3 right-6 w-20 h-6 rounded-[2px]" />
-        <div aria-hidden className="pointer-events-none absolute -top-4 -right-2 text-7xl opacity-[0.06] select-none">🌙</div>
+    <div className="mt-6 rounded-3xl border border-white/[0.08] bg-gradient-to-b from-white/[0.05] to-transparent px-5 py-6 animate-fade-in relative overflow-hidden">
+        <div aria-hidden className="pointer-events-none absolute -top-10 right-0 opacity-20"><MoonStars size={90} weight="fill" className="text-amber-200" /></div>
         <div className="text-center mb-5 relative z-10">
-            <h3 className="text-[24px] font-black tracking-wide" style={{ color: INK }}>{scene.title}</h3>
-            {scene.subtitle && <p className="text-[11.5px] mt-1.5" style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', color: '#8a7c5e' }}>{scene.subtitle}</p>}
+            <h3 className="text-2xl font-black tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-rose-200 to-amber-200">{scene.title}</h3>
+            {scene.subtitle && <p className="text-[11px] text-white/40 italic mt-1.5">{scene.subtitle}</p>}
         </div>
         <div className="space-y-3 relative z-10">
             {scene.lines.map((line, i) => {
                 if (line.who === 'narration') {
-                    return <p key={i} className="text-center text-[11.5px] px-4 py-1 leading-relaxed" style={{ fontFamily: 'var(--font-display)', fontStyle: 'italic', color: INK_SOFT }}>— {line.text} —</p>;
+                    return <p key={i} className="text-center text-[11.5px] text-white/40 italic px-4 py-1 leading-relaxed">— {line.text} —</p>;
                 }
                 const isNow = line.who === 'now';
-                const c = isNow ? WASHI.amber : WASHI.lilac;
                 return (
                     <div key={i} className={`flex ${isNow ? 'justify-end' : 'justify-start'}`}>
-                        <div className="max-w-[82%] px-3.5 py-2.5 text-[12.5px] leading-relaxed" style={{ background: c.base, color: '#4a4334', borderRadius: isNow ? '12px 12px 4px 12px' : '12px 12px 12px 4px', boxShadow: '0 6px 12px -8px rgba(70,62,48,0.4)' }}>
-                            <span className="block text-[9px] font-black mb-1 tracking-wider" style={{ color: c.ink }}>{isNow ? '此刻的 TA' : '从前的 TA'}</span>
+                        <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-[12.5px] leading-relaxed ${isNow ? 'bg-amber-400/[0.16] border border-amber-300/20 text-amber-50/90 rounded-br-md' : 'bg-indigo-400/[0.12] border border-indigo-300/15 text-indigo-50/85 rounded-bl-md'}`}>
+                            <span className={`block text-[9px] font-bold mb-1 tracking-wider ${isNow ? 'text-amber-200/70' : 'text-indigo-200/60'}`}>{isNow ? '此刻的 TA' : '从前的 TA'}</span>
                             {line.text}
                         </div>
                     </div>
@@ -195,11 +191,11 @@ const ReflectionView: React.FC<{ scene: ReflectionScene; onRegen: () => void; re
             })}
         </div>
         <div className="flex justify-center mt-6 relative z-10">
-            <button onClick={onRegen} disabled={regenerating} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[10.5px] font-black active:scale-95 transition disabled:opacity-45" style={{ background: 'rgba(255,253,247,0.95)', color: '#6b6456', border: '1px dashed rgba(150,140,120,0.6)' }}>
+            <button onClick={onRegen} disabled={regenerating} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-white/8 hover:bg-white/12 text-white/55 active:scale-95 transition disabled:opacity-40">
                 <ArrowsClockwise size={12} weight="bold" /> 再照一次
             </button>
         </div>
-    </PaperCard>
+    </div>
 );
 
 export default ReflectionApp;

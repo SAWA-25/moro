@@ -634,7 +634,7 @@ const PhoneShell: React.FC = () => {
   // 安全区策略（方案 B）：彼方/聊天/群聊/桌面这几个 App 已全屏铺底、自己给控件让位，外壳不再加 padding；
   // 其余尚未迁移、靠外壳兜底的 App，仍由外壳用单一来源变量 --safe-* 统一让出安全区，避免顶栏怼进状态栏。
   // TODO(safe-area-A): 把下列「未迁移」App 逐个改为自理安全区后，移除外壳这层兜底，实现全屏无色条。
-  const shellHandlesSafeArea = ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat, AppID.Settings].includes(activeApp);
+  const shellHandlesSafeArea = ![AppID.Launcher, AppID.VRWorld, AppID.Chat, AppID.GroupChat].includes(activeApp);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-gradient-to-br from-pink-200 via-purple-200 to-indigo-200 text-slate-900 font-sans select-none overscroll-none">

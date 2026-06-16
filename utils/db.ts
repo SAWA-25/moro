@@ -1753,22 +1753,6 @@ export const DB = {
       db.transaction(STORE_INNER_VOICES, 'readwrite').objectStore(STORE_INNER_VOICES).delete(id);
   },
 
-  /** 清空某角色的全部「偷看心声」历史（清空聊天记录时连带清掉）。 */
-  clearInnerVoicesByCharId: async (charId: string): Promise<void> => {
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-          const tx = db.transaction(STORE_INNER_VOICES, 'readwrite');
-          const index = tx.objectStore(STORE_INNER_VOICES).index('charId');
-          const req = index.openCursor(IDBKeyRange.only(charId));
-          req.onsuccess = () => {
-              const cursor = req.result;
-              if (cursor) { cursor.delete(); cursor.continue(); }
-          };
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-      });
-  },
-
   getAllTasks: async (): Promise<Task[]> => {
       const db = await openDB();
       if (!db.objectStoreNames.contains(STORE_TASKS)) return [];

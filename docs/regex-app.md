@@ -20,12 +20,9 @@ SillyTavern 正则脚本系统的完整移植：脚本数据结构、执行引�
   `REGEX_SCRIPTS_UPDATED_EVENT`，聊天页监听刷新显示层。
 - **预设自带**：`preset.regexScripts`，随预设导入（解析预设 JSON 的
   `extensions.regex_scripts`），**只有该预设被激活、且印坊开印时生效**。运行时是
-  同步管线、取不到 async 的激活预设，所以 `store.ts` 把激活预设的正则持久化到
-  localStorage（`moro_preset_regex_scripts`）+ 懒预热进模块级缓存 `presetCache` ——
-  与全局脚本同款，**刷新页面后首帧就能同步命中**（早期只活内存、靠异步填充，于是刷新后第一帧
-  presetCache 为空、显示层 markdownOnly 脚本漏匹配，伪 XML 标签露在气泡里）。LS 由
-  `presets.ts` 的 `refreshPresetRegexCache`（App 启动）、`chatRequestPayload`
-  （每次发送复用已取到的激活预设）、活字盘（选预设 / 开关印坊 / 改正则）三处写入保持同步。
+  同步管线、取不到 async 的激活预设，所以 `store.ts` 维持一份模块级缓存 `presetCache`，
+  由 `presets.ts` 的 `refreshPresetRegexCache`（App 启动）、`chatRequestPayload`
+  （每次发送复用已取到的激活预设）、活字盘（选预设 / 开关印坊 / 改正则）三处刷新。
   详见 [`preset-app.md`](./preset-app.md)。
 - **角色局部**：`char.regexScripts`，随角色进 IndexedDB / 备份。
   ST 卡导入时 `sillyTavernCard.ts` 解析 `extensions.regex_scripts` 填充。

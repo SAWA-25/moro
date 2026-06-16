@@ -145,15 +145,12 @@ ${historyText || '（没有可用的聊天记录）'}
 
             const replyText = String(parsed.reply || '').trim();
             setReply(replyText);
-            const now = Date.now();
 
             if (parsed.accept) {
-                // 通过：解除角色对用户的拉黑 / 顺带解除用户对角色的拉黑，并确保回到往来列表
-                updateCharacter(char.id, {
-                    addedToChat: true,
-                    ...(char.charBlock ? { charBlock: { ...char.charBlock, active: false } } : {}),
-                    ...(char.blacklisted ? { blacklisted: false, blacklistedAt: undefined } : {}),
-                } as any);
+                if (char.charBlock) {
+                    updateCharacter(char.id, { charBlock: { ...char.charBlock, active: false } });
+                }
+                const now = Date.now();
                 await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `[好友验证] ${verifyText}`, timestamp: now, metadata: { friendVerify: true } });
                 await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: `「${char.name}」通过了你的好友验证，你们可以继续聊天了`, timestamp: now + 1 });
                 if (replyText) {
@@ -162,12 +159,6 @@ ${historyText || '（没有可用的聊天记录）'}
                 setPhase('accepted');
                 onAccepted?.();
             } else {
-                // 拒绝：把验证申请与角色的回应也落库，确保用户「收得到」角色的验证消息
-                // （修复：角色拒绝/被拉黑状态下，用户看不到角色那条验证回应）
-                await DB.saveMessage({ charId: char.id, role: 'user', type: 'text', content: `[好友验证] ${verifyText}`, timestamp: now, metadata: { friendVerify: true, hidden: true } });
-                if (replyText) {
-                    await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: replyText, timestamp: now + 2, metadata: { friendVerifyReply: true } });
-                }
                 setPhase('rejected');
             }
         } catch (e: any) {

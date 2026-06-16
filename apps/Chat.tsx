@@ -2335,36 +2335,16 @@ ${recent || '（你们还没怎么聊过）'}
             const allIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
             await DB.clearMessages(char.id);
             discardVoiceForMessages(allIds);
-            // 彻底清空：连同本会话沉淀的关系痕迹一并清掉 ——
-            // 偷看心声历史、好感/心情、关系/婚姻、以及 TA 对你的备注（及其历史/动机）。
-            try { await DB.clearInnerVoicesByCharId(char.id); } catch { /* ignore */ }
-            const cs = char.convoSettings || {};
-            // 全部清除：连同本会话沉淀的关系痕迹与情绪 / 日程一并抹掉（否则残留会污染下一轮 prompt）——
-            // 好感/心情/关系/婚姻、情绪 buff、TA 对你的备注（及历史/动机）、偷看心声历史、日程。
-            await updateCharacter(char.id, {
-                affection: undefined,
-                currentMood: undefined,
-                relationship: undefined,
-                marriage: undefined,
-                activeBuffs: [],
-                buffInjection: '',
-                convoSettings: {
-                    ...cs,
-                    userNickname: undefined,
-                    userRemarkMotivation: undefined,
-                    userRemarkUpdatedAt: undefined,
-                    userRemarkHistory: undefined,
-                },
-            });
-            try { await DB.deleteDailySchedulesByChar(char.id); } catch { /* ignore */ }
-            setScheduleData(null);
-            setInnerVoiceHistory([]);
-            setInnerVoiceCurrent(null);
             setMessages([]);
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            addToast('已清空（含好感 / 关系 / 备注 / 心情 / 日程）', 'success');
+            // 全部清除：连角色的情绪（心情 / buff）与日程一并抹掉 —— 只有勾选「留最近10条」时才保留。
+            // 否则清空后旧心情/日程还残留会污染下一轮 prompt，与「全部清除」语义不符。
+            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '' });
+            await DB.deleteDailySchedulesByChar(char.id);
+            setScheduleData(null);
+            addToast('已清空（含心情与日程）', 'success');
         }
         setModalType('none');
     };

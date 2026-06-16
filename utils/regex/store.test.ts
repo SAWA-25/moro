@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
     findDisplayRegexSpans, splitOutDisplayRegexSegments,
     collectRegexScripts, getPresetRegexScripts, setPresetRegexScripts, saveGlobalRegexScripts,
@@ -105,40 +105,5 @@ describe('预设自带正则缓存（ST PRESET 作用域）', () => {
         expect(getPresetRegexScripts()[0].trimStrings).toEqual(['剪掉']);
 
         setPresetRegexScripts(null);
-    });
-
-    it('预设正则落 localStorage：刷新页面（模块重载）后首帧同步可用，不靠异步预热', async () => {
-        // 修复「预设正则在聊天界面不生效」的根因：原本预设正则只活在内存里，靠异步
-        // refreshPresetRegexCache 填充，刷新页面后第一帧 presetCache 为空 → 显示层
-        // markdownOnly 脚本命不中，伪 XML（如 <Human_inputs>）露在气泡里。现在与全局脚本
-        // 同款持久化到 localStorage，模块重载后懒预热即可同步拿到，无需等 IndexedDB。
-        const persisted = script({
-            id: 'persist', scriptName: '隐藏 Human_inputs 包裹',
-            findRegex: '/<Human_inputs>\\s*([\\s\\S]*?)\\s*<\\/Human_inputs>/g', replaceString: '$1',
-            placement: [regex_placement.USER_INPUT], markdownOnly: true,
-        });
-        setPresetRegexScripts([persisted]);
-        expect(localStorage.getItem('moro_preset_regex_scripts')).toBeTruthy();
-
-        // 模拟刷新：重置模块，让 presetCache 回到「未预热」状态，再 import 一份全新的 store。
-        vi.resetModules();
-        const fresh = await import('./store');
-        // 没有任何异步填充，直接读 —— 应当从 localStorage 同步预热出刚才那条脚本。
-        expect(fresh.getPresetRegexScripts().map(s => s.id)).toEqual(['persist']);
-        expect(fresh.collectRegexScripts(null).map(s => s.id)).toEqual(['persist']);
-
-        // 端到端：模拟气泡渲染（挂载点 4）首帧那次调用 —— 伪 XML 标签应当当场被剥掉，
-        // 而不是等异步预热后才消失（正是截图里 <Human_inputs> 露出来的那个 bug）。
-        const stripped = fresh.applyRegexToText(
-            '<Human_inputs>\n我想说\n</Human_inputs>',
-            regex_placement.USER_INPUT,
-            { isMarkdown: true },
-        );
-        expect(stripped).toBe('我想说');
-
-        // 清空（同时抹掉 LS），避免污染其它用例
-        fresh.setPresetRegexScripts(null);
-        setPresetRegexScripts(null);
-        expect(localStorage.getItem('moro_preset_regex_scripts')).toBeNull();
     });
 });
