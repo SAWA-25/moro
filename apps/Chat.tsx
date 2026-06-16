@@ -2991,7 +2991,7 @@ ${recent || '（你们还没怎么聊过）'}
               ? 'flex flex-col h-full bg-white overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
               : chatChromeStyle === 'floating'
                 ? 'flex flex-col h-full bg-[#eef2ff] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500'
-                : 'flex flex-col h-full bg-[#fafafa] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
+                : 'flex flex-col h-full bg-[#ededed] overflow-hidden relative font-sans transition-[background-image,background-color] duration-500';
     const chatRootStyle: React.CSSProperties = char.chatBackground
         ? {
             backgroundImage: `url(${char.chatBackground})`,
@@ -4064,7 +4064,7 @@ ${recent || '（你们还没怎么聊过）'}
                             avatarShape={osTheme.chatAvatarShape}
                             avatarSize={osTheme.chatAvatarSize}
                             avatarMode={osTheme.chatAvatarMode}
-                            bubbleVariant={osTheme.chatBubbleStyle || 'wechat'}
+                            bubbleVariant={osTheme.chatBubbleStyle || 'plain'}
                             messageSpacing={osTheme.chatMessageSpacing}
                             showTimestamp={convo?.hideTimestamp ? 'never' : osTheme.chatShowTimestamp}
                             isPending={false}
