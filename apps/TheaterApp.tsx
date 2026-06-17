@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { MaskHappy, Crosshair, GameController, Heart, Sparkle, Footprints, Users, ChatCircleDots, BookBookmark, MagicWand } from '@phosphor-icons/react';
+import { Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle, type Icon } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
@@ -8,23 +8,46 @@ import ReflectionApp from './theater/ReflectionApp';
 import TalkTherapyApp from './theater/TalkTherapyApp';
 import ExtraApp from './theater/ExtraApp';
 import DivinationApp from './theater/DivinationApp';
+import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './theater/scrapbook';
 
 /**
- * 小剧场：原「攻略本」（galgame 恋爱攻略，apps/GuidebookApp.tsx）与「TRPG」（跑团
- * 冒险，apps/GameApp.tsx）的统一入口。桌面只保留一个「小剧场」图标，点开是封面页，
- * 先挑一出戏：
- *   - 攻略本 → 和角色谈一场有回合、有好感度的恋爱小游戏
- *   - TRPG  → 拉上熟人开团，世界观 + 骰子 + 自由行动的跑团冒险
- * 两个子页通过 onExit 回到本封面页（不直接回桌面）。两边各自保留玩法、数据与名字，
- * 合并后只占一个入口。
+ * 折子戏（原「小剧场」）：一个图标、一张戏单，先挑一折戏。
+ * 黑白拼贴手账皮肤——米白报纸 + 墨黑 + 牛皮胶带 + 邮票 + 网点半调，由 theater/scrapbook 套件统一。
+ * 七折各自保留原玩法、数据与名字（攻略本 / 番外 / 占卜 / 谈心 / TRPG / 轨迹 / 对影），
+ * 合并后只占一个入口；子页通过 onExit 回到本戏单页（不直接回桌面）。换肤不改、不减任何功能。
  */
+
+type Section = 'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination';
+
+interface Zhe {
+    section: Exclude<Section, 'home'>;
+    no: string;       // 折次（壹贰叁…）
+    name: string;     // 折名（保留原功能名）
+    en: string;       // 英文小标
+    tagline: string;  // 戏文式一句
+    desc: string;     // 介绍
+    Icon: Icon;
+}
+
+const PROGRAMME: Zhe[] = [
+    { section: 'guide',      no: '壹', name: '攻略本', en: 'THE COURTSHIP',  tagline: '择一言，赌一段心动',     desc: '和角色排一出恋爱戏：定场、择言、攒心动，落幕收一张攻略结算卡。', Icon: Path },
+    { section: 'extra',      no: '贰', name: '番外',   en: 'SIDE LEAVES',    tagline: '正传之外的边角料',       desc: '拉个角色做问卷（恋爱百问 / MBTI / 性癖…），或现搓贴吧帖、聊天截图、热梗等仿真番外。', Icon: Scroll },
+    { section: 'divination', no: '叁', name: '占卜',   en: 'THE READING',    tagline: '向纸牌问一问前路',       desc: '塔罗78 / 雷诺曼36 / 六爻金钱卦 / 梅花易数，抽牌起卦，自解或请 TA 以本人口吻为你解读。', Icon: Cards },
+    { section: 'talk',       no: '肆', name: '谈心',   en: 'HEART TO HEART', tagline: '把心里的话，轻轻放下',   desc: '心里堵时，找个角色好好被听一次——只负责接住你、抱住你的安全角落。', Icon: Quotes },
+    { section: 'trpg',       no: '伍', name: 'TRPG',   en: 'THE CAMPAIGN',   tagline: '掷一颗骰子，闯一段故事', desc: '拉熟人开团：AI 现搓世界观、骰子判定、自由行动，剧情可转回聊天一起回味。', Icon: DiceFive },
+    { section: 'trajectory', no: '陆', name: '轨迹',   en: 'BEFORE WE MET',  tagline: '那些还没遇见你的日子',   desc: '回到过去的节点，看 TA 原本走过的路——也看你，从哪一天起慢慢走进 TA 的人生。', Icon: FilmReel },
+    { section: 'reflection', no: '柒', name: '对影',   en: 'BY MOONLIGHT',   tagline: '举杯邀明月，对影成三人', desc: '同一个人，在不同时间里重逢——是谁，让命运偏离了原本的方向。', Icon: MaskSad },
+];
 
 const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
-    const [section, setSection] = useState<'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination'>('home');
+    const [section, setSection] = useState<Section>('home');
 
-    if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
-    if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
+    // 攻略本（galgame）/ TRPG 是两套沉浸式大型子页；用根级 grayscale 让整页落进黑白默片，
+    // 既保证「黑白」一致、又不动其内部布局/功能（TRPG 另在 GAME_THEMES 里重映射成纸/墨明度，
+    // 保证选项三档对比；galgame 的立绘 / 对话框随之去色）。
+    if (section === 'guide') return <div className="absolute inset-0" style={{ filter: 'grayscale(1)' }}><GuidebookApp onExit={() => setSection('home')} /></div>;
+    if (section === 'trpg') return <div className="absolute inset-0" style={{ filter: 'grayscale(1)' }}><GameApp onExit={() => setSection('home')} /></div>;
     if (section === 'trajectory') return <TrajectoryApp onExit={() => setSection('home')} />;
     if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
     if (section === 'talk') return <TalkTherapyApp onExit={() => setSection('home')} />;
@@ -32,142 +55,87 @@ const TheaterApp: React.FC = () => {
     if (section === 'divination') return <DivinationApp onExit={() => setSection('home')} />;
 
     return (
-        <div
-            className="absolute inset-0 flex flex-col bg-[#14101c] text-white animate-fade-in overflow-hidden"
-            style={{ paddingTop: 'var(--safe-top)' }}
-        >
-            {/* 舞台暖光氛围 */}
-            <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[140%] h-72 rounded-full blur-3xl opacity-40 bg-gradient-to-b from-amber-400/50 via-rose-500/20 to-transparent" />
-            <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #fff 0 1px, transparent 1px 14px)' }} />
+        <PaperShell>
+            <ScrapHeader title="折子戏" en="ZHE ZI XI" onBack={closeApp} backLabel="回桌面" />
 
-            {/* 顶栏：回桌面 + 居中小字 */}
-            <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0 z-10">
-                <button
-                    onClick={closeApp}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/15 text-white/80 active:scale-95 transition-all backdrop-blur-sm border border-white/10"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-                    </svg>
-                    回桌面
-                </button>
-                <div className="absolute left-1/2 -translate-x-1/2 text-center select-none">
-                    <div className="text-[9px] tracking-[0.35em] text-white/40 font-mono">LITTLE THEATER</div>
-                    <div className="text-[11px] tracking-[0.3em] text-white/45 mt-0.5">挑 一 出 戏</div>
+            <ScrapScroll className="px-5 pb-12 pt-1">
+                {/* ── 戏单招牌 ── */}
+                <PaperCard tilt={-0.8} className="px-6 py-7 mt-2 overflow-hidden">
+                    {/* 网点半调底纹 */}
+                    <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.10]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
+                    {/* 角落戏票印 */}
+                    <WashiTape color="ink" rotate={-7} className="absolute -top-2 right-6 w-20 h-6 rounded-[2px] text-[8px] tracking-[0.35em]" style={{ fontFamily: 'var(--font-label)' }}>TICKET</WashiTape>
+                    <div className="relative">
+                        <div className="text-[9px] tracking-[0.42em] mb-2" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>TONIGHT'S BILL · 今 日 戏 单</div>
+                        <div className="flex items-end gap-2.5">
+                            <div className="text-[52px] leading-[0.9] font-black tracking-tight" style={{ color: INK }}>折子戏</div>
+                            <MaskHappy size={30} weight="fill" className="mb-2 -rotate-[8deg]" style={{ color: INK }} />
+                            <MaskSad size={22} weight="regular" className="mb-2.5 rotate-[6deg]" style={{ color: INK_SOFT }} />
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                            <span className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(140,132,118,0.6) 0 5px, transparent 5px 10px)' }} />
+                            <Sparkle size={12} weight="fill" style={{ color: INK_SOFT }} />
+                            <span className="h-px flex-1" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(140,132,118,0.6) 0 5px, transparent 5px 10px)' }} />
+                        </div>
+                        <div className="text-[12.5px] mt-2.5 leading-relaxed" style={{ color: '#54504a' }}>
+                            一张戏单，七出折子。挑个角色登台，演一折就散场——不必从头看到尾。
+                        </div>
+                    </div>
+                </PaperCard>
+
+                {/* ── 折目 ── */}
+                <SectionTag en="THE PROGRAMME" className="mt-7 mb-3.5">今日折目</SectionTag>
+
+                <div className="space-y-4">
+                    {PROGRAMME.map((z, i) => {
+                        const tilt = i % 2 === 0 ? -0.7 : 0.6;
+                        const tape = (['amber', 'sage', 'butter', 'lilac'] as const)[i % 4];
+                        return (
+                            <PaperCard
+                                key={z.section}
+                                tilt={tilt}
+                                tape={tape}
+                                onClick={() => setSection(z.section)}
+                                className="px-4 py-4"
+                            >
+                                <div className="flex items-stretch gap-3.5">
+                                    {/* 折次票根 */}
+                                    <div className="shrink-0 flex flex-col items-center justify-center px-2.5 py-1 self-stretch" style={{ borderRight: '1px dashed rgba(150,144,132,0.6)' }}>
+                                        <div className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>折</div>
+                                        <div className="text-[26px] leading-none font-black" style={{ color: INK }}>{z.no}</div>
+                                        <div className="text-[7px] mt-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>No.{i + 1}</div>
+                                    </div>
+
+                                    {/* 邮票图标 */}
+                                    <Stamp size={46} className="self-center">
+                                        <z.Icon size={24} weight="duotone" />
+                                    </Stamp>
+
+                                    {/* 折名 + 戏文 + 介绍 */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-baseline gap-2">
+                                            <div className="text-[21px] font-black tracking-wide" style={{ color: INK }}>{z.name}</div>
+                                            <div className="text-[8px] tracking-[0.28em] uppercase truncate" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{z.en}</div>
+                                        </div>
+                                        <div className="text-[12px] font-bold mt-0.5" style={{ color: '#4a463e' }}>「{z.tagline}」</div>
+                                        <div className="text-[11px] mt-1.5 leading-relaxed" style={{ color: '#6b6558' }}>{z.desc}</div>
+                                    </div>
+
+                                    {/* 开演 */}
+                                    <div className="shrink-0 self-center flex flex-col items-center gap-1" style={{ color: INK }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+                                        <span className="text-[8px] tracking-[0.16em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>OPEN</span>
+                                    </div>
+                                </div>
+                            </PaperCard>
+                        );
+                    })}
                 </div>
-            </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 space-y-6 pt-3 z-10">
-                {/* 封面：剧场招牌 */}
-                <div className="relative rounded-3xl px-7 py-8 select-none overflow-hidden border border-white/10 bg-gradient-to-br from-white/[0.08] to-white/[0.02] shadow-2xl">
-                    <div className="text-[9px] tracking-[0.3em] text-amber-300/70 font-mono mb-2">TONIGHT'S PROGRAMME · 今夜上演</div>
-                    <div className="flex items-end gap-3">
-                        <div className="text-5xl font-black tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-rose-200 to-amber-300">小剧场</div>
-                        <MaskHappy size={30} weight="fill" className="mb-2 text-amber-300/90 rotate-[-8deg]" />
-                    </div>
-                    <div className="text-[13px] text-white/55 mt-2 leading-relaxed">找个角色登台，演一场恋爱攻略，或者拉队开一局跑团。</div>
-                    <Sparkle size={18} weight="fill" className="absolute top-4 right-5 text-amber-300/40" />
-                </div>
-
-                {/* 攻略本 */}
-                <button
-                    onClick={() => setSection('guide')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-rose-300/15 bg-gradient-to-br from-rose-500/15 to-fuchsia-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-rose-200/70 font-mono mb-2">DATE — 谈一场恋爱</div>
-                    <div className="flex items-center gap-2.5">
-                        <Crosshair size={26} weight="bold" className="text-rose-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-rose-50">攻略本</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">和角色玩一局 galgame：定场景、挑选项、攒好感度，结局生成攻略结算卡。</div>
-                    <Heart size={64} weight="fill" className="absolute -bottom-3 -right-2 text-rose-300/10 rotate-[12deg]" />
-                </button>
-
-                {/* 番外 */}
-                <button
-                    onClick={() => setSection('extra')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-amber-300/15 bg-gradient-to-br from-amber-500/15 to-rose-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-amber-200/70 font-mono mb-2">SIDE STORY — 番外篇</div>
-                    <div className="flex items-center gap-2.5">
-                        <BookBookmark size={26} weight="bold" className="text-amber-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-amber-50">番外</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">挑个角色一起做问卷（恋爱相性100问 / MBTI / 性癖测试 / 价值观…想要啥写啥，一题一题答到底），或生成贴吧帖、聊天记录、热梗等主题番外。</div>
-                    <BookBookmark size={64} weight="fill" className="absolute -bottom-3 -right-2 text-amber-300/10 rotate-[10deg]" />
-                </button>
-
-                {/* 占卜 */}
-                <button
-                    onClick={() => setSection('divination')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-violet-300/15 bg-gradient-to-br from-violet-500/15 to-indigo-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-violet-200/70 font-mono mb-2">DIVINATION — 占一卦</div>
-                    <div className="flex items-center gap-2.5">
-                        <MagicWand size={26} weight="bold" className="text-violet-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-violet-50">占卜</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">挑个角色一起占卜：塔罗(78) / 雷诺曼(36) / 六爻金钱卦 / 梅花易数。抽牌起卦后可自己解，或让 TA 结合世界书以本人口吻为你解读。</div>
-                    <Sparkle size={64} weight="fill" className="absolute -bottom-3 -right-2 text-violet-300/10 rotate-[12deg]" />
-                </button>
-
-                {/* 谈心 */}
-                <button
-                    onClick={() => setSection('talk')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-pink-300/15 bg-gradient-to-br from-pink-500/15 to-violet-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-pink-200/70 font-mono mb-2">HEART-TO-HEART — 好好被听一次</div>
-                    <div className="flex items-center gap-2.5">
-                        <ChatCircleDots size={26} weight="bold" className="text-pink-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-pink-50">谈心</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">心里堵得慌时，找个角色把话放下来。这里只负责好好听你说、轻轻抱住你——一个被美化过的、安全的安慰角落。</div>
-                    <Heart size={64} weight="fill" className="absolute -bottom-3 -right-2 text-pink-300/10 rotate-[10deg]" />
-                </button>
-
-                {/* TRPG */}
-                <button
-                    onClick={() => setSection('trpg')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-purple-300/15 bg-gradient-to-br from-purple-500/15 to-indigo-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-purple-200/70 font-mono mb-2">TRPG — 开一局跑团</div>
-                    <div className="flex items-center gap-2.5">
-                        <GameController size={26} weight="bold" className="text-purple-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-purple-50">TRPG</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">拉上熟人开团：AI 生成世界观、骰子判定、自由行动，剧情可转发回聊天一起回味。</div>
-                    <GameController size={64} weight="fill" className="absolute -bottom-3 -right-2 text-purple-300/10 rotate-[-12deg]" />
-                </button>
-
-                {/* 轨迹 */}
-                <button
-                    onClick={() => setSection('trajectory')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-indigo-300/15 bg-gradient-to-br from-indigo-500/15 to-violet-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-indigo-200/70 font-mono mb-2">TRAJECTORY — 那些还未曾相遇的日子</div>
-                    <div className="flex items-center gap-2.5">
-                        <Footprints size={26} weight="bold" className="text-indigo-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-indigo-50">轨迹</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">回到过去的时间节点，看看角色原本走过的路——一个人不是从被看见的那一刻才开始存在的。也看见你是从什么时候，慢慢走进 TA 的人生。</div>
-                    <Footprints size={64} weight="fill" className="absolute -bottom-3 -right-2 text-indigo-300/10 rotate-[12deg]" />
-                </button>
-
-                {/* 对影 */}
-                <button
-                    onClick={() => setSection('reflection')}
-                    className="relative w-full text-left rounded-3xl px-7 py-9 overflow-hidden border border-amber-300/15 bg-gradient-to-br from-amber-500/15 to-rose-500/[0.07] active:scale-[0.98] transition-transform select-none shadow-lg"
-                >
-                    <div className="text-[9px] tracking-[0.3em] text-amber-200/70 font-mono mb-2">REFLECTION — 对影成几人</div>
-                    <div className="flex items-center gap-2.5">
-                        <Users size={26} weight="bold" className="text-amber-200/90" />
-                        <div className="text-3xl font-black tracking-wide text-amber-50">对影</div>
-                    </div>
-                    <div className="text-[11px] text-white/55 mt-3 leading-relaxed">同一个人，在不同时间里的相逢。看见 TA 并非突然变成今天的样子，也看见——是谁让命运偏离过原本的方向。举杯邀明月，对影成几人。</div>
-                    <Users size={64} weight="fill" className="absolute -bottom-3 -right-2 text-amber-300/10 rotate-[-12deg]" />
-                </button>
-            </div>
-        </div>
+                {/* 落款 */}
+                <div className="mt-8 text-center text-[9px] tracking-[0.34em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>— 散 场 不 谢 幕 —</div>
+            </ScrapScroll>
+        </PaperShell>
     );
 };
 

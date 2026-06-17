@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../../context/OSContext';
-import { Users, Sparkle, MoonStars, ArrowsClockwise } from '@phosphor-icons/react';
+import { MaskSad, Sparkle, MoonStars, ArrowsClockwise } from '@phosphor-icons/react';
 import {
     CharTrajectory,
     TrajectoryNode,
@@ -10,11 +10,12 @@ import {
     nodeWhen,
 } from '../../utils/theaterTimeline';
 import { Shell, CharPicker } from './TrajectoryApp';
+import { ScrapButton, WashiTape, HALFTONE, INK, INK_SOFT } from './scrapbook';
 
 /**
- * 小剧场·对影：同一个人，在不同时间里的相逢。
+ * 折子戏·对影（柒）：同一个人，在不同时间里的相逢。
  * 看见 TA 并不是突然变成今天的样子；也看见某个人，真的让命运偏离过原本的方向。
- * 举杯邀明月，对影成几人。—— 联动「轨迹」的时间节点。
+ * 举杯邀明月，对影成几人。—— 联动「轨迹」的时间节点。黑白拼贴手账皮肤。
  */
 
 interface Props { onExit: () => void; }
@@ -41,7 +42,6 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         try {
             const t = await loadOrGenerateTrajectory(selectedChar, userName, apiConfig);
             setTrajectory(t);
-            // 默认挑：最早的「遇见之前」 + 最后一个节点（此刻的 TA）
             const before = t.nodes.find(n => n.era === 'before');
             const last = t.nodes[t.nodes.length - 1];
             const uniq = Array.from(new Set([before?.id, last?.id].filter(Boolean))) as string[];
@@ -62,7 +62,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         setScene(null);
         setPick(prev => {
             if (prev.includes(id)) return prev.filter(x => x !== id);
-            if (prev.length >= 2) return [prev[1], id]; // 满了就顶掉最早选的
+            if (prev.length >= 2) return [prev[1], id];
             return [...prev, id];
         });
     };
@@ -87,14 +87,14 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
     // ── 角色选择页 ──
     if (!selectedCharId) {
         return (
-            <Shell onBack={onExit} title="对影">
-                <div className="px-6 pt-2 pb-5 text-center">
-                    <Users size={30} weight="duotone" className="mx-auto text-amber-200/80 mb-3" />
-                    <p className="text-[13px] leading-relaxed text-white/55">
+            <Shell onBack={onExit} title="对影" en="BY MOONLIGHT">
+                <div className="px-6 pt-3 pb-5 text-center">
+                    <MaskSad size={30} weight="duotone" className="mx-auto mb-3" style={{ color: INK }} />
+                    <p className="text-[13px] leading-relaxed" style={{ color: '#5b554a' }}>
                         同一个人，在不同时间里的相逢。<br />
                         看见 TA 并非突然变成今天的样子，<br />
                         也看见——是谁让命运偏离过原本的方向。<br />
-                        <span className="text-white/40 italic">举杯邀明月，对影成几人。</span>
+                        <span className="italic" style={{ color: INK_SOFT }}>举杯邀明月，对影成几人。</span>
                     </p>
                 </div>
                 <CharPicker characters={characters} onPick={setSelectedCharId} />
@@ -103,63 +103,69 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
     }
 
     return (
-        <Shell onBack={() => { setSelectedCharId(''); setTrajectory(null); setScene(null); }} title={selectedChar?.name || '对影'}>
+        <Shell onBack={() => { setSelectedCharId(''); setTrajectory(null); setScene(null); }} title={selectedChar?.name || '对影'} en="BY MOONLIGHT">
             {loadingTraj && (
                 <div className="flex flex-col items-center justify-center py-24 text-center px-8">
-                    <MoonStars size={32} weight="duotone" className="text-amber-200/80 animate-pulse mb-4" />
-                    <p className="text-[13px] text-white/60">正在翻出 {selectedChar?.name} 走过的那条路…</p>
+                    <MoonStars size={32} weight="duotone" className="animate-pulse mb-4" style={{ color: INK }} />
+                    <p className="text-[13px]" style={{ color: '#5b554a' }}>正在翻出 {selectedChar?.name} 走过的那条路…</p>
                 </div>
             )}
 
             {!loadingTraj && error && (
-                <div className="mx-6 mt-6 rounded-2xl border border-rose-300/20 bg-rose-500/10 px-5 py-4 text-center">
-                    <p className="text-[12px] text-rose-100/80 leading-relaxed">{error}</p>
-                    {apiReady && <button onClick={() => void loadTraj()} className="mt-3 px-4 py-1.5 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/15 text-white/75 active:scale-95 transition">再试一次</button>}
+                <div className="mx-6 mt-6 rounded-2xl px-5 py-4 text-center" style={{ border: '1px dashed rgba(150,144,132,0.6)', background: 'rgba(31,29,26,0.04)' }}>
+                    <p className="text-[12px] leading-relaxed" style={{ color: '#6b6558' }}>{error}</p>
+                    {apiReady && <ScrapButton variant="ink" className="mt-3 px-4 py-1.5 text-[11px]" onClick={() => void loadTraj()}>再试一次</ScrapButton>}
                 </div>
             )}
 
             {!loadingTraj && !error && trajectory && (
                 <div className="px-5 pb-12">
-                    {/* 节点挑选 */}
-                    <div className="pt-2 pb-3">
-                        <p className="text-[11px] text-white/45 leading-relaxed mb-3 px-1">
-                            从 TA 的轨迹里挑 <span className="text-amber-200/90 font-bold">两个时刻</span>，让那两个 TA 在此刻相逢。
+                    <div className="pt-3 pb-3">
+                        <p className="text-[11px] leading-relaxed mb-3 px-1" style={{ color: '#6b6558' }}>
+                            从 TA 的轨迹里挑 <span className="font-black" style={{ color: INK }}>两个时刻</span>，让那两个 TA 在此刻相逢。
                         </p>
                         <div className="space-y-2">
-                            {trajectory.nodes.map(node => {
+                            {trajectory.nodes.map((node, ni) => {
                                 const idx = pick.indexOf(node.id);
                                 const selected = idx >= 0;
                                 return (
                                     <button
                                         key={node.id}
                                         onClick={() => togglePick(node.id)}
-                                        className={`w-full text-left rounded-xl px-3.5 py-2.5 border transition-all flex items-start gap-2.5 ${selected ? 'border-amber-300/40 bg-amber-400/[0.12]' : 'border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.05]'}`}
+                                        className="w-full text-left rounded-xl px-3.5 py-2.5 transition-all flex items-start gap-2.5"
+                                        style={{
+                                            background: selected ? 'linear-gradient(180deg,#fbf9f2,#efece2)' : 'rgba(255,253,247,0.6)',
+                                            border: selected ? '1px solid rgba(31,29,26,0.5)' : '1px solid rgba(176,170,158,0.55)',
+                                            outline: selected ? '1px dashed rgba(31,29,26,0.28)' : 'none', outlineOffset: -5,
+                                            transform: selected ? `rotate(${ni % 2 ? 0.5 : -0.5}deg)` : undefined,
+                                        }}
                                     >
-                                        <span className={`mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black ${selected ? 'bg-amber-300 text-[#14101c]' : 'bg-white/10 text-white/40'}`}>
+                                        <span className="mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-black" style={{ background: selected ? '#1f1d1a' : 'rgba(31,29,26,0.08)', color: selected ? '#f6f3ec' : INK_SOFT }}>
                                             {selected ? (idx + 1) : ''}
                                         </span>
                                         <span className="min-w-0 flex-1">
                                             <span className="flex items-center justify-between gap-2">
-                                                <span className="text-[12.5px] font-bold text-white/85 truncate">{node.title}</span>
-                                                <span className="text-[9px] text-white/35 shrink-0">{nodeWhen(node, trajectory.firstMetTs)}</span>
+                                                <span className="text-[12.5px] font-black truncate" style={{ color: INK }}>{node.title}</span>
+                                                <span className="text-[9px] shrink-0" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{nodeWhen(node, trajectory.firstMetTs)}</span>
                                             </span>
-                                            <span className="block text-[11px] text-white/45 line-clamp-1 mt-0.5">{node.scene}</span>
+                                            <span className="block text-[11px] line-clamp-1 mt-0.5" style={{ color: '#6b6558' }}>{node.scene}</span>
                                         </span>
                                     </button>
                                 );
                             })}
                         </div>
 
-                        <button
+                        <ScrapButton
+                            variant="ink"
                             disabled={pick.length !== 2 || generating}
                             onClick={doGenerate}
-                            className={`mt-4 w-full py-3 rounded-2xl text-[13px] font-black tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${pick.length === 2 && !generating ? 'bg-gradient-to-r from-amber-300 to-rose-300 text-[#14101c] shadow-lg shadow-amber-500/20' : 'bg-white/[0.06] text-white/30'}`}
+                            className="mt-4 w-full py-3 text-[13px] tracking-wide"
+                            icon={generating ? <Sparkle size={15} weight="fill" className="animate-pulse" /> : <MaskSad size={15} weight="bold" />}
                         >
-                            {generating ? <><Sparkle size={15} weight="fill" className="animate-pulse" /> 两个 TA 正在照面…</> : <><Users size={15} weight="bold" /> 对影成几人</>}
-                        </button>
+                            {generating ? '两个 TA 正在照面…' : '对影成几人'}
+                        </ScrapButton>
                     </div>
 
-                    {/* 生成结果 */}
                     {scene && <ReflectionView scene={scene} onRegen={doGenerate} regenerating={generating} />}
                 </div>
             )}
@@ -168,22 +174,34 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
 };
 
 const ReflectionView: React.FC<{ scene: ReflectionScene; onRegen: () => void; regenerating: boolean }> = ({ scene, onRegen, regenerating }) => (
-    <div className="mt-6 rounded-3xl border border-white/[0.08] bg-gradient-to-b from-white/[0.05] to-transparent px-5 py-6 animate-fade-in relative overflow-hidden">
-        <div aria-hidden className="pointer-events-none absolute -top-10 right-0 opacity-20"><MoonStars size={90} weight="fill" className="text-amber-200" /></div>
+    <div className="mt-6 rounded-[20px] px-5 py-6 animate-fade-in relative overflow-hidden" style={{
+        background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)',
+        border: '1px solid rgba(176,170,158,0.7)', outline: '1px dashed rgba(150,144,132,0.5)', outlineOffset: -6,
+        boxShadow: '0 16px 30px -20px rgba(31,29,26,0.5)', transform: 'rotate(-0.5deg)',
+    }}>
+        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
+        <WashiTape color="ink" rotate={-5} className="absolute -top-3 left-1/2 -translate-x-1/2 w-24 h-6 rounded-[2px]" />
+        <div aria-hidden className="pointer-events-none absolute -top-8 right-2 opacity-[0.08]"><MoonStars size={90} weight="fill" style={{ color: INK }} /></div>
         <div className="text-center mb-5 relative z-10">
-            <h3 className="text-2xl font-black tracking-wide bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-rose-200 to-amber-200">{scene.title}</h3>
-            {scene.subtitle && <p className="text-[11px] text-white/40 italic mt-1.5">{scene.subtitle}</p>}
+            <h3 className="text-2xl font-black tracking-wide" style={{ color: INK }}>{scene.title}</h3>
+            {scene.subtitle && <p className="text-[11px] italic mt-1.5" style={{ color: INK_SOFT }}>{scene.subtitle}</p>}
         </div>
         <div className="space-y-3 relative z-10">
             {scene.lines.map((line, i) => {
                 if (line.who === 'narration') {
-                    return <p key={i} className="text-center text-[11.5px] text-white/40 italic px-4 py-1 leading-relaxed">— {line.text} —</p>;
+                    return <p key={i} className="text-center text-[11.5px] italic px-4 py-1 leading-relaxed" style={{ color: INK_SOFT }}>— {line.text} —</p>;
                 }
                 const isNow = line.who === 'now';
                 return (
                     <div key={i} className={`flex ${isNow ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-[12.5px] leading-relaxed ${isNow ? 'bg-amber-400/[0.16] border border-amber-300/20 text-amber-50/90 rounded-br-md' : 'bg-indigo-400/[0.12] border border-indigo-300/15 text-indigo-50/85 rounded-bl-md'}`}>
-                            <span className={`block text-[9px] font-bold mb-1 tracking-wider ${isNow ? 'text-amber-200/70' : 'text-indigo-200/60'}`}>{isNow ? '此刻的 TA' : '从前的 TA'}</span>
+                        <div className="max-w-[82%] px-3.5 py-2.5 text-[12.5px] leading-relaxed" style={{
+                            background: isNow ? '#1f1d1a' : 'rgba(255,253,247,0.95)',
+                            color: isNow ? '#f3ecdf' : '#3a362f',
+                            border: isNow ? 'none' : '1px solid rgba(176,170,158,0.7)',
+                            borderRadius: isNow ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                            boxShadow: '0 8px 16px -12px rgba(31,29,26,0.4)',
+                        }}>
+                            <span className="block text-[9px] font-black mb-1 tracking-wider" style={{ color: isNow ? 'rgba(243,236,223,0.65)' : INK_SOFT }}>{isNow ? '此刻的 TA' : '从前的 TA'}</span>
                             {line.text}
                         </div>
                     </div>
@@ -191,9 +209,7 @@ const ReflectionView: React.FC<{ scene: ReflectionScene; onRegen: () => void; re
             })}
         </div>
         <div className="flex justify-center mt-6 relative z-10">
-            <button onClick={onRegen} disabled={regenerating} className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[10px] font-bold bg-white/8 hover:bg-white/12 text-white/55 active:scale-95 transition disabled:opacity-40">
-                <ArrowsClockwise size={12} weight="bold" /> 再照一次
-            </button>
+            <ScrapButton variant="paper" className="px-3.5 py-1.5 text-[10px]" disabled={regenerating} onClick={onRegen} icon={<ArrowsClockwise size={12} weight="bold" />}>再照一次</ScrapButton>
         </div>
     </div>
 );

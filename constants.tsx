@@ -41,6 +41,7 @@ import {
   PencilRuler,
   PushPin,
   MaskHappy,
+  FilmSlate,
   CalendarHeart,
   Scissors,
   Moped,
@@ -88,7 +89,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Personas: ({ className }) => <UserSwitch className={className} weight="bold" />,
   Regex: ({ className }) => <Bandaids className={className} weight="bold" />,
   Creative: ({ className }) => <Feather className={className} weight="bold" />,
-  Theater: ({ className }) => <MaskHappy className={className} weight="bold" />,
+  Theater: ({ className }) => <FilmSlate className={className} weight="bold" />,
   Almanac: ({ className }) => <CalendarHeart className={className} weight="bold" />,
   Takeout: ({ className }) => <Moped className={className} weight="bold" />,
 };
@@ -123,9 +124,9 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）
   { id: AppID.Social, name: '见闻簿', icon: 'Social', color: 'red' },
   { id: AppID.Study, name: '自习室', icon: 'Study', color: 'emerald' },
-  // 「攻略本」(galgame 恋爱攻略) + 「TRPG」(跑团冒险) 合并为「小剧场」：一个图标，
-  // 封面页选「攻略本 / TRPG」再进对应剧目（两个子模式各自保留玩法与名字）。
-  { id: AppID.Theater, name: '小剧场', icon: 'Theater', color: 'orange' },
+  // 「折子戏」（原「小剧场」）：一个图标、一张戏单，七折各自保留玩法与名字
+  //（攻略本 / 番外 / 占卜 / 谈心 / TRPG / 轨迹 / 对影）。黑白拼贴手账皮肤。
+  { id: AppID.Theater, name: '折子戏', icon: 'Theater', color: 'orange' },
   // 笔友会（小说）+ 写歌 合并为「创作社」：一个图标，封面页选「笔友会 / 写歌」再进对应创作台
   { id: AppID.Creative, name: '创作社', icon: 'Creative', color: 'fuchsia' },
   { id: AppID.VRWorld, name: '页外', icon: 'VRWorld', color: 'indigo' },
