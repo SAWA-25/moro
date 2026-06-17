@@ -561,6 +561,66 @@
           transform: scale(0.97);
         }
       }
+      /* ── 来往·入场/微交互动效（纯 CSS，避开 CDN Tailwind 自定义 animate-* 的不确定性）── */
+      /* 列表行逐行轻起：上浮 + 极轻缩放 + 淡入（配合行内 animationDelay 做错峰）。
+         只动 transform/opacity；与 .scrap-card 的 nth-child rotate 用的是独立 rotate 属性、互不打架。 */
+      @keyframes moroRowIn { from { opacity: 0; transform: translateY(11px) scale(0.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      .anim-row-in { animation: moroRowIn 0.44s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      /* 顶栏/区块落入：自上而下轻落 + 淡入。 */
+      @keyframes moroDropIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+      .anim-drop-in { animation: moroDropIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      /* 浮起淡入（用于聊天信息区在登场过场后柔和接续）。 */
+      @keyframes moroFloatIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+      .anim-float-in { animation: moroFloatIn 0.52s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      /* 头像登场：轻微回弹缩放（治愈系 overshoot）。 */
+      @keyframes moroAvatarPop { 0% { opacity: 0; transform: scale(0.6); } 70% { opacity: 1; transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); } }
+      .anim-avatar-pop { animation: moroAvatarPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+      /* 徽标/数字弹入。 */
+      @keyframes moroPop { 0% { opacity: 0; transform: scale(0.4); } 60% { transform: scale(1.15); } 100% { opacity: 1; transform: scale(1); } }
+      .anim-pop { animation: moroPop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+      /* 底部导航：选中态滑动指示条（在按钮内绝对定位，靠 left/width 过渡平滑滑动）。 */
+      .moro-tabbar { position: relative; }
+      .moro-tab-ink {
+        position: absolute; top: 0; height: 2.5px; border-radius: 9999px;
+        background: linear-gradient(90deg, transparent, currentColor, transparent);
+        transition: left 0.34s cubic-bezier(0.22, 1, 0.36, 1), width 0.34s cubic-bezier(0.22, 1, 0.36, 1), color 0.2s ease;
+        pointer-events: none;
+      }
+
+      /* ════════════════ 来往 · ins 风皮肤（与手帐拼贴融合）════════════════
+         干净留白 + 发丝描边 + 大圆角 + 极柔投影；去掉拼贴账本的虚线描边 / 纸片微旋转 / 网点纸纹，
+         但留住圆润温度与柔和配色。仅作用在 .moro-laiwang 作用域内（来往），不影响折子戏等「黑白拼贴手账」身份。
+         注意：.moro-laiwang 只作纯作用域钩子、自身不设背景——聊天页有自己的皮肤底色/壁纸，别被这层盖掉。 */
+      /* 卡片：纯白 + 发丝线 + 大圆角 + 极柔投影（覆盖 .scrap-card 的虚线描边/纸面投影） */
+      .moro-laiwang .scrap-card {
+        background: #ffffff;
+        border: 1px solid #ededed;
+        outline: none;
+        border-radius: 20px;
+        box-shadow: 0 1px 2px rgba(38, 38, 38, 0.04), 0 14px 30px -24px rgba(38, 38, 38, 0.22);
+      }
+      /* 去掉列表卡片的拼贴微旋转 */
+      .moro-laiwang .scrap-list > .scrap-card,
+      .moro-laiwang .scrap-list > .scrap-card:nth-child(5n + 2),
+      .moro-laiwang .scrap-list > .scrap-card:nth-child(5n + 4) { rotate: 0deg; }
+      /* 去掉网点纸纹底，换 ins 纯净浅底 */
+      .moro-laiwang.scrap-panel, .moro-laiwang .scrap-panel { background-image: none; background-color: #fafafa; }
+      /* 按钮：去虚线描边，干净圆角 */
+      .moro-laiwang .scrap-btn { outline: none; border-radius: 14px; box-shadow: 0 8px 20px -12px rgba(38, 38, 38, 0.5); }
+      .moro-laiwang .scrap-btn-paper { outline: none; border: 1px solid #ededed; border-radius: 14px; box-shadow: none; }
+      /* 文具盒贴纸/纸条：撕掉胶带与虚线，转成干净浅卡（来往输入面板更 ins） */
+      .moro-laiwang .scrap-tile { outline: none; border: 1px solid #ededed; border-radius: 16px; box-shadow: 0 1px 2px rgba(38, 38, 38, 0.04); }
+      .moro-laiwang .scrap-tile::after, .moro-laiwang .stationery-strip::before { display: none; }
+      .moro-laiwang .stationery-strip { outline: none; border: 1px solid #ededed; border-radius: 14px; }
+      /* 来往作用域里的滑动指示条换 ins 渐变（暖橙→品红→紫），更鲜活 */
+      .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, #fa7e1e, #d62976, #962fbf); }
+
+      /* IG 故事环：渐变描边 + 白缝 + 头像（用于「此刻」有动态的活跃角色，像 IG 的 story ring） */
+      .ig-ring {
+        display: inline-flex; padding: 2.5px; border-radius: 9999px;
+        background: conic-gradient(from 30deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5, #feda75);
+      }
+      .ig-ring > img { border: 2px solid #fff; }
     </style>
   <script type="importmap">
 {

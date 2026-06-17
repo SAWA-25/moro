@@ -215,16 +215,18 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
     const headerSafeStyle: React.CSSProperties = { minHeight: headerBaseHeight };
     const primaryTextClass = isDarkHeader ? 'text-white' : isPixelHeader ? 'text-[#fff7ed]' : 'text-slate-800';
     const secondaryTextClass = isDarkHeader ? 'text-slate-400' : isPixelHeader ? 'text-[#f3ddc7]' : 'text-slate-400';
-    const iconButtonClass = isDarkHeader
+    // 顶栏图标按钮统一带按压回弹（active:scale）+ 过渡，手感更跟手。
+    const pressFx = ' active:scale-90 transition-transform';
+    const iconButtonClass = (isDarkHeader
         ? 'text-slate-200 hover:bg-white/10 rounded-full'
         : isPixelHeader
           ? 'text-[#fff7ed] hover:bg-[#f8f0e0]/20 rounded-[4px] border-2 border-[#8f674a] bg-[#f8f0e0]/10'
-          : 'text-slate-500 hover:bg-slate-100 rounded-full';
-    const actionButtonClass = isDarkHeader
+          : 'text-slate-500 hover:bg-slate-100 rounded-full') + pressFx;
+    const actionButtonClass = (isDarkHeader
         ? 'text-sky-300 hover:bg-sky-400/10 rounded-full'
         : isPixelHeader
           ? 'text-[#fff7ed] hover:bg-[#f8f0e0]/20 rounded-[4px] border-2 border-[#8f674a] bg-[#f8f0e0]/10'
-          : 'text-indigo-500 hover:bg-indigo-50 rounded-full';
+          : 'text-indigo-500 hover:bg-indigo-50 rounded-full') + pressFx;
 
     const onlineStatusNode = headerStyle === 'telegram'
         ? null

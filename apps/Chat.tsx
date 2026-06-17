@@ -3010,7 +3010,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
     return (
         <div
-            className={`moro-chat-root ${finalRootClass}`}
+            className={`moro-chat-root moro-laiwang ${finalRootClass}`}
             style={finalRootStyle}
         >
              {/* 白框自定义 CSS：全局默认在前、角色专属在后（后者叠加覆盖）。作用于 .moro-chat-* 各零件。 */}
