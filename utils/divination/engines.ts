@@ -86,6 +86,34 @@ export function drawLenormand(spread: SpreadDef): DrawnLenormand[] {
     return spread.positions.map((position, i) => ({ position, card: deck[i] }));
 }
 
+// ── 翻牌挑选流程（用户从一副背面朝上的牌里自己挑）────────────────────────────
+/** 一张待挑选的塔罗牌：洗好牌时就把正逆位定下来（挑中即定，所见即所得）。 */
+export interface TarotPick { card: TarotCardDef; reversed: boolean; }
+
+/** 洗一副完整塔罗（78 张），每张预先定好正逆位，背面朝上供用户挑选。 */
+export function shuffledTarotDeck(): TarotPick[] {
+    return shuffle(TAROT_78).map(card => ({ card, reversed: randInt(2) === 1 }));
+}
+
+/** 把用户「按挑选顺序」选中的牌落到牌阵各位置。 */
+export function tarotFromPicks(spread: SpreadDef, picks: TarotPick[]): DrawnTarot[] {
+    return spread.positions.map((position, i) => ({
+        position,
+        card: picks[i].card,
+        reversed: picks[i].reversed,
+    }));
+}
+
+/** 洗一副完整雷诺曼（36 张），背面朝上供用户挑选。 */
+export function shuffledLenormandDeck(): LenormandCardDef[] {
+    return shuffle(LENORMAND_36);
+}
+
+/** 把用户选中的雷诺曼牌落到牌阵各位置。 */
+export function lenormandFromPicks(spread: SpreadDef, picks: LenormandCardDef[]): DrawnLenormand[] {
+    return spread.positions.map((position, i) => ({ position, card: picks[i] }));
+}
+
 // ── 卦：六爻金钱卦 ──────────────────────────────────────────────────────────
 
 /** 一爻的状态：值 6/7/8/9 = 老阴/少阳/少阴/老阳。 */
