@@ -18,7 +18,9 @@
 - **数据**：`utils/divination/cards.ts` —— `TAROT_78` / `LENORMAND_36` 牌义，`HEXAGRAM_BY_KEY`(64 卦，按「上卦bits_下卦bits」查) / `TRIGRAM_BY_BITS` / 先天八卦数映射。三爻 bits 约定：**下爻 = 最低位，阳 = 1**。
 - **随机**：`crypto.getRandomValues` + 拒绝采样去偏 + Fisher–Yates（`engines.ts`）。注意这是 app 运行时，可用 crypto；Workflow 脚本里才禁 `Math.random`。
 - **解牌**：`utils/divination/interpret.ts` `interpretReading()` —— 走 `resolveAuxApi`（副 API 优先、回退主 API），把牌面/卦象文字 + 问题 + 角色人设 + **世界书**（`WorldbookRuntime.resolveForChar` 取 local+global）组进 prompt，以角色口吻输出。`*ToText()` 把结果转可读文字（解读 + 发到聊天共用）。
+  - ⚠️ **解牌截断**：推理模型先在 `<think>` 里吃掉一大截 token，预算太小正文只显示半句。解牌走 `utils/llmComplete.ts` 的 `llmComplete`（`maxTokens:4096 + continueRounds:2`）：被 `finish_reason='length'` 截断会**自动接着写完**。改解牌长度/续写策略去那里，别只调一个 `max_tokens`。
 - **手动 vs API 解牌**：UI 两个入口——「让 TA 解牌」(API) / `<details>` 里「自己解」(手写 textarea)。解读 + 牌面摘要可「发到聊天」(`DB.saveMessage` system 消息)。
+- **洗牌 + 抽牌交互**：塔罗/雷诺曼点「抽牌」进 `components/theater/divination/CardPicker.tsx`（两段式：①洗牌堆点击重洗、可反复；②牌轮横向滑动、按牌阵位置逐张点选，抽中落进位置格子，抽满翻开）。皮肤＝折子戏黑白拼贴深「相版」+ 去色牌背（牌背图同 skin，取不到回退 CSS 黑白牌背）。`DivinationApp` 只持有当前洗好的那副牌，CardPicker 回传「按位置选中的索引序列」→ `tarotFromPicks`/`lenormandFromPicks` 落阵。六爻/梅花仍是直接起卦、无挑牌。
 
 ### 牌库（图）
 
@@ -48,6 +50,7 @@
   做这份问卷时 `genNextQuestion` **优先按顺序取题库的题、不调 AI**；题库取完（用户想要的题量更多）才自动用 AI 续题；角色仍逐题作答。
 - **番外指令库 `EXTRA_INSTRUCTIONS`**：`{ kind, label, instruction }[]`，`kind` 对应番外 8 个 tab（tieba/chatlog/meme/custom + wechat/moments/xhs/forum）。
   「番外工坊」「仿真图文」里渲染成芯片：点芯片＝自己挑，点「🎲 随机挑一条」＝系统（`pickInstruction`）从你的列表里替你选；选中即填进输入框、可再编辑。
+  - **长篇番外指令**（`kind:'custom'`，如「不少于 10000 字」的整段创作简报）：番外工坊「自定义」的 `genExtraPiece` 已放宽到 `maxTokens:4096 + continueRounds:5`（`utils/llmComplete.ts`），被长度截断会自动续写写完；`custom` 的 sys 文案（`utils/theaterPrompts.ts` 的 `extraPiecePrompt`）也要求严格照办指令里的字数/格式/不得 OOC。
 - 读取帮手：`bankQuizNames()` / `getBankQuestions(topic)` / `isBankQuiz` / `instructionsForKind(kind)` / `pickInstruction(kind)`。
 - 与 prompt 中心的分工：**这里只放「内容」（题、指令）**；番外实际生成用的 prompt 模板在 `utils/theaterPrompts.ts`（[贰] 番外）。
 

@@ -12,38 +12,21 @@
 
 import type { CharacterProfile, UserProfile } from '../types';
 import type { ResolvedApi } from './auxApi';
-import { safeResponseJson, extractContent, extractJson } from './safeApi';
+import { extractJson } from './safeApi';
+import { llmComplete } from './llmComplete';
 import {
     EXTRA_QUIZ_QUESTION_SYS, extraQuizQuestionUser, extraQuizAnswerSys, extraQuizAnswerUser,
     extraPiecePrompt, extraFauxPrompt,
 } from './theaterPrompts';
 
-async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }): Promise<string> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages,
-            temperature: opts?.temperature ?? 0.9,
-            max_tokens: opts?.maxTokens ?? 900,
-            stream: false,
-        }),
+/** 聊天补全（去思维链，按需续写）。短问答 / JSON 不续写；长篇番外传 continueRounds 自动写完。 */
+async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal; continueRounds?: number }): Promise<string> {
+    return llmComplete(api, messages, {
+        temperature: opts?.temperature ?? 0.9,
+        maxTokens: opts?.maxTokens ?? 900,
+        continueRounds: opts?.continueRounds,
         signal: opts?.signal,
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
-    return stripThink(extractContent(data) || '');
-}
-
-/** 去掉思维链：成对 <think>…</think>，以及被 max_tokens 截断、没收尾的残缺 <think>…（到结尾）。 */
-function stripThink(s: string): string {
-    return (s || '')
-        .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
-        .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
-        .trim();
 }
 
 /** 从问卷名里尽量解析题量（如「恋爱相性100问」「性癖测试50题」），解析不到给 50（且不少于 50）。 */
@@ -108,7 +91,8 @@ export async function genExtraPiece(args: {
     const { api, kind, char, userProfile, prompt, signal } = args;
     const userName = (userProfile?.name || '').trim() || '我';
     const { sys, user } = extraPiecePrompt({ kind, charName: char.name, description: char.description || '', prompt, userName });
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 2200, signal })) || '（这次没生成出来，换个说法再试试）';
+    // 番外指令常要求「不少于 5000/10000 字」的长篇——大幅放宽 max_tokens，并在被长度截断时自动续写写完。
+    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 4096, continueRounds: 5, signal })) || '（这次没生成出来，换个说法再试试）';
 }
 
 // ── 仿真图文番外（结构化 JSON，UI 渲染成仿微信/朋友圈/小红书/论坛） ──────────────

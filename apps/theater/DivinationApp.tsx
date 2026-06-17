@@ -15,6 +15,7 @@ import {
 import { TarotSpreadView, LenormandSpreadView } from '../../components/theater/divination/TarotCard';
 import { LiuyaoView, MeihuaView } from '../../components/theater/divination/HexagramView';
 import CardDeckManager from '../../components/theater/divination/CardDeckManager';
+import CardPicker from '../../components/theater/divination/CardPicker';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, INK, INK_SOFT } from './scrapbook';
 
 interface Props { onExit: () => void; }
@@ -40,36 +41,6 @@ const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.85)', 
 
 // 默认牌背图（放在 public/ 根，部署后按此路径取；该图在主支上）。取不到时回退到 CSS 黑白牌背。
 const DEFAULT_CARD_BACK = '/A6581845961B07B58DA1E1E88DA367F3.jpg';
-
-/** 背面朝上的牌（挑牌界面用）：优先牌背图，加载失败回退黑白拼贴牌背。 */
-const CardBack: React.FC<{ src?: string; selected?: boolean; order?: number; onClick?: () => void }> = ({ src, selected, order, onClick }) => {
-    const [broken, setBroken] = useState(false);
-    const showImg = !!src && !broken;
-    return (
-        <button
-            onClick={onClick}
-            className={`relative aspect-[2/3] w-full rounded-md overflow-hidden transition-transform active:scale-95 ${selected ? '-translate-y-1.5' : ''}`}
-            style={{
-                outline: selected ? '2px solid #f3ecdf' : '1px solid rgba(246,243,236,0.22)',
-                outlineOffset: selected ? 0 : -1,
-                boxShadow: selected ? '0 10px 16px -8px rgba(0,0,0,0.7)' : '0 4px 8px -6px rgba(0,0,0,0.5)',
-            }}
-        >
-            {showImg ? (
-                <img src={src} onError={() => setBroken(true)} className="w-full h-full object-cover" style={{ filter: 'grayscale(1) contrast(1.05)' }} alt="" draggable={false} />
-            ) : (
-                <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#2a2620,#141210)' }}>
-                    <div className="flex items-center justify-center" style={{ width: '60%', height: '76%', borderRadius: 3, border: '1px solid rgba(246,243,236,0.4)', outline: '1px solid rgba(246,243,236,0.16)', outlineOffset: 2 }}>
-                        <span style={{ color: 'rgba(246,243,236,0.85)', fontSize: 15 }}>✦</span>
-                    </div>
-                </div>
-            )}
-            {selected && order != null && (
-                <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>{order}</span>
-            )}
-        </button>
-    );
-};
 
 const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast, theme } = useOS();
@@ -98,11 +69,10 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const [meihua, setMeihua] = useState<MeihuaResult | null>(null);
     const [hasResult, setHasResult] = useState(false);
 
-    // 翻牌挑选（塔罗 / 雷诺曼）：先铺一副背面朝上的牌，用户自己挑够张数再翻开
+    // 翻牌挑选（塔罗 / 雷诺曼）：洗牌 → 抽牌两段式交互在 CardPicker 里；这里只持有「当前那副洗好的牌」。
     const [pickPhase, setPickPhase] = useState(false);
     const [tarotPickDeck, setTarotPickDeck] = useState<TarotPick[]>([]);
     const [lenoPickDeck, setLenoPickDeck] = useState<ReturnType<typeof shuffledLenormandDeck>>([]);
-    const [picks, setPicks] = useState<number[]>([]);
 
     const [manualText, setManualText] = useState('');
     const [aiText, setAiText] = useState('');
@@ -115,13 +85,13 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     }, []);
     useEffect(() => { void loadDecks(); }, [loadDecks]);
 
-    const resetResult = () => { setTarotDraws(null); setLenoDraws(null); setLiuyao(null); setMeihua(null); setHasResult(false); setManualText(''); setAiText(''); setPickPhase(false); setPicks([]); };
+    const resetResult = () => { setTarotDraws(null); setLenoDraws(null); setLiuyao(null); setMeihua(null); setHasResult(false); setManualText(''); setAiText(''); setPickPhase(false); };
 
-    /** 塔罗 / 雷诺曼：进入翻牌挑选；六爻 / 梅花：直接起卦出结果。 */
+    /** 塔罗 / 雷诺曼：进入洗牌+抽牌挑选；六爻 / 梅花：直接起卦出结果。 */
     const startDivine = () => {
         resetResult();
-        if (mode === 'tarot') { setTarotPickDeck(shuffledTarotDeck()); setPicks([]); setPickPhase(true); return; }
-        if (mode === 'lenormand') { setLenoPickDeck(shuffledLenormandDeck()); setPicks([]); setPickPhase(true); return; }
+        if (mode === 'tarot') { setTarotPickDeck(shuffledTarotDeck()); setPickPhase(true); return; }
+        if (mode === 'lenormand') { setLenoPickDeck(shuffledLenormandDeck()); setPickPhase(true); return; }
         if (mode === 'liuyao') setLiuyao(castLiuyao());
         else if (mode === 'meihua') {
             if (meihuaMethod === 'time') setMeihua(castMeihua({ method: 'time', time: nowToMeihuaTime() }));
@@ -134,14 +104,8 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         setHasResult(true);
     };
 
-    /** 挑选时点一张牌：未满则选中、再点取消；已满则忽略（保持挑选顺序 = 牌阵位置顺序）。 */
-    const need = mode === 'tarot' ? tarotSpread.count : lenoSpread.count;
-    const togglePick = (i: number) => {
-        setPicks(prev => prev.includes(i) ? prev.filter(x => x !== i) : (prev.length >= need ? prev : [...prev, i]));
-    };
-    /** 挑够数 → 按挑选顺序落到牌阵各位置，翻开出结果。 */
-    const revealPicks = () => {
-        if (picks.length !== need) return;
+    /** CardPicker 抽满后回调：按牌阵位置顺序把选中的索引落到各位置，翻开出结果。 */
+    const handleReveal = (picks: number[]) => {
         if (mode === 'tarot') setTarotDraws(tarotFromPicks(tarotSpread, picks.map(i => tarotPickDeck[i])));
         else if (mode === 'lenormand') setLenoDraws(lenormandFromPicks(lenoSpread, picks.map(i => lenoPickDeck[i])));
         setPickPhase(false);
@@ -294,34 +258,17 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                     </ScrapButton>
                 )}
 
-                {/* 翻牌挑选：铺一副背面朝上的牌，凭直觉挑够张数再翻开（黑底相版，牌背默认 DEFAULT_CARD_BACK） */}
+                {/* 翻牌挑选：洗牌堆 → 牌轮抽牌两段式（CardPicker，黑底相版，牌背默认 DEFAULT_CARD_BACK） */}
                 {pickPhase && (
-                    <div className="relative rounded-[16px] p-4" style={{
-                        background: 'linear-gradient(180deg,#26231f,#1c1a17)',
-                        border: '1px solid rgba(31,29,26,0.8)', outline: '1px dashed rgba(246,243,236,0.22)', outlineOffset: -6,
-                        boxShadow: '0 18px 34px -20px rgba(31,29,26,0.7)',
-                    }}>
-                        <div className="text-center mb-3">
-                            <div className="text-[12.5px] font-bold" style={{ color: 'rgba(246,243,236,0.9)' }}>凝神想着你要问的事，凭直觉挑 {need} 张牌</div>
-                            <div className="text-[10px] mt-1 tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.5)' }}>已选 {picks.length} / {need}　·　{activeMode.label}</div>
-                        </div>
-                        <div className="grid grid-cols-6 gap-1.5 max-h-[46vh] overflow-y-auto no-scrollbar pb-1 px-0.5">
-                            {Array.from({ length: mode === 'tarot' ? tarotPickDeck.length : lenoPickDeck.length }).map((_, i) => {
-                                const ord = picks.indexOf(i);
-                                return <CardBack key={i} src={skin?.cardBack || DEFAULT_CARD_BACK} selected={ord >= 0} order={ord >= 0 ? ord + 1 : undefined} onClick={() => togglePick(i)} />;
-                            })}
-                        </div>
-                        <div className="flex gap-2 mt-3">
-                            <button onClick={() => { mode === 'tarot' ? setTarotPickDeck(shuffledTarotDeck()) : setLenoPickDeck(shuffledLenormandDeck()); setPicks([]); }}
-                                className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重洗">
-                                <ArrowClockwise size={15} weight="bold" /> 重洗
-                            </button>
-                            <button onClick={revealPicks} disabled={picks.length !== need}
-                                className="flex-1 py-2.5 rounded-xl text-[12.5px] font-bold active:scale-95 disabled:opacity-40 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
-                                <Sparkle size={15} weight="fill" /> {picks.length === need ? `翻开这 ${need} 张` : `还要再挑 ${need - picks.length} 张`}
-                            </button>
-                        </div>
-                    </div>
+                    <CardPicker
+                        modeLabel={activeMode.label}
+                        positions={mode === 'tarot' ? tarotSpread.positions : lenoSpread.positions}
+                        deckCount={mode === 'tarot' ? tarotPickDeck.length : lenoPickDeck.length}
+                        cardBack={skin?.cardBack || DEFAULT_CARD_BACK}
+                        onReshuffle={() => { mode === 'tarot' ? setTarotPickDeck(shuffledTarotDeck()) : setLenoPickDeck(shuffledLenormandDeck()); }}
+                        onReveal={handleReveal}
+                        onCancel={() => setPickPhase(false)}
+                    />
                 )}
 
                 {/* 结果：拼贴里贴进一张「黑底相版」，保证牌面 / 卦象在深色上仍清晰 */}
