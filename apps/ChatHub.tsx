@@ -1338,7 +1338,11 @@ ${recentPrivate || '(暂无私聊)'}
                 } else if (m.type === 'emoji') {
                     content = '[表情包]';
                 } else if (m.type === 'transfer') {
-                    content = `[发红包: ${m.metadata?.amount}]`;
+                    // 区分红包 / 普通转账（与单聊 chatPrompts.summarizeGroupMsgContent 口径一致），
+                    // 否则导演会把转账误读成红包、让角色说错话。
+                    content = m.metadata?.kind === 'redpacket'
+                        ? `[红包: ${m.metadata?.amount}]`
+                        : `[转账: ${m.metadata?.amount}]`;
                 } else if (/^(data:|https?:\/\/)/i.test(rawText.trim())) {
                     content = '[媒体]';
                 } else {
@@ -1517,6 +1521,10 @@ ${attachedImagesNote}
             for (const action of actions) {
                 const targetId = activeGroup.members.find(id => id === action.charId);
                 if (!targetId) continue;
+                // 防御：导演偶尔给「本轮沉默的成员」只返回 {charId} 而不带 content（或 content 非字符串）。
+                // 不归一化的话，下面对 action.content 调 .replace/.exec 会抛 TypeError，被外层 catch 吞掉，
+                // 中断 for 循环 → 该 action 之后所有合法成员的发言被静默丢弃（群聊只渲染出前半截）。
+                if (typeof action.content !== 'string') action.content = '';
                 const charName = characters.find(c => c.id === targetId)?.name || '成员';
 
                 // 禁言强制执行：模型不听话也拦下来，被禁言成员本轮的输出全部丢弃

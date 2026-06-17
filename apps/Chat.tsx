@@ -1210,7 +1210,10 @@ const Chat: React.FC = () => {
     // ── 求婚 / 订婚 ──
     const finalizeEngagement = async (proposalBy: 'user' | 'char', vow: string) => {
         if (!char) return;
-        const today = new Date().toISOString().slice(0, 10);
+        // 用本地日期（与情侣空间 todayYmd / loveDays 的本地解析口径一致）。toISOString() 取的是 UTC
+        // 日期，在负时区深夜订婚会比本地日期早/晚一天，导致相恋天数 / 婚期倒计时 off-by-one。
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const rel = buildRelationshipState(char.relationship, 'engaged', STAGE_DEFAULT_LABEL.engaged, '求婚成功');
         const marriage = createMarriageState(proposalBy, proposalBy === 'user' ? (userProfile.name || '我') : char.name);
         updateCharacter(char.id, { relationship: rel, marriage, affection: 100 });

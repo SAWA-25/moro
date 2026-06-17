@@ -1026,7 +1026,17 @@ export async function applyAssistantPostProcessing(
         const daysAgo = dateInput.match(/^(\d+)天前$/);
         if (daysAgo) { const d = new Date(now); d.setDate(d.getDate() - parseInt(daysAgo[1])); return d.toISOString().split('T')[0]; }
         const monthDay = dateInput.match(/(\d{1,2})月(\d{1,2})/);
-        if (monthDay) return `${now.getFullYear()}-${monthDay[1].padStart(2, '0')}-${monthDay[2].padStart(2, '0')}`;
+        if (monthDay) {
+            // 用本地日期构造 + 月/日回环校验：13月 / 2月30 / 4月31 这类溢出会被 new Date 滚到别的月，
+            // getMonth/getDate 对不上即判非法，不返回伪日期（否则下游 if (targetDate) 会把它当成
+            // 「有效日期」去查空结果）。无时区问题（全程本地）。非法则继续往下走通用解析。
+            const mo = parseInt(monthDay[1], 10);
+            const dy = parseInt(monthDay[2], 10);
+            const probe = new Date(now.getFullYear(), mo - 1, dy);
+            if (probe.getMonth() === mo - 1 && probe.getDate() === dy) {
+                return `${now.getFullYear()}-${monthDay[1].padStart(2, '0')}-${monthDay[2].padStart(2, '0')}`;
+            }
+        }
         const parsed = new Date(dateInput);
         if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
         return '';
