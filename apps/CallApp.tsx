@@ -1084,7 +1084,7 @@ const CallApp: React.FC = () => {
             <button key={char.id} onClick={() => setSelectedCharId(char.id)} className={`relative w-full p-3.5 text-left border-2 border-black transition-transform active:translate-x-px active:translate-y-px ${active ? 'bg-black text-white' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: active ? '3px 3px 0 rgba(27,26,23,0.4)' : '3px 3px 0 #000' }}>
               {active && <span className="absolute -top-2 -right-2 border-2 border-black bg-white text-black text-[9px] font-mono px-1.5 rotate-6">选中</span>}
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 border-2 ${active ? 'border-white' : 'border-black'} grayscale flex items-center justify-center font-serif font-bold overflow-hidden -rotate-2`}>{char.avatar ? <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" /> : (char.name?.[0] || '某')}</div>
+                <div className={`w-12 h-12 border-2 ${active ? 'border-white' : 'border-black'} flex items-center justify-center font-serif font-bold overflow-hidden -rotate-2`}>{char.avatar ? <img src={char.avatar} alt={char.name} className="w-full h-full object-cover" /> : (char.name?.[0] || '某')}</div>
                 <div className="min-w-0">
                   <div className="font-serif font-bold truncate">{char.name}</div>
                   <div className={`text-xs mt-1 line-clamp-2 ${active ? 'text-white/70' : 'text-neutral-500'}`}>{char.description || '在听筒那头等你。'}</div>
@@ -1127,7 +1127,7 @@ const CallApp: React.FC = () => {
             <button key={record.id} onClick={() => { setRecordDetailId(record.id); setViewMode('record-detail'); }} className={`relative w-full bg-white border-2 border-black p-4 text-left transition-transform active:translate-x-px active:translate-y-px ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
               <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#efece3] border-2 border-black rounded-full -ml-2" />
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 border-2 border-black grayscale flex items-center justify-center text-sm font-serif font-bold overflow-hidden -rotate-2">{record.characterName[0] || '某'}</div>
+                <div className="w-10 h-10 border-2 border-black flex items-center justify-center text-sm font-serif font-bold overflow-hidden -rotate-2">{record.characterName[0] || '某'}</div>
                 <div className="min-w-0 flex-1">
                   <div className="font-serif font-bold text-sm truncate">{record.characterName}</div>
                   <div className="text-xs text-neutral-500 mt-0.5 font-mono">{formatDuration(record.durationSec)} · {turnCount} 个来回</div>
@@ -1195,15 +1195,15 @@ const CallApp: React.FC = () => {
   return (
     <div className="h-full w-full relative text-black flex flex-col overflow-hidden" style={{ background: '#efece3' }}>
       <div
-        className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-25 grayscale"
+        className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-25"
         style={{ backgroundImage: (selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar) ? `url(${selectedChar?.convoSettings?.callSprites?.['默认'] || selectedChar?.avatar})` : undefined }}
       />
-      {/* 会话设置「通话立绘」：默认立绘作为通话形象铺在背景之上（黑白处理） */}
+      {/* 会话设置「通话立绘」：默认立绘作为通话形象铺在背景之上（保留原彩色） */}
       {selectedChar?.convoSettings?.callSprites?.['默认'] && (
         <img
           src={selectedChar.convoSettings.callSprites['默认']}
           alt=""
-          className="absolute bottom-0 left-1/2 -translate-x-1/2 max-h-[72%] max-w-[88%] object-contain pointer-events-none select-none opacity-80 grayscale"
+          className="absolute bottom-0 left-1/2 -translate-x-1/2 max-h-[72%] max-w-[88%] object-contain pointer-events-none select-none opacity-80"
         />
       )}
       {/* 报纸网点纹理 */}
@@ -1213,7 +1213,7 @@ const CallApp: React.FC = () => {
       <div className="px-4 pt-10 pb-3 border-b-2 border-black flex items-center justify-between">
         <button onClick={handleHangup} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断"><PhoneDisconnect size={15} weight="bold" /></button>
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 border-2 border-black grayscale flex items-center justify-center text-xs font-serif font-bold overflow-hidden -rotate-2">{selectedChar?.avatar ? <img src={selectedChar.avatar} alt="" className="w-full h-full object-cover" /> : (selectedChar?.name?.[0] || '某')}</div>
+          <div className="w-8 h-8 border-2 border-black flex items-center justify-center text-xs font-serif font-bold overflow-hidden -rotate-2">{selectedChar?.avatar ? <img src={selectedChar.avatar} alt="" className="w-full h-full object-cover" /> : (selectedChar?.name?.[0] || '某')}</div>
           <div className="text-sm font-serif font-bold">{selectedChar?.name || '未选号码'}</div>
         </div>
         <div className="text-sm tabular-nums font-mono border-2 border-black bg-white px-1.5 py-0.5">{formatDuration(elapsedSeconds)}</div>
@@ -1238,7 +1238,7 @@ const CallApp: React.FC = () => {
           <div className={`absolute inset-0 border-2 border-black ${displayCallState === 'speaking' ? 'animate-ping' : 'opacity-40'}`} />
           <div className={`absolute -inset-3 border-2 border-dashed border-black ${displayCallState === 'speaking' ? 'animate-pulse' : 'opacity-25'}`} />
           {selectedChar?.avatar
-            ? <img src={selectedChar.avatar} alt={selectedChar.name} className="relative z-10 w-full h-full object-cover border-2 border-black grayscale" style={{ boxShadow: '4px 4px 0 #000' }} />
+            ? <img src={selectedChar.avatar} alt={selectedChar.name} className="relative z-10 w-full h-full object-cover border-2 border-black" style={{ boxShadow: '4px 4px 0 #000' }} />
             : <div className="relative z-10 w-full h-full border-2 border-black bg-white flex items-center justify-center text-3xl font-serif font-bold" style={{ boxShadow: '4px 4px 0 #000' }}>{selectedChar?.name?.[0] || '某'}</div>}
           {/* 照片角 */}
           <span className="absolute z-20 -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-black" />

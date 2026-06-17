@@ -592,8 +592,8 @@
          但留住圆润温度与柔和配色。仅作用在 .moro-laiwang 作用域内（来往），不影响折子戏等「黑白拼贴手账」身份。
          注意：.moro-laiwang 只作纯作用域钩子、自身不设背景——聊天页有自己的皮肤底色/壁纸，别被这层盖掉。 */
       /* 黑白灰主色调：作用域内把主题色整体去饱和成中性墨灰，一举改掉所有 primary 强调色
-         （bg-/text-/border-/ring-primary 全部变灰）；并把头像/故事环等「装饰图」去色成黑白，
-         营造 ins 杂志拼贴的单色编辑部观感——但不动聊天正文图片/贴纸/表情的内容色。 */
+         （bg-/text-/border-/ring-primary 全部变灰），营造 ins 杂志拼贴的单色编辑部观感——
+         但角色头像保留原彩色，聊天正文图片/贴纸/表情的内容色也不动。 */
       .moro-laiwang {
         --primary-hue: 30;
         --primary-sat: 0%;
@@ -602,9 +602,7 @@
         --ink-soft: #857f74;
         --glass-border: rgba(176, 170, 158, 0.55);
       }
-      /* 头像/封面/故事环去色（杂志黑白）。.moro-mono 供组件主动挂载到任意要去色的图。 */
-      .moro-laiwang img.rounded-full,
-      .moro-laiwang .ig-ring > img,
+      /* 角色头像 / 故事环头像保持原彩色（不再去色）；仅显式挂 .moro-mono 的装饰图转黑白。 */
       .moro-laiwang .moro-mono { filter: grayscale(1) contrast(1.03); }
       /* 卡片：纯白 + 发丝线 + 大圆角 + 极柔投影（覆盖 .scrap-card 的虚线描边/纸面投影） */
       .moro-laiwang .scrap-card {
