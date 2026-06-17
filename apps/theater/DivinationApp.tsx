@@ -231,7 +231,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                         </div>
                         {deckImported === 0 && (
                             <button onClick={() => { setDeckToManage('tarot'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(31,29,26,0.06)', color: '#5b554a', border: '1px dashed rgba(150,144,132,0.7)' }}>
-                                <Stack size={15} weight="bold" /> 还没导入塔罗牌图，点此批量导入（也可不导入，用文字牌义占卜）
+                                <Stack size={15} weight="bold" /> 已内置整副韦特塔罗牌面，可直接抽牌；想用自己的牌图？点此批量导入
                             </button>
                         )}
                     </div>
@@ -280,8 +280,8 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                         border: '1px solid rgba(31,29,26,0.8)', outline: '1px dashed rgba(246,243,236,0.22)', outlineOffset: -6,
                         boxShadow: '0 18px 34px -20px rgba(31,29,26,0.7)', transform: 'rotate(-0.4deg)',
                     }}>
-                        {tarotDraws && <TarotSpreadView draws={tarotDraws} images={tarotImgs} skin={skin} />}
-                        {lenoDraws && <LenormandSpreadView draws={lenoDraws} images={lenoImgs} skin={skin} />}
+                        {tarotDraws && <TarotSpreadView draws={tarotDraws} images={tarotImgs} skin={skin} cardBack={skin?.cardBack || DEFAULT_CARD_BACK} />}
+                        {lenoDraws && <LenormandSpreadView draws={lenoDraws} images={lenoImgs} skin={skin} cardBack={skin?.cardBack || DEFAULT_CARD_BACK} />}
                         {liuyao && <LiuyaoView r={liuyao} />}
                         {meihua && <MeihuaView r={meihua} />}
 

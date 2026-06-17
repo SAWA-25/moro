@@ -29,13 +29,17 @@
 
 ### 牌库（图）
 
-- 塔罗 78 张命名 `0.jpg`~`77.jpg`、雷诺曼 36 张命名 `1.jpg`~`36.jpg`，在占卜 app 的「牌库」子页（`components/theater/divination/CardDeckManager.tsx`）`<input multiple>` 批量导入：`processImage` 压成 dataURL → `DB.bulkSaveDivinationCards`。按文件名首个数字解析 index。
-- 存储：IndexedDB `divination_cards` store（`db.ts` v72，keyPath `id=${deck}_${index}`，建 `deck` 索引）。CRUD：`getDivinationCards(deck)` / `saveDivinationCard` / `bulkSaveDivinationCards` / `deleteDivinationDeck`。**未导入也能占卜**（牌面退回文字牌义占位）。
-- ⚠️ 牌库**不进全量备份**（与 takeout 同策略）：图是大 base64、可重新导入，避免撑爆导出。
+- **内置默认塔罗牌面**：仓库自带整副公版韦特塔罗（Rider–Waite–Smith，1909 公有领域），放在 `public/tarot/0.jpg`~`77.jpg`，按 `TAROT_78` 的 index 命名（0~21 大阿卡纳、22~35 权杖、36~49 圣杯、50~63 宝剑、64~77 星币；小牌 01=Ace…10=Ten、11=侍从、12=骑士、13=王后、14=King）。`TarotCard.tsx` 的 `defaultTarotFace(index)` 给出 `/tarot/${index}.jpg`。**开箱即用、不必导入**。雷诺曼无内置图。
+- 牌面取图优先级：**用户导入的自定义图 → 内置默认牌面 → 文字牌义占位**（`CardFace` 的 `<img onError>` 再兜底回占位）。
+- 塔罗 78 张命名 `0.jpg`~`77.jpg`、雷诺曼 36 张命名 `1.jpg`~`36.jpg`，在占卜 app 的「牌库」子页（`components/theater/divination/CardDeckManager.tsx`）`<input multiple>` 批量导入即可**覆盖**内置图：`processImage` 压成 dataURL → `DB.bulkSaveDivinationCards`。按文件名首个数字解析 index。
+- 存储：IndexedDB `divination_cards` store（`db.ts` v72，keyPath `id=${deck}_${index}`，建 `deck` 索引）。CRUD：`getDivinationCards(deck)` / `saveDivinationCard` / `bulkSaveDivinationCards` / `deleteDivinationDeck`。
+- ⚠️ 用户导入的牌库**不进全量备份**（与 takeout 同策略）：图是大 base64、可重新导入，避免撑爆导出。内置默认牌面是静态资源，不入库。
 
 ### 牌面美化（主题 App「牌面」页）
 
-`apps/Appearance.tsx` 的 `TarotSkinEditor` → 写 `theme.tarotSkin`：`cardBack`(牌背图 dataURL) / `frame`(none/gold/ink/film) / `renderStyle`(classic/minimal/mystic)。占卜 app 的 `components/theater/divination/TarotCard.tsx` 读这份 skin 渲染牌面（逆位 `rotate-180`）。
+`apps/Appearance.tsx` 的 `TarotSkinEditor` → 写 `theme.tarotSkin`：`cardBack`(牌背图 dataURL) / `frame`(none/gold/ink/film) / `renderStyle`(classic/minimal/mystic)。占卜 app 的 `components/theater/divination/TarotCard.tsx` 读这份 skin 渲染牌面。
+- **抽牌结果＝大牌面 + 3D 翻牌揭示**（仿 Quin 等实体占卜 App）：`CardFace` 先背面朝上（牌背图 = `skin.cardBack` 或 `DEFAULT_CARD_BACK`），逐张错峰 `rotateY(180→0)` 翻面（`backface-visibility:hidden` + `preserve-3d`），配柔光光晕（`animate-tarot-glow`）+ 一次性高光扫过（`animate-tarot-shine`）+ 轻微浮动（`animate-tarot-bob`，错峰相位）。三个 keyframe 定义在 `index.html` 的 Tailwind 配置里。
+- 牌面尺寸按牌阵张数自适应（`widthFor`：单张最大 200px、越多越小、横向可滚），比旧版（112px）明显增大。逆位＝牌面 `rotate(180deg)` + 右上「逆位」角标。`TarotSpreadView` / `LenormandSpreadView` 接收 `cardBack` 作翻牌背面。
 
 ## 番外 · 仿真图文（小剧场 → 番外 → 仿真图文）
 
@@ -54,6 +58,7 @@
 
 - **题库 `QUESTION_BANK`**：`Record<问卷名, 题目[]>`。问卷名自动进「问卷番外」的快捷选项（带「题库」小标）。
   做这份问卷时 `genNextQuestion` **优先按顺序取题库的题、不调 AI**；题库取完（用户想要的题量更多）才自动用 AI 续题；角色仍逐题作答。
+  - ⚠️ **角色作答/AI 出题防截断**（修「回答显示不全」）：`genCharAnswer`（`maxTokens:1200 + continueRounds:3`）、`genNextQuestion`（`maxTokens:800 + continueRounds:2`）都走 `utils/llmComplete.ts`——推理模型先在 `<think>` 里吃 token，预算太小正文只剩半句；被长度截断会自动续写写完（同解牌那条坑）。改作答/出题长度去这两处，别只调一个 `maxTokens`。
 - **番外指令库 `EXTRA_INSTRUCTIONS`**：`{ kind, label, instruction }[]`，`kind` 对应番外 8 个 tab（tieba/chatlog/meme/custom + wechat/moments/xhs/forum）。
   「番外工坊」「仿真图文」里渲染成芯片：点芯片＝自己挑，点「🎲 随机挑一条」＝系统（`pickInstruction`）从你的列表里替你选；选中即填进输入框、可再编辑。
   - **长篇番外指令**（`kind:'custom'`，如「不少于 10000 字」的整段创作简报）：番外工坊「自定义」的 `genExtraPiece` 已放宽到 `maxTokens:4096 + continueRounds:5`（`utils/llmComplete.ts`），被长度截断会自动续写写完；`custom` 的 sys 文案（`utils/theaterPrompts.ts` 的 `extraPiecePrompt`）也要求严格照办指令里的字数/格式/不得 OOC。

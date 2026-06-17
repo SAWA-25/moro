@@ -18,7 +18,7 @@ interface Props {
 }
 
 const DECK_META = {
-    tarot: { name: '塔罗', total: 78, lo: 0, hi: 77, hint: '78 张图，命名 0.jpg ～ 77.jpg（0 号为愚者，按韦特体系大→小阿卡纳）' },
+    tarot: { name: '塔罗', total: 78, lo: 0, hi: 77, hint: '已内置整副公版韦特塔罗牌面，可直接占卜。想换成自己的牌？导入 78 张图，命名 0.jpg ～ 77.jpg（0 号为愚者，按韦特体系大→小阿卡纳）即可覆盖' },
     lenormand: { name: '雷诺曼', total: 36, lo: 1, hi: 36, hint: '36 张图，命名 1.jpg ～ 36.jpg（牌号 1=骑士…36=十字）' },
 } as const;
 
