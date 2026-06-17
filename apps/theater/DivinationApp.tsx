@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../../context/OSContext';
-import { Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, PencilSimple, Cards } from '@phosphor-icons/react';
+import { Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, Cards } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { DB } from '../../utils/db';
 import { WorldbookRuntime } from '../../utils/worldbookRuntime';
@@ -10,7 +10,7 @@ import {
     type SpreadDef, type DrawnTarot, type DrawnLenormand, type LiuyaoResult, type MeihuaResult, type TarotPick,
 } from '../../utils/divination/engines';
 import {
-    interpretReading, tarotToText, lenormandToText, liuyaoToText, meihuaToText, type DivinationKind,
+    interpretReading, tarotToText, lenormandToText, liuyaoToText, meihuaToText, type DivinationKind, type ReadingTurn,
 } from '../../utils/divination/interpret';
 import { TarotSpreadView, LenormandSpreadView } from '../../components/theater/divination/TarotCard';
 import { LiuyaoView, MeihuaView } from '../../components/theater/divination/HexagramView';
@@ -74,9 +74,11 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const [tarotPickDeck, setTarotPickDeck] = useState<TarotPick[]>([]);
     const [lenoPickDeck, setLenoPickDeck] = useState<ReturnType<typeof shuffledLenormandDeck>>([]);
 
-    const [manualText, setManualText] = useState('');
-    const [aiText, setAiText] = useState('');
+    // 抽牌后「继续和角色对话」：角色围绕同一副牌继续回应追问（取代旧的「自己解」手写框）
+    const [convo, setConvo] = useState<{ role: 'user' | 'char'; text: string }[]>([]);
+    const [askInput, setAskInput] = useState('');
     const [busy, setBusy] = useState(false);
+    const userName = (userProfile?.name || '').trim() || '我';
 
     const loadDecks = useCallback(async () => {
         const [t, l] = await Promise.all([DB.getDivinationCards('tarot'), DB.getDivinationCards('lenormand')]);
@@ -85,7 +87,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     }, []);
     useEffect(() => { void loadDecks(); }, [loadDecks]);
 
-    const resetResult = () => { setTarotDraws(null); setLenoDraws(null); setLiuyao(null); setMeihua(null); setHasResult(false); setManualText(''); setAiText(''); setPickPhase(false); };
+    const resetResult = () => { setTarotDraws(null); setLenoDraws(null); setLiuyao(null); setMeihua(null); setHasResult(false); setConvo([]); setAskInput(''); setPickPhase(false); };
 
     /** 塔罗 / 雷诺曼：进入洗牌+抽牌挑选；六爻 / 梅花：直接起卦出结果。 */
     const startDivine = () => {
@@ -120,16 +122,28 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         return '';
     };
 
-    const runInterpret = async () => {
+    /**
+     * 解牌 / 继续追问统一入口：
+     *  - 无入参 = 首次解牌（角色给完整解读）；
+     *  - 传 userMessage = 围绕同一副牌的追问，角色顺着已抽的牌口语化回应。
+     */
+    const ask = async (userMessage?: string) => {
         if (!char) { addToast('先选一个为你解牌的角色', 'info'); return; }
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
-        setBusy(true); setAiText('');
+        if (busy) return;
+        const q = userMessage?.trim();
+        // 显示态对话 → LLM 角色历史；追问把新问题接在末尾
+        const history: ReadingTurn[] = convo.map(m => ({ role: m.role === 'char' ? 'assistant' : 'user', content: m.text }));
+        if (q) history.push({ role: 'user', content: q });
+        setBusy(true);
+        if (q) { setConvo(prev => [...prev, { role: 'user', text: q }]); setAskInput(''); }
         try {
             const out = await interpretReading({
                 api, kind: mode, readingText: currentReadingText(), question,
                 char, userProfile, worldbookText: buildWorldbookText(char),
+                history: history.length ? history : undefined,
             });
-            setAiText(out);
+            setConvo(prev => [...prev, { role: 'char', text: out }]);
         } catch (e: any) {
             addToast('解牌失败：' + (e?.message || e), 'error');
         } finally { setBusy(false); }
@@ -137,8 +151,8 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
 
     const exportToChat = async () => {
         if (!char) { addToast('先选一个角色才能发到 TA 的聊天', 'info'); return; }
-        const interp = aiText || manualText.trim();
-        const body = `【占卜${question ? `·${question}` : ''}】\n${currentReadingText()}` + (interp ? `\n\n— ${char.name} 的解读 —\n${interp}` : '');
+        const lines = convo.map(m => m.role === 'char' ? `— ${char.name}：${m.text}` : `— ${userName}：${m.text}`);
+        const body = `【占卜${question ? `·${question}` : ''}】\n${currentReadingText()}` + (lines.length ? `\n\n${lines.join('\n\n')}` : '');
         try {
             await DB.saveMessage({ charId: char.id, role: 'system', type: 'text', content: body, timestamp: Date.now() });
             addToast(`已发到与 ${char.name} 的聊天`, 'success');
@@ -166,6 +180,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         : { background: 'rgba(255,253,247,0.7)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.65)' };
 
     return (
+        <>
         <PaperShell>
             <ScrapHeader title="占卜" en="THE READING" onBack={onExit} backLabel="回戏单" />
 
@@ -251,24 +266,11 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                     </div>
                 )}
 
-                {/* 起卦/抽牌按钮 */}
+                {/* 起卦/抽牌按钮（塔罗/雷诺曼的抽牌走全屏 CardPicker，见下方 overlay） */}
                 {!pickPhase && (
                     <ScrapButton variant="ink" className="w-full py-3 text-sm" onClick={startDivine} icon={mode === 'tarot' || mode === 'lenormand' ? <Cards size={17} weight="bold" /> : <Sparkle size={17} weight="fill" />}>
                         {hasResult ? '重新' : ''}{mode === 'tarot' || mode === 'lenormand' ? '抽牌' : '起卦'}（{activeMode.label}）
                     </ScrapButton>
-                )}
-
-                {/* 翻牌挑选：洗牌堆 → 牌轮抽牌两段式（CardPicker，黑底相版，牌背默认 DEFAULT_CARD_BACK） */}
-                {pickPhase && (
-                    <CardPicker
-                        modeLabel={activeMode.label}
-                        positions={mode === 'tarot' ? tarotSpread.positions : lenoSpread.positions}
-                        deckCount={mode === 'tarot' ? tarotPickDeck.length : lenoPickDeck.length}
-                        cardBack={skin?.cardBack || DEFAULT_CARD_BACK}
-                        onReshuffle={() => { mode === 'tarot' ? setTarotPickDeck(shuffledTarotDeck()) : setLenoPickDeck(shuffledLenormandDeck()); }}
-                        onReveal={handleReveal}
-                        onCancel={() => setPickPhase(false)}
-                    />
                 )}
 
                 {/* 结果：拼贴里贴进一张「黑底相版」，保证牌面 / 卦象在深色上仍清晰 */}
@@ -283,31 +285,56 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                         {liuyao && <LiuyaoView r={liuyao} />}
                         {meihua && <MeihuaView r={meihua} />}
 
-                        <div className="border-t pt-3 space-y-2" style={{ borderColor: 'rgba(246,243,236,0.14)' }}>
-                            <div className="flex gap-2">
-                                <button onClick={() => void runInterpret()} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 disabled:opacity-50 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
-                                    <Cards size={15} weight="bold" /> {busy ? '解牌中…' : `让 ${char?.name || 'TA'} 解牌`}
+                        <div className="border-t pt-3 space-y-2.5" style={{ borderColor: 'rgba(246,243,236,0.14)' }}>
+                            {convo.length === 0 ? (
+                                // 还没解牌：让角色先给一段完整解读
+                                <button onClick={() => void ask()} disabled={busy} className="w-full py-2.5 rounded-xl text-[12.5px] font-bold active:scale-95 disabled:opacity-50 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
+                                    <Cards size={15} weight="bold" /> {busy ? `${char?.name || 'TA'} 解牌中…` : `让 ${char?.name || 'TA'} 解牌`}
                                 </button>
-                                <button onClick={() => startDivine()} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重抽/重起">
-                                    <ArrowClockwise size={15} weight="bold" />
-                                </button>
-                            </div>
+                            ) : (
+                                <>
+                                    {/* 解牌 + 继续追问：像和角色聊天一样，TA 顺着这副牌继续回应 */}
+                                    <div className="space-y-2">
+                                        {convo.map((m, i) => m.role === 'char' ? (
+                                            <div key={i} className="rounded-xl p-3 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ background: 'rgba(246,243,236,0.08)', border: '1px solid rgba(246,243,236,0.16)', color: 'rgba(246,243,236,0.92)' }}>
+                                                <div className="text-[9px] mb-1 tracking-wide" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>{char?.name || 'TA'}</div>
+                                                {m.text}
+                                            </div>
+                                        ) : (
+                                            <div key={i} className="flex justify-end">
+                                                <div className="rounded-xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap max-w-[84%]" style={{ background: '#f3ecdf', color: '#26231f' }}>{m.text}</div>
+                                            </div>
+                                        ))}
+                                        {busy && <div className="text-[11px] pl-1" style={{ color: 'rgba(246,243,236,0.5)' }}>{char?.name || 'TA'} 正在回应…</div>}
+                                    </div>
 
-                            {aiText && (
-                                <div className="rounded-xl p-3 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ background: 'rgba(246,243,236,0.08)', border: '1px solid rgba(246,243,236,0.16)', color: 'rgba(246,243,236,0.92)' }}>{aiText}</div>
+                                    {/* 继续追问输入框：回车 / 点发送，角色继续回答牌上的问题 */}
+                                    <div className="flex gap-2 items-end">
+                                        <textarea
+                                            value={askInput}
+                                            onChange={e => setAskInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (askInput.trim() && !busy) void ask(askInput); } }}
+                                            rows={1}
+                                            placeholder={`继续问 ${char?.name || 'TA'}…（这张牌是什么意思 / 那我该怎么办）`}
+                                            className="flex-1 rounded-xl px-3 py-2 text-[13px] outline-none resize-none"
+                                            style={{ background: 'rgba(0,0,0,0.25)', color: '#f3ecdf', border: '1px solid rgba(246,243,236,0.16)', maxHeight: 96 }}
+                                        />
+                                        <button onClick={() => askInput.trim() && void ask(askInput)} disabled={busy || !askInput.trim()} className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center active:scale-95 disabled:opacity-40" style={{ background: '#f3ecdf', color: '#1f1d1a' }} title="继续问">
+                                            <PaperPlaneTilt size={17} weight="fill" />
+                                        </button>
+                                    </div>
+                                </>
                             )}
 
-                            <details className="rounded-xl" style={{ background: 'rgba(246,243,236,0.05)', border: '1px solid rgba(246,243,236,0.12)' }}>
-                                <summary className="px-3 py-2 text-[12px] cursor-pointer inline-flex items-center gap-1.5 list-none" style={{ color: 'rgba(246,243,236,0.7)' }}><PencilSimple size={14} weight="bold" /> 自己解（手写解读）</summary>
-                                <div className="px-3 pb-3">
-                                    <textarea value={manualText} onChange={e => setManualText(e.target.value)} rows={4} placeholder="写下你对这次占卜的理解…"
-                                        className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none" style={{ background: 'rgba(0,0,0,0.25)', color: '#f3ecdf', border: '1px solid rgba(246,243,236,0.16)' }} />
-                                </div>
-                            </details>
-
-                            <button onClick={() => void exportToChat()} className="w-full py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
-                                <PaperPlaneTilt size={15} weight="bold" /> 发到与 {char?.name || 'TA'} 的聊天
-                            </button>
+                            {/* 重抽 + 发到聊天 */}
+                            <div className="flex gap-2">
+                                <button onClick={() => startDivine()} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重抽/重起">
+                                    <ArrowClockwise size={15} weight="bold" /> 重抽
+                                </button>
+                                <button onClick={() => void exportToChat()} disabled={convo.length === 0} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 disabled:opacity-40 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
+                                    <PaperPlaneTilt size={15} weight="bold" /> 发到与 {char?.name || 'TA'} 的聊天
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -320,6 +347,20 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                 )}
             </ScrapScroll>
         </PaperShell>
+
+        {/* 塔罗 / 雷诺曼·全屏抽牌：洗牌花 → 牌轮抽牌两段式（CardPicker 全屏接管，盖住整个占卜页） */}
+        {pickPhase && (
+            <CardPicker
+                modeLabel={activeMode.label}
+                positions={mode === 'tarot' ? tarotSpread.positions : lenoSpread.positions}
+                deckCount={mode === 'tarot' ? tarotPickDeck.length : lenoPickDeck.length}
+                cardBack={skin?.cardBack || DEFAULT_CARD_BACK}
+                onReshuffle={() => { mode === 'tarot' ? setTarotPickDeck(shuffledTarotDeck()) : setLenoPickDeck(shuffledLenormandDeck()); }}
+                onReveal={handleReveal}
+                onCancel={() => setPickPhase(false)}
+            />
+        )}
+        </>
     );
 };
 

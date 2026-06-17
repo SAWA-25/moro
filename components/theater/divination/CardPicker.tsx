@@ -2,15 +2,14 @@ import React, { useMemo, useState, useRef } from 'react';
 import { ArrowClockwise, Sparkle, ArrowUUpLeft, Hand, X } from '@phosphor-icons/react';
 
 /**
- * 占卜·洗牌 + 抽牌交互（塔罗 / 雷诺曼共用）。
+ * 占卜·洗牌 + 抽牌交互（塔罗 / 雷诺曼共用）—— 全屏接管，仿实体占卜 App 的仪式感。
  * ────────────────────────────────────────────────────────────────────────────
- * 两段式，呼应实体占卜的仪式感（参照占卜 App 的「洗牌花 + 抽牌牌轮」）：
- *   ① 洗牌（shuffle）：一朵向心散开的「牌花」（向日葵式螺旋铺开），点牌堆 / 点「洗牌」即重洗，
- *                     整朵花旋转重排（可反复），洗到有感觉再下一步；
- *   ② 抽牌（draw）  ：一个巨大的「牌轮」——背面牌沿大圆弧排成扇环，左右拖动可转动牌轮，
- *                     凭直觉点一张抽出；按牌阵位置逐张抽（第 1 张代表「现状」…），抽中的牌落进上方位置格子。
- * 皮肤＝折子戏黑白拼贴：深「相版」底 + 米白牌背 + 去色，牌背图取不到时回退 CSS 黑白牌背。
- * 两个舞台的牌堆都裹在 overflow:hidden 的固定尺寸容器里——牌再多 / 再大也只在框内，绝不溢出界面。
+ * 以 absolute inset-0 盖住整屏（不再挤在小拼贴框里），两段式：
+ *   ① 洗牌（shuffle）：一朵向日葵螺旋铺开的「牌花」，点牌堆 / 点「洗牌」即重洗，整朵旋转重排（可反复）；
+ *   ② 抽牌（draw）  ：一个巨大的「牌轮」——背面牌沿大圆弧排成密环、只露顶部一段，左右拖动转动牌轮，
+ *                     凭直觉点一张抽出；按牌阵位置逐张抽，抽中的牌 dealIn 落进上方位置格子。
+ * 皮肤＝折子戏黑白拼贴：深底 + 米白牌背 + 去色，牌背图取不到回退 CSS 黑白牌背。
+ * 牌花/牌轮都裹在 overflow:hidden 容器里——牌再多 / 再大也只在框内被裁，绝不溢出。
  *
  * 纯交互壳：洗牌的真随机由父级负责（onReshuffle 重洗那副牌），本组件只回传「按位置选中的索引序列」，
  * 父级再用 tarotFromPicks / lenormandFromPicks 落到牌阵。
@@ -59,7 +58,7 @@ const CardBack: React.FC<{
                 outline: glow ? '1.5px solid rgba(246,243,236,0.92)' : '1px solid rgba(246,243,236,0.22)',
                 outlineOffset: -1,
                 boxShadow: glow
-                    ? '0 0 20px rgba(243,236,223,0.55), 0 7px 16px -7px rgba(0,0,0,0.7)'
+                    ? '0 0 22px rgba(243,236,223,0.6), 0 7px 16px -7px rgba(0,0,0,0.7)'
                     : '0 4px 9px -6px rgba(0,0,0,0.6)',
                 opacity: dim ? 0.3 : 1,
                 ...style,
@@ -81,28 +80,23 @@ const CardBack: React.FC<{
     );
 };
 
-// 深「相版」面板，沿用 DivinationApp 里抽牌区的黑底拼贴样式。
-const PANEL: React.CSSProperties = {
-    background: 'linear-gradient(180deg,#26231f,#1c1a17)',
-    border: '1px solid rgba(31,29,26,0.8)', outline: '1px dashed rgba(246,243,236,0.22)', outlineOffset: -6,
-    boxShadow: '0 18px 34px -20px rgba(31,29,26,0.7)',
-};
+// 全屏深底（黑白、moody，顶部一抹柔光）
+const SCREEN_BG = 'radial-gradient(125% 72% at 50% 0%, #2c2925 0%, #211e1b 46%, #181613 100%)';
 
 // ── 洗牌花（向日葵螺旋铺开，裹在固定方框里，绝不溢出）─────────────────────────
-const BLOOM_N = 24;          // 牌花铺多少张（纯视觉）
-const BLOOM_SIZE = 244;      // 方框边长（overflow hidden）
-const BLOOM_MAX_R = 72;      // 离心最大半径
-const BLOOM_CARD_W = 54;     // 牌花里每张牌宽
+const BLOOM_N = 26;          // 牌花铺多少张（纯视觉）
+const BLOOM_SIZE = 288;      // 方框边长（overflow hidden）
+const BLOOM_MAX_R = 88;      // 离心最大半径
+const BLOOM_CARD_W = 62;     // 牌花里每张牌宽
 const GOLDEN = 137.508;      // 黄金角，铺出自然的螺旋花
 
 // ── 牌轮（大圆弧扇环，只露顶部一段，左右拖动转动）──────────────────────────────
-// 调参：R/STEP 让顶弧横跨约 12 张相互叠压的牌（贴近参照图密环）；塔罗 78 张 ≈ 358.8°≈ 整圈闭环。
-const WHEEL_H = 210;         // 牌轮视窗高（overflow hidden）
+// 牌轮区域高度由 flex-1 撑满（全屏给得起），牌锚在区域顶部、其余沿弧向下转出视窗被裁。
 const WHEEL_R = 360;         // 大圆半径（越大弧越平缓、越像巨轮）
 const WHEEL_STEP = 4.6;      // 相邻两张牌的夹角（度）—— 叠压成密环
-const WHEEL_VIS = 62;        // 可见半弧（±度），其余转出视窗外被裁掉
-const WHEEL_TOP_PAD = 14;    // 圆弧顶到视窗顶的留白
-const WHEEL_CARD_W = 40;     // 牌轮上每张牌宽（聚焦那张会放大）
+const WHEEL_VIS = 90;        // 渲染半弧（±度），其余 wrap 出窗外不渲染
+const WHEEL_TOP_PAD = 20;    // 圆弧顶到牌轮区顶的留白
+const WHEEL_CARD_W = 42;     // 牌轮上每张牌宽（聚焦那张会放大）
 const PX_PER_CARD = WHEEL_R * WHEEL_STEP * DEG;   // 拖动多少 px 转过一张牌
 
 interface DragState { active: boolean; startX: number; startOffset: number; moved: boolean; idx: number | null; }
@@ -126,7 +120,7 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
     // 牌花每张牌的散落位姿（随 pileSeed 变 → 重洗时整朵重新铺开）
     const bloom = useMemo(() => Array.from({ length: BLOOM_N }).map((_, i) => {
         const j1 = hash(i, pileSeed), j2 = hash(i, pileSeed + 13);
-        const a = i * GOLDEN + (j1 - 0.5) * 24;
+        const a = i * GOLDEN + (j1 - 0.5) * 22;
         const r = BLOOM_MAX_R * Math.sqrt((i + 0.55) / BLOOM_N) * (0.82 + j2 * 0.3);
         return {
             x: Math.cos(a * DEG) * r,
@@ -194,63 +188,79 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
         setOffset(o => Math.round(o));                      // 松手吸附到最近一张（带过渡，像牌轮缓缓停稳）
     };
 
-    // 顶部关闭钮（两个舞台共用）
-    const CloseBtn = (
-        <button onClick={onCancel} title="退出抽牌" className="absolute left-2.5 top-2.5 z-20 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ background: 'rgba(246,243,236,0.1)', color: 'rgba(246,243,236,0.78)' }}>
-            <X size={15} weight="bold" />
-        </button>
+    const progress = (
+        <div className="flex justify-center gap-1.5">
+            {positions.map((_, j) => (
+                <span key={j} className="h-[3px] rounded-full transition-colors" style={{ width: need > 6 ? 14 : 22, background: j < picks.length ? '#f3ecdf' : 'rgba(246,243,236,0.18)' }} />
+            ))}
+        </div>
     );
+
+    // 顶栏：关闭 X + 进度
+    const topBar = (
+        <div className="shrink-0 flex items-center px-4 pb-1">
+            <button onClick={onCancel} title="退出抽牌" className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform" style={{ background: 'rgba(246,243,236,0.1)', color: 'rgba(246,243,236,0.8)' }}>
+                <X size={16} weight="bold" />
+            </button>
+            <div className="flex-1">{progress}</div>
+            <div className="w-8" />
+        </div>
+    );
+
+    const shellStyle: React.CSSProperties = {
+        background: SCREEN_BG,
+        paddingTop: 'calc(var(--chrome-top) + 6px)',
+        paddingBottom: 'max(var(--safe-bottom), 14px)',
+    };
 
     // ── 洗牌阶段 ──────────────────────────────────────────────────────────────
     if (stage === 'shuffle') {
         return (
-            <div className="relative rounded-[16px] p-4 pt-3 overflow-hidden" style={PANEL}>
-                {CloseBtn}
-                <div className="text-center mb-1 px-7">
-                    <div className="text-[8px] tracking-[0.3em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>SHUFFLE · {modeLabel}</div>
-                    <div className="text-[17px] font-black mt-0.5" style={{ color: '#f3ecdf' }}>洗牌</div>
-                    <div className="text-[11px] mt-1" style={{ color: 'rgba(246,243,236,0.6)' }}>凝神想着你要问的事，点牌堆洗牌一次，可反复，洗到有感觉为止</div>
+            <div className="absolute inset-0 z-[80] flex flex-col animate-fade-in" style={shellStyle}>
+                {topBar}
+                <div className="shrink-0 text-center px-8 pt-1">
+                    <div className="text-[9px] tracking-[0.34em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>SHUFFLE · {modeLabel}</div>
+                    <div className="text-[24px] font-black mt-1" style={{ color: '#f3ecdf' }}>洗牌</div>
+                    <div className="text-[12px] mt-1.5" style={{ color: 'rgba(246,243,236,0.62)' }}>凝神想着你要问的事，点牌堆洗牌一次，可反复，洗到有感觉为止</div>
                 </div>
 
-                {/* 牌花：固定方框 + overflow hidden（牌再多也只在框内）；点击即重洗，整朵旋转重排 */}
-                <div
-                    onClick={doShuffle}
-                    className="relative mx-auto my-3 cursor-pointer select-none overflow-hidden"
-                    style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, maxWidth: '100%' }}
-                    title="点击洗牌"
-                >
-                    {/* 牌花底下的柔光晕，呼应占卜仪式感 */}
-                    <div aria-hidden className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ width: BLOOM_SIZE * 0.92, height: BLOOM_SIZE * 0.92, background: 'radial-gradient(circle, rgba(246,243,236,0.1), transparent 68%)' }} />
+                {/* 牌花：固定方框 + overflow hidden；点击即重洗，整朵旋转重排 */}
+                <div className="flex-1 min-h-0 flex items-center justify-center px-4">
                     <div
-                        className="absolute inset-0"
-                        style={{ transform: `rotate(${spin}deg) scale(${pulse ? 0.93 : 1})`, transition: 'transform 0.62s cubic-bezier(0.22,1,0.36,1)' }}
+                        onClick={doShuffle}
+                        className="relative cursor-pointer select-none overflow-hidden"
+                        style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, maxWidth: '92vw', maxHeight: '92vw' }}
+                        title="点击洗牌"
                     >
-                        {bloom.map((p, i) => (
-                            <div
-                                key={i}
-                                className="absolute left-1/2 top-1/2"
-                                style={{
-                                    transform: `translate(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px)) rotate(${p.rot}deg)`,
-                                    transition: 'transform 0.58s cubic-bezier(0.22,1,0.36,1)',
-                                    zIndex: p.z,
-                                }}
-                            >
-                                <CardBack src={cardBack} style={{ width: BLOOM_CARD_W, pointerEvents: 'none' }} />
-                            </div>
-                        ))}
+                        <div aria-hidden className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, background: 'radial-gradient(circle, rgba(246,243,236,0.12), transparent 66%)' }} />
+                        <div className="absolute inset-0" style={{ transform: `rotate(${spin}deg) scale(${pulse ? 0.93 : 1})`, transition: 'transform 0.62s cubic-bezier(0.22,1,0.36,1)' }}>
+                            {bloom.map((p, i) => (
+                                <div
+                                    key={i}
+                                    className="absolute left-1/2 top-1/2"
+                                    style={{
+                                        transform: `translate(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px)) rotate(${p.rot}deg)`,
+                                        transition: 'transform 0.58s cubic-bezier(0.22,1,0.36,1)',
+                                        zIndex: p.z,
+                                    }}
+                                >
+                                    <CardBack src={cardBack} style={{ width: BLOOM_CARD_W, pointerEvents: 'none' }} />
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                <div className="text-center text-[10px] mb-3" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.5)' }}>
+                <div className="shrink-0 text-center text-[11px] pb-3" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.5)' }}>
                     {shuffleCount > 0 ? `已洗 ${shuffleCount} 次` : '点一下牌花开始洗牌'}
                 </div>
 
-                <div className="flex gap-2">
-                    <button onClick={doShuffle} className="px-4 py-2.5 rounded-xl text-[12.5px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
-                        <ArrowClockwise size={15} weight="bold" /> 洗牌
+                <div className="shrink-0 px-5 flex gap-2.5">
+                    <button onClick={doShuffle} className="px-5 py-3.5 rounded-2xl text-[13px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
+                        <ArrowClockwise size={16} weight="bold" /> 洗牌
                     </button>
-                    <button onClick={() => { if (shuffleCount === 0) doShuffle(); setStage('draw'); }} className="flex-1 py-2.5 rounded-xl text-[12.5px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
-                        <Hand size={15} weight="fill" /> 下一步 · 抽牌
+                    <button onClick={() => { if (shuffleCount === 0) doShuffle(); setStage('draw'); }} className="flex-1 py-3.5 rounded-2xl text-[14px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
+                        <Hand size={16} weight="fill" /> 下一步 · 抽牌
                     </button>
                 </div>
             </div>
@@ -258,61 +268,59 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
     }
 
     // ── 抽牌阶段 ──────────────────────────────────────────────────────────────
+    const slotW = need > 6 ? 54 : need > 3 ? 62 : 72;
     return (
-        <div className="relative rounded-[16px] p-4 pt-3 overflow-hidden" style={PANEL}>
-            {CloseBtn}
+        <div className="absolute inset-0 z-[80] flex flex-col animate-fade-in" style={shellStyle}>
+            {topBar}
 
-            {/* 进度分段条（已抽 / 总数），呼应参照图顶部进度 */}
-            <div className="flex justify-center gap-1.5 mb-2 px-7 pt-0.5">
-                {positions.map((_, j) => (
-                    <span key={j} className="h-[3px] rounded-full transition-colors" style={{ width: need > 6 ? 14 : 22, background: j < picks.length ? '#f3ecdf' : 'rgba(246,243,236,0.2)' }} />
-                ))}
-            </div>
-
-            <div className="text-center mb-2 px-7">
+            <div className="shrink-0 text-center px-8 pt-0.5">
                 {full ? (
                     <>
-                        <div className="text-[8px] tracking-[0.3em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>READY · {need} / {need}</div>
-                        <div className="text-[18px] font-black mt-0.5" style={{ color: '#f3ecdf' }}>抽满 {need} 张啦</div>
-                        <div className="text-[11px] mt-1" style={{ color: 'rgba(246,243,236,0.6)' }}>翻开看看牌面在说什么</div>
+                        <div className="text-[9px] tracking-[0.34em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>READY · {need} / {need}</div>
+                        <div className="text-[22px] font-black mt-1" style={{ color: '#f3ecdf' }}>抽满 {need} 张啦</div>
+                        <div className="text-[12px] mt-1.5" style={{ color: 'rgba(246,243,236,0.62)' }}>翻开看看牌面在说什么</div>
                     </>
                 ) : (
                     <>
-                        <div className="text-[8px] tracking-[0.3em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>第 {picks.length + 1} 张牌 · DRAW</div>
-                        <div className="text-[18px] font-black mt-0.5 leading-tight" style={{ color: '#f3ecdf' }}>这张牌代表「{currentPos}」</div>
-                        <div className="text-[10.5px] mt-1" style={{ color: 'rgba(246,243,236,0.5)' }}>滑动牌轮转动，凭直觉点一张抽出</div>
+                        <div className="text-[9px] tracking-[0.34em]" style={{ fontFamily: 'var(--font-label)', color: 'rgba(246,243,236,0.45)' }}>第 {picks.length + 1} 张牌 · DRAW</div>
+                        <div className="text-[21px] font-black mt-1 leading-tight" style={{ color: '#f3ecdf' }}>这张牌代表「{currentPos}」</div>
+                        <div className="text-[11px] mt-1.5" style={{ color: 'rgba(246,243,236,0.5)' }}>滑动牌轮转动，凭直觉点一张抽出</div>
                     </>
                 )}
             </div>
 
             {/* 牌阵位置格子：抽中的牌落进对应格（dealIn 落桌动画） */}
-            <div className="flex flex-wrap justify-center gap-1.5 mb-2 px-1">
+            <div className="shrink-0 flex flex-wrap justify-center gap-2 mt-3 px-4">
                 {positions.map((pos, j) => {
                     const taken = j < picks.length;
                     const active = j === picks.length && !full;
-                    const slotW = need > 6 ? 50 : need > 3 ? 56 : 64;
                     return (
                         <div key={j} className="flex flex-col items-center" style={{ width: slotW }}>
                             <div className="w-full aspect-[2/3] rounded-md flex items-center justify-center" style={{
                                 background: taken ? 'transparent' : 'rgba(246,243,236,0.045)',
                                 border: active ? '1.5px solid #f3ecdf' : '1px dashed rgba(246,243,236,0.26)',
-                                boxShadow: active ? '0 0 0 3px rgba(243,236,223,0.14), 0 0 16px rgba(243,236,223,0.18)' : undefined,
+                                boxShadow: active ? '0 0 0 3px rgba(243,236,223,0.14), 0 0 18px rgba(243,236,223,0.2)' : undefined,
                             }}>
                                 {taken
                                     ? <CardBack key={picks[j]} src={cardBack} className="w-full animate-deal-in" badge={j + 1} />
-                                    : <span className="text-[12px] font-black" style={{ color: active ? '#f3ecdf' : 'rgba(246,243,236,0.3)' }}>{j + 1}</span>}
+                                    : <span className="text-[13px] font-black" style={{ color: active ? '#f3ecdf' : 'rgba(246,243,236,0.3)' }}>{j + 1}</span>}
                             </div>
-                            <span className="text-[8.5px] mt-1 leading-tight text-center truncate w-full" style={{ color: active ? '#f3ecdf' : 'rgba(246,243,236,0.5)' }}>{pos}</span>
+                            <span className="text-[9px] mt-1 leading-tight text-center truncate w-full" style={{ color: active ? '#f3ecdf' : 'rgba(246,243,236,0.5)' }}>{pos}</span>
                         </div>
                     );
                 })}
             </div>
 
-            {/* 牌轮：大圆弧扇环，只露顶部一段；左右拖动转动，点一张抽出。整片裹在 overflow hidden 里不外溢 */}
-            {!full && (
+            {/* 牌轮：撑满剩余高度的大圆弧；左右拖动转动，点一张抽出。整片 overflow hidden 不外溢 */}
+            {full ? (
+                <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
+                    <Sparkle size={40} weight="fill" style={{ color: 'rgba(243,236,223,0.85)' }} />
+                    <div className="text-[13px]" style={{ color: 'rgba(246,243,236,0.6)' }}>{need} 张都抽好了，翻开它们听 TA 怎么说。</div>
+                </div>
+            ) : (
                 <div
-                    className="relative -mx-4 mb-1 select-none overflow-hidden"
-                    style={{ height: WHEEL_H, touchAction: 'pan-y', cursor: dragging ? 'grabbing' : 'grab' }}
+                    className="flex-1 min-h-0 relative select-none overflow-hidden mt-1"
+                    style={{ touchAction: 'pan-y', cursor: dragging ? 'grabbing' : 'grab' }}
                     onPointerDown={onWheelDown}
                     onPointerMove={onWheelMove}
                     onPointerUp={onWheelUp}
@@ -322,7 +330,7 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                     <div aria-hidden className="absolute rounded-full pointer-events-none" style={{
                         width: WHEEL_R * 2, height: WHEEL_R * 2, left: '50%', top: WHEEL_TOP_PAD,
                         transform: 'translateX(-50%)',
-                        border: '1px dashed rgba(246,243,236,0.14)',
+                        border: '1px dashed rgba(246,243,236,0.13)',
                     }} />
                     {wheelCards.map(({ i, theta }) => {
                         const used = picks.includes(i);
@@ -344,7 +352,7 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                             >
                                 <CardBack
                                     src={cardBack}
-                                    style={{ width: isActive ? WHEEL_CARD_W + 9 : WHEEL_CARD_W, transition: 'width 0.2s ease' }}
+                                    style={{ width: isActive ? WHEEL_CARD_W + 10 : WHEEL_CARD_W, transition: 'width 0.2s ease' }}
                                     dim={used}
                                     glow={isActive}
                                 />
@@ -352,24 +360,24 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                         );
                     })}
                     {/* 顶部正中的「抽这张」指针 */}
-                    <div aria-hidden className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ top: 0, color: 'rgba(246,243,236,0.7)' }}>
-                        <svg width="16" height="10" viewBox="0 0 16 10" fill="currentColor"><path d="M8 10L0.5 0.5h15z" /></svg>
+                    <div aria-hidden className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ top: 1, color: 'rgba(246,243,236,0.7)' }}>
+                        <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><path d="M9 11L0.5 0.5h17z" /></svg>
                     </div>
                 </div>
             )}
 
             {/* 控制区 */}
-            <div className="flex gap-2 mt-1">
-                <button onClick={reshuffleFromDraw} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重新洗牌">
-                    <ArrowClockwise size={15} weight="bold" /> 重洗
+            <div className="shrink-0 px-5 pt-2 flex gap-2.5">
+                <button onClick={reshuffleFromDraw} className="px-4 py-3.5 rounded-2xl text-[13px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重新洗牌">
+                    <ArrowClockwise size={16} weight="bold" /> 重洗
                 </button>
                 {picks.length > 0 && !full && (
-                    <button onClick={undo} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.1)', color: 'rgba(246,243,236,0.8)' }} title="撤销上一张">
-                        <ArrowUUpLeft size={15} weight="bold" /> 撤销
+                    <button onClick={undo} className="px-4 py-3.5 rounded-2xl text-[13px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.1)', color: 'rgba(246,243,236,0.8)' }} title="撤销上一张">
+                        <ArrowUUpLeft size={16} weight="bold" /> 撤销
                     </button>
                 )}
-                <button onClick={() => full && onReveal(picks)} disabled={!full} className="flex-1 py-2.5 rounded-xl text-[12.5px] font-bold active:scale-95 disabled:opacity-40 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
-                    <Sparkle size={15} weight="fill" /> {full ? `翻开这 ${need} 张` : `再抽 ${need - picks.length} 张`}
+                <button onClick={() => full && onReveal(picks)} disabled={!full} className="flex-1 py-3.5 rounded-2xl text-[14px] font-bold active:scale-95 disabled:opacity-40 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
+                    <Sparkle size={16} weight="fill" /> {full ? `翻开这 ${need} 张` : `再抽 ${need - picks.length} 张`}
                 </button>
             </div>
         </div>
