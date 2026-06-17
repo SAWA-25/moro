@@ -13,6 +13,7 @@ import {
 } from '../../utils/theaterExtraBank';
 import { WeChatScreenshot, MomentsCard, XhsCard, ForumThread } from '../../components/theater/faux/FauxRenderers';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard, Stamp, SectionTag, INK, INK_SOFT } from './scrapbook';
+import type { CharacterProfile } from '../../types';
 
 /**
  * 折子戏·番外（贰）：选一个角色一起做「番外」。
@@ -49,6 +50,56 @@ const PIECE_TABS: { kind: ExtraKind; label: string; icon: React.ReactNode; hint:
 ];
 
 const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.85)', color: '#3a362f', border: '1px solid rgba(176,170,158,0.7)' };
+
+// ⚠️ 下面这几个积木**必须放在组件外**：若放进 ExtraApp 体内，每次 render 都会生成新组件标识，
+// React 会把 <Page> 整棵子树（PaperShell + 内容）卸载重挂，PaperShell 的 animate-fade-in 随之重放。
+// 而 useOS() 的 virtualTime 每秒一跳 → ExtraApp 每秒 re-render → 三个子页（问卷/工坊/仿真图文）一直闪屏。
+// 提到模块级后标识稳定，每秒只是就地 reconcile，不再重挂、不再闪。
+
+// 选项卡（仿真/工坊）墨纸切换
+const tabStyle = (on: boolean): React.CSSProperties => on
+    ? { background: '#1f1d1a', color: '#f6f3ec', border: '1px solid #1f1d1a' }
+    : { background: 'rgba(255,253,247,0.7)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.65)' };
+
+// 黑白页壳
+const Page: React.FC<{ title: string; en: string; onBack: () => void; backLabel?: string; children: React.ReactNode }> = ({ title, en, onBack, backLabel = '返回', children }) => (
+    <PaperShell>
+        <ScrapHeader title={title} en={en} onBack={onBack} backLabel={backLabel} />
+        <ScrapScroll className="px-5 pb-10 space-y-4 pt-1">{children}</ScrapScroll>
+    </PaperShell>
+);
+
+// 角色选择条（拍立得）
+const CharPicker: React.FC<{ characters: CharacterProfile[]; pickCharId: string; setPickCharId: (id: string) => void }> = ({ characters, pickCharId, setPickCharId }) => (
+    <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 px-0.5">
+        {characters.length === 0 && <div className="text-xs py-2" style={{ color: INK_SOFT }}>还没有角色，先去创建一个吧</div>}
+        {characters.map((c, i) => (
+            <Polaroid key={c.id} src={c.avatar} caption={c.name} size={48} rotate={i % 2 ? 1.5 : -1.5} selected={pickCharId === c.id} onClick={() => setPickCharId(c.id)} />
+        ))}
+    </div>
+);
+
+// 指令库（你的文档 theaterExtraBank）：芯片点选 = 自己挑；随机挑一条 = 系统从你列表里替你选。
+// 选中即填进输入框，可再编辑。用在番外工坊 / 仿真图文。
+const InstructionRow: React.FC<{ kind: ExtraBankKind; onPick: (s: string) => void }> = ({ kind, onPick }) => {
+    if (!EXTRA_INSTRUCTIONS.length) return null;
+    const list = instructionsForKind(kind);
+    return (
+        <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] tracking-[0.18em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>指令库 · 你的文档</span>
+                <button onClick={() => { const ins = pickInstruction(kind); if (ins) onPick(ins.instruction); }} className="text-[11px] font-bold active:scale-95" style={{ color: INK }}>🎲 随机挑一条</button>
+            </div>
+            {list.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                    {list.map((ins, i) => (
+                        <button key={i} onClick={() => onPick(ins.instruction)} title={ins.instruction} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95" style={tabStyle(false)}>{ins.label}</button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const ExtraApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast } = useOS();
@@ -173,51 +224,6 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         } catch { addToast('发送失败', 'error'); }
     };
 
-    // ── 黑白页壳 ──
-    const Page: React.FC<{ title: string; en: string; onBack: () => void; backLabel?: string; children: React.ReactNode }> = ({ title, en, onBack, backLabel = '返回', children }) => (
-        <PaperShell>
-            <ScrapHeader title={title} en={en} onBack={onBack} backLabel={backLabel} />
-            <ScrapScroll className="px-5 pb-10 space-y-4 pt-1">{children}</ScrapScroll>
-        </PaperShell>
-    );
-
-    // ── 角色选择条（拍立得）──
-    const CharPicker = () => (
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 px-0.5">
-            {characters.length === 0 && <div className="text-xs py-2" style={{ color: INK_SOFT }}>还没有角色，先去创建一个吧</div>}
-            {characters.map((c, i) => (
-                <Polaroid key={c.id} src={c.avatar} caption={c.name} size={48} rotate={i % 2 ? 1.5 : -1.5} selected={pickCharId === c.id} onClick={() => setPickCharId(c.id)} />
-            ))}
-        </div>
-    );
-
-    // 选项卡（仿真/工坊）墨纸切换
-    const tabStyle = (on: boolean): React.CSSProperties => on
-        ? { background: '#1f1d1a', color: '#f6f3ec', border: '1px solid #1f1d1a' }
-        : { background: 'rgba(255,253,247,0.7)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.65)' };
-
-    // 指令库（你的文档 theaterExtraBank）：芯片点选 = 自己挑；随机挑一条 = 系统从你列表里替你选。
-    // 选中即填进输入框，可再编辑。用在番外工坊 / 仿真图文。
-    const InstructionRow: React.FC<{ kind: ExtraBankKind; onPick: (s: string) => void }> = ({ kind, onPick }) => {
-        if (!EXTRA_INSTRUCTIONS.length) return null;
-        const list = instructionsForKind(kind);
-        return (
-            <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                    <span className="text-[10px] tracking-[0.18em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>指令库 · 你的文档</span>
-                    <button onClick={() => { const ins = pickInstruction(kind); if (ins) onPick(ins.instruction); }} className="text-[11px] font-bold active:scale-95" style={{ color: INK }}>🎲 随机挑一条</button>
-                </div>
-                {list.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                        {list.map((ins, i) => (
-                            <button key={i} onClick={() => onPick(ins.instruction)} title={ins.instruction} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95" style={tabStyle(false)}>{ins.label}</button>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
     // ============ 问卷番外 ============
     if (mode === 'quiz') {
         const cur = items[idx];
@@ -225,7 +231,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
             <Page title="问卷番外" en="THE QUIZ" onBack={() => { resetQuiz(); setMode('home'); }}>
                 {items.length === 0 ? (
                     <>
-                        <CharPicker />
+                        <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
                         <PaperCard tilt={-0.5} className="p-4 space-y-3">
                             <div className="text-[13px]" style={{ color: '#4a463e' }}>想做哪份问卷？市面上的都行——写名字就生成（每份至少 50 题）。带「题库」标的用你在文档里写好的题。</div>
                             <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="如：恋爱相性100问 / 性癖测试50问 / MBTI"
@@ -296,7 +302,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         const d = fauxResult?.data;
         return (
             <Page title="仿真图文" en="FAUX SCREENS" onBack={() => { setFauxResult(null); setMode('home'); }}>
-                <CharPicker />
+                <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
                 <div className="grid grid-cols-4 gap-2">
                     {FAUX_TABS.map(t => (
                         <button key={t.kind} onClick={() => { setFauxKind(t.kind); setFauxResult(null); }} className="flex flex-col items-center gap-1 py-2.5 rounded-2xl transition-all active:scale-95" style={tabStyle(fauxKind === t.kind)}>
@@ -338,7 +344,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         const tab = PIECE_TABS.find(t => t.kind === pieceKind)!;
         return (
             <Page title="番外工坊" en="THE WORKSHOP" onBack={() => { setPiece(''); setMode('home'); }}>
-                <CharPicker />
+                <CharPicker characters={characters} pickCharId={pickCharId} setPickCharId={setPickCharId} />
                 <div className="grid grid-cols-4 gap-2">
                     {PIECE_TABS.map(t => (
                         <button key={t.kind} onClick={() => { setPieceKind(t.kind); setPiece(''); }} className="flex flex-col items-center gap-1 py-2.5 rounded-2xl transition-all active:scale-95" style={tabStyle(pieceKind === t.kind)}>

@@ -19,12 +19,13 @@
 - **随机**：`crypto.getRandomValues` + 拒绝采样去偏 + Fisher–Yates（`engines.ts`）。注意这是 app 运行时，可用 crypto；Workflow 脚本里才禁 `Math.random`。
 - **解牌**：`utils/divination/interpret.ts` `interpretReading()` —— 走 `resolveAuxApi`（副 API 优先、回退主 API），把牌面/卦象文字 + 问题 + 角色人设 + **世界书**（`WorldbookRuntime.resolveForChar` 取 local+global）组进 prompt，以角色口吻输出。`*ToText()` 把结果转可读文字（解读 + 发到聊天共用）。
   - ⚠️ **解牌截断**：推理模型先在 `<think>` 里吃掉一大截 token，预算太小正文只显示半句。解牌走 `utils/llmComplete.ts` 的 `llmComplete`（`maxTokens:4096 + continueRounds:3`）：被 `finish_reason='length'` 截断会**自动接着写完**。⚠️ 很多 OpenAI 兼容代理 `stream:false` 下**不回 `finish_reason`**（给 null），这时 `llmComplete` 用启发式兜底——正文停在半句（结尾不是句末标点 / 引号 / 收尾括号）就继续续写（`looksTruncated`，有单测 `utils/llmComplete.test.ts`）；`finish_reason='stop'` 则一律信任、不强续。改解牌长度/续写策略去那里，别只调一个 `max_tokens`。
-- **手动 vs API 解牌**：UI 两个入口——「让 TA 解牌」(API) / `<details>` 里「自己解」(手写 textarea)。解读 + 牌面摘要可「发到聊天」(`DB.saveMessage` system 消息)。
-- **洗牌 + 抽牌交互**：塔罗/雷诺曼点「抽牌」进 `components/theater/divination/CardPicker.tsx`（两段式，仿实体占卜 App 的「洗牌花 + 抽牌牌轮」）：
+- **解牌 + 抽牌后「继续和角色对话」**：UI 入口「让 TA 解牌」(API) 给一段完整解读后，下面变成一个**对话框**——可继续追问，角色顺着**同一副牌**口语化回应（不再有旧的「自己解」手写框，已删）。
+  - 实现：`DivinationApp` 持 `convo:{role:'user'|'char';text}[]`，`ask(userMessage?)` 统一处理「首解 / 追问」：把 `convo` 映射成 `ReadingTurn[]` 历史传给 `interpretReading({..., history})`；`history` 非空时 `divinationInterpretSys({conversational:true})` 让角色围绕已抽的牌继续聊、篇幅可短。回车 / 点发送即追问。整段对话「发到聊天」。
+- **洗牌 + 抽牌交互**：塔罗/雷诺曼点「抽牌」进 `components/theater/divination/CardPicker.tsx`——**全屏接管**（`absolute inset-0 z-[80]`，盖住整个占卜页，不再挤在小拼贴框里；`DivinationApp` 把它作为 `<PaperShell>` 的兄弟 overlay 渲染）。两段式，仿实体占卜 App 的「洗牌花 + 抽牌牌轮」：
   - **① 洗牌（bloom）**：一朵向日葵螺旋铺开的「牌花」，点牌堆 / 点「洗牌」即重洗——整朵旋转重排（可反复），洗到有感觉再「下一步·抽牌」。
-  - **② 抽牌（wheel）**：一个巨大的「牌轮」——背面牌沿大圆弧排成密环、只露顶部一段，左右**拖动转动**（pointer 拖拽，松手吸附到最近一张），正中那张放大发光、顶上有指针；凭直觉**点一张抽出**，按牌阵位置逐张抽，抽中的牌 `dealIn` 落进上方位置格子，抽满翻开。
-  - ⚠️ **不溢出**：牌花与牌轮都裹在 `overflow:hidden` 的固定尺寸容器里（面板本身也 `overflow-hidden`），牌再多 / 再大也只在框内被裁掉，绝不溢出界面。几何参数（`WHEEL_R/STEP/VIS`、`BLOOM_*`）在文件顶部常量区集中可调；牌轮点选靠容器 pointer 事件在 pointerdown 时抓 `data-cidx`，不依赖 click 合成（pointer capture 也不影响）。
-  - 皮肤＝折子戏黑白拼贴深「相版」+ 去色牌背（牌背图同 skin，取不到回退 CSS 黑白牌背）。`DivinationApp` 只持有当前洗好的那副牌，CardPicker 回传「按位置选中的索引序列」→ `tarotFromPicks`/`lenormandFromPicks` 落阵。六爻/梅花仍是直接起卦、无挑牌。
+  - **② 抽牌（wheel）**：一个巨大的「牌轮」——背面牌沿大圆弧排成密环、只露顶部一段（区域 `flex-1` 撑满全屏剩余高度），左右**拖动转动**（pointer 拖拽，松手吸附到最近一张），正中那张放大发光、顶上有指针；凭直觉**点一张抽出**，按牌阵位置逐张抽，抽中的牌 `dealIn` 落进上方位置格子，抽满翻开。
+  - ⚠️ **不溢出**：牌花与牌轮都裹在 `overflow:hidden` 容器里，牌再多 / 再大也只在框内被裁掉。几何参数（`WHEEL_R/STEP/VIS`、`BLOOM_*`）在文件顶部常量区集中可调；牌轮点选靠容器 pointer 事件在 pointerdown 时抓 `data-cidx`，不依赖 click 合成（pointer capture 也不影响）。顶部留白用 `--chrome-top` 让开 Moro 状态栏。
+  - 皮肤＝折子戏黑白拼贴深底 + 去色牌背（牌背图同 skin，取不到回退 CSS 黑白牌背）。`DivinationApp` 只持有当前洗好的那副牌，CardPicker 回传「按位置选中的索引序列」→ `tarotFromPicks`/`lenormandFromPicks` 落阵。六爻/梅花仍是直接起卦、无挑牌。
 
 ### 牌库（图）
 
@@ -45,6 +46,7 @@
 - 渲染：`components/theater/faux/FauxRenderers.tsx`（`WeChatScreenshot` / `MomentsCard` / `XhsCard` / `ForumThread`）。**仿真 UI**，配图用灰块占位（无截图库依赖）；用户用手机系统截屏保存。
 - **JSON 解析失败兜底**：`FauxResult.data=null` 时退回 `fallbackText` 纯文本展示，不报错。
 - 发到聊天：落 system 消息（结构化时发 JSON 文本摘要）。
+- ⚠️ **闪屏坑（已修）**：`ExtraApp` 里 `Page` / `CharPicker` / `InstructionRow` 这类积木**必须放在组件外**（模块级）。放进组件体内 → 每次 render 都是新组件标识 → React 把 `<Page>` 整棵子树（含 `PaperShell` 的 `animate-fade-in`）卸载重挂；而 `useOS()` 的 `virtualTime` 每秒一跳逼着 `ExtraApp` 每秒 re-render，于是问卷/工坊/仿真图文三个子页**每秒重放淡入＝一直闪屏**。任何用 `useOS()` 的全屏 App 都别在组件体内定义会被当 JSX 元素用的子组件。
 
 ## 番外 · 题库 & 番外指令库（用户内容仓库）
 

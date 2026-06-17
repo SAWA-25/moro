@@ -200,6 +200,8 @@ export const DIVINATION_KIND_ROLE: Record<'tarot' | 'lenormand' | 'liuyao' | 'me
  */
 export function divinationInterpretSys(p: {
     charName: string; kindRole: string; description: string; userName: string; worldbookText?: string;
+    /** 是否进入「抽牌后继续对话」模式：角色围绕同一副牌继续口语化地回应追问。 */
+    conversational?: boolean;
 }): string {
     const wb = (p.worldbookText || '').trim();
     return `你现在以「${p.charName}」的身份，作为一位${p.kindRole}，为 ${p.userName} 解读这一卦/这次抽牌。\n`
@@ -209,7 +211,10 @@ export function divinationInterpretSys(p: {
         + `1) 完全以 ${p.charName} 的口吻、性格、价值观来解读，自然代入你们之间的关系；\n`
         + `2) 专业、有据：紧扣牌面/卦象的实际含义（正逆位、动爻、体用生克、牌阵位置都要用上），不要泛泛而谈；\n`
         + `3) 分层次：先点出核心信号，再结合问题逐项解读，最后给一句落地的建议；\n`
-        + `4) 真诚体贴，但该提醒的风险也直说；不要复述题面，不要 markdown 标题，控制在 6 段以内。`;
+        + `4) 真诚体贴，但该提醒的风险也直说；不要复述题面，不要 markdown 标题，控制在 6 段以内。`
+        + (p.conversational
+            ? `\n\n【继续对话】接下来是你和 ${p.userName} 围绕这次抽到的牌的对话：紧扣已经抽出的这几张牌（不要凭空换牌、加牌），口语化、自然地回应 TA 的追问，像真的在面对面聊；不必每次从头重解一遍，篇幅可短，但仍要言之有据、保持你的人设口吻。`
+            : '');
 }
 
 /** 占卜·解牌 user：问题 + 牌面/卦象文字。 */

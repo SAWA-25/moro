@@ -46,6 +46,9 @@ export function meihuaToText(r: MeihuaResult): string {
 
 // ── 解牌 ───────────────────────────────────────────────────────────────────
 
+/** 抽牌后继续对话的一轮（user=问卜者追问 / assistant=角色回应）。 */
+export interface ReadingTurn { role: 'user' | 'assistant'; content: string }
+
 export interface InterpretArgs {
     api: ResolvedApi;
     kind: DivinationKind;
@@ -56,18 +59,30 @@ export interface InterpretArgs {
     userProfile: UserProfile;
     /** 角色当前生效的世界书文本（local + global 拼好），可空 */
     worldbookText?: string;
+    /**
+     * 抽牌后「继续和角色对话」的历史（按时间顺序）：
+     *  - 空 / 省略 = 首次解牌（角色给完整解读）；
+     *  - 非空 = 围绕同一副牌的追问对话，最后一条应是 user 的新问题，角色据此口语化回应。
+     */
+    history?: ReadingTurn[];
     signal?: AbortSignal;
 }
 
 export async function interpretReading(args: InterpretArgs): Promise<string> {
-    const { api, kind, readingText, question, char, userProfile, worldbookText, signal } = args;
+    const { api, kind, readingText, question, char, userProfile, worldbookText, history, signal } = args;
     const userName = (userProfile?.name || '').trim() || '问卜者';
-    const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.description || '', userName, worldbookText });
+    const conversational = !!(history && history.length);
+    const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.description || '', userName, worldbookText, conversational });
     const user = divinationInterpretUser({ question, readingText, charName: char.name });
+    // 首解：[sys, 牌面/问题]；继续对话：再接上「角色解读 + 追问 + 回应…」的历史，角色顺着聊。
+    const messages = [
+        { role: 'system', content: sys },
+        { role: 'user', content: user },
+        ...(history || []),
+    ];
     // 调高 max_tokens + 自动续写：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断
     // （反馈：解牌只显示半句）。llmComplete 会在被 finish_reason='length' 截断、
     // 或代理不回 finish_reason 但正文停在半句上时自动接着写完（continueRounds 轮内）。
-    return (await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: user }],
-        { temperature: 0.85, maxTokens: 4096, continueRounds: 3, signal }))
+    return (await llmComplete(api, messages, { temperature: 0.85, maxTokens: 4096, continueRounds: 3, signal }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
 }
