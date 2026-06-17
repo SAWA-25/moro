@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useOS } from '../../context/OSContext';
 import {
   CharacterProfile, CoupleSpace as CoupleSpaceData, CoupleMoment, CoupleAnniversary,
-  CouplePhoto, CoupleTask, CoupleWhisper, CoupleInteractionKind,
+  CouplePhoto, CoupleTask, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
 } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
@@ -12,10 +12,12 @@ import {
   intimacyLevel, intimacyProgress, intimacyTitle, INTERACTIONS, interactionDef,
   fallbackCharInteractionNote, todayYmd, pushInteraction,
   generateCharCoupleComment, generateCharWhisperReply, generateCharInteractionNote, generateCharMoment,
+  generateCharInnerVoice, fallbackInnerVoice,
 } from '../../utils/coupleSpace';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
-  CheckCircle, Circle, GearSix, EnvelopeOpen, CalendarBlank, X, ChatCircleDots,
+  CheckCircle, Circle, List, EnvelopeOpen, CalendarBlank, X, ChatCircleDots,
+  Microphone, MusicNotes, Gift, ImageSquare, Quotes,
 } from '@phosphor-icons/react';
 
 const PARTNER_KEY = 'moro_couple_partner_id';
@@ -23,9 +25,21 @@ const MAX_IMAGES = 9;
 const MOOD_EMOJIS = ['😊', '🥰', '😍', '🤗', '😋', '🥳', '🤔', '😢', '😴', '💕', '🌙', '☀️'];
 const TASK_SUGGESTIONS = ['今天说晚安', '一起看一部电影', '给对方做顿饭', '一起散步半小时', '互道一句早安', '拍一张合照'];
 
+// ── 全局设计 token ──
+const ACCENT = 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)';   // 强调粉紫渐变
+const ACCENT_SOFT = 'linear-gradient(135deg, #fff1f3 0%, #fdf0fb 100%)';            // 极浅粉紫（卡片底）
+const FONT_STACK = '"Quicksand", "PingFang SC", "Noto Sans SC", "Nunito", sans-serif';
+const AVATAR_GLOW = '0 4px 12px rgba(255, 182, 193, 0.4)';
+const BG = '#FAFAFA';
+
+// 心电图（ECG）路径：一条基本水平、含一处心跳尖峰的折线（用 pathLength=100 归一化便于动画）
+const ECG_D = 'M2,20 H44 l5,-3 l4,6 l5,-21 l5,33 l5,-18 l4,3 H118';
+
 const romanticBtn = 'rounded-full font-bold active:scale-95 transition-transform disabled:opacity-50';
 
-// 友好的相对时间
+type ComposeMedia = { kind: CoupleMediaKind; name: string; duration?: string };
+
+// 友好的相对时间（悄悄话 / 照片用）
 const timeAgo = (ts: number): string => {
   const diff = Date.now() - ts;
   if (diff < 60_000) return '刚刚';
@@ -37,6 +51,13 @@ const timeAgo = (ts: number): string => {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 };
 
+// 时间线绝对时间戳：2024.10.22 21:00
+const fmtStamp = (ts: number): string => {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 const KIND_LABEL: Record<CoupleAnniversary['kind'], string> = {
   love: '恋爱纪念', birthday: '生日', promise: '约定日', custom: '纪念日',
 };
@@ -45,6 +66,19 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
 };
 
 type Tab = 'moments' | 'anniversary' | 'album' | 'tasks';
+
+// ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
+const HeartbeatLine: React.FC = () => (
+  <svg viewBox="0 0 120 40" preserveAspectRatio="none" className="w-full h-10" aria-hidden>
+    {/* 底层淡线 */}
+    <path pathLength={100} d={ECG_D} fill="none" stroke="#ffd9e4" strokeWidth={2.5}
+      strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+    {/* 流动的亮色脉冲（一段亮线沿路径从左向右循环） */}
+    <path pathLength={100} d={ECG_D} fill="none" stroke="#ff7eb3" strokeWidth={3}
+      strokeLinecap="round" strokeLinejoin="round"
+      style={{ strokeDasharray: '20 80', animation: 'csEcg 1.6s linear infinite' }} />
+  </svg>
+);
 
 const CoupleSpace: React.FC = () => {
   const { characters, userProfile, updateCharacter, addToast, apiConfig, auxApiConfig } = useOS();
@@ -152,11 +186,12 @@ const CoupleSpace: React.FC = () => {
   const [composeText, setComposeText] = useState('');
   const [composeMood, setComposeMood] = useState('');
   const [composeImages, setComposeImages] = useState<string[]>([]);
+  const [composeMedia, setComposeMedia] = useState<ComposeMedia | null>(null);
   const [engagingId, setEngagingId] = useState<string | null>(null);
   const [charMomentBusy, setCharMomentBusy] = useState(false);
   const composeFileRef = useRef<HTMLInputElement>(null);
 
-  const resetCompose = () => { setComposeText(''); setComposeMood(''); setComposeImages([]); };
+  const resetCompose = () => { setComposeText(''); setComposeMood(''); setComposeImages([]); setComposeMedia(null); };
 
   const pickComposeImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -173,11 +208,15 @@ const CoupleSpace: React.FC = () => {
   const postUserMoment = async () => {
     if (!partner) return;
     const text = composeText.trim();
-    if (!text && composeImages.length === 0 && !composeMood) { addToast('写点什么或加张图吧', 'info'); return; }
+    const mediaName = composeMedia?.name.trim();
+    if (!text && composeImages.length === 0 && !composeMood && !mediaName) { addToast('写点什么、加张图或附段语音吧', 'info'); return; }
     const id = genCoupleId('mo');
+    const media: CoupleMedia | undefined = composeMedia && mediaName
+      ? { kind: composeMedia.kind, name: mediaName, duration: composeMedia.kind === 'voice' ? (composeMedia.duration?.trim() || '00:15') : undefined }
+      : undefined;
     const moment: CoupleMoment = {
       id, author: 'user', text: text || undefined, mood: composeMood || undefined,
-      images: composeImages.length ? composeImages : undefined,
+      images: composeImages.length ? composeImages : undefined, media,
       createdAt: Date.now(), comments: [], likedByUser: false, likedByChar: false,
     };
     mutate(cs => ({ ...cs, moments: [moment, ...cs.moments] }), 3);
@@ -200,11 +239,11 @@ const CoupleSpace: React.FC = () => {
   const requestCharMoment = async () => {
     if (!partner || charMomentBusy) return;
     setCharMomentBusy(true);
-    let res: { text: string; mood?: string } | null = null;
+    let res: { text: string; mood?: string; media?: CoupleMedia } | null = null;
     try { res = await generateCharMoment({ char: partner, userName, api: coupleApi, space }); } catch { /* ignore */ }
     if (res) {
       const moment: CoupleMoment = {
-        id: genCoupleId('mo'), author: 'char', text: res.text, mood: res.mood,
+        id: genCoupleId('mo'), author: 'char', text: res.text, mood: res.mood, media: res.media,
         createdAt: Date.now(), comments: [], likedByUser: false, likedByChar: true,
       };
       mutate(cs => ({ ...cs, moments: [moment, ...cs.moments] }), 2);
@@ -228,6 +267,36 @@ const CoupleSpace: React.FC = () => {
 
   const deleteMoment = (mid: string) => mutate(cs => ({ ...cs, moments: cs.moments.filter(m => m.id !== mid) }), 0);
 
+  // ── 心声弹窗（两阶段：声波加载 1.5s → 黑色心声卡片浮现） ──
+  const [innerMoment, setInnerMoment] = useState<CoupleMoment | null>(null);
+  const [innerPhase, setInnerPhase] = useState<'loading' | 'card'>('loading');
+  const [innerText, setInnerText] = useState('');
+  const innerToken = useRef(0);
+
+  const openInnerVoice = (m: CoupleMoment) => {
+    const token = ++innerToken.current;
+    setInnerMoment(m);
+    setInnerPhase('loading');
+    setInnerText('');
+    const minDelay = new Promise<void>(r => setTimeout(r, 1500));   // 声波加载至少演 1.5s
+    const cached = m.innerVoice;
+    const textP: Promise<string> = cached
+      ? Promise.resolve(cached)
+      : (partner
+        ? generateCharInnerVoice({ char: partner, userName, api: coupleApi, moment: m })
+          .then(t => t || fallbackInnerVoice(m)).catch(() => fallbackInnerVoice(m))
+        : Promise.resolve(fallbackInnerVoice(m)));
+    void Promise.all([minDelay, textP]).then(([, text]) => {
+      if (innerToken.current !== token) return;   // 期间已关闭 / 换了一条
+      setInnerText(text);
+      setInnerPhase('card');
+      if (!cached && text) {
+        mutate(cs => ({ ...cs, moments: cs.moments.map(x => x.id === m.id ? { ...x, innerVoice: text } : x) }), 0);
+      }
+    });
+  };
+  const closeInnerVoice = () => { innerToken.current++; setInnerMoment(null); };
+
   // ── 纪念日 ──
   const [annivTitle, setAnnivTitle] = useState('');
   const [annivDate, setAnnivDate] = useState(todayYmd());
@@ -247,6 +316,7 @@ const CoupleSpace: React.FC = () => {
   };
   const deleteAnniversary = (id: string) => mutate(cs => ({ ...cs, anniversaries: cs.anniversaries.filter(a => a.id !== id) }), 0);
   const setAnniversaryDate = () => { mutate(cs => ({ ...cs, anniversaryDate: annivDateDraft }), 0); setShowAnnivDateSet(false); };
+  const openDateSet = () => { setAnnivDateDraft(space.anniversaryDate || todayYmd()); setShowAnnivDateSet(true); };
 
   // ── 相册 ──
   const albumFileRef = useRef<HTMLInputElement>(null);
@@ -309,39 +379,41 @@ const CoupleSpace: React.FC = () => {
     const romantic = (c: CharacterProfile) => ['crush', 'lover', 'engaged', 'married'].includes(c.relationship?.stage || '');
     const sorted = [...characters].sort((a, b) => (romantic(b) ? 1 : 0) - (romantic(a) ? 1 : 0));
     return (
-      <div className="h-full overflow-y-auto" style={{ background: 'linear-gradient(180deg,#fdf6f9 0%,#faf2f7 50%,#f6f2fb 100%)' }}>
-        <div className="flex flex-col items-center px-6 pt-8 pb-6 text-center">
-          <div className="relative mb-3">
-            <Heart size={56} weight="fill" className="text-pink-400 drop-shadow" />
-            <Sparkle size={20} weight="fill" className="text-rose-300 absolute -top-1 -right-2" />
+      <div className="h-full w-full overflow-y-auto" style={{ background: BG, fontFamily: FONT_STACK }}>
+        <div className="max-w-[480px] mx-auto">
+          <div className="flex flex-col items-center px-6 pt-10 pb-6 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-3.5 relative" style={{ background: ACCENT, boxShadow: '0 8px 24px rgba(255,154,158,0.45)' }}>
+              <Heart size={30} weight="fill" className="text-white" />
+              <Sparkle size={18} weight="fill" className="text-white/90 absolute -top-1 -right-1" />
+            </div>
+            <h2 className="text-lg font-black text-[#333]">情侣空间</h2>
+            <p className="text-[12px] text-[#999] mt-2 leading-relaxed max-w-[16rem]">
+              选一位 TA，绑定为你的另一半，<br />一起经营只属于你们的小天地 💕
+            </p>
           </div>
-          <h2 className="text-lg font-black text-rose-500">情侣空间</h2>
-          <p className="text-[12px] text-rose-400/80 mt-1.5 leading-relaxed max-w-[16rem]">
-            选一位 TA，绑定为你的另一半，<br />一起经营只属于你们的小天地 💕
-          </p>
-        </div>
-        <div className="px-4 pb-10 space-y-2">
-          {sorted.length === 0 && (
-            <div className="text-center text-rose-300 text-xs py-10">还没有角色，先去「名册」认识一个人吧</div>
-          )}
-          {sorted.map(c => {
-            const isRomantic = romantic(c);
-            return (
-              <button key={c.id} onClick={() => bindPartner(c.id)}
-                className="w-full bg-white backdrop-blur rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-transform shadow-sm border border-pink-100">
-                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-pink-100 shrink-0" />
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
-                  {c.relationship?.label && (
-                    <div className={`text-[11px] mt-0.5 ${isRomantic ? 'text-rose-400 font-semibold' : 'text-slate-400'}`}>
-                      {isRomantic ? '💗 ' : ''}{c.relationship.label}
-                    </div>
-                  )}
-                </div>
-                <span className="text-[11px] text-white bg-pink-400 px-3 py-1.5 rounded-full font-bold shrink-0">绑定</span>
-              </button>
-            );
-          })}
+          <div className="px-4 pb-10 space-y-2">
+            {sorted.length === 0 && (
+              <div className="text-center text-[#bbb] text-xs py-10">还没有角色，先去「名册」认识一个人吧</div>
+            )}
+            {sorted.map(c => {
+              const isRomantic = romantic(c);
+              return (
+                <button key={c.id} onClick={() => bindPartner(c.id)}
+                  className="w-full bg-white rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-transform shadow-[0_2px_14px_rgba(0,0,0,0.04)] border border-[#f0f0f0]">
+                  <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover shrink-0" style={{ boxShadow: AVATAR_GLOW }} />
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="font-bold text-[#333] truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
+                    {c.relationship?.label && (
+                      <div className={`text-[11px] mt-0.5 ${isRomantic ? 'font-semibold' : 'text-[#999]'}`} style={isRomantic ? { color: '#e07a9c' } : undefined}>
+                        {isRomantic ? '💗 ' : ''}{c.relationship.label}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-white px-3.5 py-1.5 rounded-full font-bold shrink-0" style={{ background: ACCENT }}>绑定</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -359,11 +431,13 @@ const CoupleSpace: React.FC = () => {
   const doneTasks = space.tasks.filter(t => t.done);
 
   return (
-    <div className="h-full flex flex-col relative overflow-hidden" style={{ background: 'linear-gradient(180deg,#fdf6f9 0%,#faf2f7 50%,#f6f2fb 100%)' }}>
+    <div className="h-full w-full max-w-[480px] mx-auto flex flex-col relative overflow-hidden" style={{ background: BG, fontFamily: FONT_STACK }}>
       <style>{`
         @keyframes csFloat { 0% { transform: translateY(0) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-160px) scale(1.3) rotate(12deg); opacity: 0; } }
-        @keyframes csHeartbeat { 0%,100% { transform: scale(1); } 45% { transform: scale(1.18); } }
         @keyframes csPop { 0% { transform: scale(.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes csEcg { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+        @keyframes csEq { 0%,100% { transform: scaleY(.28); } 50% { transform: scaleY(1); } }
+        @keyframes csVoiceCard { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
 
       {/* 漂浮互动动画 */}
@@ -378,79 +452,73 @@ const CoupleSpace: React.FC = () => {
         </div>
       )}
 
-      {/* 顶部情侣信息卡 */}
-      <div className="shrink-0 px-4 pt-3 pb-2">
-        <div className="rounded-3xl p-4 text-white shadow-lg shadow-pink-200/60 relative overflow-hidden" style={{ background: 'linear-gradient(120deg,#ff9ec4 0%,#f777b0 50%,#c98bff 100%)' }}>
-          <button onClick={() => setShowSettings(true)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/25 flex items-center justify-center active:scale-90 transition" title="情侣空间设置">
-            <GearSix size={16} weight="bold" />
-          </button>
-          {/* 双头像 + 红线 + 爱心 */}
-          <div className="flex items-center justify-center gap-2 mb-2.5">
-            <div className="flex flex-col items-center gap-1 w-20">
-              <img src={userAvatar} className="w-14 h-14 rounded-full object-cover border-[3px] border-white/90 shadow" />
-              <span className="text-[11px] font-bold truncate max-w-full">{userName}</span>
-            </div>
-            <div className="flex-1 max-w-[80px] flex items-center">
-              <div className="h-[2px] flex-1 bg-white/60 rounded" />
-              <Heart size={26} weight="fill" className="text-white drop-shadow mx-0.5" style={{ animation: 'csHeartbeat 1.6s ease-in-out infinite' }} />
-              <div className="h-[2px] flex-1 bg-white/60 rounded" />
-            </div>
-            <div className="flex flex-col items-center gap-1 w-20">
-              <img src={partnerAvatar} className="w-14 h-14 rounded-full object-cover border-[3px] border-white/90 shadow" />
-              <span className="text-[11px] font-bold truncate max-w-full">{partnerName}</span>
-            </div>
-          </div>
+      {/* ── 顶部羁绊区：菜单 + 双头像心跳连线 + 在一起天数 + 亲密度 ── */}
+      <div className="shrink-0 px-5 pt-4 pb-3 bg-white border-b border-[#f2f2f2] relative">
+        <button onClick={() => setShowSettings(true)} className="absolute top-2.5 right-3 p-1 text-[#999] active:scale-90 transition z-10" title="菜单">
+          <List size={20} weight="bold" />
+        </button>
 
-          {/* 恋爱天数 */}
-          <div className="text-center mb-2.5">
-            {space.anniversaryDate ? (
-              days > 0 ? (
-                <button onClick={() => { setAnnivDateDraft(space.anniversaryDate || todayYmd()); setShowAnnivDateSet(true); }} className="active:scale-95 transition">
-                  <span className="text-[13px] font-medium opacity-90">已相恋 </span>
-                  <span className="text-2xl font-black tracking-tight">{days}</span>
-                  <span className="text-[13px] font-medium opacity-90"> 天</span>
-                </button>
-              ) : (
-                <span className="text-[13px] font-medium opacity-90">纪念日是 {space.anniversaryDate}，就要在一起啦 💓</span>
-              )
-            ) : (
-              <button onClick={() => { setAnnivDateDraft(todayYmd()); setShowAnnivDateSet(true); }}
-                className="text-[12px] font-bold bg-white/25 px-3 py-1.5 rounded-full active:scale-95 transition">
-                ＋ 设定在一起纪念日
+        <div className="flex items-center justify-center gap-2">
+          <div className="flex flex-col items-center gap-1 w-[64px]">
+            <img src={userAvatar} className="w-[50px] h-[50px] rounded-full object-cover" style={{ boxShadow: AVATAR_GLOW, border: '2px solid #fff' }} />
+            <span className="text-[10px] text-[#999] truncate max-w-full">{userName}</span>
+          </div>
+          <div className="flex-1 max-w-[150px] h-[50px] flex items-center px-1">
+            <HeartbeatLine />
+          </div>
+          <div className="flex flex-col items-center gap-1 w-[64px]">
+            <img src={partnerAvatar} className="w-[50px] h-[50px] rounded-full object-cover" style={{ boxShadow: AVATAR_GLOW, border: '2px solid #fff' }} />
+            <span className="text-[10px] text-[#999] truncate max-w-full">{partnerName}</span>
+          </div>
+        </div>
+
+        {/* 在一起 X 天 */}
+        <div className="text-center mt-2">
+          {space.anniversaryDate ? (
+            days > 0 ? (
+              <button onClick={openDateSet} className="active:scale-95 transition text-[12px] tracking-wide" style={{ color: '#a8788c' }}>
+                在一起 <span className="font-bold" style={{ color: '#e07a9c' }}>{days}</span> 天
               </button>
-            )}
-          </div>
+            ) : (
+              <span className="text-[12px]" style={{ color: '#a8788c' }}>纪念日 {space.anniversaryDate}，就要在一起啦 💓</span>
+            )
+          ) : (
+            <button onClick={() => { setAnnivDateDraft(todayYmd()); setShowAnnivDateSet(true); }}
+              className="text-[12px] font-bold px-3 py-1 rounded-full active:scale-95 transition" style={{ background: ACCENT_SOFT, color: '#e07a9c' }}>
+              ＋ 设定在一起纪念日
+            </button>
+          )}
+        </div>
 
-          {/* 亲密度 */}
-          <div className="bg-white/20 rounded-2xl px-3 py-2">
-            <div className="flex items-center justify-between text-[11px] font-bold mb-1">
-              <span className="flex items-center gap-1"><Sparkle size={13} weight="fill" /> 亲密度 Lv.{lv}「{intimacyTitle(space.intimacy)}」</span>
-              <span>{Math.round(space.intimacy)}</span>
-            </div>
-            <div className="h-2 rounded-full bg-white/30 overflow-hidden">
-              <div className="h-full rounded-full bg-white transition-all duration-500" style={{ width: `${Math.max(4, prog * 100)}%` }} />
-            </div>
+        {/* 亲密度（纤细一行） */}
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-[11px] font-bold flex items-center gap-1 shrink-0" style={{ color: '#c76b8e' }}>
+            <Sparkle size={12} weight="fill" /> Lv.{lv} {intimacyTitle(space.intimacy)}
+          </span>
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: '#f1e7ec' }}>
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(4, prog * 100)}%`, background: ACCENT }} />
           </div>
+          <span className="text-[10px] shrink-0" style={{ color: '#bbb' }}>{Math.round(space.intimacy)}</span>
         </div>
       </div>
 
       {/* 每日互动 */}
-      <div className="shrink-0 px-4 pb-1">
+      <div className="shrink-0 px-4 pt-3 pb-1">
         <div className="flex items-stretch gap-2">
           {INTERACTIONS.map(it => (
             <button key={it.kind} onClick={() => doInteraction(it.kind)}
-              className="flex-1 bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition shadow-sm border border-pink-100">
+              className="flex-1 bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
               <span className="text-xl leading-none">{it.emoji}</span>
-              <span className="text-[10px] font-bold text-rose-400">{it.label}</span>
+              <span className="text-[10px] font-bold" style={{ color: '#c76b8e' }}>{it.label}</span>
             </button>
           ))}
         </div>
         {/* 对方反应气泡 */}
         {charReaction && (
-          <div className="mt-2 flex items-center gap-2 bg-white/90 rounded-2xl px-3 py-2 shadow-sm border border-pink-100" style={{ animation: 'csPop .25s ease-out' }}>
+          <div className="mt-2 flex items-center gap-2 bg-white rounded-2xl px-3 py-2 shadow-[0_2px_10px_rgba(0,0,0,0.04)] border border-[#f2f2f2]" style={{ animation: 'csPop .25s ease-out' }}>
             <img src={partnerAvatar} className="w-7 h-7 rounded-full object-cover shrink-0" />
-            <div className="flex-1 min-w-0 text-[12px] text-slate-600 leading-snug">
-              {charReaction.loading ? <span className="text-rose-300">{partnerName} 正在回应… {charReaction.text}</span> : <span>{charReaction.text}</span>}
+            <div className="flex-1 min-w-0 text-[12px] leading-snug" style={{ color: '#555' }}>
+              {charReaction.loading ? <span style={{ color: '#d9a' }}>{partnerName} 正在回应… {charReaction.text}</span> : <span>{charReaction.text}</span>}
             </div>
             <span className="text-base shrink-0">{charReaction.emoji}</span>
           </div>
@@ -459,10 +527,11 @@ const CoupleSpace: React.FC = () => {
 
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
-        <div className="flex bg-white/60 rounded-full p-1 text-[12px] font-bold">
+        <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
           {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`flex-1 py-1.5 rounded-full transition ${tab === k ? 'bg-pink-400 text-white shadow' : 'text-rose-400/70'}`}>
+              className="flex-1 py-1.5 rounded-full transition"
+              style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
               {label}
             </button>
           ))}
@@ -474,10 +543,10 @@ const CoupleSpace: React.FC = () => {
         {tab === 'moments' && (
           <>
             <div className="flex gap-2">
-              <button onClick={() => setShowCompose(true)} className={`flex-1 py-2.5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>
+              <button onClick={() => setShowCompose(true)} className={`flex-1 py-2.5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>
                 <span className="inline-flex items-center gap-1.5"><Plus size={15} weight="bold" /> 发布动态</span>
               </button>
-              <button onClick={requestCharMoment} disabled={charMomentBusy} className={`px-4 py-2.5 bg-white text-rose-400 text-[13px] border border-pink-200 ${romanticBtn}`}>
+              <button onClick={requestCharMoment} disabled={charMomentBusy} className={`px-4 py-2.5 bg-white text-[13px] border ${romanticBtn}`} style={{ borderColor: '#f3d6e0', color: '#c76b8e' }}>
                 <span className="inline-flex items-center gap-1.5">
                   {charMomentBusy ? <ArrowsClockwise size={15} className="animate-spin" /> : <ChatCircleDots size={15} weight="fill" />}
                   请 TA 冒个泡
@@ -485,49 +554,50 @@ const CoupleSpace: React.FC = () => {
               </button>
             </div>
             {sortedMoments.length === 0 && (
-              <div className="text-center text-rose-300 text-xs py-10">还没有动态，发布第一条留言吧 💌</div>
+              <div className="text-center text-[#bbb] text-xs py-10">还没有动态，发布第一条留言吧 💌</div>
             )}
             {sortedMoments.map(m => (
               <MomentCard key={m.id} m={m} userName={userName} userAvatar={userAvatar} partnerName={partnerName} partnerAvatar={partnerAvatar}
-                engaging={engagingId === m.id} onToggleLike={() => toggleLike(m.id)} onComment={(t) => addUserComment(m.id, t)} onDelete={() => deleteMoment(m.id)} />
+                engaging={engagingId === m.id} onToggleLike={() => toggleLike(m.id)} onComment={(t) => addUserComment(m.id, t)}
+                onDelete={() => deleteMoment(m.id)} onInnerVoice={() => openInnerVoice(m)} />
             ))}
           </>
         )}
 
         {tab === 'anniversary' && (
           <>
-            <button onClick={() => setShowAnnivForm(true)} className={`w-full py-2.5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>
+            <button onClick={() => setShowAnnivForm(true)} className={`w-full py-2.5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>
               <span className="inline-flex items-center gap-1.5"><Plus size={15} weight="bold" /> 添加纪念日</span>
             </button>
             {space.anniversaryDate && days > 0 && (
-              <div className="rounded-2xl p-3.5 text-white shadow" style={{ background: 'linear-gradient(120deg,#f777b0,#c98bff)' }}>
-                <div className="text-[11px] opacity-90 font-medium">💞 在一起</div>
+              <div className="rounded-2xl p-3.5 text-white shadow-[0_6px_18px_rgba(255,154,158,0.35)]" style={{ background: ACCENT }}>
+                <div className="text-[11px] opacity-95 font-medium">💞 在一起</div>
                 <div className="text-lg font-black mt-0.5">已相恋 {days} 天</div>
-                <div className="text-[11px] opacity-90 mt-0.5">自 {space.anniversaryDate} 起</div>
+                <div className="text-[11px] opacity-95 mt-0.5">自 {space.anniversaryDate} 起</div>
               </div>
             )}
             {sortedAnnivs.length === 0 && !space.anniversaryDate && (
-              <div className="text-center text-rose-300 text-xs py-8">添加生日、约定日，自动倒计时提醒 ⏳</div>
+              <div className="text-center text-[#bbb] text-xs py-8">添加生日、约定日，自动倒计时提醒 ⏳</div>
             )}
             {sortedAnnivs.map(({ a, occ }) => {
               const d = occ?.daysLeft ?? null;
               return (
-                <div key={a.id} className="bg-white rounded-2xl p-3.5 flex items-center gap-3 shadow-sm border border-pink-100">
+                <div key={a.id} className="bg-white rounded-2xl p-3.5 flex items-center gap-3 shadow-[0_2px_14px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
                   <span className="text-2xl shrink-0">{KIND_EMOJI[a.kind]}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-700 text-sm truncate">{a.title}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{KIND_LABEL[a.kind]} · {a.date}{a.repeatYearly ? ' · 每年' : ''}</div>
+                    <div className="font-bold text-[#333] text-sm truncate">{a.title}</div>
+                    <div className="text-[11px] text-[#999] mt-0.5">{KIND_LABEL[a.kind]} · {a.date}{a.repeatYearly ? ' · 每年' : ''}</div>
                   </div>
                   <div className="text-right shrink-0">
                     {d === null ? null : d === 0 ? (
-                      <span className="text-rose-500 font-black text-sm">就是今天 🎉</span>
+                      <span className="font-black text-sm" style={{ color: '#e07a9c' }}>就是今天 🎉</span>
                     ) : d > 0 ? (
-                      <div><span className="text-rose-400 font-black text-lg leading-none">{d}</span><div className="text-[10px] text-slate-400">天后</div></div>
+                      <div><span className="font-black text-lg leading-none" style={{ color: '#e07a9c' }}>{d}</span><div className="text-[10px] text-[#999]">天后</div></div>
                     ) : (
-                      <span className="text-slate-300 text-[11px]">已过 {-d} 天</span>
+                      <span className="text-[#ccc] text-[11px]">已过 {-d} 天</span>
                     )}
                   </div>
-                  <button onClick={() => deleteAnniversary(a.id)} className="text-slate-300 hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={16} /></button>
+                  <button onClick={() => deleteAnniversary(a.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={16} /></button>
                 </div>
               );
             })}
@@ -537,15 +607,15 @@ const CoupleSpace: React.FC = () => {
         {tab === 'album' && (
           <>
             <input ref={albumFileRef} type="file" accept="image/*" multiple className="hidden" onChange={pickAlbumPhotos} />
-            <button onClick={() => albumFileRef.current?.click()} className={`w-full py-2.5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>
+            <button onClick={() => albumFileRef.current?.click()} className={`w-full py-2.5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>
               <span className="inline-flex items-center gap-1.5"><Camera size={15} weight="fill" /> 添加照片</span>
             </button>
             {space.photos.length === 0 ? (
-              <div className="text-center text-rose-300 text-xs py-10">还没有合照，添加你们的第一张照片 📷</div>
+              <div className="text-center text-[#bbb] text-xs py-10">还没有合照，添加你们的第一张照片 📷</div>
             ) : (
               <div className="grid grid-cols-3 gap-1.5">
                 {space.photos.map(p => (
-                  <button key={p.id} onClick={() => setPhotoView(p)} className="aspect-square rounded-xl overflow-hidden bg-pink-50 active:scale-95 transition border border-pink-100">
+                  <button key={p.id} onClick={() => setPhotoView(p)} className="aspect-square rounded-xl overflow-hidden bg-[#f4f4f4] active:scale-95 transition border border-[#f0f0f0]">
                     <img src={p.url} className="w-full h-full object-cover" />
                   </button>
                 ))}
@@ -558,33 +628,33 @@ const CoupleSpace: React.FC = () => {
           <>
             <div className="flex gap-2">
               <input value={taskInput} onChange={e => setTaskInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask(taskInput); }}
-                placeholder="添加一个小约定…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-pink-100 focus:border-pink-300" />
-              <button onClick={() => addTask(taskInput)} className={`px-5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>添加</button>
+                placeholder="添加一个小约定…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-[#eee] focus:border-[#f3c0d2]" />
+              <button onClick={() => addTask(taskInput)} className={`px-5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>添加</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
               {TASK_SUGGESTIONS.map(s => (
-                <button key={s} onClick={() => addTask(s)} className="text-[11px] px-3 py-1.5 rounded-full bg-white/70 text-rose-400 border border-pink-100 active:scale-95 transition">+ {s}</button>
+                <button key={s} onClick={() => addTask(s)} className="text-[11px] px-3 py-1.5 rounded-full bg-white border border-[#f0f0f0] active:scale-95 transition" style={{ color: '#c76b8e' }}>+ {s}</button>
               ))}
             </div>
             {pendingTasks.map(t => (
-              <div key={t.id} className="bg-white rounded-2xl p-3 flex items-center gap-3 shadow-sm border border-pink-100">
-                <button onClick={() => toggleTask(t.id)} className="text-pink-300 active:scale-90 transition shrink-0"><Circle size={22} /></button>
-                <span className="flex-1 text-sm text-slate-700">{t.title}</span>
-                <button onClick={() => deleteTask(t.id)} className="text-slate-300 hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              <div key={t.id} className="bg-white rounded-2xl p-3 flex items-center gap-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
+                <button onClick={() => toggleTask(t.id)} className="active:scale-90 transition shrink-0" style={{ color: '#f0a8c4' }}><Circle size={22} /></button>
+                <span className="flex-1 text-sm text-[#333]">{t.title}</span>
+                <button onClick={() => deleteTask(t.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
               </div>
             ))}
             {doneTasks.length > 0 && (
-              <div className="text-[11px] font-bold text-rose-300 pt-1 pl-1">已完成 {doneTasks.length}</div>
+              <div className="text-[11px] font-bold pt-1 pl-1" style={{ color: '#d9a' }}>已完成 {doneTasks.length}</div>
             )}
             {doneTasks.map(t => (
-              <div key={t.id} className="bg-white/55 rounded-2xl p-3 flex items-center gap-3 shadow-sm border border-pink-50">
-                <button onClick={() => toggleTask(t.id)} className="text-pink-400 active:scale-90 transition shrink-0"><CheckCircle size={22} weight="fill" /></button>
-                <span className="flex-1 text-sm text-slate-400 line-through">{t.title}</span>
-                <button onClick={() => deleteTask(t.id)} className="text-slate-300 hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              <div key={t.id} className="bg-white/70 rounded-2xl p-3 flex items-center gap-3 border border-[#f4f4f4]">
+                <button onClick={() => toggleTask(t.id)} className="active:scale-90 transition shrink-0" style={{ color: '#e07a9c' }}><CheckCircle size={22} weight="fill" /></button>
+                <span className="flex-1 text-sm text-[#bbb] line-through">{t.title}</span>
+                <button onClick={() => deleteTask(t.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
               </div>
             ))}
             {space.tasks.length === 0 && (
-              <div className="text-center text-rose-300 text-xs py-8">立个小约定，一起去完成吧 ✅</div>
+              <div className="text-center text-[#bbb] text-xs py-8">立个小约定，一起去完成吧 ✅</div>
             )}
           </>
         )}
@@ -592,28 +662,30 @@ const CoupleSpace: React.FC = () => {
 
       {/* 悄悄话浮动入口 */}
       <button onClick={() => setShowWhispers(true)}
-        className="absolute right-4 bottom-4 z-20 w-12 h-12 rounded-full text-white shadow-lg shadow-pink-300/60 flex items-center justify-center active:scale-90 transition"
-        style={{ background: 'linear-gradient(135deg,#f777b0,#c98bff)' }} title="悄悄话信箱">
+        className="absolute right-4 bottom-4 z-20 w-12 h-12 rounded-full text-white shadow-lg shadow-pink-300/50 flex items-center justify-center active:scale-90 transition"
+        style={{ background: ACCENT }} title="悄悄话信箱">
         <EnvelopeOpen size={22} weight="fill" />
       </button>
 
       {/* ── 各种弹窗 ── */}
       <ComposeModal open={showCompose} text={composeText} setText={setComposeText} mood={composeMood} setMood={setComposeMood}
         images={composeImages} onPick={() => composeFileRef.current?.click()} onRemoveImage={(i) => setComposeImages(prev => prev.filter((_, idx) => idx !== i))}
-        fileRef={composeFileRef} onPickFiles={pickComposeImages} onClose={() => { setShowCompose(false); }} onPost={postUserMoment} />
+        fileRef={composeFileRef} onPickFiles={pickComposeImages} media={composeMedia} setMedia={setComposeMedia}
+        onClose={() => { setShowCompose(false); }} onPost={postUserMoment} />
 
       <Modal isOpen={showAnnivForm} title="添加纪念日" onClose={() => setShowAnnivForm(false)}
         footer={<><button onClick={() => setShowAnnivForm(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">取消</button>
-          <button onClick={addAnniversary} className="flex-1 py-3 bg-pink-400 text-white font-bold rounded-2xl active:scale-95 transition">保存</button></>}>
+          <button onClick={addAnniversary} className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition" style={{ background: ACCENT }}>保存</button></>}>
         <div className="space-y-3">
-          <input value={annivTitle} onChange={e => setAnnivTitle(e.target.value)} placeholder="纪念日名称（如 TA 的生日）" className="w-full px-4 py-3 bg-pink-50/60 rounded-xl text-sm outline-none border border-pink-100" />
+          <input value={annivTitle} onChange={e => setAnnivTitle(e.target.value)} placeholder="纪念日名称（如 TA 的生日）" className="w-full px-4 py-3 rounded-xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
           <div className="flex items-center gap-2 text-sm">
-            <CalendarBlank size={18} className="text-rose-400" />
-            <input type="date" value={annivDate} onChange={e => setAnnivDate(e.target.value)} className="flex-1 px-3 py-2.5 bg-pink-50/60 rounded-xl text-sm outline-none border border-pink-100" />
+            <CalendarBlank size={18} style={{ color: '#e07a9c' }} />
+            <input type="date" value={annivDate} onChange={e => setAnnivDate(e.target.value)} className="flex-1 px-3 py-2.5 rounded-xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
           </div>
           <div className="grid grid-cols-4 gap-2">
             {(['love', 'birthday', 'promise', 'custom'] as CoupleAnniversary['kind'][]).map(k => (
-              <button key={k} onClick={() => setAnnivKind(k)} className={`py-2 rounded-xl text-[11px] font-bold border transition ${annivKind === k ? 'bg-pink-400 text-white border-pink-400' : 'bg-white text-slate-500 border-pink-100'}`}>
+              <button key={k} onClick={() => setAnnivKind(k)} className="py-2 rounded-xl text-[11px] font-bold border transition"
+                style={annivKind === k ? { background: ACCENT, color: '#fff', borderColor: 'transparent' } : { background: '#fff', color: '#888', borderColor: '#f0e3e9' }}>
                 {KIND_EMOJI[k]} {KIND_LABEL[k]}
               </button>
             ))}
@@ -627,10 +699,10 @@ const CoupleSpace: React.FC = () => {
 
       <Modal isOpen={showAnnivDateSet} title="设定在一起纪念日" onClose={() => setShowAnnivDateSet(false)}
         footer={<><button onClick={() => setShowAnnivDateSet(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">取消</button>
-          <button onClick={setAnniversaryDate} className="flex-1 py-3 bg-pink-400 text-white font-bold rounded-2xl active:scale-95 transition">保存</button></>}>
+          <button onClick={setAnniversaryDate} className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition" style={{ background: ACCENT }}>保存</button></>}>
         <div className="space-y-2">
           <p className="text-[12px] text-slate-500">从这一天起，自动计算「已相恋多少天」。</p>
-          <input type="date" value={annivDateDraft} onChange={e => setAnnivDateDraft(e.target.value)} className="w-full px-4 py-3 bg-pink-50/60 rounded-xl text-sm outline-none border border-pink-100" />
+          <input type="date" value={annivDateDraft} onChange={e => setAnnivDateDraft(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
         </div>
       </Modal>
 
@@ -654,37 +726,38 @@ const CoupleSpace: React.FC = () => {
       <Modal isOpen={showWhispers} title="悄悄话信箱 💌" onClose={() => setShowWhispers(false)} footer={<div className="w-full">
         <div className="flex gap-2">
           <input value={whisperInput} onChange={e => setWhisperInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !whisperBusy) sendWhisper(); }}
-            placeholder={`给 ${partnerName} 留一句悄悄话…`} className="flex-1 px-4 py-3 bg-pink-50/60 rounded-2xl text-sm outline-none border border-pink-100" />
-          <button onClick={sendWhisper} disabled={whisperBusy || !whisperInput.trim()} className="px-4 bg-pink-400 text-white rounded-2xl active:scale-95 transition disabled:opacity-50">
+            placeholder={`给 ${partnerName} 留一句悄悄话…`} className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
+          <button onClick={sendWhisper} disabled={whisperBusy || !whisperInput.trim()} className="px-4 text-white rounded-2xl active:scale-95 transition disabled:opacity-50" style={{ background: ACCENT }}>
             {whisperBusy ? <ArrowsClockwise size={18} className="animate-spin" /> : <PaperPlaneTilt size={18} weight="fill" />}
           </button>
         </div>
       </div>}>
         <div className="space-y-2.5">
-          {space.whispers.length === 0 && <div className="text-center text-rose-300 text-xs py-6">还没有悄悄话，留下第一句心里话吧</div>}
+          {space.whispers.length === 0 && <div className="text-center text-[#bbb] text-xs py-6">还没有悄悄话，留下第一句心里话吧</div>}
           {[...space.whispers].sort((a, b) => a.at - b.at).map(w => (
             <div key={w.id} className={`flex ${w.author === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${w.author === 'user' ? 'bg-pink-400 text-white rounded-br-md' : 'bg-pink-50 text-slate-700 rounded-bl-md border border-pink-100'}`}>
+              <div className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${w.author === 'user' ? 'text-white rounded-br-md' : 'text-[#444] rounded-bl-md border border-[#f0e3e9]'}`}
+                style={w.author === 'user' ? { background: ACCENT } : { background: ACCENT_SOFT }}>
                 {w.text}
-                <div className={`text-[9px] mt-1 ${w.author === 'user' ? 'text-white/70' : 'text-slate-400'}`}>{timeAgo(w.at)}</div>
+                <div className={`text-[9px] mt-1 ${w.author === 'user' ? 'text-white/70' : 'text-[#bbb]'}`}>{timeAgo(w.at)}</div>
               </div>
             </div>
           ))}
-          {whisperBusy && <div className="text-center text-rose-300 text-[11px]">{partnerName} 正在回信…</div>}
+          {whisperBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在回信…</div>}
         </div>
       </Modal>
 
-      {/* 设置 */}
+      {/* 设置 / 菜单 */}
       <Modal isOpen={showSettings} title="情侣空间" onClose={() => setShowSettings(false)}>
         <div className="space-y-3">
-          <div className="flex items-center gap-3 bg-pink-50/60 rounded-2xl p-3">
-            <img src={partnerAvatar} className="w-12 h-12 rounded-full object-cover border-2 border-pink-100" />
+          <div className="flex items-center gap-3 rounded-2xl p-3" style={{ background: ACCENT_SOFT }}>
+            <img src={partnerAvatar} className="w-12 h-12 rounded-full object-cover" style={{ boxShadow: AVATAR_GLOW }} />
             <div className="flex-1 min-w-0">
-              <div className="font-bold text-slate-700 text-sm">{partnerName}</div>
-              <div className="text-[11px] text-slate-400">{partner.relationship?.label || '你的另一半'} · 亲密度 {Math.round(space.intimacy)}</div>
+              <div className="font-bold text-[#333] text-sm">{partnerName}</div>
+              <div className="text-[11px] text-[#999]">{partner.relationship?.label || '你的另一半'} · 亲密度 {Math.round(space.intimacy)}</div>
             </div>
           </div>
-          <p className="text-[12px] text-slate-400 leading-relaxed px-1">
+          <p className="text-[12px] text-[#999] leading-relaxed px-1">
             解除绑定不会删除你们的回忆——重新绑定 {partnerName} 时，动态、纪念日、相册都还在。
           </p>
           <button onClick={unbind} className="w-full py-3 bg-rose-50 text-rose-500 font-bold rounded-2xl active:scale-95 transition border border-rose-100">
@@ -692,15 +765,84 @@ const CoupleSpace: React.FC = () => {
           </button>
         </div>
       </Modal>
+
+      {/* ── 心声弹窗（毛玻璃遮罩 + 两阶段动画） ── */}
+      {innerMoment && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6"
+          style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+          onClick={closeInnerVoice}>
+          <button onClick={closeInnerVoice} className="absolute top-5 right-5 w-10 h-10 rounded-full bg-black/5 flex items-center justify-center active:scale-90 transition" style={{ color: '#666' }}>
+            <X size={20} weight="bold" />
+          </button>
+
+          {innerPhase === 'loading' ? (
+            <div className="flex flex-col items-center gap-5" onClick={e => e.stopPropagation()}>
+              <div className="flex items-end gap-1.5 h-12">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} className="w-1.5 rounded-full" style={{ height: '100%', background: ACCENT, transformOrigin: 'bottom', animation: `csEq ${0.7 + (i % 3) * 0.18}s ease-in-out ${i * 0.12}s infinite` }} />
+                ))}
+              </div>
+              <div className="text-[12px] tracking-wide" style={{ color: '#c76b8e' }}>正在读取 {partnerName} 的心声…</div>
+            </div>
+          ) : (
+            <div onClick={e => e.stopPropagation()} className="relative w-full max-w-[300px] rounded-2xl px-6 py-7 text-center"
+              style={{ background: '#222222', color: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(0,0,0,0.45)', animation: 'csVoiceCard .4s ease-out both' }}>
+              <Quotes size={22} weight="fill" className="mx-auto mb-2.5 text-white/35" />
+              <div className="text-[13px] font-bold tracking-[0.18em] mb-4 text-white/95">{partnerName} の 心声</div>
+              <p className="text-[14px] leading-relaxed text-white/95 whitespace-pre-wrap">{innerText}</p>
+              <div className="mt-6 text-[10px] text-white/40">轻触别处收起 · 只有你听得见</div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
-// ── 动态卡片 ──
+// ── 多媒体卡片（语音 / 音乐 / 物件），点击触发心声 ──
+const MediaCard: React.FC<{ media: CoupleMedia; onClick: () => void }> = ({ media, onClick }) => {
+  if (media.kind === 'voice') {
+    return (
+      <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 mb-2.5 active:scale-[0.98] transition-transform" style={{ background: ACCENT_SOFT, borderRadius: 12 }}>
+        <span className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: ACCENT }}><Microphone size={18} weight="fill" /></span>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="text-[13px] font-semibold truncate" style={{ color: '#7a4a5e' }}>{media.name}</div>
+          <div className="flex items-end gap-0.5 h-3 mt-1">
+            {[6, 11, 16, 9, 14, 7, 12, 5, 10, 8].map((h, i) => (<span key={i} className="w-[3px] rounded-full" style={{ height: h, background: '#f3a6c4' }} />))}
+          </div>
+        </div>
+        <span className="text-[12px] shrink-0" style={{ color: '#b06f8a' }}>{media.duration || '00:12'}</span>
+      </button>
+    );
+  }
+  if (media.kind === 'music') {
+    return (
+      <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 mb-2.5 active:scale-[0.98] transition-transform" style={{ background: ACCENT_SOFT, borderRadius: 12 }}>
+        <span className="w-9 h-9 rounded-full flex items-center justify-center text-white shrink-0" style={{ background: ACCENT }}><MusicNotes size={18} weight="fill" /></span>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="text-[13px] font-semibold truncate" style={{ color: '#7a4a5e' }}>{media.name}</div>
+          <div className="text-[11px]" style={{ color: '#bf8aa0' }}>🎵 TA 分享的歌</div>
+        </div>
+      </button>
+    );
+  }
+  // item（物件 / 照片附件卡）
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 mb-2.5 active:scale-[0.98] transition-transform" style={{ background: ACCENT_SOFT, borderRadius: 12 }}>
+      <span className="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0" style={{ background: ACCENT }}><ImageSquare size={20} weight="fill" /></span>
+      <div className="flex-1 min-w-0 text-left">
+        <div className="text-[13px] font-semibold truncate" style={{ color: '#7a4a5e' }}>{media.name}</div>
+        <div className="text-[11px]" style={{ color: '#bf8aa0' }}>点击查看图片描述</div>
+      </div>
+    </button>
+  );
+};
+
+// ── 动态卡片（时间线帖子） ──
 const MomentCard: React.FC<{
   m: CoupleMoment; userName: string; userAvatar: string; partnerName: string; partnerAvatar?: string;
-  engaging: boolean; onToggleLike: () => void; onComment: (t: string) => void; onDelete: () => void;
-}> = ({ m, userName, userAvatar, partnerName, partnerAvatar, engaging, onToggleLike, onComment, onDelete }) => {
+  engaging: boolean; onToggleLike: () => void; onComment: (t: string) => void; onDelete: () => void; onInnerVoice: () => void;
+}> = ({ m, userName, userAvatar, partnerName, partnerAvatar, engaging, onToggleLike, onComment, onDelete, onInnerVoice }) => {
   const [showComment, setShowComment] = useState(false);
   const [draft, setDraft] = useState('');
   const isUser = m.author === 'user';
@@ -711,54 +853,70 @@ const MomentCard: React.FC<{
   const submit = () => { const t = draft.trim(); if (!t) return; onComment(t); setDraft(''); };
 
   return (
-    <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-pink-100">
+    <article className="bg-white rounded-2xl p-4 shadow-[0_2px_14px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
+      {/* 时间戳（顶部居右） */}
+      <div className="text-[12px] text-right mb-2 font-medium" style={{ color: '#A0A0A0' }}>{fmtStamp(m.createdAt)}</div>
+      {/* 作者行（左侧 30px 头像） */}
       <div className="flex items-center gap-2.5 mb-2">
-        <img src={avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="font-bold text-slate-700 text-[13px] truncate">{name}{!isUser && <span className="ml-1 text-[10px] text-rose-300 font-normal">TA</span>}</div>
-          <div className="text-[10px] text-slate-400">{timeAgo(m.createdAt)}{m.mood ? ` · ${m.mood}` : ''}</div>
+        <img src={avatar} className="w-[30px] h-[30px] rounded-full object-cover shrink-0" />
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          <span className="font-bold text-[13px] truncate" style={{ color: '#333' }}>{name}</span>
+          {!isUser && <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: ACCENT }}>TA</span>}
+          {m.mood && <span className="text-[13px] shrink-0">{m.mood}</span>}
         </div>
-        {isUser && <button onClick={onDelete} className="text-slate-300 hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={14} /></button>}
+        {isUser && <button onClick={onDelete} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={14} /></button>}
       </div>
-      {m.text && <p className="text-[13.5px] text-slate-700 leading-relaxed whitespace-pre-wrap mb-2">{m.text}</p>}
+      {/* 正文 */}
+      {m.text && <p className="text-[14px] leading-relaxed whitespace-pre-wrap mb-2.5" style={{ color: '#333' }}>{m.text}</p>}
+      {/* 多媒体块：语音 / 音乐 / 物件 */}
+      {m.media && <MediaCard media={m.media} onClick={onInnerVoice} />}
+      {/* 图片（点击查看「图片描述」= 心声） */}
       {m.images && m.images.length > 0 && (
-        <div className={`grid gap-1 mb-2 ${m.images.length === 1 ? 'grid-cols-1' : m.images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-          {m.images.map((src, i) => (
-            <div key={i} className={`overflow-hidden rounded-lg bg-pink-50 ${m.images!.length === 1 ? 'max-h-60' : 'aspect-square'}`}>
-              <img src={src} className="w-full h-full object-cover" />
-            </div>
-          ))}
-        </div>
+        <button onClick={onInnerVoice} className="block w-full text-left mb-2.5 active:scale-[0.98] transition-transform">
+          <div className={`grid gap-1 ${m.images.length === 1 ? 'grid-cols-1' : m.images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            {m.images.map((src, i) => (
+              <div key={i} className={`overflow-hidden rounded-lg bg-[#f4f4f4] ${m.images!.length === 1 ? 'max-h-60' : 'aspect-square'}`}>
+                <img src={src} className="w-full h-full object-cover" />
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] mt-1.5 flex items-center gap-1" style={{ color: '#bbb' }}><Quotes size={11} weight="fill" /> 点击查看图片描述</div>
+        </button>
       )}
-      <div className="flex items-center gap-4 pt-1 border-t border-pink-50">
-        <button onClick={onToggleLike} className="flex items-center gap-1 text-[12px] active:scale-90 transition">
-          <Heart size={16} weight={m.likedByUser ? 'fill' : 'regular'} className={m.likedByUser ? 'text-rose-400' : 'text-slate-400'} />
-          <span className={m.likedByUser ? 'text-rose-400' : 'text-slate-400'}>{likeCount > 0 ? likeCount : '赞'}</span>
-        </button>
-        <button onClick={() => setShowComment(v => !v)} className="flex items-center gap-1 text-[12px] text-slate-400 active:scale-90 transition">
-          <ChatCircleDots size={16} /> <span>{m.comments.length > 0 ? m.comments.length : '评论'}</span>
-        </button>
-        {m.likedByChar && <span className="text-[10px] text-rose-300 ml-auto">💗 {partnerName} 赞过</span>}
-        {engaging && <span className="text-[10px] text-rose-300 ml-auto animate-pulse">{partnerName} 正在看…</span>}
-      </div>
+      {/* 评论区 */}
       {(m.comments.length > 0 || showComment) && (
-        <div className="mt-2 space-y-1.5 bg-pink-50/50 rounded-xl p-2.5">
+        <div className="mt-1 space-y-1.5 rounded-xl p-3" style={{ background: '#faf7f8' }}>
           {m.comments.map(c => (
-            <div key={c.id} className="text-[12px] leading-snug">
-              <span className={`font-bold ${c.author === 'user' ? 'text-slate-600' : 'text-rose-400'}`}>{c.author === 'user' ? userName : partnerName}</span>
-              <span className="text-slate-600">：{c.text}</span>
+            <div key={c.id} className="text-[12.5px] leading-snug">
+              <span className="font-bold" style={{ color: '#333' }}>{c.author === 'user' ? userName : partnerName}</span>
+              <span style={{ color: '#555' }}>：{c.text}</span>
             </div>
           ))}
           {showComment && (
             <div className="flex gap-2 pt-1">
               <input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-                placeholder="说点什么…" className="flex-1 px-3 py-1.5 bg-white rounded-full text-[12px] outline-none border border-pink-100" autoFocus />
-              <button onClick={submit} className="text-pink-400 active:scale-90 transition"><PaperPlaneTilt size={18} weight="fill" /></button>
+                placeholder="说点什么…" className="flex-1 px-3 py-1.5 bg-white rounded-full text-[12px] outline-none border border-[#eee]" autoFocus />
+              <button onClick={submit} className="active:scale-90 transition" style={{ color: '#e07a9c' }}><PaperPlaneTilt size={18} weight="fill" /></button>
             </div>
           )}
         </div>
       )}
-    </div>
+      {/* 操作栏 */}
+      <div className="flex items-center gap-4 pt-2.5 mt-2.5 border-t border-[#f4f4f4]">
+        <button onClick={onToggleLike} className="flex items-center gap-1 text-[12px] active:scale-90 transition">
+          <Heart size={16} weight={m.likedByUser ? 'fill' : 'regular'} className={m.likedByUser ? 'text-rose-400' : ''} style={m.likedByUser ? undefined : { color: '#bbb' }} />
+          <span style={{ color: m.likedByUser ? '#fb7185' : '#999' }}>{likeCount > 0 ? likeCount : '赞'}</span>
+        </button>
+        <button onClick={() => setShowComment(v => !v)} className="flex items-center gap-1 text-[12px] active:scale-90 transition" style={{ color: '#999' }}>
+          <ChatCircleDots size={16} /> <span>{m.comments.length > 0 ? m.comments.length : '评论'}</span>
+        </button>
+        <button onClick={onInnerVoice} className="flex items-center gap-1 text-[12px] active:scale-90 transition" style={{ color: '#c76b8e' }}>
+          <Quotes size={15} weight="fill" /> <span>心声</span>
+        </button>
+        {m.likedByChar && <span className="text-[10px] ml-auto" style={{ color: '#d98aa9' }}>💗 {partnerName} 赞过</span>}
+        {engaging && <span className="text-[10px] ml-auto animate-pulse" style={{ color: '#d98aa9' }}>{partnerName} 正在看…</span>}
+      </div>
+    </article>
   );
 };
 
@@ -767,36 +925,91 @@ const ComposeModal: React.FC<{
   open: boolean; text: string; setText: (v: string) => void; mood: string; setMood: (v: string) => void;
   images: string[]; onPick: () => void; onRemoveImage: (i: number) => void;
   fileRef: React.RefObject<HTMLInputElement>; onPickFiles: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  media: ComposeMedia | null; setMedia: React.Dispatch<React.SetStateAction<ComposeMedia | null>>;
   onClose: () => void; onPost: () => void;
-}> = ({ open, text, setText, mood, setMood, images, onPick, onRemoveImage, fileRef, onPickFiles, onClose, onPost }) => (
-  <Modal isOpen={open} title="发布情侣动态" onClose={onClose}
-    footer={<><button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">取消</button>
-      <button onClick={onPost} className="flex-1 py-3 bg-pink-400 text-white font-bold rounded-2xl active:scale-95 transition">发布</button></>}>
-    <div className="space-y-3">
-      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="此刻想对 TA 说点什么…" rows={3}
-        className="w-full px-4 py-3 bg-pink-50/60 rounded-xl text-sm outline-none border border-pink-100 resize-none" />
-      <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickFiles} />
-      <div className="grid grid-cols-4 gap-2">
-        {images.map((src, i) => (
-          <div key={i} className="relative aspect-square rounded-lg overflow-hidden">
-            <img src={src} className="w-full h-full object-cover" />
-            <button onClick={() => onRemoveImage(i)} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center"><X size={11} weight="bold" /></button>
+}> = ({ open, text, setText, mood, setMood, images, onPick, onRemoveImage, fileRef, onPickFiles, media, setMedia, onClose, onPost }) => {
+  const mediaKinds: { kind: CoupleMediaKind; label: string; Icon: React.ElementType; placeholder: string }[] = [
+    { kind: 'voice', label: '语音', Icon: Microphone, placeholder: '语音名（如 晚安语音.m4a）' },
+    { kind: 'music', label: '音乐', Icon: MusicNotes, placeholder: '歌名（如 夜空中最亮的星）' },
+    { kind: 'item', label: '物件', Icon: Gift, placeholder: '物件名（如 照片_糯米糍.jpg）' },
+  ];
+  const active = mediaKinds.find(k => k.kind === media?.kind);
+  return (
+    <Modal isOpen={open} title="发布情侣动态" onClose={onClose}
+      footer={<><button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">取消</button>
+        <button onClick={onPost} className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition" style={{ background: ACCENT }}>发布</button></>}>
+      <div className="space-y-3">
+        <textarea value={text} onChange={e => setText(e.target.value)} placeholder="此刻想对 TA 说点什么…" rows={3}
+          className="w-full px-4 py-3 rounded-xl text-sm outline-none border border-[#f0e3e9] resize-none" style={{ background: ACCENT_SOFT }} />
+
+        {/* 添加内容：图片 / 语音 / 音乐 / 物件 */}
+        <div>
+          <div className="text-[11px] font-bold mb-1.5" style={{ color: '#bf8aa0' }}>添加内容</div>
+          <div className="flex gap-2">
+            <button onClick={onPick} className="flex-1 py-2 rounded-xl text-[12px] font-bold border flex items-center justify-center gap-1 active:scale-95 transition"
+              style={{ background: '#fff', color: '#c76b8e', borderColor: '#f0e3e9' }}>
+              <Camera size={15} weight="fill" /> 图片
+            </button>
+            {mediaKinds.map(({ kind, label, Icon }) => {
+              const on = media?.kind === kind;
+              return (
+                <button key={kind} onClick={() => setMedia(on ? null : { kind, name: '', duration: kind === 'voice' ? '00:15' : undefined })}
+                  className="flex-1 py-2 rounded-xl text-[12px] font-bold border flex items-center justify-center gap-1 active:scale-95 transition"
+                  style={on ? { background: ACCENT, color: '#fff', borderColor: 'transparent' } : { background: '#fff', color: '#c76b8e', borderColor: '#f0e3e9' }}>
+                  <Icon size={15} weight="fill" /> {label}
+                </button>
+              );
+            })}
           </div>
-        ))}
-        {images.length < MAX_IMAGES && (
-          <button onClick={onPick} className="aspect-square rounded-lg border-2 border-dashed border-pink-200 text-pink-300 flex items-center justify-center active:scale-95 transition"><Camera size={20} /></button>
+        </div>
+
+        {/* 多媒体编辑器 */}
+        {media && active && (
+          <div className="rounded-xl p-3 space-y-2" style={{ background: ACCENT_SOFT }}>
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-bold flex items-center gap-1.5" style={{ color: '#7a4a5e' }}>
+                <active.Icon size={15} weight="fill" /> {active.label}卡片
+              </span>
+              <button onClick={() => setMedia(null)} className="w-6 h-6 rounded-full bg-white/70 flex items-center justify-center active:scale-90 transition" style={{ color: '#b06f8a' }}><X size={13} weight="bold" /></button>
+            </div>
+            <input value={media.name} onChange={e => setMedia(prev => prev ? { ...prev, name: e.target.value } : prev)}
+              placeholder={active.placeholder} className="w-full px-3 py-2 bg-white rounded-lg text-[13px] outline-none border border-[#f0e3e9]" />
+            {media.kind === 'voice' && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px]" style={{ color: '#bf8aa0' }}>时长</span>
+                <input value={media.duration || ''} onChange={e => setMedia(prev => prev ? { ...prev, duration: e.target.value } : prev)}
+                  placeholder="00:15" className="w-24 px-3 py-1.5 bg-white rounded-lg text-[13px] outline-none border border-[#f0e3e9]" />
+              </div>
+            )}
+          </div>
         )}
-      </div>
-      <div>
-        <div className="text-[11px] font-bold text-rose-300 mb-1.5">心情</div>
-        <div className="flex flex-wrap gap-1.5">
-          {MOOD_EMOJIS.map(em => (
-            <button key={em} onClick={() => setMood(mood === em ? '' : em)} className={`w-8 h-8 rounded-full text-lg flex items-center justify-center transition ${mood === em ? 'bg-pink-100 ring-2 ring-pink-300' : 'bg-pink-50/50'}`}>{em}</button>
-          ))}
+
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={onPickFiles} />
+        {images.length > 0 && (
+          <div className="grid grid-cols-4 gap-2">
+            {images.map((src, i) => (
+              <div key={i} className="relative aspect-square rounded-lg overflow-hidden">
+                <img src={src} className="w-full h-full object-cover" />
+                <button onClick={() => onRemoveImage(i)} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/50 text-white flex items-center justify-center"><X size={11} weight="bold" /></button>
+              </div>
+            ))}
+            {images.length < MAX_IMAGES && (
+              <button onClick={onPick} className="aspect-square rounded-lg border-2 border-dashed flex items-center justify-center active:scale-95 transition" style={{ borderColor: '#f3c0d2', color: '#e7a8c2' }}><Camera size={20} /></button>
+            )}
+          </div>
+        )}
+        <div>
+          <div className="text-[11px] font-bold mb-1.5" style={{ color: '#bf8aa0' }}>心情</div>
+          <div className="flex flex-wrap gap-1.5">
+            {MOOD_EMOJIS.map(em => (
+              <button key={em} onClick={() => setMood(mood === em ? '' : em)} className="w-8 h-8 rounded-full text-lg flex items-center justify-center transition"
+                style={mood === em ? { background: '#fde4ee', boxShadow: '0 0 0 2px #f3a6c4 inset' } : { background: '#faf4f7' }}>{em}</button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
-  </Modal>
-);
+    </Modal>
+  );
+};
 
 export default CoupleSpace;

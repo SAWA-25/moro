@@ -141,9 +141,22 @@ export function coupleInteractionUserPrompt(userName: string, interactionLabel: 
     return `${userName}在情侣空间里对你「${interactionLabel}」。请你给出一句娇羞 / 甜蜜 / 俏皮的即时反应（15 字左右，一句话）。`;
 }
 
-/** 「请 TA 冒个泡」：角色主动发一条情侣动态（user 文案，要求输出 JSON）。 */
+/** 「请 TA 冒个泡」：角色主动发一条情侣动态（user 文案，要求输出 JSON，可选附带多媒体）。 */
 export function coupleMomentUserPrompt(userName: string, daysContext: string): string {
-    return `现在请你在你们的情侣空间里主动发一条动态${daysContext}，可以是此刻的心情、想对${userName}说的话、或想和 TA 一起做的事（35 字以内）。\n严格只输出 JSON：{"text":"动态正文","mood":"一个 emoji 心情"}`;
+    return `现在请你在你们的情侣空间里主动发一条动态${daysContext}，可以是此刻的心情、想对${userName}说的话、或想和 TA 一起做的事（35 字以内）。\n`
+        + `你也可以（不是必须）随手附带一个小小的多媒体：一段语音、一首想分享的歌、或一件小物件 / 一张照片。\n`
+        + `严格只输出 JSON：{"text":"动态正文","mood":"一个 emoji 心情","media":{"kind":"voice|music|item","name":"显示名（如 晚安语音.m4a / 歌名 / 照片_糯米糍.jpg）","duration":"语音时长 mm:ss，非语音省略此字段"}}\n`
+        + `若不附带多媒体，则整个省略 media 字段。`;
+}
+
+/** 点击多媒体块时，角色对这条动态的私密「心声」内心独白（user 文案）。 */
+export function coupleInnerVoiceUserPrompt(userName: string, byUser: boolean, what: string): string {
+    if (byUser) {
+        return `${userName}在你们的情侣空间发了这条动态：「${what}」。\n`
+            + `这是只有你自己知道的「心声」——请说出此刻心里真正的感受、那些没好意思说出口的话（40~70 字，2~3 句，第一人称，真挚、私密，像内心独白）。只输出独白本身，不要任何前后缀。`;
+    }
+    return `这是你之前在你们情侣空间发的动态：「${what}」。\n`
+        + `现在请说出当时藏在心底、没明说的真实想法（你的「心声」）（40~70 字，2~3 句，第一人称，真挚私密的内心独白）。只输出独白本身，不要任何前后缀。`;
 }
 
 

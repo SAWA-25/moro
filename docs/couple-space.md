@@ -24,6 +24,24 @@
 `whispers`（悄悄话信箱）、`interactions`（每日互动记录）。子类型：`CoupleMoment` / `CoupleComment` /
 `CoupleAnniversary` / `CouplePhoto` / `CoupleTask` / `CoupleWhisper` / `CoupleInteraction`。
 
+- `CoupleMoment` 额外带 `media?: CoupleMedia`（多媒体卡片：`voice` 语音条 / `music` 音乐 / `item` 物件·照片，
+  含 `name`、语音另有 `duration`）和 `innerVoice?`（角色对该条动态的「心声」独白，**点击多媒体块时懒生成、缓存后复用**）。
+
+## UI·极简白 + 粉紫渐变皮肤（`components/couple/CoupleSpace.tsx`）
+
+整套界面走「干净极简白（`#FAFAFA`）+ 温柔粉紫渐变强调（`ACCENT = linear-gradient(135deg,#ff9a9e→#fecfef)`）」，
+圆润无衬线字（Quicksand / PingFang SC），正文 `#333`、次要信息 `#999`，容器 `max-w-[480px] mx-auto` 居中适配 PC 预览。
+
+- **顶部羁绊区**：右上角菜单（`List ≡`，开设置/解绑；返回 `<` 由 ChatHub 外层标题栏提供）、两枚 50px 头像（粉色发光阴影
+  `0 4px 12px rgba(255,182,193,.4)`）中间一条 **SVG 心电图（ECG）连线**——`stroke-dasharray`+`stroke-dashoffset`
+  做 `@keyframes csEcg` 亮色脉冲从左向右持续流动；下方居中「在一起 X 天」+ 纤细亲密度条。
+- **时间线动态卡**：顶部居右绝对时间戳（`YYYY.MM.DD HH:mm`，12px `#A0A0A0`）、左侧 30px 头像、加粗昵称、正文，
+  多媒体块（语音/音乐/物件卡，圆角 12px、极浅粉紫底、`active:scale-[0.98]` 按压反馈）、评论区（`昵称：内容`，昵称加粗）。
+- **「心声」弹窗**（隐藏交互，点任意多媒体块 / 图片 / 卡片底「心声」触发）：毛玻璃遮罩
+  （`rgba(255,255,255,.8)`+`backdrop-filter:blur(8px)`）右上 `X`；**两阶段**——阶段 1 几根粉色竖条（音轨均衡器
+  `@keyframes csEq`）跳动约 1.5s「读取心声中」；阶段 2 黑色心声卡（`#222`/白字/圆角 16/深阴影）以
+  `translateY(20px)→0`+`opacity 0→1`（`@keyframes csVoiceCard` 0.4s ease-out）浮现，顶部「{TA} の 心声」+ 一段独白。
+
 - **亲密度**按每 `INTIMACY_PER_LEVEL=100` 一级展示（Lv + 头衔「初识→神仙眷侣」+ 级内进度条）。
   增长来源：每日互动（亲 6 / 抱 5 / 牵手 4 / 礼物 8）、完成约定 +5、发动态 +3、角色互动/评论 +1~2、发悄悄话 +2。
   这是情侣空间**独立的**度量，**不**走 `utils/relationship.ts` 的好感框架（affection），互不干扰。
@@ -37,7 +55,8 @@
 | 用户发动态 | `generateCharCoupleComment` | 角色自动点赞 + 评论那条动态 |
 | 用户留悄悄话 | `generateCharWhisperReply` | 角色回一条悄悄话 |
 | 用户亲一下/抱一下/… | `generateCharInteractionNote` | 角色给一句即时反应（节流 6s，过频用模板，避免刷 token） |
-| 点「请 TA 冒个泡」 | `generateCharMoment` | 角色**主动发**一条情侣动态（JSON `{text, mood}`） |
+| 点「请 TA 冒个泡」 | `generateCharMoment` | 角色**主动发**一条情侣动态（JSON `{text, mood, media?}`，可选附带语音/音乐/物件卡） |
+| 点多媒体块 / 「心声」 | `generateCharInnerVoice` | 角色对该条动态的私密内心独白（点击触发，懒生成→写回 `moment.innerVoice` 缓存；失败用 `fallbackInnerVoice` 兜底） |
 
 > 这些是 char「在情侣空间发动态 / 回复留言 / 发起互动」的落点。没做后台自主调度（不挤占 token / 不动 OSContext 调度器）——
 > char 自发内容由「请 TA 冒个泡」按钮显式触发，对用户动作的回应则即时跟随。

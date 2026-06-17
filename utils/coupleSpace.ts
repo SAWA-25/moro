@@ -18,10 +18,12 @@ import type {
   CoupleInteraction,
   CoupleInteractionKind,
   CoupleMoment,
+  CoupleMedia,
 } from '../types';
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
+  coupleInnerVoiceUserPrompt,
 } from './laiwangPrompts';
 
 export interface CoupleApi {
@@ -205,7 +207,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     .slice(0, 3)
     .map(m => {
       const who = authorLabel(m.author, userName, char.name);
-      const body = (m.text || (m.images?.length ? '[图片]' : '')).slice(0, 50);
+      const body = (m.text || mediaSummary(m.media) || (m.images?.length ? '[图片]' : '')).slice(0, 50);
       return `${who}：${body}${m.mood ? `（心情：${m.mood}）` : ''}`;
     });
 
@@ -348,20 +350,98 @@ export async function generateCharInteractionNote(opts: {
   return cleanLine(out, 50);
 }
 
-/** 角色主动发的一条情侣动态（"请 TA 冒个泡"按钮触发）。返回 { text, mood }。 */
+/** 去围栏 + 去前缀，但保留多句（把换行并成一段）：用于「心声」这类成段独白。 */
+function cleanParagraph(raw: string, maxLen = 140): string {
+  if (!raw) return '';
+  let t = raw.trim();
+  const fenced = t.match(/```(?:\w+)?\s*([\s\S]*?)```/);
+  if (fenced) t = fenced[1].trim();
+  t = t.replace(/\s*\n+\s*/g, ' ').trim();          // 多行并一段
+  t = t.replace(/^["“「『\s]+/, '').replace(/["”」』\s]+$/, '');
+  t = t.replace(/^[^：:]{1,12}[：:]\s*/, '');          // 去「角色名：」前缀
+  return t.slice(0, maxLen);
+}
+
+/** 把一条动态压成一句「内容描述」，用于心声 prompt / 上下文摘要。 */
+const mediaSummary = (media?: CoupleMedia): string => {
+  if (!media) return '';
+  const k = media.kind === 'voice' ? '语音' : media.kind === 'music' ? '音乐' : '物件';
+  return `[${k}] ${media.name}`;
+};
+
+export function describeMoment(m: CoupleMoment): string {
+  const parts: string[] = [];
+  if (m.text) parts.push(m.text);
+  if (m.media) {
+    const label = m.media.kind === 'voice' ? '一段语音' : m.media.kind === 'music' ? '一首歌' : '一件小物件';
+    parts.push(`${label}「${m.media.name}」`);
+  }
+  if (m.images?.length) parts.push('一张照片');
+  if (m.mood) parts.push(`（心情：${m.mood}）`);
+  return parts.join('，').slice(0, 90) || '一条动态';
+}
+
+/** 点击多媒体块时，角色对这条动态的「心声」独白；失败由 {@link fallbackInnerVoice} 兜底。 */
+export async function generateCharInnerVoice(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  moment: CoupleMoment;
+}): Promise<string> {
+  const { char, userName, api, moment } = opts;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleInnerVoiceUserPrompt(userName, moment.author === 'user', describeMoment(moment)) },
+  ], 240);
+  return cleanParagraph(out, 120);
+}
+
+/** 心声兜底文案（LLM 失败 / 未配 API 时用）。区分「用户发的」与「角色自己发的」。 */
+export function fallbackInnerVoice(moment: CoupleMoment): string {
+  const byUser = moment.author === 'user';
+  const userPool = [
+    '看到你发的这个，我心里偷偷甜了好久……其实我比表面上要在乎得多，只是没好意思说出口。',
+    '这种小事你都愿意分享给我，真好。我嘴上没说什么，心里其实早就笑开花了。',
+    '每次你在我们的小天地里留下点什么，我都会反复看好几遍。和你在一起的每一天，我都想好好收着。',
+  ];
+  const charPool = [
+    '发的时候其实有点紧张……我只是想让你知道，你在我心里的分量，比我说出口的要重很多很多。',
+    '这条动态背后，藏着我没敢直说的话：能和你一起经营这个小天地，我真的觉得很幸福。',
+    '我假装很随意地发了出来，可心里一直在偷偷期待着你的回应呀。',
+  ];
+  const pool = byUser ? userPool : charPool;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** 防御式解析模型给的 media 字段（"请 TA 冒个泡"可选附带）。非法则返回 undefined。 */
+function parseMedia(raw: any): CoupleMedia | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const kind = raw.kind;
+  if (kind !== 'voice' && kind !== 'music' && kind !== 'item') return undefined;
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, 40) : '';
+  if (!name) return undefined;
+  const media: CoupleMedia = { kind, name };
+  if (kind === 'voice') {
+    media.duration = typeof raw.duration === 'string' && /^\d{1,2}:\d{2}$/.test(raw.duration.trim())
+      ? raw.duration.trim() : '00:12';
+  }
+  return media;
+}
+
+/** 角色主动发的一条情侣动态（"请 TA 冒个泡"按钮触发）。返回 { text, mood, media? }。 */
 export async function generateCharMoment(opts: {
   char: CharacterProfile;
   userName: string;
   api: CoupleApi;
   space: CoupleSpace;
-}): Promise<{ text: string; mood?: string } | null> {
+}): Promise<{ text: string; mood?: string; media?: CoupleMedia } | null> {
   const { char, userName, api, space } = opts;
   const days = loveDays(space.anniversaryDate);
   const ctx = days > 0 ? `（你们已相恋 ${days} 天）` : '';
   const out = await callCoupleLLM(api, [
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleMomentUserPrompt(userName, ctx) },
-  ], 200);
+  ], 240);
   if (!out) return null;
   // 尝试解析 JSON；失败则把整段当正文
   try {
@@ -369,7 +449,13 @@ export async function generateCharMoment(opts: {
     if (m) {
       const obj = JSON.parse(m[0]);
       const text = cleanLine(String(obj.text || ''), 80);
-      if (text) return { text, mood: typeof obj.mood === 'string' ? obj.mood.slice(0, 8) : undefined };
+      if (text) {
+        const res: { text: string; mood?: string; media?: CoupleMedia } = { text };
+        if (typeof obj.mood === 'string') res.mood = obj.mood.slice(0, 8);
+        const media = parseMedia(obj.media);
+        if (media) res.media = media;
+        return res;
+      }
     }
   } catch { /* fallthrough */ }
   const text = cleanLine(out, 80);
