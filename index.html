@@ -64,6 +64,9 @@
               'tarot-shine': 'tarotShine 1.05s ease-out',
               'tarot-glow': 'tarotGlow 3.6s ease-in-out infinite',
               'tarot-bob': 'tarotBob 4.8s ease-in-out infinite',
+              'tarot-sheen': 'tarotSheen 3.2s ease-in-out infinite',
+              'tarot-twinkle': 'tarotTwinkle 2.4s ease-in-out infinite',
+              'tarot-float': 'tarotFloat 5.5s ease-in-out infinite',
             },
             keyframes: {
               fadeIn: {
@@ -145,6 +148,22 @@
               tarotBob: {
                 '0%, 100%': { transform: 'translateY(0)' },
                 '50%': { transform: 'translateY(-5px)' },
+              },
+              // 抽牌·正中聚焦那张：一道高光循环扫过，强化「这张在发光」的实体占卜质感（仿 Quin）
+              tarotSheen: {
+                '0%': { transform: 'translateX(-130%) skewX(-14deg)', opacity: '0' },
+                '18%': { opacity: '0.55' },
+                '50%, 100%': { transform: 'translateX(240%) skewX(-14deg)', opacity: '0' },
+              },
+              // 洗牌花上的星芒：缓慢明灭 + 轻微缩放，让牌堆看起来在呼吸
+              tarotTwinkle: {
+                '0%, 100%': { opacity: '0.15', transform: 'scale(0.7)' },
+                '50%': { opacity: '0.9', transform: 'scale(1.15)' },
+              },
+              // 聚焦牌的轻盈上下浮动（比 tarotBob 幅度大些，单张用）
+              tarotFloat: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-8px)' },
               },
             }
           }

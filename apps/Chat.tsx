@@ -4605,12 +4605,13 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             )}
 
-            {/* 线下模式弹窗 */}
+            {/* 线下模式弹窗：默认走副 API（与「线下功能默认走副 API」的约定一致，
+                不与线上聊天抢同一根线、也省主 API 额度；副 API 没配则回退主 API） */}
             {showOfflineMode && char && (
                 <OfflineModeModal
                     char={char}
                     userProfile={userProfile}
-                    apiConfig={apiConfig}
+                    apiConfig={resolveAuxApi(auxApiConfig, apiConfig)}
                     addToast={addToast}
                     onEnd={handleOfflineEnd}
                 />

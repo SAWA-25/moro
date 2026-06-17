@@ -19,7 +19,7 @@ interface Props {
 
 const DECK_META = {
     tarot: { name: '塔罗', total: 78, lo: 0, hi: 77, hint: '已内置整副公版韦特塔罗牌面，可直接占卜。想换成自己的牌？导入 78 张图，命名 0.jpg ～ 77.jpg（0 号为愚者，按韦特体系大→小阿卡纳）即可覆盖' },
-    lenormand: { name: '雷诺曼', total: 36, lo: 1, hi: 36, hint: '36 张图，命名 1.jpg ～ 36.jpg（牌号 1=骑士…36=十字）' },
+    lenormand: { name: '雷诺曼', total: 36, lo: 1, hi: 36, hint: '雷诺曼无牌面图，已用每张对应的传统扑克牌（如 1骑士=9♥）代替牌面，可直接占卜。想换成自己的牌？导入 36 张图，命名 1.jpg ～ 36.jpg（牌号 1=骑士…36=十字）即可覆盖' },
 } as const;
 
 /** 从文件名解析牌号（取第一段数字）。 */

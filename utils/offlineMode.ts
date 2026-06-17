@@ -15,6 +15,14 @@ import { RealtimeContextManager } from './realtimeContext';
  *
  * 结束：线下窗口内的全部情景（旁白/对话/用户行动）合成一条 system 消息落库进入
  * 上下文，随后触发角色主动发一条线上消息收尾。
+ *
+ * 线上 ↔ 线下「关联」：本模块做了两头桥接，让见面不是和线上聊天割裂的独立剧情——
+ *  · 线上 → 线下：buildOfflineBase 把最近的线上聊天喂进开场/推进 prompt，并明确要求
+ *    这场见面承接线上聊到的话题/约定/心情，是同一段关系的延续；
+ *  · 线下 → 线上：commitOfflineSessionToContext 把现场情景落成 system 记录，并提示角色
+ *    回到线上后记得这次见面、可自然提起，于是收尾的线上消息能接住刚刚发生的事。
+ * API：线下场景默认走副 API（宿主用 resolveAuxApi 传入），与线上聊天分线、省主 API 额度，
+ *      和占卜/生活侧写等「主聊天以外的辅助任务」一致；副 API 没配时回退主 API。
  */
 
 export const OFFLINE_START_RE = /\[\[\s*OFFLINE_START\s*\]\]/gi;
@@ -153,7 +161,12 @@ const buildOfflineBase = async (char: CharacterProfile, userProfile: UserProfile
 ${recentLines || '（你们还没怎么聊过）'}
 
 ### [线下模式]
-你们的对话已经发展到见面情境，现在切换到线下面对面模式。接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。${clockBlock}`;
+你们刚刚还在线上聊天（见上面[最近的线上聊天]），现在对话发展到了见面情境，切换成线下面对面模式。
+**这场见面是上面那段线上聊天的直接延续**，请把它当成同一段关系、同一条时间线上的事：
+- 承接线上聊到的话题、约定、心情和未说完的话，自然延续，而不是另起一段毫无关联的剧情；
+- 记得你们线上是什么关系、聊到哪儿了，见面时的熟悉度、语气、称呼都要和线上一致；
+- 线上挖的坑（约好要做的事、想问的话、暧昧或别扭的气氛）可以在见面时被自然地呼应或解开。
+接下来的内容是你们真实见面时发生的现场互动，以「对话 + 动作/场景旁白」推进。${clockBlock}`;
 };
 
 // ── 线下开场白方式（见面是怎么开始的）──────────────────────────────
@@ -249,7 +262,9 @@ export const commitOfflineSessionToContext = async (
         charId: char.id,
         role: 'system',
         type: 'text',
-        content: `[线下模式记录] 你们刚刚线下见面了，以下是现场发生的全部情景（已结束，现在回到线上聊天）：\n${transcript}`,
+        content: `[线下模式记录] 你（${char.name}）和 ${userName} 刚刚线下见面了，下面是这次见面现场发生的全部情景。`
+            + `见面已经结束，你们现在回到线上聊天——请把这次见面当作真实发生过、你清楚记得的事：`
+            + `线上接着聊时可以自然提起见面时的细节、延续当时的心情和话题，不要表现得好像没见过面。\n${transcript}`,
         metadata: { offlineSession: true },
     } as any);
 };

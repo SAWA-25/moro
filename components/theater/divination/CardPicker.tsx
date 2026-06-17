@@ -55,10 +55,10 @@ const CardBack: React.FC<{
         <div
             className={`relative aspect-[2/3] rounded-md overflow-hidden ${className}`}
             style={{
-                outline: glow ? '1.5px solid rgba(246,243,236,0.92)' : '1px solid rgba(246,243,236,0.22)',
+                outline: glow ? '1.5px solid rgba(246,243,236,0.95)' : '1px solid rgba(246,243,236,0.22)',
                 outlineOffset: -1,
                 boxShadow: glow
-                    ? '0 0 22px rgba(243,236,223,0.6), 0 7px 16px -7px rgba(0,0,0,0.7)'
+                    ? '0 0 30px rgba(243,236,223,0.7), 0 0 10px rgba(243,236,223,0.45), 0 12px 24px -10px rgba(0,0,0,0.8)'
                     : '0 4px 9px -6px rgba(0,0,0,0.6)',
                 opacity: dim ? 0.3 : 1,
                 ...style,
@@ -73,6 +73,11 @@ const CardBack: React.FC<{
                     </div>
                 </div>
             )}
+            {/* 聚焦牌：一道高光循环扫过（仿实体牌在光下转动） */}
+            {glow && (
+                <div aria-hidden className="absolute inset-0 pointer-events-none animate-tarot-sheen"
+                    style={{ background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.55) 50%, transparent 60%)' }} />
+            )}
             {badge != null && (
                 <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>{badge}</span>
             )}
@@ -84,19 +89,21 @@ const CardBack: React.FC<{
 const SCREEN_BG = 'radial-gradient(125% 72% at 50% 0%, #2c2925 0%, #211e1b 46%, #181613 100%)';
 
 // ── 洗牌花（向日葵螺旋铺开，裹在固定方框里，绝不溢出）─────────────────────────
-const BLOOM_N = 26;          // 牌花铺多少张（纯视觉）
-const BLOOM_SIZE = 288;      // 方框边长（overflow hidden）
-const BLOOM_MAX_R = 88;      // 离心最大半径
-const BLOOM_CARD_W = 62;     // 牌花里每张牌宽
+// 牌做大了一圈（仿 Quin 等占卜 App 的「大牌堆」手感），方框 / 半径同步放大保持构图。
+const BLOOM_N = 30;          // 牌花铺多少张（纯视觉）
+const BLOOM_SIZE = 336;      // 方框边长（overflow hidden）
+const BLOOM_MAX_R = 106;     // 离心最大半径
+const BLOOM_CARD_W = 78;     // 牌花里每张牌宽
 const GOLDEN = 137.508;      // 黄金角，铺出自然的螺旋花
 
 // ── 牌轮（大圆弧扇环，只露顶部一段，左右拖动转动）──────────────────────────────
 // 牌轮区域高度由 flex-1 撑满（全屏给得起），牌锚在区域顶部、其余沿弧向下转出视窗被裁。
-const WHEEL_R = 360;         // 大圆半径（越大弧越平缓、越像巨轮）
-const WHEEL_STEP = 4.6;      // 相邻两张牌的夹角（度）—— 叠压成密环
-const WHEEL_VIS = 90;        // 渲染半弧（±度），其余 wrap 出窗外不渲染
-const WHEEL_TOP_PAD = 20;    // 圆弧顶到牌轮区顶的留白
-const WHEEL_CARD_W = 42;     // 牌轮上每张牌宽（聚焦那张会放大）
+const WHEEL_R = 392;         // 大圆半径（越大弧越平缓、越像巨轮）
+const WHEEL_STEP = 4.5;      // 相邻两张牌的夹角（度）—— 叠压成密环
+const WHEEL_VIS = 82;        // 渲染半弧（±度），其余 wrap 出窗外不渲染
+const WHEEL_TOP_PAD = 30;    // 圆弧顶到牌轮区顶的留白（聚焦牌会上浮，多留一点空）
+const WHEEL_CARD_W = 58;     // 牌轮上每张牌宽（聚焦那张会放大）
+const WHEEL_FOCUS_GROW = 20; // 正中聚焦那张额外加宽多少 px
 const PX_PER_CARD = WHEEL_R * WHEEL_STEP * DEG;   // 拖动多少 px 转过一张牌
 
 interface DragState { active: boolean; startX: number; startOffset: number; moved: boolean; idx: number | null; }
@@ -229,24 +236,32 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                     <div
                         onClick={doShuffle}
                         className="relative cursor-pointer select-none overflow-hidden"
-                        style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, maxWidth: '92vw', maxHeight: '92vw' }}
+                        style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, maxWidth: '94vw', maxHeight: '94vw' }}
                         title="点击洗牌"
                     >
-                        <div aria-hidden className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, background: 'radial-gradient(circle, rgba(246,243,236,0.12), transparent 66%)' }} />
-                        <div className="absolute inset-0" style={{ transform: `rotate(${spin}deg) scale(${pulse ? 0.93 : 1})`, transition: 'transform 0.62s cubic-bezier(0.22,1,0.36,1)' }}>
-                            {bloom.map((p, i) => (
-                                <div
-                                    key={i}
-                                    className="absolute left-1/2 top-1/2"
-                                    style={{
-                                        transform: `translate(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px)) rotate(${p.rot}deg)`,
-                                        transition: 'transform 0.58s cubic-bezier(0.22,1,0.36,1)',
-                                        zIndex: p.z,
-                                    }}
-                                >
-                                    <CardBack src={cardBack} style={{ width: BLOOM_CARD_W, pointerEvents: 'none' }} />
-                                </div>
-                            ))}
+                        {/* 呼吸光晕：缓慢明灭 + 缩放，牌堆像在发光 */}
+                        <div aria-hidden className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full animate-tarot-glow" style={{ width: BLOOM_SIZE, height: BLOOM_SIZE, background: 'radial-gradient(circle, rgba(246,243,236,0.16), transparent 64%)' }} />
+                        {/* 散落的星芒：错峰明灭，烘托仪式感 */}
+                        {[[18, 24], [80, 14], [22, 78], [78, 82], [50, 8], [12, 52]].map(([lx, ly], i) => (
+                            <span key={i} aria-hidden className="absolute animate-tarot-twinkle" style={{ left: `${lx}%`, top: `${ly}%`, color: 'rgba(246,243,236,0.8)', fontSize: 11, animationDelay: `${i * 0.4}s` }}>✦</span>
+                        ))}
+                        {/* 整朵轻微摇曳（idle 也有生气）；内层承接点击洗牌的旋转 + 收放 */}
+                        <div className="absolute inset-0 animate-sway">
+                            <div className="absolute inset-0" style={{ transform: `rotate(${spin}deg) scale(${pulse ? 0.88 : 1})`, transition: 'transform 0.62s cubic-bezier(0.22,1,0.36,1)' }}>
+                                {bloom.map((p, i) => (
+                                    <div
+                                        key={i}
+                                        className="absolute left-1/2 top-1/2"
+                                        style={{
+                                            transform: `translate(calc(-50% + ${p.x}px), calc(-50% + ${p.y}px)) rotate(${p.rot}deg)`,
+                                            transition: 'transform 0.58s cubic-bezier(0.22,1,0.36,1)',
+                                            zIndex: p.z,
+                                        }}
+                                    >
+                                        <CardBack src={cardBack} style={{ width: BLOOM_CARD_W, pointerEvents: 'none' }} />
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -268,7 +283,7 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
     }
 
     // ── 抽牌阶段 ──────────────────────────────────────────────────────────────
-    const slotW = need > 6 ? 54 : need > 3 ? 62 : 72;
+    const slotW = need > 6 ? 58 : need > 3 ? 68 : 80;
     return (
         <div className="absolute inset-0 z-[80] flex flex-col animate-fade-in" style={shellStyle}>
             {topBar}
@@ -332,11 +347,18 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                         transform: 'translateX(-50%)',
                         border: '1px dashed rgba(246,243,236,0.13)',
                     }} />
+                    {/* 顶部正中的聚光：聚焦那张牌正落在一汪光里（仿实体占卜 App 的舞台聚光） */}
+                    <div aria-hidden className="absolute left-1/2 -translate-x-1/2 pointer-events-none animate-tarot-glow" style={{
+                        top: -10, width: 200, height: 200,
+                        background: 'radial-gradient(circle at 50% 35%, rgba(243,236,223,0.3), transparent 62%)',
+                    }} />
                     {wheelCards.map(({ i, theta }) => {
                         const used = picks.includes(i);
                         const isActive = i === activeI && !used;
                         const x = Math.sin(theta * DEG) * WHEEL_R;
-                        const y = (WHEEL_R - Math.cos(theta * DEG) * WHEEL_R) + WHEEL_TOP_PAD;
+                        // 聚焦那张上浮一点，离开牌环、凑近指针，更像「被托起待抽」
+                        const lift = isActive ? 12 : 0;
+                        const y = (WHEEL_R - Math.cos(theta * DEG) * WHEEL_R) + WHEEL_TOP_PAD - lift;
                         return (
                             <div
                                 key={i}
@@ -350,12 +372,15 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                                     zIndex: 1000 - Math.round(Math.abs(theta) * 4) + (isActive ? 3000 : 0),
                                 }}
                             >
-                                <CardBack
-                                    src={cardBack}
-                                    style={{ width: isActive ? WHEEL_CARD_W + 10 : WHEEL_CARD_W, transition: 'width 0.2s ease' }}
-                                    dim={used}
-                                    glow={isActive}
-                                />
+                                {/* 聚焦牌轻盈浮动（内层动画，不与外层定位 transform 打架）；其余牌静止 */}
+                                <div className={isActive && !dragging ? 'animate-tarot-float' : ''}>
+                                    <CardBack
+                                        src={cardBack}
+                                        style={{ width: isActive ? WHEEL_CARD_W + WHEEL_FOCUS_GROW : WHEEL_CARD_W, transition: 'width 0.22s ease' }}
+                                        dim={used}
+                                        glow={isActive}
+                                    />
+                                </div>
                             </div>
                         );
                     })}
