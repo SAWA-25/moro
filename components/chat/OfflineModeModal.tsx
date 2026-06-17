@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CharacterProfile, UserProfile } from '../../types';
-import { WashiTape, MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
+import { MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import {
     OfflineEntry,
     OfflinePov,
@@ -131,17 +131,12 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     return (
         <div className="absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(61,47,61,0.5)', backdropFilter: 'blur(3px)' }}>
             <div
-                className="relative w-full max-w-[400px] h-[78%] flex flex-col rounded-[18px]"
+                className="relative w-full max-w-[400px] h-[78%] flex flex-col rounded-[22px] overflow-hidden"
                 style={{
-                    background: '#fff8f3',
-                    backgroundImage: 'repeating-linear-gradient(transparent, transparent 25px, rgba(242,157,176,0.14) 25px, rgba(242,157,176,0.14) 26px)',
-                    boxShadow: '0 10px 40px rgba(61,47,61,0.35), 0 0 0 1px rgba(220,199,213,0.5) inset',
+                    background: '#ffffff',
+                    boxShadow: '0 24px 60px -24px rgba(61,47,61,0.4), 0 0 0 1px #ededed inset',
                 }}
             >
-                {/* 胶带标题 */}
-                <div className="absolute -top-3 left-5 z-10">
-                    <WashiTape color="lemon" pattern="heart" rotate={-2}>见面这一页</WashiTape>
-                </div>
 
                 {/* 头部 */}
                 <div className="px-4 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.22)' }}>

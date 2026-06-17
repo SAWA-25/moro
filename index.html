@@ -615,6 +615,11 @@
       /* 来往作用域里的滑动指示条换 ins 渐变（暖橙→品红→紫），更鲜活 */
       .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, #fa7e1e, #d62976, #962fbf); }
 
+      /* 全域去「拼贴」信号：来往作用域内一律把虚线描边换成实线发丝线（弹窗/朋友圈/情侣空间/群聊通吃）。
+         只改 border-style，不动盒模型尺寸，安全；颜色保留，留住一点暖度（与手帐融合）。 */
+      .moro-laiwang .border-dashed { border-style: solid; }
+      /* 群聊/朋友圈/情侣空间等也在作用域内，跟随上面的 .scrap-* / 发丝线 / 去纹理规则一起 ins 化。 */
+
       /* IG 故事环：渐变描边 + 白缝 + 头像（用于「此刻」有动态的活跃角色，像 IG 的 story ring） */
       .ig-ring {
         display: inline-flex; padding: 2.5px; border-radius: 9999px;

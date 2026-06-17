@@ -136,18 +136,14 @@ const Page: React.FC<{
     no: string; title: string; en: string;
     tape?: TapeProps['color']; pattern?: TapeProps['pattern']; paper?: PaperKind;
     children: React.ReactNode;
-}> = ({ no, title, en, tape = 'rose', pattern = 'stripe', paper = 'plain', children }) => {
-    const pk = PAPERS[paper];
+}> = ({ title, en, children }) => {
     return (
-        <section className="relative rounded-[14px]" style={{ background: pk.bg, ...pk.style, ...PAPER_SHADOW }}>
-            <div className="absolute -top-3 left-4 z-10">
-                <WashiTape color={tape} pattern={pattern} rotate={-2}>{title}</WashiTape>
+        <section className="relative rounded-[18px] bg-white" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
+            <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
+                <span className="text-[15px] font-bold leading-tight" style={{ color: PAPER_TONES.ink }}>{title}</span>
+                <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</span>
             </div>
-            <div className="flex justify-end px-4 pt-2.5">
-                <span className="text-[8.5px] tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</span>
-            </div>
-            <div className="px-4 pb-7 pt-1">{children}</div>
-            <span className="absolute bottom-2 right-4 text-[9px] select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>✂ P.{no}</span>
+            <div className="px-4 pb-5 pt-1">{children}</div>
         </section>
     );
 };
@@ -340,20 +336,18 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
             className="absolute inset-0 z-[260] flex flex-col animate-fade-in"
             style={{
                 paddingTop: 'var(--safe-top)',
-                backgroundColor: '#f6ecf1',
-                backgroundImage: 'radial-gradient(rgba(242,157,176,0.16) 1.2px, transparent 1.2px)',
-                backgroundSize: '18px 18px',
+                backgroundColor: '#fafafa',
             }}
         >
-            {/* 封面条（顶栏） */}
+            {/* 封面条（顶栏）：ins 干净白 + 发丝下边线 */}
             <div
                 className="shrink-0 flex items-center gap-3 px-3 py-3"
-                style={{ background: 'linear-gradient(135deg, #fbd3de 0%, #f3e3f2 70%, #fdeee4 100%)', borderBottom: '1.5px dashed rgba(122,90,114,0.3)' }}
+                style={{ background: '#ffffff', borderBottom: '1px solid #ededed' }}
             >
                 <button
                     onClick={onClose}
                     className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
-                    style={{ boxShadow: '0 1px 3px rgba(122,90,114,0.3)', border: '1px dashed #eab6c6' }}
+                    style={{ boxShadow: '0 1px 3px rgba(122,90,114,0.18)', border: '1px solid #ededed' }}
                     aria-label="合上手帐"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="#9c5e74" className="w-[18px] h-[18px]">
