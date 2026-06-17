@@ -1764,8 +1764,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
               let timeSinceUser = '';
+              // 距上次 ≥2 小时才算「挺久没找你了」（可表达想念/抱怨）。注意不能对带单位的
+              // timeSinceUser 字符串做 parseInt——"30分钟"→30、"2天5小时"→2 都会误判，
+              // 必须用真实分钟数判断。
+              let userGapLong = false;
               if (lastRealUserMsg) {
                   const gapMin = Math.floor((now.getTime() - lastRealUserMsg.timestamp) / 60000);
+                  userGapLong = gapMin >= 120;
                   if (gapMin < 60) timeSinceUser = `${gapMin}分钟`;
                   else if (gapMin < 1440) timeSinceUser = `${Math.floor(gapMin / 60)}小时${gapMin % 60 > 0 ? gapMin % 60 + '分钟' : ''}`;
                   else timeSinceUser = `${Math.floor(gapMin / 1440)}天${Math.floor((gapMin % 1440) / 60)}小时`;
@@ -1806,7 +1811,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   ? customHint
                   : lifeEvent
                   ? buildAutonomousProactiveHint({ char, userName, timeStr, timeSinceUser, event: lifeEvent, randomMode: pCfg?.randomMode, proactiveCallAllowed })
-                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: !!(timeSinceUser && parseInt(timeSinceUser) > 2), randomMode: pCfg?.randomMode, proactiveCallAllowed });
+                  : proactiveFallbackHint({ userName, timeStr, timeSinceUser, longGap: userGapLong, randomMode: pCfg?.randomMode, proactiveCallAllowed });
 
               await DB.saveMessage({
                   charId,
@@ -2190,6 +2195,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const orders = await DB.getTakeoutOrders().catch(() => []);
               const now = Date.now();
               const userName = userProfileRef.current?.name || '对方';
+              // 同角色同批多单时累加好感的本地账：charactersRef 在这个同步 for 循环里不会刷新，
+              // 若每单都从 char.affection 起算，后一次 updateCharacter 会覆盖前一次（多单只净 +2）。
+              const affectionByChar = new Map<string, number>();
               for (const o of orders) {
                   if (!o.charId || o.recipient !== o.charId) continue;      // 只处理「给角色点的」单
                   if (o.deliveredAt || o.reactionPosted || o.status === 'cancelled') continue;
@@ -2199,8 +2207,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   // 签收 + 打标，避免重复反应
                   await DB.saveTakeoutOrder({ ...o, status: 'delivered', deliveredAt: now, reactionPosted: true }).catch(() => {});
                   notifyTakeoutUpdated();
-                  // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）
-                  updateCharacter(o.charId, { affection: applyAffectionDelta(char.affection, 2) });
+                  // 收到对方专门点的外卖是日常里的小温暖 → 好感小幅 +（走加减框架，限制幅度）。
+                  // 基于「上一单算出的值」继续加，保证同批 N 单每单都生效。
+                  const baseAff = affectionByChar.get(o.charId) ?? char.affection;
+                  const nextAff = applyAffectionDelta(baseAff, 2);
+                  affectionByChar.set(o.charId, nextAff);
+                  updateCharacter(o.charId, { affection: nextAff });
                   if (char.charBlock?.active || char.blacklisted) continue; // 拉黑期间不反应
                   await runProactive(o.charId, { customHint: buildTakeoutReceivedHint(o, userName) });
               }

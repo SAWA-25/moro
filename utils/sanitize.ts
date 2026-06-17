@@ -51,6 +51,9 @@ const stripBusinessTagsForBubble = (t: string): string =>
   t
     .replace(/\[\[(?:ACTION|RECALL|SEARCH|DIARY|READ_DIARY|FS_DIARY|FS_READ_DIARY|DIARY_START|DIARY_END|FS_DIARY_START|FS_DIARY_END|MUSIC_ACTION)[:\s][\s\S]*?\]\]/g, '')
     .replace(/\[\[\s*BLOCK_USER\s*\]\]/gi, '')
+    // [[CALL_USER]] 主动语音通话指令：仅在 OSContext 主动消息路径（开关打开时）于 sanitize 前
+    // 被提取处理；气泡里任何情况下都不该残留（开关关闭却被模型吐出时也得兜底剥掉）。
+    .replace(/\[\[\s*CALL_USER\s*\]\]/gi, '')
     // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
     .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
     .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')
@@ -64,7 +67,10 @@ const stripBusinessTagsForBubble = (t: string): string =>
 const stripBusinessTagsForNotification = (t: string): string =>
   stripBusinessTagsForBubble(t)
     .replace(/\[\[(?:READ_NOTE|XHS_[A-Z_]+)[:\s][\s\S]*?\]\]/g, '')
-    .replace(/\[\[XHS_[A-Z_]+\]\]/g, '');
+    .replace(/\[\[XHS_[A-Z_]+\]\]/g, '')
+    // SHARE_SONG / NEWS_CARD 在气泡路径要留给 chatParser.parseAndExecuteActions 做成卡片，
+    // 但通知是终态、不会再渲染卡片，残留原文反而难看，这里剥掉只保留正文。
+    .replace(/\[\[(?:SHARE_SONG|NEWS_CARD)[:\s][\s\S]*?\]\]/g, '');
 
 /** 引用类: `[[QUOTE|引用]] / [QUOTE|引用] / [回复 "..."]` */
 const stripQuotes = (t: string): string =>

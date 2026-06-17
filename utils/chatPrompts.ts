@@ -833,8 +833,6 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                      return { role: m.role, content: [{ type: "text", text: textPart }, { type: "image_url", image_url: { url: m.content } }] };
                 }
                 
-                if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') content = `${content}\n\n${timeGapHint}`; 
-                
                 if (m.type === 'interaction') content = `${timeStr} [系统: 用户戳了你一下]`;
                 else if (m.type === 'transfer') {
                     const isRedPacket = m.metadata?.kind === 'redpacket';
@@ -1033,6 +1031,12 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     }
                 }
                 else content = `${timeStr} ${sourceTag} ${content}`;
+
+                // 时间间隔提示统一在所有 type 分支「之后」追加：早先放在分支前会被
+                // interaction/transfer/voice/location/各类卡片分支整段重写 content 时覆盖掉，
+                // 导致「最后一条是非文本消息」时丢失「距上次多久」的注入。
+                // （image 分支自行 early-return、已在分支内处理过，不会走到这里。）
+                if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') content = `${content}\n\n${timeGapHint}`;
 
                 return { role: m.role, content };
             }),

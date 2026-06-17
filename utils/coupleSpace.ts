@@ -102,7 +102,9 @@ export const todayYmd = (now = Date.now()): string => {
 export function loveDays(anniversaryDate?: string, now = Date.now()): number {
   const start = parseYmd(anniversaryDate);
   if (start == null) return 0;
-  const diff = Math.floor((startOfDay(now) - start) / DAY_MS);
+  // 两端都是「本地 0 点」时间戳。跨夏令时切换日两次本地午夜相差 23h/25h，不是 DAY_MS 整数倍，
+  // 用 Math.floor 会少算一天 → 用 Math.round 消除这 ±1h 抖动（与 nextOccurrence 口径一致）。
+  const diff = Math.round((startOfDay(now) - start) / DAY_MS);
   return diff >= 0 ? diff + 1 : 0;
 }
 
@@ -283,8 +285,28 @@ async function callCoupleLLM(api: CoupleApi, messages: any[], maxTokens: number)
   }
 }
 
+/**
+ * 去掉模型偶尔加在台词前的「说话人名：」前缀。
+ * 只剥真正的说话人名（char.name / userName）；给了名单却都不匹配时**不剥**，
+ * 避免把「今天总结：好累但开心」「宝贝：我想你了」这类正文的冒号前缀误吃掉。
+ * 没给名单时退回旧的宽松行为（≤12 字非冒号前缀）。
+ */
+function stripSpeakerPrefix(t: string, speakerNames?: string[]): string {
+  if (speakerNames && speakerNames.length) {
+    for (const n of speakerNames) {
+      const name = (n || '').trim();
+      if (!name) continue;
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`^${esc}\\s*[：:]\\s*`);
+      if (re.test(t)) return t.replace(re, '');
+    }
+    return t;
+  }
+  return t.replace(/^[^：:]{1,12}[：:]\s*/, '');
+}
+
 /** 去围栏 + 去首尾引号，把模型输出洗成一句干净的台词。 */
-function cleanLine(raw: string, maxLen = 80): string {
+function cleanLine(raw: string, maxLen = 80, speakerNames?: string[]): string {
   if (!raw) return '';
   let t = raw.trim();
   // 去掉代码围栏
@@ -294,8 +316,8 @@ function cleanLine(raw: string, maxLen = 80): string {
   t = (t.split(/\n+/).map(s => s.trim()).find(Boolean) || t).trim();
   // 去掉包裹的引号 / 书名号
   t = t.replace(/^["“「『\s]+/, '').replace(/["”」』\s]+$/, '');
-  // 去掉「角色名：」前缀
-  t = t.replace(/^[^：:]{1,12}[：:]\s*/, '');
+  // 去掉「角色名：」前缀（只剥真正的说话人名，避免误吃正文）
+  t = stripSpeakerPrefix(t, speakerNames);
   return t.slice(0, maxLen);
 }
 
@@ -316,7 +338,7 @@ export async function generateCharCoupleComment(opts: {
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleCommentUserPrompt(userName, what, moment.mood ? `（心情：${moment.mood}）` : '') },
   ], 120);
-  return cleanLine(out, 60);
+  return cleanLine(out, 60, [char.name, userName]);
 }
 
 /** 角色回复用户的悄悄话。 */
@@ -331,7 +353,7 @@ export async function generateCharWhisperReply(opts: {
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleWhisperUserPrompt(userName, whisper) },
   ], 160);
-  return cleanLine(out, 100);
+  return cleanLine(out, 100, [char.name, userName]);
 }
 
 /** 角色被「亲一下 / 抱一下 / 牵手 / 送礼物」后的一句反应。 */
@@ -347,18 +369,18 @@ export async function generateCharInteractionNote(opts: {
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleInteractionUserPrompt(userName, label) },
   ], 100);
-  return cleanLine(out, 50);
+  return cleanLine(out, 50, [char.name, userName]);
 }
 
 /** 去围栏 + 去前缀，但保留多句（把换行并成一段）：用于「心声」这类成段独白。 */
-function cleanParagraph(raw: string, maxLen = 140): string {
+function cleanParagraph(raw: string, maxLen = 140, speakerNames?: string[]): string {
   if (!raw) return '';
   let t = raw.trim();
   const fenced = t.match(/```(?:\w+)?\s*([\s\S]*?)```/);
   if (fenced) t = fenced[1].trim();
   t = t.replace(/\s*\n+\s*/g, ' ').trim();          // 多行并一段
   t = t.replace(/^["“「『\s]+/, '').replace(/["”」』\s]+$/, '');
-  t = t.replace(/^[^：:]{1,12}[：:]\s*/, '');          // 去「角色名：」前缀
+  t = stripSpeakerPrefix(t, speakerNames);          // 去「角色名：」前缀（只剥真正的说话人名）
   return t.slice(0, maxLen);
 }
 
@@ -393,7 +415,7 @@ export async function generateCharInnerVoice(opts: {
     { role: 'system', content: personaSystem(char, userName) },
     { role: 'user', content: coupleInnerVoiceUserPrompt(userName, moment.author === 'user', describeMoment(moment)) },
   ], 240);
-  return cleanParagraph(out, 120);
+  return cleanParagraph(out, 120, [char.name, userName]);
 }
 
 /** 心声兜底文案（LLM 失败 / 未配 API 时用）。区分「用户发的」与「角色自己发的」。 */
@@ -448,7 +470,7 @@ export async function generateCharMoment(opts: {
     const m = out.match(/\{[\s\S]*\}/);
     if (m) {
       const obj = JSON.parse(m[0]);
-      const text = cleanLine(String(obj.text || ''), 80);
+      const text = cleanLine(String(obj.text || ''), 80, [char.name, userName]);
       if (text) {
         const res: { text: string; mood?: string; media?: CoupleMedia } = { text };
         if (typeof obj.mood === 'string') res.mood = obj.mood.slice(0, 8);
@@ -458,7 +480,7 @@ export async function generateCharMoment(opts: {
       }
     }
   } catch { /* fallthrough */ }
-  const text = cleanLine(out, 80);
+  const text = cleanLine(out, 80, [char.name, userName]);
   return text ? { text } : null;
 }
 
