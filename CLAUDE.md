@@ -28,6 +28,7 @@
 | **折子戏·占卜 + 番外仿真图文 + 牌面美化** | [`docs/divination-and-faux.md`](./docs/divination-and-faux.md) | 占卜（塔罗78/雷诺曼36/六爻金钱卦/梅花易数，抽牌起卦 + 手动/API 解牌走世界书）、番外仿真图文（仿微信聊天截图/朋友圈/小红书/匿名论坛）、主题 App「牌面」美化（牌背/边框/风格）。改占卜引擎 / 牌库 / 番外仿真渲染前必读 |
 | **折子戏（原小剧场）· 黑白拼贴手账** | `apps/TheaterApp.tsx` + `apps/theater/scrapbook.tsx` | 「小剧场」已更名「折子戏」（戏单首页 + 七折：攻略本/番外/占卜/谈心/TRPG/轨迹/对影）。统一皮肤＝黑白拼贴手账，复用积木都在 `theater/scrapbook.tsx`（米白报纸 + 墨黑 + 牛皮胶带 + 邮票 + 拍立得；PaperShell/ScrapHeader/PaperCard/Polaroid/ScrapButton…），照片一律 grayscale。攻略本/TRPG 体量大，走根级 grayscale + GAME_THEMES 灰阶重映射落「黑白默片」。改折子戏外观前看这里 |
 | **来往 Prompt 中心** | [`docs/laiwang-prompts.md`](./docs/laiwang-prompts.md) | 改聊天 AI 的说话规则/语气/指令前必读。`utils/laiwangPrompts.ts` 是来往全部 prompt 文案的唯一可改处（关系/情侣空间/自主生活/回神/思考链/行动建议/核心系统提示/主动消息/偷看心声 分区注释），各功能从它 import、改了即生效 |
+| **折子戏 Prompt 中心** | `utils/theaterPrompts.ts` | 改折子戏（七折）AI 文案前必读。番外/占卜/谈心/TRPG/轨迹/对影 的全部 prompt 集中在此（按折分区、逐项注释），各功能从它 import、改了即生效；攻略本文案体量大、仍在 `utils/guidebookPrompts.ts`（已被中心 re-export）。番外的「题库 / 番外指令」内容仓库另见 `utils/theaterExtraBank.ts` |
 | **二改 / 加 App / 数据流 / 后端 Worker** | [`README.md`](./README.md) 「给想二改的人」一节 | 新增 App、build badge、sfworker 代理替换、开源协议 |
 
 > README 的「给想二改的人」区域信息量很大（数据流、ContextBuilder、Instant Push Phase 2、sfworker 清单），动后端 / 加功能前先扫一遍。

@@ -5,6 +5,11 @@ import { DB } from '../utils/db';
 import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, GameSummary } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { extractContent, extractJson } from '../utils/safeApi';
+import {
+    trpgWorldGenPrompt, trpgProloguePrompt, trpgGameLoopPrompt,
+    trpgStatusWarning, trpgGameOverTrigger, trpgRollInstruction,
+    trpgRecapPrompt, trpgArchiveSummaryPrompt,
+} from '../utils/theaterPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import Modal from '../components/os/Modal';
 import { Planet, RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
@@ -433,15 +438,7 @@ ${recentLog}
         try {
             // [鲁棒性] 改用带分隔符的纯文本格式而非 JSON——即使被截断也能干净解析；
             // 不再限制字数，给足 token 防止半路砍断。
-            const prompt = `你是一位资深的 TRPG（桌面跑团）剧本设计师。请按照指定风格，原创一个适合开团的世界观设定。
-**风格基调**: ${worldStyle}
-${worldIdea.trim() ? `**玩家的灵感/想法（请务必围绕它发挥）**: ${worldIdea.trim()}` : ''}
-
-请严格按下面的纯文本格式输出，**不要用 JSON，不要代码块，不要额外说明**：
-
-标题：<一个有吸引力的剧本标题>
-===
-<世界观正文。请写充分、生动，篇幅自由不设上限，包含：时代/地点背景与基调氛围、当前世界的核心矛盾或危机、玩家小队的处境与初始目标钩子、一两个可探索的悬念或势力。留足玩家发挥空间，不要写死结局。>`;
+            const prompt = trpgWorldGenPrompt({ worldStyle, worldIdea });
 
             const data = await fetchGameAPI(prompt, 6000);
             const raw = (extractContent(data) || '').trim();
@@ -480,37 +477,14 @@ ${worldIdea.trim() ? `**玩家的灵感/想法（请务必围绕它发挥）**: 
             const playerContext = await buildSyncContext(players);
 
             // Generate Prologue Prompt
-            const prompt = `### TRPG 序章生成 (Game Start)
-**剧本标题**: ${newTitle}
-**世界观设定**: ${newWorld}
-**玩家**: ${userProfile.name}
-**队友**: ${players.map(p => p.name).join(', ')}
-
-### 角色数据 (包含私聊记忆)
-${playerContext}
-
-### 任务
-你现在是 **Game Master (GM)**。请为这个冒险故事生成一个**精彩的开场 (Prologue)**。
-1. **剧情描述**: 描述这个世界正在发生什么、小队所处的环境与正在逼近的事件。**先有世界，再有人**——开场不要围着玩家转，而是把舞台和危机铺开。
-2. **角色反应**: 简要描述队友们的初始状态或第一句台词。请**务必**参考【神经链接】中的私聊状态来决定他们的态度；同时让每个角色展现**自己的性格与目的**，而不是一上来就众星捧月地讨好玩家。
-3. **初始选项**: 给出三个玩家可以采取的行动选项${newDiceDisabled ? '（本场未启用骰子，玩家行动默认顺利成功，选项可以是各种有趣的方向）' : '（每个选项玩家执行时都会自动骰 D20 判定，因此选项应是"有成败风险的尝试"而非必然成功的动作）'}。
-
-### 一致性自检 (Consistency Check)
-输出前，请在心里核对：每个角色的台词/行为是否**只**来自 TA 自己的"角色档案"（性格、记忆、印象）？严禁把某个角色的记忆、口癖或人设安到另一个角色身上（防止"串台"）。
-
-### 输出格式 (Strict JSON)
-{
-  "gm_narrative": "序章剧情描述...",
-  "characters": [
-    { "charId": "角色ID", "action": "初始动作", "dialogue": "第一句台词" }
-  ],
-  "startLocation": "起始地点名称",
-  "suggested_actions": [
-    { "label": "选项1 (中立/正直/推进剧情)", "type": "neutral" },
-    { "label": "选项2 (乐子人/搞怪/出其不意)", "type": "chaotic" },
-    { "label": "选项3 (邪恶/激进/贪婪)", "type": "evil" }
-  ]
-}`;
+            const prompt = trpgProloguePrompt({
+                title: newTitle,
+                world: newWorld,
+                userName: userProfile.name,
+                playerNames: players.map(p => p.name).join(', '),
+                playerContext,
+                diceDisabled: newDiceDisabled,
+            });
 
             const data = await fetchGameAPI(prompt);
             const rawContent = extractContent(data);
@@ -663,15 +637,9 @@ ${playerContext}
             const players = characters.filter(c => activeGame.playerCharIds.includes(c.id));
             const playerContext = await buildSyncContext(players);
 
-            // 3. Build Status Warning
-            let statusWarning = "";
-            if (activeGame.status.health <= 30) statusWarning += "\n[WARNING: LOW HP] 玩家濒临死亡，请描述极度的虚弱、伤痛、视野模糊或濒死体验。\n";
-            if (activeGame.status.sanity <= 30) statusWarning += "\n[WARNING: LOW SAN] 玩家理智崩溃中，请描述疯狂、幻听、幻视或不可名状的恐惧。\n";
-            
-            let gameOverTrigger = "";
-            if (activeGame.status.health <= 0 || activeGame.status.sanity <= 0) {
-                gameOverTrigger = "\n[GAME OVER TRIGGER] 玩家的生命值或理智值已归零。请生成一个悲惨或疯狂的结局 (Bad Ending)，结束本次冒险。\n";
-            }
+            // 3. Build Status Warning（低血/低 SAN 氛围警告 + 归零 Bad Ending 触发；文案在 theaterPrompts）
+            const statusWarning = trpgStatusWarning(activeGame.status.health, activeGame.status.sanity);
+            const gameOverTrigger = trpgGameOverTrigger(activeGame.status.health, activeGame.status.sanity);
 
             // [优化] 历史记录：已归档的旧剧情用「前情提要」总结代替，未归档日志保留原文，
             //   并把每条玩家行动的骰点结果一并喂给 GM 用于判定（之前 GM 根本看不到骰点）。
@@ -686,86 +654,30 @@ ${playerContext}
                 : '';
             const activeLogText = contextLogs.filter(l => !l.archived).map(serializeLog).join('\n');
 
-            // 当前这步行动的判定提示：开了骰子按 D20 裁定；关了骰子默认直接成功
-            const rollInstruction = currentRoll
-                ? `\n### 本回合判定\n玩家这次行动掷出了 **D20 = ${currentRoll}（${rollFlavor(currentRoll)}）**。请据此裁定行动的成败与代价：20=出乎意料的大成功，1=灾难性大失败，高分顺利、低分受挫。让结果自然融入叙事，不要直接复述数字。\n`
-                : (activeGame.diceDisabled
-                    ? `\n### 判定模式\n本场冒险未启用骰子，玩家的行动默认视为顺利成功（除非剧情逻辑上明显不可能）。请直接推进正向结果，不要用随机失败打断节奏。\n`
-                    : '');
+            // 当前这步行动的判定提示：开了骰子按 D20 裁定；关了骰子默认直接成功（文案在 theaterPrompts）
+            const rollInstruction = trpgRollInstruction({
+                currentRoll: currentRoll ?? undefined,
+                rollFlavor: currentRoll ? rollFlavor(currentRoll) : undefined,
+                diceDisabled: activeGame.diceDisabled,
+            });
 
-            const prompt = `### TRPG 跑团模式: ${activeGame.title}
-**当前剧本**: ${activeGame.worldSetting}
-**当前场景**: ${activeGame.status.location}
-**队伍资源**:
-- HP: ${activeGame.status.health}%
-- SAN: ${activeGame.status.sanity || 100}%
-- GOLD: ${activeGame.status.gold || 0}
-- 物品: ${activeGame.status.inventory.join(', ') || '空'}
-
-${statusWarning}
-${gameOverTrigger}
-
-### 冒险小队 (The Party)
-1. **${userProfile.name}** (玩家/User)
-${players.map(p => `2. **${p.name}** (ID: ${p.id}) - 你的队友`).join('\n')}
-
-### 角色档案 & 神经链接 (Character Sheets & Neural Links)
-${playerContext}
-
-${recapBlock}### 冒险记录 (Recent Log)
-${activeLogText}
-${rollInstruction}
-### GM 指令 (Game Master Instructions)
-你现在是这场跑团游戏的 **主持人 (GM)**。
-**现在的状态**：这是一群真实的朋友（基于神经链接中的私聊关系）在一起玩跑团游戏。
-
-**请遵循以下法则**：
-1. **全员「入戏」 (Roleplay First)**:
-   - 队友们是活生生的冒险者，但同时也带着私聊时的记忆和情感。
-   - **拒绝机械感**: 他们应该主动观察环境、吐槽现状、互相开玩笑。
-   - **私聊影响 (关键)**: 请根据【神经链接】中的“关系温度”和“最近话题”来调整每个角色的反应。
-   - **队内互动**: 队友之间也可以有互动（比如A吐槽B的计划）。
-
-2. **去玩家中心 · 让世界自己转 (关键)**:
-   - **拒绝修罗场**: 队友们不是来讨好/争抢玩家的 NPC。不要让所有人都把注意力黏在玩家身上、抢着对玩家示好。
-   - **各有所图**: 每个角色都带着**自己的目的、立场和情绪**行动，可以分歧、可以自顾自做事、可以暂时忽略玩家。
-   - **因地制宜**: 同一个角色在战斗、社交、独处、危机等不同环境下应表现出**不同侧面**，而非一套反应走到底。
-   - **剧情自驱**: 世界有自己的节奏——即使玩家什么都不做，也会有事件发生、势力推进、NPC 行动。主动推动主线。
-
-3. **硬核 GM 风格**:
-   - **制造冲突**: 不要让旅途一帆风顺。安排陷阱、突发战斗、尴尬的社交场面、或者道德困境。
-   - **环境描写**: 描述光影、气味、声音，营造沉浸感。
-   - **骰点判定**: 严格依据【本回合判定】的 D20 结果裁定成败，骰得低就要有真实代价。
-   - **Markdown 排版**: 请在 \`gm_narrative\` 和 \`dialogue\` 中**积极使用 Markdown**。例如：使用 **加粗** 强调重点，使用 *斜体* 描述动作。
-
-4. **生成选项 (Action Options)**:
-   - 请根据当前局势，为玩家提供 3 个可选的行动建议（玩家选择后都会自动骰 D20，因此选项应是有成败风险的尝试）。
-
-### 一致性自检 (Consistency Check)
-输出前请最后核对一遍：每个角色的台词、记忆、口癖、性格是否**严格来自 TA 各自的"角色档案"**？绝不能把一个角色的记忆/人设/经历安到另一个角色身上（防止"串台"）。如发现串台，请改正后再输出。
-
-### 输出格式 (Strict JSON)
-请仅输出 JSON，不要包含 Markdown 代码块。
-{
-  "gm_narrative": "GM的剧情描述 (支持Markdown)...",
-  "characters": [
-    { 
-      "charId": "角色ID (必须对应上方列表)", 
-      "action": "动作描述", 
-      "dialogue": "台词" 
-    }
-  ],
-  "newLocation": "新地点 (可选)",
-  "hpChange": 0,
-  "sanityChange": 0,
-  "goldChange": 0,
-  "newItem": "获得物品 (可选)",
-  "suggested_actions": [
-    { "label": "选项1文本", "type": "neutral" },
-    { "label": "选项2文本", "type": "chaotic" },
-    { "label": "选项3文本", "type": "evil" }
-  ]
-}`;
+            const prompt = trpgGameLoopPrompt({
+                title: activeGame.title,
+                worldSetting: activeGame.worldSetting,
+                location: activeGame.status.location,
+                health: activeGame.status.health,
+                sanity: activeGame.status.sanity,
+                gold: activeGame.status.gold,
+                inventory: activeGame.status.inventory,
+                statusWarning,
+                gameOverTrigger,
+                userName: userProfile.name,
+                players: players.map(p => ({ name: p.name, id: p.id })),
+                playerContext,
+                recapBlock,
+                activeLogText,
+                rollInstruction,
+            });
 
             const data = await fetchGameAPI(prompt);
             const rawContent = extractContent(data);
@@ -864,17 +776,7 @@ ${rollInstruction}
                 return `[${who}]: ${l.content}`;
             }).join('\n');
 
-            const prompt = `你是一位擅长写小说的记录者。请把下面这段 TRPG 跑团剧情，总结成一段**连贯、生动、像小说梗概一样**的前情提要。
-${prevRecap ? `\n【已有前情（仅供衔接，不要重复）】\n${prevRecap}\n` : ''}
-【本段需要总结的剧情记录】
-${logText}
-
-要求：
-1. 用第三人称叙述，包含【起因 → 经过 → 结果】的来龙去脉。
-2. 重点写清楚**人物之间的关系变化与各自的处境/情绪**（谁和谁更近了/起了冲突/暴露了什么）。
-3. 控制在 200~350 字，文笔流畅，不要分点罗列，不要写"总结如下"之类的开场白。
-
-直接输出总结正文：`;
+            const prompt = trpgRecapPrompt({ prevRecap, logText });
 
             const data = await fetchGameAPI(prompt, 1500);
             let summaryText = (extractContent(data) || '').trim();
@@ -1026,11 +928,7 @@ ${logText}
             // Increase log context for summary
             const logText = activeGame.logs.slice(-30).map(l => `${l.role}: ${l.content}`).join('\n');
             
-            const prompt = `Task: Summarize the key events of this TRPG session into a short clause (what happened).
-Game: ${activeGame.title}
-Logs:
-${logText}
-Output: A concise summary in Chinese (e.g. "探索了地牢并击败了史莱姆"). No preamble.`;
+            const prompt = trpgArchiveSummaryPrompt({ title: activeGame.title, logText });
 
             const data = await fetchGameAPI(prompt);
             let summary = extractContent(data) || '进行了一场冒险';

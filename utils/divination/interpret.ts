@@ -3,11 +3,13 @@
  * ========================================================================
  * UI 在 apps/theater/DivinationApp.tsx；牌面/卦象由 engines.ts 产出后转成文字喂进来。
  * 失败抛错，由调用方兜底（同 theaterExtra 的风格）。
+ * 📌 解牌 prompt 文案集中在 utils/theaterPrompts.ts（[叁] 占卜 区段），改文案去那里。
  */
 
 import type { CharacterProfile, UserProfile } from '../../types';
 import type { ResolvedApi } from '../auxApi';
 import { safeResponseJson, extractContent } from '../safeApi';
+import { DIVINATION_KIND_ROLE, divinationInterpretSys, divinationInterpretUser } from '../theaterPrompts';
 import type { DrawnTarot, DrawnLenormand, LiuyaoResult, MeihuaResult } from './engines';
 
 async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }): Promise<string> {
@@ -81,30 +83,11 @@ export interface InterpretArgs {
     signal?: AbortSignal;
 }
 
-const KIND_ROLE: Record<DivinationKind, string> = {
-    tarot: '资深塔罗占卜师',
-    lenormand: '雷诺曼卡牌占卜师',
-    liuyao: '精通六爻纳甲的命理师',
-    meihua: '精通梅花易数、体用生克的命理师',
-};
-
 export async function interpretReading(args: InterpretArgs): Promise<string> {
     const { api, kind, readingText, question, char, userProfile, worldbookText, signal } = args;
     const userName = (userProfile?.name || '').trim() || '问卜者';
-    const wb = (worldbookText || '').trim();
-    const sys =
-        `你现在以「${char.name}」的身份，作为一位${KIND_ROLE[kind]}，为 ${userName} 解读这一卦/这次抽牌。\n` +
-        `角色人设：${String(char.description || '').slice(0, 800)}\n` +
-        (wb ? `相关设定（世界书，务必结合）：\n${wb.slice(0, 1200)}\n` : '') +
-        `要求：\n` +
-        `1) 完全以 ${char.name} 的口吻、性格、价值观来解读，自然代入你们之间的关系；\n` +
-        `2) 专业、有据：紧扣牌面/卦象的实际含义（正逆位、动爻、体用生克、牌阵位置都要用上），不要泛泛而谈；\n` +
-        `3) 分层次：先点出核心信号，再结合问题逐项解读，最后给一句落地的建议；\n` +
-        `4) 真诚体贴，但该提醒的风险也直说；不要复述题面，不要 markdown 标题，控制在 6 段以内。`;
-    const user =
-        `问卜的问题：${question || '（未明确提问，请做综合运势解读）'}\n\n` +
-        `占卜结果：\n${readingText}\n\n` +
-        `请你（${char.name}）开始解读。`;
+    const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.description || '', userName, worldbookText });
+    const user = divinationInterpretUser({ question, readingText, charName: char.name });
     // 调高 max_tokens：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断（反馈：解牌只显示半句）
     return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.85, maxTokens: 2200, signal }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
