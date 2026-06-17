@@ -8,33 +8,9 @@
 
 import type { CharacterProfile, UserProfile } from '../../types';
 import type { ResolvedApi } from '../auxApi';
-import { safeResponseJson, extractContent } from '../safeApi';
+import { llmComplete } from '../llmComplete';
 import { DIVINATION_KIND_ROLE, divinationInterpretSys, divinationInterpretUser } from '../theaterPrompts';
 import type { DrawnTarot, DrawnLenormand, LiuyaoResult, MeihuaResult } from './engines';
-
-async function chat(api: ResolvedApi, messages: { role: string; content: string }[], opts?: { temperature?: number; maxTokens?: number; signal?: AbortSignal }): Promise<string> {
-    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) throw new Error('请先在「文具盒」里配置 API');
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-        body: JSON.stringify({
-            model: api.model,
-            messages,
-            temperature: opts?.temperature ?? 0.85,
-            max_tokens: opts?.maxTokens ?? 1200,
-            stream: false,
-        }),
-        signal: opts?.signal,
-    });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await safeResponseJson(res);
-    return (extractContent(data) || '')
-        // 去思维链：成对 <think>…</think> + 被 max_tokens 截断的残缺 <think>…（到结尾）
-        .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
-        .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
-        .trim();
-}
 
 export type DivinationKind = 'tarot' | 'lenormand' | 'liuyao' | 'meihua';
 
@@ -88,7 +64,9 @@ export async function interpretReading(args: InterpretArgs): Promise<string> {
     const userName = (userProfile?.name || '').trim() || '问卜者';
     const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.description || '', userName, worldbookText });
     const user = divinationInterpretUser({ question, readingText, charName: char.name });
-    // 调高 max_tokens：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断（反馈：解牌只显示半句）
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.85, maxTokens: 2200, signal }))
+    // 调高 max_tokens + 自动续写：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断
+    // （反馈：解牌只显示半句）。若仍被 finish_reason='length' 截断，llmComplete 会自动接着写完。
+    return (await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: user }],
+        { temperature: 0.85, maxTokens: 4096, continueRounds: 2, signal }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
 }
