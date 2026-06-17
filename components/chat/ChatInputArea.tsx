@@ -581,8 +581,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             onSend();
                         }}
                         className={idleHeart
-                            ? 'w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-rose-300 transition-colors'
-                            : `${sendButtonClass} ${input.trim() ? '' : 'opacity-70'}`}
+                            ? 'w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-rose-300 hover:scale-110 active:scale-90 transition-all'
+                            : `${sendButtonClass} ${input.trim() ? 'active:scale-90' : 'opacity-70 active:scale-95'} transition-transform`}
                     >
                         {sendButtonStyle === 'pill'
                             ? <span>寄出</span>

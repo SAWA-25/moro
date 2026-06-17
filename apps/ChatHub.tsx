@@ -1736,7 +1736,7 @@ ${attachedImagesNote}
                 {/* safe-top spacer 透明 + backdrop-blur，下方容器/list bubbles 透出+模糊（跟 iOS 系统 status bar 一致），避免 header 白 bg 在刘海下铺一条突兀白带 */}
                 <div className="shrink-0 z-10 sticky top-0">
                     <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
-                    <div className="bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 h-20">
+                    <div className="bg-white/70 backdrop-blur-md flex items-end pb-3 px-4 border-b border-white/40 h-20 anim-drop-in">
                         <button
                         onClick={() => {
                             // 朋友圈 tab 上有内层页面（发布动态等）打开时，返回键先回到动态流
@@ -1795,7 +1795,7 @@ ${attachedImagesNote}
                                         key={`g-${cv.id}`}
                                         onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
                                         style={{ animationDelay: enterDelay }}
-                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] animate-fade-in ${cv.dissolved ? 'opacity-70' : ''}`}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''}`}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -1838,7 +1838,7 @@ ${attachedImagesNote}
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
                                     style={{ animationDelay: enterDelay }}
-                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] animate-fade-in ${cv.starred ? 'bg-amber-50/60' : ''}`}
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.starred ? 'bg-amber-50/60' : ''}`}
                                 >
                                     <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                     <div className="flex-1 min-w-0">
@@ -1863,8 +1863,8 @@ ${attachedImagesNote}
                             );
                         })}
                         {convos.length === 0 && (
-                            <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2">
-                                <ChatsTeardrop size={36} className="opacity-50" />
+                            <div className="text-center text-slate-400 text-xs py-10 flex flex-col items-center gap-2 anim-float-in">
+                                <ChatsTeardrop size={36} className="opacity-50 animate-float" />
                                 这里还空着。去「名册」找个人说说话，或点右上角拉个群。
                             </div>
                         )}
@@ -1874,8 +1874,8 @@ ${attachedImagesNote}
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
-                        {characters.map(c => (
-                            <div key={c.id} onClick={() => openPrivateChat(c.id)} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee]">
+                        {characters.map((c, i) => (
+                            <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
@@ -1912,7 +1912,17 @@ ${attachedImagesNote}
 
                 {/* ── 底部导航：往来 / 名册 / 此刻 / 情侣空间 ── */}
                 <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-dashed border-[#d9d4c8] pb-safe">
-                    <div className="grid grid-cols-4">
+                    <div className="grid grid-cols-4 moro-tabbar">
+                        {/* 选中态滑动指示条：随当前 tab 在四格间平滑滑动（left/width 过渡） */}
+                        <span
+                            aria-hidden
+                            className="moro-tab-ink"
+                            style={{
+                                left: `${['chats', 'contacts', 'moments', 'couple'].indexOf(hubTab) * 25 + 6}%`,
+                                width: '13%',
+                                color: hubTab === 'couple' ? '#ec4899' : '#2b2933',
+                            }}
+                        />
                         {([
                             { id: 'chats', label: '往来', Icon: ChatsTeardrop, on: 'text-[#2b2933]' },
                             { id: 'contacts', label: '名册', Icon: AddressBook, on: 'text-[#2b2933]' },
