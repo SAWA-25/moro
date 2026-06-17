@@ -25,11 +25,11 @@ const MAX_IMAGES = 9;
 const MOOD_EMOJIS = ['😊', '🥰', '😍', '🤗', '😋', '🥳', '🤔', '😢', '😴', '💕', '🌙', '☀️'];
 const TASK_SUGGESTIONS = ['今天说晚安', '一起看一部电影', '给对方做顿饭', '一起散步半小时', '互道一句早安', '拍一张合照'];
 
-// ── 全局设计 token ──
-const ACCENT = 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)';   // 强调粉紫渐变
-const ACCENT_SOFT = 'linear-gradient(135deg, #fff1f3 0%, #fdf0fb 100%)';            // 极浅粉紫（卡片底）
+// ── 全局设计 token（黑白灰拼贴手帐：强调色由粉紫改墨灰）──
+const ACCENT = 'linear-gradient(135deg, #3a352e 0%, #1f1d1a 100%)';                 // 强调墨灰渐变
+const ACCENT_SOFT = 'linear-gradient(135deg, #f4f1ea 0%, #ececec 100%)';            // 极浅纸灰（卡片底）
 const FONT_STACK = '"Quicksand", "PingFang SC", "Noto Sans SC", "Nunito", sans-serif';
-const AVATAR_GLOW = '0 4px 12px rgba(255, 182, 193, 0.4)';
+const AVATAR_GLOW = '0 4px 12px rgba(31, 29, 26, 0.18)';
 const BG = '#FAFAFA';
 
 // 心电图（ECG）路径：一条基本水平、含一处心跳尖峰的折线（用 pathLength=100 归一化便于动画）
@@ -71,10 +71,10 @@ type Tab = 'moments' | 'anniversary' | 'album' | 'tasks';
 const HeartbeatLine: React.FC = () => (
   <svg viewBox="0 0 120 40" preserveAspectRatio="none" className="w-full h-10" aria-hidden>
     {/* 底层淡线 */}
-    <path pathLength={100} d={ECG_D} fill="none" stroke="#ffd9e4" strokeWidth={2.5}
+    <path pathLength={100} d={ECG_D} fill="none" stroke="#dcd7cd" strokeWidth={2.5}
       strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
     {/* 流动的亮色脉冲（一段亮线沿路径从左向右循环） */}
-    <path pathLength={100} d={ECG_D} fill="none" stroke="#ff7eb3" strokeWidth={3}
+    <path pathLength={100} d={ECG_D} fill="none" stroke="#1f1d1a" strokeWidth={3}
       strokeLinecap="round" strokeLinejoin="round"
       style={{ strokeDasharray: '20 80', animation: 'csEcg 1.6s linear infinite' }} />
   </svg>
