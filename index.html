@@ -61,6 +61,9 @@
               'drift-slower': 'driftSlow 26s ease-in-out infinite alternate-reverse',
               'sway': 'sway 6s ease-in-out infinite alternate',
               'rise-in': 'riseIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both',
+              'tarot-shine': 'tarotShine 1.05s ease-out',
+              'tarot-glow': 'tarotGlow 3.6s ease-in-out infinite',
+              'tarot-bob': 'tarotBob 4.8s ease-in-out infinite',
             },
             keyframes: {
               fadeIn: {
@@ -129,6 +132,19 @@
               riseIn: {
                 '0%': { opacity: '0', transform: 'translateY(14px)' },
                 '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              tarotShine: {
+                '0%': { transform: 'translateX(-130%) skewX(-12deg)', opacity: '0' },
+                '12%': { opacity: '0.85' },
+                '60%, 100%': { transform: 'translateX(230%) skewX(-12deg)', opacity: '0' },
+              },
+              tarotGlow: {
+                '0%, 100%': { opacity: '0.3', transform: 'scale(0.94)' },
+                '50%': { opacity: '0.68', transform: 'scale(1.05)' },
+              },
+              tarotBob: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-5px)' },
               },
             }
           }

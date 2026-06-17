@@ -63,10 +63,11 @@ export async function genNextQuestion(args: {
         if (q) return q;
     }
     const recent = asked.slice(-12).map((q, i) => `${asked.length - Math.min(12, asked.length) + i + 1}. ${q}`).join('\n');
+    // ⚠️ 推理模型会先在 <think> 里吃掉 token，预算太小正文（题目）就被截没了。给足预算 + 截断自动续写。
     const raw = await chat(api, [
         { role: 'system', content: EXTRA_QUIZ_QUESTION_SYS },
         { role: 'user', content: extraQuizQuestionUser({ topic, index, total, recent }) },
-    ], { temperature: 0.95, maxTokens: 500, signal });
+    ], { temperature: 0.95, maxTokens: 800, continueRounds: 2, signal });
     return cleanQuestion(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || raw) || `（第 ${index + 1} 题生成失败，点重试）`;
 }
 
@@ -76,10 +77,12 @@ export async function genCharAnswer(args: {
 }): Promise<string> {
     const { api, char, userProfile, topic, question, signal } = args;
     const userName = (userProfile?.name || '').trim() || '对方';
+    // ⚠️ 角色作答被截断显示半句（见 docs/divination-and-faux 同款坑）：推理模型先在 <think> 里耗预算，
+    // 800 token 常只够吐半句正文。给足预算并在被长度截断时自动续写写完，避免「回答显示不全」。
     return (await chat(api, [
         { role: 'system', content: extraQuizAnswerSys({ charName: char.name, topic, description: char.description || '', userName }) },
         { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question }) },
-    ], { temperature: 0.9, maxTokens: 800, signal })) || '……（TA 没说话）';
+    ], { temperature: 0.9, maxTokens: 1200, continueRounds: 3, signal })) || '……（TA 没说话）';
 }
 
 export type ExtraKind = 'tieba' | 'chatlog' | 'meme' | 'custom';
