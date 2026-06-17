@@ -28,6 +28,8 @@ import {
 interface OfflineModeModalProps {
     char: CharacterProfile;
     userProfile: UserProfile;
+    /** 线下场景生成用的 API。宿主默认传副 API（resolveAuxApi）——线下功能默认走副 API，
+        与线上聊天分线、省主 API 额度；副 API 没配时 resolveAuxApi 已回退主 API。 */
     apiConfig: { baseUrl: string; apiKey: string; model: string };
     /** 结束线下模式：情景已落库后回调，宿主负责 reload + 触发角色主动消息 */
     onEnd: () => void;

@@ -22,15 +22,18 @@
 - **解牌 + 抽牌后「继续和角色对话」**：UI 入口「让 TA 解牌」(API) 给一段完整解读后，下面变成一个**对话框**——可继续追问，角色顺着**同一副牌**口语化回应（不再有旧的「自己解」手写框，已删）。
   - 实现：`DivinationApp` 持 `convo:{role:'user'|'char';text}[]`，`ask(userMessage?)` 统一处理「首解 / 追问」：把 `convo` 映射成 `ReadingTurn[]` 历史传给 `interpretReading({..., history})`；`history` 非空时 `divinationInterpretSys({conversational:true})` 让角色围绕已抽的牌继续聊、篇幅可短。回车 / 点发送即追问。整段对话「发到聊天」。
 - **洗牌 + 抽牌交互**：塔罗/雷诺曼点「抽牌」进 `components/theater/divination/CardPicker.tsx`——**全屏接管**（`absolute inset-0 z-[80]`，盖住整个占卜页，不再挤在小拼贴框里；`DivinationApp` 把它作为 `<PaperShell>` 的兄弟 overlay 渲染）。两段式，仿实体占卜 App 的「洗牌花 + 抽牌牌轮」：
-  - **① 洗牌（bloom）**：一朵向日葵螺旋铺开的「牌花」，点牌堆 / 点「洗牌」即重洗——整朵旋转重排（可反复），洗到有感觉再「下一步·抽牌」。
-  - **② 抽牌（wheel）**：一个巨大的「牌轮」——背面牌沿大圆弧排成密环、只露顶部一段（区域 `flex-1` 撑满全屏剩余高度），左右**拖动转动**（pointer 拖拽，松手吸附到最近一张），正中那张放大发光、顶上有指针；凭直觉**点一张抽出**，按牌阵位置逐张抽，抽中的牌 `dealIn` 落进上方位置格子，抽满翻开。
-  - ⚠️ **不溢出**：牌花与牌轮都裹在 `overflow:hidden` 容器里，牌再多 / 再大也只在框内被裁掉。几何参数（`WHEEL_R/STEP/VIS`、`BLOOM_*`）在文件顶部常量区集中可调；牌轮点选靠容器 pointer 事件在 pointerdown 时抓 `data-cidx`，不依赖 click 合成（pointer capture 也不影响）。顶部留白用 `--chrome-top` 让开 Moro 状态栏。
+  - **① 洗牌（bloom）**：一朵向日葵螺旋铺开的「牌花」，点牌堆 / 点「洗牌」即重洗——整朵旋转重排（可反复），洗到有感觉再「下一步·抽牌」。牌花整朵轻微摇曳（`animate-sway`）+ 呼吸光晕（`animate-tarot-glow`）+ 散落星芒明灭（`animate-tarot-twinkle`），idle 也有仪式感。
+  - **② 抽牌（wheel）**：一个巨大的「牌轮」——背面牌沿大圆弧排成密环、只露顶部一段（区域 `flex-1` 撑满全屏剩余高度），左右**拖动转动**（pointer 拖拽，松手吸附到最近一张），正中那张放大 + 上浮 + 强光晕 + 高光循环扫过（`animate-tarot-sheen`）+ 轻盈浮动（`animate-tarot-float`）、落在顶部聚光里、顶上有指针；凭直觉**点一张抽出**，按牌阵位置逐张抽，抽中的牌 `dealIn` 落进上方位置格子，抽满翻开。
+  - **牌的尺寸（仿 Quin 等占卜 App 的大牌堆手感）**：牌花/牌轮的牌都做大了一圈，几何常量在文件顶部 —— `BLOOM_CARD_W`(牌花单牌宽)、`WHEEL_CARD_W` + `WHEEL_FOCUS_GROW`(牌轮单牌宽/聚焦额外加宽)、`BLOOM_SIZE/MAX_R`、`WHEEL_R/STEP/VIS` 集中可调。
+  - ⚠️ **不溢出**：牌花与牌轮都裹在 `overflow:hidden` 容器里，牌再多 / 再大也只在框内被裁掉；放大牌时同步调 `BLOOM_SIZE`/`WHEEL_TOP_PAD` 留白即可。牌轮点选靠容器 pointer 事件在 pointerdown 时抓 `data-cidx`，不依赖 click 合成（pointer capture 也不影响）。聚焦牌的浮动动画放在**内层**包裹元素（不与外层定位 transform 打架）。顶部留白用 `--chrome-top` 让开 Moro 状态栏。
+  - ⚠️ keyframe（`tarotSheen`/`tarotTwinkle`/`tarotFloat` 等）定义在 `index.html` 的 Tailwind 配置里，新增动画去那加。
   - 皮肤＝折子戏黑白拼贴深底 + 去色牌背（牌背图同 skin，取不到回退 CSS 黑白牌背）。`DivinationApp` 只持有当前洗好的那副牌，CardPicker 回传「按位置选中的索引序列」→ `tarotFromPicks`/`lenormandFromPicks` 落阵。六爻/梅花仍是直接起卦、无挑牌。
 
 ### 牌库（图）
 
-- **内置默认塔罗牌面**：仓库自带整副公版韦特塔罗（Rider–Waite–Smith，1909 公有领域），放在 `public/tarot/0.jpg`~`77.jpg`，按 `TAROT_78` 的 index 命名（0~21 大阿卡纳、22~35 权杖、36~49 圣杯、50~63 宝剑、64~77 星币；小牌 01=Ace…10=Ten、11=侍从、12=骑士、13=王后、14=King）。`TarotCard.tsx` 的 `defaultTarotFace(index)` 给出 `/tarot/${index}.jpg`。**开箱即用、不必导入**。雷诺曼无内置图。
-- 牌面取图优先级：**用户导入的自定义图 → 内置默认牌面 → 文字牌义占位**（`CardFace` 的 `<img onError>` 再兜底回占位）。
+- **内置默认塔罗牌面**：仓库自带整副公版韦特塔罗（Rider–Waite–Smith，1909 公有领域），放在 `public/tarot/0.jpg`~`77.jpg`，按 `TAROT_78` 的 index 命名（0~21 大阿卡纳、22~35 权杖、36~49 圣杯、50~63 宝剑、64~77 星币；小牌 01=Ace…10=Ten、11=侍从、12=骑士、13=王后、14=King）。`TarotCard.tsx` 的 `defaultTarotFace(index)` 给出 `/tarot/${index}.jpg`。**开箱即用、不必导入**。
+- **内置默认雷诺曼牌面**：雷诺曼没有自带牌面图，于是用每张牌「传统对应的那张扑克牌」当牌面代替（36 张 Petit Lenormand 牌角自古就印着一张小扑克：1骑士=9♥、2三叶草=6♦…）。仓库自带整副公版扑克牌图（Byron Knoll 扑克牌，公有领域，来源 GitHub `hayeah/playing-cards-assets`），放在 `public/lenormand/{number}.png`（按 `LENORMAND_36` 的 number 1~36 命名），`TarotCard.tsx` 的 `defaultLenormandFace(number)` 给出 `/lenormand/${number}.png`，**开箱即用、不必导入**；牌号·牌名由 `CardFace` 显示在牌面下方。`LenormandSpreadView` 给 `CardFace` 传 `aspect="222 / 323"`(扑克牌比例，不裁切) + `faceBg`(米白底，衬透明圆角)。映射表 `LENORMAND_PIP` 与纯 CSS 扑克牌组件 `LenormandDefaultFace`（牌角索引 + 居中大点数/花色）也在 `TarotCard.tsx`，作图加载失败时的兜底。
+- 牌面取图优先级：**用户导入的自定义图 → 内置默认牌面（塔罗=韦特图 / 雷诺曼=对应扑克牌 PNG）→ CSS 兜底牌面 → 文字占位**（`CardFace` 无 `img` / `<img onError>` 时走 `fallback`，雷诺曼即 CSS 扑克牌 `LenormandDefaultFace`；连 `fallback` 都没有才回退 🔮 占位）。
 - 塔罗 78 张命名 `0.jpg`~`77.jpg`、雷诺曼 36 张命名 `1.jpg`~`36.jpg`，在占卜 app 的「牌库」子页（`components/theater/divination/CardDeckManager.tsx`）`<input multiple>` 批量导入即可**覆盖**内置图：`processImage` 压成 dataURL → `DB.bulkSaveDivinationCards`。按文件名首个数字解析 index。
 - 存储：IndexedDB `divination_cards` store（`db.ts` v72，keyPath `id=${deck}_${index}`，建 `deck` 索引）。CRUD：`getDivinationCards(deck)` / `saveDivinationCard` / `bulkSaveDivinationCards` / `deleteDivinationDeck`。
 - ⚠️ 用户导入的牌库**不进全量备份**（与 takeout 同策略）：图是大 base64、可重新导入，避免撑爆导出。内置默认牌面是静态资源，不入库。

@@ -245,7 +245,7 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                         </div>
                         {deckImported === 0 && (
                             <button onClick={() => { setDeckToManage('lenormand'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(31,29,26,0.06)', color: '#5b554a', border: '1px dashed rgba(150,144,132,0.7)' }}>
-                                <Stack size={15} weight="bold" /> 还没导入雷诺曼牌图，点此批量导入
+                                <Stack size={15} weight="bold" /> 雷诺曼无牌面图，已用每张对应的传统扑克牌代替，可直接抽牌；想用自己的牌图？点此批量导入
                             </button>
                         )}
                     </div>

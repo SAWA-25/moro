@@ -16,6 +16,61 @@ type Skin = NonNullable<OSTheme['tarotSkin']>;
 /** 内置默认塔罗牌面（公版 Rider–Waite–Smith，随仓库放在 public/tarot/{index}.jpg）。 */
 export const defaultTarotFace = (index: number): string => `/tarot/${index}.jpg`;
 
+/**
+ * 内置默认雷诺曼牌面：雷诺曼本身没有牌面图，用每张牌「传统对应的那张扑克牌」当牌面代替
+ * （36 张 Petit Lenormand 牌角自古就印着一张小扑克：1骑士=9♥、2三叶草=6♦…）。
+ * 仓库自带整副公版扑克牌图（Byron Knoll 的扑克牌，公有领域），放在 public/lenormand/{number}.png，
+ * 按 LENORMAND_36 的 number(1~36) 命名，**开箱即用、不必导入**。
+ */
+export const defaultLenormandFace = (number: number): string => `/lenormand/${number}.png`;
+
+/**
+ * 雷诺曼牌面的 CSS 兜底：当 public/lenormand 的扑克牌 PNG 加载失败（没部署/离线）时，
+ * 用纯 CSS 画出同一张扑克牌（牌角索引 + 居中大点数/花色），保证总有牌面可看、不依赖外部图。
+ * 牌号·牌名由 CardFace 显示在牌面下方。
+ */
+const LENORMAND_PIP: Record<number, string> = {
+    1: '9♥', 2: '6♦', 3: '10♠', 4: 'K♥', 5: '7♥', 6: 'K♣', 7: 'Q♣', 8: '9♦', 9: 'Q♠',
+    10: 'J♦', 11: 'J♣', 12: '7♦', 13: 'J♠', 14: '9♣', 15: '10♣', 16: '6♥', 17: 'Q♥', 18: '10♥',
+    19: '6♠', 20: '8♠', 21: '8♣', 22: 'Q♦', 23: '7♣', 24: 'J♥', 25: 'A♣', 26: '10♦', 27: '7♠',
+    28: 'A♥', 29: 'A♠', 30: 'K♠', 31: 'A♦', 32: '8♥', 33: '8♦', 34: 'K♦', 35: '9♠', 36: '6♣',
+};
+
+/** 雷诺曼内置默认牌面：渲染该牌对应的那张扑克牌（牌角索引 + 居中大点数/花色），尺寸随宽度自适应。 */
+export const LenormandDefaultFace: React.FC<{ number: number; name: string; widthPx: number }> = ({ number, widthPx }) => {
+    const pip = LENORMAND_PIP[number] || '';
+    const suit = pip.slice(-1);
+    const rank = pip.slice(0, -1);
+    const red = suit === '♥' || suit === '♦';
+    const color = red ? '#c2362c' : '#1d1b18';
+    const pad = Math.round(widthPx * 0.06);
+    const idxRank = Math.round(widthPx * (rank.length > 1 ? 0.135 : 0.155));
+    const idxSuit = Math.round(widthPx * 0.12);
+    const bigRank = Math.round(widthPx * (rank.length > 1 ? 0.36 : 0.46));
+    const bigSuit = Math.round(widthPx * 0.34);
+    // 牌角索引（点数在上、花色在下），右下角整体旋转 180° —— 标准扑克牌排版
+    const corner = (
+        <div className="flex flex-col items-center" style={{ color, lineHeight: 0.92 }}>
+            <span style={{ fontWeight: 800, fontSize: idxRank }}>{rank}</span>
+            <span style={{ fontSize: idxSuit }}>{suit}</span>
+        </div>
+    );
+    return (
+        <div className="w-full h-full relative overflow-hidden" style={{
+            background: 'linear-gradient(160deg,#fbf8f1,#efe9da)',
+            boxShadow: 'inset 0 0 0 1px rgba(29,27,24,0.18)',
+        }}>
+            <div className="absolute" style={{ top: pad, left: pad }}>{corner}</div>
+            <div className="absolute" style={{ bottom: pad, right: pad, transform: 'rotate(180deg)' }}>{corner}</div>
+            {/* 居中大点数 + 花色，一眼读出是哪张牌 */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ color }}>
+                <span style={{ fontWeight: 800, fontSize: bigRank, lineHeight: 0.9, letterSpacing: '-0.02em' }}>{rank}</span>
+                <span style={{ fontSize: bigSuit, lineHeight: 0.9, marginTop: Math.round(widthPx * 0.01) }}>{suit}</span>
+            </div>
+        </div>
+    );
+};
+
 const FRAME_CLASS: Record<NonNullable<Skin['frame']>, string> = {
     none: 'ring-1 ring-white/15',
     gold: 'ring-2 ring-amber-300/70 shadow-[0_0_14px_rgba(251,191,36,0.3)]',
@@ -64,7 +119,13 @@ export const CardFace: React.FC<{
     revealDelay?: number;
     /** 第几张（用于浮动错峰，避免整排同相位机械感）。 */
     seq?: number;
-}> = ({ img, back, label, sub, reversed, position, skin, widthPx = 132, revealDelay, seq = 0 }) => {
+    /** 无 img / img 加载失败时的兜底牌面（如雷诺曼内置扑克牌牌面）；不传则回退到 🔮 + 牌名占位。 */
+    fallback?: React.ReactNode;
+    /** 牌面长宽比（CSS aspect-ratio），默认 '7 / 12'（塔罗较瘦长）。雷诺曼=扑克牌图，传扑克牌比例避免裁切。 */
+    aspect?: string;
+    /** 正面底色：牌图带透明圆角（如扑克牌 PNG）时给个底色让圆角处自然过渡；不传则用默认深色渐变。 */
+    faceBg?: string;
+}> = ({ img, back, label, sub, reversed, position, skin, widthPx = 132, revealDelay, seq = 0, fallback, aspect = '7 / 12', faceBg }) => {
     const frame = FRAME_CLASS[skin?.frame || 'none'];
     const wrap = STYLE_WRAP[skin?.renderStyle || 'classic'];
     const doFlip = revealDelay != null;
@@ -96,14 +157,14 @@ export const CardFace: React.FC<{
                         }} />
                     {/* 翻牌本体 */}
                     <div className="relative" style={{
-                        aspectRatio: '7 / 12',
+                        aspectRatio: aspect,
                         transformStyle: 'preserve-3d',
                         transition: 'transform 0.78s cubic-bezier(0.22,1,0.36,1)',
                         transform: revealed ? 'rotateY(0deg)' : 'rotateY(180deg)',
                     }}>
                         {/* 正面（牌面） */}
-                        <div className={`absolute inset-0 overflow-hidden bg-gradient-to-br from-indigo-950/70 to-violet-950/50 ${frame} ${wrap}`}
-                            style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+                        <div className={`absolute inset-0 overflow-hidden ${faceBg ? '' : 'bg-gradient-to-br from-indigo-950/70 to-violet-950/50'} ${frame} ${wrap}`}
+                            style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', background: faceBg || undefined }}>
                             {showFace ? (
                                 <img
                                     src={img}
@@ -113,6 +174,8 @@ export const CardFace: React.FC<{
                                     style={reversed ? { transform: 'rotate(180deg)' } : undefined}
                                     draggable={false}
                                 />
+                            ) : fallback ? (
+                                fallback
                             ) : (
                                 <div className="w-full h-full flex flex-col items-center justify-center text-center px-2">
                                     <span className="text-3xl">🔮</span>
@@ -192,7 +255,7 @@ export const LenormandSpreadView: React.FC<{
             {draws.map((d, i) => (
                 <div key={`${d.card.number}-${i}`} className="snap-center">
                     <CardFace
-                        img={images[d.card.number]}
+                        img={images[d.card.number] || defaultLenormandFace(d.card.number)}
                         back={cardBack}
                         label={`${d.card.number}·${d.card.name}`}
                         sub={d.card.meaning}
@@ -201,6 +264,9 @@ export const LenormandSpreadView: React.FC<{
                         widthPx={w}
                         revealDelay={240 + i * 360}
                         seq={i}
+                        aspect="222 / 323"
+                        faceBg="#f4eee1"
+                        fallback={<LenormandDefaultFace number={d.card.number} name={d.card.name} widthPx={w} />}
                     />
                 </div>
             ))}
