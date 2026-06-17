@@ -7,6 +7,10 @@ import {
     inferQuestionCount, genNextQuestion, genCharAnswer, genExtraPiece, genFauxPiece,
     type ExtraKind, type FauxKind, type FauxResult,
 } from '../../utils/theaterExtra';
+import {
+    bankQuizNames, getBankQuestions, isBankQuiz,
+    instructionsForKind, pickInstruction, EXTRA_INSTRUCTIONS, type ExtraBankKind,
+} from '../../utils/theaterExtraBank';
 import { WeChatScreenshot, MomentsCard, XhsCard, ForumThread } from '../../components/theater/faux/FauxRenderers';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard, Stamp, SectionTag, INK, INK_SOFT } from './scrapbook';
 
@@ -15,6 +19,8 @@ import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard,
  *  - 问卷番外：输入想要的问卷，系统一题一题出题，角色作答 + 用户作答；
  *  - 番外工坊 / 仿真图文：围绕角色一次性生成贴吧帖 / 聊天记录 / 热梗 / 微信朋友圈等主题番外。
  * 黑白拼贴手账皮肤（仿真图文渲染保留原样，模拟真 App 观感）。
+ * 📌 题库（问卷题目）& 番外指令库都在 utils/theaterExtraBank.ts（用户可自由增删）：
+ *    问卷带「题库」标的从你的题库取题；工坊/仿真图文可点指令芯片或「随机挑一条」从你的列表里选。
  */
 
 interface Props { onExit: () => void; }
@@ -22,7 +28,11 @@ interface Props { onExit: () => void; }
 type Mode = 'home' | 'quiz' | 'piece' | 'faux';
 interface QA { question: string; charAnswer: string; userAnswer: string }
 
-const QUIZ_PRESETS = ['恋爱相性100问', 'MBTI 测试问卷', '性癖测试问卷50问', '价值观问卷', '无厘头问卷50题', '灵魂拷问36问'];
+// 题库里的问卷名排在前（带「题库」标），再接默认示例；去重。
+const QUIZ_PRESETS = [...new Set([
+    ...bankQuizNames(),
+    '恋爱相性100问', 'MBTI 测试问卷', '性癖测试问卷50问', '价值观问卷', '无厘头问卷50题', '灵魂拷问36问',
+])];
 
 const FAUX_TABS: { kind: FauxKind; label: string; icon: React.ReactNode; hint: string; ph: string }[] = [
     { kind: 'wechat', label: '微信聊天', icon: <WechatLogo size={18} weight="fill" />, hint: '仿“捡手机”看到的、极真实接地气的 user×char 微信聊天记录', ph: '聊天关键词（如：深夜报备 / 吵架冷战 / 出差想你）' },
@@ -93,10 +103,11 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         const t = topic.trim();
         if (!t) { addToast('想做哪份问卷？写一个名字～', 'info'); return; }
         if (!apiReady) { addToast('还没配置 API，去「文具盒」填好再来', 'error'); return; }
-        const n = inferQuestionCount(t);
+        const bank = getBankQuestions(t);          // 题库里有这份问卷就用你的题
+        const n = bank ? bank.length : inferQuestionCount(t);
         setTotal(n); setItems([]); setIdx(0); setAnswerInput(''); setFinished(false); setBusy(true);
         try {
-            const q = await genNextQuestion({ api, topic: t, index: 0, total: n, asked: [] });
+            const q = await genNextQuestion({ api, topic: t, index: 0, total: n, asked: [], bankQuestions: bank ?? undefined });
             const a = await genCharAnswer({ api, char, userProfile, topic: t, question: q });
             setItems([{ question: q, charAnswer: a, userAnswer: '' }]);
         } catch (e: any) {
@@ -112,7 +123,8 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         setBusy(true); setAnswerInput('');
         try {
             const asked = committed.map(it => it.question);
-            const q = await genNextQuestion({ api, topic, index: committed.length, total, asked });
+            const bank = getBankQuestions(topic);
+            const q = await genNextQuestion({ api, topic, index: committed.length, total, asked, bankQuestions: bank ?? undefined });
             const a = await genCharAnswer({ api, char, userProfile, topic, question: q });
             setItems([...committed, { question: q, charAnswer: a, userAnswer: '' }]);
             setIdx(committed.length);
@@ -184,6 +196,28 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
         ? { background: '#1f1d1a', color: '#f6f3ec', border: '1px solid #1f1d1a' }
         : { background: 'rgba(255,253,247,0.7)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.65)' };
 
+    // 指令库（你的文档 theaterExtraBank）：芯片点选 = 自己挑；随机挑一条 = 系统从你列表里替你选。
+    // 选中即填进输入框，可再编辑。用在番外工坊 / 仿真图文。
+    const InstructionRow: React.FC<{ kind: ExtraBankKind; onPick: (s: string) => void }> = ({ kind, onPick }) => {
+        if (!EXTRA_INSTRUCTIONS.length) return null;
+        const list = instructionsForKind(kind);
+        return (
+            <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] tracking-[0.18em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>指令库 · 你的文档</span>
+                    <button onClick={() => { const ins = pickInstruction(kind); if (ins) onPick(ins.instruction); }} className="text-[11px] font-bold active:scale-95" style={{ color: INK }}>🎲 随机挑一条</button>
+                </div>
+                {list.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {list.map((ins, i) => (
+                            <button key={i} onClick={() => onPick(ins.instruction)} title={ins.instruction} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95" style={tabStyle(false)}>{ins.label}</button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // ============ 问卷番外 ============
     if (mode === 'quiz') {
         const cur = items[idx];
@@ -193,12 +227,14 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                     <>
                         <CharPicker />
                         <PaperCard tilt={-0.5} className="p-4 space-y-3">
-                            <div className="text-[13px]" style={{ color: '#4a463e' }}>想做哪份问卷？市面上的都行——写名字就生成（每份至少 50 题）。</div>
+                            <div className="text-[13px]" style={{ color: '#4a463e' }}>想做哪份问卷？市面上的都行——写名字就生成（每份至少 50 题）。带「题库」标的用你在文档里写好的题。</div>
                             <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="如：恋爱相性100问 / 性癖测试50问 / MBTI"
                                 className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={paperInput} />
                             <div className="flex flex-wrap gap-1.5">
                                 {QUIZ_PRESETS.map(p => (
-                                    <button key={p} onClick={() => setTopic(p)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95" style={tabStyle(false)}>{p}</button>
+                                    <button key={p} onClick={() => setTopic(p)} className="px-2.5 py-1 rounded-full text-[11px] font-bold active:scale-95 inline-flex items-center gap-1" style={tabStyle(false)}>
+                                        {p}{isBankQuiz(p) && <span className="text-[8px] px-1 rounded-[3px]" style={{ background: '#1f1d1a', color: '#f6f3ec' }}>题库</span>}
+                                    </button>
                                 ))}
                             </div>
                             <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={busy} onClick={() => void startQuiz()}>{busy ? '正在出第一题…' : '开始答题'}</ScrapButton>
@@ -271,6 +307,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                 <div className="text-[11px] px-1" style={{ color: '#6b6558' }}>{tab.hint}</div>
                 <textarea value={fauxKeyword} onChange={e => setFauxKeyword(e.target.value)} placeholder={tab.ph}
                     rows={2} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
+                <InstructionRow kind={fauxKind} onPick={setFauxKeyword} />
                 <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={busy} onClick={() => void runFaux()}>{busy ? '生成中…' : '生成仿真图文'}</ScrapButton>
 
                 {fauxResult && (
@@ -312,6 +349,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                 <div className="text-[11px] px-1" style={{ color: '#6b6558' }}>{tab.hint}</div>
                 <textarea value={piecePrompt} onChange={e => setPiecePrompt(e.target.value)} placeholder={tab.ph}
                     rows={2} className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-none" style={paperInput} />
+                <InstructionRow kind={pieceKind} onPick={setPiecePrompt} />
                 <ScrapButton variant="ink" className="w-full py-2.5 text-sm" disabled={busy} onClick={() => void runPiece()}>{busy ? '生成中…' : '生成番外'}</ScrapButton>
                 {piece && (
                     <PaperCard tilt={-0.4} className="p-4 space-y-3">

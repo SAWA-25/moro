@@ -68,9 +68,17 @@ function cleanQuestion(s: string): string {
  * 出下一题。基于问卷主题 + 已出过的题（避免重复），一次只出一题。
  */
 export async function genNextQuestion(args: {
-    api: ResolvedApi; topic: string; index: number; total: number; asked: string[]; signal?: AbortSignal;
+    api: ResolvedApi; topic: string; index: number; total: number; asked: string[];
+    /** 你写好的题库题目（来自 theaterExtraBank）。本题在范围内就直接取，不走 AI。 */
+    bankQuestions?: string[];
+    signal?: AbortSignal;
 }): Promise<string> {
-    const { api, topic, index, total, asked, signal } = args;
+    const { api, topic, index, total, asked, bankQuestions, signal } = args;
+    // 题库优先：本题落在你写的题库范围内，就直接用你的题，不调用 AI 出题。
+    if (bankQuestions && index < bankQuestions.length) {
+        const q = cleanQuestion(bankQuestions[index] || '');
+        if (q) return q;
+    }
     const recent = asked.slice(-12).map((q, i) => `${asked.length - Math.min(12, asked.length) + i + 1}. ${q}`).join('\n');
     const raw = await chat(api, [
         { role: 'system', content: EXTRA_QUIZ_QUESTION_SYS },

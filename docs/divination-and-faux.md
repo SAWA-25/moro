@@ -40,6 +40,17 @@
 - **JSON 解析失败兜底**：`FauxResult.data=null` 时退回 `fallbackText` 纯文本展示，不报错。
 - 发到聊天：落 system 消息（结构化时发 JSON 文本摘要）。
 
+## 番外 · 题库 & 番外指令库（用户内容仓库）
+
+入口（改内容处）：[`utils/theaterExtraBank.ts`](../utils/theaterExtraBank.ts) —— 一份**给用户填内容**的文件，注释逐项说明怎么加。
+
+- **题库 `QUESTION_BANK`**：`Record<问卷名, 题目[]>`。问卷名自动进「问卷番外」的快捷选项（带「题库」小标）。
+  做这份问卷时 `genNextQuestion` **优先按顺序取题库的题、不调 AI**；题库取完（用户想要的题量更多）才自动用 AI 续题；角色仍逐题作答。
+- **番外指令库 `EXTRA_INSTRUCTIONS`**：`{ kind, label, instruction }[]`，`kind` 对应番外 8 个 tab（tieba/chatlog/meme/custom + wechat/moments/xhs/forum）。
+  「番外工坊」「仿真图文」里渲染成芯片：点芯片＝自己挑，点「🎲 随机挑一条」＝系统（`pickInstruction`）从你的列表里替你选；选中即填进输入框、可再编辑。
+- 读取帮手：`bankQuizNames()` / `getBankQuestions(topic)` / `isBankQuiz` / `instructionsForKind(kind)` / `pickInstruction(kind)`。
+- 与 prompt 中心的分工：**这里只放「内容」（题、指令）**；番外实际生成用的 prompt 模板在 `utils/theaterPrompts.ts`（[贰] 番外）。
+
 ## 验证
 
 `pnpm vitest run utils/divination`（引擎单测：抽牌不重复、六爻齐全、梅花体用/互卦/变卦、卦序映射）。手动：四种占卜各跑一遍；导入几张图测牌库；手动 + API 解牌（开/不开副 API、开/不开世界书）；番外四类各生成一次确认仿真渲染 + JSON 失败回退；主题「牌面」改牌背/边框/风格回占卜确认生效。
