@@ -1789,8 +1789,17 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               // 生成失败 / 未开启时回退到旧的「主动找用户」hint。
               let lifeEvent: CharLifeEvent | null = null;
               if (!customHint && isAutonomousLifeEnabled(char)) {
-                  // api 已是本次 proactive 选好的接口（副 API 或主 API），直接复用。
-                  lifeEvent = await advanceLife(char, api, { source: 'proactive' });
+                  // 「线下」生活生成默认走副 API（与「线上」聊天分线）：
+                  // per-char 副 API > 全局副 API（文具盒）> 主 API。
+                  const lifeApi = resolveLifeApi(char, auxApiConfigRef.current, currentApiConfig);
+                  // 线上→线下：把最近几句对话给生活 agent 一眼，让 TA「此刻的生活」能呼应这段关系，
+                  // 而不是凭空过日子（与「线下→线上」注入合起来，线上线下双向关联）。
+                  const recentChat = recentMsgs
+                      .filter(m => (m.role === 'user' || m.role === 'assistant') && (!m.type || m.type === 'text') && !m.metadata?.proactiveHint && typeof m.content === 'string' && m.content.trim())
+                      .slice(-6)
+                      .map(m => `${m.role === 'user' ? userName : char.name}：${String(m.content).replace(/\s+/g, ' ').slice(0, 60)}`)
+                      .join('\n');
+                  lifeEvent = await advanceLife(char, lifeApi, { source: 'proactive', recentChat });
               }
 
               const hintContent = customHint
@@ -2280,7 +2289,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           for (const char of chars) {
               if (cancelled) break;
               const main = apiConfigRef.current;
-              const api = resolveLifeApi(char, { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model });
+              // 「线下」离线补齐默认走副 API（per-char 副 API > 全局副 API > 主 API）。
+              const api = resolveLifeApi(char, auxApiConfigRef.current, { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model });
               if (!api.baseUrl) continue;
               try {
                   const events = await catchUpOfflineLife(char, api, gapStart, { now });

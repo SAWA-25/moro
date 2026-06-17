@@ -207,6 +207,19 @@ export function autonomousProactiveHint(p: AutonomousProactiveHintParams): strin
     );
 }
 
+/**
+ * 线上聊天里注入「你近来的线下生活」一段的引导语（让线上 / 线下关联起来）。
+ * 后面会接上按时间排列的若干条生活事件。data 拼装在 utils/autonomousLife.ts。
+ */
+export function recentLifeContextIntro(userName: string): string {
+    return (
+        `### 你近来的生活（线下 · 与这段聊天是同一条时间线）\n` +
+        `（下面这些是你不在和 ${userName} 聊天的时候、自己过日子真实经历的事，和现在这场对话发生在同一条时间线上。` +
+        `你清楚记得它们，可以在合适的时候自然地提起、被它们影响心情、或顺着对方的话呼应——但这是你的私人生活，` +
+        `不必逐条汇报、也不必每次都提。如果 ${userName} 问起你刚才/这段时间在做什么，就照这些如实说。）`
+    );
+}
+
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ [4] 回神 (Recenter)                                                        ║
