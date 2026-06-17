@@ -2143,7 +2143,19 @@ export interface CoupleComment {
   at: number;
 }
 
-/** 情侣动态（留言板）：双方可发文字 / 心情 / 图片，按时间倒序展示，可点赞 + 评论。 */
+/** 情侣动态里的多媒体卡片类型：语音条 / 音乐 / 物件·照片（点击触发「心声」弹窗）。 */
+export type CoupleMediaKind = 'voice' | 'music' | 'item';
+
+/** 情侣动态的多媒体附件卡片（语音 / 音乐 / 物件）。 */
+export interface CoupleMedia {
+  kind: CoupleMediaKind;
+  /** 显示名（语音：如「晚安语音.m4a」；音乐：歌名；物件：如「照片_糯米糍.jpg」） */
+  name: string;
+  /** 语音时长展示（如「00:15」），仅 voice 用 */
+  duration?: string;
+}
+
+/** 情侣动态（留言板）：双方可发文字 / 心情 / 图片 / 多媒体卡片，按时间倒序展示，可点赞 + 评论。 */
 export interface CoupleMoment {
   id: string;
   author: 'user' | 'char';
@@ -2152,6 +2164,10 @@ export interface CoupleMoment {
   mood?: string;
   /** 图片（base64 data url），九宫格展示 */
   images?: string[];
+  /** 多媒体卡片（语音 / 音乐 / 物件）；点击触发「心声」弹窗 */
+  media?: CoupleMedia;
+  /** 角色对这条动态的「心声」独白（点击多媒体块时懒生成、缓存后复用） */
+  innerVoice?: string;
   createdAt: number;
   /** 点赞：双方各自是否赞过 */
   likedByUser?: boolean;
