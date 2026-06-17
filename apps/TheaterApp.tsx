@@ -43,8 +43,11 @@ const TheaterApp: React.FC = () => {
     const { closeApp } = useOS();
     const [section, setSection] = useState<Section>('home');
 
-    if (section === 'guide') return <GuidebookApp onExit={() => setSection('home')} />;
-    if (section === 'trpg') return <GameApp onExit={() => setSection('home')} />;
+    // 攻略本（galgame）/ TRPG 是两套沉浸式大型子页；用根级 grayscale 让整页落进黑白默片，
+    // 既保证「黑白」一致、又不动其内部布局/功能（TRPG 另在 GAME_THEMES 里重映射成纸/墨明度，
+    // 保证选项三档对比；galgame 的立绘 / 对话框随之去色）。
+    if (section === 'guide') return <div className="absolute inset-0" style={{ filter: 'grayscale(1)' }}><GuidebookApp onExit={() => setSection('home')} /></div>;
+    if (section === 'trpg') return <div className="absolute inset-0" style={{ filter: 'grayscale(1)' }}><GameApp onExit={() => setSection('home')} /></div>;
     if (section === 'trajectory') return <TrajectoryApp onExit={() => setSection('home')} />;
     if (section === 'reflection') return <ReflectionApp onExit={() => setSection('home')} />;
     if (section === 'talk') return <TalkTherapyApp onExit={() => setSection('home')} />;

@@ -10,54 +10,56 @@ import Modal from '../components/os/Modal';
 import { Planet, RocketLaunch, Lightning, LockSimple, DiceFive, Toolbox, FloppyDisk, ArrowsClockwise, DoorOpen } from '@phosphor-icons/react';
 
 // --- Themes Configuration (Enhanced) ---
+// 折子戏·TRPG「黑白默片」四种戏路：全部黑白灰，仅靠冷暖/反差/明暗区分；
+// 选项三档用「纸 / 中灰 / 墨」的明度差保留正经·混乱·邪恶的层次。
 const GAME_THEMES: Record<GameTheme, { bg: string, text: string, accent: string, font: string, border: string, cardBg: string, gradient: string, optionNormal: string, optionChaotic: string, optionEvil: string }> = {
-    fantasy: {
-        bg: 'bg-[#1a120b]',
-        text: 'text-[#e5e5e5]',
-        accent: 'text-[#fbbf24]',
+    fantasy: { // 暖墨默片
+        bg: 'bg-[#1b1814]',
+        text: 'text-[#d9d2c4]',
+        accent: 'text-[#efe7d6]',
         font: 'font-serif',
-        border: 'border-[#78350f]',
-        cardBg: 'bg-[#2a2018]',
-        gradient: 'from-[#451a03] to-[#1a120b]',
-        optionNormal: 'bg-[#451a03] border-[#78350f] text-[#fbbf24]',
-        optionChaotic: 'bg-[#78350f] border-[#b45309] text-[#fcd34d]',
-        optionEvil: 'bg-[#3f0f0f] border-[#7f1d1d] text-[#fca5a5]'
+        border: 'border-[#3a352c]',
+        cardBg: 'bg-[#25211b]',
+        gradient: 'from-[#2a251d] to-[#15120d]',
+        optionNormal: 'bg-[#f3ecdf] border-[#cbbfa6] text-[#2a2620]',
+        optionChaotic: 'bg-[#6f685b] border-[#8a8273] text-[#f5efe2]',
+        optionEvil: 'bg-[#1c1a16] border-[#4a443a] text-[#e7ded0]'
     },
-    cyber: {
-        bg: 'bg-[#020617]',
-        text: 'text-[#94a3b8]',
-        accent: 'text-[#22d3ee]',
+    cyber: { // 冷墨默片
+        bg: 'bg-[#121519]',
+        text: 'text-[#aab2bd]',
+        accent: 'text-[#e3e7ec]',
         font: 'font-mono',
-        border: 'border-[#1e293b]',
-        cardBg: 'bg-[#0f172a]/80',
-        gradient: 'from-[#0f172a] to-[#020617]',
-        optionNormal: 'bg-[#0f172a] border-[#1e293b] text-[#22d3ee]',
-        optionChaotic: 'bg-[#1e1b4b] border-[#4338ca] text-[#a78bfa]',
-        optionEvil: 'bg-[#450a0a] border-[#7f1d1d] text-[#fca5a5]'
+        border: 'border-[#2b3138]',
+        cardBg: 'bg-[#1b1f25]',
+        gradient: 'from-[#1b2027] to-[#0e1115]',
+        optionNormal: 'bg-[#eef0f2] border-[#c2c8cf] text-[#23272c]',
+        optionChaotic: 'bg-[#5f6670] border-[#7c828c] text-[#eef0f2]',
+        optionEvil: 'bg-[#16191d] border-[#3a4048] text-[#dfe3e8]'
     },
-    horror: {
-        bg: 'bg-[#0f0000]',
-        text: 'text-[#d4d4d8]',
-        accent: 'text-[#ef4444]',
+    horror: { // 高反差默片
+        bg: 'bg-[#0c0c0c]',
+        text: 'text-[#cfcfcf]',
+        accent: 'text-[#f2f2f2]',
         font: 'font-serif',
-        border: 'border-[#450a0a]',
-        cardBg: 'bg-[#2b0e0e]',
-        gradient: 'from-[#450a0a] to-[#000000]',
-        optionNormal: 'bg-[#2b0e0e] border-[#450a0a] text-[#d4d4d8]',
-        optionChaotic: 'bg-[#3f1d1d] border-[#7f1d1d] text-[#fda4af]',
-        optionEvil: 'bg-[#450a0a] border-[#991b1b] text-[#ef4444]'
+        border: 'border-[#333333]',
+        cardBg: 'bg-[#171717]',
+        gradient: 'from-[#1a1a1a] to-[#000000]',
+        optionNormal: 'bg-[#ededed] border-[#bcbcbc] text-[#1a1a1a]',
+        optionChaotic: 'bg-[#5a5a5a] border-[#777777] text-[#f2f2f2]',
+        optionEvil: 'bg-[#111111] border-[#3a3a3a] text-[#e6e6e6]'
     },
-    modern: {
-        bg: 'bg-slate-50',
-        text: 'text-slate-700',
-        accent: 'text-blue-600',
+    modern: { // 纸默片
+        bg: 'bg-[#f5f2ea]',
+        text: 'text-[#3a362f]',
+        accent: 'text-[#1f1d1a]',
         font: 'font-sans',
-        border: 'border-slate-200',
-        cardBg: 'bg-white',
-        gradient: 'from-slate-100 to-white',
-        optionNormal: 'bg-white border-slate-200 text-slate-600',
-        optionChaotic: 'bg-yellow-50 border-yellow-200 text-yellow-700',
-        optionEvil: 'bg-red-50 border-red-200 text-red-700'
+        border: 'border-[#cdc6b6]',
+        cardBg: 'bg-[#fbf9f2]',
+        gradient: 'from-[#efece3] to-[#f7f4ec]',
+        optionNormal: 'bg-[#fbf9f2] border-[#cdc6b6] text-[#3a362f]',
+        optionChaotic: 'bg-[#d9d3c5] border-[#b3ab98] text-[#3a362f]',
+        optionEvil: 'bg-[#2a2620] border-[#4a443a] text-[#f3ecdf]'
     }
 };
 
