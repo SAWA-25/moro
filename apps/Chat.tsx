@@ -116,6 +116,7 @@ const Chat: React.FC = () => {
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
     const [claimTarget, setClaimTarget] = useState<Message | null>(null);
+    const [claimRevealed, setClaimRevealed] = useState(false); // 收款弹窗「拆开」前后两态
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
     // 回神：自我校准结果弹窗 + 进行中状态
@@ -827,23 +828,44 @@ const Chat: React.FC = () => {
         };
     }, []);
 
-    // Auto-generate daily schedule (fire-and-forget on chat load)
+    // Auto-generate daily schedule (fire-and-forget on chat load) + 今日作息每 24 小时自动更新一次
     // 总开关关闭时完全跳过：不查询 DB、不调用副 API、不跑兜底
+    // 刷新策略：① 进聊天时若缓存作息已存在但 generatedAt 距今 ≥24h，自动重算；
+    //          ② 未过期则按差额挂一个一次性定时器，聊天长开也能到点自动刷新。
     useEffect(() => {
         if (!char || !apiConfig.apiKey) return;
         if (!isScheduleFeatureOn(char)) {
             setScheduleData(null);
             return;
         }
+        const SCHEDULE_TTL_MS = 24 * 60 * 60 * 1000;
+        const targetChar = char;
         const today = new Date().toISOString().split('T')[0];
-        DB.getDailySchedule(char.id, today).then(existing => {
+        let cancelled = false;
+        let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+        DB.getDailySchedule(targetChar.id, today).then(existing => {
+            if (cancelled) return;
             if (!existing) {
                 // Generate in background, don't block chat
-                generateDailySchedule(char, false);
+                generateDailySchedule(targetChar, false);
+                return;
+            }
+            const age = Date.now() - (existing.generatedAt || 0);
+            if (age >= SCHEDULE_TTL_MS) {
+                // 距上次生成已满 24 小时：自动重算一份新作息（强制重生成）
+                generateDailySchedule(targetChar, true);
             } else {
                 setScheduleData(existing);
+                // 聊天保持打开时，到 24 小时整点再自动刷新一次
+                refreshTimer = setTimeout(() => {
+                    if (!cancelled) generateDailySchedule(targetChar, true);
+                }, SCHEDULE_TTL_MS - age);
             }
         }).catch(() => {});
+        return () => {
+            cancelled = true;
+            if (refreshTimer) clearTimeout(refreshTimer);
+        };
     }, [activeCharacterId, char?.scheduleFeatureEnabled]);
 
     // 日程锚点：聊天里出现约定/变更时，自动协调今天的日程（让 char 的日程既自治、又随聊天对齐）
@@ -1171,6 +1193,7 @@ const Chat: React.FC = () => {
         const meta: any = m.metadata || {};
         const expired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
         if (meta.status === 'claimed' || meta.status === 'declined' || expired) return;
+        setClaimRevealed(false);
         setClaimTarget(m);
     }, []);
 
@@ -4524,20 +4547,53 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 const isRedpacket = meta.kind === 'redpacket';
                 const amt = Math.abs(parseFloat(String(meta.amount))) || 0;
                 const note = isRedpacket && typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '';
+                const ink = isRedpacket; // 红包＝墨色信封；转账＝米纸凭条
+                const hair = ink ? '1px solid rgba(242,236,224,0.14)' : '1px solid rgba(140,132,118,0.25)';
+                const closeModal = () => { setClaimTarget(null); setClaimRevealed(false); };
                 return (
-                    <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => setClaimTarget(null)}>
-                        <div className="w-[min(82vw,320px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-                            <div className="px-6 pt-7 pb-5 text-center" style={{ background: isRedpacket ? 'linear-gradient(150deg,#fffbeb,#fef3c7)' : '#fff' }}>
-                                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center text-2xl" style={{ background: isRedpacket ? 'rgba(245,158,11,0.25)' : '#f1f5f9' }}>{isRedpacket ? '🧧' : '💸'}</div>
-                                <div className="text-[15px] font-bold text-slate-800">{displayCharName} 给你{isRedpacket ? '发了个红包' : '转了笔零花钱'}</div>
-                                {note && <div className="text-[13px] text-amber-700 mt-1.5">「{note}」</div>}
-                                <div className="text-[30px] font-black tracking-tight text-slate-800 mt-3">¥ {meta.amount}</div>
-                                <div className="text-[11px] text-slate-400 mt-2 leading-relaxed">收下后进入你的钱包余额 · 超过 24 小时不领会自动退回</div>
+                    <div className="absolute inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={closeModal}>
+                        <div
+                            className="w-[min(84vw,330px)] relative rounded-[22px] overflow-hidden animate-pop-in"
+                            onClick={e => e.stopPropagation()}
+                            style={ink
+                                ? { background: 'linear-gradient(160deg,#2c2823,#15120f)', color: '#f2ece0', boxShadow: '0 30px 60px -24px rgba(0,0,0,0.7)' }
+                                : { background: 'linear-gradient(180deg,#fbf9f3,#efebe1)', color: '#1f1d1a', boxShadow: '0 30px 60px -24px rgba(31,29,26,0.55)', border: '1px solid rgba(176,170,158,0.6)' }}
+                        >
+                            {/* 半调网点纹 */}
+                            <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: ink ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 1.6px)' : 'radial-gradient(circle at 1px 1px, rgba(31,29,26,0.05) 1px, transparent 1.6px)', backgroundSize: '8px 8px', opacity: 0.6 }} />
+                            {/* 牛皮胶带斜贴 */}
+                            <div aria-hidden className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-24 h-6 rotate-[-3deg]" style={{ background: ink ? 'rgba(232,228,218,0.9)' : 'rgba(31,29,26,0.82)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.18) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
+                            <div className="px-7 pt-8 pb-6 text-center relative">
+                                <div className="text-[9px] font-mono tracking-[0.34em] uppercase mb-2" style={{ opacity: 0.6 }}>{isRedpacket ? 'Lucky Money · 利是' : 'Transfer Voucher · 转账'}</div>
+                                <div className="text-[14px] font-bold">{displayCharName} 给你{isRedpacket ? '封了个红包' : '转了笔零花钱'}</div>
+                                {note && <div className="text-[12.5px] mt-1.5 italic" style={{ opacity: 0.8 }}>「{note}」</div>}
+                                {!claimRevealed ? (
+                                    <button
+                                        onClick={() => setClaimRevealed(true)}
+                                        className="mt-5 mx-auto w-20 h-20 rounded-full flex flex-col items-center justify-center active:scale-90 transition-transform"
+                                        style={ink
+                                            ? { background: 'radial-gradient(circle at 34% 28%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 3px rgba(242,236,224,0.18), 0 10px 22px -10px rgba(0,0,0,0.7)' }
+                                            : { background: 'radial-gradient(circle at 34% 28%, #45403a, #1f1d1a)', color: '#f4f1ea', boxShadow: '0 0 0 3px rgba(31,29,26,0.12), 0 10px 22px -10px rgba(31,29,26,0.5)' }}
+                                    >
+                                        <span className="text-[22px] leading-none">{isRedpacket ? '✦' : '↥'}</span>
+                                        <span className="text-[10px] font-bold mt-0.5">拆开</span>
+                                    </button>
+                                ) : (
+                                    <div className="mt-4 animate-pop-in">
+                                        <div className="flex items-end justify-center gap-1">
+                                            <span className="text-[18px] font-bold pb-1.5" style={{ opacity: 0.6 }}>¥</span>
+                                            <span className="text-[36px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{meta.amount}</span>
+                                        </div>
+                                        <div className="text-[10.5px] mt-2.5 leading-relaxed" style={{ opacity: 0.55 }}>收下后进入你的钱包余额 · 超过 24 小时不领自动退回</div>
+                                    </div>
+                                )}
                             </div>
-                            <div className="flex border-t border-slate-100">
-                                <button onClick={() => { void handleDeclineTransfer(); }} className="flex-1 py-3.5 text-[15px] text-slate-500 font-medium active:bg-slate-50">先不收</button>
-                                <button onClick={() => { void handleAcceptTransfer(); }} className="flex-1 py-3.5 text-[15px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: isRedpacket ? '#d97706' : '#576b95' }}>收下 ¥{Math.round(amt)}</button>
-                            </div>
+                            {claimRevealed && (
+                                <div className="flex" style={{ borderTop: hair }}>
+                                    <button onClick={() => { void handleDeclineTransfer(); setClaimRevealed(false); }} className="flex-1 py-3.5 text-[14px] font-medium active:opacity-70" style={{ opacity: 0.62 }}>先不收</button>
+                                    <button onClick={() => { void handleAcceptTransfer(); setClaimRevealed(false); }} className="flex-1 py-3.5 text-[14px] font-bold active:opacity-80" style={{ borderLeft: hair }}>收下 ¥{Math.round(amt)}</button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );

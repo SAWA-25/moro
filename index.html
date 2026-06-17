@@ -591,6 +591,21 @@
          干净留白 + 发丝描边 + 大圆角 + 极柔投影；去掉拼贴账本的虚线描边 / 纸片微旋转 / 网点纸纹，
          但留住圆润温度与柔和配色。仅作用在 .moro-laiwang 作用域内（来往），不影响折子戏等「黑白拼贴手账」身份。
          注意：.moro-laiwang 只作纯作用域钩子、自身不设背景——聊天页有自己的皮肤底色/壁纸，别被这层盖掉。 */
+      /* 黑白灰主色调：作用域内把主题色整体去饱和成中性墨灰，一举改掉所有 primary 强调色
+         （bg-/text-/border-/ring-primary 全部变灰）；并把头像/故事环等「装饰图」去色成黑白，
+         营造 ins 杂志拼贴的单色编辑部观感——但不动聊天正文图片/贴纸/表情的内容色。 */
+      .moro-laiwang {
+        --primary-hue: 30;
+        --primary-sat: 0%;
+        --primary-lightness: 22%;
+        --ink: #1f1d1a;
+        --ink-soft: #857f74;
+        --glass-border: rgba(176, 170, 158, 0.55);
+      }
+      /* 头像/封面/故事环去色（杂志黑白）。.moro-mono 供组件主动挂载到任意要去色的图。 */
+      .moro-laiwang img.rounded-full,
+      .moro-laiwang .ig-ring > img,
+      .moro-laiwang .moro-mono { filter: grayscale(1) contrast(1.03); }
       /* 卡片：纯白 + 发丝线 + 大圆角 + 极柔投影（覆盖 .scrap-card 的虚线描边/纸面投影） */
       .moro-laiwang .scrap-card {
         background: #ffffff;
@@ -612,18 +627,18 @@
       .moro-laiwang .scrap-tile { outline: none; border: 1px solid #ededed; border-radius: 16px; box-shadow: 0 1px 2px rgba(38, 38, 38, 0.04); }
       .moro-laiwang .scrap-tile::after, .moro-laiwang .stationery-strip::before { display: none; }
       .moro-laiwang .stationery-strip { outline: none; border: 1px solid #ededed; border-radius: 14px; }
-      /* 来往作用域里的滑动指示条换 ins 渐变（暖橙→品红→紫），更鲜活 */
-      .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, #fa7e1e, #d62976, #962fbf); }
+      /* 来往作用域里的滑动指示条：黑白灰墨条（去掉 IG 彩虹渐变） */
+      .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, transparent, #1f1d1a, transparent); }
 
       /* 全域去「拼贴」信号：来往作用域内一律把虚线描边换成实线发丝线（弹窗/朋友圈/情侣空间/群聊通吃）。
-         只改 border-style，不动盒模型尺寸，安全；颜色保留，留住一点暖度（与手帐融合）。 */
+         只改 border-style，不动盒模型尺寸，安全。 */
       .moro-laiwang .border-dashed { border-style: solid; }
-      /* 群聊/朋友圈/情侣空间等也在作用域内，跟随上面的 .scrap-* / 发丝线 / 去纹理规则一起 ins 化。 */
+      /* 群聊/朋友圈/情侣空间等也在作用域内，跟随上面的 token 去饱和 + 发丝线 + 去色头像一起化为黑白灰。 */
 
-      /* IG 故事环：渐变描边 + 白缝 + 头像（用于「此刻」有动态的活跃角色，像 IG 的 story ring） */
+      /* IG 故事环：灰阶描边 + 白缝 + 去色头像（用于「此刻」有动态的活跃角色，单色 story ring） */
       .ig-ring {
         display: inline-flex; padding: 2.5px; border-radius: 9999px;
-        background: conic-gradient(from 30deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5, #feda75);
+        background: conic-gradient(from 30deg, #dcd7cd, #6b665d, #1f1d1a, #6b665d, #dcd7cd, #1f1d1a);
       }
       .ig-ring > img { border: 2px solid #fff; }
     </style>

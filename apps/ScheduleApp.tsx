@@ -33,22 +33,23 @@ interface HbTheme {
 }
 
 const THEMES: Record<ThemeId, HbTheme> = {
+    // 三套纸面统一走黑白灰：保留牛皮纸 / 方格本 / 便利贴的纸纹身份，强调色由彩色改墨灰。
     kraft: {
         id: 'kraft', paper: 'kraft', name: '牛皮纸',
-        ink: '#5b4636', inkSoft: '#9a8262', accent: '#b1543f',
-        noteBg: '#fffdf7', tape: 'rgba(231,163,156,0.66)',
+        ink: '#3a342c', inkSoft: '#8a8276', accent: '#2c2823',
+        noteBg: '#faf7f0', tape: 'rgba(120,116,108,0.5)',
         tabTodo: '要做的事', tabDays: '数着的日子', switchEmoji: '📜',
     },
     grid: {
         id: 'grid', paper: 'grid', name: '方格本',
-        ink: '#34503f', inkSoft: '#6f8a76', accent: '#3f8a6b',
-        noteBg: '#fbfdf8', tape: 'rgba(158,201,163,0.66)',
+        ink: '#33312c', inkSoft: '#857f74', accent: '#3a352e',
+        noteBg: '#fbfaf6', tape: 'rgba(150,146,138,0.5)',
         tabTodo: '清单', tabDays: '倒数日', switchEmoji: '🟩',
     },
     sticky: {
         id: 'sticky', paper: 'sticky', name: '便利贴',
-        ink: '#6b4a2e', inkSoft: '#b08a5a', accent: '#d9694e',
-        noteBg: '#fff8df', tape: 'rgba(231,196,120,0.7)',
+        ink: '#3a342c', inkSoft: '#908a7e', accent: '#1f1d1a',
+        noteBg: '#f7f4ec', tape: 'rgba(140,134,124,0.55)',
         tabTodo: '便签事', tabDays: '惦记日', switchEmoji: '🟨',
     },
 };
