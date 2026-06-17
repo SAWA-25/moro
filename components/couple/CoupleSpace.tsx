@@ -309,7 +309,7 @@ const CoupleSpace: React.FC = () => {
     const romantic = (c: CharacterProfile) => ['crush', 'lover', 'engaged', 'married'].includes(c.relationship?.stage || '');
     const sorted = [...characters].sort((a, b) => (romantic(b) ? 1 : 0) - (romantic(a) ? 1 : 0));
     return (
-      <div className="h-full overflow-y-auto" style={{ background: 'linear-gradient(180deg,#fff1f6 0%,#fce7f3 45%,#f5e6ff 100%)' }}>
+      <div className="h-full overflow-y-auto" style={{ background: 'linear-gradient(180deg,#fdf6f9 0%,#faf2f7 50%,#f6f2fb 100%)' }}>
         <div className="flex flex-col items-center px-6 pt-8 pb-6 text-center">
           <div className="relative mb-3">
             <Heart size={56} weight="fill" className="text-pink-400 drop-shadow" />
@@ -328,7 +328,7 @@ const CoupleSpace: React.FC = () => {
             const isRomantic = romantic(c);
             return (
               <button key={c.id} onClick={() => bindPartner(c.id)}
-                className="w-full bg-white/80 backdrop-blur rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-transform shadow-sm border border-pink-100">
+                className="w-full bg-white backdrop-blur rounded-2xl p-3 flex items-center gap-3 active:scale-[0.98] transition-transform shadow-sm border border-pink-100">
                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border-2 border-pink-100 shrink-0" />
                 <div className="flex-1 min-w-0 text-left">
                   <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
@@ -359,7 +359,7 @@ const CoupleSpace: React.FC = () => {
   const doneTasks = space.tasks.filter(t => t.done);
 
   return (
-    <div className="h-full flex flex-col relative overflow-hidden" style={{ background: 'linear-gradient(180deg,#fff1f6 0%,#fce7f3 50%,#f6ecff 100%)' }}>
+    <div className="h-full flex flex-col relative overflow-hidden" style={{ background: 'linear-gradient(180deg,#fdf6f9 0%,#faf2f7 50%,#f6f2fb 100%)' }}>
       <style>{`
         @keyframes csFloat { 0% { transform: translateY(0) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-160px) scale(1.3) rotate(12deg); opacity: 0; } }
         @keyframes csHeartbeat { 0%,100% { transform: scale(1); } 45% { transform: scale(1.18); } }
@@ -439,7 +439,7 @@ const CoupleSpace: React.FC = () => {
         <div className="flex items-stretch gap-2">
           {INTERACTIONS.map(it => (
             <button key={it.kind} onClick={() => doInteraction(it.kind)}
-              className="flex-1 bg-white/85 rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition shadow-sm border border-pink-100">
+              className="flex-1 bg-white rounded-2xl py-2 flex flex-col items-center gap-0.5 active:scale-95 transition shadow-sm border border-pink-100">
               <span className="text-xl leading-none">{it.emoji}</span>
               <span className="text-[10px] font-bold text-rose-400">{it.label}</span>
             </button>
@@ -477,7 +477,7 @@ const CoupleSpace: React.FC = () => {
               <button onClick={() => setShowCompose(true)} className={`flex-1 py-2.5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>
                 <span className="inline-flex items-center gap-1.5"><Plus size={15} weight="bold" /> 发布动态</span>
               </button>
-              <button onClick={requestCharMoment} disabled={charMomentBusy} className={`px-4 py-2.5 bg-white/85 text-rose-400 text-[13px] border border-pink-200 ${romanticBtn}`}>
+              <button onClick={requestCharMoment} disabled={charMomentBusy} className={`px-4 py-2.5 bg-white text-rose-400 text-[13px] border border-pink-200 ${romanticBtn}`}>
                 <span className="inline-flex items-center gap-1.5">
                   {charMomentBusy ? <ArrowsClockwise size={15} className="animate-spin" /> : <ChatCircleDots size={15} weight="fill" />}
                   请 TA 冒个泡
@@ -512,7 +512,7 @@ const CoupleSpace: React.FC = () => {
             {sortedAnnivs.map(({ a, occ }) => {
               const d = occ?.daysLeft ?? null;
               return (
-                <div key={a.id} className="bg-white/85 rounded-2xl p-3.5 flex items-center gap-3 shadow-sm border border-pink-100">
+                <div key={a.id} className="bg-white rounded-2xl p-3.5 flex items-center gap-3 shadow-sm border border-pink-100">
                   <span className="text-2xl shrink-0">{KIND_EMOJI[a.kind]}</span>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-slate-700 text-sm truncate">{a.title}</div>
@@ -558,7 +558,7 @@ const CoupleSpace: React.FC = () => {
           <>
             <div className="flex gap-2">
               <input value={taskInput} onChange={e => setTaskInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTask(taskInput); }}
-                placeholder="添加一个小约定…" className="flex-1 px-4 py-2.5 bg-white/85 rounded-full text-[13px] outline-none border border-pink-100 focus:border-pink-300" />
+                placeholder="添加一个小约定…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-pink-100 focus:border-pink-300" />
               <button onClick={() => addTask(taskInput)} className={`px-5 bg-pink-400 text-white text-[13px] ${romanticBtn}`}>添加</button>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -567,7 +567,7 @@ const CoupleSpace: React.FC = () => {
               ))}
             </div>
             {pendingTasks.map(t => (
-              <div key={t.id} className="bg-white/85 rounded-2xl p-3 flex items-center gap-3 shadow-sm border border-pink-100">
+              <div key={t.id} className="bg-white rounded-2xl p-3 flex items-center gap-3 shadow-sm border border-pink-100">
                 <button onClick={() => toggleTask(t.id)} className="text-pink-300 active:scale-90 transition shrink-0"><Circle size={22} /></button>
                 <span className="flex-1 text-sm text-slate-700">{t.title}</span>
                 <button onClick={() => deleteTask(t.id)} className="text-slate-300 hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
@@ -711,7 +711,7 @@ const MomentCard: React.FC<{
   const submit = () => { const t = draft.trim(); if (!t) return; onComment(t); setDraft(''); };
 
   return (
-    <div className="bg-white/85 rounded-2xl p-3.5 shadow-sm border border-pink-100">
+    <div className="bg-white rounded-2xl p-3.5 shadow-sm border border-pink-100">
       <div className="flex items-center gap-2.5 mb-2">
         <img src={avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
         <div className="flex-1 min-w-0">

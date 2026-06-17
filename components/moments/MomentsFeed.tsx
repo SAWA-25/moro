@@ -336,7 +336,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         <div
             className="h-full w-full flex flex-col relative overflow-hidden font-sans text-slate-900 scrap-panel"
             style={{
-                background: 'linear-gradient(165deg, #f4f2ed 0%, #eee9e1 100%)',
+                background: '#fafafa',
                 paddingTop: embedded ? '0px' : 'max(8px, var(--safe-top))',
             }}
         >
@@ -357,17 +357,6 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 {/* 页眉：纸面名片 + 拍立得封面 + 贴纸按钮行 */}
                 <div className="px-3 pt-3">
                     <div className="relative bg-white rounded-[1.8rem] border border-slate-100 shadow-[0_18px_36px_-24px_rgba(50,48,60,0.45)] px-5 pt-6 pb-5">
-                        {/* 和纸胶带：压住页眉卡上缘 */}
-                        <span
-                            className="absolute -top-2 left-9 w-[72px] h-5 -rotate-[2.5deg] pointer-events-none"
-                            style={{
-                                background: 'linear-gradient(100deg, rgba(255,255,255,0.6), rgba(243,240,233,0.45))',
-                                boxShadow: '0 2px 6px rgba(50,48,60,0.14)',
-                                borderLeft: '1px dashed rgba(160,156,146,0.45)',
-                                borderRight: '1px dashed rgba(160,156,146,0.45)',
-                            }}
-                        />
-
                         <div className="flex items-start gap-3">
                             {/* 左：字标 + 用户名片 */}
                             <div className="flex-1 min-w-0">
@@ -398,15 +387,6 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                                     )}
                                     <span className="absolute bottom-1 left-0 right-0 text-center text-[8px] font-mono tracking-[0.25em] uppercase text-slate-300 select-none">Cover</span>
                                 </div>
-                                <span
-                                    className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-9 h-3.5 -rotate-[4deg] pointer-events-none"
-                                    style={{
-                                        background: 'linear-gradient(100deg, rgba(255,255,255,0.65), rgba(243,240,233,0.5))',
-                                        boxShadow: '0 1px 3px rgba(50,48,60,0.12)',
-                                        borderLeft: '1px dashed rgba(160,156,146,0.4)',
-                                        borderRight: '1px dashed rgba(160,156,146,0.4)',
-                                    }}
-                                />
                             </button>
                         </div>
                         <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverPick} />
