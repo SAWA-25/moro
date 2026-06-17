@@ -262,24 +262,24 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 onClose={() => setModalType('none')}
                 footer={<>
                     <SealBtn kind="ghost" onClick={() => setModalType('none')}>再想想</SealBtn>
-                    <SealBtn kind={transferMode === 'redpacket' ? 'berry' : 'rose'} onClick={onTransfer}>
+                    <SealBtn kind="ink" onClick={onTransfer}>
                         {transferMode === 'redpacket' ? '封进红包递去' : '塞进信封寄走'}
                     </SealBtn>
                 </>}
             >
                 <div className="space-y-4">
-                    {/* 模式切换：零花钱 / 红包，两张大贴纸 */}
+                    {/* 模式切换：零花钱（米纸凭条）/ 红包（墨色信封），灰阶两张贴纸 */}
                     <div className="flex gap-2.5">
                         <button
                             onClick={() => setTransferMode('transfer')}
                             className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
                             style={{
                                 transform: 'rotate(-0.6deg)',
-                                background: transferMode === 'transfer' ? '#f5e295' : '#fffdfa',
-                                color: transferMode === 'transfer' ? '#5a4818' : '#a892a3',
-                                border: transferMode === 'transfer' ? '1px solid rgba(90,72,24,0.2)' : '1px dashed #ddc9d3',
+                                background: transferMode === 'transfer' ? '#efe9dd' : '#fffdfa',
+                                color: transferMode === 'transfer' ? '#1f1d1a' : '#a8a297',
+                                border: transferMode === 'transfer' ? '1px solid rgba(31,29,26,0.28)' : '1px dashed #d9d3c7',
                                 borderRadius: '6px 12px 7px 12px',
-                                boxShadow: transferMode === 'transfer' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                boxShadow: transferMode === 'transfer' ? '0 1px 2px rgba(31,29,26,0.18)' : 'none',
                                 ...CUTE_STACK,
                             }}
                         >💴 零花钱</button>
@@ -288,25 +288,45 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
                             style={{
                                 transform: 'rotate(0.8deg)',
-                                background: transferMode === 'redpacket' ? '#f08a8a' : '#fffdfa',
-                                color: transferMode === 'redpacket' ? '#5d1f1f' : '#a892a3',
-                                border: transferMode === 'redpacket' ? '1px solid rgba(93,31,31,0.2)' : '1px dashed #ddc9d3',
+                                background: transferMode === 'redpacket' ? '#1f1d1a' : '#fffdfa',
+                                color: transferMode === 'redpacket' ? '#f4f1ea' : '#a8a297',
+                                border: transferMode === 'redpacket' ? '1px solid #1f1d1a' : '1px dashed #d9d3c7',
                                 borderRadius: '12px 6px 12px 7px',
-                                boxShadow: transferMode === 'redpacket' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                boxShadow: transferMode === 'redpacket' ? '0 2px 8px -2px rgba(31,29,26,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
                         >🧧 红包</button>
                     </div>
                     {/* 数目：写在横线上的大字 */}
                     <div className="flex items-end gap-2 px-1">
-                        <span className="text-[18px] font-bold pb-1.5 select-none" style={{ color: '#c98ba0' }}>¥</span>
+                        <span className="text-[18px] font-bold pb-1.5 select-none" style={{ color: '#857f74' }}>¥</span>
                         <input
                             type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
                             placeholder="写个数目"
-                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-dashed border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4] placeholder:text-[15px]"
-                            style={{ color: PAPER_TONES.ink, caretColor: '#f29db0' }}
+                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-dashed border-[#cfc8ba] focus:border-[#8a8479] placeholder:text-[#c4bdb0] placeholder:text-[15px]"
+                            style={{ color: PAPER_TONES.ink, caretColor: '#8a8479' }}
                             autoFocus
                         />
+                    </div>
+                    {/* 快捷金额贴片（点一下就填，含 520 / 1314 这种心意数） */}
+                    <div className="flex flex-wrap gap-2 px-1">
+                        {[5, 20, 52, 88, 520, 1314].map(v => {
+                            const active = (parseFloat(transferAmt) || 0) === v;
+                            return (
+                                <button
+                                    key={v}
+                                    onClick={() => setTransferAmt(String(v))}
+                                    className="px-3 py-1 text-[12px] font-bold transition-all active:scale-95"
+                                    style={{
+                                        background: active ? '#1f1d1a' : '#fffdfa',
+                                        color: active ? '#f4f1ea' : '#6b665d',
+                                        border: active ? '1px solid #1f1d1a' : '1px solid #e4ded2',
+                                        borderRadius: 9999,
+                                        ...CUTE_STACK,
+                                    }}
+                                >¥{v}</button>
+                            );
+                        })}
                     </div>
                     {transferMode === 'redpacket' && (
                         <LinedInput
@@ -320,7 +340,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         const amt = parseFloat(transferAmt) || 0;
                         const insufficient = amt > walletBalance;
                         return (
-                            <div className="flex items-center justify-between px-1 text-[12px]" style={{ color: insufficient ? '#c0392b' : '#a08a6a' }}>
+                            <div className="flex items-center justify-between px-1 text-[12px]" style={{ color: insufficient ? '#9a3b3b' : '#857f74' }}>
                                 <span>钱包余额 ¥{Math.round(walletBalance)}</span>
                                 {insufficient && <span className="font-bold">不够啦，去存钱罐营业赚点</span>}
                             </div>

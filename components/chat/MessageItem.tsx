@@ -2398,19 +2398,32 @@ const MessageItem = React.memo(({
         return commonLayout(
             <div
                 onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
-                className={`w-64 rounded-[1.4rem] p-4 relative overflow-hidden transition-transform border border-amber-200/70 shadow-[0_14px_28px_-18px_rgba(180,130,20,0.5)] ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-60 grayscale' : ''}`}
-                style={{ background: 'linear-gradient(150deg, #fffbeb 0%, #fef3c7 100%)', color: '#42361e' }}
+                className={`w-64 rounded-[18px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
+                style={{ background: 'linear-gradient(155deg, #2c2823 0%, #16130f 100%)', color: '#f2ece0', border: '1px solid rgba(0,0,0,0.45)', boxShadow: '0 16px 30px -18px rgba(20,16,12,0.7)' }}
             >
-                {/* 右上书签缎带 */}
-                <div className="absolute top-0 right-5 w-4 h-7 bg-amber-400/90" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
-                <div className="flex items-center gap-2 mb-3 relative">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[13px] bg-amber-400/30">🧧</div>
-                    <span className="text-[10px] font-mono font-bold tracking-[0.25em] uppercase opacity-60">Lucky&nbsp;Pocket</span>
+                {/* 半调网点纹（拼贴手帐感） */}
+                <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 1.6px)', backgroundSize: '7px 7px', opacity: 0.5 }} />
+                {/* 牛皮胶带（灰阶条纹）斜贴右上 */}
+                <div aria-hidden className="absolute -top-2 -right-5 w-20 h-6 rotate-[18deg]" style={{ background: 'rgba(232,228,218,0.9)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
+                <div className="relative flex items-center gap-2 mb-3">
+                    {/* 邮票格：墨字「利」 */}
+                    <span className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#f4f1ea', color: '#1f1d1a', outline: '1.5px dashed rgba(120,116,108,0.55)', outlineOffset: -3 }}>利</span>
+                    <div className="leading-tight">
+                        <div className="text-[10px] font-mono font-bold tracking-[0.26em] uppercase" style={{ opacity: 0.7 }}>Lucky&nbsp;Money</div>
+                        <div className="text-[10px]" style={{ opacity: 0.5 }}>利是 · 封个心意</div>
+                    </div>
                 </div>
                 <div className="relative">
-                    <div className="text-[13px] font-medium opacity-80 mb-1.5 truncate">「{note}」</div>
-                    <div className="text-[26px] font-black tracking-tight">₩ {m.metadata?.amount}</div>
-                    <div className={`mt-2 pt-2 border-t border-amber-900/10 text-[10px] ${claimable ? 'font-bold opacity-80' : 'opacity-60'}`}>{footerText}</div>
+                    <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
+                    <div className="flex items-end gap-1">
+                        <span className="text-[15px] font-bold pb-1" style={{ opacity: 0.65 }}>¥</span>
+                        <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
+                    </div>
+                    <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(242,236,224,0.22)' }}>
+                        <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ opacity: claimable ? 0.92 : 0.55 }}>{footerText}</span>
+                        {/* 火漆封印点 */}
+                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: 'radial-gradient(circle at 34% 30%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 1.5px rgba(242,236,224,0.22)' }}>✦</span>
+                    </div>
                 </div>
             </div>
         );
@@ -2432,20 +2445,25 @@ const MessageItem = React.memo(({
         return commonLayout(
             <div
                 onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
-                className={`w-64 bg-white rounded-[1.4rem] p-4 relative overflow-hidden transition-transform border border-slate-100 shadow-[0_14px_28px_-18px_rgba(50,48,60,0.4)] ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-60 grayscale' : ''}`}
+                className={`w-64 rounded-[16px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
+                style={{ background: 'linear-gradient(180deg, #fbf9f3 0%, #f1ede3 100%)', color: '#1f1d1a', border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 14px 28px -18px rgba(31,29,26,0.5)' }}
             >
-                {/* 右上书签缎带 */}
-                <div className="absolute top-0 right-5 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
-                <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center">
+                {/* 票据左右齿孔（撕口感） */}
+                <div aria-hidden className="absolute top-0 bottom-0 left-0 w-1.5" style={{ backgroundImage: 'radial-gradient(circle at 0 4px, transparent 3px, #f1ede3 3.4px)', backgroundSize: '6px 11px' }} />
+                <div aria-hidden className="absolute top-0 bottom-0 right-0 w-1.5" style={{ backgroundImage: 'radial-gradient(circle at 6px 4px, transparent 3px, #f1ede3 3.4px)', backgroundSize: '6px 11px' }} />
+                <div className="relative flex items-center gap-2 mb-2.5">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#1f1d1a', color: '#f4f1ea' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold tracking-[0.25em] uppercase text-slate-400">Transfer&nbsp;·&nbsp;Moro&nbsp;Pay</span>
+                    </span>
+                    <span className="text-[10px] font-mono font-bold tracking-[0.24em] uppercase" style={{ color: '#857f74' }}>Transfer&nbsp;Voucher</span>
                 </div>
-                <div className="text-[26px] font-black tracking-tight text-slate-800">₩ {m.metadata?.amount}</div>
-                <div className="mt-2 pt-2 border-t border-slate-50 flex items-center justify-between">
-                    <span className={`text-[10px] ${claimable ? 'text-slate-600 font-bold' : 'text-slate-400'}`}>{footerText}</span>
-                    <span className="text-[10px] text-slate-300">♡</span>
+                <div className="relative flex items-end gap-1">
+                    <span className="text-[15px] font-bold pb-1" style={{ color: '#857f74' }}>¥</span>
+                    <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
+                </div>
+                <div className="relative mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(140,132,118,0.4)' }}>
+                    <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#3a352e' : '#857f74' }}>{footerText}</span>
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: '#b0aa9e' }}>Moro·Pay</span>
                 </div>
             </div>
         );
