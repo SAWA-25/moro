@@ -2072,7 +2072,7 @@ ${attachedImagesNote}
 
     // CHAT VIEW
     return (
-        <div className="h-full w-full bg-[#f0f4f8] flex flex-col font-sans relative">
+        <div className="h-full w-full bg-[#f0f4f8] moro-laiwang flex flex-col font-sans relative">
             {/* 群记忆宫殿"提取中"浮动胶囊 — 不阻塞交互 */}
             {groupPalaceStatus && (
                 <div

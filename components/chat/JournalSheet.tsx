@@ -1,16 +1,13 @@
 import React from 'react';
 import {
-    PAPER_TONES, PAPERS, PaperKind, WashiTape,
+    PAPER_TONES, PaperKind,
     MONO_STACK, CUTE_STACK, tiltFor,
 } from '../handbook/paper';
 
 /**
- * 聊天功能弹层的手账视觉套件（取代旧蓝图风 DraftSheet）。
- * 一张「从本子里撕下来的纸」做底，胶带贴标题，糖果色贴纸做按钮——
- * 与 ConvoSettingsPanel（聊天手帐）同一套视觉语言。
+ * 聊天功能弹层的视觉套件。已偏 ins 风（与拼贴账本融合）：干净白卡 + 发丝线 + 柔影 + 大圆角，
+ * 标题直接做成卡片头部的加粗标题（不再用胶带），留住糖果按钮等一点暖度。
  */
-
-type TapeProps = React.ComponentProps<typeof WashiTape>;
 
 export const JournalSheet: React.FC<{
     open: boolean;
@@ -19,8 +16,9 @@ export const JournalSheet: React.FC<{
     en?: string;
     /** 标题下的一行小注 */
     sub?: string;
-    tape?: TapeProps['color'];
-    pattern?: TapeProps['pattern'];
+    /** 兼容旧调用保留（已不再渲染胶带/纸纹，ins 风干净白卡） */
+    tape?: string;
+    pattern?: string;
     paper?: PaperKind;
     onClose: () => void;
     children: React.ReactNode;
@@ -30,9 +28,8 @@ export const JournalSheet: React.FC<{
     tall?: boolean;
     /** 覆盖层 z-index 类（默认 z-[100]，与旧 Modal 持平） */
     zClass?: string;
-}> = ({ open, title, en, sub, tape = 'rose', pattern = 'stripe', paper = 'plain', onClose, children, footer, tall, zClass = 'z-[100]' }) => {
+}> = ({ open, title, en, sub, onClose, children, footer, tall, zClass = 'z-[100]' }) => {
     if (!open) return null;
-    const pk = PAPERS[paper];
     return (
         <div className={`fixed inset-0 ${zClass} flex items-end sm:items-center justify-center animate-fade-in`}>
             <div
@@ -41,28 +38,26 @@ export const JournalSheet: React.FC<{
                 onClick={onClose}
             />
             <div
-                className="relative w-full sm:max-w-[26rem] flex flex-col animate-slide-up rounded-t-[18px] sm:rounded-[18px]"
+                className="relative w-full sm:max-w-[26rem] flex flex-col animate-slide-up rounded-t-[22px] sm:rounded-[22px] overflow-hidden"
                 style={{
-                    background: pk.bg, ...pk.style,
+                    background: '#ffffff',
                     maxHeight: tall ? '88vh' : '80vh',
                     paddingBottom: 'var(--safe-bottom)',
-                    boxShadow: '0 -6px 30px rgba(61,47,61,0.28), 0 0 0 1px rgba(220,199,213,0.5) inset',
+                    boxShadow: '0 24px 60px -24px rgba(61,47,61,0.4), 0 0 0 1px #ededed inset',
                 }}
                 onClick={e => e.stopPropagation()}
             >
-                <div className="absolute -top-3 left-5 z-10">
-                    <WashiTape color={tape} pattern={pattern} rotate={-2}>{title}</WashiTape>
-                </div>
-                <div className="shrink-0 flex items-start justify-between gap-3 px-4 pt-5 pb-2.5 border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.22)' }}>
+                <div className="shrink-0 flex items-start justify-between gap-3 px-4 pt-4 pb-2.5 border-b" style={{ borderColor: '#ededed' }}>
                     <div className="min-w-0 pt-0.5">
                         {en && <div className="text-[8.5px] tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</div>}
+                        <div className="text-[16px] font-bold leading-tight mt-0.5" style={{ color: PAPER_TONES.ink }}>{title}</div>
                         {sub && <div className="text-[10.5px] mt-0.5" style={{ color: PAPER_TONES.inkSoft }}>{sub}</div>}
                     </div>
                     <button
                         onClick={onClose}
                         aria-label="合上这页"
                         className="w-8 h-8 shrink-0 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform"
-                        style={{ border: '1px dashed #eab6c6', boxShadow: '0 1px 3px rgba(122,90,114,0.3)', color: '#9c5e74' }}
+                        style={{ border: '1px solid #eab6c6', boxShadow: '0 1px 3px rgba(122,90,114,0.3)', color: '#9c5e74' }}
                     >
                         <span className="text-[13px] leading-none" aria-hidden>✕</span>
                     </button>
@@ -71,7 +66,7 @@ export const JournalSheet: React.FC<{
                     {children}
                 </div>
                 {footer && (
-                    <div className="shrink-0 flex gap-2.5 px-4 py-3.5 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.22)' }}>
+                    <div className="shrink-0 flex gap-2.5 px-4 py-3.5 border-t border-solid" style={{ borderColor: 'rgba(122,90,114,0.22)' }}>
                         {footer}
                     </div>
                 )}
@@ -93,7 +88,7 @@ export const SealBtn: React.FC<{
         mint:  { bg: '#bfe1cf', border: '1.5px solid #8fbfa5', fg: '#264a36', shadow: '#d9efe3' },
         ink:   { bg: '#3d2f3d', border: '1.5px solid #2a1f2a', fg: '#fff5fa', shadow: '#cbb3c4' },
         berry: { bg: '#e26b84', border: '1.5px solid #c14a64', fg: '#ffffff', shadow: '#f3c1cd' },
-        ghost: { bg: '#fffdfa', border: '1.5px dashed #ddc9d3', fg: '#8a6478', shadow: '#eadfe6' },
+        ghost: { bg: '#fffdfa', border: '1.5px solid #ddc9d3', fg: '#8a6478', shadow: '#eadfe6' },
     }[kind];
     return (
         <button
@@ -114,7 +109,7 @@ export const CandyToggle: React.FC<{ on: boolean; onToggle: () => void; candy?: 
         className="relative w-[52px] h-[26px] shrink-0 transition-all duration-300 active:scale-95"
         style={{
             background: on ? candy : '#fdf7f2',
-            border: on ? '1.5px solid rgba(61,47,61,0.18)' : '1.5px dashed #dcc3cf',
+            border: on ? '1.5px solid rgba(61,47,61,0.18)' : '1.5px solid #dcc3cf',
             borderRadius: '8px 12px 9px 12px',
             boxShadow: on ? 'inset 0 1px 3px rgba(61,47,61,0.15)' : 'none',
         }}
@@ -140,7 +135,7 @@ export const StickerChip: React.FC<{
             transform: `rotate(${tiltFor(seed) * 0.55}deg)`,
             background: active ? candy : '#fffdfa',
             color: active ? '#5a3140' : '#a892a3',
-            border: active ? '1px solid rgba(90,49,64,0.18)' : '1px dashed #ddc9d3',
+            border: active ? '1px solid rgba(90,49,64,0.18)' : '1px solid #ddc9d3',
             borderRadius: '5px 11px 6px 11px',
             boxShadow: active ? '0 1px 2px rgba(122,90,114,0.28)' : 'none',
             ...CUTE_STACK,
@@ -156,7 +151,7 @@ export const LinedInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttr
             <input
                 ref={ref}
                 {...rest}
-                className={`w-full bg-transparent px-1 py-1.5 text-[13px] outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4] ${className}`}
+                className={`w-full bg-transparent px-1 py-1.5 text-[13px] outline-none border-0 border-b border-solid border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4] ${className}`}
                 style={{ color: PAPER_TONES.ink, caretColor: '#f29db0', ...style }}
             />
         </div>
@@ -172,10 +167,9 @@ export const LinedArea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTM
             {...rest}
             className={`w-full rounded-[8px] px-3 py-2 text-[12.5px] resize-none outline-none placeholder:text-[#cfb8c4] ${className}`}
             style={{
-                background: '#fffdfa',
-                backgroundImage: 'repeating-linear-gradient(transparent, transparent 25px, rgba(242,157,176,0.18) 25px, rgba(242,157,176,0.18) 26px)',
-                border: '1px dashed #dcc3cf',
-                lineHeight: '26px',
+                background: '#ffffff',
+                border: '1px solid #ececec',
+                lineHeight: '24px',
                 color: PAPER_TONES.ink,
                 caretColor: '#f29db0',
                 ...style,
@@ -194,7 +188,7 @@ export const NoteStrip: React.FC<{ tone?: 'info' | 'warn' | 'good' | 'danger'; c
         danger: { bg: 'rgba(255,235,240,0.85)', border: '#e8a0b0', mark: '✕', markColor: '#c75570' },
     }[tone];
     return (
-        <div className="flex items-start gap-2 rounded-[8px] px-3 py-2.5" style={{ background: palette.bg, border: `1px dashed ${palette.border}` }}>
+        <div className="flex items-start gap-2 rounded-[8px] px-3 py-2.5" style={{ background: palette.bg, border: `1px solid ${palette.border}` }}>
             <span className="text-[10px] font-bold shrink-0 leading-[1.7]" style={{ color: palette.markColor }} aria-hidden>{palette.mark}</span>
             <div className="text-[10.5px] leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>{children}</div>
         </div>
