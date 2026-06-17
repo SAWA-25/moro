@@ -15,9 +15,10 @@
  * prompt 短、max_tokens 小。失败全吞 —— 自主生活只是锦上添花，绝不能影响主聊天。
  */
 
-import { CharacterProfile, CharLifeEvent } from '../types';
+import { CharacterProfile, CharLifeEvent, AuxApiConfig } from '../types';
 import { DB } from './db';
-import { AUTONOMOUS_SINGLE_SYSTEM, AUTONOMOUS_BATCH_SYSTEM, autonomousProactiveHint } from './laiwangPrompts';
+import { isAuxApiOn } from './auxApi';
+import { AUTONOMOUS_SINGLE_SYSTEM, AUTONOMOUS_BATCH_SYSTEM, autonomousProactiveHint, recentLifeContextIntro } from './laiwangPrompts';
 
 export interface LifeApi {
   baseUrl: string;
@@ -47,12 +48,20 @@ export function isAutonomousLifeEnabled(char: CharacterProfile): boolean {
   return cfg.autonomousLifeEnabled !== false;
 }
 
-/** 与 OSContext proactive 一致：副 API 配了就走副 API，否则走主 API。 */
-export function resolveLifeApi(char: CharacterProfile, mainApi: LifeApi): LifeApi {
+/**
+ * 「线下自主生活」该用哪根线，优先级：
+ *  1) 角色自带的副 API（proactiveConfig.secondaryApi）—— 显式 per-char 覆盖，最优先；
+ *  2) 全局副 API（文具盒 auxApiConfig）—— **线下功能默认就走副 API**，和占卜/生活侧写
+ *     等「主聊天以外的辅助任务」一致：省主 API 额度、不与线上聊天抢同一根线；
+ *  3) 主 API —— 都没配时兜底（行为同旧版）。
+ *
+ * 这样「线下（生活生成）」与「线上（聊天）」默认走不同接口，但产出的生活事件会被
+ * 注入回线上聊天上下文（见 buildRecentLifeContextBlock），二者数据是关联的。
+ */
+export function resolveLifeApi(char: CharacterProfile, aux: AuxApiConfig | null | undefined, mainApi: LifeApi): LifeApi {
   const cfg = char.proactiveConfig;
-  if (cfg?.useSecondaryApi && cfg.secondaryApi?.baseUrl) {
-    return cfg.secondaryApi;
-  }
+  if (cfg?.useSecondaryApi && cfg.secondaryApi?.baseUrl) return cfg.secondaryApi;
+  if (isAuxApiOn(aux)) return { baseUrl: aux!.baseUrl, apiKey: aux!.apiKey || '', model: aux!.model };
   return mainApi;
 }
 
@@ -297,16 +306,20 @@ const SINGLE_SYSTEM = AUTONOMOUS_SINGLE_SYSTEM;
 export async function advanceLife(
   char: CharacterProfile,
   api: LifeApi,
-  opts?: { source?: CharLifeEvent['source']; now?: number; signal?: AbortSignal },
+  opts?: { source?: CharLifeEvent['source']; now?: number; signal?: AbortSignal; recentChat?: string },
 ): Promise<CharLifeEvent | null> {
   try {
     const now = opts?.now ?? Date.now();
     const recent = await DB.getLifeEvents(char.id, RECENT_EVENTS_FOR_CONTEXT);
+    // 线上→线下：把最近聊了什么也给一眼，让 TA「此刻的生活」能自然呼应这段关系/对话
+    // （只是参考，不是在回复对方，也不强行扯上）。
+    const chatNote = (opts?.recentChat || '').trim();
     const userMsg = [
       personaBrief(char),
       '',
       `现在是：${describeTime(new Date(now))}`,
       '',
+      ...(chatNote ? ['你和对方最近的对话（仅作参考，让你此刻的生活或心情能自然呼应，但你不是在回复对方、也不必强行扯上）：', chatNote, ''] : []),
       'TA 最近的生活：',
       recentEventsBrief(recent),
       '',
@@ -411,6 +424,42 @@ export async function catchUpOfflineLife(
   } catch (e) {
     console.warn('[AutonomousLife] catchUpOfflineLife failed:', e);
     return [];
+  }
+}
+
+// ── 对外：把「近来的线下生活」拼成线上聊天上下文（让线上/线下关联）──────
+
+/**
+ * 关键「关联」点：把角色最近的线下自主生活事件拼成一段，注入到线上聊天的 system prompt，
+ * 让在线聊天时角色「知道自己这段时间在过什么日子」、能自然提起或被影响——而不是线上、
+ * 线下两套互不相通。
+ *
+ * 仅在「开启了自主生活」且「近 windowMs 内确有事件」时返回文本，否则空串（不污染 prompt）。
+ */
+export async function buildRecentLifeContextBlock(
+  char: CharacterProfile,
+  userName: string,
+  opts?: { windowMs?: number; max?: number; now?: number },
+): Promise<string> {
+  try {
+    if (!isAutonomousLifeEnabled(char)) return '';
+    const now = opts?.now ?? Date.now();
+    const windowMs = opts?.windowMs ?? 36 * 60 * 60 * 1000; // 默认看近 36 小时的生活
+    const max = opts?.max ?? 8;
+    const recent = (await DB.getLifeEventsSince(char.id, now - windowMs))
+      .filter(e => e.timestamp <= now)
+      .slice(-max);
+    if (recent.length === 0) return '';
+    const lines = recent.map(e => {
+      const t = describeTime(new Date(e.timestamp));
+      const where = e.location ? `（在${e.location}）` : '';
+      const mood = e.mood ? `，${e.mood}` : '';
+      return `- ${t}${where}：${sanitizeLifeText(e.activity)}${mood}`;
+    }).join('\n');
+    return `\n${recentLifeContextIntro(userName)}\n${lines}\n`;
+  } catch (e) {
+    console.warn('[AutonomousLife] buildRecentLifeContextBlock failed:', e);
+    return '';
   }
 }
 

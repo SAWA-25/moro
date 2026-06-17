@@ -13,6 +13,7 @@ import { isScheduleFeatureOn } from './scheduleGenerator';
 import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { timeGapHint } from './laiwangPrompts';
+import { buildRecentLifeContextBlock } from './autonomousLife';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -267,7 +268,13 @@ export const ChatPrompts = {
             }
         })();
 
-        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText] =
+        // 7. 角色「近来的线下自主生活」—— 把线下生成的生活事件注入线上聊天上下文，
+        //    让线上、线下关联起来（角色知道自己这段时间过的日子、能自然提起或被影响）。
+        //    仅对开启了自主生活、且近期确有事件的角色生效；失败/无事件返回空串。
+        const lifeContextPromise: Promise<string> = buildRecentLifeContextBlock(char, userProfile.name)
+            .catch(() => '');
+
+        const [realtimeText, schedule, groupContextText, notionDiaryText, feishuDiaryText, notionNotesText, recentLifeText] =
             await Promise.all([
                 timed('realtime', realtimePromise),
                 timed('schedule', schedulePromise),
@@ -275,6 +282,7 @@ export const ChatPrompts = {
                 timed('notionDiary', notionDiaryPromise),
                 timed('feishuDiary', feishuDiaryPromise),
                 timed('notionNotes', notionNotesPromise),
+                timed('recentLife', lifeContextPromise),
             ]);
 
         // ── 按原顺序拼接 ──
@@ -342,6 +350,7 @@ export const ChatPrompts = {
         baseSystemPrompt += notionDiaryText;
         baseSystemPrompt += feishuDiaryText;
         baseSystemPrompt += notionNotesText;
+        baseSystemPrompt += recentLifeText;   // 线下自主生活 → 线上聊天上下文（关联线上/线下）
 
         // 彼方常驻设定：仅对启用了「彼方」的角色注入。让角色在聊天里始终知道彼方是什么，
         // 不再依赖累积的 vr_card 动态 / 记忆总结（那些会被压缩、丢掉"彼方=VR游戏"的框定，

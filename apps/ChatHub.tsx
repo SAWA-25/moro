@@ -16,6 +16,7 @@ import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSl
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
+import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -309,6 +310,8 @@ const ChatHub: React.FC = () => {
         dissolved?: boolean;
         memberCount?: number;
         starred?: boolean;
+        /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
+        lifeStatus?: { activity: string; mood?: string };
     }>>([]);
     // 成员资料页（点头像进入）
     const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
@@ -553,11 +556,25 @@ const ChatHub: React.FC = () => {
                     memberCount: g.members.length,
                 });
             }
+            // 「此刻」状态新鲜度：最近一条线下生活事件在这个时长内才显示（再久就不算「此刻」了）
+            const LIFE_STATUS_FRESH_MS = 5 * 60 * 60 * 1000; // 5 小时
+            const nowTs = Date.now();
             for (const c of characters) {
                 const { messages: lastMsgs } = await DB.getRecentMessagesWithCount(c.id, 1);
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
                 // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
                 if (lastMsgs.length === 0 && !(c as any).addedToChat) continue;
+                // 角色开了自主生活：把 TA「此刻」正在过的日子（最近一条生活事件，够新）带进列表
+                let lifeStatus: { activity: string; mood?: string } | undefined;
+                if (isAutonomousLifeEnabled(c)) {
+                    try {
+                        const ev = (await DB.getLifeEvents(c.id, 1))[0];
+                        if (ev && nowTs - ev.timestamp <= LIFE_STATUS_FRESH_MS) {
+                            const activity = sanitizeLifeText(ev.activity);
+                            if (activity) lifeStatus = { activity, mood: ev.mood ? sanitizeLifeText(ev.mood) : undefined };
+                        }
+                    } catch { /* 生活状态只是锦上添花，取不到就不显示 */ }
+                }
                 // 会话设置「备注名 / 会话头像」覆盖列表展示
                 items.push({
                     kind: 'char', id: c.id,
@@ -565,6 +582,7 @@ const ChatHub: React.FC = () => {
                     avatar: c.convoSettings?.charAvatarOverride || c.avatar,
                     last: lastMsgs[lastMsgs.length - 1],
                     starred: !!c.starredFriend,
+                    lifeStatus,
                 });
             }
             // 星标置顶：先按星标（星标的排前面），同组内再按最后一条消息时间倒序。
@@ -1767,14 +1785,17 @@ ${attachedImagesNote}
                 {/* ── 消息 tab：单聊 + 群聊混排 ── */}
                 {hubTab === 'chats' && (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
-                        {convos.map(cv => {
+                        {convos.map((cv, i) => {
+                            // 进入列表时逐行轻微淡入（错峰），多了也不至于拖太久
+                            const enterDelay = `${Math.min(i, 14) * 32}ms`;
                             if (cv.kind === 'group') {
                                 const g = groups.find(x => x.id === cv.id);
                                 return (
                                     <div
                                         key={`g-${cv.id}`}
                                         onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
-                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.dissolved ? 'opacity-70' : ''}`}
+                                        style={{ animationDelay: enterDelay }}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] animate-fade-in ${cv.dissolved ? 'opacity-70' : ''}`}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -1816,7 +1837,8 @@ ${attachedImagesNote}
                                 <div
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
-                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-amber-50/60' : ''}`}
+                                    style={{ animationDelay: enterDelay }}
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-all cursor-pointer hover:bg-[#f7f4ee] animate-fade-in ${cv.starred ? 'bg-amber-50/60' : ''}`}
                                 >
                                     <img src={cv.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                     <div className="flex-1 min-w-0">
@@ -1825,6 +1847,16 @@ ${attachedImagesNote}
                                             <span className="font-bold text-slate-700 truncate text-sm">{cv.name}</span>
                                         </div>
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
+                                        {/* 「此刻」TA 的线下生活状态：把线下自主生活带进列表，线上线下一眼关联 */}
+                                        {cv.lifeStatus && (
+                                            <div className="flex items-center gap-1.5 mt-1">
+                                                <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500/80" />
+                                                </span>
+                                                <span className="text-[10px] text-emerald-700/70 truncate min-w-0">此刻 · {cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}</span>
+                                            </div>
+                                        )}
                                     </div>
                                     <span className="text-[9px] text-slate-300 shrink-0">{formatConvoTime(cv.last?.timestamp)}</span>
                                 </div>
@@ -1881,22 +1913,25 @@ ${attachedImagesNote}
                 {/* ── 底部导航：往来 / 名册 / 此刻 / 情侣空间 ── */}
                 <div className="shrink-0 bg-white/85 backdrop-blur-md border-t border-dashed border-[#d9d4c8] pb-safe">
                     <div className="grid grid-cols-4">
-                        <button onClick={() => setHubTab('chats')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'chats' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
-                            <ChatsTeardrop size={22} weight={hubTab === 'chats' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">往来</span>
-                        </button>
-                        <button onClick={() => setHubTab('contacts')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'contacts' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
-                            <AddressBook size={22} weight={hubTab === 'contacts' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">名册</span>
-                        </button>
-                        <button onClick={() => setHubTab('moments')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'moments' ? 'text-[#2b2933]' : 'text-slate-400'}`}>
-                            <Planet size={22} weight={hubTab === 'moments' ? 'fill' : 'regular'} />
-                            <span className="text-[10px] font-bold">此刻</span>
-                        </button>
-                        <button onClick={() => setHubTab('couple')} className={`flex flex-col items-center gap-0.5 py-2.5 transition-colors ${hubTab === 'couple' ? 'text-pink-500' : 'text-slate-400'}`}>
-                            <Heart size={22} weight={hubTab === 'couple' ? 'fill' : 'regular'} className={hubTab === 'couple' ? 'text-pink-500' : ''} />
-                            <span className="text-[10px] font-bold">情侣空间</span>
-                        </button>
+                        {([
+                            { id: 'chats', label: '往来', Icon: ChatsTeardrop, on: 'text-[#2b2933]' },
+                            { id: 'contacts', label: '名册', Icon: AddressBook, on: 'text-[#2b2933]' },
+                            { id: 'moments', label: '此刻', Icon: Planet, on: 'text-[#2b2933]' },
+                            { id: 'couple', label: '情侣空间', Icon: Heart, on: 'text-pink-500' },
+                        ] as const).map(t => {
+                            const active = hubTab === t.id;
+                            // 选中：图标轻轻放大 + 上抬；点按：整体下沉一下（更有「按下去」的手感）
+                            return (
+                                <button
+                                    key={t.id}
+                                    onClick={() => setHubTab(t.id)}
+                                    className={`flex flex-col items-center gap-0.5 py-2.5 transition-all duration-200 active:scale-90 ${active ? t.on : 'text-slate-400'}`}
+                                >
+                                    <t.Icon size={22} weight={active ? 'fill' : 'regular'} className={`transition-transform duration-300 ${active ? 'scale-110 -translate-y-0.5' : ''}`} />
+                                    <span className="text-[10px] font-bold">{t.label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
