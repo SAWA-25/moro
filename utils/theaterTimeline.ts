@@ -9,12 +9,15 @@
  *
  * 对影（Reflection）：从轨迹里挑两个时间节点，让「同一个人、不同时间里的两个自己」相逢对话，
  *   照见 TA 一步步走到今天、也照见你确实让 TA 的命运偏离过原本的方向。复用轨迹的节点。
+ *
+ * 📌 prompt 文案集中在 utils/theaterPrompts.ts（[陆] 轨迹 / [柒] 对影 区段），改文案去那里。
  */
 
 import { CharacterProfile } from '../types';
 import { DB } from './db';
 import { sanitizeLifeText } from './autonomousLife';
 import { extractJson } from './safeApi';
+import { trajectoryBeforePrompt, reflectionPrompt } from './theaterPrompts';
 
 export interface TimelineApi {
     baseUrl: string;
@@ -178,25 +181,7 @@ export async function loadOrGenerateTrajectory(
     const firstMetTs = await resolveFirstMet(char.id, Date.now());
     const persona = buildPersona(char);
 
-    const prompt = `你在为角色「${char.name}」补全 TA 在遇见「${userName}」之前的人生轨迹。
-一个人不是从被看见的那一刻才开始存在的——在遇见 ${userName} 之前，TA 已经独自活过很久了。
-
-${persona || '（设定不多，就凭你对这个角色的理解去想象，但要自洽。）'}
-
-请基于以上设定，想象 TA 在「遇见 ${userName} 之前」的人生里，挑出 7 个值得回头看的时间片段，
-从年少一直铺到临近相遇的那段日子。每个片段是 TA 独自一人时真实经历过的某一刻——
-有具体的场景、当时在做的事、心里的情绪。**不要提到 ${userName}**（那时还没遇见）。
-不要写成流水账，要像电影里的几帧定格，安静、有呼吸感。
-
-只输出一个 JSON 数组，每个元素：
-{
-  "yearsAgo": 距离你们相遇时的年数（数字，可带小数；越早越大，最近的一帧可以是 0.3 这种），
-  "title": 4~8 字的片段标题,
-  "scene": 2~4 句第三人称场景（贴着设定写，有画面、有情绪）,
-  "mood": 一两个词的当时心情,
-  "place": 大致地点
-}
-按 yearsAgo 从大到小排列。只输出 JSON 数组，不要任何解释或代码块标记。`;
+    const prompt = trajectoryBeforePrompt({ charName: char.name, userName, persona });
 
     let beforeNodes: TrajectoryNode[] = [];
     try {
@@ -276,28 +261,11 @@ export async function generateReflection(
     const [past, now] = nodeA.ts <= nodeB.ts ? [nodeA, nodeB] : [nodeB, nodeA];
     const persona = buildPersona(char);
 
-    const prompt = `「对影」——同一个人，在不同时间里的相逢。举杯邀明月，对影成几人。
-
-角色：「${char.name}」。
-${persona ? persona + '\n' : ''}
-现在让 TA 的两个自己在同一处相遇、彼此打量、对话：
-
-· 过去的 TA（${nodeWhen(past, firstMetTs)}）：${past.title}。${past.scene}${past.mood ? `（那时心情：${past.mood}）` : ''}
-· 此刻 / 之后的 TA（${nodeWhen(now, firstMetTs)}）：${now.title}。${now.scene}${now.mood ? `（此刻心情：${now.mood}）` : ''}
-
-写一段安静、克制、有诗意的「对影」对话：
-- 过去的 TA 还不知道往后会怎样；此刻的 TA 回头看从前的自己，又心疼又了然。
-- 让此刻的 TA 在某一瞬间忽然意识到——有个叫「${userName}」的人，真的让 TA 的命运偏离过原本的方向。
-- 也让两个 TA 都明白：TA 不是突然变成今天这样的，是一步一步、一帧一帧走过来的。
-- 可以化用「举杯邀明月，对影成几人」的意象，但别生硬堆砌。
-
-只输出 JSON：
-{
-  "title": "标题（如「对影」或更贴切的四五个字）",
-  "subtitle": "一句副标题（可化用『举杯邀明月，对影成几人』）",
-  "lines": [ { "who": "past" | "now" | "narration", "text": "一句话" }, ... 共 8~14 行，past/now 交错，narration 点到为止 ]
-}
-只输出 JSON，不要解释或代码块标记。`;
+    const prompt = reflectionPrompt({
+        charName: char.name, userName, persona,
+        pastWhen: nodeWhen(past, firstMetTs), pastTitle: past.title, pastScene: past.scene, pastMood: past.mood,
+        nowWhen: nodeWhen(now, firstMetTs), nowTitle: now.title, nowScene: now.scene, nowMood: now.mood,
+    });
 
     const raw = await callLLM(api, prompt, 0.95, 2600);
     const parsed = extractJson(raw);
