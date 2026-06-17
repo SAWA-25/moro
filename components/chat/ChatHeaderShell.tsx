@@ -392,7 +392,10 @@ const ChatHeaderShell: React.FC<ChatHeaderShellProps> = ({
                 <span className={`text-[12px] font-bold tracking-wide truncate max-w-full ${isDarkHeader ? 'text-slate-300' : 'text-slate-500'}`}>{decorText}</span>
             </div>
         ) : (
-            <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
+            // 没有页眉小字时：居中布局（极简皮肤）也要给「灵动岛」让位——否则居中的情绪 buff /
+            // 头像会顶到 safe-top+26px 的灵动岛底下（参考反馈图：buff 被灵动岛劈成左右两半）。
+            // 与上面页眉小字同样下沉 2.5rem 到灵动岛底缘之下；左对齐布局内容在两侧、不压岛，保持 safe-top。
+            <div className="bg-transparent backdrop-blur-xl" style={{ height: useCenteredLayout ? 'calc(var(--safe-top) + 2.5rem)' : 'var(--safe-top)' }} />
         )}
         {/* header 主体：moro-chat-header 钩子 + 内容垂直居中（items-center）；safe-top 已由上面 spacer 让位 */}
         <div className={`moro-chat-header ${headerDensityClass} flex items-center relative ${headerToneClass}`} style={headerSafeStyle}>

@@ -30,8 +30,14 @@ async function chat(api: ResolvedApi, messages: { role: string; content: string 
     });
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await safeResponseJson(res);
-    return (extractContent(data) || '')
+    return stripThink(extractContent(data) || '');
+}
+
+/** 去掉思维链：成对 <think>…</think>，以及被 max_tokens 截断、没收尾的残缺 <think>…（到结尾）。 */
+function stripThink(s: string): string {
+    return (s || '')
         .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
+        .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
         .trim();
 }
 
@@ -67,7 +73,7 @@ export async function genNextQuestion(args: {
         + `这是第 ${index + 1} / ${total} 题。\n`
         + (recent ? `已经出过的题（不要重复、不要近义）：\n${recent}\n` : '')
         + `请给出第 ${index + 1} 题的题干（贴合「${topic}」的风格，简洁、可作答）。`;
-    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 200, signal });
+    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 500, signal });
     return cleanQuestion(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || raw) || `（第 ${index + 1} 题生成失败，点重试）`;
 }
 
@@ -78,10 +84,13 @@ export async function genCharAnswer(args: {
     const { api, char, userProfile, topic, question, signal } = args;
     const userName = (userProfile?.name || '').trim() || '对方';
     const sys = `你正在扮演「${char.name}」回答一份「${topic}」问卷。\n人设：${String(char.description || '').slice(0, 700)}\n`
-        + `完全以 ${char.name} 的口吻、价值观、说话习惯第一人称作答，可带点情绪和私心（${userName} 也在一起做这份问卷）。`
-        + `只输出答案本身，简短自然（一般 1~3 句），不要复述题目、不要旁白、不要引号。`;
-    const user = `题目：${question}\n请以 ${char.name} 的身份作答。`;
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.9, maxTokens: 300, signal })) || '……（TA 没说话）';
+        + `完全以 ${char.name} 的口吻、价值观、说话习惯第一人称作答，可带点情绪和私心（${userName} 也在一起做这份问卷）。\n`
+        + `【最重要】必须正面回答这道题问的具体内容，给出明确、有信息量的答案：\n`
+        + `- 哪怕是私密 / 露骨 / 尴尬 / 羞耻的题，也要按人设给出真实的态度与选择（可以害羞、嘴硬、欲盖弥彰、调侃${userName}），但**不许回避、不许打太极、不许只反问或吐槽题目本身、不许答非所问、不许说“这个不方便说/无可奉告”**；\n`
+        + `- 把题目当成真在被问，认真给出 TA 会怎么答。\n`
+        + `只输出答案本身，自然口语（一般 1~4 句，可长可短按内容来），不要复述题目、不要旁白、不要引号。`;
+    const user = `题目：${question}\n请以 ${char.name} 的身份，正面作答这道题。`;
+    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.9, maxTokens: 800, signal })) || '……（TA 没说话）';
 }
 
 export type ExtraKind = 'tieba' | 'chatlog' | 'meme' | 'custom';
@@ -107,7 +116,7 @@ export async function genExtraPiece(args: {
         sys = '你是一个有想象力的同人作者。根据用户的要求，围绕某角色写一段番外内容，贴合角色人设，有画面感。中文。';
         user = `${persona}\n用户要的番外：${prompt || `关于「${char.name}」的一段番外`}\n（${userName} 想看的）`;
     }
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 1400, signal })) || '（这次没生成出来，换个说法再试试）';
+    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 2200, signal })) || '（这次没生成出来，换个说法再试试）';
 }
 
 // ── 仿真图文番外（结构化 JSON，UI 渲染成仿微信/朋友圈/小红书/论坛） ──────────────
@@ -163,7 +172,7 @@ export async function genFauxPiece(args: {
         user = `${persona}\n以「${topic || `关于 ${char.name} 的瓜`}」开个匿名帖，深扒 ${char.name} 与 ${userName} 的八卦。生成 JSON。`;
     }
 
-    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 1800, signal });
+    const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 2600, signal });
     const data = extractJson(raw);
     return { kind, data: data ?? null, fallbackText: raw || '（这次没生成出来，换个关键词再试试）' };
 }

@@ -1456,11 +1456,22 @@ const MessageItem = React.memo(({
                     style={canSwipeReply ? { transform: `translateX(${swipeX}px)`, transition: swipeActive.current ? 'none' : 'transform 0.22s cubic-bezier(0.22,1,0.36,1)' } : undefined}
                     {...interactionProps}
                 >
-                    {/* 极简皮肤：该组消息上方的「昵称标签 + 时间戳」（对方）/「时间戳」（我方） */}
-                    {isPlainBubble && isFirstInGroup && showTimestamp !== 'never' && (
+                    {/* 极简皮肤：该组消息上方的「头像 + 昵称标签 + 时间戳」（对方）/「时间戳」（我方）。
+                        对方头像可点：进角色资料 / 心声（onAvatarClick），双击戳一戳（onAvatarPoke）。
+                        身份（头像+昵称）只要是该组首条就显示，不受「隐藏时间戳」影响。 */}
+                    {isPlainBubble && isFirstInGroup && (!isUser || showTimestamp !== 'never') && (
                         <div className="flex items-center gap-1.5 mb-1 px-0.5">
+                            {!isUser && (
+                                <img
+                                    src={charAvatar}
+                                    onClick={handleAvatarClick}
+                                    className={`moro-msg-avatar w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-black/5 ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
+                                    alt=""
+                                    draggable={false}
+                                />
+                            )}
                             {!isUser && <span className="moro-group-name text-[11px] font-medium text-slate-400 bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{charName}</span>}
-                            <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>
+                            {showTimestamp !== 'never' && <span className="text-[9px] text-slate-400/80 font-medium">{formatTime(m.timestamp)}</span>}
                         </div>
                     )}
                     {!isUser && m.metadata?.thinkingChain && (

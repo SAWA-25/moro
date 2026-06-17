@@ -28,7 +28,9 @@ async function chat(api: ResolvedApi, messages: { role: string; content: string 
     if (!res.ok) throw new Error(`API ${res.status}`);
     const data = await safeResponseJson(res);
     return (extractContent(data) || '')
+        // 去思维链：成对 <think>…</think> + 被 max_tokens 截断的残缺 <think>…（到结尾）
         .replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '')
+        .replace(/<(?:think|thinking|thought)>[\s\S]*$/i, '')
         .trim();
 }
 
@@ -103,6 +105,7 @@ export async function interpretReading(args: InterpretArgs): Promise<string> {
         `问卜的问题：${question || '（未明确提问，请做综合运势解读）'}\n\n` +
         `占卜结果：\n${readingText}\n\n` +
         `请你（${char.name}）开始解读。`;
-    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.85, maxTokens: 1300, signal }))
+    // 调高 max_tokens：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断（反馈：解牌只显示半句）
+    return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.85, maxTokens: 2200, signal }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
 }
