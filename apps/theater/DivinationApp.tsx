@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../../context/OSContext';
-import { ArrowLeft, Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, PencilSimple, MagicWand } from '@phosphor-icons/react';
+import { Sparkle, ArrowClockwise, PaperPlaneTilt, Stack, PencilSimple, Cards } from '@phosphor-icons/react';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { DB } from '../../utils/db';
 import { WorldbookRuntime } from '../../utils/worldbookRuntime';
@@ -14,6 +14,7 @@ import {
 import { TarotSpreadView, LenormandSpreadView } from '../../components/theater/divination/TarotCard';
 import { LiuyaoView, MeihuaView } from '../../components/theater/divination/HexagramView';
 import CardDeckManager from '../../components/theater/divination/CardDeckManager';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, INK, INK_SOFT } from './scrapbook';
 
 interface Props { onExit: () => void; }
 
@@ -33,6 +34,9 @@ const buildWorldbookText = (char: any): string => {
     } catch { return ''; }
 };
 
+// 浅纸面输入框样式
+const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.85)', color: '#3a362f', border: '1px solid rgba(176,170,158,0.7)' };
+
 const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const { characters, apiConfig, auxApiConfig, userProfile, addToast, theme } = useOS();
     const api = resolveAuxApi(auxApiConfig, apiConfig);
@@ -46,25 +50,20 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const [view, setView] = useState<'home' | 'deck'>('home');
     const [deckToManage, setDeckToManage] = useState<'tarot' | 'lenormand'>('tarot');
 
-    // 牌阵
     const [tarotSpread, setTarotSpread] = useState<SpreadDef>(TAROT_SPREADS[1]);
     const [lenoSpread, setLenoSpread] = useState<SpreadDef>(LENORMAND_SPREADS[1]);
-    // 梅花起卦法
     const [meihuaMethod, setMeihuaMethod] = useState<'time' | 'number'>('time');
     const [n1, setN1] = useState(''); const [n2, setN2] = useState('');
 
-    // 已导入的牌图：deck → (index → dataUrl)
     const [tarotImgs, setTarotImgs] = useState<Record<number, string>>({});
     const [lenoImgs, setLenoImgs] = useState<Record<number, string>>({});
 
-    // 占卜结果
     const [tarotDraws, setTarotDraws] = useState<DrawnTarot[] | null>(null);
     const [lenoDraws, setLenoDraws] = useState<DrawnLenormand[] | null>(null);
     const [liuyao, setLiuyao] = useState<LiuyaoResult | null>(null);
     const [meihua, setMeihua] = useState<MeihuaResult | null>(null);
     const [hasResult, setHasResult] = useState(false);
 
-    // 解读
     const [manualText, setManualText] = useState('');
     const [aiText, setAiText] = useState('');
     const [busy, setBusy] = useState(false);
@@ -94,7 +93,6 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         setHasResult(true);
     };
 
-    /** 当前结果转文字摘要（解读 / 发到聊天共用）。 */
     const currentReadingText = (): string => {
         if (tarotDraws) return tarotToText(tarotSpread.name, tarotDraws);
         if (lenoDraws) return lenormandToText(lenoSpread.name, lenoDraws);
@@ -128,7 +126,6 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
         } catch { addToast('发送失败', 'error'); }
     };
 
-    // 牌库管理子页
     if (view === 'deck') {
         return (
             <CardDeckManager
@@ -144,59 +141,62 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
     const activeMode = MODES.find(m => m.kind === mode)!;
     const deckImported = mode === 'tarot' ? Object.keys(tarotImgs).length : mode === 'lenormand' ? Object.keys(lenoImgs).length : -1;
 
-    return (
-        <div className="absolute inset-0 flex flex-col bg-[#14101c] text-white animate-fade-in overflow-hidden" style={{ paddingTop: 'var(--safe-top)' }}>
-            <div aria-hidden className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[140%] h-72 rounded-full blur-3xl opacity-40 bg-gradient-to-b from-violet-500/50 via-indigo-500/20 to-transparent" />
-            <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0 z-10">
-                <button onClick={onExit} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/15 text-white/80 active:scale-95 transition-all border border-white/10">
-                    <ArrowLeft size={14} weight="bold" /> 返回
-                </button>
-                <div className="absolute left-1/2 -translate-x-1/2 text-[11px] tracking-[0.3em] text-white/45 select-none">占卜 · DIVINATION</div>
-            </div>
+    // 牌阵 / 起卦 切换胶囊
+    const chip = (on: boolean): React.CSSProperties => on
+        ? { background: '#1f1d1a', color: '#f6f3ec', border: 'none' }
+        : { background: 'rgba(255,253,247,0.7)', color: '#5b554a', border: '1px solid rgba(176,170,158,0.65)' };
 
-            <div className="flex-1 overflow-y-auto no-scrollbar px-5 pb-10 space-y-4 z-10">
+    return (
+        <PaperShell>
+            <ScrapHeader title="占卜" en="THE READING" onBack={onExit} backLabel="回戏单" />
+
+            <ScrapScroll className="px-5 pb-10 space-y-4 pt-1">
                 {/* 模式选择 */}
-                <div className="grid grid-cols-2 gap-2">
-                    {MODES.map(m => (
-                        <button key={m.kind} onClick={() => { setMode(m.kind); resetResult(); }}
-                            className={`text-left p-3 rounded-2xl border transition-all ${mode === m.kind ? 'border-violet-300/60 bg-violet-300/10' : 'border-white/10 bg-white/[0.03]'}`}>
-                            <div className="text-[8px] tracking-widest text-violet-200/60 font-mono">{m.en}</div>
-                            <div className="text-base font-black text-white mt-0.5">{m.label}</div>
-                            <div className="text-[10px] text-white/45 mt-0.5 leading-tight">{m.desc}</div>
-                        </button>
-                    ))}
+                <div className="grid grid-cols-2 gap-2.5">
+                    {MODES.map((m, i) => {
+                        const on = mode === m.kind;
+                        return (
+                            <button key={m.kind} onClick={() => { setMode(m.kind); resetResult(); }}
+                                className="text-left p-3 rounded-[14px] transition-all active:scale-[0.98]" style={{
+                                    background: on ? 'linear-gradient(180deg,#2a2722,#1f1d1a)' : 'linear-gradient(180deg,#fbf9f2,#f1eee4)',
+                                    color: on ? '#f6f3ec' : INK,
+                                    border: on ? '1px solid #1f1d1a' : '1px solid rgba(176,170,158,0.7)',
+                                    outline: '1px dashed', outlineColor: on ? 'rgba(255,255,255,0.25)' : 'rgba(150,144,132,0.45)', outlineOffset: -5,
+                                    transform: `rotate(${i % 2 ? 0.5 : -0.5}deg)`,
+                                }}>
+                                <div className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: on ? 'rgba(246,243,236,0.6)' : INK_SOFT }}>{m.en}</div>
+                                <div className="text-base font-black mt-0.5">{m.label}</div>
+                                <div className="text-[10px] mt-0.5 leading-tight" style={{ color: on ? 'rgba(246,243,236,0.7)' : '#6b6558' }}>{m.desc}</div>
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* 角色选择 */}
                 <div>
-                    <div className="text-[11px] text-white/55 mb-1.5">和谁一起占卜（解牌时以 TA 口吻 + 世界书）</div>
-                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                        {characters.length === 0 && <div className="text-white/40 text-xs py-2">还没有角色，先去创建一个吧</div>}
-                        {characters.map(c => (
-                            <button key={c.id} onClick={() => setPickCharId(c.id)}
-                                className={`shrink-0 flex flex-col items-center gap-1 px-2 py-1.5 rounded-2xl border transition-all ${pickCharId === c.id ? 'border-violet-300/60 bg-violet-300/10' : 'border-white/10 bg-white/[0.03]'}`}>
-                                <img src={c.avatar} className="w-11 h-11 rounded-full object-cover" alt={c.name} />
-                                <span className="text-[10px] text-white/70 max-w-[56px] truncate">{c.name}</span>
-                            </button>
+                    <div className="text-[11px] mb-2" style={{ color: '#6b6558' }}>和谁一起占卜（解牌时以 TA 口吻 + 世界书）</div>
+                    <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1 px-0.5">
+                        {characters.length === 0 && <div className="text-xs py-2" style={{ color: INK_SOFT }}>还没有角色，先去创建一个吧</div>}
+                        {characters.map((c, i) => (
+                            <Polaroid key={c.id} src={c.avatar} caption={c.name} size={48} rotate={i % 2 ? 1.5 : -1.5} selected={pickCharId === c.id} onClick={() => setPickCharId(c.id)} />
                         ))}
                     </div>
                 </div>
 
                 {/* 问题 */}
                 <input value={question} onChange={e => setQuestion(e.target.value)} placeholder="想占问什么？（如：这段关系的走向 / 这个决定）"
-                    className="w-full bg-black/30 rounded-xl px-3 py-2.5 text-sm outline-none border border-white/10 focus:border-violet-300/40" />
+                    className="w-full rounded-xl px-3 py-2.5 text-sm outline-none" style={paperInput} />
 
-                {/* 各模式的参数 */}
+                {/* 各模式参数 */}
                 {mode === 'tarot' && (
                     <div className="space-y-2">
                         <div className="flex flex-wrap gap-1.5">
                             {TAROT_SPREADS.map(s => (
-                                <button key={s.key} onClick={() => setTarotSpread(s)}
-                                    className={`px-2.5 py-1 rounded-full text-[11px] border ${tarotSpread.key === s.key ? 'bg-violet-400/20 border-violet-300/50 text-violet-100' : 'bg-white/[0.04] border-white/10 text-white/60'}`}>{s.name}（{s.count}）</button>
+                                <button key={s.key} onClick={() => setTarotSpread(s)} className="px-2.5 py-1 rounded-full text-[11px] font-bold transition" style={chip(tarotSpread.key === s.key)}>{s.name}（{s.count}）</button>
                             ))}
                         </div>
                         {deckImported === 0 && (
-                            <button onClick={() => { setDeckToManage('tarot'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold bg-amber-300/15 border border-amber-300/30 text-amber-100 inline-flex items-center justify-center gap-1.5">
+                            <button onClick={() => { setDeckToManage('tarot'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(31,29,26,0.06)', color: '#5b554a', border: '1px dashed rgba(150,144,132,0.7)' }}>
                                 <Stack size={15} weight="bold" /> 还没导入塔罗牌图，点此批量导入（也可不导入，用文字牌义占卜）
                             </button>
                         )}
@@ -206,12 +206,11 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                     <div className="space-y-2">
                         <div className="flex flex-wrap gap-1.5">
                             {LENORMAND_SPREADS.map(s => (
-                                <button key={s.key} onClick={() => setLenoSpread(s)}
-                                    className={`px-2.5 py-1 rounded-full text-[11px] border ${lenoSpread.key === s.key ? 'bg-violet-400/20 border-violet-300/50 text-violet-100' : 'bg-white/[0.04] border-white/10 text-white/60'}`}>{s.name}（{s.count}）</button>
+                                <button key={s.key} onClick={() => setLenoSpread(s)} className="px-2.5 py-1 rounded-full text-[11px] font-bold transition" style={chip(lenoSpread.key === s.key)}>{s.name}（{s.count}）</button>
                             ))}
                         </div>
                         {deckImported === 0 && (
-                            <button onClick={() => { setDeckToManage('lenormand'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold bg-amber-300/15 border border-amber-300/30 text-amber-100 inline-flex items-center justify-center gap-1.5">
+                            <button onClick={() => { setDeckToManage('lenormand'); setView('deck'); }} className="w-full py-2 rounded-xl text-[12px] font-bold inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(31,29,26,0.06)', color: '#5b554a', border: '1px dashed rgba(150,144,132,0.7)' }}>
                                 <Stack size={15} weight="bold" /> 还没导入雷诺曼牌图，点此批量导入
                             </button>
                         )}
@@ -221,74 +220,72 @@ const DivinationApp: React.FC<Props> = ({ onExit }) => {
                     <div className="space-y-2">
                         <div className="flex gap-1.5">
                             {(['time', 'number'] as const).map(m => (
-                                <button key={m} onClick={() => setMeihuaMethod(m)}
-                                    className={`px-3 py-1.5 rounded-full text-[11px] border ${meihuaMethod === m ? 'bg-violet-400/20 border-violet-300/50 text-violet-100' : 'bg-white/[0.04] border-white/10 text-white/60'}`}>{m === 'time' ? '时间起卦' : '报数起卦'}</button>
+                                <button key={m} onClick={() => setMeihuaMethod(m)} className="px-3 py-1.5 rounded-full text-[11px] font-bold transition" style={chip(meihuaMethod === m)}>{m === 'time' ? '时间起卦' : '报数起卦'}</button>
                             ))}
                         </div>
                         {meihuaMethod === 'number' && (
                             <div className="flex gap-2">
-                                <input value={n1} onChange={e => setN1(e.target.value)} inputMode="numeric" placeholder="第一个数" className="flex-1 bg-black/30 rounded-xl px-3 py-2 text-sm outline-none border border-white/10 focus:border-violet-300/40" />
-                                <input value={n2} onChange={e => setN2(e.target.value)} inputMode="numeric" placeholder="第二个数" className="flex-1 bg-black/30 rounded-xl px-3 py-2 text-sm outline-none border border-white/10 focus:border-violet-300/40" />
+                                <input value={n1} onChange={e => setN1(e.target.value)} inputMode="numeric" placeholder="第一个数" className="flex-1 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
+                                <input value={n2} onChange={e => setN2(e.target.value)} inputMode="numeric" placeholder="第二个数" className="flex-1 rounded-xl px-3 py-2 text-sm outline-none" style={paperInput} />
                             </div>
                         )}
                     </div>
                 )}
 
                 {/* 起卦/抽牌按钮 */}
-                <button onClick={doDivine}
-                    className="w-full py-3 rounded-xl text-sm font-black bg-gradient-to-r from-violet-400 to-indigo-400 text-[#14101c] active:scale-95 inline-flex items-center justify-center gap-2">
-                    <Sparkle size={18} weight="fill" /> {hasResult ? '重新' : ''}{mode === 'tarot' || mode === 'lenormand' ? '抽牌' : '起卦'}（{activeMode.label}）
-                </button>
+                <ScrapButton variant="ink" className="w-full py-3 text-sm" onClick={doDivine} icon={mode === 'tarot' || mode === 'lenormand' ? <Cards size={17} weight="bold" /> : <Sparkle size={17} weight="fill" />}>
+                    {hasResult ? '重新' : ''}{mode === 'tarot' || mode === 'lenormand' ? '抽牌' : '起卦'}（{activeMode.label}）
+                </ScrapButton>
 
-                {/* 结果 */}
+                {/* 结果：拼贴里贴进一张「黑底相版」，保证牌面 / 卦象在深色上仍清晰 */}
                 {hasResult && (
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 space-y-3">
+                    <div className="relative rounded-[16px] p-4 space-y-3" style={{
+                        background: 'linear-gradient(180deg,#26231f,#1c1a17)', color: '#f3ecdf',
+                        border: '1px solid rgba(31,29,26,0.8)', outline: '1px dashed rgba(246,243,236,0.22)', outlineOffset: -6,
+                        boxShadow: '0 18px 34px -20px rgba(31,29,26,0.7)', transform: 'rotate(-0.4deg)',
+                    }}>
                         {tarotDraws && <TarotSpreadView draws={tarotDraws} images={tarotImgs} skin={skin} />}
                         {lenoDraws && <LenormandSpreadView draws={lenoDraws} images={lenoImgs} skin={skin} />}
                         {liuyao && <LiuyaoView r={liuyao} />}
                         {meihua && <MeihuaView r={meihua} />}
 
-                        {/* 解读区 */}
-                        <div className="border-t border-white/10 pt-3 space-y-2">
+                        <div className="border-t pt-3 space-y-2" style={{ borderColor: 'rgba(246,243,236,0.14)' }}>
                             <div className="flex gap-2">
-                                <button onClick={() => void runInterpret()} disabled={busy}
-                                    className="flex-1 py-2.5 rounded-xl text-[12px] font-bold bg-violet-300/90 text-[#14101c] active:scale-95 disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
-                                    <MagicWand size={15} weight="bold" /> {busy ? '解牌中…' : `让 ${char?.name || 'TA'} 解牌`}
+                                <button onClick={() => void runInterpret()} disabled={busy} className="flex-1 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 disabled:opacity-50 inline-flex items-center justify-center gap-1.5" style={{ background: '#f3ecdf', color: '#1f1d1a' }}>
+                                    <Cards size={15} weight="bold" /> {busy ? '解牌中…' : `让 ${char?.name || 'TA'} 解牌`}
                                 </button>
-                                <button onClick={() => void doDivine()} className="px-3 py-2.5 rounded-xl text-[12px] font-bold bg-white/10 active:scale-95 inline-flex items-center justify-center gap-1.5" title="重抽/重起">
+                                <button onClick={() => void doDivine()} className="px-3 py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }} title="重抽/重起">
                                     <ArrowClockwise size={15} weight="bold" />
                                 </button>
                             </div>
 
                             {aiText && (
-                                <div className="rounded-xl border border-violet-300/20 bg-violet-500/[0.06] p-3 text-[13px] text-white/85 leading-relaxed whitespace-pre-wrap">{aiText}</div>
+                                <div className="rounded-xl p-3 text-[13px] leading-relaxed whitespace-pre-wrap" style={{ background: 'rgba(246,243,236,0.08)', border: '1px solid rgba(246,243,236,0.16)', color: 'rgba(246,243,236,0.92)' }}>{aiText}</div>
                             )}
 
-                            <details className="rounded-xl border border-white/10 bg-white/[0.02]">
-                                <summary className="px-3 py-2 text-[12px] text-white/60 cursor-pointer inline-flex items-center gap-1.5 list-none"><PencilSimple size={14} weight="bold" /> 自己解（手写解读）</summary>
+                            <details className="rounded-xl" style={{ background: 'rgba(246,243,236,0.05)', border: '1px solid rgba(246,243,236,0.12)' }}>
+                                <summary className="px-3 py-2 text-[12px] cursor-pointer inline-flex items-center gap-1.5 list-none" style={{ color: 'rgba(246,243,236,0.7)' }}><PencilSimple size={14} weight="bold" /> 自己解（手写解读）</summary>
                                 <div className="px-3 pb-3">
                                     <textarea value={manualText} onChange={e => setManualText(e.target.value)} rows={4} placeholder="写下你对这次占卜的理解…"
-                                        className="w-full bg-black/30 rounded-xl px-3 py-2 text-sm outline-none border border-white/10 focus:border-violet-300/40 resize-none" />
+                                        className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none" style={{ background: 'rgba(0,0,0,0.25)', color: '#f3ecdf', border: '1px solid rgba(246,243,236,0.16)' }} />
                                 </div>
                             </details>
 
-                            <button onClick={() => void exportToChat()}
-                                className="w-full py-2.5 rounded-xl text-[12px] font-bold bg-white/10 active:scale-95 inline-flex items-center justify-center gap-1.5">
+                            <button onClick={() => void exportToChat()} className="w-full py-2.5 rounded-xl text-[12px] font-bold active:scale-95 inline-flex items-center justify-center gap-1.5" style={{ background: 'rgba(246,243,236,0.12)', color: '#f3ecdf' }}>
                                 <PaperPlaneTilt size={15} weight="bold" /> 发到与 {char?.name || 'TA'} 的聊天
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* 牌库入口（常驻底部，方便管理） */}
+                {/* 牌库入口 */}
                 {(mode === 'tarot' || mode === 'lenormand') && (
-                    <button onClick={() => { setDeckToManage(mode); setView('deck'); }}
-                        className="w-full py-2 rounded-xl text-[11px] text-white/55 bg-white/[0.03] border border-white/10 inline-flex items-center justify-center gap-1.5">
-                        <Stack size={14} weight="bold" /> 管理{activeMode.label}牌库（已导入 {mode === 'tarot' ? Object.keys(tarotImgs).length : Object.keys(lenoImgs).length} 张）
-                    </button>
+                    <ScrapButton variant="ghost" className="w-full py-2 text-[11px]" onClick={() => { setDeckToManage(mode); setView('deck'); }} icon={<Stack size={14} weight="bold" />}>
+                        管理{activeMode.label}牌库（已导入 {mode === 'tarot' ? Object.keys(tarotImgs).length : Object.keys(lenoImgs).length} 张）
+                    </ScrapButton>
                 )}
-            </div>
-        </div>
+            </ScrapScroll>
+        </PaperShell>
     );
 };
 
