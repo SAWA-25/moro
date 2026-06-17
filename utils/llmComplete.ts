@@ -34,6 +34,18 @@ export function stripThink(s: string): string {
         .trim();
 }
 
+/**
+ * 启发式判断一段正文是否「像被截断了」（没写完）。
+ * 用于代理不回 finish_reason（很多 OpenAI 兼容代理 stream:false 下不给 / 给 null）时兜底续写：
+ * 正常收尾的文字会以句末标点 / 引号 / 收尾括号结束；停在汉字、逗号、半个词上 → 多半被砍。
+ */
+function looksTruncated(s: string): boolean {
+    const t = (s || '').replace(/\s+$/, '');
+    if (!t) return false;
+    // 句末/收尾字符：中英文句号问号叹号省略号、引号、各类收尾括号、收尾书名号
+    return !/[。．.!！?？…⋯”’"'」』）)\]】〉》>~～—]$/.test(t);
+}
+
 /** 调一次 chat/completions，回 { 可见正文, finish_reason }。 */
 async function callOnce(
     api: ResolvedApi,
@@ -71,8 +83,13 @@ export async function llmComplete(api: ResolvedApi, messages: ChatMsg[], opts: C
         const { content, finishReason } = await callOnce(api, convo, opts);
         const chunk = stripThink(content);
         full += chunk;
-        // 收尾条件：没被长度截断 / 没拿到可见增量 / 已用尽续写轮数
-        if (finishReason !== 'length' || !chunk.trim() || round === rounds) break;
+        // 是否还需续写：被长度截断（finish_reason='length'），
+        // 或代理没给 finish_reason（null/undefined）但正文像是停在半句上（启发式兜底）。
+        // 注意：finish_reason 明确是 'stop' 等正常收尾时，一律信任、不强续。
+        const needMore = finishReason === 'length'
+            || (finishReason == null && looksTruncated(full));
+        // 收尾条件：不需要续写 / 没拿到可见增量 / 已用尽续写轮数
+        if (!needMore || !chunk.trim() || round === rounds) break;
         convo = [
             ...convo,
             { role: 'assistant', content: chunk },

@@ -65,8 +65,9 @@ export async function interpretReading(args: InterpretArgs): Promise<string> {
     const sys = divinationInterpretSys({ charName: char.name, kindRole: DIVINATION_KIND_ROLE[kind], description: char.description || '', userName, worldbookText });
     const user = divinationInterpretUser({ question, readingText, charName: char.name });
     // 调高 max_tokens + 自动续写：推理模型会先吃掉一大截 token 做思维链，预算太小会把正文解读截断
-    // （反馈：解牌只显示半句）。若仍被 finish_reason='length' 截断，llmComplete 会自动接着写完。
+    // （反馈：解牌只显示半句）。llmComplete 会在被 finish_reason='length' 截断、
+    // 或代理不回 finish_reason 但正文停在半句上时自动接着写完（continueRounds 轮内）。
     return (await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: user }],
-        { temperature: 0.85, maxTokens: 4096, continueRounds: 2, signal }))
+        { temperature: 0.85, maxTokens: 4096, continueRounds: 3, signal }))
         || '（这次没解出来，换个问法或重新抽一次试试）';
 }
