@@ -5,7 +5,7 @@ import { DailySchedule, ScheduleSlot, CharacterProfile } from '../../types';
 interface ScheduleCardProps {
     schedule: DailySchedule | null;
     character: CharacterProfile | null;
-    contentColor?: string;
+    contentColor?: string; // 兼容旧调用方；ins 浅色卡自带墨色文字，不再依赖此项
     compact?: boolean; // widget mode (no editing)
     onEdit?: (index: number, slot: ScheduleSlot) => void;
     onDelete?: (index: number) => void;
@@ -32,10 +32,64 @@ const formatDate = (): string => {
     return `${months[now.getMonth()]} ${now.getDate()} · ${days[now.getDay()]}`;
 };
 
+/* ══════════ ins 杂志风调色 ══════════
+   白底 + 发丝线 + 大圆角 + 极柔投影；强调色由角色 themeColor 派生成柔和的彩色，
+   头像走「故事环」（角色色渐变描边 + 白缝 + 彩色头像）。 */
+const INK = '#26242b';
+const INK_SOFT = '#8b8794';
+const INK_FAINT = '#bdb9c6';
+const HAIRLINE = '#ededed';
+const CARD_BG = '#ffffff';
+
+const palette = (character: CharacterProfile | null) => {
+    const hue = character?.themeColor ?? 258;
+    return {
+        hue,
+        accent: `hsl(${hue} 66% 56%)`,
+        accentDeep: `hsl(${hue} 58% 44%)`,
+        accentTint: `hsl(${hue} 72% 96.5%)`,
+        accentBorder: `hsl(${hue} 52% 90%)`,
+        ring: `linear-gradient(135deg, hsl(${hue} 88% 66%), hsl(${(hue + 46) % 360} 86% 68%))`,
+    };
+};
+
+/* 故事环头像（彩色）：渐变描边 + 白缝 + 彩色头像。无图时落角色名首字。 */
+const StoryAvatar: React.FC<{
+    character: CharacterProfile | null;
+    size?: number;
+    ring: string;
+    accent: string;
+}> = ({ character, size = 46, ring, accent }) => {
+    const avatar = character?.avatar;
+    const isImg = !!avatar && (avatar.startsWith('http') || avatar.startsWith('data:'));
+    const inner = size - 6;
+    return (
+        <div
+            className="shrink-0 rounded-full"
+            style={{ width: size, height: size, padding: 2.5, background: ring }}
+        >
+            <div
+                className="w-full h-full rounded-full overflow-hidden flex items-center justify-center"
+                style={{ border: '2px solid #fff', background: '#fff' }}
+            >
+                {isImg ? (
+                    <img src={avatar} alt="" className="w-full h-full object-cover" style={{ width: inner, height: inner }} />
+                ) : (
+                    <span
+                        className="font-bold"
+                        style={{ color: accent, fontSize: Math.round(inner * 0.42) }}
+                    >
+                        {(character?.name || '·').slice(0, 1)}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const ScheduleCard: React.FC<ScheduleCardProps> = ({
     schedule,
     character,
-    contentColor = '#ffffff',
     compact = false,
     onEdit,
     onDelete,
@@ -73,9 +127,9 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
     };
 
     const currentIdx = schedule ? getCurrentSlotIndex(schedule.slots) : -1;
-    const charAvatar = character?.avatar;
     const charName = character?.name || '角色';
     const coverImage = schedule?.coverImage;
+    const pal = palette(character);
 
     const startEdit = (idx: number, slot: ScheduleSlot) => {
         setEditingIdx(idx);
@@ -118,267 +172,262 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
         e.target.value = '';
     };
 
-    // Accent color derived from theme
-    const accentHsl = `hsl(${character?.themeColor || 260}, 70%, 65%)`;
-    const accentBg = `hsl(${character?.themeColor || 260}, 50%, 20%)`;
-    const cardBg = `hsl(${character?.themeColor || 260}, 40%, 12%)`;
-
     return (
         <div
-            className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/10"
+            className="relative rounded-[24px] overflow-hidden"
             style={{
-                background: `linear-gradient(145deg, ${cardBg}, hsl(${character?.themeColor || 260}, 35%, 8%))`,
-                color: contentColor,
+                background: CARD_BG,
+                border: `1px solid ${HAIRLINE}`,
+                boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 38px -28px rgba(38,38,38,0.30)',
+                color: INK,
             }}
         >
-            {/* Header */}
-            <div className="relative px-5 pt-5 pb-3 flex items-start justify-between">
-                <div>
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-bold tracking-[0.2em] uppercase opacity-50">Daily</span>
-                        <div className="h-px flex-1 opacity-20" style={{ background: contentColor }}></div>
-                    </div>
-                    <h2 className="text-2xl font-black tracking-tight" style={{ color: accentHsl }}>Schedule</h2>
+            {/* 可选封面：ins 个人页式头图，渐变收口后落入白底 */}
+            {coverImage && (
+                <div className="relative w-full h-24 overflow-hidden">
+                    <img src={coverImage} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 32%' }} />
+                    <div className="absolute inset-0" style={{ background: `linear-gradient(to bottom, rgba(255,255,255,0) 35%, ${CARD_BG} 98%)` }} />
+                    {!compact && onCoverImageChange && (
+                        <button
+                            onClick={() => coverInputRef.current?.click()}
+                            className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full flex items-center justify-center text-[11px] transition-transform active:scale-90"
+                            style={{ background: 'rgba(255,255,255,0.9)', color: INK_SOFT, boxShadow: '0 2px 8px rgba(38,38,38,0.12)' }}
+                            title="更换看板图"
+                        >
+                            ✎
+                        </button>
+                    )}
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20" style={{ background: accentBg }}>
+            )}
+
+            {/* ins 头部：故事环头像 + 名字 + 副标题 + 日期/重排 */}
+            <div className={`relative flex items-center gap-3 px-4 ${coverImage ? 'pt-1' : 'pt-4'} pb-3`}>
+                <StoryAvatar character={character} size={compact ? 42 : 48} ring={pal.ring} accent={pal.accent} />
+                <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-bold leading-tight truncate" style={{ color: INK }}>{charName}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] font-bold tracking-[0.16em] uppercase" style={{ color: pal.accent }}>Daily</span>
+                        <span className="w-1 h-1 rounded-full" style={{ background: INK_FAINT }} />
+                        <span className="text-[10.5px]" style={{ color: INK_SOFT }}>今日作息</span>
+                    </div>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[9.5px] font-bold tracking-wider px-2 py-0.5 rounded-full" style={{ background: '#f6f6f6', color: INK_SOFT }}>
                         {formatDate()}
                     </span>
                     {!compact && onReroll && (
                         <button
                             onClick={onReroll}
                             disabled={isGenerating}
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20 hover:border-white/40 transition-all active:scale-95 disabled:opacity-30"
-                            style={{ background: accentBg }}
+                            className="text-[9.5px] font-bold px-2 py-0.5 rounded-full transition-all active:scale-95 disabled:opacity-40"
+                            style={{ background: pal.accentTint, color: pal.accentDeep, border: `1px solid ${pal.accentBorder}` }}
                         >
-                            {isGenerating ? '生成中...' : '↻ 重新生成'}
+                            {isGenerating ? '生成中…' : '↻ 重排'}
                         </button>
                     )}
-                </div>
-            </div>
-
-            {/* Content: Character Image Banner on top, Schedule List below */}
-            <div className="flex flex-col">
-                {/* Character Image Banner */}
-                <div className="relative w-full h-32 overflow-hidden flex-shrink-0">
-                    {(coverImage || charAvatar) ? (
-                        <img
-                            src={coverImage || charAvatar}
-                            alt=""
-                            className="absolute inset-0 w-full h-full object-cover opacity-70"
-                            style={{ objectPosition: 'center 30%' }}
-                        />
-                    ) : (
-                        <div className="absolute inset-0 opacity-10" style={{ background: `linear-gradient(135deg, ${accentHsl}, transparent)` }}></div>
-                    )}
-
-                    {/* Bottom gradient for blending into schedule */}
-                    <div className="absolute inset-0 z-10" style={{ background: `linear-gradient(to bottom, transparent 30%, ${cardBg})` }}></div>
-
-                    {/* Character name label */}
-                    <div className="absolute bottom-2 right-3 z-20">
-                        <span className="text-[10px] font-bold opacity-50 tracking-widest uppercase">
-                            {charName}
-                        </span>
-                    </div>
-
-                    {/* Cover image upload (non-compact) */}
-                    {!compact && onCoverImageChange && (
+                    {!compact && onCoverImageChange && !coverImage && (
                         <button
                             onClick={() => coverInputRef.current?.click()}
-                            className="absolute top-2 right-2 z-20 w-6 h-6 rounded-full bg-black/40 flex items-center justify-center text-white/60 hover:text-white/90 transition-colors text-[10px]"
-                            title="更换看板图"
+                            className="text-[9.5px] px-2 py-0.5 rounded-full transition-all active:scale-95"
+                            style={{ background: '#f6f6f6', color: INK_SOFT }}
+                            title="添加看板图"
                         >
-                            ✎
+                            ＋图
                         </button>
                     )}
-                    <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
                 </div>
+                <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
+            </div>
 
-                {/* Schedule List */}
-                <div className="px-5 pb-5 pt-1 space-y-1 min-w-0">
-                    {isGenerating && !schedule ? (
-                        <div className="py-12 text-center">
-                            <div className="inline-block w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin mb-3"></div>
-                            <p className="text-xs opacity-40">正在生成日程...</p>
-                        </div>
-                    ) : schedule && schedule.slots.length > 0 ? (
-                        schedule.slots.map((slot, idx) => {
-                            const isCurrent = idx === currentIdx;
-                            const isPast = currentIdx >= 0 && idx < currentIdx;
-                            const isEditing = editingIdx === idx;
+            {/* 发丝分隔线 */}
+            <div className="mx-4" style={{ height: 1, background: HAIRLINE }} />
 
-                            if (isEditing && !compact) {
-                                return (
-                                    <div key={idx} className="p-3 rounded-xl border border-white/20" style={{ background: accentBg }}>
-                                        <div className="flex gap-2 mb-2">
-                                            <input
-                                                type="time"
-                                                value={editTime}
-                                                onChange={e => setEditTime(e.target.value)}
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs font-mono w-24 border border-white/10 focus:outline-none"
-                                            />
-                                            <input
-                                                value={editEmoji}
-                                                onChange={e => setEditEmoji(e.target.value)}
-                                                placeholder="emoji"
-                                                className="bg-white/10 rounded-lg px-2 py-1 text-xs w-14 border border-white/10 focus:outline-none text-center"
-                                            />
-                                        </div>
-                                        <input
-                                            value={editActivity}
-                                            onChange={e => setEditActivity(e.target.value)}
-                                            placeholder="活动"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-sm font-bold mb-1 border border-white/10 focus:outline-none"
-                                        />
-                                        <input
-                                            value={editDesc}
-                                            onChange={e => setEditDesc(e.target.value)}
-                                            placeholder="描述 (可选)"
-                                            className="w-full bg-white/10 rounded-lg px-2 py-1 text-xs border border-white/10 focus:outline-none opacity-70"
-                                        />
-                                        <div className="flex gap-2 mt-2">
-                                            <button onClick={saveEdit} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/20 hover:bg-white/30 transition-colors">保存</button>
-                                            <button onClick={() => setEditingIdx(null)} className="text-[10px] font-bold px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors opacity-60">取消</button>
-                                        </div>
-                                    </div>
-                                );
-                            }
+            {/* 作息列表（时间线 feed） */}
+            <div className="px-3.5 pb-4 pt-2 space-y-1 min-w-0">
+                {isGenerating && !schedule ? (
+                    <div className="py-12 text-center">
+                        <div className="inline-block w-6 h-6 border-2 rounded-full animate-spin mb-3" style={{ borderColor: pal.accentBorder, borderTopColor: pal.accent }}></div>
+                        <p className="text-xs" style={{ color: INK_FAINT }}>正在排今天的作息…</p>
+                    </div>
+                ) : schedule && schedule.slots.length > 0 ? (
+                    schedule.slots.map((slot, idx) => {
+                        const isCurrent = idx === currentIdx;
+                        const isPast = currentIdx >= 0 && idx < currentIdx;
+                        const isEditing = editingIdx === idx;
 
-                            const editable = !compact && !!onEdit;
-                            const pressHandlers = editable ? {
-                                onPointerDown: (e: React.PointerEvent) => {
-                                    // 只对主指针（鼠标左键 / 触屏首指）起反应，忽略右键
-                                    if (e.button !== undefined && e.button !== 0) return;
-                                    startLongPress(idx);
-                                },
-                                onPointerUp: () => cancelLongPress(),
-                                onPointerLeave: () => cancelLongPress(),
-                                onPointerCancel: () => cancelLongPress(),
-                                onClick: () => {
-                                    // 长按已触发时不再执行 tap-to-edit，避免抬手时误进入编辑
-                                    if (longPressTriggeredRef.current) {
-                                        longPressTriggeredRef.current = false;
-                                        return;
-                                    }
-                                    startEdit(idx, slot);
-                                },
-                                // 屏蔽原生长按右键菜单，避免与自定义长按冲突
-                                onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-                            } : {};
+                        if (isEditing && !compact) {
                             return (
-                                <div
-                                    key={idx}
-                                    className={`relative flex items-start gap-3 py-2 px-3 rounded-xl transition-all ${
-                                        isCurrent ? 'border border-white/20' : 'border border-transparent'
-                                    } ${editable ? 'cursor-pointer hover:bg-white/5 select-none' : ''}`}
-                                    style={isCurrent ? { background: accentBg } : {}}
-                                    {...pressHandlers}
-                                >
-                                    {/* Time */}
-                                    <div className="flex flex-col items-center w-12 flex-shrink-0">
-                                        <span className={`text-xs font-mono font-bold ${isPast ? 'opacity-30' : isCurrent ? 'opacity-100' : 'opacity-60'}`}>
-                                            {slot.startTime}
+                                <div key={idx} className="p-3 rounded-2xl" style={{ background: pal.accentTint, border: `1px solid ${pal.accentBorder}` }}>
+                                    <div className="flex gap-2 mb-2">
+                                        <input
+                                            type="time"
+                                            value={editTime}
+                                            onChange={e => setEditTime(e.target.value)}
+                                            className="rounded-lg px-2 py-1 text-xs font-mono w-24 focus:outline-none"
+                                            style={{ background: '#fff', border: `1px solid ${HAIRLINE}`, color: INK }}
+                                        />
+                                        <input
+                                            value={editEmoji}
+                                            onChange={e => setEditEmoji(e.target.value)}
+                                            placeholder="emoji"
+                                            className="rounded-lg px-2 py-1 text-xs w-14 focus:outline-none text-center"
+                                            style={{ background: '#fff', border: `1px solid ${HAIRLINE}`, color: INK }}
+                                        />
+                                    </div>
+                                    <input
+                                        value={editActivity}
+                                        onChange={e => setEditActivity(e.target.value)}
+                                        placeholder="活动"
+                                        className="w-full rounded-lg px-2 py-1 text-sm font-bold mb-1 focus:outline-none"
+                                        style={{ background: '#fff', border: `1px solid ${HAIRLINE}`, color: INK }}
+                                    />
+                                    <input
+                                        value={editDesc}
+                                        onChange={e => setEditDesc(e.target.value)}
+                                        placeholder="描述 (可选)"
+                                        className="w-full rounded-lg px-2 py-1 text-xs focus:outline-none"
+                                        style={{ background: '#fff', border: `1px solid ${HAIRLINE}`, color: INK_SOFT }}
+                                    />
+                                    <div className="flex gap-2 mt-2">
+                                        <button onClick={saveEdit} className="text-[10px] font-bold px-3 py-1 rounded-lg text-white transition-transform active:scale-95" style={{ background: pal.accent }}>保存</button>
+                                        <button onClick={() => setEditingIdx(null)} className="text-[10px] font-bold px-3 py-1 rounded-lg transition-transform active:scale-95" style={{ background: '#f0f0f0', color: INK_SOFT }}>取消</button>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const editable = !compact && !!onEdit;
+                        const pressHandlers = editable ? {
+                            onPointerDown: (e: React.PointerEvent) => {
+                                if (e.button !== undefined && e.button !== 0) return;
+                                startLongPress(idx);
+                            },
+                            onPointerUp: () => cancelLongPress(),
+                            onPointerLeave: () => cancelLongPress(),
+                            onPointerCancel: () => cancelLongPress(),
+                            onClick: () => {
+                                if (longPressTriggeredRef.current) {
+                                    longPressTriggeredRef.current = false;
+                                    return;
+                                }
+                                startEdit(idx, slot);
+                            },
+                            onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+                        } : {};
+                        return (
+                            <div
+                                key={idx}
+                                className={`relative flex items-start gap-2.5 py-2 px-2.5 rounded-2xl transition-all ${editable ? 'cursor-pointer select-none' : ''}`}
+                                style={isCurrent
+                                    ? { background: pal.accentTint, border: `1px solid ${pal.accentBorder}` }
+                                    : { border: '1px solid transparent' }}
+                                {...pressHandlers}
+                            >
+                                {/* Time */}
+                                <div className="flex flex-col items-center w-11 flex-shrink-0 pt-0.5">
+                                    <span className="text-xs font-mono font-bold tabular-nums" style={{ color: isPast ? INK_FAINT : isCurrent ? pal.accentDeep : INK }}>
+                                        {slot.startTime}
+                                    </span>
+                                    {slot.endTime && (
+                                        <span className="text-[8px] font-mono leading-none mt-0.5" style={{ color: INK_FAINT }}>
+                                            ~{slot.endTime}
                                         </span>
-                                        {slot.endTime && (
-                                            <span className={`text-[8px] font-mono leading-none mt-0.5 ${isPast ? 'opacity-20' : 'opacity-35'}`}>
-                                                ~{slot.endTime}
-                                            </span>
-                                        )}
+                                    )}
+                                </div>
+
+                                {/* Timeline dot + line */}
+                                <div className="flex flex-col items-center pt-1.5 flex-shrink-0 self-stretch">
+                                    <div
+                                        className="w-2.5 h-2.5 rounded-full"
+                                        style={{
+                                            border: `2px solid ${isCurrent ? pal.accent : isPast ? INK_FAINT : '#d8d6dd'}`,
+                                            background: isCurrent ? pal.accent : (isPast ? INK_FAINT : '#fff'),
+                                            boxShadow: isCurrent ? `0 0 0 3px ${pal.accentTint}` : 'none',
+                                        }}
+                                    />
+                                    {idx < schedule.slots.length - 1 && (
+                                        <div className="w-px flex-1 min-h-[18px] mt-1" style={{ background: HAIRLINE }}></div>
+                                    )}
+                                </div>
+
+                                {/* Content */}
+                                <div className={`flex-1 min-w-0 ${isPast ? 'opacity-45' : ''}`}>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {slot.emoji && <span className="text-sm flex-shrink-0">{slot.emoji}</span>}
+                                        <span className="text-[13.5px] font-bold" style={{ color: INK }}>{slot.activity}</span>
                                         {isCurrent && (
-                                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full mt-0.5 animate-pulse" style={{ background: accentHsl, color: cardBg }}>
+                                            <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded-full text-white animate-pulse" style={{ background: pal.accent }}>
                                                 NOW
                                             </span>
                                         )}
                                     </div>
-
-                                    {/* Timeline dot + line */}
-                                    <div className="flex flex-col items-center pt-1.5 flex-shrink-0">
-                                        <div
-                                            className={`w-2.5 h-2.5 rounded-full border-2 ${isPast ? 'opacity-30' : ''}`}
-                                            style={{
-                                                borderColor: isCurrent ? accentHsl : 'rgba(255,255,255,0.3)',
-                                                background: isCurrent ? accentHsl : (isPast ? 'rgba(255,255,255,0.15)' : 'transparent'),
-                                            }}
-                                        />
-                                        {idx < schedule.slots.length - 1 && (
-                                            <div className={`w-px flex-1 min-h-[16px] ${isPast ? 'opacity-15' : 'opacity-20'}`} style={{ background: contentColor }}></div>
-                                        )}
-                                    </div>
-
-                                    {/* Content */}
-                                    <div className={`flex-1 min-w-0 ${isPast ? 'opacity-30' : ''}`}>
-                                        <div className="flex items-center gap-1.5">
-                                            {slot.emoji && <span className="text-sm flex-shrink-0">{slot.emoji}</span>}
-                                            <span className={`text-sm font-bold ${isCurrent ? '' : ''}`}>{slot.activity}</span>
+                                    {slot.description && (
+                                        <p className="text-[11px] mt-0.5 leading-snug" style={{ color: INK_SOFT }}>{slot.description}</p>
+                                    )}
+                                    {/* 节点元信息：地点 / 情绪 / 精力 */}
+                                    {(slot.location || slot.mood || typeof slot.energy === 'number') && (
+                                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                                            {slot.location && (
+                                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: INK_SOFT }}>📍 {slot.location}</span>
+                                            )}
+                                            {slot.mood && (
+                                                <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: '#f4f4f5', color: INK_SOFT }}>{slot.mood}</span>
+                                            )}
+                                            {typeof slot.energy === 'number' && slot.energy > 0 && (
+                                                <span className="text-[9px] font-mono tracking-tighter" style={{ color: pal.accent }} title={`精力 ${slot.energy}/5`}>
+                                                    {'●'.repeat(Math.min(5, slot.energy))}{'○'.repeat(Math.max(0, 5 - slot.energy))}
+                                                </span>
+                                            )}
                                         </div>
-                                        {slot.description && (
-                                            <p className="text-[11px] opacity-50 mt-0.5 leading-tight">{slot.description}</p>
-                                        )}
-                                        {/* 节点元信息：地点 / 情绪 / 精力 */}
-                                        {(slot.location || slot.mood || typeof slot.energy === 'number') && (
-                                            <div className="flex flex-wrap items-center gap-1 mt-1">
-                                                {slot.location && (
-                                                    <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 opacity-65">📍 {slot.location}</span>
-                                                )}
-                                                {slot.mood && (
-                                                    <span className="inline-flex items-center text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 opacity-65">{slot.mood}</span>
-                                                )}
-                                                {typeof slot.energy === 'number' && slot.energy > 0 && (
-                                                    <span className="text-[9px] font-mono tracking-tighter opacity-45" title={`精力 ${slot.energy}/5`}>
-                                                        {'●'.repeat(Math.min(5, slot.energy))}{'○'.repeat(Math.max(0, 5 - slot.energy))}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                        {/* 当前时段：露出一句此刻的心里话 */}
-                                        {isCurrent && slot.innerThought && (
-                                            <p className="text-[10.5px] italic opacity-50 mt-1 leading-snug">「{slot.innerThought}」</p>
-                                        )}
-                                    </div>
+                                    )}
+                                    {/* 当前时段：露出一句此刻的心里话 */}
+                                    {isCurrent && slot.innerThought && (
+                                        <p className="text-[10.5px] italic mt-1 leading-snug" style={{ color: pal.accentDeep }}>「{slot.innerThought}」</p>
+                                    )}
                                 </div>
-                            );
-                        })
-                    ) : (
-                        <div className="py-12 text-center">
-                            <p className="text-xs opacity-30">暂无日程</p>
-                            {onReroll && (
-                                <button onClick={onReroll} className="mt-2 text-xs font-bold opacity-50 hover:opacity-80 transition-opacity" style={{ color: accentHsl }}>
-                                    生成今日日程
-                                </button>
-                            )}
-                        </div>
-                    )}
+                            </div>
+                        );
+                    })
+                ) : (
+                    <div className="py-12 text-center">
+                        <p className="text-xs" style={{ color: INK_FAINT }}>今天还没排作息</p>
+                        {onReroll && (
+                            <button onClick={onReroll} className="mt-2 text-xs font-bold px-3 py-1.5 rounded-full transition-transform active:scale-95" style={{ background: pal.accentTint, color: pal.accentDeep, border: `1px solid ${pal.accentBorder}` }}>
+                                生成今日作息
+                            </button>
+                        )}
+                    </div>
+                )}
 
-                    {/* OFFLINE footer */}
-                    {schedule && schedule.slots.length > 0 && (
-                        <div className="pt-2 pl-3">
-                            <span className="text-[10px] font-bold tracking-widest opacity-20">OFFLINE</span>
-                            <p className="text-[10px] opacity-15">就寝</p>
-                        </div>
-                    )}
-                </div>
-
+                {/* OFFLINE footer */}
+                {schedule && schedule.slots.length > 0 && (
+                    <div className="flex items-center gap-2 pt-2 pl-2.5">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: INK_FAINT }} />
+                        <span className="text-[10px] font-bold tracking-widest" style={{ color: INK_FAINT }}>OFFLINE · 就寝</span>
+                    </div>
+                )}
             </div>
 
             {/* 长按菜单：修改 / 删除 */}
             {actionIdx !== null && schedule && schedule.slots[actionIdx] && (
                 <div
-                    className="absolute inset-0 z-30 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
+                    className="absolute inset-0 z-30 flex items-end sm:items-center justify-center bg-black/30 backdrop-blur-sm"
                     onClick={() => setActionIdx(null)}
                 >
                     <div
-                        className="w-full sm:w-64 bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden"
+                        className="w-full sm:w-64 bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden"
+                        style={{ border: `1px solid ${HAIRLINE}` }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="px-4 py-3 border-b border-slate-100">
-                            <p className="text-xs text-slate-400">日程项</p>
-                            <p className="text-sm font-bold text-slate-700 truncate">
+                        <div className="px-4 py-3" style={{ borderBottom: `1px solid ${HAIRLINE}` }}>
+                            <p className="text-xs" style={{ color: INK_FAINT }}>作息项</p>
+                            <p className="text-sm font-bold truncate" style={{ color: INK }}>
                                 {schedule.slots[actionIdx].startTime} · {schedule.slots[actionIdx].activity}
                             </p>
                         </div>
                         <button
-                            className="w-full py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                            className="w-full py-3 text-sm font-bold transition-colors hover:bg-slate-50"
+                            style={{ color: INK }}
                             onClick={() => {
                                 const i = actionIdx;
                                 setActionIdx(null);
@@ -388,7 +437,8 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                             修改
                         </button>
                         <button
-                            className="w-full py-3 text-sm font-bold text-red-500 border-t border-slate-100 hover:bg-red-50 transition-colors"
+                            className="w-full py-3 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
+                            style={{ borderTop: `1px solid ${HAIRLINE}` }}
                             onClick={() => {
                                 const i = actionIdx;
                                 setActionIdx(null);
@@ -398,7 +448,8 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                             删除
                         </button>
                         <button
-                            className="w-full py-3 text-sm text-slate-400 border-t border-slate-100 hover:bg-slate-50 transition-colors"
+                            className="w-full py-3 text-sm transition-colors hover:bg-slate-50"
+                            style={{ color: INK_FAINT, borderTop: `1px solid ${HAIRLINE}` }}
                             onClick={() => setActionIdx(null)}
                         >
                             取消
@@ -406,16 +457,6 @@ const ScheduleCard: React.FC<ScheduleCardProps> = ({
                     </div>
                 </div>
             )}
-
-            {/* Decorative elements */}
-            <div className="absolute top-3 left-3 opacity-10 pointer-events-none">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill={contentColor}>
-                    <path d="M10 0l2.5 7.5H20l-6 4.5 2.5 7.5L10 15l-6.5 4.5L6 12 0 7.5h7.5z"/>
-                </svg>
-            </div>
-            <div className="absolute bottom-2 left-5 opacity-5 pointer-events-none text-[8px] font-mono tracking-widest">
-                DESIGN: NOI
-            </div>
         </div>
     );
 };
