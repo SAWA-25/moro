@@ -2,6 +2,13 @@
 
 这一套把「外卖 App」「来往·偷看心声」「聊天回形针」「岁时记」串成一条感情线。改这些前先读本篇。
 
+> **⚠️ 外卖 App 已更名「饭票」并整体换肤为「黑白拼贴手账」。** 桌面名 `饭票`（`constants.tsx`，图标 `ForkKnife`）。
+> `apps/TakeoutApp.tsx` 完全重写界面与文案（店名/按键图案/按键位置/口吻全部原创为手账口吻），但**不改、不减任何原功能**；
+> 视觉积木复用 `apps/theater/scrapbook.tsx`（与折子戏同一套黑白拼贴手账套件），食物 emoji 一律去色成灰阶。
+> 文案词表：订单＝「饭票/票根」、订单列表＝「票根夹」、菜篮/购物车、撕票下单、盖章签收、食评/食客留言墙、申诉条、跑腿（骑手）/铺子（商家）/平台。
+> 状态词集中在 `utils/takeout.ts:STATUS_LABEL`/`etaText`（灶上忙着/跑腿在路上/到门口·待签收/已签收/已作废），改这里即同步聊天小票（`MessageItem`）与灵动岛（`DynamicIsland`）。
+> 聊天小票（`MessageItem.tsx:TakeoutCardView`）同步换成黑白「饭票·票根」纸票。
+
 ## 1. 外卖：送达与现实同步 + 收货才能确认
 
 - 状态机在 `utils/takeout.ts:liveTakeoutStatus`。新增 `arrived`（已到达·待收货）：`now >= etaAt` 只进 `arrived`，**不再自动 `delivered`**。`delivered` 必须有 `deliveredAt`（用户手动确认，或给角色点的单到点后系统自动签收）。
@@ -27,6 +34,15 @@
 - **店铺评价**：店铺详情页底部「大家的评价」展示按店名稳定生成的 NPC 评价（`generateStoreReviews`：评分向店铺整体分靠拢、含商家回复、点赞数）。
 - **订单评价**：送达后（仅自己那份）可「评价此单」——星级 + 快捷标签（`reviewQuickTags`）+ 文字，存 `TakeoutOrder.review`。
 - **其它 NPC 评论**：发表评价后 `generateReviewReplies` 生成商家回复 + 1~2 条其它食客评论，挂在 `review.replies`，在订单详情里展示。
+
+## 2c. 「饭票」换肤时新增的玩法（不改原功能，纯增量）
+
+- **抽张饭票**（首页）：替你随机翻一家进店点菜（在当前筛选结果里随机），治选择困难。
+- **钉在墙上的常去铺子**：店铺详情可「钉住」，按店名存 `localStorage('moro_takeout_pinned_v1')`（`getPinnedStores`/`togglePinnedStore`）；首页顶端列出钉住的铺子，点一下直达（不在当前街上就转成搜索词）。
+- **照着再撕一张（再来一单）**：订单详情按旧票重建一个临时铺子 + 菜篮，直接进结算。
+- **备注快捷条**：结算页一串可点的备注芯片（少辣/多放饭/放门口…）追加进留言。
+- **给跑腿塞小费**：结算页可选小费（`TakeoutOrder.tip`，计入 `total`，被强制砍单时随 `total` 原路退回）；靠谱跑腿收到小费后回话更暖（`buildDeliveryReply` 注入 tip 提示，含本地兜底 `CANNED_RIDER_TIPPED`）。
+- **Prompt 加料**：`generateStoresAI`（店名更有烟火气/菜品写卖点/黑心店伪装更真）、`buildDeliveryReply`（跑腿/铺子/平台人设更鲜活 + 小费感知）、`laiwangPrompts.ts` 的 `proactiveTakeoutOrder`/`takeoutReceivedHint`（按天气时辰挑吃食、收到投喂的反应更具体）。
 
 ## 3. 聊天设置「角色主动为用户点外卖」开关
 

@@ -1,32 +1,83 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { ArrowLeft, MagnifyingGlass, Storefront, Star, Minus, Plus, Receipt, MapPin, ChatCircleDots, ArrowClockwise, CheckCircle, Bicycle, Warning, Wallet, Sparkle, ShieldWarning, SealCheck, HandCoins } from '@phosphor-icons/react';
-import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg } from '../types';
+import {
+    MagnifyingGlass, Star, Minus, Plus, Receipt, MapPin, ArrowClockwise, CheckCircle, Bicycle,
+    Warning, Sparkle, ShieldWarning, SealCheck, HandCoins, Coins, PushPin, Shuffle, CookingPot,
+    PaperPlaneRight, Storefront, Repeat, NotePencil, Package, ChatCircleDots,
+} from '@phosphor-icons/react';
+import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview } from '../types';
 import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
 import {
     generateStores, generateStoresAI, liveTakeoutStatus, STATUS_LABEL, etaText, newRider, PACK_FEE,
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
-    isTakeoutArrived, consumeTakeoutIntent, notifyTakeoutUpdated,
-    generateStoreReviews, reviewQuickTags, generateReviewReplies, type StoreNpcReview,
+    consumeTakeoutIntent, notifyTakeoutUpdated,
+    generateStoreReviews, reviewQuickTags, generateReviewReplies,
+    getPinnedStores, togglePinnedStore, type StoreNpcReview,
 } from '../utils/takeout';
-import { TakeoutReview } from '../types';
+import {
+    PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
+    SectionTag, DashedRule, PaperSheet, Polaroid, HALFTONE, TAPE_STRIPES, WASHI, INK, INK_SOFT, PAPER,
+} from './theater/scrapbook';
 
 /**
- * 外卖 App（参考美团）。店铺 AI 现搓 / 本地兜底，可进店点菜下单；订单可看配送进度、和骑手/商家/平台客服聊天；
- * 付款按钱包余额实扣（adjustUserBalance），支持自己付 / 找角色代付；店家有好有坏（黑心商家会缺斤少两/图文不符/
- * 强制砍单），骑手也有好有坏（超时/撒漏/偷吃/不送上门）—— 翻车后可一键投诉，平台核定后把赔付退回钱包。
+ * 「饭票」（原「外卖」）—— 黑白拼贴手账皮肤的吃食铺子。
+ * ──────────────────────────────────────────────────────────────
+ * 一整本米白报纸做的「饭票簿」：撕一张饭票点吃的，跑腿把热乎送到门口，盖个签收章收下。
+ * 完全重写界面与文案（店名/按键/位置/口吻全部原创为手账口吻），但不改、不减任何原功能：
+ *   现搓店铺(AI/本地) · 进铺点菜 · 撕票下单 · 配送进度 · 跟跑腿/铺子/平台对话 ·
+ *   自付/代付(钱包实扣) · 黑心铺子&坏跑腿事故 · 一键申诉退款 · 食评 + NPC 留言。
+ * 新增：抽张饭票(随机) · 钉常去的铺子 · 照着再撕一张(再来一单) · 备注快捷条 · 给跑腿塞小费。
+ * 视觉积木复用 theater/scrapbook（黑白拼贴手账统一套件）；食物 emoji 一律去色成灰阶。
  */
 
-const Y = '#FFD161';      // 顶栏黄
-const O = '#FF5339';      // 主橙红
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const ADDR_KEY = 'moro_takeout_address';
 const CATS = ['全部', '中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
+const NOTE_CHIPS = ['少辣', '多放饭', '多给餐具', '不要香菜', '放门口别敲门', '微辣多醋', '打包结实点', '调料另放'];
+const TIP_CHOICES = [0, 2, 5, 8];
+const STAR_WORDS = ['', '难吃', '一般', '还行', '满意', '绝了'];
 
 type View = 'home' | 'store' | 'checkout' | 'orders' | 'detail';
 type ChatTarget = 'rider' | 'store' | 'support';
+
+const paperInput: React.CSSProperties = {
+    background: 'rgba(255,253,247,0.9)', color: '#36322b',
+    border: '1px solid rgba(176,170,158,0.7)', outline: '1px dashed rgba(150,144,132,0.4)', outlineOffset: -4,
+};
+
+// 是否是可作 <img> 的头像（URL/data），否则当 emoji 文字
+const isImg = (s?: string) => !!s && /^(https?:|data:|blob:)/.test(s);
+
+// ── 去色食物 emoji（呼应「照片一律 grayscale」的黑白规矩）──
+const Emo: React.FC<{ e?: string; size?: number; className?: string }> = ({ e = '🍽️', size = 22, className = '' }) => (
+    <span className={className} aria-hidden style={{ fontSize: size, lineHeight: 1, display: 'inline-block', filter: 'grayscale(1) contrast(1.03)' }}>{e}</span>
+);
+
+// ── 墨色星星（评分）──
+const Stars: React.FC<{ n: number; size?: number }> = ({ n, size = 12 }) => (
+    <span className="inline-flex items-center gap-0.5">
+        {[1, 2, 3, 4, 5].map(i => <Star key={i} size={size} weight="fill" color={i <= Math.round(n) ? INK : 'rgba(31,29,26,0.16)'} />)}
+    </span>
+);
+
+// ── 纸面切换芯片（墨底=选中 / 纸底=未选）──
+const ChoiceChip: React.FC<{ on?: boolean; onClick?: () => void; children: React.ReactNode; icon?: React.ReactNode; className?: string; title?: string }> = ({ on, onClick, children, icon, className = '', title }) => (
+    <button onClick={onClick} title={title} className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-[7px] text-[12px] font-bold shrink-0 active:scale-95 transition-transform ${className}`}
+        style={on
+            ? { background: INK, color: PAPER, boxShadow: '0 7px 14px -9px rgba(31,29,26,0.65)' }
+            : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.7)' }}>
+        {icon}{children}
+    </button>
+);
+
+// ── 门脸：去色 emoji 装进小纸框（店铺/菜品 logo）──
+const Shopfront: React.FC<{ e?: string; size?: number; box?: number }> = ({ e, size = 30, box = 56 }) => (
+    <div className="shrink-0 flex items-center justify-center" style={{ width: box, height: box, borderRadius: 10, background: '#efeae0', border: '1px solid rgba(176,170,158,0.7)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6)' }}>
+        <Emo e={e} size={size} />
+    </div>
+);
 
 const TakeoutApp: React.FC = () => {
     const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast, adjustUserBalance } = useOS();
@@ -45,32 +96,31 @@ const TakeoutApp: React.FC = () => {
     const [orders, setOrders] = useState<TakeoutOrder[]>([]);
     const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
+    const [pinned, setPinned] = useState<string[]>(() => getPinnedStores());
 
     // 结算配置
     const [recipient, setRecipient] = useState('me');
     const [payer, setPayer] = useState('me');
-    // 从聊天回形针「点外卖」进来时预设的收货角色（一次性）
     const [intentCharId, setIntentCharId] = useState<string | null>(null);
     const [address, setAddress] = useState(() => { try { return localStorage.getItem(ADDR_KEY) || '城南花园 3 栋 502'; } catch { return '城南花园 3 栋 502'; } });
     const [note, setNote] = useState('');
+    const [tip, setTip] = useState(0);
 
-    // 骑手 / 商家 / 平台客服聊天
+    // 跟跑腿 / 铺子 / 平台对话
     const [chatTarget, setChatTarget] = useState<ChatTarget>('rider');
     const [chatInput, setChatInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
 
-    // 评价
-    const [reviewing, setReviewing] = useState(false);      // 评价弹窗开
+    // 食评
+    const [reviewing, setReviewing] = useState(false);
     const [reviewRating, setReviewRating] = useState(5);
     const [reviewTags, setReviewTags] = useState<string[]>([]);
     const [reviewText, setReviewText] = useState('');
-    // 店铺 NPC 评价（按店名稳定生成）
     const storeReviews = useMemo<StoreNpcReview[]>(() => activeStore ? generateStoreReviews(activeStore.name, activeStore.rating) : [], [activeStore]);
 
     const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
     useEffect(() => { void reloadOrders(); }, []);
     useEffect(() => { const t = setInterval(() => setNow(Date.now()), 15000); return () => clearInterval(t); }, []);
-    // 聊天回形针「点外卖」带来的下单意图：预设收货角色，提示用户在选店点菜后直接结算。
     useEffect(() => {
         const intent = consumeTakeoutIntent();
         if (intent?.recipientCharId && characters.some(c => c.id === intent.recipientCharId)) {
@@ -79,7 +129,6 @@ const TakeoutApp: React.FC = () => {
         }
     }, [characters]);
 
-    // 进店前先让 AI 现搓一批店铺（配了副 API / 主 API 才走，否则保留本地兜底）。
     const loadStoresAI = async () => {
         if (!aiReady || aiLoading) return;
         setAiLoading(true);
@@ -110,26 +159,64 @@ const TakeoutApp: React.FC = () => {
 
     // ── 操作 ──
     const refresh = () => {
-        if (aiReady) { void loadStoresAI(); addToast('AI 正在现搓一批新店…', 'info'); }
-        else { setStores(generateStores(12)); addToast('换了一批店～', 'info'); }
+        if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
+        else { setStores(generateStores(12)); addToast('翻到另一条街啦～', 'info'); }
     };
     const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setView('store'); };
     const setQty = (dishId: string, delta: number) => setCart(prev => ({ ...prev, [dishId]: Math.max(0, (prev[dishId] || 0) + delta) }));
 
+    // 抽张饭票：命运替你翻一家进去
+    const randomPick = () => {
+        const pool = filteredStores.length ? filteredStores : stores;
+        if (!pool.length) return;
+        const s = pool[Math.floor(Math.random() * pool.length)];
+        addToast(`命运替你翻到了「${s.name}」`, 'info');
+        openStore(s);
+    };
+
+    // 钉 / 取常去的铺子
+    const togglePin = (name: string) => {
+        const next = togglePinnedStore(name);
+        setPinned(next);
+        addToast(next.includes(name) ? '钉住啦，下回好找～' : '从墙上取下了', 'info');
+    };
+    const openPinned = (name: string) => {
+        const s = stores.find(x => x.name === name);
+        if (s) openStore(s);
+        else { setQuery(name); setCat('全部'); addToast('这条街上暂没这家，帮你搜搜看', 'info'); }
+    };
+
+    const addNoteChip = (t: string) => setNote(prev => prev.includes(t) ? prev : (prev ? `${prev}；${t}` : t));
+
     const goCheckout = () => {
         if (!activeStore) return;
-        if (cartSubtotal < activeStore.minOrder) { addToast(`还差 ¥${activeStore.minOrder - cartSubtotal} 起送`, 'info'); return; }
-        // 从聊天「点外卖」进来时，默认收货人就是那个角色；否则默认送给自己。
-        setRecipient(intentCharId || 'me'); setPayer('me'); setNote('');
+        if (cartSubtotal < activeStore.minOrder) { addToast(`再凑 ¥${activeStore.minOrder - cartSubtotal} 就能起送`, 'info'); return; }
+        setRecipient(intentCharId || 'me'); setPayer('me'); setNote(''); setTip(0);
+        setView('checkout');
+    };
+
+    // 照着再撕一张：用旧票重建一个临时铺子 + 菜篮，直接进结算
+    const reorder = (o: TakeoutOrder) => {
+        const mins = Math.max(15, Math.round((o.etaAt - o.placedAt) / 60000)) || 30;
+        const pseudo: TakeoutStore = {
+            id: o.storeId, name: o.storeName, emoji: o.storeEmoji, category: '中餐',
+            rating: 4.6, monthlySales: 0, deliveryMinutes: mins, deliveryFee: o.deliveryFee,
+            minOrder: 0, distanceKm: 1, integrity: 0.85,
+            dishes: o.items.map(i => ({ id: i.dishId, name: i.name, price: i.price, emoji: i.emoji, popular: false })),
+        };
+        setActiveStore(pseudo);
+        setCart(Object.fromEntries(o.items.map(i => [i.dishId, i.qty])));
+        const keepRecipient = o.recipient === 'me' || characters.some(c => c.id === o.recipient) ? o.recipient : 'me';
+        setRecipient(keepRecipient); setPayer('me'); setNote(o.note || ''); setTip(0);
+        addToast('照着又撕了一张，核对下就能下单～', 'info');
         setView('checkout');
     };
 
     const placeOrder = async () => {
         if (!activeStore || cartItems.length === 0) return;
-        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE;
+        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip;
         const payByMe = payer === 'me';
-        // 扣款按钱包余额：自己付且余额不足直接拦下
-        if (payByMe && wallet < total) { addToast(`钱包余额不足（¥${wallet} / 应付 ¥${total}）`, 'error'); return; }
+        if (payByMe && wallet < total) { addToast(`饭钱不够：钱包 ¥${wallet} / 这张票要 ¥${total}`, 'error'); return; }
         try { localStorage.setItem(ADDR_KEY, address); } catch { /* ignore */ }
 
         const rider = newRider();
@@ -137,7 +224,6 @@ const TakeoutApp: React.FC = () => {
         const charId = recipient !== 'me' ? recipient : (payer !== 'me' ? payer : undefined);
         const roll = rollOrderIssues(activeStore, cartItems, cartSubtotal, activeStore.deliveryFee);
 
-        // 实扣钱包
         if (payByMe) adjustUserBalance(-total);
 
         const base: TakeoutOrder = {
@@ -145,6 +231,7 @@ const TakeoutApp: React.FC = () => {
             storeId: activeStore.id, storeName: activeStore.name, storeEmoji: activeStore.emoji,
             items: cartItems,
             subtotal: cartSubtotal, deliveryFee: activeStore.deliveryFee, packFee: PACK_FEE,
+            tip: tip || undefined,
             total,
             recipient, payer, charId,
             payStatus: 'paid',
@@ -161,15 +248,14 @@ const TakeoutApp: React.FC = () => {
 
         let order: TakeoutOrder;
         if (roll.forceCancel) {
-            // 黑心店收了钱迟迟不接单 → 强制砍单 + 原路退款
             if (payByMe) adjustUserBalance(total);
             order = {
                 ...base,
                 status: 'cancelled',
                 cancelledByStore: true,
-                chat: [{ role: 'support', text: `「${activeStore.name}」长时间未接单，系统已自动取消并原路退款 ¥${total}。`, at: Date.now() } as TakeoutChatMsg],
+                chat: [{ role: 'support', text: `「${activeStore.name}」长时间未接单，平台已替你作废这张饭票并原路退款 ¥${total}。`, at: Date.now() } as TakeoutChatMsg],
                 chatTarget: 'support',
-                complaint: { filed: true, resolved: true, outcome: `商家长时间未接单，订单自动取消并原路退款 ¥${payByMe ? total : 0}。`, refunded: payByMe ? total : 0 },
+                complaint: { filed: true, resolved: true, outcome: `铺子长时间不接单，饭票作废、原路退回 ¥${payByMe ? total : 0}。`, refunded: payByMe ? total : 0 },
             };
         } else {
             order = { ...base, incidents: roll.incidents };
@@ -186,8 +272,8 @@ const TakeoutApp: React.FC = () => {
         setIntentCharId(null);
         setCart({});
         setView('detail');
-        if (order.cancelledByStore) addToast('商家迟迟未接单，已自动退款 🙄', 'info');
-        else addToast(payByMe ? '下单成功，骑手马上接单🛵' : `已下单，已通知 ${nameOf(payer)} 代付`, 'success');
+        if (order.cancelledByStore) addToast('铺子迟迟不接单，已替你作废退款 🙄', 'info');
+        else addToast(payByMe ? '票撕好了，跑腿这就去取餐 🛵' : `票开好了，已捎话请 ${nameOf(payer)} 付`, 'success');
     };
 
     const sendChat = async () => {
@@ -213,10 +299,9 @@ const TakeoutApp: React.FC = () => {
         if (order.charId) { try { await postTakeoutDeliveredToChat(done); } catch { /* ignore */ } }
         notifyTakeoutUpdated();
         await reloadOrders();
-        addToast('已确认收货～', 'success');
+        addToast('签收章盖好啦，趁热吃～', 'success');
     };
 
-    // 一键投诉：平台核定赔付 → 退回钱包（自己付才退到自己钱包），并补两条客服消息
     const fileComplaint = async (order: TakeoutOrder) => {
         if (!hasOpenIssues(order)) return;
         const { refund, outcome, supportMessages } = resolveComplaint(order);
@@ -232,7 +317,7 @@ const TakeoutApp: React.FC = () => {
         if (order.charId) { try { await postTakeoutIssueToChat(order); } catch { /* ignore */ } }
         await reloadOrders();
         setChatTarget('support');
-        addToast(credited > 0 ? `平台已赔付 ¥${credited} 到钱包` : (refund > 0 ? `已为 ${nameOf(order.payer)} 退回 ¥${refund}` : '已提交投诉，平台会跟进'), credited > 0 ? 'success' : 'info');
+        addToast(credited > 0 ? `平台判赔 ¥${credited}，已退回饭钱袋` : (refund > 0 ? `已为 ${nameOf(order.payer)} 退回 ¥${refund}` : '申诉条递上去了，平台会跟进'), credited > 0 ? 'success' : 'info');
     };
 
     const openReview = (order: TakeoutOrder) => {
@@ -256,488 +341,574 @@ const TakeoutApp: React.FC = () => {
         notifyTakeoutUpdated();
         await reloadOrders();
         setReviewing(false);
-        addToast('评价成功，感谢反馈～', 'success');
+        addToast('食评贴上墙啦，谢谢你的滋味～', 'success');
     };
 
     const toggleReviewTag = (t: string) => setReviewTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
 
-    const recipientOptions = [{ id: 'me', label: '我自己' }, ...characters.map(c => ({ id: c.id, label: c.name }))];
+    const recipientOptions = [{ id: 'me', label: '我自己', avatar: userProfile.avatar }, ...characters.map(c => ({ id: c.id, label: c.name, avatar: c.avatar }))];
 
-    // ════════════════ 渲染 ════════════════
-    const Stars = ({ n, size = 12 }: { n: number; size?: number }) => (
-        <span className="inline-flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map(i => <Star key={i} size={size} weight="fill" color={i <= Math.round(n) ? '#ff9500' : '#e2e2e2'} />)}
+    // ── 钱袋纸签 ──
+    const walletChip = (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-[12px] font-black" style={{ background: '#efeae0', color: INK, border: '1px solid rgba(176,170,158,0.7)' }} title="饭钱">
+            <Coins size={13} weight="fill" />¥{wallet}
         </span>
     );
-    const topBar = (title: string, onBack: () => void, right?: React.ReactNode) => (
-        <div className="shrink-0 flex items-center justify-between px-3 py-2.5" style={{ background: Y, paddingTop: 'calc(var(--safe-top) + 8px)' }}>
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/5 active:scale-90 transition"><ArrowLeft size={18} weight="bold" color="#4a3000" /></button>
-            <span className="text-[15px] font-black" style={{ color: '#4a3000' }}>{title}</span>
-            <div className="w-8 h-8 flex items-center justify-center">{right}</div>
-        </div>
+    // 选人拍立得（送给谁 / 谁来付 共用）
+    const personPolaroid = (o: { id: string; label: string; avatar?: string }, on: boolean, onClick: () => void) => (
+        <Polaroid
+            key={o.id}
+            src={isImg(o.avatar) ? o.avatar : undefined}
+            fallback={<Emo e={isImg(o.avatar) ? '🙂' : (o.avatar || '🙂')} size={24} />}
+            caption={o.label}
+            selected={on}
+            onClick={onClick}
+            size={48}
+        />
     );
 
-    const walletChip = (
-        <div className="flex items-center gap-1 text-[12px] font-black px-2 py-1 rounded-full bg-black/5" style={{ color: '#4a3000' }} title="钱包余额">
-            <Wallet size={13} weight="fill" />¥{wallet}
-        </div>
-    );
-
-    // —— 首页 ——
+    // ════════════════════════ 首页·饭票簿 ════════════════════════
     if (view === 'home') {
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
-                <div className="shrink-0 px-3 pb-3" style={{ background: `linear-gradient(180deg, ${Y}, #FFE39A)`, paddingTop: 'calc(var(--safe-top) + 10px)' }}>
-                    <div className="flex items-center justify-between gap-2">
-                        <button onClick={closeApp} className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-black/5 active:scale-90 transition"><ArrowLeft size={18} weight="bold" color="#4a3000" /></button>
-                        <div className="flex items-center gap-1 text-[13px] font-bold min-w-0" style={{ color: '#4a3000' }}>
-                            <MapPin size={15} weight="fill" /><span className="truncate max-w-[120px]">{address}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            {walletChip}
-                            <button onClick={() => setView('orders')} className="w-8 h-8 flex items-center justify-center rounded-full bg-black/5 active:scale-90 transition" title="我的订单"><Receipt size={18} weight="bold" color="#4a3000" /></button>
-                        </div>
-                    </div>
-                    <div className="mt-2.5 flex items-center gap-2 bg-white rounded-full px-3 py-2 shadow-sm">
-                        <MagnifyingGlass size={16} color="#999" />
-                        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="搜店铺 / 搜菜品" className="flex-1 min-w-0 bg-transparent text-[13px] outline-none placeholder:text-slate-300" />
-                        <button onClick={refresh} disabled={aiLoading} className="text-[12px] font-bold flex items-center gap-1 disabled:opacity-50" style={{ color: O }}>
-                            {aiLoading ? <><Sparkle size={14} weight="fill" className="animate-pulse" />现搓中…</> : <><ArrowClockwise size={14} weight="bold" />{aiReady ? 'AI现搓' : '换一批'}</>}
+            <PaperShell key="home">
+                <ScrapHeader
+                    title="饭票" en="MEAL TICKET" onBack={closeApp} backLabel="回桌面"
+                    right={<button onClick={() => setView('orders')} className="relative inline-flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }} title="票根夹">
+                        <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.amber.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(2deg)' }} />
+                        <span className="relative z-10 flex items-center gap-1"><Receipt size={13} weight="bold" />票根夹</span>
+                    </button>}
+                />
+
+                {/* 地址 + 钱袋 */}
+                <div className="relative z-10 px-5 flex items-center justify-between gap-2">
+                    <StickyNote color="butter" rotate={-1.5} className="px-2.5 py-1 flex items-center gap-1 min-w-0">
+                        <MapPin size={13} weight="fill" />
+                        <span className="text-[8px] tracking-[0.2em]" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>送到</span>
+                        <span className="text-[11.5px] font-bold truncate max-w-[150px]" style={{ color: '#3a362f' }}>{address}</span>
+                    </StickyNote>
+                    {walletChip}
+                </div>
+
+                {/* 搜索 + 现写 + 抽饭票 */}
+                <div className="relative z-10 px-5 pt-2.5">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-[10px]" style={paperInput}>
+                        <MagnifyingGlass size={15} color={INK_SOFT} />
+                        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="翻翻铺子，找点想吃的…" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
+                        <button onClick={refresh} disabled={aiLoading} className="text-[11px] font-black flex items-center gap-1 disabled:opacity-50" style={{ color: INK }}>
+                            {aiLoading ? <><Sparkle size={13} weight="fill" className="animate-pulse" />现写中…</> : <><ArrowClockwise size={13} weight="bold" />{aiReady ? '现写一条街' : '另逛一条街'}</>}
                         </button>
                     </div>
+                    <button onClick={randomPick} className="mt-2.5 w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-[10px] text-[13px] font-black active:scale-[0.98] transition-transform" style={{ background: INK, color: PAPER, outline: '1px dashed rgba(255,255,255,0.32)', outlineOffset: -4, boxShadow: '0 12px 22px -14px rgba(31,29,26,0.6)' }}>
+                        <Shuffle size={16} weight="bold" />抽张饭票 · 替我拿主意
+                    </button>
                 </div>
-                {/* 分类 */}
-                <div className="shrink-0 flex gap-2 overflow-x-auto no-scrollbar px-3 py-2.5 bg-white border-b border-slate-100">
+
+                {/* 钉在墙上的常去铺子 */}
+                {pinned.length > 0 && (
+                    <div className="relative z-10 px-5 pt-3">
+                        <div className="text-[8.5px] tracking-[0.3em] mb-1.5 flex items-center gap-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}><PushPin size={10} weight="fill" />钉在墙上 · USUAL HAUNTS</div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                            {pinned.map(n => (
+                                <button key={n} onClick={() => openPinned(n)} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.7)' }}>📌 {n}</button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* 品类纸标签 */}
+                <div className="relative z-10 shrink-0 flex gap-2 overflow-x-auto no-scrollbar px-5 pt-3 pb-1">
                     {CATS.map(c => (
-                        <button key={c} onClick={() => setCat(c)} className="shrink-0 px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={cat === c ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>{c}</button>
+                        <ChoiceChip key={c} on={cat === c} onClick={() => setCat(c)}>{c === '全部' ? '不挑食' : c}</ChoiceChip>
                     ))}
                 </div>
-                {/* 店铺列表 */}
-                <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-2 space-y-2.5">
-                    {aiLoading && stores.length === 0 && <div className="text-center text-[12px] text-slate-400 py-10 flex items-center justify-center gap-1.5"><Sparkle size={16} weight="fill" className="animate-pulse" />AI 正在现搓店铺…</div>}
-                    {filteredStores.length === 0 && !aiLoading && <div className="text-center text-[12px] text-slate-400 py-10">没有匹配的店铺，换个词或点「{aiReady ? 'AI现搓' : '换一批'}」。</div>}
-                    {filteredStores.map(s => (
-                        <button key={s.id} onClick={() => openStore(s)} className="w-full text-left bg-white rounded-2xl p-3 flex gap-3 shadow-sm active:scale-[0.99] transition">
-                            <div className="w-16 h-16 rounded-xl flex items-center justify-center text-[34px] shrink-0" style={{ background: '#fff6e6' }}>{s.emoji}</div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="text-[14px] font-black text-slate-800 truncate">{s.name}</span>
-                                    {s.aiGenerated && <Sparkle size={12} weight="fill" className="shrink-0" color="#c084fc" />}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                                    <span className="flex items-center gap-0.5" style={{ color: '#ff9500' }}><Star size={11} weight="fill" />{s.rating}</span>
-                                    <span>月售{s.monthlySales}</span>
-                                    <span>·</span><span>{s.distanceKm}km</span>
-                                </div>
-                                <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
-                                    <span className="flex items-center gap-0.5"><Bicycle size={12} weight="fill" color={O} />{s.deliveryMinutes}分钟</span>
-                                    <span>{s.deliveryFee === 0 ? '免配送费' : `配送¥${s.deliveryFee}`}</span>
-                                    <span>起送¥{s.minOrder}</span>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                    {s.promo && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff0ec', color: O }}>🎫 {s.promo}</span>}
-                                    {s.warning && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff4e5', color: '#c2410c' }}><Warning size={11} weight="fill" />{s.warning}</span>}
-                                </div>
-                            </div>
-                        </button>
-                    ))}
-                    <div className="h-2" />
-                </div>
-            </div>
+
+                {/* 铺子列表 */}
+                <ScrapScroll className="px-5 pt-2 pb-10">
+                    <SectionTag en="THE STREET" className="mb-3">这条街上的铺子</SectionTag>
+                    {aiLoading && stores.length === 0 && <div className="text-center text-[12px] py-12 flex items-center justify-center gap-1.5" style={{ color: INK_SOFT }}><Sparkle size={16} weight="fill" className="animate-pulse" />正在一笔笔现写这条街…</div>}
+                    {filteredStores.length === 0 && !aiLoading && <div className="text-center text-[12px] py-12" style={{ color: INK_SOFT }}>这条街上没找着，换个词或点「{aiReady ? '现写一条街' : '另逛一条街'}」。</div>}
+                    <div className="space-y-3.5">
+                        {filteredStores.map((s, i) => {
+                            const tape = (['amber', 'sage', 'lilac', 'butter'] as const)[i % 4];
+                            return (
+                                <PaperCard key={s.id} tilt={i % 2 === 0 ? -0.6 : 0.5} tape={i % 3 === 0 ? tape : null} onClick={() => openStore(s)} className="px-3.5 py-3.5">
+                                    <div className="flex gap-3.5">
+                                        <Shopfront e={s.emoji} size={32} box={58} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[15px] font-black truncate" style={{ color: INK }}>{s.name}</span>
+                                                {s.aiGenerated && <WashiTape color="ink" rotate={-4} className="px-1 py-px text-[7px] tracking-[0.2em] rounded-[2px]" style={{ fontFamily: 'var(--font-label)' }}>现写</WashiTape>}
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: '#6b665c' }}>
+                                                <span className="flex items-center gap-0.5"><Stars n={s.rating} size={10} /><b style={{ color: INK }}>{s.rating}</b></span>
+                                                <span>卖出 {s.monthlySales}</span>
+                                                <span>·</span><span>{s.distanceKm}km</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: '#6b665c' }}>
+                                                <span className="flex items-center gap-0.5"><Bicycle size={12} weight="fill" />{s.deliveryMinutes}分到手</span>
+                                                <span>{s.deliveryFee === 0 ? '免跑腿费' : `跑腿¥${s.deliveryFee}`}</span>
+                                                <span>{s.minOrder ? `够¥${s.minOrder}起送` : '无门槛'}</span>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                                {s.promo && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}>票面优惠 · {s.promo}</span>}
+                                                {s.warning && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: INK, color: PAPER }}><Warning size={11} weight="fill" />街坊提醒 · {s.warning}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </PaperCard>
+                            );
+                        })}
+                    </div>
+                </ScrapScroll>
+            </PaperShell>
         );
     }
 
-    // —— 店铺详情 / 点菜 ——
+    // ════════════════════════ 铺子·点菜 ════════════════════════
     if (view === 'store' && activeStore) {
+        const isPinned = pinned.includes(activeStore.name);
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
-                {topBar(activeStore.name, () => setView('home'), walletChip)}
-                <div className="shrink-0 bg-white px-4 py-3 flex items-center gap-3 border-b border-slate-100">
-                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-[30px]" style={{ background: '#fff6e6' }}>{activeStore.emoji}</div>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-[15px] font-black text-slate-800 truncate">{activeStore.name}</span>
-                            {activeStore.aiGenerated && <Sparkle size={12} weight="fill" className="shrink-0" color="#c084fc" />}
+            <PaperShell key="store">
+                <ScrapHeader
+                    title={activeStore.name} en="THE SHOP" onBack={() => setView('home')} backLabel="回街上"
+                    right={<button onClick={() => togglePin(activeStore.name)} className="inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={{ color: isPinned ? PAPER : '#36322b', background: isPinned ? INK : 'transparent', borderRadius: 6, border: isPinned ? 'none' : '1px dashed rgba(150,144,132,0.7)' }} title="钉住常去">
+                        <PushPin size={13} weight={isPinned ? 'fill' : 'bold'} />{isPinned ? '已钉' : '钉住'}
+                    </button>}
+                />
+                <div className="relative z-10 px-5">
+                    <PaperCard tilt={-0.5} className="px-4 py-3.5 flex items-center gap-3 overflow-hidden">
+                        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
+                        <Shopfront e={activeStore.emoji} size={30} box={54} />
+                        <div className="min-w-0 flex-1 relative">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[16px] font-black truncate" style={{ color: INK }}>{activeStore.name}</span>
+                                {activeStore.aiGenerated && <Sparkle size={12} weight="fill" style={{ color: INK_SOFT }} />}
+                            </div>
+                            <div className="text-[11px] mt-0.5 flex items-center gap-2" style={{ color: '#6b665c' }}>
+                                <span className="flex items-center gap-0.5"><Star size={11} weight="fill" color={INK} /><b style={{ color: INK }}>{activeStore.rating}</b></span>
+                                <span>卖出{activeStore.monthlySales} · {activeStore.deliveryMinutes}分 · {activeStore.distanceKm}km</span>
+                            </div>
+                            {activeStore.blurb && <div className="text-[11px] mt-1 italic truncate" style={{ color: INK_SOFT }}>「{activeStore.blurb}」</div>}
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {activeStore.promo && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}>票面优惠 · {activeStore.promo}</span>}
+                                {activeStore.warning && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: INK, color: PAPER }}><Warning size={11} weight="fill" />{activeStore.warning}</span>}
+                            </div>
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
-                            <span className="flex items-center gap-0.5" style={{ color: '#ff9500' }}><Star size={11} weight="fill" />{activeStore.rating}</span>
-                            <span>月售{activeStore.monthlySales} · {activeStore.deliveryMinutes}分钟 · {activeStore.distanceKm}km</span>
-                        </div>
-                        {activeStore.blurb && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{activeStore.blurb}</div>}
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                            {activeStore.promo && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff0ec', color: O }}>🎫 {activeStore.promo}</span>}
-                            {activeStore.warning && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff4e5', color: '#c2410c' }}><Warning size={11} weight="fill" />{activeStore.warning}</span>}
-                        </div>
-                    </div>
+                    </PaperCard>
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-2 space-y-2">
-                    {activeStore.dishes.map(d => (
-                        <div key={d.id} className="bg-white rounded-xl p-3 flex gap-3 items-center">
-                            <div className="w-14 h-14 rounded-lg flex items-center justify-center text-[26px] shrink-0" style={{ background: '#faf7f2' }}>{d.emoji || '🍽️'}</div>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-[13.5px] font-bold text-slate-800 truncate">{d.name}{d.popular && <span className="ml-1 text-[9px] px-1 py-0.5 rounded" style={{ background: '#fff0ec', color: O }}>招牌</span>}</div>
-                                {d.desc && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{d.desc}</div>}
-                                <div className="text-[14px] font-black mt-1" style={{ color: O }}>¥{d.price}</div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                {(cart[d.id] || 0) > 0 && <>
-                                    <button onClick={() => setQty(d.id, -1)} className="w-6 h-6 rounded-full border flex items-center justify-center active:scale-90" style={{ borderColor: O, color: O }}><Minus size={13} weight="bold" /></button>
-                                    <span className="text-[13px] font-bold w-4 text-center">{cart[d.id]}</span>
-                                </>}
-                                <button onClick={() => setQty(d.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center text-white active:scale-90" style={{ background: O }}><Plus size={13} weight="bold" /></button>
-                            </div>
-                        </div>
-                    ))}
 
-                    {/* 大家的评价（NPC 评论） */}
-                    <div className="bg-white rounded-xl p-3.5 mt-1">
+                <ScrapScroll className="px-5 pt-3 pb-28">
+                    <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
+                    <div className="space-y-2.5">
+                        {activeStore.dishes.map(d => (
+                            <div key={d.id} className="flex gap-3 items-center px-3 py-2.5 rounded-[12px]" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                <Shopfront e={d.emoji} size={24} box={46} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
+                                        {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
+                                    </div>
+                                    {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
+                                    <div className="text-[14px] font-black mt-1" style={{ color: INK }}>¥{d.price}</div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {(cart[d.id] || 0) > 0 && <>
+                                        <button onClick={() => setQty(d.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
+                                        <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{cart[d.id]}</span>
+                                    </>}
+                                    <button onClick={() => setQty(d.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* 食客留言墙 */}
+                    <SectionTag en="DINERS' WALL" className="mt-6 mb-3">食客留言墙</SectionTag>
+                    <PaperCard tilt={0.4} className="px-4 py-3.5">
                         <div className="flex items-center justify-between mb-2.5">
-                            <span className="text-[13px] font-black text-slate-800">大家的评价</span>
-                            <span className="flex items-center gap-1 text-[12px] font-bold" style={{ color: '#ff9500' }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
+                            <span className="text-[12px] font-black" style={{ color: INK }}>大伙儿吃过都说</span>
+                            <span className="flex items-center gap-1 text-[12px] font-black" style={{ color: INK }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
                         </div>
+                        <DashedRule className="mb-3" />
                         <div className="space-y-3">
                             {storeReviews.slice(0, 6).map(r => (
                                 <div key={r.id} className="flex gap-2.5">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-[18px] shrink-0" style={{ background: '#faf7f2' }}>{r.emoji}</div>
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.6)' }}><Emo e={r.emoji} size={16} /></div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-[12px] font-bold text-slate-700 truncate">{r.name}</span>
-                                            <span className="text-[10px] text-slate-300">{r.date}</span>
+                                            <span className="text-[12px] font-bold truncate" style={{ color: '#46423a' }}>{r.name}</span>
+                                            <span className="text-[10px]" style={{ color: INK_SOFT }}>{r.date}</span>
                                         </div>
                                         <Stars n={r.rating} size={10} />
-                                        <div className="text-[12px] text-slate-600 mt-0.5 leading-snug">{r.text}</div>
-                                        {r.reply && <div className="mt-1 text-[11px] text-slate-500 bg-[#faf7f2] rounded-lg px-2 py-1.5">🏪 商家回复：{r.reply}</div>}
-                                        <div className="text-[10px] text-slate-300 mt-1">👍 {r.likes}</div>
+                                        <div className="text-[12px] mt-0.5 leading-snug" style={{ color: '#54504a' }}>{r.text}</div>
+                                        {r.reply && <div className="mt-1 text-[11px] px-2 py-1.5 rounded-[8px]" style={{ background: '#efeae0', color: '#5a554c' }}>铺子回话：{r.reply}</div>}
+                                        <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>👍 {r.likes} 人点头</div>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                    </PaperCard>
+                </ScrapScroll>
+
+                {/* 菜篮搁板 */}
+                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+                    <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px]" style={{ background: PAPER, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 -10px 22px -16px rgba(31,29,26,0.5)' }}>
+                        <div className="relative">
+                            <Stamp size={44} color="ink"><Package size={22} weight="duotone" /></Stamp>
+                            {cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center" style={{ background: INK, color: PAPER, border: `2px solid ${PAPER}` }}>{cartCount}</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[17px] font-black" style={{ color: INK }}>¥{cartSubtotal}</div>
+                            <div className="text-[10px]" style={{ color: INK_SOFT }}>另付 跑腿¥{activeStore.deliveryFee} · 打包¥{PACK_FEE}</div>
+                        </div>
+                        <ScrapButton variant="ink" onClick={goCheckout} disabled={cartCount === 0} className="px-5 py-2.5 text-[13.5px]" icon={<Receipt size={15} weight="bold" />}>
+                            {cartSubtotal < activeStore.minOrder ? `再凑¥${Math.max(0, activeStore.minOrder - cartSubtotal)}` : '撕票下单'}
+                        </ScrapButton>
                     </div>
-                    <div className="h-20" />
                 </div>
-                {/* 购物车条 */}
-                <div className="shrink-0 px-3 py-2.5 bg-white border-t border-slate-100 flex items-center gap-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
-                    <div className="relative w-12 h-12 rounded-full flex items-center justify-center text-[24px]" style={{ background: cartCount ? O : '#ddd' }}>
-                        🛒
-                        {cartCount > 0 && <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[10px] font-black flex items-center justify-center" style={{ color: O, border: `1px solid ${O}` }}>{cartCount}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-[16px] font-black text-slate-800">¥{cartSubtotal}</div>
-                        <div className="text-[10px] text-slate-400">另需配送¥{activeStore.deliveryFee} · 打包¥{PACK_FEE}</div>
-                    </div>
-                    <button onClick={goCheckout} disabled={cartCount === 0} className="px-6 py-2.5 rounded-full text-[14px] font-black text-white active:scale-95 transition disabled:opacity-50" style={{ background: O }}>
-                        {cartSubtotal < activeStore.minOrder ? `差¥${Math.max(0, activeStore.minOrder - cartSubtotal)}起送` : '去结算'}
-                    </button>
-                </div>
-            </div>
+            </PaperShell>
         );
     }
 
-    // —— 结算 ——
+    // ════════════════════════ 写一张饭票·结算 ════════════════════════
     if (view === 'checkout' && activeStore) {
-        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE;
+        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip;
         const payByMe = payer === 'me';
         const notEnough = payByMe && wallet < total;
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
-                {topBar('确认订单', () => setView('store'))}
-                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-3">
-                    {/* 送给谁 */}
-                    <div className="bg-white rounded-2xl p-3.5">
-                        <div className="text-[12px] font-bold text-slate-700 mb-2">送给谁</div>
-                        <div className="flex flex-wrap gap-2">
-                            {recipientOptions.map(o => (
-                                <button key={o.id} onClick={() => setRecipient(o.id)} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={recipient === o.id ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>{o.id === 'me' ? '🙋 我自己' : `🎁 ${o.label}`}</button>
-                            ))}
+            <PaperShell key="checkout">
+                <ScrapHeader title="写一张饭票" en="FILL THE TICKET" onBack={() => setView('store')} backLabel="回铺子" right={walletChip} />
+                <ScrapScroll className="px-5 pt-2 pb-28 space-y-4">
+                    {/* 这一份送给 */}
+                    <PaperCard tilt={-0.5} className="px-4 py-3.5">
+                        <SectionTag en="DELIVER TO" className="mb-2.5">这一份送给</SectionTag>
+                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                            {recipientOptions.map(o => personPolaroid(o, recipient === o.id, () => setRecipient(o.id)))}
                         </div>
-                        <div className="mt-3 flex items-center gap-2">
-                            <MapPin size={15} color={O} weight="fill" />
+                        <div className="mt-2.5 flex items-center gap-2">
+                            <MapPin size={15} color={INK} weight="fill" />
                             {recipient === 'me'
-                                ? <input value={address} onChange={e => setAddress(e.target.value)} className="flex-1 bg-[#faf7f2] rounded-lg px-2.5 py-2 text-[12.5px] outline-none" placeholder="收货地址" />
-                                : <span className="text-[12.5px] text-slate-500">送到 {nameOf(recipient)} 那里</span>}
+                                ? <input value={address} onChange={e => setAddress(e.target.value)} className="flex-1 rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} placeholder="送到哪儿…" />
+                                : <span className="text-[12.5px]" style={{ color: '#5a554c' }}>径直送到 {nameOf(recipient)} 那儿</span>}
                         </div>
-                    </div>
-                    {/* 付款方式 */}
-                    <div className="bg-white rounded-2xl p-3.5">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[12px] font-bold text-slate-700">谁来付</span>
-                            <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: notEnough ? '#dc2626' : '#16a34a' }}><Wallet size={12} weight="fill" />钱包 ¥{wallet}</span>
+                    </PaperCard>
+
+                    {/* 谁来掏这顿饭钱 */}
+                    <PaperCard tilt={0.4} className="px-4 py-3.5">
+                        <div className="flex items-center justify-between mb-2.5">
+                            <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-1 rounded-[4px] text-[11px] font-black tracking-wide" style={{ background: INK, color: PAPER }}>谁来掏这顿</span>
+                                <span className="text-[9px] tracking-[0.3em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>WHO PAYS</span>
+                            </div>
+                            <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: notEnough ? INK : '#5a554c' }}><Coins size={12} weight="fill" />饭钱 ¥{wallet}</span>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            <button onClick={() => setPayer('me')} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={payer === 'me' ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>💳 我自己付</button>
-                            {characters.map(c => (
-                                <button key={c.id} onClick={() => setPayer(c.id)} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={payer === c.id ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>🤝 {c.name}代付</button>
+                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                            {personPolaroid({ id: 'me', label: '我自己掏', avatar: userProfile.avatar }, payByMe, () => setPayer('me'))}
+                            {characters.map(c => personPolaroid({ id: c.id, label: `${c.name}请客`, avatar: c.avatar }, payer === c.id, () => setPayer(c.id)))}
+                        </div>
+                        {payByMe && notEnough && <div className="text-[11px] font-bold mt-2 flex items-center gap-1" style={{ color: INK }}><Warning size={12} weight="fill" />饭钱不够，还差 ¥{Math.round((total - wallet) * 100) / 100}，让 TA 请客或先去赚点。</div>}
+                        {!payByMe && <div className="text-[11px] mt-2" style={{ color: INK_SOFT }}>会在来往里给 {nameOf(payer)} 捎一条代付的话，不动你的饭钱袋。</div>}
+                    </PaperCard>
+
+                    {/* 给跑腿塞瓶水（小费） */}
+                    <PaperCard tilt={-0.3} className="px-4 py-3.5">
+                        <SectionTag en="TIP THE RUNNER" className="mb-2.5">给跑腿塞瓶水？</SectionTag>
+                        <div className="flex gap-2 flex-wrap">
+                            {TIP_CHOICES.map(t => (
+                                <ChoiceChip key={t} on={tip === t} onClick={() => setTip(t)} icon={t > 0 ? <HandCoins size={12} weight="fill" /> : undefined}>{t === 0 ? '先不塞' : `¥${t}`}</ChoiceChip>
                             ))}
                         </div>
-                        {payByMe && notEnough && <div className="text-[11px] font-bold text-red-500 mt-2 flex items-center gap-1"><Warning size={12} weight="fill" />余额不足，还差 ¥{Math.round((total - wallet) * 100) / 100}，可让角色代付或先去赚点钱。</div>}
-                        {!payByMe && <div className="text-[11px] text-slate-400 mt-2">将给 {nameOf(payer)} 发一条代付提醒（在来往里），不扣你的钱包。</div>}
-                    </div>
-                    {/* 菜品清单 */}
-                    <div className="bg-white rounded-2xl p-3.5">
-                        <div className="flex items-center gap-2 mb-2"><span className="text-[20px]">{activeStore.emoji}</span><span className="text-[13px] font-black text-slate-800">{activeStore.name}</span></div>
+                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>风里来雨里去，塞点小费，跑腿心里暖、回话也更上心。</div>
+                    </PaperCard>
+
+                    {/* 饭票清单 + 留言 */}
+                    <PaperCard tilt={0.3} tape="butter" className="px-4 py-4">
+                        <div className="flex items-center gap-2 mb-1"><Emo e={activeStore.emoji} size={18} /><span className="text-[13px] font-black" style={{ color: INK }}>{activeStore.name}</span></div>
+                        <DashedRule className="my-2" />
                         {cartItems.map(i => (
                             <div key={i.dishId} className="flex items-center justify-between py-1 text-[12.5px]">
-                                <span className="text-slate-600">{i.emoji} {i.name} ×{i.qty}</span>
-                                <span className="text-slate-700 font-bold">¥{i.price * i.qty}</span>
+                                <span style={{ color: '#54504a' }}><Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}</span>
+                                <span className="font-bold" style={{ color: INK }}>¥{i.price * i.qty}</span>
                             </div>
                         ))}
-                        <div className="border-t border-dashed border-slate-200 mt-2 pt-2 space-y-1 text-[12px] text-slate-500">
-                            <div className="flex justify-between"><span>配送费</span><span>¥{activeStore.deliveryFee}</span></div>
+                        <DashedRule className="my-2" />
+                        <div className="space-y-1 text-[12px]" style={{ color: '#6b665c' }}>
+                            <div className="flex justify-between"><span>跑腿费</span><span>¥{activeStore.deliveryFee}</span></div>
                             <div className="flex justify-between"><span>打包费</span><span>¥{PACK_FEE}</span></div>
+                            {tip > 0 && <div className="flex justify-between"><span>跑腿小费</span><span>¥{tip}</span></div>}
                         </div>
-                        <input value={note} onChange={e => setNote(e.target.value)} placeholder="备注：口味、餐具、放门口…" className="mt-2 w-full bg-[#faf7f2] rounded-lg px-2.5 py-2 text-[12px] outline-none" />
+                        <div className="mt-3">
+                            <input value={note} onChange={e => setNote(e.target.value)} placeholder="给铺子和跑腿留句话…" className="w-full rounded-[8px] px-2.5 py-2 text-[12px] outline-none" style={paperInput} />
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {NOTE_CHIPS.map(t => (
+                                    <button key={t} onClick={() => addNoteChip(t)} className="text-[10.5px] px-2 py-1 rounded-[6px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.7)' }}>＋{t}</button>
+                                ))}
+                            </div>
+                        </div>
+                    </PaperCard>
+                </ScrapScroll>
+
+                <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+                    <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px]" style={{ background: PAPER, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 -10px 22px -16px rgba(31,29,26,0.5)' }}>
+                        <div className="flex-1"><span className="text-[11px]" style={{ color: INK_SOFT }}>一共 </span><span className="text-[19px] font-black" style={{ color: INK }}>¥{total}</span></div>
+                        <ScrapButton variant="ink" onClick={() => void placeOrder()} disabled={notEnough} className="px-6 py-3 text-[14px]" icon={<SealCheck size={16} weight="fill" />}>
+                            {payByMe ? `盖章付 ¥${total}` : `请 ${nameOf(payer)} 付`}
+                        </ScrapButton>
                     </div>
-                    <div className="h-16" />
                 </div>
-                <div className="shrink-0 px-3 py-2.5 bg-white border-t border-slate-100 flex items-center gap-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
-                    <div className="flex-1"><span className="text-[12px] text-slate-500">合计 </span><span className="text-[18px] font-black" style={{ color: O }}>¥{total}</span></div>
-                    <button onClick={() => void placeOrder()} disabled={notEnough} className="px-7 py-3 rounded-full text-[14px] font-black text-white active:scale-95 transition disabled:opacity-50" style={{ background: O }}>
-                        {payByMe ? `支付 ¥${total}` : '发起代付'}
-                    </button>
-                </div>
-            </div>
+            </PaperShell>
         );
     }
 
-    // —— 订单列表 ——
+    // ════════════════════════ 票根夹·订单列表 ════════════════════════
     if (view === 'orders') {
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
-                {topBar('我的订单', () => setView('home'), walletChip)}
-                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5">
-                    {orders.length === 0 && <div className="text-center text-[12px] text-slate-400 py-12">还没有订单，去点一单吧～</div>}
-                    {orders.map(o => {
-                        const st = liveTakeoutStatus(o, now);
-                        const issues = st === 'delivered' || st === 'arrived' || st === 'cancelled' ? incidentsSummary(o) : '';
-                        const open = hasOpenIssues(o);
-                        return (
-                            <button key={o.id} onClick={() => { setActiveOrderId(o.id); setChatTarget(o.chatTarget || 'rider'); setView('detail'); }} className="w-full text-left bg-white rounded-2xl p-3 active:scale-[0.99] transition">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[13px] font-black text-slate-800 truncate">{o.storeEmoji} {o.storeName}</span>
-                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={st === 'delivered' ? { background: '#eef7ee', color: '#3a9d52' } : st === 'cancelled' ? { background: '#fdecec', color: '#dc2626' } : st === 'arrived' ? { background: '#fff7e6', color: '#c47d12' } : { background: '#fff0ec', color: O }}>{o.cancelledByStore ? '商家砍单' : STATUS_LABEL[st]}</span>
-                                </div>
-                                <div className="text-[11.5px] text-slate-500 mt-1 truncate">{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
-                                {(issues || o.complaint?.refunded) ? (
-                                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                        {issues && open && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#fff4e5', color: '#c2410c' }}><ShieldWarning size={11} weight="fill" />{issues} · 可投诉</span>}
-                                        {issues && !open && o.complaint?.resolved && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#eef7ee', color: '#3a9d52' }}><SealCheck size={11} weight="fill" />已处理</span>}
-                                        {!!o.complaint?.refunded && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: '#eef2ff', color: '#4f46e5' }}><HandCoins size={11} weight="fill" />退¥{o.complaint.refunded}</span>}
+            <PaperShell key="orders">
+                <ScrapHeader title="票根夹" en="TICKET STUBS" onBack={() => setView('home')} backLabel="回街上" right={walletChip} />
+                <ScrapScroll className="px-5 pt-2 pb-10">
+                    {orders.length === 0 && <div className="text-center text-[12px] py-16" style={{ color: INK_SOFT }}>票根夹还空着，去街上撕一张吧～</div>}
+                    <div className="space-y-3.5">
+                        {orders.map((o, idx) => {
+                            const st = liveTakeoutStatus(o, now);
+                            const issues = st === 'delivered' || st === 'arrived' || st === 'cancelled' ? incidentsSummary(o) : '';
+                            const open = hasOpenIssues(o);
+                            const isDone = st === 'delivered';
+                            return (
+                                <PaperCard key={o.id} tilt={idx % 2 === 0 ? -0.5 : 0.5} pin onClick={() => { setActiveOrderId(o.id); setChatTarget(o.chatTarget || 'rider'); setView('detail'); }} className="px-4 py-3.5">
+                                    {/* 票根齿边 */}
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[13.5px] font-black truncate flex items-center gap-1" style={{ color: INK }}><Emo e={o.storeEmoji} size={15} /> {o.storeName}</span>
+                                        <span className="text-[10.5px] font-black px-2 py-0.5 rounded-[5px]" style={isDone ? { background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' } : st === 'cancelled' ? { background: INK, color: PAPER } : { background: INK, color: PAPER }}>{o.cancelledByStore ? '铺子撂挑子' : STATUS_LABEL[st]}</span>
                                     </div>
-                                ) : null}
-                                <div className="flex items-center justify-between mt-1.5">
-                                    <span className="text-[10.5px] text-slate-400">{o.recipient !== 'me' ? `送给 ${nameOf(o.recipient)}` : '送给我'}{o.payer !== 'me' ? ` · ${nameOf(o.payer)}代付` : ''}</span>
-                                    <span className="text-[13px] font-black" style={{ color: O }}>¥{o.total}</span>
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
+                                    <div className="text-[11.5px] mt-1 truncate" style={{ color: '#6b665c' }}>{o.items.map(i => `${i.name}×${i.qty}`).join('、')}</div>
+                                    {(issues || o.complaint?.refunded) ? (
+                                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                            {issues && open && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: INK, color: PAPER }}><ShieldWarning size={11} weight="fill" />{issues} · 可申诉</span>}
+                                            {issues && !open && o.complaint?.resolved && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}><SealCheck size={11} weight="fill" />已了结</span>}
+                                            {!!o.complaint?.refunded && <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}><HandCoins size={11} weight="fill" />退¥{o.complaint.refunded}</span>}
+                                        </div>
+                                    ) : null}
+                                    <DashedRule className="my-2" />
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10.5px]" style={{ color: INK_SOFT }}>{o.recipient !== 'me' ? `送给 ${nameOf(o.recipient)}` : '送给我'}{o.payer !== 'me' ? ` · ${nameOf(o.payer)}请客` : ''}</span>
+                                        <span className="text-[14px] font-black" style={{ color: INK }}>¥{o.total}</span>
+                                    </div>
+                                </PaperCard>
+                            );
+                        })}
+                    </div>
+                </ScrapScroll>
+            </PaperShell>
         );
     }
 
-    // —— 订单详情 ——
+    // ════════════════════════ 这张饭票·详情 ════════════════════════
     if (view === 'detail' && activeOrder) {
         const o = activeOrder;
         const st = liveTakeoutStatus(o, now);
-        const steps: { key: string; label: string }[] = [
-            { key: 'preparing', label: '商家备餐' }, { key: 'delivering', label: '骑手配送' }, { key: 'delivered', label: '已送达' },
+        const steps = [
+            { key: 'preparing', label: '灶上忙着', Icon: CookingPot },
+            { key: 'delivering', label: '跑腿在路上', Icon: Bicycle },
+            { key: 'delivered', label: '到你手上', Icon: Package },
         ];
         const stepIdx = (st === 'delivered' || st === 'arrived') ? 2 : st === 'delivering' ? 1 : 0;
         const arrived = st === 'arrived';
         const showIssues = (st === 'delivered' || st === 'arrived' || st === 'cancelled') && (o.incidents || []).length > 0;
-        const targets: { id: ChatTarget; label: string }[] = [
-            { id: 'rider', label: `${o.riderEmoji} 联系骑手` }, { id: 'store', label: '🏪 联系商家' }, { id: 'support', label: '🛡️ 平台客服' },
+        const targets: { id: ChatTarget; label: string; icon: React.ReactNode }[] = [
+            { id: 'rider', label: '捎话·跑腿', icon: <Bicycle size={13} weight="bold" /> },
+            { id: 'store', label: '问问·铺子', icon: <Storefront size={13} weight="bold" /> },
+            { id: 'support', label: '平台·说理', icon: <ShieldWarning size={13} weight="bold" /> },
         ];
+        const targetZh = chatTarget === 'rider' ? '跑腿' : chatTarget === 'store' ? '铺子' : '平台';
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f5f5f5] animate-fade-in overflow-hidden">
-                {topBar('订单详情', () => setView('orders'), walletChip)}
-                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-3">
-                    {/* 进度 / 砍单 */}
+            <PaperShell key="detail">
+                <ScrapHeader title="这张饭票" en="THE TICKET" onBack={() => setView('orders')} backLabel="票根夹" right={walletChip} />
+                <ScrapScroll className="px-5 pt-2 pb-10 space-y-4">
+                    {/* 进度 / 撂挑子 */}
                     {o.cancelledByStore ? (
-                        <div className="rounded-2xl p-4 text-white" style={{ background: 'linear-gradient(135deg, #ef4444, #b91c1c)' }}>
-                            <div className="text-[16px] font-black flex items-center gap-1.5"><ShieldWarning size={18} weight="fill" />商家强制砍单</div>
-                            <div className="text-[11.5px] opacity-90 mt-1">「{o.storeName}」收了钱迟迟不接单，系统已自动取消并原路退款 ¥{o.complaint?.refunded ?? 0}。下次避开这种黑店吧。</div>
-                        </div>
+                        <PaperCard tilt={-0.6} className="px-4 py-4 overflow-hidden">
+                            <WashiTape color="ink" rotate={-6} className="absolute -top-2 right-5 w-24 h-6 rounded-[2px] text-[8px] tracking-[0.3em]" style={{ fontFamily: 'var(--font-label)' }}>VOID</WashiTape>
+                            <div className="text-[16px] font-black flex items-center gap-1.5" style={{ color: INK }}><ShieldWarning size={18} weight="fill" />铺子撂了挑子</div>
+                            <div className="text-[11.5px] mt-1.5 leading-relaxed" style={{ color: '#54504a' }}>「{o.storeName}」收了钱迟迟不接单，平台替你把这张票作废、把 ¥{o.complaint?.refunded ?? 0} 退回饭钱袋。下次绕开这种铺子吧。</div>
+                        </PaperCard>
                     ) : (
-                        <div className="rounded-2xl p-4 text-white" style={{ background: `linear-gradient(135deg, ${O}, #ff8a5c)` }}>
-                            <div className="text-[17px] font-black">{etaText(o, now)}</div>
-                            <div className="text-[11.5px] opacity-90 mt-0.5">{st === 'delivered' ? '希望你/TA吃得开心～' : arrived ? '外卖已经到了，记得确认收货' : `${o.riderEmoji} ${o.riderName} 正在为你奔波`}</div>
-                            <div className="flex items-center gap-1 mt-3">
-                                {steps.map((s, i) => (
-                                    <React.Fragment key={s.key}>
-                                        <div className="flex flex-col items-center gap-1">
-                                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[12px]" style={{ background: i <= stepIdx ? '#fff' : 'rgba(255,255,255,0.35)', color: O }}>{i < stepIdx || st === 'delivered' ? '✓' : i === stepIdx ? '•' : ''}</div>
-                                            <span className="text-[9px] opacity-90">{s.label}</span>
-                                        </div>
-                                        {i < steps.length - 1 && <div className="flex-1 h-0.5 rounded" style={{ background: i < stepIdx ? '#fff' : 'rgba(255,255,255,0.35)' }} />}
-                                    </React.Fragment>
-                                ))}
+                        <PaperCard tilt={0.4} className="px-4 py-4 overflow-hidden">
+                            <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
+                            <div className="relative">
+                                <div className="text-[17px] font-black" style={{ color: INK }}>{etaText(o, now)}</div>
+                                <div className="text-[11.5px] mt-0.5" style={{ color: INK_SOFT }}>{st === 'delivered' ? '希望你/TA 吃得开心～' : arrived ? '到门口啦，盖个章签收吧' : `${o.riderEmoji} ${o.riderName} 正替你跑这一趟`}</div>
+                                <div className="flex items-center gap-1 mt-3.5">
+                                    {steps.map((s, i) => {
+                                        const done = i < stepIdx || st === 'delivered';
+                                        const cur = i === stepIdx && st !== 'delivered';
+                                        return (
+                                            <React.Fragment key={s.key}>
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: done ? INK : cur ? '#efeae0' : '#f1eee4', color: done ? PAPER : INK, border: cur ? `1.5px dashed ${INK}` : '1px solid rgba(176,170,158,0.6)' }}>
+                                                        {done ? <SealCheck size={17} weight="fill" /> : <s.Icon size={17} weight={cur ? 'fill' : 'regular'} />}
+                                                    </div>
+                                                    <span className="text-[9px] font-bold" style={{ color: done || cur ? INK : INK_SOFT }}>{s.label}</span>
+                                                </div>
+                                                {i < steps.length - 1 && <div className="flex-1 h-px mb-4" style={{ backgroundImage: 'repeating-linear-gradient(90deg, rgba(31,29,26,0.5) 0 4px, transparent 4px 8px)', opacity: i < stepIdx ? 1 : 0.3 }} />}
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </div>
                             </div>
-                        </div>
+                        </PaperCard>
                     )}
 
-                    {/* 事故 / 投诉 */}
+                    {/* 路上的岔子 / 申诉 */}
                     {showIssues && (
-                        <div className="bg-white rounded-2xl p-3.5 border border-orange-100">
-                            <div className="flex items-center gap-1.5 text-[13px] font-black text-orange-700 mb-2"><ShieldWarning size={16} weight="fill" />这单出了点状况</div>
+                        <PaperCard tilt={-0.4} className="px-4 py-3.5">
+                            <div className="flex items-center gap-1.5 text-[13px] font-black mb-2" style={{ color: INK }}><ShieldWarning size={16} weight="fill" />这趟路上出了点岔子</div>
+                            <DashedRule className="mb-2.5" />
                             <div className="space-y-2">
                                 {(o.incidents || []).map((inc, i) => (
                                     <div key={i} className="flex gap-2">
-                                        <span className="text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0 h-fit" style={{ background: inc.by === 'store' ? '#fff0ec' : '#eef2ff', color: inc.by === 'store' ? O : '#4f46e5' }}>{inc.by === 'store' ? '商家' : '骑手'}·{inc.title}</span>
-                                        <span className="text-[11.5px] text-slate-500 leading-snug">{inc.detail}</span>
+                                        <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-[4px] shrink-0 h-fit" style={{ background: INK, color: PAPER }}>{inc.by === 'store' ? '铺子' : '跑腿'}·{inc.title}</span>
+                                        <span className="text-[11.5px] leading-snug" style={{ color: '#54504a' }}>{inc.detail}</span>
                                     </div>
                                 ))}
                             </div>
                             {o.complaint?.resolved ? (
-                                <div className="mt-3 text-[11.5px] font-bold flex items-start gap-1.5 p-2.5 rounded-xl" style={{ background: '#eef7ee', color: '#3a9d52' }}><SealCheck size={14} weight="fill" className="mt-0.5 shrink-0" />{o.complaint.outcome}</div>
+                                <div className="mt-3 text-[11.5px] font-bold flex items-start gap-1.5 p-2.5 rounded-[10px]" style={{ background: '#efeae0', color: '#3a362f' }}><SealCheck size={14} weight="fill" className="mt-0.5 shrink-0" />{o.complaint.outcome}</div>
                             ) : (
-                                <button onClick={() => void fileComplaint(o)} className="mt-3 w-full py-2.5 rounded-xl text-[13px] font-black text-white active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#ea580c' }}>
-                                    <HandCoins size={16} weight="fill" />一键投诉 · 申请退款
-                                </button>
+                                <ScrapButton variant="ink" onClick={() => void fileComplaint(o)} className="mt-3 w-full py-2.5 text-[13px]" icon={<HandCoins size={16} weight="fill" />}>递一张申诉条 · 讨个说法</ScrapButton>
                             )}
-                        </div>
+                        </PaperCard>
                     )}
 
-                    {/* 骑手 / 商家 / 平台客服 + 聊天 */}
-                    <div className="bg-white rounded-2xl p-3.5">
-                        <div className="flex gap-2 mb-2">
-                            {targets.map(t => (
-                                <button key={t.id} onClick={() => setChatTarget(t.id)} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={chatTarget === t.id ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>
-                                    {t.label}
-                                </button>
-                            ))}
+                    {/* 捎话：跑腿 / 铺子 / 平台 */}
+                    <PaperCard tilt={0.3} className="px-4 py-3.5">
+                        <div className="flex gap-2 mb-2.5">
+                            {targets.map(t => <ChoiceChip key={t.id} on={chatTarget === t.id} onClick={() => setChatTarget(t.id)} icon={t.icon}>{t.label}</ChoiceChip>)}
                         </div>
-                        <div className="bg-[#faf7f2] rounded-xl p-2.5 max-h-44 overflow-y-auto no-scrollbar space-y-2">
+                        <div className="rounded-[10px] p-2.5 max-h-44 overflow-y-auto no-scrollbar space-y-2" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.5)' }}>
                             {o.chat.filter(m => m.role === 'user' || m.role === chatTarget).length === 0 && (
-                                <div className="text-[11px] text-slate-400 text-center py-3 flex items-center justify-center gap-1"><ChatCircleDots size={14} />给{chatTarget === 'rider' ? '骑手' : chatTarget === 'store' ? '商家' : '平台客服'}发条消息试试</div>
+                                <div className="text-[11px] text-center py-3 flex items-center justify-center gap-1" style={{ color: INK_SOFT }}><ChatCircleDots size={14} />给{targetZh}捎句话试试</div>
                             )}
                             {o.chat.filter(m => m.role === 'user' || m.role === chatTarget).map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                    <span className="max-w-[78%] px-3 py-1.5 rounded-2xl text-[12.5px] leading-snug" style={m.role === 'user' ? { background: O, color: '#fff' } : { background: '#fff', color: '#333', border: '1px solid #eee' }}>{m.text}</span>
+                                    <span className="max-w-[78%] px-3 py-1.5 rounded-[12px] text-[12.5px] leading-snug" style={m.role === 'user' ? { background: INK, color: PAPER } : { background: PAPER, color: '#36322b', border: '1px solid rgba(176,170,158,0.7)' }}>{m.text}</span>
                                 </div>
                             ))}
-                            {chatBusy && <div className="text-[11px] text-slate-400 pl-1">对方正在输入…</div>}
+                            {chatBusy && <div className="text-[11px] pl-1" style={{ color: INK_SOFT }}>对方正在写…</div>}
                         </div>
                         <div className="flex items-center gap-2 mt-2">
-                            <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendChat(); }} placeholder={`和${chatTarget === 'rider' ? '骑手' : chatTarget === 'store' ? '商家' : '平台客服'}说点什么…`} className="flex-1 bg-[#faf7f2] rounded-full px-3 py-2 text-[12.5px] outline-none" disabled={chatBusy} />
-                            <button onClick={() => void sendChat()} disabled={chatBusy || !chatInput.trim()} className="px-4 py-2 rounded-full text-[12px] font-bold text-white active:scale-95 transition disabled:opacity-50" style={{ background: O }}>发送</button>
+                            <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void sendChat(); }} placeholder={`想对${targetZh}说点啥…`} className="flex-1 rounded-full px-3 py-2 text-[12.5px] outline-none" style={paperInput} disabled={chatBusy} />
+                            <button onClick={() => void sendChat()} disabled={chatBusy || !chatInput.trim()} className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition disabled:opacity-50" style={{ background: INK, color: PAPER }}><PaperPlaneRight size={15} weight="fill" /></button>
                         </div>
-                    </div>
+                    </PaperCard>
 
-                    {/* 订单信息 */}
-                    <div className="bg-white rounded-2xl p-3.5">
-                        <div className="flex items-center gap-2 mb-2"><span className="text-[20px]">{o.storeEmoji}</span><span className="text-[13px] font-black text-slate-800">{o.storeName}</span></div>
+                    {/* 票面明细 */}
+                    <PaperCard tilt={-0.3} tape="amber" className="px-4 py-4">
+                        <div className="flex items-center gap-2 mb-1"><Emo e={o.storeEmoji} size={17} /><span className="text-[13px] font-black" style={{ color: INK }}>{o.storeName}</span></div>
+                        <DashedRule className="my-2" />
                         {o.items.map(i => (
                             <div key={i.dishId} className="flex items-center justify-between py-0.5 text-[12.5px]">
-                                <span className="text-slate-600">{i.emoji} {i.name} ×{i.qty}</span>
-                                <span className="text-slate-700 font-bold">¥{i.price * i.qty}</span>
+                                <span style={{ color: '#54504a' }}><Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}</span>
+                                <span className="font-bold" style={{ color: INK }}>¥{i.price * i.qty}</span>
                             </div>
                         ))}
-                        <div className="border-t border-dashed border-slate-200 mt-2 pt-2 text-[12px] text-slate-500 space-y-1">
-                            <div className="flex justify-between"><span>配送 / 打包</span><span>¥{o.deliveryFee + o.packFee}</span></div>
-                            <div className="flex justify-between text-slate-800 font-black text-[13px]"><span>实付</span><span style={{ color: O }}>¥{o.total}</span></div>
-                            {!!o.complaint?.refunded && <div className="flex justify-between font-bold" style={{ color: '#4f46e5' }}><span>已退款</span><span>-¥{o.complaint.refunded}</span></div>}
+                        <DashedRule className="my-2" />
+                        <div className="text-[12px] space-y-1" style={{ color: '#6b665c' }}>
+                            <div className="flex justify-between"><span>跑腿 / 打包</span><span>¥{o.deliveryFee + o.packFee}</span></div>
+                            {!!o.tip && <div className="flex justify-between"><span>跑腿小费</span><span>¥{o.tip}</span></div>}
+                            <div className="flex justify-between text-[13px] font-black" style={{ color: INK }}><span>实付</span><span>¥{o.total}</span></div>
+                            {!!o.complaint?.refunded && <div className="flex justify-between font-bold" style={{ color: INK }}><span>已退回</span><span>-¥{o.complaint.refunded}</span></div>}
                             <div className="flex justify-between"><span>收货</span><span>{o.recipient !== 'me' ? nameOf(o.recipient) : o.address}</span></div>
-                            <div className="flex justify-between"><span>付款</span><span>{o.payer !== 'me' ? `${nameOf(o.payer)}代付` : '我自己付'} · {o.cancelledByStore ? '已退款' : '已支付'}</span></div>
-                            {o.note && <div className="flex justify-between"><span>备注</span><span className="text-right max-w-[60%] truncate">{o.note}</span></div>}
+                            <div className="flex justify-between"><span>付款</span><span>{o.payer !== 'me' ? `${nameOf(o.payer)}请客` : '我自己掏'} · {o.cancelledByStore ? '已退款' : '已付'}</span></div>
+                            {o.note && <div className="flex justify-between"><span>留言</span><span className="text-right max-w-[60%] truncate">{o.note}</span></div>}
                         </div>
-                    </div>
+                        <button onClick={() => reorder(o)} className="mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-[8px] text-[12px] font-black active:scale-[0.98] transition-transform" style={{ background: 'transparent', color: INK, border: '1px dashed rgba(150,144,132,0.8)' }}>
+                            <Repeat size={14} weight="bold" />照着再撕一张
+                        </button>
+                    </PaperCard>
 
-                    {/* 评价（送达后，仅自己那份可评） */}
+                    {/* 食评（送达后，仅自己那份可写） */}
                     {st === 'delivered' && o.recipient === 'me' && (
-                        <div className="bg-white rounded-2xl p-3.5">
-                            <div className="text-[13px] font-black text-slate-800 mb-2">我的评价</div>
+                        <PaperCard tilt={0.4} className="px-4 py-3.5">
+                            <SectionTag en="MY REVIEW" className="mb-2.5">我的食评</SectionTag>
                             {o.review ? (
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <Stars n={o.review.rating} />
-                                        <button onClick={() => openReview(o)} className="ml-auto text-[11px] font-bold" style={{ color: O }}>修改</button>
+                                        <Stars n={o.review.rating} size={14} />
+                                        <button onClick={() => openReview(o)} className="ml-auto text-[11px] font-black inline-flex items-center gap-1" style={{ color: INK }}><NotePencil size={12} weight="bold" />改改</button>
                                     </div>
                                     {o.review.tags && o.review.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                            {o.review.tags.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: '#fff0ec', color: O }}>{t}</span>)}
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {o.review.tags.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-[4px]" style={{ background: '#e9e4d9', color: '#3a362f', border: '1px dashed rgba(150,144,132,0.7)' }}>{t}</span>)}
                                         </div>
                                     )}
-                                    {o.review.text && <div className="text-[12.5px] text-slate-600 mt-1.5 leading-snug">{o.review.text}</div>}
+                                    {o.review.text && <div className="text-[12.5px] mt-2 leading-snug" style={{ color: '#54504a' }}>{o.review.text}</div>}
                                     {o.review.replies && o.review.replies.length > 0 && (
-                                        <div className="mt-2.5 space-y-1.5 border-t border-dashed border-slate-100 pt-2">
+                                        <div className="mt-2.5 space-y-1.5 pt-2" style={{ borderTop: '1px dashed rgba(150,144,132,0.5)' }}>
                                             {o.review.replies.map((rp, i) => (
                                                 <div key={i} className="text-[11.5px] leading-snug">
-                                                    <span className="font-bold text-slate-700">{rp.emoji} {rp.name}{rp.isMerchant ? '（商家）' : ''}：</span>
-                                                    <span className="text-slate-500">{rp.text}</span>
+                                                    <span className="font-bold" style={{ color: '#46423a' }}><Emo e={rp.emoji} size={12} /> {rp.name}{rp.isMerchant ? '（铺子）' : ''}：</span>
+                                                    <span style={{ color: INK_SOFT }}>{rp.text}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
                             ) : (
-                                <button onClick={() => openReview(o)} className="w-full py-2.5 rounded-xl text-[13px] font-black active:scale-[0.98] transition" style={{ background: '#fff0ec', color: O }}>
-                                    ⭐ 评价此单
-                                </button>
+                                <ScrapButton variant="paper" onClick={() => openReview(o)} className="w-full py-2.5 text-[13px]" icon={<NotePencil size={15} weight="bold" />}>写一张食评 · 贴上墙</ScrapButton>
                             )}
-                        </div>
+                        </PaperCard>
                     )}
 
-                    {/* 收货按钮：收到货（到点）才能确认；给角色点的单由 TA 自己签收并回应。砍单/取消则不显示。 */}
+                    {/* 签收 / 等门口 */}
                     {st !== 'delivered' && st !== 'cancelled' && o.recipient !== 'me' && (
-                        <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center" style={{ background: '#f3f3f3', color: '#888' }}>
-                            {arrived ? `已送到 ${nameOf(o.recipient)} 那儿，TA 收到后会在聊天里回应你～` : `送到后 ${nameOf(o.recipient)} 会签收，并在聊天里回应你`}
-                        </div>
+                        <StickyNote color="butter" rotate={-0.6} className="px-4 py-3 text-[12px] font-bold text-center" style={{ color: '#46423a' }}>
+                            {arrived ? `已送到 ${nameOf(o.recipient)} 门口，TA 收下后会在聊天里回应你～` : `送到后 ${nameOf(o.recipient)} 会自己签收，并在聊天里回应你`}
+                        </StickyNote>
                     )}
                     {st !== 'delivered' && st !== 'cancelled' && o.recipient === 'me' && (
                         arrived ? (
-                            <button onClick={() => void notifyDelivered(o)} className="w-full py-3 rounded-2xl text-[13px] font-black active:scale-[0.98] transition flex items-center justify-center gap-1.5" style={{ background: '#eef7ee', color: '#3a9d52' }}>
-                                <CheckCircle size={16} weight="fill" /> 确认收货
-                            </button>
+                            <ScrapButton variant="ink" onClick={() => void notifyDelivered(o)} className="w-full py-3 text-[14px]" icon={<SealCheck size={17} weight="fill" />}>盖章签收 · 收下这份</ScrapButton>
                         ) : (
-                            <div className="w-full py-3 rounded-2xl text-[12.5px] font-bold text-center flex items-center justify-center gap-1.5" style={{ background: '#f3f3f3', color: '#aaa' }}>
-                                <CheckCircle size={15} /> 送达后才能确认收货 · {etaText(o, now)}
+                            <div className="w-full py-3 rounded-[12px] text-[12px] font-bold text-center flex items-center justify-center gap-1.5" style={{ background: '#efeae0', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.7)' }}>
+                                <CheckCircle size={15} /> 到门口才能盖签收章 · {etaText(o, now)}
                             </div>
                         )
                     )}
-                    <div className="h-3" />
-                </div>
+                </ScrapScroll>
 
-                {/* 评价弹窗 */}
-                {reviewing && (
-                    <div className="absolute inset-0 z-[60] flex items-end justify-center bg-black/40 animate-fade-in" onClick={() => setReviewing(false)}>
-                        <div className="w-full bg-white rounded-t-3xl p-5" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }} onClick={e => e.stopPropagation()}>
-                            <div className="text-center text-[15px] font-black text-slate-800 mb-1">评价「{o.storeName}」</div>
-                            <div className="text-center text-[11px] text-slate-400 mb-3">{o.items.map(i => i.name).join('、')}</div>
-                            {/* 星级 */}
-                            <div className="flex items-center justify-center gap-2 mb-3">
-                                {[1, 2, 3, 4, 5].map(i => (
-                                    <button key={i} onClick={() => { setReviewRating(i); setReviewTags([]); }} className="active:scale-90 transition">
-                                        <Star size={32} weight="fill" color={i <= reviewRating ? '#ff9500' : '#e2e2e2'} />
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="text-center text-[12px] font-bold text-slate-500 mb-3">{['', '很差', '一般', '还行', '满意', '超赞'][reviewRating]}</div>
-                            {/* 快捷标签 */}
-                            <div className="flex flex-wrap gap-2 justify-center mb-3">
-                                {reviewQuickTags(reviewRating).map(t => (
-                                    <button key={t} onClick={() => toggleReviewTag(t)} className="px-3 py-1.5 rounded-full text-[12px] font-bold transition active:scale-95" style={reviewTags.includes(t) ? { background: O, color: '#fff' } : { background: '#f3f3f3', color: '#666' }}>{t}</button>
-                                ))}
-                            </div>
-                            <textarea value={reviewText} onChange={e => setReviewText(e.target.value)} rows={3} placeholder="说说这次的体验吧～（选填）" className="w-full bg-[#faf7f2] rounded-2xl px-3 py-2.5 text-[13px] outline-none resize-none mb-3" />
-                            <div className="flex gap-2.5">
-                                <button onClick={() => setReviewing(false)} className="flex-1 py-3 rounded-2xl text-[14px] font-bold bg-slate-100 text-slate-600 active:scale-[0.98] transition">取消</button>
-                                <button onClick={() => void submitReview()} className="flex-1 py-3 rounded-2xl text-[14px] font-black text-white active:scale-[0.98] transition" style={{ background: O }}>发布评价</button>
-                            </div>
-                        </div>
+                {/* 食评抽屉 */}
+                <PaperSheet open={reviewing} onClose={() => setReviewing(false)} title={`给「${o.storeName}」写张食评`} tape="ink">
+                    <div className="text-center text-[11px] mb-3" style={{ color: INK_SOFT }}>{o.items.map(i => i.name).join('、')}</div>
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                        {[1, 2, 3, 4, 5].map(i => (
+                            <button key={i} onClick={() => { setReviewRating(i); setReviewTags([]); }} className="active:scale-90 transition">
+                                <Star size={32} weight="fill" color={i <= reviewRating ? INK : 'rgba(31,29,26,0.16)'} />
+                            </button>
+                        ))}
                     </div>
-                )}
-            </div>
+                    <div className="text-center text-[12px] font-black mb-3" style={{ color: INK }}>{STAR_WORDS[reviewRating]}</div>
+                    <div className="flex flex-wrap gap-2 justify-center mb-3">
+                        {reviewQuickTags(reviewRating).map(t => (
+                            <ChoiceChip key={t} on={reviewTags.includes(t)} onClick={() => toggleReviewTag(t)}>{t}</ChoiceChip>
+                        ))}
+                    </div>
+                    <textarea value={reviewText} onChange={e => setReviewText(e.target.value)} rows={3} placeholder="说说这一口的滋味…（随手写写）" className="w-full rounded-[12px] px-3 py-2.5 text-[13px] outline-none resize-none mb-3" style={paperInput} />
+                    <div className="flex gap-2.5">
+                        <ScrapButton variant="ghost" onClick={() => setReviewing(false)} className="flex-1 py-3 text-[14px]">先不写</ScrapButton>
+                        <ScrapButton variant="ink" onClick={() => void submitReview()} className="flex-1 py-3 text-[14px]">贴上墙</ScrapButton>
+                    </div>
+                </PaperSheet>
+            </PaperShell>
         );
     }
 
     // 兜底
     return (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#f5f5f5]">
-            <Storefront size={40} color={O} />
-            <button onClick={() => setView('home')} className="mt-3 px-4 py-2 rounded-full text-white text-[13px] font-bold" style={{ background: O }}>回外卖首页</button>
-        </div>
+        <PaperShell key="fallback">
+            <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-3">
+                <Stamp size={56} color="ink"><Storefront size={28} weight="duotone" /></Stamp>
+                <ScrapButton variant="ink" onClick={() => setView('home')} icon={<Receipt size={15} weight="bold" />} className="px-4 py-2 text-[13px]">回饭票簿</ScrapButton>
+            </div>
+        </PaperShell>
     );
 };
 

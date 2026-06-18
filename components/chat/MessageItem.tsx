@@ -69,48 +69,50 @@ const TakeoutCardView: React.FC<{
     const deliveredAt = order?.deliveredAt ?? snap.deliveredAt;
     const faux = { status: order?.status || 'preparing', deliveredAt, etaAt, placedAt } as any;
     const st = liveTakeoutStatus(faux, now);
-    const stColor = st === 'delivered' ? '#3a9d52' : st === 'arrived' ? '#c47d12' : '#FF5339';
     const eta = etaText(faux, now);
     const initiatedBy = order?.initiatedBy || snap.initiatedBy;
     const recipientLabel = snap.recipientLabel || '我';
     const headline = initiatedBy === 'char'
-        ? `${charName} 给${recipientLabel === '我' ? '你' : recipientLabel}点了外卖`
-        : `${recipientLabel === '我' ? '给自己' : `送给 ${recipientLabel}`}的外卖`;
+        ? `${charName} 替${recipientLabel === '我' ? '你' : recipientLabel}撕了张饭票`
+        : `${recipientLabel === '我' ? '给自己' : `捎给 ${recipientLabel}`}的饭票`;
     const reviewed = !!order?.review;
+    const gray: React.CSSProperties = { filter: 'grayscale(1) contrast(1.03)' };
 
+    // 「饭票·票根」——黑白拼贴手账的米白纸票（与饭票 App 同一套观感）
     return commonLayout(
         <div
             onClick={() => onOpen?.(m)}
-            className="w-64 bg-white rounded-[1.4rem] overflow-hidden relative transition-transform border border-orange-100 shadow-[0_14px_28px_-18px_rgba(255,83,57,0.45)] active:scale-[0.98] cursor-pointer"
+            className="w-64 rounded-[14px] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer"
+            style={{ background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)', border: '1px solid rgba(176,170,158,0.8)', outline: '1px dashed rgba(150,144,132,0.5)', outlineOffset: -5, boxShadow: '0 14px 26px -16px rgba(31,29,26,0.5)' }}
         >
-            <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
-                <span className="text-[12px] font-black text-white tracking-wide">🛵 外卖订单</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/90" style={{ color: stColor }}>{STATUS_LABEL[st]}</span>
+            <div className="px-4 py-2 flex items-center justify-between" style={{ background: '#1f1d1a' }}>
+                <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#f6f3ec' }}><span style={gray}>🍱</span> 饭票 · 票根</span>
+                <span className="text-[9.5px] font-black px-2 py-0.5 rounded-[4px]" style={{ background: '#f6f3ec', color: '#1f1d1a' }}>{STATUS_LABEL[st]}</span>
             </div>
             <div className="px-4 pt-3 pb-3.5">
-                <div className="text-[12px] text-slate-400 mb-1">{headline}</div>
-                <div className="text-[13px] font-black text-slate-800 truncate mb-2">{snap.storeEmoji} {snap.storeName}</div>
+                <div className="text-[11px] mb-1" style={{ color: '#857f74' }}>{headline}</div>
+                <div className="text-[13px] font-black truncate mb-2" style={{ color: '#1f1d1a' }}><span style={gray}>{snap.storeEmoji}</span> {snap.storeName}</div>
                 <div className="space-y-0.5 mb-2">
                     {items.slice(0, 4).map((it, i) => (
-                        <div key={i} className="flex items-center justify-between text-[12px] text-slate-600">
-                            <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
-                            <span className="text-slate-400 shrink-0 ml-2">×{it.qty}</span>
+                        <div key={i} className="flex items-center justify-between text-[12px]" style={{ color: '#54504a' }}>
+                            <span className="truncate"><span style={gray}>{it.emoji || '🍽️'}</span> {it.name}</span>
+                            <span className="shrink-0 ml-2" style={{ color: '#857f74' }}>×{it.qty}</span>
                         </div>
                     ))}
-                    {items.length > 4 && <div className="text-[11px] text-slate-400">…等 {items.length} 样</div>}
+                    {items.length > 4 && <div className="text-[11px]" style={{ color: '#857f74' }}>…等 {items.length} 样</div>}
                 </div>
-                {/* 实时配送进度条 */}
+                {/* 实时配送进度条（墨色） */}
                 {st !== 'delivered' && (
                     <div className="mb-2">
-                        <div className="h-1 rounded-full bg-orange-100 overflow-hidden">
-                            <div className="h-full rounded-full transition-all duration-700" style={{ width: st === 'arrived' ? '100%' : st === 'delivering' ? '66%' : '30%', background: stColor }} />
+                        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(31,29,26,0.12)' }}>
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: st === 'arrived' ? '100%' : st === 'delivering' ? '66%' : '30%', background: '#1f1d1a' }} />
                         </div>
-                        <div className="text-[10.5px] mt-1 font-bold" style={{ color: stColor }}>{eta}</div>
+                        <div className="text-[10.5px] mt-1 font-bold" style={{ color: '#1f1d1a' }}>{eta}</div>
                     </div>
                 )}
-                <div className="flex items-center justify-between border-t border-dashed border-slate-200 pt-2">
-                    <span className="text-[10.5px] text-slate-400">{st === 'delivered' ? (reviewed ? '已评价 · 点开看' : '点开看详情/评价') : `${snap.payLabel || ''} · 点开看详情`}</span>
-                    <span className="text-[14px] font-black" style={{ color: '#FF5339' }}>¥{total}</span>
+                <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)' }}>
+                    <span className="text-[10.5px]" style={{ color: '#857f74' }}>{st === 'delivered' ? (reviewed ? '已写食评 · 点开看' : '点开写食评/看详情') : `${snap.payLabel || ''} · 点开看详情`}</span>
+                    <span className="text-[14px] font-black" style={{ color: '#1f1d1a' }}>¥{total}</span>
                 </div>
             </div>
         </div>

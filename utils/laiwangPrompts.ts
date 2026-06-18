@@ -587,7 +587,7 @@ export const convoLines = {
     proactiveLookup: `- 主动查询：开启。你开口前会先留意当前时间、天气、热点等实时信息，把它们自然融进话题。`,
     allowPhoneBrowse: `- 看手机：被允许。你可以拿过TA的手机翻看（系统会进入"查手机"画面），翻完后你会主动跟TA聊起你看到的东西。`,
     momentsAutoPost: `- 朋友圈习惯：你有空时会随手发此刻记录生活，聊天中可以提到你刚发/想发的此刻。`,
-    proactiveTakeoutOrder: (userName: string) => `- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${userName}说饿了或没空做饭、加班晚归…），你可以默默替 ${userName} 点一份外卖并代付。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗热乎的牛肉面]]\`），系统会生成订单小票并通知 ${userName}。前面正常说你给 TA 点了什么。别频繁、别刻意，像真的会照顾人那样偶尔为之。`,
+    proactiveTakeoutOrder: (userName: string) => `- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${userName}说饿了或没空做饭、加班晚归、生病没胃口…），你可以默默替 ${userName} 在「饭票」里点一份吃的并代付——挑的东西要贴合此刻的天气、时辰和 TA 的状态（冷天来碗热汤面，嘴馋来份炸物，难受就清淡好克化的）。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗加蛋的热汤牛肉面]]\`），系统会生成饭票小票并通知 ${userName}。前面正常说你给 TA 点了什么、为什么想到点这个。别频繁、别刻意，像真的会照顾人那样偶尔为之。`,
 };
 
 
@@ -636,7 +636,7 @@ export function proactiveFallbackHint(p: ProactiveFallbackHintParams): string {
 
 /** 角色收到「对方专门给你点的外卖」送达后的反应 hint。 */
 export function takeoutReceivedHint(userName: string, storeName: string, items: string): string {
-    return `[系统提示（非${userName}发言）：${userName}之前在「${storeName}」给你点的外卖（${items}）刚刚送到你这边，你签收了。这是 ${userName} 特意为你点的、惦记着你的一份心意。请像真人收到对方专门送来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、边吃边报实况说味道（"还热乎的""这家的料给得好足"）、或调侃${userName}怎么知道你想吃这个、又乱花钱。带上你自己的性格（嘴硬的就口是心非一下），一两句话就好，别像在汇报。]`;
+    return `[系统提示（非${userName}发言）：${userName}之前在「${storeName}」给你点的那张饭票（${items}）刚刚送到你门口，你签收了。这是 ${userName} 特意惦记着你、隔着屏幕投喂的一份心意。请像真人收到对方专门点来的外卖那样，在聊天里自然地对${userName}做出反应——可以道谢、惊喜、拆开保温袋边吃边报实况说味道（"还冒热气""这家的料是真给得足""你怎么知道我就馋这口"）、或嗔怪 TA 又乱花钱。带上你自己的性格（嘴硬的就口是心非、心里却甜一下），一两句话就好，别像在汇报。]`;
 }
 
 /** 用户回应「角色的求婚」后，给角色的反应 hint（accept / 婉拒）。 */

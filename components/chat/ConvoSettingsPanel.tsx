@@ -835,8 +835,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
 
                     <Entry
-                        mark="☘" title="TA 会主动给你点外卖"
-                        note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默替你下一单外卖并代付，在聊天里生成一张能点开看的外卖订单小票。关掉则永远不会触发。"
+                        mark="☘" title="TA 会主动给你撕饭票"
+                        note="到饭点、降温、你喊饿或聊到吃的时，TA 可能默默在「饭票」里替你点一单并代付，在聊天里生成一张能点开看的饭票小票。关掉则永远不会触发。"
                         side={<CandyToggle candy="#ffb27a" on={!!cs.proactiveTakeoutOrder} onToggle={() => updateConvo({ proactiveTakeoutOrder: !cs.proactiveTakeoutOrder })} />}
                     />
 

@@ -3772,6 +3772,8 @@ export interface TakeoutOrder {
   subtotal: number;
   deliveryFee: number;
   packFee: number;
+  /** 可选：给跑腿的小费（结算时自选，计入 total，被强制砍单时随 total 原路退回）。 */
+  tip?: number;
   total: number;
   /** 收货人：'me' = 用户本人，否则是 charId。 */
   recipient: string;

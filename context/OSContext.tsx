@@ -1491,7 +1491,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               await postTakeoutPlacedToChat(order, nameOf);
               notifyTakeoutUpdated();
               bumpUnread(d.charId);
-              addToast(`${char.name} 给你点了份外卖`, 'success');
+              addToast(`${char.name} 悄悄给你撕了张饭票 🍱`, 'success');
           } catch { /* ignore */ }
       };
 
