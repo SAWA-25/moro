@@ -76,9 +76,8 @@ const TakeoutCardView: React.FC<{
         ? `${charName} 替${recipientLabel === '我' ? '你' : recipientLabel}撕了张饭票`
         : `${recipientLabel === '我' ? '给自己' : `捎给 ${recipientLabel}`}的饭票`;
     const reviewed = !!order?.review;
-    const gray: React.CSSProperties = { filter: 'grayscale(1) contrast(1.03)' };
 
-    // 「饭票·票根」——黑白拼贴手账的米白纸票（与饭票 App 同一套观感）
+    // 「饭票·票根」——黑白拼贴手账的米白纸票（食物 emoji 保留彩色，像贴上去的小贴纸）
     return commonLayout(
         <div
             onClick={() => onOpen?.(m)}
@@ -86,16 +85,16 @@ const TakeoutCardView: React.FC<{
             style={{ background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)', border: '1px solid rgba(176,170,158,0.8)', outline: '1px dashed rgba(150,144,132,0.5)', outlineOffset: -5, boxShadow: '0 14px 26px -16px rgba(31,29,26,0.5)' }}
         >
             <div className="px-4 py-2 flex items-center justify-between" style={{ background: '#1f1d1a' }}>
-                <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#f6f3ec' }}><span style={gray}>🍱</span> 饭票 · 票根</span>
+                <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#f6f3ec' }}>🍱 饭票 · 票根</span>
                 <span className="text-[9.5px] font-black px-2 py-0.5 rounded-[4px]" style={{ background: '#f6f3ec', color: '#1f1d1a' }}>{STATUS_LABEL[st]}</span>
             </div>
             <div className="px-4 pt-3 pb-3.5">
                 <div className="text-[11px] mb-1" style={{ color: '#857f74' }}>{headline}</div>
-                <div className="text-[13px] font-black truncate mb-2" style={{ color: '#1f1d1a' }}><span style={gray}>{snap.storeEmoji}</span> {snap.storeName}</div>
+                <div className="text-[13px] font-black truncate mb-2" style={{ color: '#1f1d1a' }}>{snap.storeEmoji} {snap.storeName}</div>
                 <div className="space-y-0.5 mb-2">
                     {items.slice(0, 4).map((it, i) => (
                         <div key={i} className="flex items-center justify-between text-[12px]" style={{ color: '#54504a' }}>
-                            <span className="truncate"><span style={gray}>{it.emoji || '🍽️'}</span> {it.name}</span>
+                            <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
                             <span className="shrink-0 ml-2" style={{ color: '#857f74' }}>×{it.qty}</span>
                         </div>
                     ))}
