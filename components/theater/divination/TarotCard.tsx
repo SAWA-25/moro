@@ -84,14 +84,14 @@ const STYLE_WRAP: Record<NonNullable<Skin['renderStyle']>, string> = {
     mystic: 'rounded-xl ring-1 ring-violet-300/30',
 };
 
-/** 翻牌背面视觉：优先牌背图（去色贴合折子戏黑白拼贴），取不到回退 CSS 牌背。 */
+/** 翻牌背面视觉：优先牌背图（彩色显示），取不到回退 CSS 牌背。 */
 const FlipBack: React.FC<{ src?: string; wrap: string }> = ({ src, wrap }) => {
     const [broken, setBroken] = useState(false);
     const showImg = !!src && !broken;
     return (
         <div className={`w-full h-full overflow-hidden ${wrap}`}>
             {showImg ? (
-                <img src={src} onError={() => setBroken(true)} className="w-full h-full object-cover" style={{ filter: 'grayscale(1) contrast(1.05)' }} alt="" draggable={false} />
+                <img src={src} onError={() => setBroken(true)} className="w-full h-full object-cover" style={{ filter: 'contrast(1.03)' }} alt="" draggable={false} />
             ) : (
                 <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#2a2620,#141210)' }}>
                     <div className="flex items-center justify-center" style={{ width: '58%', height: '74%', borderRadius: 4, border: '1px solid rgba(246,243,236,0.4)', outline: '1px solid rgba(246,243,236,0.16)', outlineOffset: 3 }}>

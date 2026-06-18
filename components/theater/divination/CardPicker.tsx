@@ -40,7 +40,7 @@ function hash(i: number, seed: number): number {
     return x - Math.floor(x);
 }
 
-/** 牌背视觉（纯展示，无 button）：优先牌背图去色，失败回退黑白拼贴牌背。glow=牌轮正中聚焦那张。 */
+/** 牌背视觉（纯展示，无 button）：优先牌背图彩色显示，失败回退拼贴牌背。glow=牌轮正中聚焦那张。 */
 const CardBack: React.FC<{
     src?: string;
     className?: string;
@@ -65,7 +65,7 @@ const CardBack: React.FC<{
             }}
         >
             {showImg ? (
-                <img src={src} onError={() => setBroken(true)} className="w-full h-full object-cover" style={{ filter: 'grayscale(1) contrast(1.05)' }} alt="" draggable={false} />
+                <img src={src} onError={() => setBroken(true)} className="w-full h-full object-cover" style={{ filter: 'contrast(1.03)' }} alt="" draggable={false} />
             ) : (
                 <div className="w-full h-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#2a2620,#141210)' }}>
                     <div className="flex items-center justify-center" style={{ width: '58%', height: '74%', borderRadius: 3, border: '1px solid rgba(246,243,236,0.4)', outline: '1px solid rgba(246,243,236,0.16)', outlineOffset: 2 }}>
@@ -89,21 +89,23 @@ const CardBack: React.FC<{
 const SCREEN_BG = 'radial-gradient(125% 72% at 50% 0%, #2c2925 0%, #211e1b 46%, #181613 100%)';
 
 // ── 洗牌花（向日葵螺旋铺开，裹在固定方框里，绝不溢出）─────────────────────────
-// 牌做大了一圈（仿 Quin 等占卜 App 的「大牌堆」手感），方框 / 半径同步放大保持构图。
-const BLOOM_N = 30;          // 牌花铺多少张（纯视觉）
-const BLOOM_SIZE = 336;      // 方框边长（overflow hidden）
-const BLOOM_MAX_R = 106;     // 离心最大半径
-const BLOOM_CARD_W = 78;     // 牌花里每张牌宽
+// 牌面整体加大（仿实体大牌堆手感，可占到约 1/3 屏宽）；方框 / 半径同步放大保持构图，
+// 牌做大后张数略减，避免糊成一团。容器 overflow:hidden，牌再大也只在框内被裁。
+const BLOOM_N = 26;          // 牌花铺多少张（纯视觉）
+const BLOOM_SIZE = 360;      // 方框边长（overflow hidden）
+const BLOOM_MAX_R = 122;     // 离心最大半径
+const BLOOM_CARD_W = 112;    // 牌花里每张牌宽（加大）
 const GOLDEN = 137.508;      // 黄金角，铺出自然的螺旋花
 
 // ── 牌轮（大圆弧扇环，只露顶部一段，左右拖动转动）──────────────────────────────
 // 牌轮区域高度由 flex-1 撑满（全屏给得起），牌锚在区域顶部、其余沿弧向下转出视窗被裁。
-const WHEEL_R = 392;         // 大圆半径（越大弧越平缓、越像巨轮）
-const WHEEL_STEP = 4.5;      // 相邻两张牌的夹角（度）—— 叠压成密环
+// 牌面加大：聚焦那张可达约 1/3 屏宽；半径 / 夹角同步放大，维持原本的叠压密环手感。
+const WHEEL_R = 470;         // 大圆半径（越大弧越平缓、越像巨轮）
+const WHEEL_STEP = 6;        // 相邻两张牌的夹角（度）—— 叠压成密环
 const WHEEL_VIS = 82;        // 渲染半弧（±度），其余 wrap 出窗外不渲染
-const WHEEL_TOP_PAD = 30;    // 圆弧顶到牌轮区顶的留白（聚焦牌会上浮，多留一点空）
-const WHEEL_CARD_W = 58;     // 牌轮上每张牌宽（聚焦那张会放大）
-const WHEEL_FOCUS_GROW = 20; // 正中聚焦那张额外加宽多少 px
+const WHEEL_TOP_PAD = 40;    // 圆弧顶到牌轮区顶的留白（聚焦牌会上浮，多留一点空）
+const WHEEL_CARD_W = 92;     // 牌轮上每张牌宽（聚焦那张会放大）
+const WHEEL_FOCUS_GROW = 40; // 正中聚焦那张额外加宽多少 px（聚焦≈1/3 屏宽）
 const PX_PER_CARD = WHEEL_R * WHEEL_STEP * DEG;   // 拖动多少 px 转过一张牌
 
 interface DragState { active: boolean; startX: number; startOffset: number; moved: boolean; idx: number | null; }
@@ -283,7 +285,8 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
     }
 
     // ── 抽牌阶段 ──────────────────────────────────────────────────────────────
-    const slotW = need > 6 ? 58 : need > 3 ? 68 : 80;
+    // 抽中落位的牌也跟着加大（少张更大、多张收一点避免换行挤）。
+    const slotW = need > 6 ? 60 : need > 3 ? 76 : 92;
     return (
         <div className="absolute inset-0 z-[80] flex flex-col animate-fade-in" style={shellStyle}>
             {topBar}
@@ -357,7 +360,7 @@ const CardPicker: React.FC<CardPickerProps> = ({ modeLabel, positions, deckCount
                         const isActive = i === activeI && !used;
                         const x = Math.sin(theta * DEG) * WHEEL_R;
                         // 聚焦那张上浮一点，离开牌环、凑近指针，更像「被托起待抽」
-                        const lift = isActive ? 12 : 0;
+                        const lift = isActive ? 18 : 0;
                         const y = (WHEEL_R - Math.cos(theta * DEG) * WHEEL_R) + WHEEL_TOP_PAD - lift;
                         return (
                             <div

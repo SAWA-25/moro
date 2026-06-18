@@ -122,7 +122,7 @@ const TalkTherapyApp: React.FC<Props> = ({ onExit }) => {
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
                     }>收起</ScrapButton>
                     <div className="flex items-center gap-2 min-w-0">
-                        {char && <img src={char.avatar} className="w-7 h-7 rounded-full object-cover" style={{ filter: 'grayscale(1) contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />}
+                        {char && <img src={char.avatar} className="w-7 h-7 rounded-full object-cover" style={{ filter: 'contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />}
                         <span className="text-[13px] font-black truncate" style={{ color: INK }}>和 {char?.name} 谈心</span>
                     </div>
                     <ScrapButton variant={collected ? 'ghost' : 'ink'} className="px-3 py-1.5 text-[11px]" disabled={collected} onClick={() => collect(session)} icon={<BookmarkSimple size={13} weight={collected ? 'fill' : 'bold'} />}>
@@ -135,7 +135,7 @@ const TalkTherapyApp: React.FC<Props> = ({ onExit }) => {
                     {session.turns.map((t, i) => (
                         t.role === 'char' ? (
                             <div key={i} className="flex items-start gap-2.5">
-                                {char && <img src={char.avatar} className="w-7 h-7 rounded-full object-cover mt-0.5 shrink-0" style={{ filter: 'grayscale(1) contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />}
+                                {char && <img src={char.avatar} className="w-7 h-7 rounded-full object-cover mt-0.5 shrink-0" style={{ filter: 'contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />}
                                 <div className="max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ background: 'rgba(255,253,247,0.96)', color: '#3a362f', border: '1px solid rgba(176,170,158,0.7)', borderRadius: '4px 16px 16px 16px', boxShadow: '0 6px 14px -10px rgba(31,29,26,0.4)' }}>
                                     {t.text}
                                 </div>
@@ -225,7 +225,7 @@ const TalkTherapyApp: React.FC<Props> = ({ onExit }) => {
                                 const collected = collectedIds.has(collectionId('talk', s.id));
                                 return (
                                     <PaperCard key={s.id} tilt={i % 2 ? 0.5 : -0.5} className="px-3.5 py-3 flex items-center gap-3">
-                                        {c ? <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" style={{ filter: 'grayscale(1) contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.6)' }} alt="" /> : <span className="text-[22px]">🫂</span>}
+                                        {c ? <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" style={{ filter: 'contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.6)' }} alt="" /> : <span className="text-[22px]">🫂</span>}
                                         <button onClick={() => resume(s)} className="flex-1 min-w-0 text-left">
                                             <div className="text-[13px] font-black truncate" style={{ color: INK }}>{s.title || '一次谈心'}</div>
                                             <div className="text-[10.5px] truncate mt-0.5" style={{ color: INK_SOFT }}>和 {c?.name || '某人'} · {new Date(s.lastActiveAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} · {s.turns.length} 句</div>

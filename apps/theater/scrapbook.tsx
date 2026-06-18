@@ -4,10 +4,10 @@ import React from 'react';
  * 折子戏 · 黑白拼贴手账设计套件（Scrapbook Collage Kit）
  * ──────────────────────────────────────────────────────────
  * 折子戏（戏单 + 攻略本 / 番外 / 占卜 / 谈心 / TRPG / 轨迹 / 对影）统一换肤用的可复用积木。
- * 风格＝米白报纸 + 黑墨 + 缝线描边 + 牛皮胶带（灰阶条纹）+ 拍立得（黑白照）+ 邮票 + 手写体，
+ * 风格＝米白报纸 + 黑墨 + 缝线描边 + 牛皮胶带（灰阶条纹）+ 拍立得 + 邮票 + 手写体，
  * 呼应 index.html 里已有的全局手账系统（--font-hand / --font-display / --font-label / .scrap-btn …）。
  *
- * 调色严格走黑白灰：纸是米白，字是墨黑，胶带 / 便签 / 邮票全是灰阶；照片统一去色。
+ * 调色走米白纸面 + 墨黑字：纸是米白，字是墨黑，胶带 / 便签 / 邮票是灰阶；照片 / 头像保留原彩色。
  *
  * 约束：这一层只管「长什么样」。所有业务逻辑、数据、handler 仍留在各 App 里，
  * 换肤不改变、不减少任何功能。
@@ -188,9 +188,9 @@ export const Polaroid: React.FC<{
     rotate?: number;
     size?: number;
     fallback?: React.ReactNode;
-    /** 默认照片去色成黑白；传 false 保留彩色（如「饭票」要彩色头像）。 */
+    /** 默认保留原彩色（照片 / 头像）；传 grayscale 强制去色成黑白。 */
     grayscale?: boolean;
-}> = ({ src, caption, selected = false, onClick, rotate = 0, size = 56, fallback, grayscale = true }) => (
+}> = ({ src, caption, selected = false, onClick, rotate = 0, size = 56, fallback, grayscale = false }) => (
     <button
         onClick={onClick}
         className="relative shrink-0 active:scale-95 transition-transform"
@@ -206,7 +206,7 @@ export const Polaroid: React.FC<{
             }}
         >
             <div className="overflow-hidden" style={{ width: size, height: size, borderRadius: 3, background: '#e6e2d8' }}>
-                {src ? <img src={src} alt={caption || ''} className="w-full h-full object-cover" style={grayscale ? { filter: 'grayscale(1) contrast(1.06)' } : undefined} /> : <div className="w-full h-full flex items-center justify-center text-xl">{fallback}</div>}
+                {src ? <img src={src} alt={caption || ''} className="w-full h-full object-cover" style={grayscale ? { filter: 'grayscale(1) contrast(1.06)' } : { filter: 'contrast(1.03)' }} /> : <div className="w-full h-full flex items-center justify-center text-xl">{fallback}</div>}
             </div>
             {caption !== undefined && (
                 <div className="absolute left-0 right-0 bottom-1 text-center px-1">
