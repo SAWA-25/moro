@@ -50,9 +50,9 @@ const paperInput: React.CSSProperties = {
 // 是否是可作 <img> 的头像（URL/data），否则当 emoji 文字
 const isImg = (s?: string) => !!s && /^(https?:|data:|blob:)/.test(s);
 
-// ── 去色食物 emoji（呼应「照片一律 grayscale」的黑白规矩）──
+// ── 食物 emoji（彩色，像贴在黑白手账上的彩色小贴纸 / 拍立得）──
 const Emo: React.FC<{ e?: string; size?: number; className?: string }> = ({ e = '🍽️', size = 22, className = '' }) => (
-    <span className={className} aria-hidden style={{ fontSize: size, lineHeight: 1, display: 'inline-block', filter: 'grayscale(1) contrast(1.03)' }}>{e}</span>
+    <span className={className} aria-hidden style={{ fontSize: size, lineHeight: 1, display: 'inline-block' }}>{e}</span>
 );
 
 // ── 墨色星星（评分）──
@@ -364,6 +364,7 @@ const TakeoutApp: React.FC = () => {
             selected={on}
             onClick={onClick}
             size={48}
+            grayscale={false}
         />
     );
 

@@ -188,7 +188,9 @@ export const Polaroid: React.FC<{
     rotate?: number;
     size?: number;
     fallback?: React.ReactNode;
-}> = ({ src, caption, selected = false, onClick, rotate = 0, size = 56, fallback }) => (
+    /** 默认照片去色成黑白；传 false 保留彩色（如「饭票」要彩色头像）。 */
+    grayscale?: boolean;
+}> = ({ src, caption, selected = false, onClick, rotate = 0, size = 56, fallback, grayscale = true }) => (
     <button
         onClick={onClick}
         className="relative shrink-0 active:scale-95 transition-transform"
@@ -204,7 +206,7 @@ export const Polaroid: React.FC<{
             }}
         >
             <div className="overflow-hidden" style={{ width: size, height: size, borderRadius: 3, background: '#e6e2d8' }}>
-                {src ? <img src={src} alt={caption || ''} className="w-full h-full object-cover" style={{ filter: 'grayscale(1) contrast(1.06)' }} /> : <div className="w-full h-full flex items-center justify-center text-xl">{fallback}</div>}
+                {src ? <img src={src} alt={caption || ''} className="w-full h-full object-cover" style={grayscale ? { filter: 'grayscale(1) contrast(1.06)' } : undefined} /> : <div className="w-full h-full flex items-center justify-center text-xl">{fallback}</div>}
             </div>
             {caption !== undefined && (
                 <div className="absolute left-0 right-0 bottom-1 text-center px-1">
