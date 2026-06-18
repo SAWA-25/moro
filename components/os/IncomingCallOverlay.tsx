@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
+import { startIncomingRing } from '../../utils/ringtone';
 import { AppID } from '../../types';
 
 /**
@@ -52,6 +53,13 @@ const IncomingCallOverlay: React.FC = () => {
             setCallCharId(null);
         }, RING_TIMEOUT_MS);
         return () => window.clearTimeout(t);
+    }, [callCharId]);
+
+    // 来电提示音：响铃期间循环播放，接听 / 挂断 / 超时（callCharId 清空）即停。
+    useEffect(() => {
+        if (!callCharId) return;
+        const ring = startIncomingRing();
+        return () => ring.stop();
     }, [callCharId]);
 
     if (!callCharId) return null;
