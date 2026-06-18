@@ -1,8 +1,20 @@
 # 主动消息 Push 加速器 · 部署剧本（全按按钮版）
 
-**作用**：给主动消息 1.0 提供"到点喊醒浏览器"的能力。cron 每分钟扫 D1，
-对心跳活着的订阅发 wake push。AI 生成全在浏览器本地跑，Worker 看不到
-任何聊天内容。
+**作用**：给主动消息提供"到点喊醒浏览器"的能力。cron 每分钟扫 D1，
+对心跳活着的订阅发 wake push。Worker 自己看不到任何聊天内容、也不调任何 LLM——
+它只发一条「该 charId 到点了」的极简 wake。
+
+收到 wake 后的生成在 **Service Worker** 里跑（sw-keep-alive.js ≥ 1.16.0）：
+- 前台有可见页面时，照旧交主线程跑完整管线；
+- **页面已关闭 / 后台冻结时，Service Worker 自己读本地快照（MoroProactiveSW）+ 调
+  「副 API」生成主动消息**，落 inbox + 弹系统通知。这就是「退出 moro 后仍能发主动消息」。
+
+> ⚠️ 本次更新改了 wake 的 payload 形状（`messageKind:'proactive_wake'`）。**请把
+> 下面的 `worker.bundle.js` 重新粘贴部署到 CF 面板**（见阶段 2 第 5~7 步），否则旧
+> Worker 发的旧 payload 不会触发新版 SW 的离线生成。
+>
+> 离线生成的前置条件：① 文具盒里配好「副 API」（或角色自带副线）；② 该角色「主动消息」
+> 开关已开；③ 本 Worker 已部署 + cron 已加 + 通知权限已授予 + 设置里「主动消息 Push 加速」开关已开。
 
 **费用**：Cloudflare 全程免费档，30 分钟主动消息随便用。
 

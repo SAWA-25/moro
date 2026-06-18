@@ -184,7 +184,17 @@ async function runScheduledSweep(env: Env): Promise<{ fired: number; dropped: nu
   let dropped = 0;
 
   for (const row of due.results) {
-    const payload = JSON.stringify({ type: 'proactive-wake', charId: row.char_id, t: now });
+    // Wake payload shaped for the SW's amsg onBusinessPayload router (sw-keep-alive.ts ≥1.16.0):
+    //   - messageKind 'proactive_wake' → routed to SW-side generation (calls aux API)
+    //   - unique messageId → not collapsed by amsg-sw delivery dedupe across ticks
+    //   - notification.show:false → amsg-sw won't render a fallback notification (SW renders its own)
+    const payload = JSON.stringify({
+      messageKind: 'proactive_wake',
+      messageId: `pw-${row.char_id}-${now}`,
+      metadata: { charId: row.char_id },
+      notification: { show: false },
+      t: now,
+    });
     try {
       const result = await sendPush(
         vapid,
