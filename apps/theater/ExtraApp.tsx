@@ -274,7 +274,7 @@ const ExtraApp: React.FC<Props> = ({ onExit }) => {
                         <div className="rounded-[14px] p-4" style={{ background: 'linear-gradient(180deg,#26231f,#1c1a17)', color: '#f3ecdf', border: '1px solid rgba(31,29,26,0.8)', outline: '1px dashed rgba(246,243,236,0.2)', outlineOffset: -5, transform: 'rotate(0.4deg)' }}>
                             <div className="flex items-center justify-between mb-1.5">
                                 <div className="flex items-center gap-2">
-                                    {char && <img src={char.avatar} className="w-6 h-6 rounded-full object-cover" style={{ filter: 'grayscale(1) contrast(1.1)' }} alt="" />}
+                                    {char && <img src={char.avatar} className="w-6 h-6 rounded-full object-cover" style={{ filter: 'contrast(1.05)' }} alt="" />}
                                     <span className="text-[12px] font-black">{char?.name} 的回答</span>
                                 </div>
                                 <button onClick={() => void regenCharAnswer()} disabled={busy} className="active:scale-90 disabled:opacity-40" style={{ color: 'rgba(246,243,236,0.7)' }} title="让 TA 重答">
