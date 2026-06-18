@@ -139,13 +139,14 @@ interface AiStoreRaw {
 export async function generateStoresAI(api: ResolvedApi, count = 12): Promise<TakeoutStore[]> {
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     if (!baseUrl || !api.model) return generateStores(count);
-    const prompt = `你是一个外卖平台的店铺数据生成器。请生成 ${count} 家风格各异、像真实存在的外卖店，覆盖这些品类：${CATS.join('、')}。
-要求（务必贴近现实）：
-- 大多数是正常/良心店；但要包含 2~3 家「黑心商家」：缺斤少两、图文严重不符、卫生堪忧、专用超低价促销坑新客、甚至收钱不接单。黑心店把 integrity 设低（0.15~0.45），正常店 0.8~1.0，一般店 0.55~0.8。
-- 黑心店里有的会露出红旗（warning，如「近期卫生差评偏多」「多人反馈缺斤少两」），有的伪装得好（高分刷单、夸张促销）就把 warning 留空。
-- 每家 5~9 个菜品，名字与价格符合该品类与现实（¥3~¥88），给每个菜配一个 emoji；把 1~2 个招牌设 popular:true。
-- blurb 是一句店铺公告/招牌话术（≤20字）。emoji 是店铺 logo（一个食物 emoji）。category 必须取自给定品类。
-只输出 JSON，不要解释，格式：
+    const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
+要求（越像真的越好，别像广告）：
+- 店名要有烟火气、有记忆点：可带店主姓氏 / 街巷地名 / 老字号味（如「城西巷·阿婆糖水」「老周烧腊」「深夜两点面」），别千篇一律。
+- 大多数是踏实经营的良心店；但务必混进 2~3 家「黑心铺子」：缺斤少两、图文严重不符、后厨卫生堪忧、专靠超低价促销坑新客、甚至收了钱迟迟不接单。黑心店 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
+- 黑心店有的会露出马脚（warning，如「近期卫生差评偏多·谨慎」「多人反馈缺斤少两」「差评回复阴阳怪气」），有的伪装得好（虚高分刷单、夸张满减引流）就把 warning 留空，专坑没防备的人。
+- 每家 5~9 道菜，菜名与定价贴合该品类与现实（¥3~¥88），口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的食物 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
+- blurb 是店主写在招牌上的一句话（≤20 字，有人味，如「慢工出细活，急单请改期」「老板娘手抖，料给得多」）。emoji 是这家的门脸 logo（一个食物 emoji）。category 必须取自给定品类。
+只输出 JSON，不要任何解释或前后缀，格式：
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
     try {
         const data = await safeFetchJson(
@@ -231,22 +232,24 @@ export function isTakeoutArrived(order: TakeoutOrder, now = Date.now()): boolean
     return !order.deliveredAt && order.status !== 'cancelled' && now >= order.etaAt;
 }
 
+// 「饭票」状态词：把美团式术语换成手账口吻（灶上/跑腿/门口/签收/作废）。
+// 注：本表被外卖 App、聊天小票（MessageItem）、灵动岛（DynamicIsland）共用，改这里即全局生效。
 export const STATUS_LABEL: Record<TakeoutStatus, string> = {
-    preparing: '商家备餐中',
-    delivering: '骑手配送中',
-    arrived: '已到达·待收货',
-    delivered: '已送达',
-    cancelled: '已取消',
+    preparing: '灶上忙着',
+    delivering: '跑腿在路上',
+    arrived: '到门口了·待签收',
+    delivered: '已签收',
+    cancelled: '已作废',
 };
 
-/** 剩余配送时间文案。 */
+/** 剩余配送时间文案（手账口吻）。 */
 export function etaText(order: TakeoutOrder, now = Date.now()): string {
     const s = liveTakeoutStatus(order, now);
-    if (s === 'delivered') return '已送达';
-    if (s === 'cancelled') return order.cancelledByStore ? '商家已砍单' : '已取消';
-    if (s === 'arrived') return '外卖已到，请确认收货';
+    if (s === 'delivered') return '已签收';
+    if (s === 'cancelled') return order.cancelledByStore ? '铺子撂了挑子' : '已作废';
+    if (s === 'arrived') return '到门口啦，盖章签收';
     const mins = Math.max(1, Math.ceil((order.etaAt - now) / 60000));
-    return `预计 ${mins} 分钟后送达`;
+    return `约 ${mins} 分钟到手`;
 }
 
 export const newRider = () => ({ name: pick(RIDER_NAMES), emoji: pick(RIDER_EMOJIS) });
@@ -355,11 +358,13 @@ export function resolveComplaint(order: TakeoutOrder): { refund: number; outcome
 }
 
 // ── 和骑手 / 商家 / 平台客服聊天 ─────────────────────────────────
-const CANNED_RIDER_GOOD = ['您好，正在赶往商家取餐～', '马上到您附近啦，请保持电话畅通🛵', '路上有点堵，会尽快送到的！', '到楼下了，请下来取一下哈～'];
-const CANNED_RIDER_BAD = ['我同时送好几单，等着。', '放门口了，自己下来拿。', '超时找平台去，别催我。', '这么远的路费才几块钱，将就下。'];
-const CANNED_STORE_GOOD = ['亲，正在为您准备，请稍等～', '已经在出餐啦，马上交给骑手！', '收到，会备注好您的口味的👌', '感谢下单，吃好喝好呀～'];
-const CANNED_STORE_BAD = ['我们分量都是标准的，不存在缺斤少两。', '餐品没问题，要退款找平台。', '概不退换，已经做好了。', '图片仅供参考，以实物为准。'];
-const CANNED_SUPPORT = ['您好，已收到反馈，正在为您核实订单～', '稍等，我们会联系商家核实并跟进赔付。', '给您带来不便很抱歉，已为您记录。'];
+const CANNED_RIDER_GOOD = ['您好，正赶去铺子取餐啦～', '马上到您楼下啦，电话保持畅通🛵', '路上有点堵，我尽量快，别急哈！', '到单元门口了，您下来取一下～', '保温袋裹好了，凉不了，稍等我两分钟'];
+const CANNED_RIDER_BAD = ['我手上好几单呢，等着吧。', '搁门口了，自己下来拿。', '超时你找平台，别催我。', '这点跑腿费跑这么远，将就下得了。'];
+const CANNED_STORE_GOOD = ['好嘞，正给您现做，稍等片刻～', '已经出餐啦，这就交给跑腿的！', '收到，您的口味我备注上了👌', '谢谢惠顾，趁热吃呀～', '招牌给您多搁了一勺，照顾好胃口'];
+const CANNED_STORE_BAD = ['我家分量都是标准的，不存在少给。', '餐品没毛病，要退款你找平台。', '都做好了，概不退换。', '图片仅供参考，以实物为准哈。'];
+const CANNED_SUPPORT = ['您好，反馈收到了，正帮您核实这张单～', '稍等，我们联系铺子核实并跟进赔付。', '给您添麻烦了十分抱歉，已记录在案。'];
+// 顾客给了小费时，靠谱跑腿会更暖一点的兜底话术
+const CANNED_RIDER_TIPPED = ['谢谢您的小费！我一定稳稳给您送到～', '收到您的心意啦，这单我格外上心🛵', '有您这份体谅，跑得再远也值！'];
 
 function riderIsBad(order: TakeoutOrder): boolean {
     return (order.riderReliability ?? 1) < 0.6 || (order.incidents || []).some(i => i.by === 'rider');
@@ -371,8 +376,9 @@ function storeIsBad(order: TakeoutOrder): boolean {
 export async function buildDeliveryReply(
     api: ResolvedApi, order: TakeoutOrder, target: 'rider' | 'store' | 'support', history: { role: string; text: string }[], userText: string,
 ): Promise<string> {
+    const tipped = (order.tip ?? 0) > 0;
     const fallback = () => target === 'support' ? pick(CANNED_SUPPORT)
-        : target === 'rider' ? (riderIsBad(order) ? pick(CANNED_RIDER_BAD) : pick(CANNED_RIDER_GOOD))
+        : target === 'rider' ? (riderIsBad(order) ? pick(CANNED_RIDER_BAD) : (tipped ? pick(CANNED_RIDER_TIPPED) : pick(CANNED_RIDER_GOOD)))
             : (storeIsBad(order) ? pick(CANNED_STORE_BAD) : pick(CANNED_STORE_GOOD));
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     if (!baseUrl || !api.model) return fallback();
@@ -380,20 +386,20 @@ export async function buildDeliveryReply(
     const issues = (order.incidents || []).map(i => i.title).join('、');
     let persona: string;
     if (target === 'support') {
-        persona = `你是外卖平台的「平台客服」，公事公办但向着消费者。会核实订单、安抚、必要时承诺联系商家与赔付。${issues ? `本单已知问题：${issues}。` : ''}`;
+        persona = `你是这座小城吃食平台的「平台客服」，公事公办但向着食客。会核实这张饭票、安抚情绪、必要时承诺联系铺子与赔付。${issues ? `本单已知问题：${issues}。` : ''}`;
     } else if (target === 'rider') {
         persona = riderIsBad(order)
-            ? `你是个不太靠谱的外卖骑手，态度敷衍、不耐烦，爱甩锅给路况/平台/商家，常说「我同时送好几单」「放门口自己拿」。别太离谱，但能感到不上心。`
-            : `你是外卖骑手「${order.riderName}」，语气朴实、热心、接地气，会提到取餐/路况/到楼下之类。`;
+            ? `你是个不太靠谱的跑腿（外卖骑手），态度敷衍、不耐烦，爱把锅甩给路况/平台/铺子，常说「我手上好几单」「搁门口自己拿」。别太离谱，但能让人感到不上心。`
+            : `你是跑腿小哥「${order.riderName}」，语气朴实、热心、接地气，会聊取餐/路况/到楼下、保温之类的实在话。${tipped ? '这位食客额外给了你小费，你心里记着这份体谅，回话更暖、更上心一点。' : ''}`;
     } else {
         persona = storeIsBad(order)
-            ? `你是「${order.storeName}」的黑心商家客服，嘴硬、抵赖、踢皮球，否认缺斤少两/图文不符，爱说「分量标准」「概不退换」「以实物为准」「找平台去」。别爆粗，但明显不想负责。`
-            : `你是「${order.storeName}」的商家客服，热情、麻利，会提到备餐/出餐/口味备注之类。`;
+            ? `你是「${order.storeName}」的黑心铺子客服，嘴硬、抵赖、踢皮球，否认缺斤少两/图文不符，爱说「分量标准」「概不退换」「以实物为准」「找平台去」。别爆粗，但明显不想负责。`
+            : `你是「${order.storeName}」的铺子客服，热情、麻利，会聊现做/出餐/口味备注、招牌推荐之类。`;
     }
     const items = order.items.map(i => `${i.name}×${i.qty}`).join('、');
-    const roleZh = target === 'rider' ? '骑手' : target === 'store' ? '商家' : '客服';
-    const hist = history.slice(-6).map(h => `${h.role === 'user' ? '顾客' : roleZh}：${h.text}`).join('\n');
-    const prompt = `${persona}\n本单：${items}。\n${hist ? `对话：\n${hist}\n` : ''}顾客刚说：${userText}\n用一句话自然回复（不超过30字，不要前缀）：`;
+    const roleZh = target === 'rider' ? '跑腿' : target === 'store' ? '铺子' : '客服';
+    const hist = history.slice(-6).map(h => `${h.role === 'user' ? '食客' : roleZh}：${h.text}`).join('\n');
+    const prompt = `${persona}\n这张饭票点的是：${items}。\n${hist ? `之前的对话：\n${hist}\n` : ''}食客刚说：${userText}\n用一句话自然回复（不超过30字，口语，不要任何前缀）：`;
     try {
         const res = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
@@ -553,6 +559,25 @@ export function consumeTakeoutIntent(): TakeoutIntent | null {
     return null;
 }
 
+// ── 「钉在墙上的常去铺子」（按店名收藏，店铺每次刷新会变，故以名字为锚） ──────
+const PINNED_KEY = 'moro_takeout_pinned_v1';
+
+export function getPinnedStores(): string[] {
+    try {
+        const raw = localStorage.getItem(PINNED_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : [];
+    } catch { return []; }
+}
+
+/** 钉上 / 取下一家常去的铺子，返回更新后的名单。 */
+export function togglePinnedStore(name: string): string[] {
+    const cur = getPinnedStores();
+    const next = cur.includes(name) ? cur.filter(n => n !== name) : [name, ...cur].slice(0, 24);
+    try { localStorage.setItem(PINNED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+}
+
 // ── 实时联动：订单变化广播（小票 / 灵动岛即时刷新） ─────────────────
 /** 订单发生变化（下单 / 送达 / 评价…）时广播，供聊天小票与灵动岛即时刷新。 */
 export const TAKEOUT_UPDATED_EVENT = 'moro-takeout-updated';
@@ -570,15 +595,15 @@ export function pickActiveOrders(orders: TakeoutOrder[], now = Date.now()): Take
 // ── 外卖评价 + 其它 NPC 评论 ───────────────────────────────────────
 export interface StoreNpcReview { id: string; name: string; emoji: string; rating: number; text: string; date: string; likes: number; reply?: string; }
 
-const REVIEWER_NAMES = ['吃货小分队', '匿名食客', '楼下的老王', '减脂中的喵', '深夜放毒', '加班狗本狗', '带饭星人', '嘴刁的猫', '干饭人', '隔壁老张', '美食侦探', '一只柯基', '打工不易', '学生党一枚', '宝妈日常', '路过的猫', '挑食小公主', '夜跑选手'];
-const REVIEWER_EMOJIS = ['🦊', '🐱', '🐻', '🐼', '🐯', '🐰', '🐧', '🐸', '🐵', '🦝', '🐶', '🦦', '🐹', '🦉'];
-const REVIEW_POS = ['分量很足，味道在线，会回购！', '送得比预计还快，包装也干净👍', '点了好多次了，稳定发挥～', '性价比真的高，学生党友好', '热乎乎的，骑手小哥人很好', '招牌名不虚传，绝了', '第一次点就爱上了，下次还来', '汤底很鲜，一滴不剩', '老板很实在，给的料超多'];
-const REVIEW_MID = ['味道还行，就是配送有点慢', '分量一般般，凑合吃', '中规中矩，不难吃也不惊艳', '包装有点简陋，味道还可以', '正常发挥吧，没踩雷'];
-const REVIEW_NEG = ['等了好久才送到，凉了…', '和图片差距有点大', '有点咸了，下次得备注少盐', '分量缩水，性价比一般'];
-const REPLY_DINER_POS = ['同感！我也常点这家', '马住，下次试试', '哈哈哈被你种草了', '+1，他家招牌真的可以', '看饿了…'];
-const REPLY_DINER_NEG = ['我也遇到过送得慢…', '可能高峰期人手不够吧', '备注少盐会好很多'];
-const REPLY_MERCHANT_POS = ['感谢支持，欢迎下次再来呀～', '谢谢喜欢！我们会继续努力🧡', '老顾客了，给您加了份小料～'];
-const REPLY_MERCHANT_NEG = ['抱歉让您久等了，已反馈给配送，下次一定更快🙏', '非常抱歉口味没达预期，欢迎备注，我们改进！'];
+const REVIEWER_NAMES = ['吃货小分队', '匿名食客', '楼下的老王', '减脂中的喵', '深夜放毒', '加班狗本狗', '带饭星人', '嘴刁的猫', '干饭人', '隔壁老张', '美食侦探', '一只柯基', '打工不易', '学生党一枚', '宝妈日常', '路过的猫', '挑食小公主', '夜跑选手', '本市干饭冠军', '蹲点测评员', '不爱做饭星人', '退休美食家', '楼上的设计师', '凌晨emo选手'];
+const REVIEWER_EMOJIS = ['🦊', '🐱', '🐻', '🐼', '🐯', '🐰', '🐧', '🐸', '🐵', '🦝', '🐶', '🦦', '🐹', '🦉', '🐨', '🦥', '🐧', '🐤'];
+const REVIEW_POS = ['分量很足，味道在线，会回购！', '送得比预计还快，包装也干净👍', '点了好多次了，稳定发挥～', '性价比真的高，学生党友好', '热乎乎的，跑腿小哥人很好', '招牌名不虚传，绝了', '第一次点就爱上了，下次还来', '汤底很鲜，一滴不剩', '老板很实在，给的料超多', '隔着保温袋都香，开盖那一下值了', '加班到深夜，这口热乎救了我', '老板娘还塞了颗糖，细节满分'];
+const REVIEW_MID = ['味道还行，就是送得有点慢', '分量一般般，凑合吃', '中规中矩，不难吃也不惊艳', '包装有点简陋，味道还可以', '正常发挥吧，没踩雷', '招牌可以，配菜略敷衍'];
+const REVIEW_NEG = ['等了好久才送到，凉透了…', '和图片差距有点大', '有点咸了，下次得备注少盐', '分量缩水，性价比一般', '催了三回才出餐，心累'];
+const REPLY_DINER_POS = ['同感！我也常点这家', '马住，下次试试', '哈哈哈被你种草了', '+1，他家招牌真的可以', '看饿了…', '楼主嘴和我一样刁，信了'];
+const REPLY_DINER_NEG = ['我也遇到过送得慢…', '可能高峰期人手不够吧', '备注少盐会好很多', '抱抱，换家吧别气'];
+const REPLY_MERCHANT_POS = ['感谢支持，欢迎下次再来呀～', '谢谢喜欢！我们会继续努力🧡', '老顾客了，给您加了份小料～', '被夸到啦，明天继续守着灶台！'];
+const REPLY_MERCHANT_NEG = ['抱歉让您久等了，已叮嘱跑腿，下次一定更快🙏', '非常抱歉口味没达预期，欢迎备注，我们改进！', '少给了是我们的错，已记下，请私信补偿'];
 
 const hashStr = (s: string): number => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const mulberry32 = (a: number) => () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
