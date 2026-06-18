@@ -1,6 +1,7 @@
 /// <reference lib="WebWorker" />
 
 import { installReiSW } from '@rei-standard/amsg-sw';
+import { swReadSnapshot, swBuildMessages, swCallLLM, swCleanProactiveText, swMarkGenerated } from '../utils/swProactiveBridge';
 
 /**
  * SW_VERSION: 改 SW 实质行为时（push handler / message protocol / 通知策略 / IDB 升级）
@@ -64,8 +65,13 @@ import { installReiSW } from '@rei-standard/amsg-sw';
  *              错误，前台据此把超时文案精确化。
  *  - 1.15.1: 临时加 instant push trace，定位 iOS PWA 后台导致的 SSE Load failed / backup push
  *            / SW inbox 落库时序。
+ *  - 1.16.0: 离线主动消息——SW 端自给自足生成。Worker cron 的 wake push
+ *            (messageKind:'proactive_wake', notification.show:false) 由 saveIncomingActiveMessage
+ *            顶部识别：无可见 client 时 SW 直接读 MoroProactiveSW 快照 + 调副 API 生成主动消息，
+ *            落 inbox + 弹系统通知（关站/后台冻结也能发）；有可见 client 则照旧 postMessage 交主线程。
+ *            本地 proactive 定时器同理（fireProactiveTrigger 无 client 时走 SW 生成）。
  */
-const SW_VERSION = '1.15.1';
+const SW_VERSION = '1.16.0';
 
 const PING_INTERVAL = 15_000;
 const MAX_MANUAL_ALIVE_MS = 5 * 60_000;
@@ -194,8 +200,64 @@ async function notifyClients(data: Record<string, any>) {
   }
 }
 
+async function hasVisibleClient(): Promise<boolean> {
+  try {
+    const clients = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    return clients.some((c) => (c as WindowClient).visibilityState === 'visible');
+  } catch {
+    return false;
+  }
+}
+
+// 离线主动消息：SW 端自己读快照 + 调副 API 生成一条主动消息，落 inbox + 弹通知。
+// 仅在「没有可见 client」（关站 / 后台冻结）时用——有前台时交主线程跑更完整的管线。
+const lastSwProactiveAt = new Map<string, number>();
+const SW_PROACTIVE_COOLDOWN_MS = 90_000;
+
+async function generateProactiveInSW(charId: string): Promise<void> {
+  if (!charId) return;
+  const now = Date.now();
+  if (now - (lastSwProactiveAt.get(charId) || 0) < SW_PROACTIVE_COOLDOWN_MS) return; // 防 wake+定时器并发重复
+  lastSwProactiveAt.set(charId, now);
+  try {
+    const snap = await swReadSnapshot(charId);
+    if (!snap || !snap.enabled || !snap.api?.baseUrl || !snap.api?.model) return;
+    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
+    if (!text) return;
+    const ts = Date.now();
+    await saveContentToInbox({
+      messageId: `proactive-sw-${charId}-${ts}`,
+      metadata: { charId },
+      message: text,
+      contactName: snap.name,
+      avatarUrl: snap.avatar,
+      source: 'proactive',
+      timestamp: ts,
+    });
+    await swMarkGenerated(charId, ts).catch(() => { /* ignore */ });
+    try {
+      await sw.registration.showNotification(snap.name || '主动消息', {
+        body: text.slice(0, 120),
+        icon: snap.avatar || './icons/icon-192.png',
+        badge: './icons/icon-192.png',
+        data: { charId, kind: 'proactive' },
+        tag: `proactive-${charId}`,
+      });
+    } catch { /* ignore */ }
+    traceSw('proactive-sw-generated', undefined, { charId, chars: text.length });
+  } catch (e) {
+    traceSw('proactive-sw-error', undefined, { charId, error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 function fireProactiveTrigger(charId: string) {
-  void notifyClients({ type: 'proactive-trigger', charId });
+  void (async () => {
+    if (await hasVisibleClient()) {
+      void notifyClients({ type: 'proactive-trigger', charId });
+    } else {
+      await generateProactiveInSW(charId);
+    }
+  })();
 }
 
 function stopProactive(charId: string) {
@@ -594,6 +656,19 @@ async function fetchBlobEnvelope(payload: any): Promise<any | null> {
 // ─── 路由总入口 ──────────────────────────────────────────────────────────────
 
 async function saveIncomingActiveMessage(payload: any) {
+  // 0. 离线主动消息 wake push（Worker cron 发来）：自己唤醒 SW 后，无可见 client 就本地生成。
+  //    Worker 端会带 notification.show:false，所以 amsg-sw 不会弹兜底通知（由本函数自己弹）。
+  if (payload?.messageKind === 'proactive_wake' || payload?.type === 'proactive-wake') {
+    const wakeCharId = payload?.metadata?.charId || payload?.charId;
+    if (!wakeCharId) return;
+    if (await hasVisibleClient()) {
+      await notifyClients({ type: 'proactive-trigger', charId: wakeCharId });
+    } else {
+      await generateProactiveInSW(wakeCharId);
+    }
+    return;
+  }
+
   // 1. blob envelope: 真正 body 在 BlobStore 里, fetch 出来后用 body 继续路由.
   // 重投递的 dedup 由主线程处理 (consumePendingToolCalls / inbox 都是原子 claim).
   if (payload?._blob === true) {

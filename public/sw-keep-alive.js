@@ -1208,11 +1208,11 @@ function openQueueDatabase() {
     const request = indexedDB.open(REI_SW_DB_NAME, REI_SW_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      const tx = request.transaction;
-      createObjectStoreIfMissing(db, tx, REI_SW_DB_STORE, { keyPath: "id", autoIncrement: true });
-      const mpStore = createObjectStoreIfMissing(db, tx, REI_SW_MULTIPART_STORE, { keyPath: "id" });
-      const mpDoneStore = createObjectStoreIfMissing(db, tx, REI_SW_MULTIPART_DONE_STORE, { keyPath: "id" });
-      createObjectStoreIfMissing(db, tx, REI_SW_MULTIPART_CHUNK_STORE, { keyPath: "id_index" });
+      const tx2 = request.transaction;
+      createObjectStoreIfMissing(db, tx2, REI_SW_DB_STORE, { keyPath: "id", autoIncrement: true });
+      const mpStore = createObjectStoreIfMissing(db, tx2, REI_SW_MULTIPART_STORE, { keyPath: "id" });
+      const mpDoneStore = createObjectStoreIfMissing(db, tx2, REI_SW_MULTIPART_DONE_STORE, { keyPath: "id" });
+      createObjectStoreIfMissing(db, tx2, REI_SW_MULTIPART_CHUNK_STORE, { keyPath: "id_index" });
       if (mpStore && !mpStore.indexNames.contains("expiresAt")) {
         mpStore.createIndex("expiresAt", "expiresAt", { unique: false });
       }
@@ -1235,8 +1235,8 @@ function openQueueDatabase() {
     request.onerror = () => reject(request.error || new Error("Failed to open queue database"));
   });
 }
-function createObjectStoreIfMissing(db, tx, name, options) {
-  if (db.objectStoreNames.contains(name)) return tx.objectStore(name);
+function createObjectStoreIfMissing(db, tx2, name, options) {
+  if (db.objectStoreNames.contains(name)) return tx2.objectStore(name);
   return db.createObjectStore(name, options);
 }
 function withQueueStore(mode, handler) {
@@ -1280,8 +1280,111 @@ async function removeQueuedRequest(id) {
   });
 }
 
+// utils/swProactiveBridge.ts
+var DB_NAME = "MoroProactiveSW";
+var DB_VERSION = 1;
+var STORE_CHARS = "chars";
+function openDb() {
+  return new Promise((resolve, reject) => {
+    let req;
+    try {
+      req = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_CHARS)) {
+        db.createObjectStore(STORE_CHARS, { keyPath: "charId" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("MoroProactiveSW open blocked"));
+  });
+}
+function tx(mode, run) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    let request;
+    const t = db.transaction(STORE_CHARS, mode);
+    t.oncomplete = () => {
+      try {
+        db.close();
+      } catch {
+      }
+      resolve(request ? request.result : void 0);
+    };
+    t.onerror = () => {
+      try {
+        db.close();
+      } catch {
+      }
+      reject(t.error);
+    };
+    t.onabort = () => {
+      try {
+        db.close();
+      } catch {
+      }
+      reject(t.error);
+    };
+    request = run(t.objectStore(STORE_CHARS));
+  }));
+}
+async function swPutSnapshot(snap) {
+  await tx("readwrite", (store) => store.put(snap));
+}
+async function swReadSnapshot(charId) {
+  const res = await tx("readonly", (store) => store.get(charId));
+  return res || null;
+}
+async function swMarkGenerated(charId, ts) {
+  const snap = await swReadSnapshot(charId);
+  if (!snap) return;
+  snap.lastGenAt = ts;
+  await swPutSnapshot(snap);
+}
+function swBuildMessages(snap) {
+  const msgs = [{ role: "system", content: snap.systemPrompt }];
+  for (const m of snap.recentMessages || []) {
+    if (!m || !m.content) continue;
+    msgs.push({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content).slice(0, 500) });
+  }
+  msgs.push({ role: "user", content: snap.instruction || "\uFF08\u8F6E\u5230\u4F60\u4E3B\u52A8\u53D1\u6D88\u606F\u4E86\uFF0C\u76F4\u63A5\u5199\u6D88\u606F\u6B63\u6587\uFF09" });
+  return msgs;
+}
+async function swCallLLM(api, messages, maxTokens = 400, signal) {
+  const baseUrl = (api.baseUrl || "").replace(/\/+$/, "");
+  if (!baseUrl || !api.model) return "";
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${api.apiKey || "sk-none"}`
+      },
+      body: JSON.stringify({ model: api.model, messages, temperature: 0.92, max_tokens: maxTokens, stream: false }),
+      signal
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || "";
+  } catch {
+    return "";
+  }
+}
+function swCleanProactiveText(raw) {
+  let t = (raw || "").trim();
+  if (!t) return "";
+  t = t.replace(/^```[a-zA-Z]*\n?/, "").replace(/```$/, "").trim();
+  t = t.replace(/^[「『"'""]/, "").replace(/[」』"'""]$/, "").trim();
+  t = t.replace(/\[\[[^\]]*\]\]/g, "").trim();
+  return t.slice(0, 600);
+}
+
 // worker/sw-keep-alive.ts
-var SW_VERSION = "1.15.1";
+var SW_VERSION = "1.16.0";
 var PING_INTERVAL = 15e3;
 var MAX_MANUAL_ALIVE_MS = 5 * 6e4;
 var ACTIVE_MSG_DB_NAME = "ActiveMsg";
@@ -1388,8 +1491,61 @@ async function notifyClients(data) {
     client.postMessage(data);
   }
 }
+async function hasVisibleClient() {
+  try {
+    const clients = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+    return clients.some((c) => c.visibilityState === "visible");
+  } catch {
+    return false;
+  }
+}
+var lastSwProactiveAt = /* @__PURE__ */ new Map();
+var SW_PROACTIVE_COOLDOWN_MS = 9e4;
+async function generateProactiveInSW(charId) {
+  if (!charId) return;
+  const now = Date.now();
+  if (now - (lastSwProactiveAt.get(charId) || 0) < SW_PROACTIVE_COOLDOWN_MS) return;
+  lastSwProactiveAt.set(charId, now);
+  try {
+    const snap = await swReadSnapshot(charId);
+    if (!snap || !snap.enabled || !snap.api?.baseUrl || !snap.api?.model) return;
+    const text = swCleanProactiveText(await swCallLLM(snap.api, swBuildMessages(snap), 400));
+    if (!text) return;
+    const ts = Date.now();
+    await saveContentToInbox({
+      messageId: `proactive-sw-${charId}-${ts}`,
+      metadata: { charId },
+      message: text,
+      contactName: snap.name,
+      avatarUrl: snap.avatar,
+      source: "proactive",
+      timestamp: ts
+    });
+    await swMarkGenerated(charId, ts).catch(() => {
+    });
+    try {
+      await sw.registration.showNotification(snap.name || "\u4E3B\u52A8\u6D88\u606F", {
+        body: text.slice(0, 120),
+        icon: snap.avatar || "./icons/icon-192.png",
+        badge: "./icons/icon-192.png",
+        data: { charId, kind: "proactive" },
+        tag: `proactive-${charId}`
+      });
+    } catch {
+    }
+    traceSw("proactive-sw-generated", void 0, { charId, chars: text.length });
+  } catch (e) {
+    traceSw("proactive-sw-error", void 0, { charId, error: e instanceof Error ? e.message : String(e) });
+  }
+}
 function fireProactiveTrigger(charId) {
-  void notifyClients({ type: "proactive-trigger", charId });
+  void (async () => {
+    if (await hasVisibleClient()) {
+      void notifyClients({ type: "proactive-trigger", charId });
+    } else {
+      await generateProactiveInSW(charId);
+    }
+  })();
 }
 function stopProactive(charId) {
   const timer = proactiveTimers.get(charId);
@@ -1483,17 +1639,17 @@ async function withInboxTx(storeName, mode, run) {
     const db = await openInboxDb();
     try {
       return await new Promise((resolve, reject) => {
-        let tx;
+        let tx2;
         try {
-          tx = db.transaction(storeName, mode);
+          tx2 = db.transaction(storeName, mode);
         } catch (e) {
           reject(e);
           return;
         }
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error || new Error(`inbox tx error (${storeName})`));
-        tx.onabort = () => reject(tx.error || new Error(`inbox tx aborted (${storeName})`));
-        run(tx.objectStore(storeName));
+        tx2.oncomplete = () => resolve();
+        tx2.onerror = () => reject(tx2.error || new Error(`inbox tx error (${storeName})`));
+        tx2.onabort = () => reject(tx2.error || new Error(`inbox tx aborted (${storeName})`));
+        run(tx2.objectStore(storeName));
       });
     } catch (e) {
       if (attempt === 0 && isInboxConnectionClosingError(e)) {
@@ -1672,6 +1828,16 @@ async function fetchBlobEnvelope(payload) {
   }
 }
 async function saveIncomingActiveMessage(payload) {
+  if (payload?.messageKind === "proactive_wake" || payload?.type === "proactive-wake") {
+    const wakeCharId = payload?.metadata?.charId || payload?.charId;
+    if (!wakeCharId) return;
+    if (await hasVisibleClient()) {
+      await notifyClients({ type: "proactive-trigger", charId: wakeCharId });
+    } else {
+      await generateProactiveInSW(wakeCharId);
+    }
+    return;
+  }
   if (payload?._blob === true) {
     const real = await fetchBlobEnvelope(payload);
     if (!real) return;

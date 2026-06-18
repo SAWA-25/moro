@@ -32,7 +32,10 @@ const CLIENT_TOKEN = 'weqwqewqeqwdcsccagdgs32132';
 // loadPushConfig() 一律返回 enabled=false：心跳不再启动、不再向 Worker
 // 注册，Worker 在心跳窗口（默认 5 分钟）内自动对这些设备停发。
 // 注意：只关掉 Worker 加速层，proactiveChat.ts 的本地定时主动消息不受影响。
-const FORCE_DISABLED = true;
+// 离线主动消息（SW 端调副 API 生成）重新启用了 Worker 加速层：cron wake push 是关站后
+// 唤醒 SW 的唯一途径。仍保留 per-user 开关（proactive_push_enabled_v1）+ VAPID 就绪判定，
+// 用户没在设置里打开 / 没部署 Worker 时，loadPushConfig 仍返回 enabled=false，纯本地定时不受影响。
+const FORCE_DISABLED = false;
 // ───────────────────────────────────────────────────────────────────
 
 import { loadPushVapid, isPushVapidReady } from './pushVapid';
