@@ -4,6 +4,7 @@ import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile,
 import { DB } from '../utils/db';
 import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
+import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
 import { proactiveFallbackHint } from '../utils/laiwangPrompts';
 import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, randomUnblockDelayMs } from '../utils/blockSystem';
@@ -1490,7 +1491,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               await postTakeoutPlacedToChat(order, nameOf);
               notifyTakeoutUpdated();
               bumpUnread(d.charId);
-              addToast(`${char.name} 给你点了份外卖`, 'success');
+              addToast(`${char.name} 悄悄给你撕了张饭票 🍱`, 'success');
           } catch { /* ignore */ }
       };
 
@@ -2331,6 +2332,26 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           markSeen();
           document.removeEventListener('visibilitychange', onVisibility);
           window.removeEventListener('focus', onFocus);
+      };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDataLoaded]);
+
+  // ─── 离线主动消息·快照镜像 ───────────────────────────────────────
+  // 把「开了主动消息的角色」的紧凑生成上下文（人设 + 当下日常 + 最近对话 + 解析好的副 API）
+  // 写进 MoroProactiveSW，供 Service Worker 在关站/后台被 Web Push 唤醒后自己调副 API 生成
+  // 主动消息（取材 ta 的日常）。每 5 分钟刷新一次保持新鲜；回前台时先对账（回填 SW 离线期间
+  // 已发过的时间）避免本地定时器重复触发，再刷一次快照。失败全吞，绝不影响主流程。
+  useEffect(() => {
+      if (!isDataLoaded) return;
+      const mirror = () => { void mirrorProactiveSnapshots(charactersRef.current, apiConfigRef.current, auxApiConfigRef.current); };
+      const onVisible = () => { if (document.visibilityState === 'visible') { void reconcileProactiveFires(); mirror(); } };
+      void reconcileProactiveFires();
+      mirror();
+      const timer = setInterval(mirror, 5 * 60 * 1000);
+      document.addEventListener('visibilitychange', onVisible);
+      return () => {
+          clearInterval(timer);
+          document.removeEventListener('visibilitychange', onVisible);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);

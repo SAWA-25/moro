@@ -402,6 +402,19 @@ export const ProactiveChat = {
     }
   },
 
+  /**
+   * 外部（Service Worker 离线生成）已经替某角色发过一次主动消息时，把那个时间
+   * 回填进 lastFire——只在比现有记录更新时写，避免回前台本地定时器重复触发。
+   */
+  noteExternalFire(charId: string, ts: number) {
+    if (!charId || !ts) return;
+    if (!loadSchedules()[charId]) return;
+    if (ts > getLastFireTime(charId)) {
+      setLastFireTime(charId, ts);
+      schedulePreciseTimer();
+    }
+  },
+
   /** Check if proactive is active for a given character */
   isActiveFor(charId: string): boolean {
     return !!loadSchedules()[charId];

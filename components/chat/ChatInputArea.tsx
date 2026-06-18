@@ -822,7 +822,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
 
                             <DrawerTag>特 别 通 道</DrawerTag>
 
-                            <ActionStrip label="点外卖" hint="联通外卖 App，为 TA 点一单" dark={isDiscordStyle} onClick={() => onPanelAction('takeout')}>
+                            <ActionStrip label="点饭票" hint="翻开「饭票」，给 TA 撕一张外卖" dark={isDiscordStyle} onClick={() => onPanelAction('takeout')}>
                                 <ForkKnife className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
