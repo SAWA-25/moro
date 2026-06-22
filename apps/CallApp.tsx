@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Microphone, SpeakerHigh, SpeakerSlash, PhoneDisconnect, Translate, Phone, ArrowsClockwise, Play, Trash, CaretLeft } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { safeFetchJson } from '../utils/safeApi';
+import { startDialTone } from '../utils/ringtone';
 import { minimaxFetch } from '../utils/minimaxEndpoint';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { hashTtsParams, getCachedTts, saveCachedTts } from '../utils/ttsCache';
@@ -581,6 +582,15 @@ const CallApp: React.FC = () => {
       }
     })();
   }, [viewMode, currentSessionId]);
+
+  // 拨出回铃音「嘟——嘟——」：初次接线（connecting 且还没收到第一句）时循环播放，
+  // 对方一开口（转 speaking / 有气泡）或离开通话即停。静音时不响（跟随外放开关）。
+  useEffect(() => {
+    const dialing = viewMode === 'in-call' && callState === 'connecting' && bubbles.length === 0;
+    if (!dialing || !isSpeakerOn) return;
+    const ring = startDialTone();
+    return () => ring.stop();
+  }, [viewMode, callState, bubbles.length, isSpeakerOn]);
   const stopPlayback = () => {
     if (!audioRef.current) return;
     audioRef.current.pause();

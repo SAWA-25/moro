@@ -67,3 +67,63 @@ export const playRingtone = (preset?: string | null): void => {
             tone(ac, 880, 0, 0.3);
     }
 };
+
+/* ───────────── 通话铃声 / 回铃音（循环，带 stop 句柄）─────────────
+ * 用于电话 App：来电响铃（角色主动来电 / 模拟来电）和拨出回铃音（用户打过去等待接通）。
+ * 同样纯 WebAudio 合成、无音频资源；返回 stop() 用于接听 / 挂断 / 接通 / 卸载时停掉。 */
+export interface RingHandle { stop: () => void; }
+
+/** 单声：attack–hold–release 包络（比 playRingtone 的指数衰减更「持续」，像电话铃 / 回铃）。 */
+const ringTone = (ac: AudioContext, freq: number, at: number, dur: number, gain = 0.1, type: OscillatorType = 'sine') => {
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    const t0 = ac.currentTime + at;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.03);
+    g.gain.setValueAtTime(gain, t0 + Math.max(0.06, dur - 0.05));
+    g.gain.linearRampToValueAtTime(0, t0 + dur);
+    osc.connect(g).connect(ac.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.04);
+};
+
+/** 立刻响一轮，之后每 periodMs 再响一轮，直到 stop()。getCtx 取不到（无 WebAudio）时返回空句柄。 */
+const loopRing = (renderOnce: (ac: AudioContext) => void, periodMs: number): RingHandle => {
+    const ac = getCtx();
+    if (!ac) return { stop: () => {} };
+    let stopped = false;
+    let timer: number | null = null;
+    const tick = () => {
+        if (stopped) return;
+        try { renderOnce(ac); } catch { /* 单轮失败不影响循环停止 */ }
+        timer = window.setTimeout(tick, periodMs);
+    };
+    tick();
+    return {
+        stop: () => {
+            stopped = true;
+            if (timer != null) { window.clearTimeout(timer); timer = null; }
+        },
+    };
+};
+
+/**
+ * 拨出回铃音「嘟——嘟——」：用户打过去、等待对方接通时循环播放，接通 / 挂断即 stop()。
+ * 仿国内回铃：450Hz 正弦，约 1s 响、2s 停。
+ */
+export const startDialTone = (): RingHandle =>
+    loopRing(ac => ringTone(ac, 450, 0, 1.0, 0.12), 3000);
+
+/**
+ * 来电铃声：经典双响铃（440+480Hz 同响产生 warble），循环到接听 / 挂断 / 超时。
+ */
+export const startIncomingRing = (): RingHandle =>
+    loopRing(ac => {
+        // 「叮铃—叮铃」双响
+        ringTone(ac, 440, 0, 0.42, 0.1);
+        ringTone(ac, 480, 0, 0.42, 0.1);
+        ringTone(ac, 440, 0.6, 0.42, 0.1);
+        ringTone(ac, 480, 0.6, 0.42, 0.1);
+    }, 2400);

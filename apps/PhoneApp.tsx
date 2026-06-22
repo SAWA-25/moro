@@ -7,6 +7,7 @@ import {
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
+import { startDialTone, startIncomingRing } from '../utils/ringtone';
 import { AppID, CharacterProfile, Message, PhoneCallLog } from '../types';
 import ConfirmDialog from '../components/os/ConfirmDialog';
 
@@ -255,6 +256,20 @@ const PhoneApp: React.FC = () => {
         if (zeroTimerRef.current) window.clearTimeout(zeroTimerRef.current);
         if (audioRef.current) audioRef.current.pause();
     }, []);
+
+    // 拨出回铃音「嘟——嘟——」：假呼叫（拨陌生号码）等待期间循环播放，结束（outgoingNumber 清空）即停。
+    useEffect(() => {
+        if (!outgoingNumber) return;
+        const ring = startDialTone();
+        return () => ring.stop();
+    }, [outgoingNumber]);
+
+    // 来电提示音：模拟来电响铃期间循环播放，接听 / 不接 / 超时（incomingChar 清空）即停。
+    useEffect(() => {
+        if (!incomingChar) return;
+        const ring = startIncomingRing();
+        return () => ring.stop();
+    }, [incomingChar]);
 
     // --- 留声片页：跨所有角色聚合 CallApp 的通话逐字稿（按 callSessionId 分组） ---
     useEffect(() => {
