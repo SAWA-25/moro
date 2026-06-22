@@ -5,6 +5,7 @@ import { DB } from '../utils/db';
 import { GameSession, GameTheme, CharacterProfile, GameLog, GameActionOption, GameSummary } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { extractContent, extractJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import {
     trpgWorldGenPrompt, trpgProloguePrompt, trpgGameLoopPrompt,
     trpgStatusWarning, trpgGameOverTrigger, trpgRollInstruction,
@@ -203,7 +204,9 @@ const GameMarkdown: React.FC<{ content: string, theme: any, customStyle?: { font
 
 /** onExit：当本 App 嵌在「小剧场」壳里时，顶层返回回到小剧场封面页而非直接关到桌面。未传则回桌面。 */
 const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-    const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter } = useOS();
+    const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
+    // TRPG/游戏属「聊天以外」的功能：走副 API（未配置副 API 时 resolveAuxApi 自动回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const exitApp = onExit ?? closeApp;
     const [view, setView] = useState<'lobby' | 'create' | 'play'>('lobby');
     const [games, setGames] = useState<GameSession[]>([]);
@@ -295,11 +298,11 @@ const GameApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     // --- Helper: Robust API Call ---
     const fetchGameAPI = async (prompt: string, maxTokens: number = 8000) => {
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
             body: JSON.stringify({
-                model: apiConfig.model,
+                model: auxApi.model,
                 messages: [{ role: "user", content: prompt }],
                 temperature: 0.9, 
                 max_tokens: maxTokens,
@@ -430,7 +433,7 @@ ${recentLog}
 
     // --- AI 世界观生成 (帮想不出剧本的用户起一个设定) ---
     const handleGenerateWorld = async () => {
-        if (!apiConfig.apiKey) {
+        if (!auxApi.apiKey) {
             addToast('请先配置 API Key', 'error');
             return;
         }
@@ -462,7 +465,7 @@ ${recentLog}
             return;
         }
         
-        if (!apiConfig.apiKey) {
+        if (!auxApi.apiKey) {
             addToast('请先配置 API Key 以生成序章', 'error');
             return;
         }
@@ -594,7 +597,7 @@ ${recentLog}
 
     // --- Gameplay Logic ---
     const handleAction = async (actionText: string, isReroll: boolean = false) => {
-        if (!activeGame || !apiConfig.apiKey) return;
+        if (!activeGame || !auxApi.apiKey) return;
 
         let contextLogs = activeGame.logs;
         let updatedGame = activeGame;

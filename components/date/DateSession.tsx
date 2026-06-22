@@ -5,6 +5,7 @@ import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import DateSettings from './DateSettings';
 import { synthesizeSpeech, cleanTextForTts } from '../../utils/minimaxTts';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 // Helper: Parse dialogue with simple state machine
 const isContextNoise = (line: string) => {
@@ -99,7 +100,7 @@ const DateSession: React.FC<DateSessionProps> = ({
     onDeleteMessages,
     onSettings
 }) => {
-    const { addToast, registerBackHandler, apiConfig, updateCharacter } = useOS();
+    const { addToast, registerBackHandler, apiConfig, auxApiConfig, updateCharacter } = useOS();
     
     // Core VN State
     const [isNovelMode, setIsNovelMode] = useState(false);
@@ -155,11 +156,13 @@ const DateSession: React.FC<DateSessionProps> = ({
             if (voiceLang) {
                 const langLabel = VOICE_LANG_LABELS[voiceLang] || voiceLang;
                 try {
-                    const transRes = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
+                    // 台词翻译属「聊天以外」的辅助任务：走副 API（语音合成仍用 MiniMax 主线）
+                    const transApi = resolveAuxApi(auxApiConfig, apiConfig);
+                    const transRes = await fetch(`${transApi.baseUrl}/chat/completions`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${transApi.apiKey}` },
                         body: JSON.stringify({
-                            model: apiConfig.model,
+                            model: transApi.model,
                             messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.` }, { role: 'user', content: ttsText }],
                             temperature: 0.3,
                         }),

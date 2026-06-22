@@ -15,6 +15,7 @@ import { useOS } from '../../context/OSContext';
 import { useMusic, musicApi, toHttps, Song } from '../../context/MusicContext';
 import { CharacterProfile, CharPlaylist, CharPlaylistSong } from '../../types';
 import { CharMusicPersona } from '../../utils/charMusicPersona';
+import { resolveAuxApi } from '../../utils/auxApi';
 import { computeCurrentListening } from '../../utils/charMusicSchedule';
 import { DB } from '../../utils/db';
 import { C, Sparkle, MizuHeader, BokehBg, MiniPlayer } from './MusicUI';
@@ -52,7 +53,9 @@ const toPlaylistSong = (s: Song): CharPlaylistSong => ({
 });
 
 const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
-  const { characters, updateCharacter, userProfile, apiConfig, addToast } = useOS();
+  const { characters, updateCharacter, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
+  // 角色音乐主页生成属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+  const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const {
     cfg, playSong,
     current, playing, togglePlay, nextSong, prevSong,
@@ -99,7 +102,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
     if (!char || initializing) return;
     setInitializing(true);
     try {
-      const newProfile = await CharMusicPersona.initialize(char, userProfile, apiConfig);
+      const newProfile = await CharMusicPersona.initialize(char, userProfile, auxApi);
       updateCharacter(char.id, { musicProfile: newProfile });
       addToast(`${char.name} 的音乐角落已开启`, 'success');
     } catch (e: any) {
@@ -118,7 +121,7 @@ const CharVisitPage: React.FC<Props> = ({ charId, onBack, onOpenPlayer }) => {
     if (!ok) return;
     setInitializing(true);
     try {
-      const newProfile = await CharMusicPersona.initialize(char, userProfile, apiConfig);
+      const newProfile = await CharMusicPersona.initialize(char, userProfile, auxApi);
       updateCharacter(char.id, { musicProfile: newProfile });
       addToast(`${char.name} 的音乐人格已重新生成`, 'success');
     } catch (e: any) {

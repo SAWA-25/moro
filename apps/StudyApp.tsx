@@ -6,6 +6,7 @@ import { StudyCourse, StudyChapter, CharacterProfile, Message, UserProfile, APIC
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { Notepad, Check, X, CheckCircle, XCircle, Hand } from '@phosphor-icons/react';
 
@@ -321,7 +322,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
 };
 
 const StudyApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateCharacter } = useOS();
     const [mode, setMode] = useState<'bookshelf' | 'classroom' | 'quiz' | 'quiz_review' | 'practice_book'>('bookshelf');
     const [courses, setCourses] = useState<StudyCourse[]>([]);
     const [activeCourse, setActiveCourse] = useState<StudyCourse | null>(null);
@@ -362,11 +363,13 @@ const StudyApp: React.FC = () => {
     const [presetName, setPresetName] = useState('');
     const [presetPrompt, setPresetPrompt] = useState('');
 
-    // Effective API config: study-specific overrides fall back to main config
+    // Effective API config: study-specific overrides fall back to 副 API（再回退主 API）
+    const auxApi = resolveAuxApi(auxApiConfig, apiConfig);
     const effectiveApi: APIConfig = {
-        baseUrl: studyApi.baseUrl || apiConfig.baseUrl,
-        apiKey: studyApi.apiKey || apiConfig.apiKey,
-        model: studyApi.model || apiConfig.model,
+        ...apiConfig,
+        baseUrl: studyApi.baseUrl || auxApi.baseUrl,
+        apiKey: studyApi.apiKey || auxApi.apiKey,
+        model: studyApi.model || auxApi.model,
     };
 
     // Delete Confirmation State

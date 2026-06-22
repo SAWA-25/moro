@@ -9,6 +9,7 @@ import {
     nodeWhen,
 } from '../../utils/theaterTimeline';
 import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, WashiTape, INK, INK_SOFT } from './scrapbook';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 /**
  * 折子戏·轨迹（陆）：回到过去的时间节点，看看那些你们还未曾相遇的日子。
@@ -26,7 +27,9 @@ const eraMeta: Record<TrajectoryNode['era'], { dot: string; line: string; label:
 };
 
 const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
-    const { characters, userProfile, apiConfig, addToast } = useOS();
+    const { characters, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
+    // 折子戏·轨迹属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [selectedCharId, setSelectedCharId] = useState('');
     const [trajectory, setTrajectory] = useState<CharTrajectory | null>(null);
     const [loading, setLoading] = useState(false);
@@ -43,7 +46,7 @@ const TrajectoryApp: React.FC<Props> = ({ onExit }) => {
         setLoading(true);
         setError('');
         try {
-            let t = await loadOrGenerateTrajectory(selectedChar, userName, apiConfig, { force });
+            let t = await loadOrGenerateTrajectory(selectedChar, userName, auxApi, { force });
             if (!force) t = await refreshAfterNodes(t, userName, selectedChar.name);
             setTrajectory(t);
         } catch (e) {

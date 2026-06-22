@@ -6,6 +6,7 @@ import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { formatMessageForPrompt } from '../utils/messageFormat';
 import { getDiaryDateStr as getLocalDateStr, parseJsonLoose, callDiaryLLM } from './diaryShared';
+import { resolveAuxApi } from '../utils/auxApi';
 
 // ============ 常量 ============
 // 拼贴手账重制：文案 / 布局 / 按键全部原创。心情、印章、信纸的 key/id 持久化不可改，
@@ -77,7 +78,9 @@ interface ExchangeDiaryAppProps {
 }
 
 const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
-    const { closeApp, characters, apiConfig, userProfile, addToast } = useOS();
+    const { closeApp, characters, apiConfig, auxApiConfig, userProfile, addToast } = useOS();
+    // 日记社属「聊天以外」的功能：走副 API（未配置副 API 时 resolveAuxApi 自动回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     // --- 全局状态 ---
     const [books, setBooks] = useState<ExchangeDiaryBook[]>([]);
@@ -215,7 +218,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
         messages: { role: 'system' | 'user'; content: string }[],
         temperature = 0.85,
     ): Promise<string> => {
-        const content = await callDiaryLLM(apiConfig, messages, { temperature });
+        const content = await callDiaryLLM(auxApi, messages, { temperature });
         if (!content) throw new Error('AI 返回为空');
         return content;
     };
@@ -247,7 +250,7 @@ const ExchangeDiaryApp: React.FC<ExchangeDiaryAppProps> = ({ tabSwitcher }) => {
     // --- AI 帮我起头：替用户拟 2-3 句日记开头，插入输入框 ---
     const handleAiOpening = async () => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
+        if (!auxApi.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('opening');
         try {
             const prompt = `你是一位温柔的日记写作助手。用户「${userProfile.name}」想写今天的日记，但不知道怎么开头。
@@ -272,7 +275,7 @@ ${draftContent.trim() ? `用户已经写了一点: "${draftContent.trim().slice(
     // 上下文 = 完整人设 (buildCoreContext) + 用户最新一篇 + 今天的聊天节选 + 本子近况。
     const requestCharEntry = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
+        if (!auxApi.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('entry');
         try {
             const latestUserEntry = [...book.entries]
@@ -346,7 +349,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
     // 把今天与活跃角色的聊天，让 LLM 以角色视角写成一篇日记式总结（isSummary 标记）
     const generateDailySummary = async (book: ExchangeDiaryBook, char: CharacterProfile) => {
         if (aiBusy) return;
-        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
+        if (!auxApi.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         setAiBusy('summary');
         try {
             const chatExcerpt = await getTodayChatExcerpt(char);
@@ -445,7 +448,7 @@ mood 必须从这些选项里选: ${moodOptions}`;
             setComposerOpen(false);
             addToast('贴进本子了', 'success');
             // 发布后自动请活跃角色回应一篇（未配置 API 时静默跳过，可稍后手动请 TA 写）
-            if (char && apiConfig.apiKey) {
+            if (char && auxApi.apiKey) {
                 void requestCharEntry(updated, char);
             }
         } catch (e: any) {

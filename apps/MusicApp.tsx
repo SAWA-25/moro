@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { useMusic, musicApi, normalizeCookie, toHttps, Song } from '../context/MusicContext';
 import { DB } from '../utils/db';
 import { discussMusic, ListenAction, ListenMsg } from '../utils/listenTogether';
+import { resolveAuxApi } from '../utils/auxApi';
 import { Gear, User as UserIcon, Crosshair, Play as PlayIcon, Pause as PauseIcon, UsersThree, PaperPlaneRight, DiceFive, SkipForward } from '@phosphor-icons/react';
 import {
   C, Sparkle, CrossStar, MizuHeader, SearchBar, SongRow, MiniPlayer,
@@ -25,7 +26,9 @@ type View = 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'liste
 
 // ========================= 主组件 =========================
 const MusicApp: React.FC = () => {
-  const { closeApp, addToast, characters, userProfile, apiConfig } = useOS();
+  const { closeApp, addToast, characters, userProfile, apiConfig, auxApiConfig } = useOS();
+  // 一起听·角色乐评属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+  const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const {
     cfg, setCfg,
     current, playing, progress, duration, loadingSong,
@@ -185,7 +188,7 @@ const MusicApp: React.FC = () => {
       const snap = current ? { name: current.name, artists: current.artists } : null;
       const lyricSnippet = activeLyricIdx >= 0 && lyric[activeLyricIdx] ? lyric[activeLyricIdx].text : undefined;
       const { reply, action } = await discussMusic({
-        char, user: userProfile, api: apiConfig,
+        char, user: userProfile, api: auxApi,
         song: snap, playing, lyricSnippet,
         history: historyOverride ?? listenMsgs, userMsg, trigger,
       });

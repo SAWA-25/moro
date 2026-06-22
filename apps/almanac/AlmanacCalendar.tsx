@@ -4,6 +4,7 @@ import { DB } from '../../utils/db';
 import { CalendarMark, CharacterProfile } from '../../types';
 import { ContextBuilder } from '../../utils/context';
 import { safeResponseJson } from '../../utils/safeApi';
+import { resolveAuxApi } from '../../utils/auxApi';
 import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
 import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, HAND_FONT, tinyRotate } from './handbookKit';
 
@@ -53,7 +54,9 @@ const parseMarkJson = (raw: string): { date: string; text: string }[] => {
 };
 
 const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
-    const { characters, activeCharacterId, apiConfig, addToast, userProfile } = useOS();
+    const { characters, activeCharacterId, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 岁时记·实时日历属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     const [marks, setMarks] = useState<CalendarMark[]>([]);
     const now = new Date();
@@ -105,7 +108,7 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
     // ---- 角色自标（AI） ----
     const genCharMarks = useCallback(async (char: CharacterProfile, quiet: boolean) => {
-        if (!char || !apiConfig.apiKey) {
+        if (!char || !auxApi.apiKey) {
             if (!quiet) addToast('还没配置 API，角色先记不了', 'info');
             return;
         }
@@ -129,10 +132,10 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 - date 必须在 ${today} 之后、45 天以内。
 - **必须使用用户常用语言**。`;
 
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: [
                     { role: 'system', content: baseContext },
                     { role: 'user', content: userPrompt },
                 ], temperature: 0.9, max_tokens: 8000 }),
@@ -192,14 +195,14 @@ const AlmanacCalendar: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     useEffect(() => {
         if (autoRan.current) return;
         const char = characters.find((c) => c.id === activeCharacterId) || characters[0];
-        if (!char || !apiConfig.apiKey) return;
+        if (!char || !auxApi.apiKey) return;
         autoRan.current = true;
         const k = `almanac_cal_gen_${char.id}`;
         const last = Number(localStorage.getItem(k) || 0);
         if (Date.now() - last < GEN_THROTTLE_MS) return;
         localStorage.setItem(k, String(Date.now()));
         genCharMarks(char, true);
-    }, [characters, activeCharacterId, apiConfig.apiKey, genCharMarks]);
+    }, [characters, activeCharacterId, auxApi.apiKey, genCharMarks]);
 
     // ---- 用户便签增删改 ----
     const openDay = (key: string) => {

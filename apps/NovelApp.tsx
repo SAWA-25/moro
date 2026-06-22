@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { NovelBook, NovelProtagonist, CharacterProfile } from '../types';
 import { processImage } from '../utils/file';
 import { NOVEL_THEMES, analyzeWriterPersonaSimple } from '../utils/novelUtils';
+import { resolveAuxApi } from '../utils/auxApi';
 import NovelWriter from '../components/novel/NovelWriter';
 import { PenNib, Books, FolderOpen, Robot, MaskHappy, Plus, Trash, Image as ImageIcon, Stack, Quotes } from '@phosphor-icons/react';
 import {
@@ -14,7 +15,9 @@ import {
 
 /** onExit：当本 App 嵌在「创作社」壳里时，顶层返回回到创作社首页而非直接关到桌面。未传则回桌面。 */
 const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-    const { closeApp, novels, addNovel, updateNovel, deleteNovel, characters, updateCharacter, apiConfig, addToast, userProfile, worldbooks } = useOS();
+    const { closeApp, novels, addNovel, updateNovel, deleteNovel, characters, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile, worldbooks } = useOS();
+    // 小说创作属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const exitApp = onExit ?? closeApp;
 
     // Navigation State
@@ -466,7 +469,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 updateNovel={updateNovel}
                 characters={characters}
                 userProfile={userProfile}
-                apiConfig={apiConfig}
+                apiConfig={auxApi}
                 onBack={() => setView('shelf')}
                 updateCharacter={updateCharacter}
                 collaborators={collaborators}

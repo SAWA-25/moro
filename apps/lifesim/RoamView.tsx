@@ -13,6 +13,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import { AppID, CharacterProfile } from '../../types';
 import { safeFetchJson } from '../../utils/safeApi';
+import { resolveAuxApi } from '../../utils/auxApi';
 import {
     X, ArrowClockwise, Crosshair, Footprints, MapPin, Sparkle,
     PaperPlaneRight, UserPlus, BookOpen, ChatCircleDots, Eye, Storefront,
@@ -304,8 +305,9 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 const RoamView: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { apiConfig, characters, userProfile, setActiveCharacterId, openApp, addToast, importCharacter } = useOS();
-    const api = apiConfig as unknown as Api;
+    const { apiConfig, auxApiConfig, characters, userProfile, setActiveCharacterId, openApp, addToast, importCharacter } = useOS();
+    // 街角·出门逛逛属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const api = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) } as unknown as Api;
 
     // 把街角偶遇的人「加进往来」：用其人设造一个真实角色（addedToChat→直接进往来），
     // 之后可在名册里改 TA 的人设。已有同名/同 id 角色则直接进聊天。

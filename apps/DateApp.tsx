@@ -9,13 +9,16 @@ import { injectMemoryPalace, processNewMessages, mergePalaceFragmentsIntoMemorie
 import type { PipelineResult } from '../utils/memoryPalace/pipeline';
 import { incrementDigestRound, runCognitiveDigestion } from '../utils/memoryPalace';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import Modal from '../components/os/Modal';
 import DateSession from '../components/date/DateSession';
 import DateSettings from '../components/date/DateSettings';
 import { BookOpen } from '@phosphor-icons/react';
 
 const DateApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, addToast, updateCharacter, virtualTime, userProfile, memoryPalaceConfig } = useOS();
+    const { closeApp, characters, activeCharacterId, setActiveCharacterId, apiConfig, auxApiConfig, addToast, updateCharacter, virtualTime, userProfile, memoryPalaceConfig } = useOS();
+    // 约会（街角·DateApp）属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API；记忆宫殿沿用其独立配置）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     // 记忆宫殿（与聊天侧共用同一套上下文：同 charId、同高水位线）
     // 见面流也需要在 AI 回复后跑一次缓冲区检查 + 自动归档，否则只有"读"没有"写"。
@@ -212,11 +215,11 @@ const DateApp: React.FC = () => {
 2. **状态一致性**: ${gapHint.includes('很久') ? '因为很久没见，可能在发呆、忙碌或者有点落寞。' : '根据最近的聊天内容和情绪来决定当前状态。如果刚聊完，角色的状态应该与聊天内容相呼应。'}
 3. **描写风格**: 电影感，沉浸式，细节丰富。不要输出任何前缀，直接输出描写内容。`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: [
                         { role: "system", content: baseContext },
                         { role: "user", content: `[最近记录 (Previous Context)]:${recentMsgs}${contextSeparator}${peekInstructions}\n\n(Start sensing...)` }
@@ -396,11 +399,11 @@ const DateApp: React.FC = () => {
 2. **Context**: 参考历史记录。如果刚刚才看到开场白（Opening），请自然接话。
 `;
 
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
             body: JSON.stringify({
-                model: apiConfig.model,
+                model: auxApi.model,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     ...historyMsgs,
@@ -469,11 +472,11 @@ const DateApp: React.FC = () => {
 用细微的肢体语言暗示情绪，不要直接说"开心""紧张"。
 `;
 
-        const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
             body: JSON.stringify({
-                model: apiConfig.model,
+                model: auxApi.model,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     ...historyMsgs,

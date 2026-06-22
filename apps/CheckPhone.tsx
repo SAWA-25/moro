@@ -5,6 +5,7 @@ import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneProfile } from '.
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildPhoneCityHint } from '../utils/charCity';
 import {
@@ -92,7 +93,9 @@ interface CheckPhoneProps {
 }
 
 const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfront }) => {
-    const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, addToast, userProfile } = useOS();
+    const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 查手机（生成 TA 的手机内容）属「聊天以外」的功能：走副 API（未配置时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [view, setView] = useState<'select' | 'phone'>(initialCharId ? 'phone' : 'select');
     // activeAppId: 'home' | 'chat_detail' | 'app_id'
     const [activeAppId, setActiveAppId] = useState<string>('home');
@@ -262,7 +265,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     // --- Core Generation Logic ---
 
     const handleGenerate = async (type: string, customPrompt?: string) => {
-        if (!targetChar || !apiConfig.apiKey) {
+        if (!targetChar || !auxApi.apiKey) {
             addToast('配置错误', 'error');
             return;
         }
@@ -333,11 +336,11 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
 
             const fullPrompt = `${context}\n\n### [Current Status]\n时间距离上次互动: ${timeGap}\n\n### [Recent Chat Context]\n${recentMsgs}\n\n### [Task]\n${promptInstruction}\n请根据[Current Status]和人设调整生成内容的时间戳和情绪。如果很久没聊天，记录可能是近期的独处状态；如果刚聊过，记录可能与聊天内容相关。`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: [{ role: "user", content: fullPrompt }],
                     temperature: 0.8
                 })
@@ -409,7 +412,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
 
     // --- AI 装点这台手机：让设备名 / 桌面副标 / 强调色更贴角色 ---
     const handleDecorate = async () => {
-        if (!targetChar || !apiConfig.apiKey) { addToast('配置错误', 'error'); return; }
+        if (!targetChar || !auxApi.apiKey) { addToast('配置错误', 'error'); return; }
         setIsDecorating(true);
         try {
             const persona = [
@@ -422,10 +425,10 @@ ${persona}
 
 只输出一个 JSON 对象，不要任何其它文字：
 {"deviceName":"设备名(像 TA 会给自己手机起的名字，10字内，可带 TA 的名字)","tagline":"锁屏/桌面上的一句话副标(20字内，像 TA 的签名/心情)","accent":"一个最贴 TA 气质的强调色十六进制(如 #a78bfa)"}`;
-            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
             });
             if (!res.ok) throw new Error(`API ${res.status}`);
             let content = (await safeResponseJson(res)).choices?.[0]?.message?.content || '';
@@ -457,7 +460,7 @@ ${persona}
     // --- Continue Chat Logic ---
 
     const handleContinueChat = async () => {
-        if (!selectedChatRecord || !targetChar || !apiConfig.apiKey) return;
+        if (!selectedChatRecord || !targetChar || !auxApi.apiKey) return;
         setIsLoading(true);
 
         try {
@@ -480,11 +483,11 @@ Format:
 - Only output the new dialogue lines. Do NOT repeat history.
 `;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.85
                 })

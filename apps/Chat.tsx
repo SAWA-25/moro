@@ -493,11 +493,12 @@ const Chat: React.FC = () => {
                 // If voice lang is set and no Chinese text outside the tag, translate spoken text back to Chinese
                 if (voiceLang && !originalText && spokenText) {
                     try {
-                        const transRes = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
+                        const transApi = resolveAuxApi(auxApiConfig, apiConfig);
+                        const transRes = await fetch(`${transApi.baseUrl}/chat/completions`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${transApi.apiKey}` },
                             body: JSON.stringify({
-                                model: apiConfig.model,
+                                model: transApi.model,
                                 messages: [{ role: 'system', content: '把以下内容翻译成中文。只输出翻译结果，不要任何解释。' }, { role: 'user', content: spokenText }],
                                 temperature: 0.3,
                             }),
@@ -529,11 +530,12 @@ const Chat: React.FC = () => {
                     if (voiceLang) {
                         const langLabel = VOICE_LANG_LABELS[voiceLang] || voiceLang;
                         try {
-                            const transRes = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
+                            const transApi = resolveAuxApi(auxApiConfig, apiConfig);
+                            const transRes = await fetch(`${transApi.baseUrl}/chat/completions`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${transApi.apiKey}` },
                                 body: JSON.stringify({
-                                    model: apiConfig.model,
+                                    model: transApi.model,
                                     messages: [{ role: 'system', content: `Translate the following text to ${langLabel}. Output ONLY the translation, nothing else.` }, { role: 'user', content: originalText }],
                                     temperature: 0.3,
                                 }),
@@ -2492,7 +2494,9 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
     };
 
     const handleFullArchive = async () => {
-        if (!apiConfig.apiKey || !char) {
+        // 整理归档（把聊天记录批量总结成档案）属「聊天以外」的辅助任务：走副 API（未配置副 API 时回退主 API）
+        const archiveApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!archiveApi.apiKey || !char) {
             addToast('请先配置 API Key', 'error');
             return;
         }
@@ -2538,14 +2542,14 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
                 prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                const response = await fetch(`${archiveApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${archiveApi.apiKey}` },
                     body: JSON.stringify({
-                        model: apiConfig.model,
+                        model: archiveApi.model,
                         messages: [{ role: "user", content: prompt }],
                         temperature: 0.5,
-                        max_tokens: 8000 
+                        max_tokens: 8000
                     })
                 });
 

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
+import { resolveAuxApi } from '../utils/auxApi';
 import { SongSheet, SongLine, SongComment, SongMood, SongGenre, SongAudio, MusicProvider, AppID } from '../types';
 import { SONG_GENRES, SONG_MOODS, SECTION_LABELS, COVER_STYLES, SongPrompts, LYRIC_TEMPLATES, getLyricTemplate } from '../utils/songPrompts';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -79,7 +80,9 @@ function mkPendingItem(l: SongLine): TimelineItem { return { kind: 'pending', da
 
 /** onExit：嵌在「创作社」壳里时，顶层返回回到创作社首页而非直接关到桌面。未传则回桌面。 */
 const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-    const { closeApp, openApp, songs, addSong, updateSong, deleteSong, characters, apiConfig, addToast, userProfile } = useOS();
+    const { closeApp, openApp, songs, addSong, updateSong, deleteSong, characters, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 写歌·歌词/Prompt 生成属「聊天以外」的功能：走副 API（音乐合成仍用各自的 MiniMax/ACE 线路）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const exitApp = onExit ?? closeApp;
     const { addLocalSong, removeLocalSong, localAlbumSongs, playSong, current: currentMusicSong, markRegenerating } = useMusic();
 
@@ -358,10 +361,10 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
             apiMessages.push({ role: 'user', content: userPrompt });
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: apiMessages, temperature: 0.8, max_tokens: 2000 })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: apiMessages, temperature: 0.8, max_tokens: 2000 })
             });
 
             if (response.ok) {
@@ -612,10 +615,10 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
         try {
             const prompt = SongPrompts.buildCompletionPrompt(collaborator, userProfile, activeSong);
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 500 })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.7, max_tokens: 500 })
             });
 
             if (response.ok) {
@@ -1043,7 +1046,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const handleAiWritePrompt = async () => {
         if (!activeSong) return;
-        if (!apiConfig.baseUrl || !apiConfig.apiKey) {
+        if (!auxApi.baseUrl || !auxApi.apiKey) {
             addToast('请先在「文具盒」里配置 LLM API', 'error');
             return;
         }
@@ -1052,7 +1055,7 @@ const SongwritingApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             // MiniMax 是中文模型 → 输出中文 natural-language prompt
             // ACE-Step 国外模型 → 输出英文 comma-separated tags
             const lang: 'en' | 'zh' = provider === 'ace-step' ? 'en' : 'zh';
-            const generated = await generatePromptViaLLM(promptGuidance.trim(), activeSong, apiConfig, collaborator, undefined, lang);
+            const generated = await generatePromptViaLLM(promptGuidance.trim(), activeSong, auxApi, collaborator, undefined, lang);
             setPromptDraft(generated);
             addToast(promptGuidance.trim() ? 'AI 已结合角色生成' : `AI 凭${collaborator?.name || '角色'}的气质写了一段`, 'success');
         } catch (err: any) {

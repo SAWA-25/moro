@@ -8,6 +8,7 @@ import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processImage } from '../utils/file';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { FURNITURE_ICONS } from '../utils/furnitureIcons';
 import PixelHomeView from './pixelHome/PixelHomeView';
 
@@ -248,7 +249,9 @@ const PaperModal: React.FC<{ isOpen: boolean; title: string; tag?: string; onClo
 };
 
 const RoomApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, addToast, userProfile } = useOS();
+    const { closeApp, characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 小屋（街角·房间）属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     
     // Core State
     const [viewState, setViewState] = useState<'select' | 'room' | 'pixelHome'>('select');
@@ -432,11 +435,11 @@ const RoomApp: React.FC = () => {
             const baseContext = ContextBuilder.buildCoreContext(c, userProfile, false);
             const fallbackPrompt = `${baseContext}\n\nTask: User entered your room. Just say hello. JSON: { "welcomeMessage": "..." }`;
             
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({ 
-                    model: apiConfig.model, 
+                    model: auxApi.model, 
                     messages: [{ role: "user", content: fallbackPrompt }], 
                     temperature: 0.5,
                     max_tokens: 8000 // Keep it tiny
@@ -481,7 +484,7 @@ const RoomApp: React.FC = () => {
     };
 
     const initializeRoomState = async (c: CharacterProfile, currentItems: RoomItem[], force: boolean = false) => {
-        if (!apiConfig.apiKey) return;
+        if (!auxApi.apiKey) return;
 
         setIsInitializing(true);
         const loadingTexts = [`正在替 ${c.name} 拂去桌上的灰…`, "正在把今天的心事贴进本子…", "正在裁剪一页新的居所…", "正在为每件物什写下注脚…"];
@@ -579,11 +582,11 @@ ${!shouldGenerateTodo ? `(系统: 今日待办已存在，无需生成，请忽�
             // CONSOLE LOG REMOVED FOR PRODUCTION CLEANUP
 
             // FIX: Add Safety Settings & Lower Temperature
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({ 
-                    model: apiConfig.model, 
+                    model: auxApi.model, 
                     messages: [{ role: "user", content: prompt }], 
                     temperature: 0.5, // Lower temp for stability
                     max_tokens: 8000,

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { processImage } from '../utils/file';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import Modal from '../components/os/Modal';
 import { Camera, ImageSquare, GlobeSimple, MagnifyingGlass, Lightning } from '@phosphor-icons/react';
 
@@ -112,8 +113,10 @@ const WebRenderer: React.FC<{ content: string }> = ({ content }) => {
 };
 
 const BrowserApp: React.FC = () => {
-    const { closeApp, apiConfig, addToast } = useOS();
-    
+    const { closeApp, apiConfig, auxApiConfig, addToast } = useOS();
+    // 浏览器属「聊天以外」的功能：走副 API（未配置副 API 时 resolveAuxApi 自动回退主 API）
+    const auxApi = resolveAuxApi(auxApiConfig, apiConfig);
+
     // Browser State
     const [urlInput, setUrlInput] = useState('');
     const [currentUrl, setCurrentUrl] = useState('home://start');
@@ -218,8 +221,8 @@ const BrowserApp: React.FC = () => {
     // --- Content Loader ---
 
     const loadPageContent = async (url: string) => {
-        if (!apiConfig.apiKey) {
-            addToast('请先在「文具盒」里配置 API Key', 'error');
+        if (!auxApi.baseUrl) {
+            addToast('请先在「文具盒」里配置 API', 'error');
             return;
         }
 
@@ -298,11 +301,11 @@ Generate realistic results linking to hypothetical URLs.`;
                 userPrompt = `Simulate the full webpage content for: "${url}". Make it detailed and realistic.`;
             }
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: [
                         { role: "system", content: systemPrompt },
                         { role: "user", content: userPrompt }

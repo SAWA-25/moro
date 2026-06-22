@@ -72,10 +72,17 @@
 
 ### 副 API（全局，在「文具盒 → 副线盒」配置）
 
-`AuxApiConfig { enabled, baseUrl, apiKey, model }`（OSContext，持久化 `os_aux_api_config`）。负责「主聊天以外」的辅助 LLM 任务——日程生成/协调、角色生活侧写（后续：约会世界引擎）。
+`AuxApiConfig { enabled, baseUrl, apiKey, model }`（OSContext，持久化 `os_aux_api_config`）。负责「主聊天对话以外」的**所有** LLM 任务——把主线（聊天）的额度与注意力让出来。
 
-- 解析：`utils/auxApi.ts` `resolveAuxApi(aux, main)` —— 副 API 开且填齐就用副 API，否则回退主 `apiConfig`；`isAuxApiOn(aux)` 判断是否「真正可用」。
-- 消费方：`apps/Chat.tsx` 的日程生成/协调；`apps/Character.tsx` 的生活侧写。把主线（聊天）的额度与注意力让出来。
+- 解析：`utils/auxApi.ts` `resolveAuxApi(aux, main)` —— 副 API 开且填齐就用副 API，否则回退主 `apiConfig`（**没配副 API 时行为与改造前完全一致**）；`isAuxApiOn(aux)` 判断是否「真正可用」。
+- 默认形态：每个消费方在组件顶部取 `const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) }`（保留 `temperature/stream/minimax` 等形状，只替换 `baseUrl/apiKey/model` 三件套），再喂给各自的 fetch / 工具函数。
+
+#### 边界：什么走主 API、什么走副 API
+
+- **主 API（聊天体验本身）**：私聊正文回复（`hooks/useChatAI.ts`）、群聊回复（`apps/ChatHub.tsx`）、主动消息（`utils/activeMsgRuntime.ts`）、Instant Push、QQ 桥（`apps/QQBridge.tsx`）、电话（`apps/CallApp.tsx` 实时通话）、聊天内的角色反应（求婚回应 `decideCharProposal`、红包过期反应、外卖/礼物反应）、偷看心声 `generateInnerVoice`、回神 `runRecenter`。
+- **副 API（其余全部功能 / App）**：浏览器、银行、TRPG/游戏、相机·查手机生成（`CheckPhone`，注意 `CameraApp` 多模态识图仍走主 API）、交换日记/日记社、小说、写歌歌词·Prompt、攻略本/手账、岁时记日历·日程表、约会/街角/记忆潜入、小红书自由活动、彼方剧院/VR·轨迹·对影、朋友圈生成、情侣空间、占卜、谈心、世界书/好友验证决策、番外仿真、角色卡生成/润色/导入、角色音乐主页、TTS 台词翻译、整理归档总结，等等。
+- **保持原样（各有独立配置 / 非文本线路）**：记忆宫殿（自带 `memoryPalaceConfig.lightLLM`）、角色情绪 API（`emotionConfig.api`）、图片生成 `generateImage`、MiniMax 语音 / ACE 音乐合成；多模态识图（相机/相册/白色情人节巧克力）因需 vision 能力暂留主 API；情人节/白色情人节/520 等节日事件作为「聊天体验」的一部分暂留主 API。
+- 早期消费方（仍然适用）：`apps/Chat.tsx` 的日程生成/协调；`apps/Character.tsx` 的生活侧写。
 
 ### 角色生活侧写（剪影集 → 登场人物 → 底稿页）
 
