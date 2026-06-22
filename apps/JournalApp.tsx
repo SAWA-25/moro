@@ -11,6 +11,7 @@ import { injectMemoryPalace, ingestDiaryToPalace, type DiaryIngestResult } from 
 import { getRoomLabel } from '../utils/memoryPalace/types';
 import { Sparkle, Archive } from '@phosphor-icons/react';
 import { getDiaryDateStr, callDiaryLLM } from './diaryShared';
+import { resolveAuxApi } from '../utils/auxApi';
 
 // 拼贴手账重制：界面文案 / 布局 / 按键全部原创，功能、数据模型、LLM 契约、score_card 结构均不变。
 
@@ -69,7 +70,9 @@ interface JournalAppProps {
 }
 
 const JournalApp: React.FC<JournalAppProps> = ({ tabSwitcher }) => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile, updateCharacter, memoryPalaceConfig } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateCharacter, memoryPalaceConfig } = useOS();
+    // 交换日记属「聊天以外」的功能：走副 API（未配置副 API 时 resolveAuxApi 自动回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     const [mode, setMode] = useState<'select' | 'calendar' | 'write'>('select');
     const [selectedChar, setSelectedChar] = useState<CharacterProfile | null>(null);
@@ -403,7 +406,7 @@ const JournalApp: React.FC<JournalAppProps> = ({ tabSwitcher }) => {
     // --- AI Interaction ---
 
     const handleExchange = async () => {
-        if (!currentEntry || !selectedChar || !apiConfig.apiKey) {
+        if (!currentEntry || !selectedChar || !auxApi.apiKey) {
             addToast('先写点什么，或去文具盒里配好 API', 'error');
             return;
         }
@@ -468,7 +471,7 @@ Structure:
   "stickers": ["sticker1", "http://custom-sticker-url..."] (从默认列表或 Custom Stickers 中选0-3个)
 }`;
 
-            let content = await callDiaryLLM(apiConfig, [
+            let content = await callDiaryLLM(auxApi, [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: `Users Diary:\n${currentEntry.userPage.text}` },
             ], { temperature: 0.85 });
@@ -525,7 +528,7 @@ Structure:
     // 召回链路不看 mood,只是元数据 / UI 徽章,所以两种 mood 都正常进 chat 上下文。
     const handleArchiveDiary = async (diary: DiaryEntry) => {
         if (!selectedChar || diary.isArchived) return;
-        if (!apiConfig.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
+        if (!auxApi.apiKey) { addToast('先去文具盒里配好 API', 'error'); return; }
         if (!diary.userPage.text.trim() && !diary.charPage?.text?.trim()) {
             addToast('空白页收不进记忆', 'info');
             return;
@@ -563,7 +566,7 @@ ${charPart}
 3. **细节胜过抽象**: 多说具体的事 (人名、地点、物件、当时的情绪),少用"我们度过了美好的一天"这种空话。
 4. **篇幅**: 150~300 字之间的一段中文叙述,不要分段,不要列表,不要任何前缀和标题,直接出叙述。
 `;
-            let s = await callDiaryLLM(apiConfig, [{ role: 'user', content: prompt }], {
+            let s = await callDiaryLLM(auxApi, [{ role: 'user', content: prompt }], {
                 temperature: 0.4,
                 maxTokens: 1200,
             });

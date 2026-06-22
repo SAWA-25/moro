@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { CharacterProfile, GuidebookSession, GuidebookRound, GuidebookOption } from '../types';
 import { extractJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
     buildOpeningPrompt,
@@ -589,7 +590,9 @@ const SessionCard: React.FC<{
 // ===== MAIN APP =====
 /** onExit：当本 App 嵌在「小剧场」壳里时，顶层返回回到小剧场封面页而非直接关到桌面。未传则回桌面。 */
 const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-    const { closeApp, characters, userProfile, apiConfig, addToast, updateCharacter } = useOS();
+    const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast, updateCharacter } = useOS();
+    // 攻略本属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const exitApp = onExit ?? closeApp;
 
     // View State
@@ -707,7 +710,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         try {
             await injectMemoryPalace(char, undefined, scenarioHint || undefined);
             const prompt = buildOpeningPrompt(char, userProfile, initialAffinity, scenarioHint, 'manual', recentMsgs, char.guidebookInsights);
-            const raw = await callAPI(apiConfig, prompt);
+            const raw = await callAPI(auxApi, prompt);
             let data = extractJson(raw);
 
             // Flexible segment extraction: try multiple paths
@@ -781,7 +784,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 session.currentRound + 1, session.rounds, session.scenarioHint || '',
                 cachedRecentMsgs, wc, nextDirectionHint || undefined
             );
-            const raw = await callAPI(apiConfig, prompt);
+            const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
             // Flexible: try data.options, or any array field with 3+ items that have text
             let opts: any[] | null = null;
@@ -879,7 +882,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 roundNum, session.maxRounds, options, session.rounds, session.scenarioHint || '',
                 cachedRecentMsgs, wc, nextDirectionHint || undefined, roundScenario || undefined
             );
-            const raw = await callAPI(apiConfig, prompt);
+            const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
             const choice = data?.choice;
             // Accept number, string number, or letter A/B/C
@@ -955,7 +958,7 @@ const GuidebookApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 session.initialAffinity, session.currentAffinity, session.rounds,
                 cachedRecentMsgs
             );
-            const raw = await callAPI(apiConfig, prompt);
+            const raw = await callAPI(auxApi, prompt);
             const data = extractJson(raw);
 
             if (data) {

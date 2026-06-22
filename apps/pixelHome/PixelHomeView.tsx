@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOS } from '../../context/OSContext';
+import { resolveAuxApi } from '../../utils/auxApi';
 import type { PixelHomeState, PixelHomeViewMode, PixelAsset, PlacedFurniture } from './types';
 import type { MemoryRoom } from '../../utils/memoryPalace/types';
 import { getOrCreateHomeState, PixelLayoutDB, PixelAssetDB } from './pixelHomeDb';
@@ -36,7 +37,9 @@ interface Props {
 }
 
 const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName, onBack }) => {
-  const { addToast, apiConfig, characters, userProfile, remoteVectorConfig } = useOS();
+  const { addToast, apiConfig, auxApiConfig, characters, userProfile, remoteVectorConfig } = useOS();
+  // 记忆潜入（像素家园）属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API；情绪/记忆仍按各自独立配置）
+  const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const char = characters.find(c => c.id === charId);
   const [viewMode, setViewMode] = useState<PixelHomeViewMode>('map');
   const [homeState, setHomeState] = useState<PixelHomeState | null>(null);
@@ -325,7 +328,7 @@ const PixelHomeView: React.FC<Props> = ({ charId, charName, charAvatar, userName
             playerSprite={pixelUserSprite || undefined}
             userName={userName}
             homeState={homeState} assets={assets}
-            apiConfig={apiConfig}
+            apiConfig={auxApi}
             remoteVectorConfig={remoteVectorConfig}
             onExit={handleDiveExit}
           />

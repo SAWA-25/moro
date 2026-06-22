@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { XhsActivityRecord, CharacterProfile } from '../types';
 import { XhsFreeRoamEngine, FreeRoamCallbacks } from '../utils/xhsFreeRoam';
+import { resolveAuxApi } from '../utils/auxApi';
 import { XhsMcpClient } from '../utils/xhsMcpClient';
 import ConfirmDialog from '../components/os/ConfirmDialog';
 import { Book, PencilSimple, MagnifyingGlass, DeviceMobileCamera, ChatCircleDots, PushPin, Moon, House } from '@phosphor-icons/react';
@@ -42,7 +43,9 @@ const RESULT_COLORS: Record<string, string> = {
 };
 
 const XhsFreeRoamApp: React.FC = () => {
-    const { goBack, addToast, characters, activeCharacterId, apiConfig, realtimeConfig, userProfile } = useOS();
+    const { goBack, addToast, characters, activeCharacterId, apiConfig, auxApiConfig, realtimeConfig, userProfile } = useOS();
+    // 小红书·自由活动属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     // Character selector — default to activeCharacterId, but user can switch
     const [selectedCharId, setSelectedCharId] = useState<string>(activeCharacterId || characters[0]?.id || '');
@@ -99,7 +102,7 @@ const XhsFreeRoamApp: React.FC = () => {
             addToast('请先在「文具盒」里配置小红书 MCP Server', 'error');
             return;
         }
-        if (!apiConfig.baseUrl) {
+        if (!auxApi.baseUrl) {
             addToast('请先在「文具盒」里配置 API', 'error');
             return;
         }
@@ -130,7 +133,7 @@ const XhsFreeRoamApp: React.FC = () => {
             await XhsFreeRoamEngine.run(
                 char,
                 userProfile,
-                apiConfig,
+                auxApi,
                 realtimeConfig || {} as any,
                 callbacks,
             );

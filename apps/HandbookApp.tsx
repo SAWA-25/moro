@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
+import { resolveAuxApi } from '../utils/auxApi';
 import { DB } from '../utils/db';
 import { HandbookEntry, HandbookPage, HandbookLayout, Tracker } from '../types';
 import {
@@ -32,7 +33,9 @@ import { PAPER_TONES, SERIF_STACK, dayOfWeekZh, monthEn, dayNum } from '../compo
 import { CaretLeft, Plus, Sparkle } from '@phosphor-icons/react';
 
 const HandbookApp: React.FC = () => {
-    const { closeApp, characters, apiConfig, userProfile, addToast } = useOS();
+    const { closeApp, characters, apiConfig, auxApiConfig, userProfile, addToast } = useOS();
+    // 手账属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     type View = 'list' | 'day';
     const [view, setView] = useState<View>('list');
@@ -123,7 +126,7 @@ const HandbookApp: React.FC = () => {
 
     const runGenerate = async () => {
         setShowCharPicker(false);
-        if (!apiConfig.apiKey || !apiConfig.baseUrl) {
+        if (!auxApi.apiKey || !auxApi.baseUrl) {
             addToast('请先在「文具盒」里配置主 API', 'error');
             return;
         }
@@ -150,7 +153,7 @@ const HandbookApp: React.FC = () => {
                 selectedCharIds: candidateCharIds,
                 characters,
                 userProfile,
-                apiConfig,
+                apiConfig: auxApi,
                 onProgress: ({ name, i, n }) => setGenProgress({ name, i, n }),
             });
 
@@ -260,7 +263,7 @@ const HandbookApp: React.FC = () => {
                 charId: page.charId,
                 pages: entry.pages,
                 layouts: entry.layouts || [],
-                characters, userProfile, apiConfig,
+                characters, userProfile, apiConfig: auxApi,
             });
             if (!result.newPage) {
                 addToast('重新生成失败 (角色 pass 了 / API 错误)', 'error');

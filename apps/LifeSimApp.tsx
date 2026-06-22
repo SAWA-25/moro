@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
+import { resolveAuxApi } from '../utils/auxApi';
 import {
     LifeSimState, SimAction, SimActionType, SimEventType,
     CharacterProfile, SimNPC,
@@ -122,7 +123,9 @@ async function callCharAI(
 // ── 主组件 ──────────────────────────────────────────────────────
 
 const LifeSimApp: React.FC = () => {
-    const { apiConfig, apiPresets, characters, userProfile, closeApp } = useOS();
+    const { apiConfig, auxApiConfig, apiPresets, characters, userProfile, closeApp } = useOS();
+    // 街角·LifeSim 属「聊天以外」的功能：未单独配置独立 API 时走副 API（再回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
 
     const [gameState, setGameState] = useState<LifeSimState | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -194,15 +197,15 @@ const LifeSimApp: React.FC = () => {
     }, [characters, resolveParticipantCharIds]);
 
     const resolveLifeSimApiConfig = useCallback((state: LifeSimState | null | undefined) => {
-        if (!state?.useIndependentApiConfig) return apiConfig;
+        if (!state?.useIndependentApiConfig) return auxApi;
         const override = state.independentApiConfig || {};
         return {
-            ...apiConfig,
-            baseUrl: override.baseUrl?.trim() || apiConfig.baseUrl,
-            apiKey: override.apiKey?.trim() || apiConfig.apiKey,
-            model: override.model?.trim() || apiConfig.model,
+            ...auxApi,
+            baseUrl: override.baseUrl?.trim() || auxApi.baseUrl,
+            apiKey: override.apiKey?.trim() || auxApi.apiKey,
+            model: override.model?.trim() || auxApi.model,
         };
-    }, [apiConfig]);
+    }, [auxApi]);
 
     const buildMainPlotAction = useCallback(async (state: LifeSimState) => {
         if (!userProfile) return null;

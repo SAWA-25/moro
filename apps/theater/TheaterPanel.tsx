@@ -16,6 +16,7 @@ import { DB } from '../../utils/db';
 import { SCRIPT_TEMPLATE } from '../../utils/vrWorld/constants';
 import { WRITING_PRESETS, type WritingPreset } from '../../utils/vrWorld/presets';
 import { resolveTheaterApi, generateScript, polishScript, collectActorNotes, charActorCount, runDirector, type TheaterCtx } from '../../utils/vrWorld/theater';
+import { resolveAuxApi } from '../../utils/auxApi';
 import { rollNpcChibi, randomNpcName } from '../../utils/vrWorld/npcRoll';
 import { getChibi } from '../../utils/vrWorld/chibi';
 import { CreatorIframe } from '../../components/Like520Event';
@@ -93,7 +94,9 @@ function parseUploadedScript(text: string, fallbackTitle: string): { title: stri
 type View = 'list' | 'script' | 'stage' | 'play';
 
 const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ addToast }) => {
-    const { characters, userProfile, groups, apiConfig } = useOS();
+    const { characters, userProfile, groups, apiConfig, auxApiConfig } = useOS();
+    // 彼方·剧院属「聊天以外」的功能：走副 API（剧院自带 VR API 优先，否则副 API，再回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [tab, setTab] = useState<'scripts' | 'history'>('scripts');
     const [scripts, setScripts] = useState<VRScript[]>([]);
     const [plays, setPlays] = useState<VRStagedPlay[]>([]);
@@ -200,13 +203,13 @@ const TheaterPanel: React.FC<{ addToast?: (m: string, t?: any) => void }> = ({ a
                     )}
 
                     {view === 'script' && cur && <ScriptView script={cur} onBack={() => setView('list')} onStage={() => setView('stage')} onDelete={async () => { await DB.deleteVRScript(cur.id); await reload(); setView('list'); addToast?.('已删除', 'success'); }} />}
-                    {view === 'stage' && cur && <StageView script={cur} ctx={ctx} apiConfig={apiConfig} addToast={addToast} onBack={() => setView('list')} onPolished={(body) => setCur({ ...cur, body })} onStaged={async (play) => { await DB.saveVRStagedPlay(play); await reload(); setCurPlay(play); setView('play'); }} />}
+                    {view === 'stage' && cur && <StageView script={cur} ctx={ctx} apiConfig={auxApi} addToast={addToast} onBack={() => setView('list')} onPolished={(body) => setCur({ ...cur, body })} onStaged={async (play) => { await DB.saveVRStagedPlay(play); await reload(); setCurPlay(play); setView('play'); }} />}
                     {view === 'play' && curPlay && <PlaybackView play={curPlay} characters={characters} onBack={() => { setView('list'); setTab('history'); }} onDelete={async () => { await DB.deleteVRStagedPlay(curPlay.id); await reload(); setView('list'); setTab('history'); addToast?.('已删除这场演出', 'success'); }} />}
                 </div>
             </div>
 
             <WriteScriptModal open={writeOpen} onClose={() => setWriteOpen(false)} onSave={async (p) => { const s: VRScript = { id: tid('scr'), ...p, authorId: 'user', authorName: userProfile?.name || '我', source: 'user', createdAt: Date.now() }; await DB.saveVRScript(s); await reload(); setWriteOpen(false); addToast?.(`已投稿《${s.title}》`, 'success'); }} />
-            <LLMScriptModal open={llmOpen} onClose={() => setLlmOpen(false)} apiConfig={apiConfig} addToast={addToast} onSaved={async () => { await reload(); setLlmOpen(false); }} />
+            <LLMScriptModal open={llmOpen} onClose={() => setLlmOpen(false)} apiConfig={auxApi} addToast={addToast} onSaved={async () => { await reload(); setLlmOpen(false); }} />
         </>
     );
 };

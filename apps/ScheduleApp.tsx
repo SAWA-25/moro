@@ -4,6 +4,7 @@ import { DB } from '../utils/db';
 import { Task, Anniversary } from '../types';
 import { ContextBuilder } from '../utils/context';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { PaperPage, PaperNote, WashiTape, TapeLabel, Postmark, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
 
@@ -57,7 +58,9 @@ const THEME_ORDER: ThemeId[] = ['kraft', 'grid', 'sticky'];
 
 /** onExit：当本 App 嵌在「岁时记」壳里时，顶层返回回到岁时记封面页而非直接关到桌面。未传则回桌面。 */
 const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
-    const { closeApp, characters, activeCharacterId, apiConfig, addToast, userProfile } = useOS();
+    const { closeApp, characters, activeCharacterId, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
+    // 日程表（TA 的日程）属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const exitApp = onExit ?? closeApp;
     const [tasks, setTasks] = useState<Task[]>([]);
     const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
@@ -108,7 +111,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const generateTaskReward = async (task: Task) => {
         const supervisor = characters.find(c => c.id === task.supervisorId);
-        if (!supervisor || !apiConfig.apiKey) {
+        if (!supervisor || !auxApi.apiKey) {
             addToast('任务已完成', 'success');
             return;
         }
@@ -141,11 +144,11 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 { role: "user", content: userPrompt }
             ];
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: messages,
                     temperature: 0.9,
                     max_tokens: 8000
@@ -186,7 +189,7 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     const generateAnniversaryThought = async (anni: Anniversary) => {
         const char = characters.find(c => c.id === anni.charId);
-        if (!char || !apiConfig.apiKey) return;
+        if (!char || !auxApi.apiKey) return;
 
         // Check cache (24h)
         if (anni.aiThought && anni.lastThoughtGeneratedAt && (Date.now() - anni.lastThoughtGeneratedAt < 24 * 60 * 60 * 1000)) {
@@ -220,11 +223,11 @@ const ScheduleApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
         ];
 
         try {
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                 body: JSON.stringify({
-                    model: apiConfig.model,
+                    model: auxApi.model,
                     messages: messages,
                     temperature: 0.8,
                     max_tokens: 8000

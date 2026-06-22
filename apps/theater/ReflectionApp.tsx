@@ -11,6 +11,7 @@ import {
 } from '../../utils/theaterTimeline';
 import { Shell, CharPicker } from './TrajectoryApp';
 import { ScrapButton, WashiTape, HALFTONE, INK, INK_SOFT } from './scrapbook';
+import { resolveAuxApi } from '../../utils/auxApi';
 
 /**
  * 折子戏·对影（柒）：同一个人，在不同时间里的相逢。
@@ -21,7 +22,9 @@ import { ScrapButton, WashiTape, HALFTONE, INK, INK_SOFT } from './scrapbook';
 interface Props { onExit: () => void; }
 
 const ReflectionApp: React.FC<Props> = ({ onExit }) => {
-    const { characters, userProfile, apiConfig, addToast } = useOS();
+    const { characters, userProfile, apiConfig, auxApiConfig, addToast } = useOS();
+    // 折子戏·对影属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [selectedCharId, setSelectedCharId] = useState('');
     const [trajectory, setTrajectory] = useState<CharTrajectory | null>(null);
     const [loadingTraj, setLoadingTraj] = useState(false);
@@ -40,7 +43,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         setLoadingTraj(true);
         setError('');
         try {
-            const t = await loadOrGenerateTrajectory(selectedChar, userName, apiConfig);
+            const t = await loadOrGenerateTrajectory(selectedChar, userName, auxApi);
             setTrajectory(t);
             const before = t.nodes.find(n => n.era === 'before');
             const last = t.nodes[t.nodes.length - 1];
@@ -75,7 +78,7 @@ const ReflectionApp: React.FC<Props> = ({ onExit }) => {
         setGenerating(true);
         setError('');
         try {
-            const s = await generateReflection(selectedChar, userName, a, b, trajectory.firstMetTs, apiConfig);
+            const s = await generateReflection(selectedChar, userName, a, b, trajectory.firstMetTs, auxApi);
             setScene(s);
         } catch (e) {
             addToast(e instanceof Error ? e.message : '对影生成失败', 'error');

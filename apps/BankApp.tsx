@@ -4,6 +4,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
+import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import BankShopScene from '../components/bank/BankShopScene';
 import BankDollhouse from '../components/bank/BankDollhouse';
@@ -123,7 +124,9 @@ const HbModal: React.FC<{
 };
 
 const BankApp: React.FC = () => {
-    const { closeApp, characters, addToast, apiConfig, userProfile, adjustUserBalance } = useOS();
+    const { closeApp, characters, addToast, apiConfig, auxApiConfig, userProfile, adjustUserBalance } = useOS();
+    // 回形针·银行属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+    const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [state, setState] = useState<BankFullState>(INITIAL_STATE);
     const [transactions, setTransactions] = useState<BankTransaction[]>([]);
     const [dollhouseState, setDollhouseState] = useState<DollhouseState>(INITIAL_DOLLHOUSE);
@@ -739,7 +742,7 @@ const BankApp: React.FC = () => {
             addToast(`AP 不足 (需 ${COST})。去省钱吧！`, 'error');
             return;
         }
-        if (!apiConfig.apiKey) { addToast('需配置 API Key', 'error'); return; }
+        if (!auxApi.apiKey) { addToast('需配置 API Key', 'error'); return; }
 
         setIsRefreshingGuestbook(true);
         try {
@@ -785,10 +788,10 @@ ${previousGuestbook}
 ]
 `;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] })
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] })
             });
 
             if (response.ok) {
@@ -998,10 +1001,10 @@ ${JSON.stringify(list, null, 2)}
 
 只输出 JSON 数组，每项 {"id":"原样照抄","text":"点评","rating":1到5整数}：`;
 
-            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }] }),
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] }),
             });
             if (!response.ok) return;
             const data = await safeResponseJson(response);
@@ -1215,7 +1218,7 @@ ${JSON.stringify(list, null, 2)}
 
         // 客户评价交给 AI 后台润色：把模板评价改写得更多样、有个性，并据此微调星级（影响口碑）。
         // 非阻塞——营业已即时出结果；没配 Key 或失败就保留模板。
-        if (apiConfig.apiKey && newReviews.length > 0) {
+        if (auxApi.apiKey && newReviews.length > 0) {
             void enrichReviewsWithAI(newReviews, Array.from(itemMap.values()).map(it => it.name), level);
         }
     };
@@ -1294,7 +1297,7 @@ ${JSON.stringify(list, null, 2)}
                         onDollhouseChange={async (updater) => { await persistDollhouseUpdate(updater); }}
                         characters={characters}
                         userProfile={userProfile}
-                        apiConfig={apiConfig}
+                        apiConfig={auxApi}
                         updateState={async (updater) => {
                             const nextState = { ...stateRef.current, shop: updater(stateRef.current.shop) };
                             stateRef.current = nextState;
@@ -1472,7 +1475,7 @@ ${JSON.stringify(list, null, 2)}
                                 goals={state.goals}
                                 currency={state.config.currencySymbol}
                                 onDeleteTx={handleDeleteTransaction}
-                                apiConfig={apiConfig}
+                                apiConfig={auxApi}
                                 dailyBudget={state.config.dailyBudget}
                             />
                         ) : (
@@ -1480,7 +1483,7 @@ ${JSON.stringify(list, null, 2)}
                                 transactions={transactions}
                                 onTxUpdated={handleTxUpdated}
                                 characters={characters}
-                                apiConfig={apiConfig}
+                                apiConfig={auxApi}
                                 userProfile={userProfile}
                                 addToast={addToast}
                                 currency={state.config.currencySymbol}

@@ -123,6 +123,8 @@ const CharacterCard: React.FC<{
 /** onExit：剪影集（PersonaHubApp）嵌入时返回封面页；不传则关闭 App 回桌面（旧行为） */
 const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const { closeApp: closeAppOS, openApp, characters, activeCharacterId, setActiveCharacterId, addCharacter, importCharacter, updateCharacter, deleteCharacter, apiConfig, auxApiConfig, addToast, userProfile, customThemes, addCustomTheme, worldbooks, addWorldbook } = useOS();
+  // 角色卡生成/润色/导入属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
+  const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const [isGeneratingLifeProfile, setIsGeneratingLifeProfile] = useState(false);
   const closeApp = onExit || closeAppOS;
   const [view, setView] = useState<'list' | 'detail'>('list');
@@ -376,7 +378,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   };
 
   const handleRefineMonth = async (year: string, month: string, rawText: string, formattedPrompt?: string) => {
-      if (!apiConfig.apiKey) { addToast('请先配置 API Key', 'error'); return; }
+      if (!auxApi.apiKey) { addToast('请先配置 API Key', 'error'); return; }
       if (!formData) return;
 
       const targetId = formData.id; // LOCK ID
@@ -404,14 +406,14 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           : `${taskPreamble}\n\n### 角色视角（仅供写作口吻参考）\n${identityContext}### 详细规则\n以该角色的第一人称写作，使用与日记相同的语言（中文），输出一段精简的月度核心记忆。`;
       const userContent = rawText;
 
-      const refineUrl = `${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+      const refineUrl = `${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`;
       const t0 = performance.now();
       try {
           const response = await fetch(refineUrl, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
               body: JSON.stringify({
-                  model: apiConfig.model,
+                  model: auxApi.model,
                   messages: [
                       { role: 'system', content: systemContent },
                       { role: 'user', content: userContent },
@@ -464,7 +466,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
    *                        没提供则退回到当前 selectedPromptId
    */
   const handleForceArchiveDate = async (dateStr: string, overridePromptId?: string): Promise<void> => {
-      if (!apiConfig.apiKey || !formData) { addToast('请先配置 API Key', 'error'); return; }
+      if (!auxApi.apiKey || !formData) { addToast('请先配置 API Key', 'error'); return; }
       const targetId = formData.id;
       try {
           const allMsgs = await DB.getMessagesByCharId(targetId, true);
@@ -491,10 +493,10 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
           prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+          const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
-              body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 8000, stream: false }),
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+              body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.5, max_tokens: 8000, stream: false }),
           });
           if (!response.ok) throw new Error(`API ${response.status}`);
           const data = await safeResponseJson(response);
@@ -547,7 +549,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const handleWebFileDownload = () => { const fileName = `${formData?.name || 'character'}_memories.txt`; const blob = new Blob([exportText], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); addToast('浏览器开始下载了', 'success'); };
 
   const handleImportMemories = async () => {
-      if (!importText.trim() || !apiConfig.apiKey) { addToast('请检查输入内容或 API 设置', 'error'); return; }
+      if (!importText.trim() || !auxApi.apiKey) { addToast('请检查输入内容或 API 设置', 'error'); return; }
       if (!formData) return;
 
       const targetId = formData.id; // LOCK ID
@@ -556,7 +558,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
       try {
           const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`;
-          const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` }, body: JSON.stringify({ model: apiConfig.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) });
+          const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` }, body: JSON.stringify({ model: auxApi.model, messages: [{ role: "user", content: prompt }], temperature: 0.1 }) });
           if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
           const data = await safeResponseJson(response);
           let content = data.choices?.[0]?.message?.content || '';
@@ -585,7 +587,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   };
 
   const handleBatchSummarize = async () => {
-        if (!apiConfig.apiKey || !formData) return;
+        if (!auxApi.apiKey || !formData) return;
 
         const targetId = formData.id; // LOCK ID
         setIsBatchProcessing(true);
@@ -636,11 +638,11 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 prompt = prompt.replace(/\$\{userProfile\.name\}/g, userProfile.name);
                 prompt = prompt.replace(/\$\{rawLog.*?\}/g, rawLog.substring(0, 200000));
 
-                const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
                     body: JSON.stringify({
-                        model: apiConfig.model,
+                        model: auxApi.model,
                         messages: [{ role: "user", content: prompt }],
                         max_tokens: 8000,
                         temperature: 0.5
