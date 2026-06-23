@@ -349,6 +349,16 @@ export const ContextBuilder = {
         }
         context += `${memoryContent}\n\n`;
 
+        // 5a-bis. 角色备忘录（待办/随手记/小心事）—— 未勾掉的注入，TA 应记得这些
+        if (includeDetailedMemories && char.memos && char.memos.length > 0) {
+            const active = char.memos.filter(m => !m.done).slice(0, 20);
+            if (active.length > 0) {
+                context += `**你的备忘录 (Your Memos)** —— 你手机备忘录里记着的事，你心里清楚、会记得，合适时会主动提起或去做：\n`;
+                active.forEach(m => { context += `- ${m.text}\n`; });
+                context += `\n`;
+            }
+        }
+
         // 5b. 记忆宫殿 (Memory Palace) — 向量检索结果
         // 仅在 includeDetailedMemories 时注入，与详细日志同级
         // buildCoreContext(false) 的调用点（情绪评估、轻量上下文等）靠月度总结即可

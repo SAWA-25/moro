@@ -253,6 +253,51 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         [char.refinedMemories]
     );
 
+    // ── 角色备忘录（待办/随手记/小心事）：用户帮记 + 让 TA 自己写，注入聊天上下文 ──
+    const [memoOpen, setMemoOpen] = useState(false);
+    const [newMemoText, setNewMemoText] = useState('');
+    const [memoGenerating, setMemoGenerating] = useState(false);
+    const addMemo = () => {
+        const t = newMemoText.trim();
+        if (!t) return;
+        const m = { id: `memo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: t.slice(0, 200), createdAt: Date.now(), by: 'user' as const };
+        updateCharacter(char.id, { memos: [m, ...(char.memos || [])].slice(0, 50) });
+        setNewMemoText('');
+    };
+    const deleteMemo = (id: string) => updateCharacter(char.id, { memos: (char.memos || []).filter(m => m.id !== id) });
+    const toggleMemoDone = (id: string) => updateCharacter(char.id, { memos: (char.memos || []).map(m => m.id === id ? { ...m, done: !m.done } : m) });
+    const generateMemos = async () => {
+        if (!apiConfig.apiKey) { addToast('先去「文具盒」配置好聊天 API', 'error'); return; }
+        setMemoGenerating(true);
+        try {
+            const persona = (char.systemPrompt || char.description || '').slice(0, 800);
+            const prompt = `你是「${char.name}」。请根据你的人设，写 3~4 条你自己手机备忘录里会有的内容（待办、随手记、藏起来的小心事、清单等，要贴合你的性格与生活，简短自然）。\n\n你的人设：${persona}\n\n只输出 JSON 字符串数组，例如：["明天记得交房租","想给 TA 买生日礼物，纠结选什么","健身：周一三五"]`;
+            const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({ model: apiConfig.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+            });
+            if (!res.ok) throw new Error('生成失败，再试一次');
+            const data = await res.json();
+            let txt: string = data?.choices?.[0]?.message?.content || '';
+            txt = txt.replace(/```json/g, '').replace(/```/g, '').trim();
+            const a = txt.indexOf('['), b = txt.lastIndexOf(']');
+            if (a >= 0 && b > a) txt = txt.slice(a, b + 1);
+            const arr = JSON.parse(txt);
+            if (!Array.isArray(arr)) throw new Error('格式不对，再试一次');
+            const newMemos = arr.filter((s: any) => typeof s === 'string' && s.trim()).slice(0, 4)
+                .map((s: string) => ({ id: `memo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: s.trim().slice(0, 200), createdAt: Date.now(), by: 'char' as const }));
+            if (newMemos.length === 0) throw new Error('没生成出内容，再试一次');
+            updateCharacter(char.id, { memos: [...newMemos, ...(char.memos || [])].slice(0, 50) });
+            setMemoOpen(true);
+            addToast(`TA 记了 ${newMemos.length} 条`, 'success');
+        } catch (e: any) {
+            addToast(e?.message || '生成失败，再试一次', 'error');
+        } finally {
+            setMemoGenerating(false);
+        }
+    };
+
     // ── 世界书：按 category 分组（与世界书 App 联动，整本挂载/卸载） ──
     // 「卷册」= 一个 category 分组；全局卷（scope=global 的条目）自动注入所有会话，
     // 此处只选局部卷。绑定数据仍存 char.mountedWorldbooks（条目快照，注入时以注册表实况覆盖）。
@@ -559,6 +604,48 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                         <p className="text-[11px] leading-relaxed whitespace-pre-wrap line-clamp-4" style={{ color: PAPER_TONES.inkSoft }}>{content}</p>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                    </Entry>
+
+                    <Entry
+                        mark="✎" title="TA 的备忘录"
+                        note="TA 手机备忘录里的待办 / 随手记 / 小心事。聊天时随身带着，TA 会记得自己写过的事；你也能帮 TA 记一条。"
+                        side={<PinButton onClick={() => setMemoOpen(v => !v)}>{(char.memos || []).length} 条 · {memoOpen ? '合上' : '翻开'}</PinButton>}
+                    >
+                        {memoOpen && (
+                            <div className="space-y-2">
+                                <div className="flex gap-2">
+                                    <input
+                                        value={newMemoText}
+                                        onChange={e => setNewMemoText(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMemo(); } }}
+                                        placeholder="帮 TA 记一条…"
+                                        className="flex-1 text-[11px] px-2.5 py-1.5 rounded-[8px] outline-none"
+                                        style={{ background: '#fffdfa', border: '1px dashed #e4cdd8', color: PAPER_TONES.inkSoft }}
+                                    />
+                                    <button onClick={addMemo} className="text-[10px] px-3 rounded-[8px] shrink-0" style={{ background: '#bfe1cf', color: '#2b2933' }}>记下</button>
+                                </div>
+                                <button onClick={generateMemos} disabled={memoGenerating} className="w-full text-[10px] py-1.5 rounded-[8px] disabled:opacity-50" style={{ background: '#f0e6c8', color: '#7a6a3a', border: '1px dashed #d8c89a' }}>
+                                    {memoGenerating ? 'TA 正在记…' : '✨ 让 TA 自己记几条'}
+                                </button>
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                    {(char.memos || []).length === 0 && (
+                                        <p className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>还没有备忘。帮 TA 记一条，或让 TA 自己写几条。</p>
+                                    )}
+                                    {(char.memos || []).map(m => (
+                                        <div key={m.id} className="flex items-start gap-2 rounded-[8px] p-2" style={{ background: '#fffdfa', border: '1px dashed #e4cdd8' }}>
+                                            <button onClick={() => toggleMemoDone(m.id)} className="mt-0.5 shrink-0 w-3.5 h-3.5 rounded-[3px] flex items-center justify-center" style={{ border: `1.5px solid ${m.done ? '#9bbf8f' : '#d4c2cb'}`, background: m.done ? '#9bbf8f' : 'transparent' }}>
+                                                {m.done && <span className="text-white text-[8px] leading-none">✓</span>}
+                                            </button>
+                                            <div className="min-w-0 flex-1">
+                                                <p className={`text-[11px] leading-relaxed whitespace-pre-wrap break-all ${m.done ? 'line-through opacity-50' : ''}`} style={{ color: PAPER_TONES.inkSoft }}>{m.text}</p>
+                                                <div className="text-[8px] mt-0.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{m.by === 'char' ? 'TA 写的' : '你记的'} · {new Date(m.createdAt).toLocaleDateString()}</div>
+                                            </div>
+                                            <button onClick={() => deleteMemo(m.id)} className="text-[8px] shrink-0" style={{ color: '#d4798f' }}>撕掉</button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </Entry>
