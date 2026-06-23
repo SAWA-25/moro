@@ -3,6 +3,7 @@ import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
 import { AppID, Message } from '../../types';
 import { getLockPasscode, isLockPasscodeEnabled } from '../../utils/lockScreenSettings';
+import { recordUserUnlockFail, consumeCharUnlockReminders, CharUnlockReminder } from '../../utils/lockAttempts';
 
 /**
  * 锁屏：壁纸 + 大时钟 + 消息通知卡（仿 iPhone 锁屏：每条消息气泡一张卡片，
@@ -55,6 +56,9 @@ const LockScreen: React.FC = () => {
     const [pendingCharId, setPendingCharId] = useState<string | null>(null);
     // 解锁退场动画进行中（主题 → 锁屏 → 解锁动画）
     const [unlocking, setUnlocking] = useState(false);
+    // 角色偷看手机时试错解锁 → 回到锁屏给用户一条提示（消费即清）
+    const [charReminders, setCharReminders] = useState<CharUnlockReminder[]>([]);
+    useEffect(() => { setCharReminders(consumeCharUnlockReminders()); }, []);
 
     const contentColor = theme.contentColor || '#3f3d49';
     // 锁屏样式自定义（主题 → 锁屏）：专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS
@@ -159,6 +163,7 @@ const LockScreen: React.FC = () => {
                 doUnlock(pendingCharId);
             } else {
                 setPadError(true);
+                recordUserUnlockFail(); // 记一笔试错：聊天上下文里角色会"看到"
                 setTimeout(() => { setEntered(''); setPadError(false); }, 600);
             }
         }
@@ -207,6 +212,24 @@ const LockScreen: React.FC = () => {
                 </div>
                 <div className="label-mono opacity-70 mt-2 text-[10px] font-bold">Moro Simulation</div>
             </div>
+
+            {/* 角色偷看手机试错解锁的提醒横幅（锁手机·双向试错的用户提醒侧） */}
+            {charReminders.length > 0 && (
+                <div className="absolute top-[26%] left-3 right-3 z-10" onClick={e => e.stopPropagation()}>
+                    <div className={`moro-lock-notif ${notifCardClass} p-3.5 flex items-start gap-3`} style={{ animation: `lockNotifIn 420ms cubic-bezier(0.2,0.9,0.3,1.2) both` }}>
+                        <span className="shrink-0 text-[18px] leading-none mt-0.5">🔓</span>
+                        <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold">手机被人动过</div>
+                            <div className="text-[11px] opacity-80 mt-0.5 leading-relaxed">
+                                {charReminders.length === 1
+                                    ? `「${charReminders[0].name}」似乎想解锁你的手机，密码输错了没进去。`
+                                    : `${charReminders.map(r => `「${r.name}」`).join('、')} 都试过解锁你的手机，没成功。`}
+                            </div>
+                        </div>
+                        <button onClick={() => setCharReminders([])} className="shrink-0 text-[10px] font-bold opacity-60 active:opacity-100 px-1">知道了</button>
+                    </div>
+                </div>
+            )}
 
             {/* 消息通知（仿 iPhone 锁屏）：每条消息气泡一张卡片竖向排列，新消息在上；
                 排不下（超过 MAX_FULL_CARDS）时其余通知折叠成覆盖在最新一批下方的堆叠 */}

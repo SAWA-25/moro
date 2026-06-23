@@ -3,6 +3,7 @@ import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniv
 import { DB } from '../../utils/db';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
 import { initUnblockAppeal } from '../../utils/unblockAppeal';
+import { recordCharUnlockFail } from '../../utils/lockAttempts';
 import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
 import { useOS } from '../../context/OSContext';
 import AppIcon from '../os/AppIcon';
@@ -194,6 +195,13 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     ].filter(Boolean).join('\n'), [char]);
 
     // ── 启动：取联系人快照 + 生成浏览脚本 ──
+    // 锁手机·双向试错：TA 拿你手机时有概率先输错一次密码（你回头会在锁屏看到提醒），再解锁翻看。
+    useEffect(() => {
+        if (Math.random() < 0.3) recordCharUnlockFail(char.name, char.id);
+        // 仅在这次「拿起手机」时记一次
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {

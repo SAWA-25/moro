@@ -8,6 +8,7 @@ import { computeCurrentListening, getCurrentSlot } from './charMusicSchedule';
 import { getCharLyricSnippet } from './charLyricCache';
 import { MusicCfg, loadMusicCfgStandalone } from '../context/MusicContext';
 import { RealtimeContextManager, NotionManager, FeishuManager, defaultRealtimeConfig } from './realtimeContext';
+import { buildUserFailAwareness } from './lockAttempts';
 import { getWeatherCity } from './charCity';
 import { isScheduleFeatureOn } from './scheduleGenerator';
 import { applyRegexToText } from './regex/store';
@@ -294,6 +295,9 @@ export const ChatPrompts = {
 
         // ── 按原顺序拼接 ──
         baseSystemPrompt += realtimeText;
+
+        // 手机动静：用户最近输错锁屏密码 → 让角色"看到"（锁手机·双向试错的角色感知侧）
+        try { baseSystemPrompt += buildUserFailAwareness(); } catch { /* ignore */ }
 
         // 2a. 日程注入
         if (schedule) {
