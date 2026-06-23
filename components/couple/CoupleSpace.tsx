@@ -66,7 +66,7 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
   love: '💞', birthday: '🎂', promise: '🤙', custom: '📌',
 };
 
-type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist';
+type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist' | 'achievements';
 
 // ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
 const HeartbeatLine: React.FC = () => (
@@ -554,7 +554,7 @@ const CoupleSpace: React.FC = () => {
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
         <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
-          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿']] as [Tab, string][]).map(([k, label]) => (
+          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿'], ['achievements', '成就']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className="flex-1 py-1.5 rounded-full transition"
               style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
@@ -719,6 +719,44 @@ const CoupleSpace: React.FC = () => {
             )}
           </>
         )}
+
+        {tab === 'achievements' && (() => {
+          const lvl = intimacyLevel(space.intimacy || 0);
+          const days = loveDays(space.anniversaryDate);
+          const ACH = [
+            { e: '💓', t: '初次心动', d: '建立你们的情侣空间', ok: (space.intimacy || 0) > 0 || !!space.anniversaryDate, cur: 0, tar: 0 },
+            { e: '🔥', t: '热恋升级', d: '亲密度达到 Lv.3', ok: lvl >= 3, cur: lvl, tar: 3 },
+            { e: '💎', t: '情比金坚', d: '亲密度达到 Lv.6', ok: lvl >= 6, cur: lvl, tar: 6 },
+            { e: '📅', t: '百日纪念', d: '相恋满 100 天', ok: days >= 100, cur: days, tar: 100 },
+            { e: '🎂', t: '周年之约', d: '相恋满 365 天', ok: days >= 365, cur: days, tar: 365 },
+            { e: '📸', t: '生活记录者', d: '一起发 10 条动态', ok: space.moments.length >= 10, cur: space.moments.length, tar: 10 },
+            { e: '✅', t: '言出必行', d: '完成 5 个约定', ok: doneTasks.length >= 5, cur: doneTasks.length, tar: 5 },
+            { e: '🌟', t: '梦想成真', d: '实现 3 个心愿', ok: doneWishes.length >= 3, cur: doneWishes.length, tar: 3 },
+            { e: '💌', t: '悄悄话', d: '互留 5 条悄悄话', ok: space.whispers.length >= 5, cur: space.whispers.length, tar: 5 },
+            { e: '🖼️', t: '回忆收藏家', d: '相册攒满 9 张', ok: space.photos.length >= 9, cur: space.photos.length, tar: 9 },
+            { e: '🗓️', t: '纪念时刻', d: '记下 3 个纪念日', ok: space.anniversaries.length >= 3, cur: space.anniversaries.length, tar: 3 },
+          ];
+          const unlocked = ACH.filter(a => a.ok).length;
+          return (
+            <>
+              <div className="text-center text-[13px] font-bold pb-1" style={{ color: '#c76b8e' }}>已解锁 {unlocked} / {ACH.length} 个里程碑</div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {ACH.map(a => (
+                  <div key={a.t} className={`rounded-2xl p-3 border flex flex-col items-center text-center gap-1 ${a.ok ? 'bg-white border-[#f3c0d2] shadow-[0_2px_12px_rgba(240,168,196,0.18)]' : 'bg-white/60 border-[#eee]'}`}>
+                    <div className={`text-2xl ${a.ok ? '' : 'grayscale opacity-40'}`}>{a.e}</div>
+                    <div className={`text-[12px] font-bold ${a.ok ? 'text-[#333]' : 'text-[#bbb]'}`}>{a.t}</div>
+                    <div className="text-[10px] leading-tight" style={{ color: a.ok ? '#c76b8e' : '#ccc' }}>{a.d}</div>
+                    {a.ok ? (
+                      <div className="text-[9px] font-bold" style={{ color: '#e07a9c' }}>✓ 已达成</div>
+                    ) : a.tar > 0 ? (
+                      <div className="text-[9px] text-[#ccc] mt-0.5">{Math.min(a.cur, a.tar)} / {a.tar}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* 悄悄话浮动入口 */}
