@@ -441,6 +441,8 @@ const ChatHub: React.FC = () => {
     const [tempMemberNickname, setTempMemberNickname] = useState('');
     // 移除成员二次确认（第一次点变红，再点才执行）
     const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+    // 转让群主二次确认（两段点击，同移出成员）
+    const [confirmTransferId, setConfirmTransferId] = useState<string | null>(null);
     // 我的群名片编辑（设置弹窗里）
     const [tempMyNickname, setTempMyNickname] = useState('');
     // 点开「改名小心思」系统提示后，要展示动机的那条消息
@@ -1005,6 +1007,35 @@ const ChatHub: React.FC = () => {
             setProfileMemberId(null);
             setModalType('none');
             addToast(`已移除 ${name}`, 'success');
+        }
+    };
+
+    /** 群主任命/取消管理员 */
+    const handleToggleAdmin = async (charId: string) => {
+        if (!activeGroup || !isUserOwner(activeGroup)) return;
+        const name = displayNameOf(activeGroup, charId);
+        const admins = new Set(activeGroup.adminIds || []);
+        const wasAdmin = admins.has(charId);
+        if (wasAdmin) admins.delete(charId); else admins.add(charId);
+        const updated = await applyGroupUpdate({ adminIds: Array.from(admins) });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, wasAdmin ? `你取消了「${name}」的管理员` : `你将「${name}」设为管理员`);
+            addToast(wasAdmin ? '已取消管理员' : '已设为管理员', 'success');
+        }
+    };
+
+    /** 群主转让：新群主从管理员列表移除（已是群主无需再挂管理员） */
+    const handleTransferOwner = async (charId: string) => {
+        if (!activeGroup || !isUserOwner(activeGroup)) return;
+        const name = displayNameOf(activeGroup, charId);
+        const admins = (activeGroup.adminIds || []).filter(id => id !== charId);
+        const updated = await applyGroupUpdate({ ownerId: charId, adminIds: admins });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, `你把群主转让给了「${name}」`);
+            setConfirmTransferId(null);
+            setProfileMemberId(null);
+            setModalType('none');
+            addToast('已转让群主', 'success');
         }
     };
 
@@ -2808,7 +2839,7 @@ ${attachedImagesNote}
                                 onLongPress={handleMessageLongPress}
                                 displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
                                 memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
-                                onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
+                                onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); } : undefined}
                                 onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                                 mentionNames={mentionNames}
@@ -3044,7 +3075,7 @@ ${attachedImagesNote}
                                 return (
                                     <div
                                         key={mid}
-                                        onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setModalType('member-profile'); }}
+                                        onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); }}
                                         className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all relative"
                                     >
                                         <img src={c.avatar} className={`w-10 h-10 rounded-full object-cover ${muted ? 'grayscale opacity-60' : ''}`} />
@@ -3498,6 +3529,20 @@ ${attachedImagesNote}
                                             <SpeakerSlash size={14} weight="bold" /> {muted ? '禁言管理' : '禁言此成员'}
                                         </button>
                                     </div>
+                                    {/* 群主专属：任命/取消管理员 · 转让群主（不能对群主本人操作） */}
+                                    {isUserOwner(activeGroup) && member.id !== (activeGroup?.ownerId || 'user') && (
+                                        <>
+                                            <button onClick={() => handleToggleAdmin(member.id)} className="w-full py-2.5 bg-violet-50 text-violet-600 font-bold rounded-xl border border-violet-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
+                                                <Crown size={14} weight="bold" /> {(activeGroup?.adminIds || []).includes(member.id) ? '取消管理员' : '设为管理员'}
+                                            </button>
+                                            <button
+                                                onClick={() => { if (confirmTransferId === member.id) handleTransferOwner(member.id); else setConfirmTransferId(member.id); }}
+                                                className={`w-full py-2.5 font-bold rounded-xl border active:scale-95 transition-all text-xs ${confirmTransferId === member.id ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200' : 'bg-violet-50 text-violet-600 border-violet-100'}`}
+                                            >
+                                                {confirmTransferId === member.id ? '再点一次确认转让群主' : '转让群主'}
+                                            </button>
+                                        </>
+                                    )}
                                     <button
                                         onClick={() => {
                                             if (confirmRemoveId === member.id) { handleRemoveMember(member.id); setConfirmRemoveId(null); }
