@@ -12,7 +12,7 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
@@ -331,6 +331,13 @@ const ChatHub: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [totalMsgCount, setTotalMsgCount] = useState(0);
     const [visibleCount, setVisibleCount] = useState(30);
+    // 群聊天记录查找：搜索浮层 + 关键词 + 全量消息快照 + 跳转高亮
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchAllMsgs, setSearchAllMsgs] = useState<Message[]>([]);
+    const [highlightMsgId, setHighlightMsgId] = useState<number | null>(null);
+    // 每次跳转自增，确保「自动滚到底」的 layout effect 重新触发并改为滚到目标
+    const [jumpNonce, setJumpNonce] = useState(0);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     /** 群记忆宫殿"提取中"状态文本——非空时显示顶部胶囊状态条 */
@@ -405,6 +412,8 @@ const ChatHub: React.FC = () => {
 
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
+    // 聊天记录查找跳转目标：非空时 layout effect 滚到该消息而非底部
+    const jumpTargetRef = useRef<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const groupAvatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -424,6 +433,8 @@ const ChatHub: React.FC = () => {
     useEffect(() => {
         if (activeGroup) {
             setVisibleCount(30);
+            setSearchOpen(false);
+            setSearchTerm('');
             DB.getRecentGroupMessagesWithCount(activeGroup.id, 30).then(({ messages: msgs, totalCount }) => {
                 setMessages(msgs);
                 setTotalMsgCount(totalCount);
@@ -438,12 +449,71 @@ const ChatHub: React.FC = () => {
 
     // Auto Scroll
     useLayoutEffect(() => {
+        // 聊天记录查找：跳转到指定消息时，优先滚到目标而非底部
+        if (jumpTargetRef.current != null) {
+            const targetId = jumpTargetRef.current;
+            jumpTargetRef.current = null;
+            const el = document.getElementById(`gmsg-${targetId}`);
+            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+        }
         if (scrollRef.current && !selectionMode) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
-    }, [messages.length, activeGroup, showActions, showEmojiPicker, isTyping, selectionMode]);
+    }, [messages.length, activeGroup, showActions, showEmojiPicker, isTyping, selectionMode, jumpNonce]);
 
     const displayMessages = useMemo(() => messages.slice(-visibleCount), [messages, visibleCount]);
+
+    // ── 群聊天记录查找 ───────────────────────────────────────────────
+    /** 打开查找浮层：拉全量群消息做快照（聊天列表是分页的，搜索要搜全部） */
+    const openSearch = async () => {
+        if (!activeGroup) return;
+        setSearchTerm('');
+        setSearchAllMsgs(await DB.getGroupMessages(activeGroup.id));
+        setSearchOpen(true);
+    };
+
+    /** 命中结果：只搜文本/系统通知（图片/红包等富媒体 content 是 base64/URL，搜了无意义）；最新在前 */
+    const searchResults = useMemo(() => {
+        const term = searchTerm.trim().toLowerCase();
+        if (!term) return [] as Message[];
+        return searchAllMsgs
+            .filter(m => {
+                if (typeof m.content !== 'string' || !m.content) return false;
+                const isText = m.type === 'text';
+                const isSystem = m.role === 'system' || m.type === 'system';
+                if (!isText && !isSystem) return false;
+                return m.content.toLowerCase().includes(term);
+            })
+            .slice()
+            .reverse();
+    }, [searchTerm, searchAllMsgs]);
+
+    /** 把命中消息高亮片段渲染出来（首个匹配处取一小段上下文，匹配词描黄） */
+    const renderSnippet = (content: string, rawTerm: string): React.ReactNode => {
+        const term = rawTerm.trim();
+        if (!term) return content.slice(0, 60);
+        const idx = content.toLowerCase().indexOf(term.toLowerCase());
+        if (idx < 0) return content.slice(0, 60);
+        const start = Math.max(0, idx - 12);
+        const pre = (start > 0 ? '…' : '') + content.slice(start, idx);
+        const match = content.slice(idx, idx + term.length);
+        const postEnd = idx + term.length + 40;
+        const post = content.slice(idx + term.length, postEnd) + (content.length > postEnd ? '…' : '');
+        return <>{pre}<mark className="bg-amber-200/70 text-amber-900 rounded px-0.5">{match}</mark>{post}</>;
+    };
+
+    /** 跳到某条命中消息：载入全量消息确保可见，关浮层并滚动+短暂高亮 */
+    const jumpToMessage = async (msg: Message) => {
+        if (!activeGroup || msg.id == null) return;
+        const all = searchAllMsgs.length ? searchAllMsgs : await DB.getGroupMessages(activeGroup.id);
+        jumpTargetRef.current = msg.id;
+        setMessages(all);
+        setVisibleCount(all.length);
+        setSearchOpen(false);
+        setHighlightMsgId(msg.id);
+        setJumpNonce(n => n + 1);
+        window.setTimeout(() => setHighlightMsgId(prev => (prev === msg.id ? null : prev)), 2600);
+    };
 
     const canReroll = useMemo(() => {
         if (isTyping || messages.length === 0) return false;
@@ -2242,6 +2312,15 @@ ${attachedImagesNote}
                             </button>
                         )}
 
+                        {/* 群聊天记录查找入口 */}
+                        <button
+                            onClick={openSearch}
+                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#2b2933] transition-all active:scale-90"
+                            title="查找聊天记录"
+                        >
+                            <MagnifyingGlass size={20} weight="bold" />
+                        </button>
+
                         {/* 群设置入口（原 + 面板里的「群设置」迁移到右上角；⚡手动触发已删除——空输入回车/发送即触发） */}
                         <button
                             onClick={() => {
@@ -2259,6 +2338,72 @@ ${attachedImagesNote}
                 )}
             </div>
             </div>
+
+            {/* 群聊天记录查找浮层（QQ 式）：顶部搜索条 + 命中列表，点结果跳转并高亮 */}
+            {searchOpen && (
+                <div className="absolute inset-0 z-[120] bg-[#faf9f6] flex flex-col animate-fade-in">
+                    <div className="shrink-0 bg-white border-b border-[#ededed]">
+                        <div style={{ height: 'var(--safe-top)' }} />
+                        <div className="px-4 py-3 flex items-center gap-2">
+                            <div className="flex-1 flex items-center gap-2 bg-slate-100 rounded-xl px-3 py-2">
+                                <MagnifyingGlass size={18} className="text-slate-400 shrink-0" />
+                                <input
+                                    autoFocus
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    placeholder="搜索群聊天记录"
+                                    className="flex-1 bg-transparent text-sm outline-none text-slate-700 placeholder:text-slate-400"
+                                />
+                                {searchTerm && (
+                                    <button onClick={() => setSearchTerm('')} className="shrink-0 text-slate-300 hover:text-slate-400" title="清空">
+                                        <XCircle size={18} weight="fill" />
+                                    </button>
+                                )}
+                            </div>
+                            <button onClick={() => setSearchOpen(false)} className="text-sm text-slate-500 font-medium px-1 shrink-0">取消</button>
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar">
+                        {searchTerm.trim() === '' ? (
+                            <div className="px-10 py-16 text-center text-xs text-slate-300 leading-relaxed">输入关键词<br />查找群里说过的话</div>
+                        ) : searchResults.length === 0 ? (
+                            <div className="px-10 py-16 text-center text-xs text-slate-300">没有找到含「{searchTerm.trim()}」的聊天记录</div>
+                        ) : (
+                            <>
+                                <div className="px-4 py-2.5 text-[11px] text-slate-400">{searchResults.length} 条结果</div>
+                                {searchResults.map((m, idx) => {
+                                    const isSystem = m.role === 'system' || m.type === 'system';
+                                    const sender = isSystem ? '系统通知' : (m.role === 'user' ? displayNameOf(activeGroup, 'user') : displayNameOf(activeGroup, m.charId));
+                                    const avatar = isSystem ? undefined : (m.role === 'user' ? userProfile.avatar : characters.find(c => c.id === m.charId)?.avatar);
+                                    return (
+                                        <button
+                                            key={m.id || idx}
+                                            onClick={() => jumpToMessage(m)}
+                                            className="w-full flex items-start gap-3 px-4 py-3 border-b border-slate-100 text-left active:bg-slate-50 transition-colors"
+                                        >
+                                            {avatar ? (
+                                                <img src={avatar} className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                                            ) : (
+                                                <div className="w-9 h-9 rounded-lg bg-slate-100 shrink-0 flex items-center justify-center text-slate-300">
+                                                    <Megaphone size={16} weight="fill" />
+                                                </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-xs font-bold text-slate-600 truncate">{sender}</span>
+                                                    <span className="text-[10px] text-slate-300 shrink-0">{new Date(m.timestamp).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                </div>
+                                                <p className="text-[13px] text-slate-700 leading-snug mt-0.5 line-clamp-2 break-all">{renderSnippet(m.content as string, searchTerm)}</p>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                                <div className="h-8" />
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* 群公告横幅（QQ 式）：进群置顶展示，点开看全文；群主/管理员可编辑 */}
             {activeGroup?.announcement?.text && !selectionMode && (
@@ -2294,23 +2439,28 @@ ${attachedImagesNote}
                     const char = characters.find(c => c.id === m.charId);
 
                     return (
-                        <GroupMessageItem
+                        <div
                             key={m.id || i}
-                            msg={m}
-                            isUser={isUser}
-                            char={char}
-                            userAvatar={userProfile.avatar}
-                            onImageClick={(url) => window.open(url, '_blank')}
-                            selectionMode={selectionMode}
-                            isSelected={selectedMsgIds.has(m.id)}
-                            onToggleSelect={toggleMessageSelection}
-                            onLongPress={handleMessageLongPress}
-                            displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
-                            memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
-                            onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
-                            onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
-                            onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
-                        />
+                            id={m.id != null ? `gmsg-${m.id}` : undefined}
+                            className={`rounded-2xl transition-all duration-500 ${highlightMsgId === m.id ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-[#faf9f6] bg-amber-50/40' : ''}`}
+                        >
+                            <GroupMessageItem
+                                msg={m}
+                                isUser={isUser}
+                                char={char}
+                                userAvatar={userProfile.avatar}
+                                onImageClick={(url) => window.open(url, '_blank')}
+                                selectionMode={selectionMode}
+                                isSelected={selectedMsgIds.has(m.id)}
+                                onToggleSelect={toggleMessageSelection}
+                                onLongPress={handleMessageLongPress}
+                                displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
+                                memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
+                                onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
+                                onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
+                                onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
+                            />
+                        </div>
                     );
                 })}
                 {isTyping && (
