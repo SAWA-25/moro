@@ -3658,6 +3658,54 @@ export interface TalkSession {
 }
 
 // ──────────────────────────────────────────────────────────────────
+// 折子戏·狼人杀（捌）：拉一桌熟人开一局狼人杀。
+// user 与选中的角色各占一座，AI 玩家按各自身份（狼 / 预言家 / 女巫 / 猎人 / 平民）
+// 在夜里行动、白天发言、投票放逐。AI 发言走副 API、贴各自人设说话、会伪装会推理。
+// 一局完整流程（夜→昼→投票）记在 log 里，可存档、回看、续局。
+// 📌 prompt 文案集中在 utils/theaterPrompts.ts（[捌] 狼人杀 区段），引擎在 utils/theaterWerewolf.ts。
+// ──────────────────────────────────────────────────────────────────
+export type WerewolfRole = 'wolf' | 'seer' | 'witch' | 'hunter' | 'villager';
+export type WerewolfPhase = 'setup' | 'night' | 'day' | 'vote' | 'over';
+export type WerewolfDeathReason = 'wolf' | 'vote' | 'poison' | 'shot';
+
+export interface WerewolfPlayer {
+  seat: number;            // 座位号 1..N
+  name: string;
+  isUser: boolean;
+  charId?: string;         // AI 玩家对应角色（user 座位无）
+  avatar?: string;
+  role: WerewolfRole;
+  alive: boolean;
+  deadRound?: number;      // 死于第几轮
+  deadReason?: WerewolfDeathReason;
+}
+
+export interface WerewolfLogEntry {
+  round: number;
+  kind: 'narration' | 'speech' | 'vote' | 'death' | 'result' | 'system' | 'check';
+  seat?: number;           // 关联玩家座位
+  name?: string;           // 冗余存名字，避免座位重排
+  text: string;
+  at: number;
+  privateToUser?: boolean; // 仅 user 可见（预言家查验结果等）
+}
+
+export interface WerewolfGame {
+  id: string;
+  title: string;
+  createdAt: number;
+  lastActiveAt: number;
+  players: WerewolfPlayer[];
+  round: number;           // 当前进行到第几轮（第 1 个夜晚 = 1）
+  phase: WerewolfPhase;
+  log: WerewolfLogEntry[];
+  witchHealUsed: boolean;  // 女巫解药是否已用
+  witchPoisonUsed: boolean;// 女巫毒药是否已用
+  pendingKill?: number | null;   // 本夜狼刀目标座位（结算前暂存）
+  winner?: 'good' | 'wolf' | null;
+}
+
+// ──────────────────────────────────────────────────────────────────
 // 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
 // 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
 // ──────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@
  *  [伍] TRPG   (Campaign)  … 世界观生成 / 序章 / 跑团 / 前情提要 / 归档 → apps/GameApp.tsx
  *  [陆] 轨迹   (Trajectory)… 角色「遇见你之前」的人生片段              → utils/theaterTimeline.ts
  *  [柒] 对影   (Reflection)… 同一个人在不同时间里的相逢对话            → utils/theaterTimeline.ts
+ *  [捌] 狼人杀 (Werewolf)   … 夜行动 / 昼发言 / 投票的法官与玩家口吻    → utils/theaterWerewolf.ts
  * ============================================================================
  */
 
@@ -528,4 +529,131 @@ ${p.persona ? p.persona + '\n' : ''}
   "lines": [ { "who": "past" | "now" | "narration", "text": "一句话" }, ... 共 8~14 行，past/now 交错，narration 点到为止 ]
 }
 只输出 JSON，不要解释或代码块标记。`;
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [捌] 狼人杀 (Werewolf)                                                     ║
+// ║   用在：utils/theaterWerewolf.ts（UI 在 apps/theater/WerewolfApp.tsx）。    ║
+// ║   一桌熟人开局：AI 玩家按各自隐藏身份在夜里行动、白天发言、投票放逐。        ║
+// ║   三类调用：① 夜晚法官结算（狼刀/查验/女巫用药）② 白天逐位发言 ③ 投票。      ║
+// ║   均要求返回严格 JSON；引擎侧 extractJson + 启发式兜底，解析失败也不卡死。    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const WEREWOLF_ROLE_CN: Record<'wolf' | 'seer' | 'witch' | 'hunter' | 'villager', string> = {
+    wolf: '狼人', seer: '预言家', witch: '女巫', hunter: '猎人', villager: '平民',
+};
+
+/** 把当前牌桌花名册（含隐藏身份，仅给法官 / 上帝视角）拼成文本。 */
+export function werewolfRosterText(players: { seat: number; name: string; role: 'wolf' | 'seer' | 'witch' | 'hunter' | 'villager'; alive: boolean; isUser: boolean; persona?: string }[]): string {
+    return players.map(p =>
+        `${p.seat}号 ${p.name}${p.isUser ? '（玩家本人）' : ''}：身份=${WEREWOLF_ROLE_CN[p.role]}，${p.alive ? '存活' : '已出局'}${p.persona ? `，人设：${p.persona}` : ''}`,
+    ).join('\n');
+}
+
+/** 公共规则说明（屠城判定 + 角色技能），各调用复用。 */
+const WEREWOLF_RULES =
+`【规则】标准狼人杀。阵营：狼人 vs 好人（预言家/女巫/猎人/平民）。
+· 狼人夜里共同刀一人；预言家夜里查验一人善恶；女巫有一瓶解药（救当晚被刀的人）和一瓶毒药（毒死一人），各一次、可同夜用也可不用。
+· 猎人出局（被刀或被票，但被毒不可）能开枪带走一名存活玩家。
+· 胜负：狼人全部出局＝好人胜；存活狼人数≥存活好人数＝狼人胜。`;
+
+/**
+ * 夜晚·法官结算（system）。法官握有全部身份（上帝视角），按各 AI 身份做出当晚行动。
+ * 调用方按需要让法官决定：狼刀（AI 狼自己定时）、AI 预言家查验、AI 女巫用药。
+ */
+export function werewolfNightSys(p: { roster: string; round: number }): string {
+    return `你是一场狼人杀的「法官 / 上帝」，握有全部玩家的真实身份，要冷静、公平地推动第 ${p.round} 夜的行动。
+${WEREWOLF_RULES}
+
+【本局花名册（含隐藏身份，严禁泄露给玩家发言）】
+${p.roster}
+
+你要扮演 AI 阵营做出本夜行动，并写一小段不泄底的夜晚氛围旁白。务必符合各身份的最优/合理打法：
+· 狼人若由 AI 决定刀人：狼队会避免刀自己人，优先刀掉威胁大的神职（预言家/女巫/猎人）或发言强的好人。
+· AI 预言家会挑一个最想验的人查验。
+· AI 女巫掌握「今晚谁被刀」，再决定要不要解救、要不要毒人；解药通常留给关键好人，毒药慎用。`;
+}
+
+/**
+ * 夜晚·法官结算（user）。need* 控制法官要返回哪些字段：
+ * knownKill = 若玩家是狼并已选刀，则把座位传进来让 AI 女巫据此决策（AI 不再决定狼刀）。
+ */
+export function werewolfNightUser(p: {
+    round: number; needWolfKill: boolean; needWitch: boolean; needSeer: boolean;
+    knownKill?: number | null; witchHealLeft: boolean; witchPoisonLeft: boolean;
+}): string {
+    const tasks: string[] = [];
+    if (p.needWolfKill) tasks.push('· wolfKill：狼队今晚要刀的座位号（整数）。');
+    else if (p.knownKill != null) tasks.push(`· （狼刀已由玩家决定为 ${p.knownKill} 号，你不要再改。）`);
+    if (p.needSeer) tasks.push('· seerCheck：AI 预言家本夜查验的座位号（整数）。');
+    if (p.needWitch) {
+        tasks.push(`· witchHeal：AI 女巫是否对今晚被刀者使用解药（true/false${p.witchHealLeft ? '' : '；解药已用完，只能 false'}）。`);
+        tasks.push(`· witchPoison：AI 女巫今晚要毒的座位号；不用毒填 null（${p.witchPoisonLeft ? '' : '毒药已用完，只能 null'}）。`);
+    }
+    return `现在是第 ${p.round} 夜，天黑请闭眼。请你作为法官给出本夜的 AI 行动。
+${tasks.length ? '需要你决定：\n' + tasks.join('\n') : '本夜 AI 无需额外行动。'}
+
+只输出 JSON（缺省字段可省略，不要解释、不要代码块）：
+{
+${p.needWolfKill ? '  "wolfKill": <座位号>,\n' : ''}${p.needSeer ? '  "seerCheck": <座位号>,\n' : ''}${p.needWitch ? '  "witchHeal": <true|false>,\n  "witchPoison": <座位号|null>,\n' : ''}  "narration": "一两句不泄露身份的夜晚旁白（如『夜风掠过屋檐，有人辗转难眠……』）"
+}`;
+}
+
+/**
+ * 白天·逐位发言（system + user 合一返回 system，user 由 werewolfSpeechUser 给）。
+ * 法官代所有存活 AI 玩家发言：各自只用「本身份该知道的信息」说话，狼伪装、神职博弈。
+ */
+export function werewolfSpeechSys(p: { roster: string }): string {
+    return `你是一场狼人杀的导演，要替每一位「存活的 AI 玩家」生成白天的公开发言。你知道全部真实身份，但每位玩家发言时只能基于「自己身份该掌握的信息」，并且要贴合各自的人设口吻。
+${WEREWOLF_RULES}
+
+【本局花名册（含隐藏身份，仅你可知；发言中绝不能直接说穿别人真实身份，除非是预言家公布自己的查验）】
+${p.roster}
+
+发言要求：
+· 狼人要伪装成好人、带节奏、必要时悍跳预言家或踩好人；千万别自曝是狼。
+· 真预言家可以选择跳出来报查验结果（也可以划水观察），女巫/猎人通常隐藏身份。
+· 平民凭逻辑站边。每个人发言 1~3 句，像真人围坐讨论，有立场、有怀疑对象，可点名几号。
+· 用该角色的语气说话，自然口语，不要写旁白动作、不要 JSON 之外的内容。`;
+}
+
+export function werewolfSpeechUser(p: { round: number; speakers: { seat: number; name: string }[]; log: string; deathNote: string }): string {
+    return `第 ${p.round} 天白天。${p.deathNote}
+
+【目前公开发生的事 / 之前的发言与投票】
+${p.log || '（第一天，还没有人发言）'}
+
+请按座位顺序，让下列存活 AI 玩家依次发言（后说的人能听到前面说的）：
+${p.speakers.map(s => `${s.seat}号 ${s.name}`).join('、')}
+
+只输出 JSON 数组（不要解释、不要代码块）：
+[ { "seat": <座位号>, "speech": "这位玩家的发言（1~3句，贴人设口吻）" }, ... 顺序与上面一致 ]`;
+}
+
+/** 投票·法官代所有存活 AI 玩家投票（放逐谁）。 */
+export function werewolfVoteSys(p: { roster: string }): string {
+    return `你是一场狼人杀的导演，要替每一位「存活的 AI 玩家」做出白天放逐投票。你知道全部真实身份。
+${WEREWOLF_RULES}
+
+【本局花名册（含隐藏身份，仅你可知）】
+${p.roster}
+
+投票原则：
+· 狼人会合力把票投给威胁大的好人（尤其跳出来的预言家），并尽量避免投自己狼队友。
+· 好人凭白天发言里的逻辑与怀疑，投给最像狼的人。
+· 每位玩家必须投一个「存活且非自己」的座位。`;
+}
+
+export function werewolfVoteUser(p: { round: number; voters: { seat: number; name: string }[]; aliveSeats: number[]; log: string }): string {
+    return `第 ${p.round} 天投票阶段。可投的存活座位：${p.aliveSeats.join('、')} 号。
+
+【白天的发言与之前的局势】
+${p.log || '（无）'}
+
+请让下列存活 AI 玩家各投一票（目标必须是存活座位、且不能投自己）：
+${p.voters.map(s => `${s.seat}号 ${s.name}`).join('、')}
+
+只输出 JSON 数组（不要解释、不要代码块）：
+[ { "seat": <投票者座位>, "target": <被投座位>, "reason": "一句很短的理由（可选）" }, ... 每位 AI 一条 ]`;
 }
