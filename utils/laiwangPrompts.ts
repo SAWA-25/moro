@@ -97,6 +97,8 @@ export interface CoupleSpaceBlockParams {
     upcomingLines: string[];
     /** 未完成约定标题列表 */
     pendingTaskTitles: string[];
+    /** 未实现的共同心愿（愿望清单），最多调用方给 3 条 */
+    pendingWishes?: string[];
     /** 用户留的、角色还没回的最新悄悄话（无则不注入） */
     lastUserWhisper?: string;
 }
@@ -116,6 +118,9 @@ export function coupleSpaceBlock(p: CoupleSpaceBlockParams): string {
     p.upcomingLines.forEach(l => lines.push(`- ${l}`));
     if (p.pendingTaskTitles.length) {
         lines.push(`- 你们还没完成的约定：${p.pendingTaskTitles.map(t => `「${t}」`).join('、')}。这些是你们对彼此许下的小心愿，合适的时候可以惦记、催一催、或主动张罗去兑现。`);
+    }
+    if (p.pendingWishes && p.pendingWishes.length) {
+        lines.push(`- 你们愿望清单上还没实现的心愿：${p.pendingWishes.map(w => `「${w}」`).join('、')}。这些是你们一起许下、盼着有天能实现的愿望，可以在合适时主动提起、憧憬一下、或张罗着去圆它。`);
     }
     if (p.lastUserWhisper) {
         lines.push(`- ${p.userName}在悄悄话信箱里给你留了言：「${p.lastUserWhisper}」，这句话 TA 没在明面上说、专门悄悄写给你——你可以在聊天里自然地、带着被这份心意触动的样子回应它。`);

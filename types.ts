@@ -2208,6 +2208,16 @@ export interface CoupleTask {
   doneAt?: number;
 }
 
+/** 愿望清单：一条共同心愿（想一起做的事 / 想要的东西），可被实现勾掉。 */
+export interface CoupleWish {
+  id: string;
+  text: string;
+  by?: 'user' | 'char';
+  fulfilled?: boolean;
+  createdAt: number;
+  fulfilledAt?: number;
+}
+
 /** 悄悄话 / 留言信箱：一条私密留言。 */
 export interface CoupleWhisper {
   id: string;
@@ -2244,6 +2254,8 @@ export interface CoupleSpace {
   photos: CouplePhoto[];
   tasks: CoupleTask[];
   whispers: CoupleWhisper[];
+  /** 愿望清单：你们的共同心愿（可选，老数据可能缺） */
+  wishes?: CoupleWish[];
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;

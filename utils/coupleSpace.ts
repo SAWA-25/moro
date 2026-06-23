@@ -47,6 +47,7 @@ export function createCoupleSpace(): CoupleSpace {
     photos: [],
     tasks: [],
     whispers: [],
+    wishes: [],
     interactions: [],
     createdAt: now,
     updatedAt: now,
@@ -66,6 +67,7 @@ export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | 
       photos: cs.photos || [],
       tasks: cs.tasks || [],
       whispers: cs.whispers || [],
+      wishes: cs.wishes || [],
       interactions: cs.interactions || [],
       intimacy: typeof cs.intimacy === 'number' ? cs.intimacy : 0,
     };
@@ -198,6 +200,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     !!cs.anniversaryDate || (cs.intimacy || 0) > 0 ||
     (cs.moments?.length || 0) > 0 || (cs.anniversaries?.length || 0) > 0 ||
     (cs.tasks?.length || 0) > 0 || (cs.whispers?.length || 0) > 0 ||
+    (cs.wishes?.length || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
 
@@ -222,6 +225,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     .map(({ a, occ }) => `纪念日「${a.title}」${occ!.daysLeft === 0 ? '就是今天！' : `还有 ${occ!.daysLeft} 天`}。`);
 
   const pendingTaskTitles = (cs.tasks || []).filter(t => !t.done).slice(0, 3).map(t => t.title);
+  const pendingWishes = (cs.wishes || []).filter(w => !w.fulfilled).slice(0, 3).map(w => w.text);
 
   // 用户留的、角色还没回的悄悄话（最新一条）
   const whispers = [...(cs.whispers || [])].sort((a, b) => b.at - a.at);
@@ -239,6 +243,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     recentMomentLines,
     upcomingLines,
     pendingTaskTitles,
+    pendingWishes,
     lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
   });
 }

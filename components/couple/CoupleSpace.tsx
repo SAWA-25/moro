@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useOS } from '../../context/OSContext';
 import {
   CharacterProfile, CoupleSpace as CoupleSpaceData, CoupleMoment, CoupleAnniversary,
-  CouplePhoto, CoupleTask, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
+  CouplePhoto, CoupleTask, CoupleWish, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
 } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
@@ -24,6 +24,7 @@ const PARTNER_KEY = 'moro_couple_partner_id';
 const MAX_IMAGES = 9;
 const MOOD_EMOJIS = ['😊', '🥰', '😍', '🤗', '😋', '🥳', '🤔', '😢', '😴', '💕', '🌙', '☀️'];
 const TASK_SUGGESTIONS = ['今天说晚安', '一起看一部电影', '给对方做顿饭', '一起散步半小时', '互道一句早安', '拍一张合照'];
+const WISH_SUGGESTIONS = ['一起去看海', '一起养一只猫', '去看一场演唱会', '一起跨年', '环游一座城市', '拍一组情侣写真'];
 
 // ── 全局设计 token（黑白灰拼贴手帐：强调色由粉紫改墨灰）──
 const ACCENT = 'linear-gradient(135deg, #3a352e 0%, #1f1d1a 100%)';                 // 强调墨灰渐变
@@ -65,7 +66,7 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
   love: '💞', birthday: '🎂', promise: '🤙', custom: '📌',
 };
 
-type Tab = 'moments' | 'anniversary' | 'album' | 'tasks';
+type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist';
 
 // ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
 const HeartbeatLine: React.FC = () => (
@@ -356,6 +357,28 @@ const CoupleSpace: React.FC = () => {
   };
   const deleteTask = (id: string) => mutate(cs => ({ ...cs, tasks: cs.tasks.filter(t => t.id !== id) }), 0);
 
+  // ── 愿望清单 ──
+  const [wishInput, setWishInput] = useState('');
+  const addWish = (text: string) => {
+    const t = text.trim(); if (!t) return;
+    const item: CoupleWish = { id: genCoupleId('ws'), text: t, fulfilled: false, by: 'user', createdAt: Date.now() };
+    mutate(cs => ({ ...cs, wishes: [...(cs.wishes || []), item] }), 0);
+    setWishInput('');
+  };
+  const toggleWish = (id: string) => {
+    let becameDone = false;
+    mutate(cs => {
+      const wishes = (cs.wishes || []).map(w => {
+        if (w.id !== id) return w;
+        const fulfilled = !w.fulfilled; if (fulfilled) becameDone = true;
+        return { ...w, fulfilled, fulfilledAt: fulfilled ? Date.now() : undefined };
+      });
+      return { ...cs, wishes, intimacy: Math.max(0, Math.round((cs.intimacy || 0) + (becameDone ? 8 : 0))) };
+    });
+    if (becameDone) addToast('心愿达成 +8 亲密度 🌟', 'success');
+  };
+  const deleteWish = (id: string) => mutate(cs => ({ ...cs, wishes: (cs.wishes || []).filter(w => w.id !== id) }), 0);
+
   // ── 悄悄话 ──
   const [whisperInput, setWhisperInput] = useState('');
   const [whisperBusy, setWhisperBusy] = useState(false);
@@ -429,6 +452,9 @@ const CoupleSpace: React.FC = () => {
     .sort((x, y) => (x.occ?.daysLeft ?? 9e9) - (y.occ?.daysLeft ?? 9e9));
   const pendingTasks = space.tasks.filter(t => !t.done);
   const doneTasks = space.tasks.filter(t => t.done);
+  const wishes = space.wishes || [];
+  const pendingWishes = wishes.filter(w => !w.fulfilled);
+  const doneWishes = wishes.filter(w => w.fulfilled);
 
   return (
     <div className="h-full w-full max-w-[480px] mx-auto flex flex-col relative overflow-hidden" style={{ background: BG, fontFamily: FONT_STACK }}>
@@ -528,7 +554,7 @@ const CoupleSpace: React.FC = () => {
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
         <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
-          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定']] as [Tab, string][]).map(([k, label]) => (
+          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className="flex-1 py-1.5 rounded-full transition"
               style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
@@ -655,6 +681,41 @@ const CoupleSpace: React.FC = () => {
             ))}
             {space.tasks.length === 0 && (
               <div className="text-center text-[#bbb] text-xs py-8">立个小约定，一起去完成吧 ✅</div>
+            )}
+          </>
+        )}
+
+        {tab === 'wishlist' && (
+          <>
+            <div className="flex gap-2">
+              <input value={wishInput} onChange={e => setWishInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addWish(wishInput); }}
+                placeholder="许个一起实现的心愿…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-[#eee] focus:border-[#f3c0d2]" />
+              <button onClick={() => addWish(wishInput)} className={`px-5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>许愿</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {WISH_SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => addWish(s)} className="text-[11px] px-3 py-1.5 rounded-full bg-white border border-[#f0f0f0] active:scale-95 transition" style={{ color: '#c76b8e' }}>+ {s}</button>
+              ))}
+            </div>
+            {pendingWishes.map(w => (
+              <div key={w.id} className="bg-white rounded-2xl p-3 flex items-center gap-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
+                <button onClick={() => toggleWish(w.id)} className="active:scale-90 transition shrink-0" style={{ color: '#f0a8c4' }}><Circle size={22} /></button>
+                <span className="flex-1 text-sm text-[#333]">{w.text}</span>
+                <button onClick={() => deleteWish(w.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              </div>
+            ))}
+            {doneWishes.length > 0 && (
+              <div className="text-[11px] font-bold pt-1 pl-1" style={{ color: '#d9a' }}>已实现 {doneWishes.length} 💫</div>
+            )}
+            {doneWishes.map(w => (
+              <div key={w.id} className="bg-white/70 rounded-2xl p-3 flex items-center gap-3 border border-[#f4f4f4]">
+                <button onClick={() => toggleWish(w.id)} className="active:scale-90 transition shrink-0" style={{ color: '#e07a9c' }}><CheckCircle size={22} weight="fill" /></button>
+                <span className="flex-1 text-sm text-[#bbb] line-through">{w.text}</span>
+                <button onClick={() => deleteWish(w.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              </div>
+            ))}
+            {wishes.length === 0 && (
+              <div className="text-center text-[#bbb] text-xs py-8">许下你们的第一个共同心愿吧 🌟</div>
             )}
           </>
         )}
