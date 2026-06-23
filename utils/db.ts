@@ -9,12 +9,12 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame
+    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 73; // Bumped: v73 新增 werewolf_games（折子戏·狼人杀对局）
+const DB_VERSION = 74; // Bumped: v74 新增 truthdare_sessions（折子戏·真心话大冒险）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -72,6 +72,7 @@ const STORE_PERSONAS = 'personas';                // 人设 App：SillyTavern �
 const STORE_CHAR_LIFE_EVENTS = 'char_life_events'; // 来往·角色离线自主生活事件（每条一件小事，攒成离线回顾时间线 + 给主动消息取材）
 const STORE_TALK_SESSIONS = 'talk_sessions';      // 小剧场·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_WEREWOLF_GAMES = 'werewolf_games';    // 折子戏·狼人杀对局（一桌熟人开局的完整流程，可存档/续局/回看）
+const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话大冒险（一圈玩家 + 一串回合记录，可存档/回看/续玩）
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/小剧场内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
 const STORE_DIVINATION_CARDS = 'divination_cards'; // 小剧场·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
@@ -605,6 +606,11 @@ export const openDB = (): Promise<IDBDatabase> => {
       if (!db.objectStoreNames.contains(STORE_WEREWOLF_GAMES)) {
           const wwStore = db.createObjectStore(STORE_WEREWOLF_GAMES, { keyPath: 'id' });
           wwStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
+      }
+      // ─── v74: 折子戏·真心话大冒险 ───
+      if (!db.objectStoreNames.contains(STORE_TRUTHDARE_SESSIONS)) {
+          const tdStore = db.createObjectStore(STORE_TRUTHDARE_SESSIONS, { keyPath: 'id' });
+          tdStore.createIndex('lastActiveAt', 'lastActiveAt', { unique: false });
       }
       // ─── v70: 岁时记·典藏馆收录条目 ───
       if (!db.objectStoreNames.contains(STORE_COLLECTION_ITEMS)) {
@@ -1292,6 +1298,35 @@ export const DB = {
       const db = await openDB();
       const tx = db.transaction(STORE_WEREWOLF_GAMES, 'readwrite');
       tx.objectStore(STORE_WEREWOLF_GAMES).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+
+  // ─── 折子戏·真心话大冒险 ───
+  getAllTruthDareSessions: async (): Promise<TruthDareSession[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_TRUTHDARE_SESSIONS, 'readonly');
+          const req = tx.objectStore(STORE_TRUTHDARE_SESSIONS).getAll();
+          req.onsuccess = () => resolve(((req.result as TruthDareSession[]) || []).sort((a, b) => b.lastActiveAt - a.lastActiveAt));
+          req.onerror = () => reject(req.error);
+      });
+  },
+  saveTruthDareSession: async (session: TruthDareSession): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_TRUTHDARE_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_TRUTHDARE_SESSIONS).put(session);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+      });
+  },
+  deleteTruthDareSession: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_TRUTHDARE_SESSIONS, 'readwrite');
+      tx.objectStore(STORE_TRUTHDARE_SESSIONS).delete(id);
       return new Promise((resolve, reject) => {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);

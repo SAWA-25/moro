@@ -28,6 +28,7 @@
  *  [陆] 轨迹   (Trajectory)… 角色「遇见你之前」的人生片段              → utils/theaterTimeline.ts
  *  [柒] 对影   (Reflection)… 同一个人在不同时间里的相逢对话            → utils/theaterTimeline.ts
  *  [捌] 狼人杀 (Werewolf)   … 夜行动 / 昼发言 / 投票的法官与玩家口吻    → utils/theaterWerewolf.ts
+ *  [玖] 真心话大冒险 (T or D)… 转瓶子出题 / 受题者作答（真心话 / 大冒险）  → utils/theaterTruthDare.ts
  * ============================================================================
  */
 
@@ -656,4 +657,63 @@ ${p.voters.map(s => `${s.seat}号 ${s.name}`).join('、')}
 
 只输出 JSON 数组（不要解释、不要代码块）：
 [ { "seat": <投票者座位>, "target": <被投座位>, "reason": "一句很短的理由（可选）" }, ... 每位 AI 一条 ]`;
+}
+
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [玖] 真心话大冒险 (Truth or Dare)                                          ║
+// ║   用在：utils/theaterTruthDare.ts（UI 在 apps/theater/TruthDareApp.tsx）。  ║
+// ║   和角色们围一圈转瓶子：受题者挑真心话 / 大冒险，另一个人出题、受题者作答。  ║
+// ║   三类调用：① 给 user 出题 ② 角色整轮（自己挑+被出题+作答）③ 角色答 user 的题。║
+// ║   尺度 spice：light 轻松 / flirty 暧昧 / bold 大胆，统一保持有趣不写露骨性描写。║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+const TD_SPICE_CN: Record<'light' | 'flirty' | 'bold', string> = {
+    light: '轻松（温馨好笑、朋友间的尺度，不涉及暧昧）',
+    flirty: '暧昧（带点心动与调侃，可以问喜欢谁、玩牵手贴贴这类轻度互动）',
+    bold: '大胆（敢爱敢恨、火辣直接的告白与挑战，但点到为止、不写露骨的性描写）',
+};
+const TD_GUARD = '无论尺度如何，都保持有趣、你情我愿、健康向上，不写露骨性描写、不涉及违法或伤害性内容。';
+
+/** 真心话大冒险·system：core = 角色核心上下文；让 TA 以本人口吻入戏玩这个游戏。 */
+export function truthDareSystem(p: { core: string; charName: string; userName: string; spice: 'light' | 'flirty' | 'bold' }): string {
+    return `${p.core}
+
+### [真心话大冒险]
+现在大家围坐一圈玩「真心话大冒险」，气氛轻松热闹。请始终以「${p.charName}」的身份、贴着 TA 的性格与说话习惯入戏。
+本局尺度：${TD_SPICE_CN[p.spice]}。${TD_GUARD}
+出题要具体、好玩、贴合在场的人与关系；作答 / 执行要真实、有 TA 的个性（可带一点点神态动作，但别长篇大论）。`;
+}
+
+/** ① 给 user 出题：poser 这个角色，向 user 抛一道真心话 / 大冒险。返回纯文本题面。 */
+export function truthDarePoseUser(p: { poserName: string; targetName: string; kind: 'truth' | 'dare'; spice: 'light' | 'flirty' | 'bold'; recent: string }): string {
+    const k = p.kind === 'truth' ? '真心话（一个让 TA 必须诚实回答的问题）' : '大冒险（一个让 TA 当场去做 / 表演的小挑战，注意是在这个围坐的场合能完成的）';
+    return `${p.recent ? `【刚刚玩到的内容】\n${p.recent}\n\n` : ''}轮到「${p.targetName}」了，TA 选了【${p.kind === 'truth' ? '真心话' : '大冒险'}】。
+请以「${p.poserName}」的身份，给 ${p.targetName} 出一道${k}。
+直接输出题面那一两句话（可以先用一句 TA 的口吻起个头），不要解释、不要 JSON、不要写 ${p.targetName} 的反应。`;
+}
+
+/** ② 角色整轮：target 这个角色当受题者——自己挑真心话/大冒险、被 poser 出题、再作答。返回 JSON。 */
+export function truthDareCharRoundUser(p: { targetName: string; poserName: string; spice: 'light' | 'flirty' | 'bold'; recent: string; forcedKind?: 'truth' | 'dare' }): string {
+    const choose = p.forcedKind
+        ? `这一轮 ${p.targetName} 选的是【${p.forcedKind === 'truth' ? '真心话' : '大冒险'}】。`
+        : `先替 ${p.targetName} 自然地选一个（真心话或大冒险，符合 TA 的性格——有人爱选真心话，有人偏爱大冒险）。`;
+    return `${p.recent ? `【刚刚玩到的内容】\n${p.recent}\n\n` : ''}转瓶子转到了「${p.targetName}」。${choose}
+然后由「${p.poserName}」出题，${p.targetName} 当场作答 / 执行。
+
+只输出 JSON（不要解释、不要代码块）：
+{
+  "kind": "truth" | "dare",
+  "challenge": "${p.poserName} 出的题面（一两句，贴 ${p.poserName} 的口吻）",
+  "answer": "${p.targetName} 的作答或执行（真实、有 TA 的个性，可带一点神态动作）"
+}`;
+}
+
+/** ③ 角色答 user 出的题：user 给 target 出了题，target 以本人口吻作答 / 执行。返回纯文本。 */
+export function truthDareAnswerUser(p: { targetName: string; userName: string; kind: 'truth' | 'dare'; challenge: string; spice: 'light' | 'flirty' | 'bold'; recent: string }): string {
+    return `${p.recent ? `【刚刚玩到的内容】\n${p.recent}\n\n` : ''}轮到「${p.targetName}」了，TA 选了【${p.kind === 'truth' ? '真心话' : '大冒险'}】。
+${p.userName} 出的题是：「${p.challenge}」
+
+请以「${p.targetName}」的身份，当场${p.kind === 'truth' ? '诚实回答这个问题' : '完成 / 表演这个大冒险'}。
+直接输出 TA 的作答 / 执行（真实、有个性，可带一点点神态动作），不要解释、不要 JSON。`;
 }

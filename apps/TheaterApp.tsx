@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle, PawPrint, type Icon } from '@phosphor-icons/react';
+import { Path, Scroll, Cards, Quotes, DiceFive, FilmReel, MaskSad, MaskHappy, Sparkle, PawPrint, BeerBottle, type Icon } from '@phosphor-icons/react';
 import GuidebookApp from './GuidebookApp';
 import GameApp from './GameApp';
 import TrajectoryApp from './theater/TrajectoryApp';
@@ -9,6 +9,7 @@ import TalkTherapyApp from './theater/TalkTherapyApp';
 import ExtraApp from './theater/ExtraApp';
 import DivinationApp from './theater/DivinationApp';
 import WerewolfApp from './theater/WerewolfApp';
+import TruthDareApp from './theater/TruthDareApp';
 import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './theater/scrapbook';
 
 /**
@@ -18,7 +19,7 @@ import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, Was
  * 合并后只占一个入口；子页通过 onExit 回到本戏单页（不直接回桌面）。换肤不改、不减任何功能。
  */
 
-type Section = 'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination' | 'werewolf';
+type Section = 'home' | 'guide' | 'trpg' | 'trajectory' | 'reflection' | 'talk' | 'extra' | 'divination' | 'werewolf' | 'truthdare';
 
 interface Zhe {
     section: Exclude<Section, 'home'>;
@@ -39,6 +40,7 @@ const PROGRAMME: Zhe[] = [
     { section: 'trajectory', no: '陆', name: '轨迹',   en: 'BEFORE WE MET',  tagline: '那些还没遇见你的日子',   desc: '回到过去的节点，看 TA 原本走过的路——也看你，从哪一天起慢慢走进 TA 的人生。', Icon: FilmReel },
     { section: 'reflection', no: '柒', name: '对影',   en: 'BY MOONLIGHT',   tagline: '举杯邀明月，对影成三人', desc: '同一个人，在不同时间里重逢——是谁，让命运偏离了原本的方向。', Icon: MaskSad },
     { section: 'werewolf',   no: '捌', name: '狼人杀', en: 'THE WOLF NIGHT', tagline: '天黑请闭眼，谁是狼',       desc: '拉一桌熟人开局：随机发牌，AI 玩家夜里行动、白天发言投票——会伪装、会推理，谁能笑到天亮？', Icon: PawPrint },
+    { section: 'truthdare',  no: '玖', name: '真心话大冒险', en: 'TRUTH OR DARE', tagline: '瓶口指向谁，谁就摊牌', desc: '和角色们围一圈转瓶子：受题者挑真心话或大冒险，另一人出题、当场作答。尺度可调，AI 贴人设玩。', Icon: BeerBottle },
 ];
 
 const TheaterApp: React.FC = () => {
@@ -56,6 +58,7 @@ const TheaterApp: React.FC = () => {
     if (section === 'extra') return <ExtraApp onExit={() => setSection('home')} />;
     if (section === 'divination') return <DivinationApp onExit={() => setSection('home')} />;
     if (section === 'werewolf') return <WerewolfApp onExit={() => setSection('home')} />;
+    if (section === 'truthdare') return <TruthDareApp onExit={() => setSection('home')} />;
 
     return (
         <PaperShell>

@@ -3706,6 +3706,46 @@ export interface WerewolfGame {
 }
 
 // ──────────────────────────────────────────────────────────────────
+// 折子戏·真心话大冒险（玖）：和角色们围一圈玩转瓶子。
+// 每轮转瓶子选一个「受题者」，TA 挑真心话或大冒险；另一个人出题，受题者作答/执行。
+// user 与 AI 都能当受题者 / 出题者；AI 贴各自人设出题、答题，可调尺度（轻松/暧昧/大胆）。
+// 一局＝一个圈 + 一串回合记录，可存档、回看、续玩。
+// 📌 prompt 文案集中在 utils/theaterPrompts.ts（[玖] 真心话大冒险 区段），引擎在 utils/theaterTruthDare.ts。
+// ──────────────────────────────────────────────────────────────────
+export type TruthDareKind = 'truth' | 'dare';
+export type TruthDareSpice = 'light' | 'flirty' | 'bold';
+
+export interface TruthDarePlayer {
+  id: string;          // 'user' 或 charId
+  name: string;
+  isUser: boolean;
+  charId?: string;
+  avatar?: string;
+}
+
+export interface TruthDareRound {
+  no: number;          // 第几回合
+  targetId: string;    // 受题者 player id
+  targetName: string;
+  kind: TruthDareKind; // 真心话 / 大冒险
+  poserId: string;     // 出题者 player id
+  poserName: string;
+  challenge: string;   // 题面
+  answer: string;      // 作答 / 执行描述
+  at: number;
+}
+
+export interface TruthDareSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  lastActiveAt: number;
+  players: TruthDarePlayer[];
+  spice: TruthDareSpice;    // 尺度
+  rounds: TruthDareRound[];
+}
+
+// ──────────────────────────────────────────────────────────────────
 // 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
 // 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
 // ──────────────────────────────────────────────────────────────────
