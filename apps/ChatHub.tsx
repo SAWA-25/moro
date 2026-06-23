@@ -1039,6 +1039,17 @@ const ChatHub: React.FC = () => {
         }
     };
 
+    /** 全员禁言开关（群主/管理员）：开启后导演跳过所有角色发言 */
+    const handleToggleMuteAll = async () => {
+        if (!activeGroup || !userCanManage(activeGroup)) return;
+        const next = !activeGroup.mutedAll;
+        const updated = await applyGroupUpdate({ mutedAll: next });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, next ? '你开启了全员禁言' : '你解除了全员禁言');
+            addToast(next ? '已开启全员禁言' : '已解除全员禁言', 'success');
+        }
+    };
+
     const handleSetTitle = async () => {
         if (!activeGroup || !profileMemberId) return;
         const name = displayNameOf(activeGroup, profileMemberId);
@@ -1682,6 +1693,7 @@ ${logText.substring(0, 10000)}
     const triggerDirector = async (currentMsgs: Message[]) => {
         if (!activeGroup || !apiConfig.apiKey) return;
         if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
+        if (activeGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
         setIsTyping(true);
 
         try {
@@ -2673,6 +2685,9 @@ ${attachedImagesNote}
                             </h1>
                             <div className="flex items-center gap-2">
                                 <p className="text-[10px] text-slate-500 font-medium">{activeGroup?.members.length} 成员</p>
+                                {activeGroup?.mutedAll && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
+                                )}
                                 {lastTokenUsage && (
                                     <div
                                         className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-mono border border-slate-200"
@@ -3063,6 +3078,23 @@ ${attachedImagesNote}
                         </button>
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">{userCanManage(activeGroup) ? '群主/管理员可发布或撤下，发布后群里会发系统通知，成员都能"看到"并自然回应。' : '仅群主/管理员可发布，你可以查看。'}</p>
                     </div>
+
+                    {/* 全员禁言开关（群主/管理员） */}
+                    {userCanManage(activeGroup) && (
+                        <div className="flex items-center justify-between gap-3 py-1">
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-bold text-slate-700 flex items-center gap-1.5"><SpeakerSlash size={14} weight="bold" className="text-slate-400" />全员禁言</div>
+                                <p className="text-[9px] text-slate-400 mt-0.5 leading-tight">开启后群成员暂时都不发言，只有你能说话</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleToggleMuteAll}
+                                className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${activeGroup?.mutedAll ? 'bg-red-400' : 'bg-slate-200'}`}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${activeGroup?.mutedAll ? 'translate-x-5' : ''}`} />
+                            </button>
+                        </div>
+                    )}
 
                     {/* 群成员管理：点成员进资料页（管理员可禁言/设头衔/移除） */}
                     <div className="pt-2 border-t border-slate-100">
