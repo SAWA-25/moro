@@ -70,3 +70,9 @@ pm run build passes after the time-gap grouping fix.
 - Gated by new `OSTheme.floatingQuickMenu` (default on; hidden on lock screen). Re-enable / toggle from a new switch in 拼贴册 (Appearance) above 灵动岛.
 - Rendered as a PhoneShell overlay next to DynamicIsland.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
+
+- Added 茶话亭 (persistent forum App): new `apps/ForumApp.tsx` + `utils/forum.ts` — distinct from the one-shot faux forum in 折子戏. Boards (水区/树洞/吃瓜/同好/求助) → threads → floors.
+- User posts threads + replies; 「召唤网友盖楼」uses the aux API to generate a mix of in-character replies (your characters, real name + avatar) and anonymous netizens, with a template fallback when API is off/fails. 「让角色发帖」(header refresh) has a random character start a thread.
+- State persisted to localStorage; seeded with two ambient threads so it's not empty on first open.
+- Registered AppID.Forum (icon `ChatsCircle`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
