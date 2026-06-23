@@ -2340,6 +2340,16 @@ export interface ConvoSettings {
     inputBarImage?: string;
 }
 
+/** 群公告（QQ 式）：一条当前生效的公告，群主/管理员可发布、修改或撤下。 */
+export interface GroupAnnouncement {
+    /** 公告正文 */
+    text: string;
+    /** 发布者：'user' 或 charId */
+    by: string;
+    /** 发布 / 最后修改时间（ms） */
+    at: number;
+}
+
 export interface GroupProfile {
     id: string;
     name: string;
@@ -2361,6 +2371,8 @@ export interface GroupProfile {
     memberTitles?: Record<string, string>;
     /** 禁言：charId → 解禁时间戳（ms）。当前时间小于该值时该成员被禁言。 */
     mutedUntil?: Record<string, number>;
+    /** 群公告：群主/管理员发布，进入群聊时置顶展示，并注入群聊上下文让成员知晓。撤下时为 undefined。 */
+    announcement?: GroupAnnouncement;
     /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
     dissolved?: boolean;
     dissolvedAt?: number;
@@ -2971,7 +2983,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card';
 
 /**
  * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：
