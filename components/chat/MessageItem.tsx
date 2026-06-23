@@ -2382,6 +2382,54 @@ const MessageItem = React.memo(({
         );
     }
 
+    if (m.type === 'transfer' && m.metadata?.kind === 'redpacket' && m.metadata?.rpType === 'lucky') {
+        // 拼手气红包卡片（群聊「抢红包」）：展示总额 + 各人抢到多少 + 手气最佳
+        const meta = m.metadata || {};
+        const grabs: any[] = Array.isArray(meta.grabs) ? meta.grabs : [];
+        const note = typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '拼手气红包，看谁手气最好';
+        const bestId = meta.bestId;
+        const count = meta.count ?? grabs.length;
+        return commonLayout(
+            <div
+                className="w-64 rounded-[18px] p-4 relative overflow-hidden"
+                style={{ background: 'linear-gradient(155deg, #2c2823 0%, #16130f 100%)', color: '#f2ece0', border: '1px solid rgba(0,0,0,0.45)', boxShadow: '0 16px 30px -18px rgba(20,16,12,0.7)' }}
+            >
+                <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 1.6px)', backgroundSize: '7px 7px', opacity: 0.5 }} />
+                <div aria-hidden className="absolute -top-2 -right-5 w-20 h-6 rotate-[18deg]" style={{ background: 'rgba(232,228,218,0.9)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
+                <div className="relative flex items-center gap-2 mb-2.5">
+                    <span className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#f4f1ea', color: '#1f1d1a', outline: '1.5px dashed rgba(120,116,108,0.55)', outlineOffset: -3 }}>拼</span>
+                    <div className="leading-tight">
+                        <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase" style={{ opacity: 0.7 }}>Lucky&nbsp;Draw</div>
+                        <div className="text-[10px]" style={{ opacity: 0.5 }}>拼手气 · {count} 个红包</div>
+                    </div>
+                </div>
+                <div className="relative">
+                    <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
+                    <div className="flex items-end gap-1">
+                        <span className="text-[14px] font-bold pb-1" style={{ opacity: 0.65 }}>共 ¥</span>
+                        <span className="text-[26px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{meta.amount}</span>
+                    </div>
+                    <div className="mt-2.5 pt-2 space-y-1.5 max-h-[140px] overflow-y-auto" style={{ borderTop: '1px dashed rgba(242,236,224,0.22)' }}>
+                        {grabs.length === 0 && <div className="text-[11px]" style={{ opacity: 0.5 }}>还没有人抢到</div>}
+                        {grabs.map((g, i) => (
+                            <div key={i} className="flex items-center justify-between text-[12px]">
+                                <span className="flex items-center gap-1 truncate" style={{ opacity: 0.92 }}>
+                                    {g.id === bestId && <span aria-hidden className="text-[11px]">👑</span>}
+                                    <span className="truncate">{g.name}</span>
+                                </span>
+                                <span className="font-bold tabular-nums" style={{ opacity: 0.95 }}>¥{g.amount}</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-2 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(242,236,224,0.16)' }}>
+                        <span className="text-[10px]" style={{ opacity: 0.55 }}>{isUser ? '你发的拼手气红包 · 已被抢光' : '拼手气红包 · 已被抢光'}</span>
+                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: 'radial-gradient(circle at 34% 30%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 1.5px rgba(242,236,224,0.22)' }}>✦</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
         // 红包卡片（参考设计：奶油底 + 墨色字的手帐风，保留暖黄的「红包」识别色）
         const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';

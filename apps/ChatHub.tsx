@@ -17,6 +17,7 @@ import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
+import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -384,6 +385,10 @@ const ChatHub: React.FC = () => {
     const [tempAdminIds, setTempAdminIds] = useState<Set<string>>(new Set());
     const [transferAmount, setTransferAmount] = useState('');
     const [transferNote, setTransferNote] = useState('');
+    // 红包类型：普通（整包给一人） / 拼手气（随机拆 N 份，群成员抢）
+    const [transferRpType, setTransferRpType] = useState<'normal' | 'lucky'>('normal');
+    // 拼手气份数（默认随群成员数变化，见 Transfer Modal）
+    const [transferShares, setTransferShares] = useState('');
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
     const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
@@ -1116,14 +1121,51 @@ ${logText.substring(0, 10000)}
         onDenied: () => addToast('无法访问麦克风，请检查浏览器权限', 'error'),
     });
 
-    // 寄零花（钱包实扣）：校验金额 → adjustUserBalance(-amt) → 红包消息
-    const sendGroupTransfer = () => {
+    // 寄零花 / 发红包（钱包实扣）：校验金额 → adjustUserBalance(-amt) → 红包消息。
+    // 普通红包＝整包给群里（沿用旧行为）；拼手气红包＝随机拆 N 份，群成员当场抢（手气最佳上榜）。
+    const resetTransferModal = () => {
+        setModalType('none'); setTransferAmount(''); setTransferNote('');
+        setTransferShares(''); setTransferRpType('normal');
+    };
+    const sendGroupTransfer = async () => {
+        if (!activeGroup) return;
         const amt = Math.round(parseFloat(transferAmount) * 100) / 100;
         if (!amt || amt <= 0) { addToast('填个金额吧', 'info'); return; }
         if (amt > wallet) { addToast(`钱包余额不足（¥${wallet}）`, 'error'); return; }
+
+        if (transferRpType === 'lucky') {
+            const groupChars = characters.filter(c => activeGroup.members.includes(c.id));
+            if (groupChars.length === 0) { addToast('群里还没有成员能抢红包', 'info'); return; }
+            const totalCents = yuanToCents(amt);
+            // 份数：用户填的，缺省＝群成员数；上限＝成员数（人手最多一份，钱全分完不留尾款）
+            let count = parseInt(transferShares, 10);
+            if (!Number.isFinite(count) || count <= 0) count = groupChars.length;
+            count = Math.min(count, groupChars.length);
+            if (totalCents < count) { addToast(`至少 ¥${(count / 100).toFixed(2)} 才够分 ${count} 份`, 'error'); return; }
+
+            adjustUserBalance(-amt);
+            // 二倍均值法拆分 + 随机挑 count 名成员当场抢
+            const shareCents = splitRedPacket(totalCents, count);
+            const grabbers = shuffle(groupChars).slice(0, count);
+            const grabs = grabbers.map((c, i) => ({ id: c.id, name: c.name, amount: centsToYuan(shareCents[i]), at: Date.now() + i }));
+            const bestIdx = bestLuckIndex(shareCents);
+            const bestId = grabbers[bestIdx]?.id;
+
+            await DB.saveMessage({
+                charId: 'user', groupId: activeGroup.id, role: 'user', type: 'transfer',
+                content: `[拼手气红包] ${amt}`,
+                metadata: { kind: 'redpacket', rpType: 'lucky', amount: amt, count, grabs, bestId, status: 'finished', note: transferNote.trim() || undefined },
+            });
+            const updated = await DB.getGroupMessages(activeGroup.id);
+            setMessages(updated);
+            addToast(`红包被抢光啦 · 手气最佳 ${grabs[bestIdx]?.name}（¥${grabs[bestIdx]?.amount}）`, 'success');
+            resetTransferModal();
+            return;
+        }
+
         adjustUserBalance(-amt);
         void handleSendMessage(`[红包] ${amt} Credits`, 'transfer', { amount: amt, note: transferNote.trim() || undefined });
-        setModalType('none'); setTransferAmount(''); setTransferNote('');
+        resetTransferModal();
     };
 
     // 落脚点：分享一个地点
@@ -1340,9 +1382,17 @@ ${recentPrivate || '(暂无私聊)'}
                 } else if (m.type === 'transfer') {
                     // 区分红包 / 普通转账（与单聊 chatPrompts.summarizeGroupMsgContent 口径一致），
                     // 否则导演会把转账误读成红包、让角色说错话。
-                    content = m.metadata?.kind === 'redpacket'
-                        ? `[红包: ${m.metadata?.amount}]`
-                        : `[转账: ${m.metadata?.amount}]`;
+                    if (m.metadata?.rpType === 'lucky') {
+                        // 拼手气红包：把「谁抢到多少、谁手气最佳」喂给导演，让角色能就抢红包结果接话
+                        const grabs: any[] = Array.isArray(m.metadata?.grabs) ? m.metadata.grabs : [];
+                        const best = grabs.find(g => g.id === m.metadata?.bestId) || grabs.reduce((a, b) => (b?.amount > (a?.amount ?? -1) ? b : a), null);
+                        const breakdown = grabs.map(g => `${g.name} ¥${g.amount}${g.id === best?.id ? '(手气最佳)' : ''}`).join('、');
+                        content = `[拼手气红包 ¥${m.metadata?.amount}，共${m.metadata?.count ?? grabs.length}个，已被抢光：${breakdown}]`;
+                    } else {
+                        content = m.metadata?.kind === 'redpacket'
+                            ? `[红包: ${m.metadata?.amount}]`
+                            : `[转账: ${m.metadata?.amount}]`;
+                    }
                 } else if (/^(data:|https?:\/\/)/i.test(rawText.trim())) {
                     content = '[媒体]';
                 } else {
@@ -2526,14 +2576,37 @@ ${attachedImagesNote}
                 />
             </Modal>
 
-            {/* Transfer Modal —— 钱包实扣 */}
-            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={() => { setModalType('none'); setTransferNote(''); }} footer={<button onClick={sendGroupTransfer} className="w-full py-3 text-white font-bold rounded-2xl" style={{ background: '#1f1d1a', boxShadow: '0 10px 22px -12px rgba(31,29,26,0.6)' }}>塞进红包</button>}>
-                <div className="space-y-4">
-                    <div className="text-center py-2 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
-                    <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder="金额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
-                    <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
-                    <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1 text-slate-400"><Wallet size={13} weight="fill" />钱包余额 ¥{wallet}</div>
-                </div>
+            {/* Transfer Modal —— 钱包实扣（普通红包 / 拼手气红包） */}
+            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={resetTransferModal} footer={<button onClick={sendGroupTransfer} className="w-full py-3 text-white font-bold rounded-2xl" style={{ background: '#1f1d1a', boxShadow: '0 10px 22px -12px rgba(31,29,26,0.6)' }}>{transferRpType === 'lucky' ? '塞进群里抢' : '塞进红包'}</button>}>
+                {(() => {
+                    const memberCount = activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)).length : 0;
+                    return (
+                        <div className="space-y-4">
+                            <div className="text-center py-2 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
+                            {/* 红包类型：普通整包 / 拼手气随机拆 */}
+                            <div className="grid grid-cols-2 gap-2">
+                                {([['normal', '普通红包', '整包心意'], ['lucky', '拼手气红包', '随机拆 · 群成员抢']] as const).map(([t, label, hint]) => (
+                                    <button key={t} onClick={() => setTransferRpType(t)}
+                                        className="py-2.5 rounded-2xl text-center transition-all active:scale-95"
+                                        style={{
+                                            background: transferRpType === t ? '#1f1d1a' : '#f1f5f9',
+                                            color: transferRpType === t ? '#fff' : '#64748b',
+                                            boxShadow: transferRpType === t ? '0 8px 18px -10px rgba(31,29,26,0.6)' : 'none',
+                                        }}>
+                                        <div className="text-[13px] font-bold">{label}</div>
+                                        <div className="text-[10px] mt-0.5" style={{ opacity: 0.75 }}>{hint}</div>
+                                    </button>
+                                ))}
+                            </div>
+                            <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '红包总额' : '金额'} className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                            {transferRpType === 'lucky' && (
+                                <input type="number" min={1} max={memberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={memberCount ? `红包个数（默认 ${memberCount}，最多 ${memberCount}）` : '红包个数'} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-center text-sm font-bold outline-none text-slate-700 placeholder:text-slate-300" />
+                            )}
+                            <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                            <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1 text-slate-400"><Wallet size={13} weight="fill" />钱包余额 ¥{wallet}</div>
+                        </div>
+                    );
+                })()}
             </Modal>
 
             {/* 落脚点 / 位置分享 */}

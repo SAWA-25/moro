@@ -30,7 +30,14 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'image': return '[图片]';
         case 'emoji': return '[表情]';
         case 'interaction': return '[戳了戳]';
-        case 'transfer': return meta.kind === 'redpacket' ? `[红包${meta.amount ?? ''}]` : `[转账${meta.amount ?? ''}]`;
+        case 'transfer': {
+            if (meta.rpType === 'lucky') {
+                const grabs: any[] = Array.isArray(meta.grabs) ? meta.grabs : [];
+                const breakdown = grabs.map(g => `${g.name} ¥${g.amount}${g.id === meta.bestId ? '(手气最佳)' : ''}`).join('、');
+                return `[拼手气红包${meta.amount ?? ''}，已被抢光：${breakdown}]`;
+            }
+            return meta.kind === 'redpacket' ? `[红包${meta.amount ?? ''}]` : `[转账${meta.amount ?? ''}]`;
+        }
         case 'location': return `[位置分享${m.content ? '：' + m.content : ''}]`;
         case 'voice': return meta.transcript ? `[语音: ${String(meta.transcript).slice(0, 100)}]` : '[语音]';
         case 'social_card': return `[分享帖子${meta.post?.title ? '：' + meta.post.title : ''}]`;
