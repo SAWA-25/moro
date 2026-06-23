@@ -523,6 +523,20 @@ const CoupleSpace: React.FC = () => {
   const pendingWishes = wishes.filter(w => !w.fulfilled);
   const doneWishes = wishes.filter(w => w.fulfilled);
 
+  // 纪念日提醒：7 天内最近的一个（恋爱纪念日周年 + 各纪念日条目），点击跳到纪念日 tab
+  const annivReminder = (() => {
+    const cands: { label: string; daysLeft: number }[] = [];
+    if (space.anniversaryDate) {
+      const occ = nextOccurrence(space.anniversaryDate, true);
+      if (occ) cands.push({ label: '恋爱纪念日', daysLeft: occ.daysLeft });
+    }
+    (space.anniversaries || []).forEach(a => {
+      const occ = nextOccurrence(a.date, a.repeatYearly);
+      if (occ) cands.push({ label: a.title, daysLeft: occ.daysLeft });
+    });
+    return cands.filter(c => c.daysLeft >= 0 && c.daysLeft <= 7).sort((x, y) => x.daysLeft - y.daysLeft)[0] || null;
+  })();
+
   return (
     <div className="h-full w-full max-w-[480px] mx-auto flex flex-col relative overflow-hidden" style={{ background: BG, fontFamily: FONT_STACK }}>
       <style>{`
@@ -594,6 +608,21 @@ const CoupleSpace: React.FC = () => {
           <span className="text-[10px] shrink-0" style={{ color: '#bbb' }}>{Math.round(space.intimacy)}</span>
         </div>
       </div>
+
+      {/* 纪念日提醒（7 天内） */}
+      {annivReminder && (
+        <button onClick={() => setTab('anniversary')}
+          className="shrink-0 mx-4 mt-2 px-3.5 py-2 rounded-2xl flex items-center gap-2 text-left active:scale-[0.98] transition border"
+          style={{ background: 'linear-gradient(135deg,#fff1f6 0%,#fdeef0 100%)', borderColor: '#f6d2de' }}>
+          <span className="text-base shrink-0">💝</span>
+          <span className="flex-1 min-w-0 text-[12px] font-bold leading-snug" style={{ color: '#c2607f' }}>
+            {annivReminder.daysLeft === 0
+              ? `今天是「${annivReminder.label}」，别忘了好好庆祝呀！`
+              : `距离「${annivReminder.label}」还有 ${annivReminder.daysLeft} 天，记得准备惊喜哦～`}
+          </span>
+          <span className="text-[10px] shrink-0" style={{ color: '#d99' }}>查看 ›</span>
+        </button>
+      )}
 
       {/* 每日互动 */}
       <div className="shrink-0 px-4 pt-3 pb-1">

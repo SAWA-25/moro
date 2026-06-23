@@ -26,7 +26,8 @@
 `CoupleTask` / `CoupleWhisper` / `CoupleWish` / `CoupleQuestion` / `CouplePlant` / `CoupleInteraction`。
 
 > **子功能（标签页 / 浮窗 / 菜单）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **盆栽（每日浇水/施肥/晒太阳→成长值→6 阶段）** · **成就（里程碑徽章，纯计算）**
-> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱；＋右上菜单：**默契大考验（情侣小游戏）**。
+> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱；＋右上菜单：**默契大考验（情侣小游戏）**；
+> ＋头部：**纪念日提醒横幅**（恋爱纪念日周年 / 各纪念日条目 7 天内最近一个，点击跳「纪念日」tab；纯前端 in-app，未接 Web Push）。
 > 盆栽阶段逻辑 `plantStage()`/`PLANT_STAGES`/`PLANT_CARE`、默契题库 `COMPAT_QUESTIONS`/`pickCompatQuestions()` 均在 `utils/coupleSpace.ts`。
 >
 > **默契大考验**：抽 5 道二选一，用户猜 TA 会怎么选 → 角色**一次 LLM 调用**以人设作答（`generateCharCompatAnswers`，失败随机兜底）→ 比对算默契度 %，按命中数 ×2 加亲密度，记 `compatBest` 历史最高。入口在右上菜单（避开已满的 tab 栏 / 两个浮窗）。
