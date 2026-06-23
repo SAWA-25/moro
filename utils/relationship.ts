@@ -91,6 +91,26 @@ export const STAGE_DEFAULT_LABEL: Record<RelationshipStage, string> = {
     estranged: '形同陌路',
 };
 
+/**
+ * 关系网可视化元数据：每个阶段的连线/光环配色 + 亲密度（决定节点离用户的远近）。
+ * 亲密度大致沿用 STAGE_RANK，但 ex/estranged 这类「断裂」分支按「当下疏远」处理，排到外圈。
+ */
+export const STAGE_NETWORK_META: Record<RelationshipStage, { color: string; intimacy: number }> = {
+    stranger:     { color: '#cbd5e1', intimacy: 0 },
+    acquaintance: { color: '#94a3b8', intimacy: 1 },
+    friend:       { color: '#60a5fa', intimacy: 2 },
+    close:        { color: '#34d399', intimacy: 3 },
+    crush:        { color: '#f9a8d4', intimacy: 4 },
+    lover:        { color: '#ec4899', intimacy: 5 },
+    engaged:      { color: '#fb7185', intimacy: 6 },
+    married:      { color: '#f59e0b', intimacy: 7 },
+    ex:           { color: '#d4b8c4', intimacy: 1 },
+    estranged:    { color: '#a8a29e', intimacy: 0 },
+};
+
+/** 连线是否用虚线（暧昧 / 断裂分支用虚线，表示「不稳定」或「已断」）。 */
+export const STAGE_DASHED: ReadonlySet<RelationshipStage> = new Set(['crush', 'ex', 'estranged']);
+
 /** “决定性事件才能进入”的关系（日常评估不可凭空设定） */
 const DECISIVE_ONLY: ReadonlySet<RelationshipStage> = new Set([
     'lover', 'engaged', 'married', 'ex', 'estranged',

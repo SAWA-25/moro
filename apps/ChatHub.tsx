@@ -12,9 +12,10 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
+import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
@@ -510,6 +511,7 @@ const ChatHub: React.FC = () => {
     const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
+    const [showRelNet, setShowRelNet] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
     const [verifyCharId, setVerifyCharId] = useState<string | null>(null);
     const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
@@ -2379,7 +2381,16 @@ ${attachedImagesNote}
 
     if (view === 'list') {
         return (
-            <div className="h-full w-full bg-[#fafafa] moro-laiwang flex flex-col">
+            <div className="relative h-full w-full bg-[#fafafa] moro-laiwang flex flex-col">
+                {showRelNet && (
+                    <RelationshipNetwork
+                        characters={characters}
+                        userName={userProfile.name}
+                        userAvatar={userProfile.avatar}
+                        onClose={() => setShowRelNet(false)}
+                        onOpenChat={(id) => { setShowRelNet(false); openPrivateChat(id); }}
+                    />
+                )}
                 {/* safe-top spacer 透明 + backdrop-blur，下方容器/list bubbles 透出+模糊（跟 iOS 系统 status bar 一致），避免 header 白 bg 在刘海下铺一条突兀白带 */}
                 <div className="shrink-0 z-10 sticky top-0">
                     <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
@@ -2396,6 +2407,11 @@ ${attachedImagesNote}
                     </button>
                     <span className="font-bold text-[#262626] text-xl tracking-tight pl-2">{hubTab === 'chats' ? '往来' : hubTab === 'contacts' ? '名册' : hubTab === 'couple' ? '情侣空间' : '此刻'}</span>
                     <div className="flex-1"></div>
+                    {hubTab === 'contacts' && characters.length > 0 && (
+                        <button onClick={() => setShowRelNet(true)} className="p-2 text-[#2b2933] scrap-btn-paper transition-colors mr-1" title="关系网">
+                            <ShareNetwork size={22} weight="duotone" />
+                        </button>
+                    )}
                     {hubTab !== 'moments' && hubTab !== 'couple' && (
                         <div className="relative">
                             <button onClick={() => setShowPlusMenu(v => !v)} className="p-2 -mr-2 text-[#2b2933] scrap-btn-paper transition-colors" title="添加">
