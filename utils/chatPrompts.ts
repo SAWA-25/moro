@@ -27,6 +27,8 @@ import { buildRecentLifeContextBlock } from './autonomousLife';
 const GROUP_MSG_TEXT_CAP = 500;
 function summarizeGroupMsgContent(m: Message): string {
     const meta = (m.metadata as any) || {};
+    // 撤回的消息（QQ/微信语义）：跨群上下文也只留"撤回了一条消息"，不泄露原文。
+    if (meta.recalled) return '[撤回了一条消息]';
     switch (m.type) {
         case 'image': return '[图片]';
         case 'emoji': return '[表情]';
@@ -820,7 +822,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     if (source === 'date') return '[约会]';
                     return '[聊天]';
                 })();
-                
+
+                // 撤回的消息（QQ/微信语义）：只让角色知道"撤回了一条消息"，看不到原文，可自然地好奇/在意。
+                if (m.metadata?.recalled) {
+                    const who = m.role === 'user' ? (userProfile?.name || '用户') : '你';
+                    return { role: m.role, content: `${timeStr} [系统: ${who}撤回了一条消息]` };
+                }
+
                 if (m.replyTo) {
                     // 引用回复：把"被引用的原话"做成独立的上下文框，用户的新回复另起一行突出出来。
                     // 旧格式 [回复 "引用前50字..."]: 回复 会把引用和回复挤在一行，引用往往比回复长得多，

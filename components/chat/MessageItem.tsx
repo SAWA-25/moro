@@ -833,6 +833,8 @@ interface MessageItemProps {
     onLongPress: (m: Message) => void;
     /** 左滑气泡触发引用回复（Telegram 式 swipe-to-reply）。 */
     onSwipeReply?: (m: Message) => void;
+    /** 撤回的自己消息点「重新编辑」：把原文还原回输入框（微信式）。 */
+    onReeditRecalled?: (m: Message) => void;
     selectionMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
@@ -899,6 +901,7 @@ const MessageItem = React.memo(({
     userAvatar,
     onLongPress,
     onSwipeReply,
+    onReeditRecalled,
     selectionMode,
     isSelected,
     onToggleSelect,
@@ -1368,6 +1371,31 @@ const MessageItem = React.memo(({
                         displayText.includes('纪念日') || displayText.includes('Event') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4c5.png' :
                         displayText.includes('转账') ? 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f4b0.png' : 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f514.png'} alt="" className="w-4 h-4 shrink-0" />
                         <span className="text-[10px] font-medium tracking-wide truncate">{displayText}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // 撤回的消息（QQ/微信语义）：不论原类型，一律渲染成居中灰条提示，原文不再显示。
+    if (m.metadata?.recalled) {
+        const mine = m.role === 'user';
+        const canReedit = mine && !!m.metadata?.recalledContent && !!onReeditRecalled;
+        return (
+            <div className={`flex items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+                {selectionMode && (
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                            {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                        </div>
+                    </div>
+                )}
+                <div className="flex justify-center my-4 px-6 w-full">
+                    <div className="flex items-center gap-1.5 bg-slate-200/40 backdrop-blur-md text-slate-400 px-3 py-1 rounded-full shadow-sm border border-white/20 select-none max-w-full min-w-0">
+                        <span className="text-[10px] font-medium tracking-wide truncate">{mine ? '你' : charName}撤回了一条消息</span>
+                        {canReedit && (
+                            <button onClick={() => onReeditRecalled!(m)} className="text-[10px] font-semibold text-primary shrink-0 active:opacity-60">重新编辑</button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -3065,7 +3093,9 @@ const MessageItem = React.memo(({
            prev.isLastUserMsg === next.isLastUserMsg &&
            // 转账 / 红包卡片的收款状态变化（pending→claimed/expired/declined）只动 metadata，
            // 不动 content/id，需单独比对，否则 memo 会挡掉卡片状态更新。
-           prev.msg.metadata?.status === next.msg.metadata?.status;
+           prev.msg.metadata?.status === next.msg.metadata?.status &&
+           // 撤回只动 metadata.recalled、不动 content，同样要单独比对，否则气泡不会变成撤回提示。
+           prev.msg.metadata?.recalled === next.msg.metadata?.recalled;
 });
 
 export default MessageItem;

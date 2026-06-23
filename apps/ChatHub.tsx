@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
@@ -41,6 +41,7 @@ const GroupMessageItem = React.memo(({
     isSelected,
     onToggleSelect,
     onLongPress,
+    onReeditRecalled,
     displayName,
     memberTitle,
     onAvatarClick,
@@ -62,6 +63,8 @@ const GroupMessageItem = React.memo(({
     isSelected: boolean,
     onToggleSelect: (id: number) => void,
     onLongPress: (id: number) => void,
+    /** 撤回的自己消息点「重新编辑」：把原文还原回输入框 */
+    onReeditRecalled?: (m: Message) => void,
     /** 群名片（成员在本群的昵称），不传则用角色名 */
     displayName?: string,
     /** 群主/管理员设置的头衔徽章 */
@@ -118,6 +121,19 @@ const GroupMessageItem = React.memo(({
             }}>
                 <span className={`px-3 py-1 rounded-full bg-slate-200/70 text-slate-500 text-[10px] text-center leading-relaxed max-w-[85%] ${revealable ? 'cursor-pointer hover:bg-slate-300/70 active:scale-95 transition' : ''} ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
                     {msg.content}{nickThought ? ' 💭' : ''}
+                </span>
+            </div>
+        );
+    }
+
+    // 撤回的消息（QQ/微信语义）：居中灰色提示，原文不再显示；自己的可「重新编辑」。
+    if (msg.metadata?.recalled) {
+        const canReedit = isUser && !!(msg.metadata as any)?.recalledContent && !!onReeditRecalled;
+        return (
+            <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
+                <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200/70 text-slate-400 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
+                    {isUser ? '你' : (displayName || char?.name || '某成员')}撤回了一条消息
+                    {canReedit && <button onClick={() => onReeditRecalled!(msg)} className="text-primary font-semibold active:opacity-60">重新编辑</button>}
                 </span>
             </div>
         );
@@ -919,6 +935,30 @@ const ChatHub: React.FC = () => {
             setSelectedMessage(null);
         }
     };
+
+    // 撤回群消息（QQ/微信语义）：原文存进 metadata 供「重新编辑」，气泡变成"X撤回了一条消息"，
+    // 群上下文里成员只看到"撤回了一条消息"（看不到原文）。
+    const handleRecallMessage = async () => {
+        if (!selectedMessage) return;
+        const target = selectedMessage;
+        const original = target.content;
+        const recalledAt = Date.now();
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), recalled: true, recalledContent: original, recalledAt }));
+        setMessages(prev => prev.map(m => m.id === target.id
+            ? { ...m, metadata: { ...(m.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+            : m));
+        setModalType('none');
+        setSelectedMessage(null);
+        addToast('已撤回', 'success');
+    };
+
+    // 「重新编辑」：把撤回的原文还原回输入框（微信式）。已有内容则换行追加。
+    const handleReeditRecalled = useCallback((m: Message) => {
+        const text = ((m.metadata as any)?.recalledContent ?? '').toString();
+        if (!text) return;
+        setInput(prev => (prev.trim() ? `${prev}\n${text}` : text));
+        addToast('已还原到输入框', 'info');
+    }, []);
 
     const handleDeleteSingleMessage = async () => {
         if (!selectedMessage) return;
@@ -1863,6 +1903,11 @@ ${recentPrivate || '(暂无私聊)'}
                 // 系统通知（改群名/禁言/头衔/移除成员/群名片变更）原样进历史，让角色"看到"事件
                 if (m.role === 'system' || m.type === 'system') {
                     return `[系统通知] ${m.content}`;
+                }
+                // 撤回的消息（QQ/微信语义）：只让群成员知道"撤回了一条消息"，看不到原文。
+                if (m.metadata?.recalled) {
+                    const who = m.role === 'user' ? '用户' : (characters.find(c => c.id === m.charId)?.name || '未知');
+                    return `${who}: [撤回了一条消息]`;
                 }
                 let name = '用户';
                 if (m.role === 'assistant') {
@@ -2957,6 +3002,7 @@ ${attachedImagesNote}
                                 isSelected={selectedMsgIds.has(m.id)}
                                 onToggleSelect={toggleMessageSelection}
                                 onLongPress={handleMessageLongPress}
+                                onReeditRecalled={handleReeditRecalled}
                                 displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
                                 memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
                                 onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); } : undefined}
@@ -3312,6 +3358,11 @@ ${attachedImagesNote}
                     {selectedMessage?.type === 'text' && (
                         <button onClick={handleStartEditMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                             修改内容
+                        </button>
+                    )}
+                    {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
+                        <button onClick={handleRecallMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
+                            撤回
                         </button>
                     )}
                     <button onClick={handleDeleteSingleMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">

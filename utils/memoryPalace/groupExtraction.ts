@@ -79,7 +79,8 @@ function buildGroupConversationText(messages: Message[], speakerNameOf: (m: Mess
         const name = speakerNameOf(m);
         const time = new Date(m.timestamp).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         let content: string;
-        if (m.type === 'image') content = '[图片]';
+        if (m.metadata?.recalled) content = '[撤回了一条消息]';
+        else if (m.type === 'image') content = '[图片]';
         else if (m.type === 'emoji') content = `[表情包]`;
         else if (m.type === 'transfer') content = `[红包: ${m.metadata?.amount ?? ''}]`;
         else content = (m.content || '').slice(0, 600);

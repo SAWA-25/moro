@@ -92,3 +92,9 @@ pm run build passes after the time-gap grouping fix.
 - On a `moments` step the generated script may include `{"type":"post_moment","content":"…"}`; applying it saves a public `SocialPost` authored as the user (so characters see it in context), prepends it to the on-screen 此刻 snapshot, and records it in the browse action log + the synthesized 查手机记录 system message. Personality still gates it (gentle chars just look; possessive/jealous ones grab the phone to reply, block, or post a relationship-flaunting moment).
 - Updated the script-gen prompt (action options, guidance, JSON example) so the model knows the new moments action.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.
+
+- 消息撤回 (message recall, QQ/微信 对标): the long-press message menu had 多选/引用/编辑/复制/删除 but no recall. Added 撤回 for your own messages in both 单聊 (`apps/Chat.tsx` + `MessageItem.tsx`) and 群聊 (`apps/ChatHub.tsx` + its `GroupMessageItem`).
+- Recalling sets `metadata.recalled` + stashes the original in `metadata.recalledContent`; the bubble (any type) collapses to a centered "你/对方/成员名 撤回了一条消息" hint, with a 微信式「重新编辑」link that restores the original text to the input box (appends after a newline if a draft exists).
+- The original text is hidden from the model everywhere it could leak: single-chat live history (`chatPrompts.ts`), group live transcript (`ChatHub.tsx`), the shared serializer used by archives + single-chat memory (`messageFormat.ts`), cross-group context (`summarizeGroupMsgContent`), and group memory extraction (`groupExtraction.ts`) — all emit only "[…撤回了一条消息]", so the character knows you recalled something (and can be curious) but can't read it.
+- Extended both `React.memo` comparators so a recall (metadata-only change) actually re-renders the bubble.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.

@@ -2673,6 +2673,34 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         addToast('已复制到剪贴板', 'success');
     };
 
+    // 撤回消息（QQ/微信语义）：原文存进 metadata.recalledContent 供「重新编辑」，
+    // 气泡变成"你撤回了一条消息"，发给角色的上下文只剩"撤回了一条消息"（看不到原文）。
+    const handleRecallMessage = async () => {
+        if (!selectedMessage) return;
+        const target = selectedMessage;
+        const original = target.content;
+        const recalledAt = Date.now();
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), recalled: true, recalledContent: original, recalledAt }));
+        setMessages(prev => prev.map(m => m.id === target.id
+            ? { ...m, metadata: { ...(m.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+            : m));
+        setModalType('none');
+        setSelectedMessage(null);
+        addToast('已撤回', 'success');
+    };
+
+    // 「重新编辑」：把撤回的原文还原回输入框（微信式）。已有草稿则换行追加，不直接覆盖。
+    const handleReeditRecalled = useCallback((m: Message) => {
+        const text = (m.metadata?.recalledContent ?? '').toString();
+        if (!text) return;
+        setInput(prev => {
+            const next = prev.trim() ? `${prev}\n${text}` : text;
+            localStorage.setItem(draftKey, next);
+            return next;
+        });
+        addToast('已还原到输入框', 'info');
+    }, [draftKey]);
+
     const handleDeleteEmoji = async () => {
         if (!selectedEmoji) return;
         const emojisToDelete = Array.isArray(selectedEmoji) ? selectedEmoji : [selectedEmoji];
@@ -3586,7 +3614,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
                 onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (!next) { setShowingTargetIds(new Set()); } }}
@@ -4066,6 +4094,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             userAvatar={displayUserAvatar}
                             onLongPress={handleMessageLongPress}
                             onSwipeReply={handleSwipeReply}
+                            onReeditRecalled={handleReeditRecalled}
                             selectionMode={selectionMode}
                             isSelected={selectedMsgIds.has(m.id)}
                             onToggleSelect={toggleMessageSelection}

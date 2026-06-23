@@ -75,6 +75,7 @@ interface ChatModalsProps {
     onEditMessageStart: () => void;
     onConfirmEditMessage: () => void;
     onDeleteMessage: () => void;
+    onRecallMessage: () => void;
     onCopyMessage: () => void;
     onDeleteEmoji: () => void;
     onDeleteCategory: () => void;
@@ -147,7 +148,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onTransfer, onImportEmoji, onSaveSettings,
     onBgUpload, onRemoveBg, onClearHistory,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
-    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
+    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
@@ -880,6 +881,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         <button onClick={() => { onGenerateVoice(); setModalType('none'); }} className="w-full py-3 bg-emerald-50 text-emerald-600 font-medium rounded-2xl active:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" /></svg>
                             转换语音
+                        </button>
+                    )}
+                    {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
+                        <button onClick={onRecallMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
+                            撤回
                         </button>
                     )}
                     <button onClick={onDeleteMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
