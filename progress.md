@@ -76,3 +76,8 @@ pm run build passes after the time-gap grouping fix.
 - State persisted to localStorage; seeded with two ambient threads so it's not empty on first open.
 - Registered AppID.Forum (icon `ChatsCircle`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
+
+- Added 视频通话 (video call): new `apps/VideoCallApp.tsx`, launched from the chat character profile (new video button next to 打电话).
+- Character side uses 通话立绘 (`convoSettings.callSprites['默认']`) → 立绘 → 头像 as the remote feed. User side: camera defaults OFF and is opt-in ("可选摄像头 / 只开一下就关了") via `getUserMedia`; toggling off stops the track; front/back flip; selfie mirror; mic is a visual mute. All tracks stopped on hang up / unmount.
+- Wired `onVideoCall` through `components/character/CharacterProfilePage.tsx` (optional prop) and `apps/Chat.tsx`; registered AppID.VideoCall (chat-launched, like Call) in `types.ts` / `components/PhoneShell.tsx`.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
