@@ -2226,6 +2226,17 @@ export interface CoupleQuestion {
   at: number;
 }
 
+/** 养盆栽：你们一起养的一株虚拟植物，每日照料攒成长值、随阶段长大。 */
+export interface CouplePlant {
+  /** 累计成长值（决定阶段） */
+  growth: number;
+  /** 上次浇水 / 施肥 / 晒太阳的本地日期 YYYY-MM-DD（每日各一次） */
+  water?: string;
+  fertilize?: string;
+  sun?: string;
+  createdAt: number;
+}
+
 /** 悄悄话 / 留言信箱：一条私密留言。 */
 export interface CoupleWhisper {
   id: string;
@@ -2266,6 +2277,8 @@ export interface CoupleSpace {
   wishes?: CoupleWish[];
   /** 提问箱：你问 TA 答的问答记录（可选，老数据可能缺） */
   questions?: CoupleQuestion[];
+  /** 养盆栽：你们一起养的小植物（可选，首次浇水时创建） */
+  plant?: CouplePlant;
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;

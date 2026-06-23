@@ -101,6 +101,8 @@ export interface CoupleSpaceBlockParams {
     pendingWishes?: string[];
     /** 提问箱里近来的问答（已格式化，如「user问「…」，你答「…」」），最多 2 条 */
     recentQaLines?: string[];
+    /** 你们一起养的盆栽当前阶段（已格式化，无则不注入） */
+    plantLine?: string;
     /** 用户留的、角色还没回的最新悄悄话（无则不注入） */
     lastUserWhisper?: string;
 }
@@ -128,6 +130,9 @@ export function coupleSpaceBlock(p: CoupleSpaceBlockParams): string {
         lines.push(`- 你最近在「提问箱」里回答过${p.userName}的问题：`);
         p.recentQaLines.forEach(l => lines.push(`  · ${l}`));
         lines.push(`  这些是你亲口说过的话，聊天时态度、喜好要和它们保持一致，别自相矛盾。`);
+    }
+    if (p.plantLine) {
+        lines.push(`- ${p.plantLine}——这是你们一起浇水照料、看着它和感情一起慢慢长大的小生命，合适时可以惦记它、招呼${p.userName}一起照顾、或为它的长势开心。`);
     }
     if (p.lastUserWhisper) {
         lines.push(`- ${p.userName}在悄悄话信箱里给你留了言：「${p.lastUserWhisper}」，这句话 TA 没在明面上说、专门悄悄写给你——你可以在聊天里自然地、带着被这份心意触动的样子回应它。`);

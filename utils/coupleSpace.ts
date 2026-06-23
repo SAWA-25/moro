@@ -186,6 +186,39 @@ export function fallbackCharInteractionNote(kind: CoupleInteractionKind): string
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ── 养盆栽 ──────────────────────────────────────────────────────────────────
+
+export interface PlantStage { emoji: string; name: string; min: number; }
+
+/** 盆栽成长阶段（按累计成长值递增）。 */
+export const PLANT_STAGES: PlantStage[] = [
+  { emoji: '🌰', name: '种子', min: 0 },
+  { emoji: '🌱', name: '发芽', min: 10 },
+  { emoji: '🌿', name: '幼苗', min: 30 },
+  { emoji: '🪴', name: '成株', min: 60 },
+  { emoji: '🌷', name: '花苞', min: 100 },
+  { emoji: '🌸', name: '绽放', min: 160 },
+];
+
+/** 每日照料动作的成长加成。 */
+export const PLANT_CARE: Record<'water' | 'fertilize' | 'sun', { emoji: string; label: string; gain: number }> = {
+  water: { emoji: '💧', label: '浇水', gain: 3 },
+  fertilize: { emoji: '🌾', label: '施肥', gain: 5 },
+  sun: { emoji: '☀️', label: '晒太阳', gain: 2 },
+};
+
+/** 由成长值算出当前阶段 + 到下一阶段的进度。 */
+export function plantStage(growth: number): { stage: PlantStage; index: number; next?: PlantStage; toNext: number; progress: number } {
+  const g = Math.max(0, growth || 0);
+  let i = 0;
+  for (let k = 0; k < PLANT_STAGES.length; k++) if (g >= PLANT_STAGES[k].min) i = k;
+  const stage = PLANT_STAGES[i];
+  const next = PLANT_STAGES[i + 1];
+  const toNext = next ? Math.max(0, next.min - g) : 0;
+  const progress = next ? (g - stage.min) / (next.min - stage.min) : 1;
+  return { stage, index: i, next, toNext, progress: Math.max(0, Math.min(1, progress)) };
+}
+
 // ── 提示词注入 ──────────────────────────────────────────────────────────────
 
 const authorLabel = (a: 'user' | 'char', userName: string, charName: string) =>
@@ -203,6 +236,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     (cs.moments?.length || 0) > 0 || (cs.anniversaries?.length || 0) > 0 ||
     (cs.tasks?.length || 0) > 0 || (cs.whispers?.length || 0) > 0 ||
     (cs.wishes?.length || 0) > 0 || (cs.questions?.length || 0) > 0 ||
+    (cs.plant?.growth || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
 
@@ -235,6 +269,13 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     .slice(0, 2)
     .map(q => `${userName}问「${q.question.slice(0, 40)}」，你答「${q.answer.slice(0, 50)}」`);
 
+  // 你们一起养的盆栽（有成长才提）
+  let plantLine: string | undefined;
+  if ((cs.plant?.growth || 0) > 0) {
+    const ps = plantStage(cs.plant!.growth);
+    plantLine = `你们一起养的小盆栽现在长到了「${ps.stage.name}」${ps.stage.emoji} 阶段（成长值 ${Math.round(cs.plant!.growth)}）`;
+  }
+
   // 用户留的、角色还没回的悄悄话（最新一条）
   const whispers = [...(cs.whispers || [])].sort((a, b) => b.at - a.at);
   const lastUserWhisper = whispers.find(w => w.author === 'user');
@@ -253,6 +294,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     pendingTaskTitles,
     pendingWishes,
     recentQaLines,
+    plantLine,
     lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
   });
 }

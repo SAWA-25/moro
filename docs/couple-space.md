@@ -21,12 +21,12 @@
 
 `CoupleSpace` 挂在角色上，含：`anniversaryDate`（在一起纪念日 YYYY-MM-DD）、`intimacy`（亲密度，0 起无上限）、
 `moments`（动态/留言板）、`anniversaries`（纪念日/生日/约定日）、`photos`（九宫格相册）、`tasks`（约定）、
-`whispers`（悄悄话信箱）、`wishes`（愿望清单/心愿）、`questions`（提问箱问答）、`interactions`（每日互动记录）。
-子类型：`CoupleMoment` / `CoupleComment` / `CoupleAnniversary` / `CouplePhoto` / `CoupleTask` / `CoupleWhisper` /
-`CoupleWish` / `CoupleQuestion` / `CoupleInteraction`。
+`whispers`（悄悄话信箱）、`wishes`（愿望清单/心愿）、`questions`（提问箱问答）、`plant`（养盆栽，首次浇水时创建）、
+`interactions`（每日互动记录）。子类型：`CoupleMoment` / `CoupleComment` / `CoupleAnniversary` / `CouplePhoto` /
+`CoupleTask` / `CoupleWhisper` / `CoupleWish` / `CoupleQuestion` / `CouplePlant` / `CoupleInteraction`。
 
-> **子功能（标签页 / 浮窗）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **成就（里程碑徽章，纯计算）**
-> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱。
+> **子功能（标签页 / 浮窗）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **盆栽（每日浇水/施肥/晒太阳→成长值→6 阶段）** · **成就（里程碑徽章，纯计算）**
+> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱。盆栽阶段逻辑 `plantStage()` / `PLANT_STAGES` / `PLANT_CARE` 在 `utils/coupleSpace.ts`。
 
 - `CoupleMoment` 额外带 `media?: CoupleMedia`（多媒体卡片：`voice` 语音条 / `music` 音乐 / `item` 物件·照片，
   含 `name`、语音另有 `duration`）和 `innerVoice?`（角色对该条动态的「心声」独白，**点击多媒体块时懒生成、缓存后复用**）。
@@ -47,7 +47,8 @@
   `translateY(20px)→0`+`opacity 0→1`（`@keyframes csVoiceCard` 0.4s ease-out）浮现，顶部「{TA} の 心声」+ 一段独白。
 
 - **亲密度**按每 `INTIMACY_PER_LEVEL=100` 一级展示（Lv + 头衔「初识→神仙眷侣」+ 级内进度条）。
-  增长来源：每日互动（亲 6 / 抱 5 / 牵手 4 / 礼物 8）、完成约定 +5、**实现心愿 +8**、发动态 +3、**提问箱提问 +3**、角色互动/评论 +1~2、发悄悄话 +2。
+  增长来源：每日互动（亲 6 / 抱 5 / 牵手 4 / 礼物 8）、完成约定 +5、**实现心愿 +8**、发动态 +3、**提问箱提问 +3**、**照料盆栽 +1**、角色互动/评论 +1~2、发悄悄话 +2。
+  （盆栽另有独立「成长值」：浇水 +3 / 施肥 +5 / 晒太阳 +2，每日各一次，与亲密度分开计。）
   这是情侣空间**独立的**度量，**不**走 `utils/relationship.ts` 的好感框架（affection），互不干扰。
 
 ## 角色侧「主动互动」（`utils/coupleSpace.ts`）
@@ -70,7 +71,7 @@
 
 - `utils/context.ts` 在 `buildRelationshipPromptBlock` 之后、**仅单聊**（`!groupOptions?.skipUserProfile`）注入一段
   「来往·情侣空间」系统提示：恋爱天数、亲密度等级、最近 3 条动态、最近的纪念日倒计时、未完成约定、**未实现的心愿**、
-  **提问箱近来的问答（让 char 言行与自己答过的话保持一致）**、用户**还没被回**的悄悄话。
+  **提问箱近来的问答（让 char 言行与自己答过的话保持一致）**、**盆栽当前阶段**、用户**还没被回**的悄悄话。
 - 只有空间真正有内容（设了纪念日 / 亲密度>0 / 有任意条目）才注入，避免空噪声。
 - 让 char 把这些当真实恋爱点滴，聊天里自然提起（某条动态、快到的纪念日、没做完的约定、想圆的心愿、答过的问题、TA 的悄悄话）。
 
@@ -86,7 +87,7 @@
 
 | 文件 | 关键点 |
 |------|-------|
-| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 主 UI：绑定页 / 双头像+恋爱天数+亲密度头卡 / 每日互动 / 动态·纪念日·相册·约定·心愿·成就 子 tab / 提问箱·悄悄话信箱浮窗 / 各弹窗 |
+| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 主 UI：绑定页 / 双头像+恋爱天数+亲密度头卡 / 每日互动 / 动态·纪念日·相册·约定·心愿·盆栽·成就 子 tab / 提问箱·悄悄话信箱浮窗 / 各弹窗 |
 | [`utils/coupleSpace.ts`](../utils/coupleSpace.ts) | 纯逻辑：默认值、恋爱天数、纪念日倒计时、亲密度等级、互动定义、提示词块、角色侧 LLM 生成 |
 | [`apps/ChatHub.tsx`](../apps/ChatHub.tsx) | 底部导航第 4 个入口 + 标题 + 内嵌渲染 |
 | [`utils/context.ts`](../utils/context.ts) | 单聊上下文里注入 `buildCoupleSpacePromptBlock` |

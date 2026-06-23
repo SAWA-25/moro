@@ -3,6 +3,7 @@ import { useOS } from '../../context/OSContext';
 import {
   CharacterProfile, CoupleSpace as CoupleSpaceData, CoupleMoment, CoupleAnniversary,
   CouplePhoto, CoupleTask, CoupleWish, CoupleQuestion, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
+  CouplePlant,
 } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
@@ -14,6 +15,7 @@ import {
   generateCharCoupleComment, generateCharWhisperReply, generateCharInteractionNote, generateCharMoment,
   generateCharInnerVoice, fallbackInnerVoice,
   generateCharQuestionAnswer, fallbackQuestionAnswer,
+  plantStage, PLANT_CARE,
 } from '../../utils/coupleSpace';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
@@ -68,7 +70,7 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
   love: '💞', birthday: '🎂', promise: '🤙', custom: '📌',
 };
 
-type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist' | 'achievements';
+type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist' | 'plant' | 'achievements';
 
 // ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
 const HeartbeatLine: React.FC = () => (
@@ -381,6 +383,18 @@ const CoupleSpace: React.FC = () => {
   };
   const deleteWish = (id: string) => mutate(cs => ({ ...cs, wishes: (cs.wishes || []).filter(w => w.id !== id) }), 0);
 
+  // ── 养盆栽 ──
+  const carePlant = (kind: 'water' | 'fertilize' | 'sun') => {
+    const today = todayYmd();
+    if (space.plant?.[kind] === today) { addToast('今天已经照料过啦，明天再来 🌱', 'info'); return; }
+    const { label, gain } = PLANT_CARE[kind];
+    mutate(cs => {
+      const plant: CouplePlant = cs.plant || { growth: 0, createdAt: Date.now() };
+      return { ...cs, plant: { ...plant, [kind]: today, growth: (plant.growth || 0) + gain } };
+    }, 1);
+    addToast(`${label} +${gain} 成长 🌱`, 'success');
+  };
+
   // ── 悄悄话 ──
   const [whisperInput, setWhisperInput] = useState('');
   const [whisperBusy, setWhisperBusy] = useState(false);
@@ -574,7 +588,7 @@ const CoupleSpace: React.FC = () => {
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
         <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
-          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿'], ['achievements', '成就']] as [Tab, string][]).map(([k, label]) => (
+          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿'], ['plant', '盆栽'], ['achievements', '成就']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className="flex-1 py-1.5 rounded-full transition"
               style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
@@ -740,6 +754,50 @@ const CoupleSpace: React.FC = () => {
           </>
         )}
 
+        {tab === 'plant' && (() => {
+          const today = todayYmd();
+          const growth = space.plant?.growth || 0;
+          const ps = plantStage(growth);
+          const cares: ('water' | 'fertilize' | 'sun')[] = ['water', 'fertilize', 'sun'];
+          return (
+            <div className="flex flex-col items-center gap-4 pt-1">
+              <div className="w-full rounded-3xl p-6 flex flex-col items-center gap-2 border border-[#f2f2f2]" style={{ background: 'linear-gradient(180deg,#fbf7f0 0%,#f1f1ec 100%)' }}>
+                <div className="text-6xl leading-none">{ps.stage.emoji}</div>
+                <div className="text-sm font-black text-[#444]">{ps.stage.name}</div>
+                {ps.next ? (
+                  <div className="w-full max-w-[14rem] mt-1">
+                    <div className="h-2 rounded-full bg-[#ececec] overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(ps.progress * 100)}%`, background: ACCENT }} />
+                    </div>
+                    <div className="text-[10px] text-[#aaa] text-center mt-1">再 {ps.toNext} 成长值 → {ps.next.name} {ps.next.emoji}</div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] font-bold mt-1" style={{ color: '#e07a9c' }}>已完全绽放 · 你们的爱开花啦 🌸</div>
+                )}
+                <div className="text-[10px] text-[#bbb] mt-0.5">成长值 {Math.round(growth)}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2.5 w-full">
+                {cares.map(k => {
+                  const c = PLANT_CARE[k];
+                  const done = space.plant?.[k] === today;
+                  return (
+                    <button key={k} onClick={() => carePlant(k)} disabled={done}
+                      className="rounded-2xl py-3 flex flex-col items-center gap-1 border transition active:scale-95 disabled:opacity-60"
+                      style={done ? { background: '#f4f4f4', borderColor: '#eee' } : { background: '#fff', borderColor: '#f3c0d2' }}>
+                      <span className="text-xl">{c.emoji}</span>
+                      <span className="text-[12px] font-bold text-[#555]">{c.label}</span>
+                      <span className="text-[9px]" style={{ color: done ? '#bbb' : '#c76b8e' }}>{done ? '今天已照料' : `+${c.gain} 成长`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-center text-[11px] text-[#aaa] leading-relaxed px-4">
+                每天给小盆栽浇水、施肥、晒晒太阳，<br />看它陪着你们的感情一起长大 🌿
+              </div>
+            </div>
+          );
+        })()}
+
         {tab === 'achievements' && (() => {
           const lvl = intimacyLevel(space.intimacy || 0);
           const days = loveDays(space.anniversaryDate);
@@ -755,6 +813,7 @@ const CoupleSpace: React.FC = () => {
             { e: '💌', t: '悄悄话', d: '互留 5 条悄悄话', ok: space.whispers.length >= 5, cur: space.whispers.length, tar: 5 },
             { e: '🖼️', t: '回忆收藏家', d: '相册攒满 9 张', ok: space.photos.length >= 9, cur: space.photos.length, tar: 9 },
             { e: '🗓️', t: '纪念时刻', d: '记下 3 个纪念日', ok: space.anniversaries.length >= 3, cur: space.anniversaries.length, tar: 3 },
+            { e: '🌸', t: '园丁之心', d: '盆栽养到绽放', ok: (space.plant?.growth || 0) >= 160, cur: Math.round(space.plant?.growth || 0), tar: 160 },
           ];
           const unlocked = ACH.filter(a => a.ok).length;
           return (
