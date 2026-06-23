@@ -23,7 +23,7 @@ import type {
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
-  coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt,
+  coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
 } from './laiwangPrompts';
 
 export interface CoupleApi {
@@ -425,6 +425,55 @@ export async function generateCharQuestionAnswer(opts: {
     { role: 'user', content: coupleQuestionUserPrompt(userName, question) },
   ], 200);
   return cleanParagraph(out, 120, [char.name, userName]);
+}
+
+// ── 情侣小游戏：默契大考验（二选一，看你多懂 TA） ──────────────────────────
+export interface CompatQuestion { q: string; a: string; b: string; }
+
+export const COMPAT_QUESTIONS: CompatQuestion[] = [
+  { q: '周末更想怎么过？', a: '宅家窝着', b: '出门浪' },
+  { q: '吃的更偏爱？', a: '甜口', b: '咸辣口' },
+  { q: '吵架后更想要？', a: '先各自冷静', b: '马上和好' },
+  { q: '更想一起养？', a: '猫', b: '狗' },
+  { q: '约会更想？', a: '看场电影', b: '吃顿大餐' },
+  { q: '作息更偏？', a: '早睡早起', b: '熬夜星人' },
+  { q: '收礼物更看重？', a: '心意满满', b: '实用为王' },
+  { q: '旅行更想去？', a: '山林', b: '海边' },
+  { q: '表达爱更习惯？', a: '挂在嘴上', b: '藏在行动里' },
+  { q: '更喜欢的天气？', a: '晴天暖阳', b: '雨天慵懒' },
+  { q: '看电影更爱？', a: '甜甜爱情片', b: '刺激动作片' },
+  { q: '深夜更想？', a: '聊到天亮', b: '抱着早睡' },
+];
+
+/** 随机抽 n 道默契题。 */
+export function pickCompatQuestions(n = 5): CompatQuestion[] {
+  return [...COMPAT_QUESTIONS].sort(() => Math.random() - 0.5).slice(0, Math.min(n, COMPAT_QUESTIONS.length));
+}
+
+/** 让角色以人设对一组二选一作答，返回 'a'/'b' 数组；失败返回 null（组件用随机兜底）。 */
+export async function generateCharCompatAnswers(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  questions: CompatQuestion[];
+}): Promise<('a' | 'b')[] | null> {
+  const { char, userName, api, questions } = opts;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleCompatPrompt(questions) },
+  ], 120);
+  if (!out) return null;
+  try {
+    const m = out.match(/\[[\s\S]*\]/);
+    if (m) {
+      const arr = JSON.parse(m[0]);
+      if (Array.isArray(arr) && arr.length === questions.length) {
+        const norm = arr.map((x: any) => String(x).toLowerCase().trim());
+        if (norm.every((x: string) => x === 'a' || x === 'b')) return norm as ('a' | 'b')[];
+      }
+    }
+  } catch { /* fallthrough */ }
+  return null;
 }
 
 /** 提问箱兜底回答（LLM 失败 / 未配 API 时用）。 */

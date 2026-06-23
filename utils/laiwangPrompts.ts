@@ -161,6 +161,12 @@ export function coupleQuestionUserPrompt(userName: string, question: string): st
     return `${userName}在情侣空间的「提问箱」里问了你一个问题：「${question}」。\n这是 TA 想更懂你、和你拉近一点的小心思。请你以恋人的身份认真回答（40 字左右，一两句）：贴着问题本身走，给出真实、具体、带着你人设口吻和这段感情温度的回答，可以坦诚、可以撒娇、可以反问回去逗 TA，但别空泛敷衍、别答非所问。`;
 }
 
+/** 默契大考验：让角色以人设对一组二选一问题真实作答，输出 'a'/'b' 数组（user 文案）。 */
+export function coupleCompatPrompt(questions: { q: string; a: string; b: string }[]): string {
+    const list = questions.map((x, i) => `${i + 1}. ${x.q}（a：${x.a} / b：${x.b}）`).join('\n');
+    return `下面是几个关于你的二选一小问题，请**完全以你的人设、喜好、性格**来真实作答——这是你们的情侣默契小游戏，${'TA'}正在猜你会怎么选，所以一定要符合「真实的你」：\n${list}\n\n严格只输出一个 JSON 数组，长度与题目数一致，每一项是 "a" 或 "b"，表示你这一题的选择。例如 ["a","b","a","a","b"]。不要解释、不要任何多余文字。`;
+}
+
 /** 用户对角色「亲一下/抱一下/牵手/送礼物」后的即时反应（user 文案）。 */
 export function coupleInteractionUserPrompt(userName: string, interactionLabel: string): string {
     return `${userName}在情侣空间里对你「${interactionLabel}」。请你给出一句即时反应（15 字左右，一句话），把这个动作的触感与亲昵带出来——可以娇羞、可以甜、可以反过来逗 TA、也可以顺着你的人设傲娇一下；是"被恋人这样对待、心头一动"的真实反应，别程式化。`;

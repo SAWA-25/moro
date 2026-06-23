@@ -25,8 +25,11 @@
 `interactions`（每日互动记录）。子类型：`CoupleMoment` / `CoupleComment` / `CoupleAnniversary` / `CouplePhoto` /
 `CoupleTask` / `CoupleWhisper` / `CoupleWish` / `CoupleQuestion` / `CouplePlant` / `CoupleInteraction`。
 
-> **子功能（标签页 / 浮窗）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **盆栽（每日浇水/施肥/晒太阳→成长值→6 阶段）** · **成就（里程碑徽章，纯计算）**
-> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱。盆栽阶段逻辑 `plantStage()` / `PLANT_STAGES` / `PLANT_CARE` 在 `utils/coupleSpace.ts`。
+> **子功能（标签页 / 浮窗 / 菜单）**：动态 · 纪念日 · 相册 · 约定 · **心愿（愿望清单）** · **盆栽（每日浇水/施肥/晒太阳→成长值→6 阶段）** · **成就（里程碑徽章，纯计算）**
+> ＋浮窗：**提问箱（你问 TA 用 AI 答）** · 悄悄话信箱；＋右上菜单：**默契大考验（情侣小游戏）**。
+> 盆栽阶段逻辑 `plantStage()`/`PLANT_STAGES`/`PLANT_CARE`、默契题库 `COMPAT_QUESTIONS`/`pickCompatQuestions()` 均在 `utils/coupleSpace.ts`。
+>
+> **默契大考验**：抽 5 道二选一，用户猜 TA 会怎么选 → 角色**一次 LLM 调用**以人设作答（`generateCharCompatAnswers`，失败随机兜底）→ 比对算默契度 %，按命中数 ×2 加亲密度，记 `compatBest` 历史最高。入口在右上菜单（避开已满的 tab 栏 / 两个浮窗）。
 
 - `CoupleMoment` 额外带 `media?: CoupleMedia`（多媒体卡片：`voice` 语音条 / `music` 音乐 / `item` 物件·照片，
   含 `name`、语音另有 `duration`）和 `innerVoice?`（角色对该条动态的「心声」独白，**点击多媒体块时懒生成、缓存后复用**）。
@@ -49,6 +52,7 @@
 - **亲密度**按每 `INTIMACY_PER_LEVEL=100` 一级展示（Lv + 头衔「初识→神仙眷侣」+ 级内进度条）。
   增长来源：每日互动（亲 6 / 抱 5 / 牵手 4 / 礼物 8）、完成约定 +5、**实现心愿 +8**、发动态 +3、**提问箱提问 +3**、**照料盆栽 +1**、角色互动/评论 +1~2、发悄悄话 +2。
   （盆栽另有独立「成长值」：浇水 +3 / 施肥 +5 / 晒太阳 +2，每日各一次，与亲密度分开计。）
+  默契大考验：每局按命中题数 ×2 加亲密度（5 题满命中 +10）。
   这是情侣空间**独立的**度量，**不**走 `utils/relationship.ts` 的好感框架（affection），互不干扰。
 
 ## 角色侧「主动互动」（`utils/coupleSpace.ts`）
@@ -60,6 +64,7 @@
 | 用户发动态 | `generateCharCoupleComment` | 角色自动点赞 + 评论那条动态 |
 | 用户留悄悄话 | `generateCharWhisperReply` | 角色回一条悄悄话 |
 | 用户在提问箱提问 | `generateCharQuestionAnswer` | 角色以恋人身份答一句（失败用 `fallbackQuestionAnswer` 兜底） |
+| 玩默契大考验 | `generateCharCompatAnswers` | 角色一次性对 5 道二选一以人设作答，返回 `'a'/'b'` 数组（失败随机兜底） |
 | 用户亲一下/抱一下/… | `generateCharInteractionNote` | 角色给一句即时反应（节流 6s，过频用模板，避免刷 token） |
 | 点「请 TA 冒个泡」 | `generateCharMoment` | 角色**主动发**一条情侣动态（JSON `{text, mood, media?}`，可选附带语音/音乐/物件卡） |
 | 点多媒体块 / 「心声」 | `generateCharInnerVoice` | 角色对该条动态的私密内心独白（点击触发，懒生成→写回 `moment.innerVoice` 缓存；失败用 `fallbackInnerVoice` 兜底） |
@@ -87,7 +92,7 @@
 
 | 文件 | 关键点 |
 |------|-------|
-| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 主 UI：绑定页 / 双头像+恋爱天数+亲密度头卡 / 每日互动 / 动态·纪念日·相册·约定·心愿·盆栽·成就 子 tab / 提问箱·悄悄话信箱浮窗 / 各弹窗 |
+| [`components/couple/CoupleSpace.tsx`](../components/couple/CoupleSpace.tsx) | 主 UI：绑定页 / 双头像+恋爱天数+亲密度头卡 / 每日互动 / 动态·纪念日·相册·约定·心愿·盆栽·成就 子 tab / 提问箱·悄悄话信箱浮窗 / 默契大考验（菜单）/ 各弹窗 |
 | [`utils/coupleSpace.ts`](../utils/coupleSpace.ts) | 纯逻辑：默认值、恋爱天数、纪念日倒计时、亲密度等级、互动定义、提示词块、角色侧 LLM 生成 |
 | [`apps/ChatHub.tsx`](../apps/ChatHub.tsx) | 底部导航第 4 个入口 + 标题 + 内嵌渲染 |
 | [`utils/context.ts`](../utils/context.ts) | 单聊上下文里注入 `buildCoupleSpacePromptBlock` |

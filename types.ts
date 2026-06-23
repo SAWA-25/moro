@@ -2279,6 +2279,8 @@ export interface CoupleSpace {
   questions?: CoupleQuestion[];
   /** 养盆栽：你们一起养的小植物（可选，首次浇水时创建） */
   plant?: CouplePlant;
+  /** 默契大考验·历史最高默契度（0~100，可选） */
+  compatBest?: number;
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;

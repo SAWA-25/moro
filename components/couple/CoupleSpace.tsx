@@ -16,6 +16,7 @@ import {
   generateCharInnerVoice, fallbackInnerVoice,
   generateCharQuestionAnswer, fallbackQuestionAnswer,
   plantStage, PLANT_CARE,
+  pickCompatQuestions, generateCharCompatAnswers, type CompatQuestion,
 } from '../../utils/coupleSpace';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
@@ -393,6 +394,38 @@ const CoupleSpace: React.FC = () => {
       return { ...cs, plant: { ...plant, [kind]: today, growth: (plant.growth || 0) + gain } };
     }, 1);
     addToast(`${label} +${gain} 成长 🌱`, 'success');
+  };
+
+  // ── 情侣小游戏：默契大考验 ──
+  const [showGame, setShowGame] = useState(false);
+  const [gamePhase, setGamePhase] = useState<'intro' | 'playing' | 'reveal'>('intro');
+  const [gameQs, setGameQs] = useState<CompatQuestion[]>([]);
+  const [gameUserAns, setGameUserAns] = useState<('a' | 'b')[]>([]);
+  const [gameCharAns, setGameCharAns] = useState<('a' | 'b')[]>([]);
+  const [gameIdx, setGameIdx] = useState(0);
+  const [gameBusy, setGameBusy] = useState(false);
+  const openGame = () => { setGamePhase('intro'); setShowGame(true); };
+  const startGame = () => {
+    setGameQs(pickCompatQuestions(5));
+    setGameUserAns([]); setGameCharAns([]); setGameIdx(0);
+    setGamePhase('playing');
+  };
+  const pickGameAnswer = async (choice: 'a' | 'b') => {
+    if (!partner || gameBusy) return;
+    const next = [...gameUserAns, choice];
+    setGameUserAns(next);
+    if (next.length < gameQs.length) { setGameIdx(i => i + 1); return; }
+    // 答完 → 角色以人设作答，比对算默契
+    setGameBusy(true);
+    let charAns: ('a' | 'b')[] | null = null;
+    try { charAns = await generateCharCompatAnswers({ char: partner, userName, api: coupleApi, questions: gameQs }); } catch { /* ignore */ }
+    if (!charAns) charAns = gameQs.map(() => (Math.random() < 0.5 ? 'a' : 'b'));
+    setGameCharAns(charAns);
+    const matches = next.reduce((acc, a, i) => acc + (a === charAns![i] ? 1 : 0), 0);
+    const pct = Math.round((matches / gameQs.length) * 100);
+    mutate(cs => ({ ...cs, compatBest: Math.max(cs.compatBest || 0, pct) }), matches * 2);
+    setGameBusy(false);
+    setGamePhase('reveal');
   };
 
   // ── 悄悄话 ──
@@ -966,6 +999,71 @@ const CoupleSpace: React.FC = () => {
         </div>
       </Modal>
 
+      {/* 默契大考验 */}
+      <Modal isOpen={showGame} title="默契大考验 💞" onClose={() => setShowGame(false)}>
+        {gamePhase === 'intro' && (
+          <div className="text-center space-y-4 py-2">
+            <div className="text-5xl">💞</div>
+            <p className="text-[13px] text-[#666] leading-relaxed px-2">
+              选出你觉得 <b>{partnerName}</b> 会选的答案，<br />答完看看你有多懂 TA～
+            </p>
+            {space.compatBest ? <div className="text-[12px]" style={{ color: '#c76b8e' }}>历史最高默契 {space.compatBest}%</div> : null}
+            <button onClick={startGame} className="w-full py-3 rounded-2xl font-bold text-white active:scale-95 transition" style={{ background: ACCENT }}>开始挑战</button>
+          </div>
+        )}
+        {gamePhase === 'playing' && gameQs[gameIdx] && (
+          <div className="space-y-4 py-1">
+            <div className="text-center text-[11px] text-[#bbb]">第 {gameIdx + 1} / {gameQs.length} 题</div>
+            <div className="text-center text-[15px] font-bold text-[#333] px-2">{gameQs[gameIdx].q}</div>
+            <div className="text-center text-[11px] text-[#aaa]">你猜 {partnerName} 会选——</div>
+            <div className="grid grid-cols-1 gap-2.5">
+              {(['a', 'b'] as const).map(opt => (
+                <button key={opt} disabled={gameBusy} onClick={() => pickGameAnswer(opt)}
+                  className="w-full py-3.5 rounded-2xl font-bold text-[14px] border-2 active:scale-95 transition disabled:opacity-50"
+                  style={{ background: '#fff', borderColor: '#f3c0d2', color: '#555' }}>
+                  {gameQs[gameIdx][opt]}
+                </button>
+              ))}
+            </div>
+            {gameBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在作答…</div>}
+          </div>
+        )}
+        {gamePhase === 'reveal' && (() => {
+          const matches = gameUserAns.reduce((acc, a, i) => acc + (a === gameCharAns[i] ? 1 : 0), 0);
+          const pct = Math.round((matches / Math.max(1, gameQs.length)) * 100);
+          const verdict = pct >= 100 ? '心有灵犀·灵魂伴侣' : pct >= 80 ? '默契满分·超懂彼此' : pct >= 60 ? '相当合拍' : pct >= 40 ? '还在磨合期' : '相反相吸·要多了解';
+          return (
+            <div className="space-y-3 py-1">
+              <div className="text-center">
+                <div className="text-3xl font-black" style={{ color: '#e07a9c' }}>{pct}%</div>
+                <div className="text-[13px] font-bold text-[#444] mt-0.5">{verdict}</div>
+                <div className="text-[10px] text-[#bbb] mt-0.5">默契 +{matches * 2} 亲密度</div>
+              </div>
+              <div className="space-y-1.5">
+                {gameQs.map((q, i) => {
+                  const ok = gameUserAns[i] === gameCharAns[i];
+                  return (
+                    <div key={i} className="rounded-xl px-3 py-2 border" style={{ background: ok ? '#fdf2f6' : '#fafafa', borderColor: ok ? '#f3c0d2' : '#eee' }}>
+                      <div className="text-[12px] font-bold text-[#444]">{q.q}</div>
+                      <div className="text-[11px] mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: '#888' }}>
+                        <span>你猜：{q[gameUserAns[i]]}</span>
+                        <span>·</span>
+                        <span>{partnerName}：{q[gameCharAns[i]]}</span>
+                        <span className="ml-auto">{ok ? '✅' : '❌'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowGame(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">收工</button>
+                <button onClick={startGame} className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition" style={{ background: ACCENT }}>再来一局</button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
       {/* 设置 / 菜单 */}
       <Modal isOpen={showSettings} title="情侣空间" onClose={() => setShowSettings(false)}>
         <div className="space-y-3">
@@ -976,6 +1074,10 @@ const CoupleSpace: React.FC = () => {
               <div className="text-[11px] text-[#999]">{partner.relationship?.label || '你的另一半'} · 亲密度 {Math.round(space.intimacy)}</div>
             </div>
           </div>
+          <button onClick={() => { setShowSettings(false); openGame(); }} className="w-full py-3 rounded-2xl font-bold text-white active:scale-95 transition flex items-center justify-center gap-2" style={{ background: ACCENT }}>
+            <span>💞 默契大考验</span>
+            {space.compatBest ? <span className="text-[11px] font-normal text-white/80">· 最高 {space.compatBest}%</span> : null}
+          </button>
           <p className="text-[12px] text-[#999] leading-relaxed px-1">
             解除绑定不会删除你们的回忆——重新绑定 {partnerName} 时，动态、纪念日、相册都还在。
           </p>
