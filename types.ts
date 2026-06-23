@@ -1762,6 +1762,8 @@ export interface CharacterProfile {
   description: string;
   systemPrompt: string;
   worldview?: string;
+  /** 外貌 Tag：booru 风格英文外貌标签，喂文生图（立绘/头像/相册）用。可从人设+绑定世界书一键生成（utils/appearanceTags.ts），也可手改。 */
+  appearanceTags?: string;
   /**
    * 开场白（SillyTavern 角色卡 first_mes）。保留原始宏（{{user}} / {{char}}），
    * 进入空聊天选择开场白时才替换 —— 换人设后再开聊天，宏会解析成新名字。

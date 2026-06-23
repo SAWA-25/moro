@@ -117,6 +117,7 @@ const Chat: React.FC = () => {
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
     const [claimTarget, setClaimTarget] = useState<Message | null>(null);
     const [claimRevealed, setClaimRevealed] = useState(false); // 收款弹窗「拆开」前后两态
+    const [claimPwInput, setClaimPwInput] = useState(''); // 口令红包：拆开前要先答对的口令
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
     // 回神：自我校准结果弹窗 + 进行中状态
@@ -126,6 +127,7 @@ const Chat: React.FC = () => {
     const [transferAmt, setTransferAmt] = useState('');
     const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
     const [transferNote, setTransferNote] = useState('');
+    const [transferPassword, setTransferPassword] = useState(''); // 口令红包：填了即口令红包
     // 外卖订单小票详情弹窗（点开聊天里的外卖卡片看具体内容）
     const [takeoutCardTarget, setTakeoutCardTarget] = useState<Message | null>(null);
     const [takeoutCardOrder, setTakeoutCardOrder] = useState<TakeoutOrder | null>(null);
@@ -3537,6 +3539,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 transferAmt={transferAmt} setTransferAmt={setTransferAmt}
                 transferMode={transferMode} setTransferMode={setTransferMode}
                 transferNote={transferNote} setTransferNote={setTransferNote}
+                transferPassword={transferPassword} setTransferPassword={setTransferPassword}
                 walletBalance={userProfile.balance || 0}
                 emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
@@ -3557,22 +3560,25 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
                 onTransfer={() => {
                     const amt = parseFloat(transferAmt);
-                    if (!transferAmt || isNaN(amt) || amt <= 0) { setModalType('none'); setTransferNote(''); return; }
+                    if (!transferAmt || isNaN(amt) || amt <= 0) { setModalType('none'); setTransferNote(''); setTransferPassword(''); return; }
                     // 与钱包绑定：从存钱罐营业赚来的余额里扣，不足则拦下（弹窗不关，方便改数目）
                     const bal = userProfile.balance || 0;
                     if (amt > bal) {
                         addToast(`钱包只有 ¥${Math.round(bal)}，先去存钱罐营业赚点再寄吧`, 'error');
                         return;
                     }
+                    const pw = transferPassword.trim();
+                    const isPw = transferMode === 'redpacket' && !!pw;
                     adjustUserBalance(-amt);
                     handleSendText(
-                        transferMode === 'redpacket' ? `[红包]` : `[转账]`,
+                        isPw ? `[口令红包]` : transferMode === 'redpacket' ? `[红包]` : `[转账]`,
                         'transfer',
-                        { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined } : {}) }
+                        { amount: transferAmt, ...(transferMode === 'redpacket' ? { kind: 'redpacket', note: transferNote.trim() || undefined, ...(isPw ? { rpType: 'password', password: pw } : {}) } : {}) }
                     );
-                    addToast(transferMode === 'redpacket' ? `红包已寄出 · 钱包 -¥${Math.round(amt)}` : `零花钱已寄出 · 钱包 -¥${Math.round(amt)}`, 'success');
+                    addToast(isPw ? `口令红包已寄出 · 钱包 -¥${Math.round(amt)}` : transferMode === 'redpacket' ? `红包已寄出 · 钱包 -¥${Math.round(amt)}` : `零花钱已寄出 · 钱包 -¥${Math.round(amt)}`, 'success');
                     setModalType('none');
                     setTransferNote('');
+                    setTransferPassword('');
                 }}
                 onImportEmoji={handleImportEmoji}
                 onSaveSettings={saveSettings} onBgUpload={handleBgUpload} onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
@@ -4553,7 +4559,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 const note = isRedpacket && typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '';
                 const ink = isRedpacket; // 红包＝墨色信封；转账＝米纸凭条
                 const hair = ink ? '1px solid rgba(242,236,224,0.14)' : '1px solid rgba(140,132,118,0.25)';
-                const closeModal = () => { setClaimTarget(null); setClaimRevealed(false); };
+                const isPassword = isRedpacket && meta.rpType === 'password';
+                const closeModal = () => { setClaimTarget(null); setClaimRevealed(false); setClaimPwInput(''); };
                 return (
                     <div className="absolute inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={closeModal}>
                         <div
@@ -4572,6 +4579,25 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                 <div className="text-[14px] font-bold">{displayCharName} 给你{isRedpacket ? '封了个红包' : '转了笔零花钱'}</div>
                                 {note && <div className="text-[12.5px] mt-1.5 italic" style={{ opacity: 0.8 }}>「{note}」</div>}
                                 {!claimRevealed ? (
+                                    isPassword ? (
+                                        <div className="mt-4 space-y-2.5">
+                                            <div className="text-[11px]" style={{ opacity: 0.72 }}>这是个口令红包 · 答对口令才能拆开</div>
+                                            <input
+                                                value={claimPwInput}
+                                                onChange={e => setClaimPwInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); } }}
+                                                placeholder="在此输入口令"
+                                                className="w-full px-3 py-2.5 rounded-xl text-center text-[14px] outline-none"
+                                                style={ink ? { background: 'rgba(255,255,255,0.10)', color: '#f2ece0', border: '1px solid rgba(242,236,224,0.25)' } : { background: 'rgba(31,29,26,0.05)', color: '#1f1d1a', border: '1px solid rgba(31,29,26,0.18)' }}
+                                                autoFocus
+                                            />
+                                            <button
+                                                onClick={() => { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); }}
+                                                className="w-full py-2.5 rounded-xl text-[13px] font-bold active:scale-95 transition-transform"
+                                                style={ink ? { background: '#f2ece0', color: '#1b1814' } : { background: '#1f1d1a', color: '#f4f1ea' }}
+                                            >对口令 · 拆开</button>
+                                        </div>
+                                    ) : (
                                     <button
                                         onClick={() => setClaimRevealed(true)}
                                         className="mt-5 mx-auto w-20 h-20 rounded-full flex flex-col items-center justify-center active:scale-90 transition-transform"
@@ -4582,6 +4608,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                         <span className="text-[22px] leading-none">{isRedpacket ? '✦' : '↥'}</span>
                                         <span className="text-[10px] font-bold mt-0.5">拆开</span>
                                     </button>
+                                    )
                                 ) : (
                                     <div className="mt-4 animate-pop-in">
                                         <div className="flex items-end justify-center gap-1">

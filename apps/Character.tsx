@@ -29,6 +29,7 @@ import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../utils/minimaxVoice';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { generateLifeProfile } from '../utils/lifeProfile';
+import { generateAppearanceTags } from '../utils/appearanceTags';
 import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
 
@@ -126,6 +127,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   // 角色卡生成/润色/导入属「聊天以外」的功能：走副 API（未配置副 API 时回退主 API）
   const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
   const [isGeneratingLifeProfile, setIsGeneratingLifeProfile] = useState(false);
+  const [isGeneratingTags, setIsGeneratingTags] = useState(false);
   const closeApp = onExit || closeAppOS;
   const [view, setView] = useState<'list' | 'detail'>('list');
   const [detailTab, setDetailTab] = useState<'identity' | 'memory'>('identity');
@@ -341,6 +343,25 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           addToast('生成失败了，待会儿再试试', 'error');
       } finally {
           setIsGeneratingLifeProfile(false);
+      }
+  };
+
+  // 外貌 Tag：从人设 + 角色绑定（已挂载）的世界书生成 booru 风格英文外貌标签（副 API）。
+  const handleGenerateAppearanceTags = async () => {
+      if (!formData) return;
+      const api = resolveAuxApi(auxApiConfig, apiConfig);
+      if (!api.baseUrl || !api.model) { addToast('请先在「文具盒」配置 API（主线或副线）', 'error'); return; }
+      setIsGeneratingTags(true);
+      try {
+          const tags = await generateAppearanceTags(formData, api);
+          if (!tags) { addToast('没提炼出标签，待会儿再试试', 'error'); return; }
+          handleChange('appearanceTags', tags);
+          addToast('外貌 Tag 生成好了', 'success');
+      } catch (e: any) {
+          console.warn('[AppearanceTags] generate failed:', e?.message || e);
+          addToast('生成失败了，待会儿再试试', 'error');
+      } finally {
+          setIsGeneratingTags(false);
       }
   };
 
@@ -1096,6 +1117,29 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/35 py-1 text-[11px] text-[#1c1b1a]/60 outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
                                    />
                                </div>
+                           </div>
+
+                           {/* 外貌 Tag：从人设 + 绑定世界书一键生成 booru 风格英文标签，喂文生图用 */}
+                           <div>
+                               <div className="flex items-center justify-between mb-1.5">
+                                   {fieldLabel('外貌 Tag（文生图用）', 'APPEARANCE TAGS')}
+                                   <button
+                                       onClick={handleGenerateAppearanceTags}
+                                       disabled={isGeneratingTags}
+                                       className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] disabled:opacity-60 ${formData.appearanceTags ? STICKER : INK_BTN}`}
+                                   >
+                                       {isGeneratingTags ? '提炼中…' : (formData.appearanceTags ? '↻ 重新生成' : '✨ 一键生成')}
+                                   </button>
+                               </div>
+                               <textarea
+                                    value={formData.appearanceTags || ''}
+                                    onChange={(e) => handleChange('appearanceTags', e.target.value)}
+                                    className="w-full h-20 bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    placeholder="点右上「一键生成」，从人设和 TA 绑定的世界书里提炼外貌标签（long_hair, silver eyes…），也可手改"
+                                />
+                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                                   ✎ 从「性格底稿 / 世界观 / 绑定的剪报（世界书）」里提炼 booru 风格英文外貌标签，方便拿去生成立绘 / 头像 / 相册。用副 API 跑（没开就走主线）。
+                               </p>
                            </div>
 
                            <div>
