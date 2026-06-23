@@ -87,3 +87,8 @@ pm run build passes after the time-gap grouping fix.
 - New `components/os/WeatherDetail.tsx`: portaled full-screen overlay (escapes the app container's `contain` clip) with condition-themed sky gradient, current hero (temp/feels-like/humidity) + 出行建议 (reuses `generateWeatherAdvice`), and a 7-day list with per-day icon, precip %, and a min→max temp bar. Loading / error (retry + 去配置) / ready states.
 - Extracted the shared `WeatherGlyph` into `components/os/WeatherGlyph.tsx` (used by both widget + detail, avoids a circular import); `WeatherWidget.tsx` now imports it and opens the detail.
 - `pnpm tsc --noEmit` clean (only pre-existing `api/` node-type errors remain), `vite build` passes, 506 unit tests green (incl. 8 new for the forecast parser).
+
+- 反查岗·代发朋友圈: char browsing your phone (`CharPhoneCheckOverlay.tsx`) could already reply / 拉黑 / 删好友 on your behalf in chat threads, but couldn't post a 朋友圈 for you. Added a `post_moment` script action.
+- On a `moments` step the generated script may include `{"type":"post_moment","content":"…"}`; applying it saves a public `SocialPost` authored as the user (so characters see it in context), prepends it to the on-screen 此刻 snapshot, and records it in the browse action log + the synthesized 查手机记录 system message. Personality still gates it (gentle chars just look; possessive/jealous ones grab the phone to reply, block, or post a relationship-flaunting moment).
+- Updated the script-gen prompt (action options, guidance, JSON example) so the model knows the new moments action.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.

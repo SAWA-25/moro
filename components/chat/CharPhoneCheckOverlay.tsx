@@ -26,7 +26,8 @@ import AppIcon from '../os/AppIcon';
 type StepApp = 'home' | 'chat-list' | 'chat-thread' | 'moments' | 'schedule' | 'gallery' | 'music';
 
 interface ScriptAction {
-    type: 'none' | 'reply' | 'block' | 'delete' | 'ignore';
+    // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）
+    type: 'none' | 'reply' | 'block' | 'delete' | 'ignore' | 'post_moment';
     content?: string;
 }
 
@@ -132,7 +133,7 @@ const safeParseScript = (raw: string): CheckScript | null => {
             thought: String(s.thought).slice(0, 300),
             action: s.action && typeof s.action === 'object'
                 ? {
-                    type: (['none', 'reply', 'block', 'delete', 'ignore'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
+                    type: (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
                     content: typeof s.action.content === 'string' ? s.action.content.slice(0, 300) : undefined,
                 }
                 : undefined,
@@ -300,13 +301,15 @@ chat-thread 步骤可以带 action：
 - {"type":"block"} 把这个联系人拉黑
 - {"type":"delete"} 删掉这个好友
 - {"type":"ignore"} 看完冷哼一声不动
-是否做这些动作、做哪种，严格按人设性格来：温柔的角色多半只看不动，占有欲强/醋劲大的角色才会下手。不要为了戏剧性乱拉黑。
+moments（朋友圈）步骤可以带 action：
+- {"type":"post_moment","content":"…"} 代替 ${userProfile.name} 发一条朋友圈（content 是以 ${userProfile.name} 口吻写的动态正文，30~80字；可以宣示主权、撒糖、调皮地替TA说点话，也可能阴阳怪气）
+是否做这些动作、做哪种，严格按人设性格来：温柔的角色多半只看不动，占有欲强/醋劲大的角色才会下手——回复别人、拉黑、或抢着替TA发条朋友圈昭告关系。不要为了戏剧性乱拉黑、乱发。
 另外生成 exitQuestions：3 个问题。${userProfile.name} 想中途拿回手机时，${char.name} 会要求 TA 先回答这 3 个问题（按人设出题：可以是审问、撒娇、试探）。
 endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用于之后 TA 主动发消息的语气基调）。
 
 ### 输出
 只输出一个 JSON 对象，不要任何其它文字：
-{"steps":[{"app":"home","thought":"…"},{"app":"chat-thread","targetName":"…","thought":"…","action":{"type":"reply","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
+{"steps":[{"app":"home","thought":"…"},{"app":"chat-thread","targetName":"…","thought":"…","action":{"type":"reply","content":"…"}},{"app":"moments","thought":"…","action":{"type":"post_moment","content":"…"}}],"exitQuestions":["…","…","…"],"endHint":"…"}`;
 
                 const raw = await llm(prompt);
                 if (cancelled) return;
@@ -367,6 +370,29 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                         : `想把「${target.name}」删掉，最终把对方加入了黑名单（删好友按拉黑执行）`);
                 } else if (act.type === 'ignore' && target) {
                     log(`看完了与「${target.name}」的对话，什么都没做`);
+                } else if (act.type === 'post_moment' && act.content) {
+                    // 代发朋友圈：以用户名义贴一条公开动态（角色随后能在上下文里看到这条）
+                    const newPost: SocialPost = {
+                        id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                        authorName: userProfile.name,
+                        authorAvatar: userProfile.avatar,
+                        title: '',
+                        content: act.content,
+                        images: [],
+                        likes: 0,
+                        isCollected: false,
+                        isLiked: false,
+                        comments: [],
+                        timestamp: Date.now(),
+                        tags: [],
+                        authorType: 'user',
+                        likedBy: [],
+                        repostOf: null,
+                        visibility: 'public',
+                    };
+                    await DB.saveSocialPost(newPost);
+                    setMoments(prev => [newPost, ...prev]);
+                    log(`以${userProfile.name}的名义发了一条朋友圈：「${act.content}」`);
                 }
             } catch (e) {
                 console.warn('[CharPhoneCheck] 执行动作失败:', e);
