@@ -44,7 +44,8 @@ const GroupMessageItem = React.memo(({
     memberTitle,
     onAvatarClick,
     onAvatarPoke,
-    onShowNicknameThought
+    onShowNicknameThought,
+    mentionNames
 }: {
     msg: Message,
     isUser: boolean,
@@ -64,7 +65,9 @@ const GroupMessageItem = React.memo(({
     /** 双击成员头像：戳一戳 */
     onAvatarPoke?: () => void,
     /** 点带「改名小心思」的系统提示：弹出查看角色改群名片的动机 */
-    onShowNicknameThought?: (msg: Message) => void
+    onShowNicknameThought?: (msg: Message) => void,
+    /** 本群所有可被 @ 的显示名，用于把 @名字 在气泡里描蓝 */
+    mentionNames?: string[]
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -166,6 +169,26 @@ const GroupMessageItem = React.memo(({
         }
     };
 
+    // 把文本里的 @名字 描成蓝色（QQ 式）。名字按长度降序匹配，避免「@小明」被「@小」截断。
+    const renderTextWithMentions = (text: string): React.ReactNode => {
+        if (!mentionNames || mentionNames.length === 0 || !text.includes('@')) return text;
+        const names = [...mentionNames].filter(Boolean).sort((a, b) => b.length - a.length);
+        const escaped = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        const re = new RegExp(`@(?:${escaped.join('|')})`, 'g');
+        const parts: React.ReactNode[] = [];
+        let last = 0;
+        let m: RegExpExecArray | null;
+        const mentionClass = isUser ? 'text-sky-300 font-medium' : 'text-sky-500 font-medium';
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) parts.push(text.slice(last, m.index));
+            parts.push(<span key={m.index} className={mentionClass}>{m[0]}</span>);
+            last = m.index + m[0].length;
+        }
+        if (last === 0) return text;
+        if (last < text.length) parts.push(text.slice(last));
+        return parts;
+    };
+
     // Special Content Renderers
     const renderContent = () => {
         switch (msg.type) {
@@ -223,7 +246,7 @@ const GroupMessageItem = React.memo(({
             default:
                 return (
                     <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
-                        {msg.content}
+                        {renderTextWithMentions(msg.content)}
                     </div>
                 );
         }
@@ -355,7 +378,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
@@ -487,6 +510,30 @@ const ChatHub: React.FC = () => {
             .slice()
             .reverse();
     }, [searchTerm, searchAllMsgs]);
+
+    // ── @ 提及 ───────────────────────────────────────────────────────
+    /** 本群所有可被 @ 的显示名（成员群名片/角色名 + 用户 + 全体别名）。稳定引用供气泡高亮。 */
+    const mentionNames = useMemo(() => {
+        if (!activeGroup) return [] as string[];
+        const names = new Set<string>();
+        names.add(activeGroup.memberNicknames?.['user'] || userProfile.name || '我');
+        for (const mid of activeGroup.members) {
+            const n = activeGroup.memberNicknames?.[mid] || characters.find(c => c.id === mid)?.name || '';
+            if (n) names.add(n);
+        }
+        names.add('全体成员');
+        names.add('所有人');
+        return Array.from(names).filter(Boolean);
+    }, [activeGroup, characters, userProfile]);
+
+    /** 把 @名字 插入输入框（与前文留一个空格分隔） */
+    const insertMention = (name: string) => {
+        setInput(prev => {
+            const sep = prev && !/[\s\n]$/.test(prev) ? ' ' : '';
+            return `${prev}${sep}@${name} `;
+        });
+        setModalType('none');
+    };
 
     /** 把命中消息高亮片段渲染出来（首个匹配处取一小段上下文，匹配词描黄） */
     const renderSnippet = (content: string, rawTerm: string): React.ReactNode => {
@@ -1602,6 +1649,7 @@ ${attachedImagesNote}
 - 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片、发布/撤下群公告等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶、响应或讨论刚发布的群公告等——按各自性格来，也允许无视。
 - **被【禁言中】标记的成员本轮严禁发言**——不要为该成员生成任何消息（包括表情包）。其他成员可以提到ta、调侃ta只能干瞪眼。
 - **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`，也可以在后面用竖线带上「改名的小心思/动机」：\`[[SET_NICKNAME: 新群名片|为什么改成这个名字的真实想法]]\`（可与一句发言放在同一条 content 里）。这段小心思不会直接显示，用户点开那条系统提示才能看到——所以可以写得更真实私密。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
+- **@提及（点名）**: 聊天记录里出现 \`@某成员的群名片/名字\` = 在**点名**那个人。**被 @ 的成员本轮应当回应**（除非 TA 被禁言）；\`@全体成员\` / \`@所有人\` = 叫上所有人，多数成员都该冒个头。成员之间、成员对用户也可以用 \`@名字\` 来点名、cue 人或回应，直接在正文里写出来即可（无需特殊格式）。但别滥用——没必要时正常聊天就行。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -2459,6 +2507,7 @@ ${attachedImagesNote}
                                 onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
                                 onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
+                                mentionNames={mentionNames}
                             />
                         </div>
                     );
@@ -2507,6 +2556,15 @@ ${attachedImagesNote}
                             className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-600 transition-colors hover:bg-[#ece7dc]"
                         >
                             <Sticker size={24} weight={showEmojiPicker ? 'fill' : 'bold'} />
+                        </button>
+
+                        {/* @ 成员：点名让 TA 本轮优先回应 */}
+                        <button
+                            onClick={() => { setShowEmojiPicker(false); setShowActions(false); setModalType('mention-picker'); }}
+                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-600 transition-colors hover:bg-[#ece7dc] text-[19px] font-bold leading-none"
+                            title="@ 成员"
+                        >
+                            @
                         </button>
 
                         {/* Input Field Container */}
@@ -2994,6 +3052,41 @@ ${attachedImagesNote}
                         <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-900/90 leading-relaxed whitespace-pre-wrap min-h-[80px]">
                             {activeGroup?.announcement?.text || '暂无群公告'}
                         </div>
+                    )}
+                </div>
+            </Modal>
+
+            {/* @ 成员选择器：点名让 TA 本轮优先回应；群主/管理员可 @全体成员 */}
+            <Modal isOpen={modalType === 'mention-picker'} title="@ 谁" onClose={() => setModalType('none')}>
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                    {userCanManage(activeGroup) && (
+                        <button
+                            onClick={() => insertMention('全体成员')}
+                            className="w-full px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-left hover:border-amber-300 active:scale-[0.98] transition-all"
+                        >
+                            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-500"><UsersThree size={18} weight="bold" /></div>
+                            <span className="text-sm text-amber-700 font-bold flex-1">@全体成员</span>
+                        </button>
+                    )}
+                    {(activeGroup?.members || []).map(mid => {
+                        const c = characters.find(ch => ch.id === mid);
+                        if (!c) return null;
+                        const dn = displayNameOf(activeGroup, mid);
+                        const muted = isMuted(activeGroup, mid);
+                        return (
+                            <button
+                                key={mid}
+                                onClick={() => insertMention(dn)}
+                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-slate-400 hover:bg-[#f7f4ee] active:scale-[0.98] transition-all"
+                            >
+                                <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${muted ? 'grayscale opacity-60' : ''}`} />
+                                <span className="text-sm text-slate-700 font-medium truncate flex-1">{dn}</span>
+                                {muted && <span className="text-[10px] text-red-400 shrink-0">禁言中</span>}
+                            </button>
+                        );
+                    })}
+                    {(activeGroup?.members || []).length === 0 && (
+                        <div className="text-center text-slate-400 text-xs py-8">群里还没有其他成员</div>
                     )}
                 </div>
             </Modal>
