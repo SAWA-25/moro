@@ -4501,6 +4501,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onBack={() => setShowCharProfile(false)}
                     onSendMessage={() => setShowCharProfile(false)}
                     onVoiceCall={() => { setShowCharProfile(false); openApp(AppID.Call); }}
+                    onVideoCall={() => { setShowCharProfile(false); openApp(AppID.VideoCall); }}
                     onOpenSettings={() => {
                         setShowCharProfile(false);
                         try {
