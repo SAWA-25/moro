@@ -45,7 +45,8 @@ const GroupMessageItem = React.memo(({
     onAvatarClick,
     onAvatarPoke,
     onShowNicknameThought,
-    mentionNames
+    mentionNames,
+    onCollectClick
 }: {
     msg: Message,
     isUser: boolean,
@@ -67,7 +68,9 @@ const GroupMessageItem = React.memo(({
     /** 点带「改名小心思」的系统提示：弹出查看角色改群名片的动机 */
     onShowNicknameThought?: (msg: Message) => void,
     /** 本群所有可被 @ 的显示名，用于把 @名字 在气泡里描蓝 */
-    mentionNames?: string[]
+    mentionNames?: string[],
+    /** 点群收款卡：打开收款详情（收款方视角，逐笔点收） */
+    onCollectClick?: (msg: Message) => void
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -203,7 +206,29 @@ const GroupMessageItem = React.memo(({
                 );
             case 'emoji':
                 return <img src={msg.content} className="w-24 h-24 object-contain drop-shadow-sm hover:scale-110 transition-transform" />;
-            case 'transfer':
+            case 'transfer': {
+                const tmeta = (msg.metadata as any) || {};
+                // 群收款卡（AA）：收款方视角，展示进度，点开逐笔点收
+                if (tmeta.kind === 'collect') {
+                    const shares: any[] = Array.isArray(tmeta.shares) ? tmeta.shares : [];
+                    const paidCount = shares.filter(s => s.paid).length;
+                    const paidSum = Math.round(shares.filter(s => s.paid).reduce((a, s) => a + (s.amount || 0), 0) * 100) / 100;
+                    const done = shares.length > 0 && paidCount === shares.length;
+                    return (
+                        <button
+                            onClick={() => { if (!selectionMode) onCollectClick?.(msg); }}
+                            className="w-60 text-left p-3 rounded-[14px] flex items-center gap-3 relative overflow-hidden active:scale-95 transition-transform"
+                            style={{ background: done ? 'linear-gradient(150deg,#0f766e,#134e4a)' : 'linear-gradient(150deg,#0d9488,#0f766e)', boxShadow: '0 12px 24px -16px rgba(13,148,136,0.7)' }}
+                        >
+                            <div className="bg-white/20 p-2 rounded-full shrink-0 text-white"><Wallet size={24} weight="fill" /></div>
+                            <div className="z-10 min-w-0 text-white">
+                                <div className="font-bold text-sm tracking-wide truncate">{tmeta.note || '群收款 · AA'}</div>
+                                <div className="text-[10px] opacity-90">{done ? `已收齐 ¥${tmeta.total}` : `已收 ¥${paidSum} / ¥${tmeta.total} · ${paidCount}/${shares.length} 人`}</div>
+                                <div className="text-[9px] opacity-70 mt-0.5">{done ? 'Moro Pay · 收款单' : '点开收款 · Moro Pay'}</div>
+                            </div>
+                        </button>
+                    );
+                }
                 return (
                     <div className="w-60 text-white p-3 rounded-[14px] flex items-center gap-3 relative overflow-hidden active:scale-95 transition-transform" style={{ background: 'linear-gradient(150deg,#2c2823,#16130f)', boxShadow: '0 12px 24px -16px rgba(20,16,12,0.7)' }}>
                         <div className="absolute -right-2 -top-2 text-white/20"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-16 h-16"><path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.324.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" /><path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" /><path d="M2.25 18a.75.75 0 0 0 0 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 0 0-.75-.75H2.25Z" /></svg></div>
@@ -214,6 +239,7 @@ const GroupMessageItem = React.memo(({
                         </div>
                     </div>
                 );
+            }
             case 'voice': {
                 const meta = (msg.metadata as any) || {};
                 const dur = meta.durationSec ? `${meta.durationSec}"` : '语音';
@@ -378,7 +404,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
@@ -421,6 +447,11 @@ const ChatHub: React.FC = () => {
     const [transferRpType, setTransferRpType] = useState<'normal' | 'lucky'>('normal');
     // 拼手气份数（默认随群成员数变化，见 Transfer Modal）
     const [transferShares, setTransferShares] = useState('');
+    // 群收款（AA 收款）：总额 / 事由 / 被收成员 / 收款详情弹窗目标
+    const [collectAmount, setCollectAmount] = useState('');
+    const [collectNote, setCollectNote] = useState('');
+    const [collectMembers, setCollectMembers] = useState<Set<string>>(new Set());
+    const [collectDetailMsg, setCollectDetailMsg] = useState<Message | null>(null);
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
     const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
@@ -458,6 +489,7 @@ const ChatHub: React.FC = () => {
             setVisibleCount(30);
             setSearchOpen(false);
             setSearchTerm('');
+            setCollectDetailMsg(null);
             DB.getRecentGroupMessagesWithCount(activeGroup.id, 30).then(({ messages: msgs, totalCount }) => {
                 setMessages(msgs);
                 setTotalMsgCount(totalCount);
@@ -1316,6 +1348,68 @@ ${logText.substring(0, 10000)}
         resetTransferModal();
     };
 
+    // 群收款（AA 收款）：用户向选定成员收钱，钱随「收」逐笔进钱包。
+    const resetCollectModal = () => {
+        setModalType('none'); setCollectAmount(''); setCollectNote(''); setCollectMembers(new Set());
+    };
+    const sendGroupCollect = async () => {
+        if (!activeGroup) return;
+        const total = Math.round(parseFloat(collectAmount) * 100) / 100;
+        if (!total || total <= 0) { addToast('填个收款总额吧', 'info'); return; }
+        const ids = Array.from(collectMembers).filter(id => activeGroup.members.includes(id));
+        if (ids.length === 0) { addToast('选择要收款的成员', 'info'); return; }
+        const totalCents = yuanToCents(total);
+        if (totalCents < ids.length) { addToast(`至少 ¥${(ids.length / 100).toFixed(2)} 才能均摊给 ${ids.length} 人`, 'error'); return; }
+        // AA 均摊：每人 base 分，余数前几人各多 1 分（合计严格等于总额）
+        const base = Math.floor(totalCents / ids.length);
+        const remainder = totalCents - base * ids.length;
+        const shares = ids.map((id, i) => ({
+            id,
+            name: characters.find(c => c.id === id)?.name || '成员',
+            amount: centsToYuan(base + (i < remainder ? 1 : 0)),
+            paid: false,
+        }));
+        await DB.saveMessage({
+            charId: 'user', groupId: activeGroup.id, role: 'user', type: 'transfer',
+            content: `[群收款] ${total}`,
+            metadata: { kind: 'collect', total, note: collectNote.trim() || undefined, shares },
+        } as any);
+        setMessages(await DB.getGroupMessages(activeGroup.id));
+        addToast('群收款已发起', 'success');
+        resetCollectModal();
+    };
+    /** 收某位成员的那一份：进钱包 + 更新收款单 */
+    const payCollectShare = async (msg: Message, shareId: string) => {
+        if (!activeGroup || msg.id == null) return;
+        const share = ((msg.metadata as any)?.shares || []).find((s: any) => s.id === shareId);
+        if (!share || share.paid) return;
+        adjustUserBalance(+share.amount);
+        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
+            ...prev,
+            shares: (prev?.shares || []).map((s: any) => s.id === shareId ? { ...s, paid: true, paidAt: Date.now() } : s),
+        }));
+        const updated = await DB.getGroupMessages(activeGroup.id);
+        setMessages(updated);
+        setCollectDetailMsg(updated.find(m => m.id === msg.id) || null);
+        addToast(`已收 ${share.name} ¥${share.amount}`, 'success');
+    };
+    /** 一键收齐剩余未付 */
+    const collectAllRemaining = async (msg: Message) => {
+        if (!activeGroup || msg.id == null) return;
+        const unpaid = ((msg.metadata as any)?.shares || []).filter((s: any) => !s.paid);
+        if (unpaid.length === 0) return;
+        const sum = Math.round(unpaid.reduce((a: number, s: any) => a + s.amount, 0) * 100) / 100;
+        adjustUserBalance(+sum);
+        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
+            ...prev,
+            shares: (prev?.shares || []).map((s: any) => s.paid ? s : { ...s, paid: true, paidAt: Date.now() }),
+        }));
+        const updated = await DB.getGroupMessages(activeGroup.id);
+        setMessages(updated);
+        setCollectDetailMsg(updated.find(m => m.id === msg.id) || null);
+        addToast(`已收齐 ¥${sum}`, 'success');
+    };
+
     // 落脚点：分享一个地点
     const sendGroupLocation = () => {
         const name = locName.trim();
@@ -1534,7 +1628,13 @@ ${recentPrivate || '(暂无私聊)'}
                 } else if (m.type === 'transfer') {
                     // 区分红包 / 普通转账（与单聊 chatPrompts.summarizeGroupMsgContent 口径一致），
                     // 否则导演会把转账误读成红包、让角色说错话。
-                    if (m.metadata?.rpType === 'lucky') {
+                    if (m.metadata?.kind === 'collect') {
+                        // 群收款（AA）：把事由/总额/各人应付与到账情况喂给导演，让被收的成员能就「该不该转、转没转」接话
+                        const shares: any[] = Array.isArray(m.metadata?.shares) ? m.metadata.shares : [];
+                        const paidCount = shares.filter(s => s.paid).length;
+                        const who = shares.map(s => `${s.name} ¥${s.amount}${s.paid ? '(已付)' : '(待付)'}`).join('、');
+                        content = `[群收款${m.metadata?.note ? `·${m.metadata.note}` : ''} 总额¥${m.metadata?.total}，${paidCount}/${shares.length}人已付：${who}]`;
+                    } else if (m.metadata?.rpType === 'lucky') {
                         // 拼手气红包：把「谁抢到多少、谁手气最佳」喂给导演，让角色能就抢红包结果接话
                         const grabs: any[] = Array.isArray(m.metadata?.grabs) ? m.metadata.grabs : [];
                         const best = grabs.find(g => g.id === m.metadata?.bestId) || grabs.reduce((a, b) => (b?.amount > (a?.amount ?? -1) ? b : a), null);
@@ -1650,6 +1750,7 @@ ${attachedImagesNote}
 - **被【禁言中】标记的成员本轮严禁发言**——不要为该成员生成任何消息（包括表情包）。其他成员可以提到ta、调侃ta只能干瞪眼。
 - **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`，也可以在后面用竖线带上「改名的小心思/动机」：\`[[SET_NICKNAME: 新群名片|为什么改成这个名字的真实想法]]\`（可与一句发言放在同一条 content 里）。这段小心思不会直接显示，用户点开那条系统提示才能看到——所以可以写得更真实私密。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
 - **@提及（点名）**: 聊天记录里出现 \`@某成员的群名片/名字\` = 在**点名**那个人。**被 @ 的成员本轮应当回应**（除非 TA 被禁言）；\`@全体成员\` / \`@所有人\` = 叫上所有人，多数成员都该冒个头。成员之间、成员对用户也可以用 \`@名字\` 来点名、cue 人或回应，直接在正文里写出来即可（无需特殊格式）。但别滥用——没必要时正常聊天就行。
+- **群收款（AA）**: 看到 \`[群收款...待付]\` = 用户在群里发起 AA 收款向大家收钱。被点到的成员可按性格反应：爽快答应"这就转"、调侃、哭穷拖延、起哄让别人先付……这只是聊天反应，钱实际到没到账由用户在收款单上点收，**别替用户宣布已收齐**。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -2508,6 +2609,7 @@ ${attachedImagesNote}
                                 onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                                 mentionNames={mentionNames}
+                                onCollectClick={setCollectDetailMsg}
                             />
                         </div>
                     );
@@ -2622,6 +2724,7 @@ ${attachedImagesNote}
                             {strip(<ImageSquare size={20} weight="bold" />, '贴照片', '从相册挑一张寄去', () => fileInputRef.current?.click())}
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
                             {strip(<Coins size={20} weight="bold" />, '寄零花', '塞红包·按钱包余额实扣', () => setModalType('transfer'))}
+                            {strip(<Wallet size={20} weight="bold" />, '发起收款', 'AA 收款·向群成员收钱', () => { setShowActions(false); setCollectMembers(new Set(activeGroup?.members || [])); setCollectAmount(''); setCollectNote(''); setModalType('collect'); })}
                             {strip(<CassetteTape size={20} weight="bold" />, '留个声', '录一段语音发群里', () => { setShowActions(false); void voice.startRecording(); })}
                             {strip(<MapTrifold size={20} weight="bold" />, '落脚点', '分享一个地点', () => setActionModal('location'))}
                             {strip(<PaintBrush size={20} weight="bold" />, '画一张', 'AI 现画一张图', () => setActionModal('image-gen'))}
@@ -2879,6 +2982,83 @@ ${attachedImagesNote}
                             )}
                             <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
                             <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1 text-slate-400"><Wallet size={13} weight="fill" />钱包余额 ¥{wallet}</div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* 群收款（AA）：选成员 + 总额 → 均摊发起 */}
+            <Modal isOpen={modalType === 'collect'} title="发起群收款" onClose={resetCollectModal} footer={<button onClick={sendGroupCollect} className="w-full py-3 bg-teal-600 text-white font-bold rounded-2xl shadow-lg shadow-teal-200">发起收款</button>}>
+                {(() => {
+                    const ids = Array.from(collectMembers).filter(id => activeGroup?.members.includes(id));
+                    const total = Math.round(parseFloat(collectAmount) * 100) / 100;
+                    const per = ids.length > 0 && total > 0 ? Math.round((total / ids.length) * 100) / 100 : 0;
+                    return (
+                        <div className="space-y-4">
+                            <div className="text-center py-1 text-teal-600"><Wallet size={40} weight="fill" className="mx-auto" /></div>
+                            <input type="number" value={collectAmount} onChange={e => setCollectAmount(e.target.value)} placeholder="收款总额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                            <input value={collectNote} onChange={e => setCollectNote(e.target.value)} placeholder="收款事由（如：上次聚餐 AA）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">向谁收（{ids.length} 人）</span>
+                                    {ids.length > 0 && total > 0 && <span className="text-[11px] text-teal-600 font-bold">每人 ¥{per}</span>}
+                                </div>
+                                <div className="grid grid-cols-4 gap-2 max-h-44 overflow-y-auto pr-1">
+                                    {(activeGroup?.members || []).map(mid => {
+                                        const c = characters.find(ch => ch.id === mid);
+                                        if (!c) return null;
+                                        const on = collectMembers.has(mid);
+                                        return (
+                                            <button key={mid} onClick={() => setCollectMembers(prev => { const n = new Set(prev); if (n.has(mid)) n.delete(mid); else n.add(mid); return n; })}
+                                                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${on ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-slate-100 bg-white'}`}>
+                                                <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover ${on ? '' : 'opacity-60 grayscale'}`} />
+                                                <span className="text-[9px] text-slate-600 truncate w-full text-center">{displayNameOf(activeGroup, mid)}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="text-center text-[11px] text-slate-400">AA 均摊 · 钱随「点收」逐笔进钱包（当前 ¥{wallet}）</div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* 群收款详情：逐笔点收 / 一键收齐 */}
+            <Modal isOpen={!!collectDetailMsg} title="群收款" onClose={() => setCollectDetailMsg(null)}>
+                {collectDetailMsg && (() => {
+                    const meta: any = collectDetailMsg.metadata || {};
+                    const shares: any[] = Array.isArray(meta.shares) ? meta.shares : [];
+                    const paidCount = shares.filter(s => s.paid).length;
+                    const paidSum = Math.round(shares.filter(s => s.paid).reduce((a, s) => a + (s.amount || 0), 0) * 100) / 100;
+                    const done = shares.length > 0 && paidCount === shares.length;
+                    return (
+                        <div className="space-y-3">
+                            <div className="text-center">
+                                <div className="text-2xl font-bold text-slate-800">¥{meta.total}</div>
+                                <div className="text-[12px] text-slate-400 mt-0.5">{meta.note || 'AA 收款'} · {done ? '已收齐' : `已收 ¥${paidSum} · ${paidCount}/${shares.length} 人`}</div>
+                            </div>
+                            <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+                                {shares.map((s: any) => {
+                                    const c = characters.find(ch => ch.id === s.id);
+                                    return (
+                                        <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                                            {c?.avatar ? <img src={c.avatar} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-slate-200" />}
+                                            <span className="text-sm text-slate-700 font-medium truncate flex-1">{displayNameOf(activeGroup, s.id)}</span>
+                                            <span className="text-[13px] font-bold text-slate-500">¥{s.amount}</span>
+                                            {s.paid ? (
+                                                <span className="text-[11px] text-teal-600 font-bold flex items-center gap-0.5 shrink-0"><svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7 7a1 1 0 01-1.4 0l-3-3a1 1 0 111.4-1.4L9 11.6l6.3-6.3a1 1 0 011.4 0z" clipRule="evenodd" /></svg>已付</span>
+                                            ) : (
+                                                <button onClick={() => payCollectShare(collectDetailMsg, s.id)} className="text-[12px] font-bold text-white bg-teal-600 px-3 py-1 rounded-full shrink-0 active:scale-95">收</button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            {!done && (
+                                <button onClick={() => collectAllRemaining(collectDetailMsg)} className="w-full py-2.5 bg-teal-600 text-white font-bold rounded-2xl shadow-lg shadow-teal-200 active:scale-95 transition-transform">一键收齐剩余</button>
+                            )}
+                            <p className="text-[10px] text-slate-300 text-center">点「收」即把那一份记入钱包</p>
                         </div>
                     );
                 })()}
