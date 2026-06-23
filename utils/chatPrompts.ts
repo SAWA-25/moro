@@ -51,6 +51,7 @@ function summarizeGroupMsgContent(m: Message): string {
         case 'news_card': return '[新闻卡片]';
         case 'trpg_card': return `[TRPG游戏片段${meta.trpg?.gameTitle ? '：《' + meta.trpg.gameTitle + '》' : ''}]`;
         case 'call_log': return '[语音通话记录]';
+        case 'gift_card': return `[礼物：${meta.gift?.emoji || ''}${meta.gift?.name || ''}${meta.gift?.note ? '，赠言「' + String(meta.gift.note).slice(0, 30) + '」' : ''}]`;
         default: {
             const c = typeof m.content === 'string' ? m.content : '';
             // 兜底：任何 data:/http(s) 链接都不内联，防止异常/未来新增类型漏网
@@ -868,6 +869,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     content = transcript
                         ? `${timeStr} [用户发来一条语音消息${dur}，内容是]: ${transcript}`
                         : `${timeStr} [用户发来一条语音消息${dur}，没听清内容，可以让用户再说一遍或打字]`;
+                }
+                else if (m.type === 'gift_card') {
+                    const g = m.metadata?.gift || {};
+                    const note = typeof g.note === 'string' && g.note.trim() ? `，赠言「${g.note.trim()}」` : '';
+                    content = m.role === 'user'
+                        ? `${timeStr} [系统: 用户从「心意铺」送了你一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}。请按你的性格自然地表达感谢 / 惊喜 / 在意，可以写一封简短的感谢信]`
+                        : `${timeStr} [系统: 你从「心意铺」送了用户一份礼物——${g.emoji || ''}${g.name || '礼物'}${note}]`;
                 }
                 else if (m.type === 'social_card') {
                     const post = m.metadata?.post || {};

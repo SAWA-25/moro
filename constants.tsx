@@ -28,6 +28,7 @@ import {
   EnvelopeSimpleOpen,
   Crosshair,
   Storefront,
+  ShoppingBagOpen,
   Brain,
   Notebook,
   Plugs,
@@ -92,6 +93,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Theater: ({ className }) => <FilmSlate className={className} weight="bold" />,
   Almanac: ({ className }) => <CalendarHeart className={className} weight="bold" />,
   Takeout: ({ className }) => <ForkKnife className={className} weight="bold" />,
+  Shop: ({ className }) => <ShoppingBagOpen className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -134,6 +136,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
   { id: AppID.Takeout, name: '饭票', icon: 'Takeout', color: 'orange' },
+  { id: AppID.Shop, name: '心意铺', icon: 'Shop', color: 'rose' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },

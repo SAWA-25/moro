@@ -44,6 +44,7 @@ export enum AppID {
   Theater = 'theater', // 小剧场 — 「攻略本」(galgame 恋爱攻略) 与「TRPG」(跑团冒险) 合并入口，封面页选模式后进入对应剧目（Guidebook/Game 子 App 保留路由兼容）
   Almanac = 'almanac', // 岁时记 — 「时光契约」(日程/心愿单/纪念日倒数) 与「特别时光」(节日记忆活动) 合并入口，封面页选模式后进入对应页（Schedule/SpecialMoments 子 App 保留路由兼容）
   Takeout = 'takeout', // 外卖 — 参考美团：本地生成店铺点菜下单、配送进度、和骑手/商家聊天、自付/代付，并与来往联动（给角色点单/代付）
+  Shop = 'shop', // 购物商城 — 虚拟礼物商城：买礼物送角色（聊天里落礼物卡 + 角色回应/感谢信），角色也会自己逛（自购/回赠），查角色购物小票
 }
 
 // =====================================================================
@@ -1962,6 +1963,8 @@ export interface CharacterProfile {
   relationship?: RelationshipState;
   /** 婚姻状态（求婚成功后进入「婚姻筹备期」，落入岁时记·喜事页） */
   marriage?: MarriageState;
+  /** 购物商城·角色小票：角色收到的礼物 / 自己买的 / 回赠用户的历史（最新在前）。供「查角色购物小票」与聊天上下文。 */
+  shopReceipts?: ShopReceipt[];
   /** 来往·情侣空间（参考 QQ 情侣空间）：恋爱天数 / 亲密度 / 情侣动态 / 纪念日 / 相册 / 约定 / 悄悄话。
    *  挂在角色上（每个角色一份），由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文。 */
   coupleSpace?: CoupleSpace;
@@ -2445,6 +2448,10 @@ export interface UserProfile {
      * 收到角色红包领取后回到钱包。与「记账」（记录现实金钱的流水）相互独立、互不影响。
      */
     balance?: number;
+    /** 购物商城·背包：买下但还没送出去的礼物。 */
+    shopInventory?: ShopOwnedItem[];
+    /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
+    shopReceipts?: ShopReceipt[];
     /**
      * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
@@ -3035,7 +3042,45 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
+
+/** 购物商城：一件礼物（内置目录条目）。 */
+export interface ShopItem {
+    id: string;
+    name: string;
+    emoji: string;          // 礼物图标（emoji）
+    price: number;          // 价格（元）
+    category: string;       // 分类 key
+    blurb: string;          // 一句话描述
+}
+
+/** 购物商城：背包里拥有的一件物品（user 买下但还没送出去的）。 */
+export interface ShopOwnedItem {
+    uid: string;            // 唯一实例 id（同一 item 可拥有多件）
+    itemId: string;
+    name: string;
+    emoji: string;
+    price: number;
+    boughtAt: number;
+}
+
+/** 购物商城：一条小票（购买 / 赠送 / 收礼）。user 与 char 各存一份历史。 */
+export interface ShopReceipt {
+    id: string;
+    itemId: string;
+    name: string;
+    emoji: string;
+    price: number;
+    /** 谁的动作：用户 or 角色 */
+    by: 'user' | 'char';
+    /** buy=给自己买；gift=送出；receive=收到对方送的 */
+    action: 'buy' | 'gift' | 'receive';
+    /** 对方是谁：charId / 'user' / 'self'（给自己买） */
+    counterpartId: string;
+    counterpartName: string;
+    note?: string;          // 赠言 / 角色买它的理由
+    at: number;
+}
 
 /**
  * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：
