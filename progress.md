@@ -64,3 +64,9 @@ pm run build passes after the time-gap grouping fix.
 - Game state is isolated from real affection (only seeded from it) and persisted to localStorage; not written back to character profiles.
 - Registered AppID.Harem (icon `Crown`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green (incl. 11 new for the engine).
+
+- Added 悬浮窗快捷菜单 (Floating quick-menu): new `components/os/FloatingQuickMenu.tsx` — a global draggable bubble that expands into shortcuts (来往 / 心意铺 / 相册 / 文具盒 / 回桌面 / 收起).
+- Drag to move (position persisted to localStorage), tap to expand/collapse (menu auto-flips up/down + left/right by where the bubble sits), long-press to hide; outside-tap closes.
+- Gated by new `OSTheme.floatingQuickMenu` (default on; hidden on lock screen). Re-enable / toggle from a new switch in 拼贴册 (Appearance) above 灵动岛.
+- Rendered as a PhoneShell overlay next to DynamicIsland.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.

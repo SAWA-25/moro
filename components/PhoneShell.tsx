@@ -5,6 +5,7 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
 import DynamicIsland from './os/DynamicIsland';
+import FloatingQuickMenu from './os/FloatingQuickMenu';
 import Launcher from '../apps/Launcher';
 
 // 按需懒加载各 App —— 切到对应 App 时才下载/解析其代码块，首屏只加载 Launcher 与外壳，
@@ -691,6 +692,9 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: 灵动岛（消息通知 + 下滑通知面板，点击直达对应角色聊天） */}
           <DynamicIsland />
+
+          {/* Overlays: 悬浮窗快捷菜单（可拖动悬浮球 → 常用 App 快捷入口；锁屏时隐藏，拼贴册可关） */}
+          {theme.floatingQuickMenu !== false && !isLocked && <FloatingQuickMenu />}
 
           {/* Overlays: 角色主动来电（[[CALL_USER]] 指令触发，接听跳电话 App） */}
           <IncomingCallOverlay />

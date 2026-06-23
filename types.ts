@@ -254,6 +254,8 @@ export interface OSTheme {
   desktopDecorations?: DesktopDecoration[];
   customFont?: string;
   hideStatusBar?: boolean;
+  /** 悬浮窗快捷菜单：全局可拖动的悬浮球，点开是常用 App 快捷入口。undefined 视为开启；显式 false 关闭。 */
+  floatingQuickMenu?: boolean;
   // Chat UI customization (global)
   chatAvatarShape?: 'circle' | 'rounded' | 'square';
   chatAvatarSize?: 'small' | 'medium' | 'large';
