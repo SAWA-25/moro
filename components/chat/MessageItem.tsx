@@ -950,6 +950,8 @@ const MessageItem = React.memo(({
     const [swipeX, setSwipeX] = useState(0);
     const swipeActive = useRef(false);
     const swipeTriggered = useRef(false);
+    // 角色撤回的消息：点「点击查看」偷看原文（防撤回）
+    const [recallPeeked, setRecallPeeked] = useState(false);
     const canSwipeReply = !!onSwipeReply && !selectionMode && m.role !== 'system';
     // 角色头像单击/双击区分：260ms 内第二次点击 = 戳一戳，否则单击进角色设置
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1378,11 +1380,13 @@ const MessageItem = React.memo(({
     }
 
     // 撤回的消息（QQ/微信语义）：不论原类型，一律渲染成居中灰条提示，原文不再显示。
+    // 自己撤回的可「重新编辑」；角色撤回的可「点击查看」偷看原文（防撤回）。
     if (m.metadata?.recalled) {
         const mine = m.role === 'user';
         const canReedit = mine && !!m.metadata?.recalledContent && !!onReeditRecalled;
+        const canPeek = !mine && !!m.metadata?.recalledContent;
         return (
-            <div className={`flex items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+            <div className={`flex flex-col items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
                 {selectionMode && (
                     <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
@@ -1396,8 +1400,22 @@ const MessageItem = React.memo(({
                         {canReedit && (
                             <button onClick={() => onReeditRecalled!(m)} className="text-[10px] font-semibold text-primary shrink-0 active:opacity-60">重新编辑</button>
                         )}
+                        {canPeek && !recallPeeked && (
+                            <button onClick={() => setRecallPeeked(true)} className="text-[10px] font-semibold text-primary shrink-0 active:opacity-60">点击查看</button>
+                        )}
                     </div>
                 </div>
+                {canPeek && recallPeeked && (
+                    <div className="-mt-2 mb-4 px-6 w-full flex justify-center animate-fade-in">
+                        <div className="max-w-[78%] rounded-2xl bg-amber-50/80 border border-amber-200/70 px-3.5 py-2 shadow-sm">
+                            <div className="flex items-center gap-1 mb-1">
+                                <span className="text-[9px] font-bold tracking-wider text-amber-500">悄悄看了 TA 撤回的话</span>
+                                <button onClick={() => setRecallPeeked(false)} className="text-[9px] text-amber-400 ml-auto active:opacity-60">收起</button>
+                            </div>
+                            <div className="text-[12px] leading-relaxed text-slate-600 whitespace-pre-wrap break-words">{m.metadata?.recalledContent}</div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }

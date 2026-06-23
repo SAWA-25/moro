@@ -54,6 +54,8 @@ const stripBusinessTagsForBubble = (t: string): string =>
     // [[CALL_USER]] 主动语音通话指令：仅在 OSContext 主动消息路径（开关打开时）于 sanitize 前
     // 被提取处理；气泡里任何情况下都不该残留（开关关闭却被模型吐出时也得兜底剥掉）。
     .replace(/\[\[\s*CALL_USER\s*\]\]/gi, '')
+    // [[WITHDRAW]] 角色撤回上一条自己的消息：Chat.tsx 据此把上一条标为撤回；气泡里不该残留。
+    .replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '')
     // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
     .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
     .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')

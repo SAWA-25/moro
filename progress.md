@@ -98,3 +98,10 @@ pm run build passes after the time-gap grouping fix.
 - The original text is hidden from the model everywhere it could leak: single-chat live history (`chatPrompts.ts`), group live transcript (`ChatHub.tsx`), the shared serializer used by archives + single-chat memory (`messageFormat.ts`), cross-group context (`summarizeGroupMsgContent`), and group memory extraction (`groupExtraction.ts`) — all emit only "[…撤回了一条消息]", so the character knows you recalled something (and can be curious) but can't read it.
 - Extended both `React.memo` comparators so a recall (metadata-only change) actually re-renders the bubble.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.
+
+- 角色撤回 + 用户偷看 (char-initiated recall + user peek): the character can now take back its own last message, and you can sneak a look at what it recalled (防撤回). Single chat for now.
+- New `utils/messageWithdraw.ts` (`[[WITHDRAW]]` directive — deliberately NOT `[[RECALL]]`, which already means memory-retrieval). `applyAssistantPostProcessing` strips it pre-render and dispatches `CHAR_WITHDRAW_EVENT` (mirrors the `[[CHECK_PHONE]]` flow); `sanitize.ts` also strips it so it never leaks as literal text on any path.
+- `Chat.tsx` listens and marks the char's most-recent non-recalled assistant message as recalled via `setMessages(prev=>…)`. The event fires before the new reply is persisted, so `prev`'s last assistant message is correctly the char's *prior* line.
+- `MessageItem`: char-recalled bubbles show "{charName}撤回了一条消息" + a 「点击查看」 that reveals the stashed `recalledContent` in an amber 偷看 box (your own recalled messages still show 「重新编辑」). The model still only ever sees "撤回了一条消息".
+- Added a `[[WITHDRAW]]` capability line to the system prompt (low-frequency, emotion-driven). New `messageWithdraw.test.ts` (5 tests, incl. guarding against `[[RECALL: YYYY-MM]]` false-positives).
+- `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.

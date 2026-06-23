@@ -26,6 +26,7 @@ import OfflineModeModal from '../components/chat/OfflineModeModal';
 import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
+import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
@@ -1433,6 +1434,33 @@ ${recent || '（你们相处了很久）'}
         };
         window.addEventListener(CHAR_PHONE_CHECK_EVENT, handler);
         return () => window.removeEventListener(CHAR_PHONE_CHECK_EVENT, handler);
+    }, []);
+
+    // ── 角色撤回自己上一条消息：监听 [[WITHDRAW]] 广播，把该角色最近一条未撤回的 assistant
+    //    消息标为已撤回（原文留 metadata.recalledContent 供用户点提示偷看）。事件在本轮回复
+    //    落库前发出，setMessages(prev=>) 拿到的 prev 即"撤回前"列表，末尾 assistant = 角色上一句。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            setMessages(prev => {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                    const mm = prev[i];
+                    if (mm.role === 'assistant' && mm.type !== 'system' && !mm.metadata?.recalled
+                        && typeof mm.content === 'string' && mm.content.trim()) {
+                        const original = mm.content;
+                        const recalledAt = Date.now();
+                        void DB.updateMessageMetadata(mm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: original, recalledAt }));
+                        return prev.map((x, j) => j === i
+                            ? { ...x, metadata: { ...(x.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+                            : x);
+                    }
+                }
+                return prev;
+            });
+        };
+        window.addEventListener(CHAR_WITHDRAW_EVENT, handler);
+        return () => window.removeEventListener(CHAR_WITHDRAW_EVENT, handler);
     }, []);
 
     // ── 角色给用户换备注：监听 [[SET_USER_REMARK]] 广播，弹「换备注」弹窗（点开看动机）──

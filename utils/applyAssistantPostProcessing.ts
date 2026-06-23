@@ -41,6 +41,7 @@ import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemark
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
+import { extractWithdrawDirective, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
@@ -492,6 +493,18 @@ export async function applyAssistantPostProcessing(
             if (typeof window !== 'undefined') {
                 setPhoneCheckPending(char.id);
                 window.dispatchEvent(new CustomEvent(CHAR_PHONE_CHECK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // 角色撤回上一条自己的消息（QQ/微信式）。先剥后播：Chat.tsx 监听 CHAR_WITHDRAW_EVENT，
+    // 把该角色最近一条未撤回的 assistant 消息标记为已撤回（原文留 metadata 供用户偷看）。
+    {
+        const withdrawExtract = extractWithdrawDirective(aiContent);
+        if (withdrawExtract.withdraw) {
+            aiContent = withdrawExtract.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_WITHDRAW_EVENT, { detail: { charId: char.id } }));
             }
         }
     }
