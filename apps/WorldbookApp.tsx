@@ -9,10 +9,11 @@
  * 功能与旧版完全一致：条目/整书开关、局部/全局、插入位置（含 @深度）、顺序、
  * 关键词激活（主/二级暗号、Selective、大小写、扫描深度、演练台）、ST 导入信息展示。
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { Worldbook, WorldbookPosition } from '../types';
-import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key } from '@phosphor-icons/react';
+import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key, UploadSimple } from '@phosphor-icons/react';
+import { importWorldbookFromFile } from '../utils/worldbookImport';
 
 // ── 黑白手账设计 token（与扮相手账同一套语言） ─────────────
 const INK = '#1c1b1a';
@@ -148,6 +149,26 @@ const WorldbookApp: React.FC = () => {
         setTempScanDepth(4);
         setScanTestText('');
         setIsEditing(true);
+    };
+
+    // 导入世界书（.json / .zip）：解析 → 逐条 addWorldbook
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [importing, setImporting] = useState(false);
+    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = ''; // 允许重复选同一文件
+        if (!file) return;
+        setImporting(true);
+        try {
+            const books = await importWorldbookFromFile(file);
+            if (books.length === 0) { addToast('没解析出任何世界书条目', 'error'); return; }
+            for (const wb of books) await addWorldbook(wb);
+            addToast(`已导入 ${books.length} 条世界书`, 'success');
+        } catch (err: any) {
+            addToast(err?.message || '导入失败', 'error');
+        } finally {
+            setImporting(false);
+        }
     };
 
     const handleEdit = (book: Worldbook) => {
@@ -655,6 +676,18 @@ const WorldbookApp: React.FC = () => {
                     );
                 })}
             </div>
+
+            {/* 导入世界书（.json / .zip）：剪刀按钮上方的贴纸 */}
+            <input ref={fileInputRef} type="file" accept=".json,.zip,application/json,application/zip" className="hidden" onChange={handleImportFile} />
+            <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                className="absolute bottom-[4.7rem] right-5 z-20 px-4 py-2.5 rotate-[2deg] flex items-center gap-1.5 bg-[#f7f5ef] text-[#1c1b1a] border-2 border-[#1c1b1a] shadow-[3px_3px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                title="导入世界书（.json 或 .zip 压缩包）"
+            >
+                <UploadSimple size={15} weight="bold" />
+                <span className="text-xs font-black">{importing ? '导入中…' : '导入'}</span>
+            </button>
 
             {/* 剪一条新的：右下角剪刀贴纸（替代原顶栏 + 号） */}
             <button
