@@ -2384,6 +2384,8 @@ export interface GroupProfile {
     memberTitles?: Record<string, string>;
     /** 禁言：charId → 解禁时间戳（ms）。当前时间小于该值时该成员被禁言。 */
     mutedUntil?: Record<string, number>;
+    /** 全员禁言：开启后所有角色成员本轮都不发言（仅群主/管理员＝用户可发），导演直接跳过。 */
+    mutedAll?: boolean;
     /** 群公告：群主/管理员发布，进入群聊时置顶展示，并注入群聊上下文让成员知晓。撤下时为 undefined。 */
     announcement?: GroupAnnouncement;
     /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
@@ -2996,7 +2998,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card';
 
 /**
  * 消息送达状态（Telegram 式回执，存 metadata.msgStatus）：

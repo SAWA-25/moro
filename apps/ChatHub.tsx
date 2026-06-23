@@ -49,7 +49,8 @@ const GroupMessageItem = React.memo(({
     onCollectClick,
     onPollVote,
     onPollClick,
-    onRelayClick
+    onRelayClick,
+    onCheckinClick
 }: {
     msg: Message,
     isUser: boolean,
@@ -79,7 +80,9 @@ const GroupMessageItem = React.memo(({
     /** 群投票：点卡片头部打开票数详情 */
     onPollClick?: (msg: Message) => void,
     /** 群接龙：点卡片打开接龙详情/加入 */
-    onRelayClick?: (msg: Message) => void
+    onRelayClick?: (msg: Message) => void,
+    /** 群签到：点卡片打开签到详情 */
+    onCheckinClick?: (msg: Message) => void
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -339,6 +342,34 @@ const GroupMessageItem = React.memo(({
                     </button>
                 );
             }
+            case 'checkin_card': {
+                const cmeta = (msg.metadata as any) || {};
+                const entries: any[] = Array.isArray(cmeta.entries) ? cmeta.entries : [];
+                const shown = entries.slice(0, 5);
+                return (
+                    <button onClick={() => { if (!selectionMode) onCheckinClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden shadow-sm border border-emerald-100 bg-white text-left active:bg-emerald-50/40 transition-colors">
+                        <div className="px-3.5 pt-3 pb-2 flex items-center gap-2 border-b border-emerald-50 bg-gradient-to-r from-emerald-50 to-white">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><CalendarCheck size={16} weight="bold" /></div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[10px] text-emerald-500 font-bold">群签到 · {cmeta.date}</div>
+                                <div className="text-[13px] font-bold text-slate-800 leading-snug">今日已打卡 {entries.length} 人</div>
+                            </div>
+                        </div>
+                        <div className="px-3.5 py-2 flex flex-wrap gap-1">
+                            {entries.length === 0 ? (
+                                <span className="text-[11px] text-slate-300">还没人签到</span>
+                            ) : (
+                                <>
+                                    {shown.map((e, i) => (
+                                        <span key={i} className="text-[11px] text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 truncate max-w-full">{e.name}{e.mood ? ` · ${e.mood}` : ''}</span>
+                                    ))}
+                                    {entries.length > shown.length && <span className="text-[11px] text-slate-300 px-1">+{entries.length - shown.length}</span>}
+                                </>
+                            )}
+                        </div>
+                    </button>
+                );
+            }
             default:
                 return (
                     <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
@@ -441,6 +472,8 @@ const ChatHub: React.FC = () => {
     const [tempMemberNickname, setTempMemberNickname] = useState('');
     // 移除成员二次确认（第一次点变红，再点才执行）
     const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+    // 转让群主二次确认（两段点击，同移出成员）
+    const [confirmTransferId, setConfirmTransferId] = useState<string | null>(null);
     // 我的群名片编辑（设置弹窗里）
     const [tempMyNickname, setTempMyNickname] = useState('');
     // 点开「改名小心思」系统提示后，要展示动机的那条消息
@@ -531,6 +564,8 @@ const ChatHub: React.FC = () => {
     const [relayFirst, setRelayFirst] = useState('');
     const [relayDetailMsg, setRelayDetailMsg] = useState<Message | null>(null);
     const [relayInput, setRelayInput] = useState('');
+    // 群签到：详情弹窗目标
+    const [checkinDetailMsg, setCheckinDetailMsg] = useState<Message | null>(null);
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
     const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
@@ -571,6 +606,7 @@ const ChatHub: React.FC = () => {
             setCollectDetailMsg(null);
             setPollDetailMsg(null);
             setRelayDetailMsg(null);
+            setCheckinDetailMsg(null);
             DB.getRecentGroupMessagesWithCount(activeGroup.id, 30).then(({ messages: msgs, totalCount }) => {
                 setMessages(msgs);
                 setTotalMsgCount(totalCount);
@@ -841,6 +877,7 @@ const ChatHub: React.FC = () => {
             case 'transfer': return (m.metadata as any)?.kind === 'collect' ? '[群收款]' : '[一点心意]';
             case 'poll_card': return '[群投票]';
             case 'relay_card': return '[接龙]';
+            case 'checkin_card': return '[群签到]';
             case 'voice': return '[一段留声]';
             case 'interaction': return m.content || '[碰了碰]';
             case 'social_card': return '[转发的此刻]';
@@ -1005,6 +1042,46 @@ const ChatHub: React.FC = () => {
             setProfileMemberId(null);
             setModalType('none');
             addToast(`已移除 ${name}`, 'success');
+        }
+    };
+
+    /** 群主任命/取消管理员 */
+    const handleToggleAdmin = async (charId: string) => {
+        if (!activeGroup || !isUserOwner(activeGroup)) return;
+        const name = displayNameOf(activeGroup, charId);
+        const admins = new Set(activeGroup.adminIds || []);
+        const wasAdmin = admins.has(charId);
+        if (wasAdmin) admins.delete(charId); else admins.add(charId);
+        const updated = await applyGroupUpdate({ adminIds: Array.from(admins) });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, wasAdmin ? `你取消了「${name}」的管理员` : `你将「${name}」设为管理员`);
+            addToast(wasAdmin ? '已取消管理员' : '已设为管理员', 'success');
+        }
+    };
+
+    /** 群主转让：新群主从管理员列表移除（已是群主无需再挂管理员） */
+    const handleTransferOwner = async (charId: string) => {
+        if (!activeGroup || !isUserOwner(activeGroup)) return;
+        const name = displayNameOf(activeGroup, charId);
+        const admins = (activeGroup.adminIds || []).filter(id => id !== charId);
+        const updated = await applyGroupUpdate({ ownerId: charId, adminIds: admins });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, `你把群主转让给了「${name}」`);
+            setConfirmTransferId(null);
+            setProfileMemberId(null);
+            setModalType('none');
+            addToast('已转让群主', 'success');
+        }
+    };
+
+    /** 全员禁言开关（群主/管理员）：开启后导演跳过所有角色发言 */
+    const handleToggleMuteAll = async () => {
+        if (!activeGroup || !userCanManage(activeGroup)) return;
+        const next = !activeGroup.mutedAll;
+        const updated = await applyGroupUpdate({ mutedAll: next });
+        if (updated) {
+            await postGroupNotice(activeGroup.id, next ? '你开启了全员禁言' : '你解除了全员禁言');
+            addToast(next ? '已开启全员禁言' : '已解除全员禁言', 'success');
         }
     };
 
@@ -1558,6 +1635,33 @@ ${logText.substring(0, 10000)}
         setRelayDetailMsg(updated.find(m => m.id === msg.id) || null);
     };
 
+    // 群签到（每日打卡）：当天一张卡，成员各签一次；角色由导演 [[CHECKIN: 心情]] 打卡
+    const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const handleGroupCheckin = async () => {
+        if (!activeGroup) return;
+        setShowActions(false);
+        const today = todayKey();
+        const userName = activeGroup.memberNicknames?.['user'] || userProfile.name || '我';
+        const all = await DB.getGroupMessages(activeGroup.id);
+        const existing = [...all].reverse().find(m => m.type === 'checkin_card' && (m.metadata as any)?.date === today);
+        if (existing && existing.id != null) {
+            const already = ((existing.metadata as any)?.entries || []).some((e: any) => e.by === 'user');
+            if (already) { addToast('今天已经签到过啦', 'info'); return; }
+            await DB.updateMessageMetadata(existing.id, (prev: any) => ({
+                ...prev,
+                entries: [...(prev?.entries || []), { by: 'user', name: userName, mood: '', at: Date.now() }],
+            }));
+        } else {
+            await DB.saveMessage({
+                charId: 'user', groupId: activeGroup.id, role: 'user', type: 'checkin_card',
+                content: `[群签到] ${today}`,
+                metadata: { kind: 'checkin', date: today, entries: [{ by: 'user', name: userName, mood: '', at: Date.now() }] },
+            } as any);
+        }
+        setMessages(await DB.getGroupMessages(activeGroup.id));
+        addToast('签到成功 ✅', 'success');
+    };
+
     // 落脚点：分享一个地点
     const sendGroupLocation = () => {
         const name = locName.trim();
@@ -1651,6 +1755,7 @@ ${logText.substring(0, 10000)}
     const triggerDirector = async (currentMsgs: Message[]) => {
         if (!activeGroup || !apiConfig.apiKey) return;
         if (activeGroup.dissolved) { addToast('该群聊已被解散', 'info'); return; }
+        if (activeGroup.mutedAll) { addToast('全员禁言中，群成员暂时不会发言', 'info'); return; }
         setIsTyping(true);
 
         try {
@@ -1803,6 +1908,11 @@ ${recentPrivate || '(暂无私聊)'}
                     const ents: any[] = Array.isArray(m.metadata?.entries) ? m.metadata.entries : [];
                     const list = ents.map((e, idx) => `${idx + 1}.${e.name}:${e.text}`).join(' ');
                     content = `[接龙「${m.metadata?.title}」已有${ents.length}条: ${list || '（还没人接）'}]`;
+                } else if (m.type === 'checkin_card') {
+                    // 群签到：把今日已打卡名单喂给导演，方便还没签的成员签到
+                    const ents: any[] = Array.isArray(m.metadata?.entries) ? m.metadata.entries : [];
+                    const who = ents.map(e => `${e.name}${e.mood ? `(${e.mood})` : ''}`).join('、');
+                    content = `[群签到 ${m.metadata?.date}，已打卡${ents.length}人: ${who || '（还没人签）'}]`;
                 } else if (/^(data:|https?:\/\/)/i.test(rawText.trim())) {
                     content = '[媒体]';
                 } else {
@@ -1911,6 +2021,7 @@ ${attachedImagesNote}
 - **群收款（AA）**: 看到 \`[群收款...待付]\` = 用户在群里发起 AA 收款向大家收钱。被点到的成员可按性格反应：爽快答应"这就转"、调侃、哭穷拖延、起哄让别人先付……这只是聊天反应，钱实际到没到账由用户在收款单上点收，**别替用户宣布已收齐**。
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
 - **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
+- **群签到**: 看到 \`[群签到 日期，已打卡N人: ...]\` = 今天群里在打卡。**还没签到的成员可以签到**：在自己的发言里加 \`[[CHECKIN: 一句此刻的心情/状态]]\`（如「摸鱼中」「刚下班累瘫」「今天超精神」，简短）。签到指令不显示，但可以配一句正常发言。**已经签过的人当天不要重复签**，没在状态的也可以不签。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -1986,6 +2097,9 @@ ${attachedImagesNote}
             const latestPollMsg = [...currentMsgs].reverse().find(m => m.type === 'poll_card');
             // 群接龙：本轮可接的目标＝最近一条接龙卡（角色用 [[JOIN_RELAY: ...]] 接，追加到该卡）
             const latestRelayMsg = [...currentMsgs].reverse().find(m => m.type === 'relay_card');
+            // 群签到：本轮可签的目标＝今天的签到卡（角色用 [[CHECKIN: 心情]] 打卡）
+            const todayCheckinKey = todayKey();
+            const latestCheckinMsg = [...currentMsgs].reverse().find(m => m.type === 'checkin_card' && (m.metadata as any)?.date === todayCheckinKey);
             for (const action of actions) {
                 const targetId = activeGroup.members.find(id => id === action.charId);
                 if (!targetId) continue;
@@ -2077,6 +2191,24 @@ ${attachedImagesNote}
                     }
                 }
 
+                // -0.3 群签到 [[CHECKIN: 心情]]：当天还没签的成员打卡（追加到今日签到卡，去重）
+                if (latestCheckinMsg && latestCheckinMsg.id != null) {
+                    const checkinMatch = /\[\[CHECKIN\s*[:：]\s*([\s\S]*?)\]\]/.exec(action.content);
+                    if (checkinMatch) {
+                        action.content = action.content.replace(checkinMatch[0], '').trim();
+                        const already = ((latestCheckinMsg.metadata as any)?.entries || []).some((e: any) => e.by === targetId);
+                        if (!already) {
+                            const mood = checkinMatch[1].trim().slice(0, 30);
+                            const entryName = liveGroup.memberNicknames?.[targetId] || charName;
+                            await DB.updateMessageMetadata(latestCheckinMsg.id, (prev: any) => ({
+                                ...prev,
+                                entries: [...(prev?.entries || []), { by: targetId, name: entryName, mood, at: Date.now() }],
+                            }));
+                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                        }
+                    }
+                }
+
                 // 0. Check for Private Message Command (Regex updated for robustness)
                 const privateMatches = [];
                 // Handle multiple private messages in one block or mixed content
@@ -2139,7 +2271,7 @@ ${attachedImagesNote}
 
                 // 2. Text Splitting (Standard Chat Logic)
                 // Remove the emoji tag if it was processed, or just clean up
-                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').trim();
+                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').trim();
                 
                 if (textContent) {
                     // Primary: split on line breaks
@@ -2642,6 +2774,9 @@ ${attachedImagesNote}
                             </h1>
                             <div className="flex items-center gap-2">
                                 <p className="text-[10px] text-slate-500 font-medium">{activeGroup?.members.length} 成员</p>
+                                {activeGroup?.mutedAll && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
+                                )}
                                 {lastTokenUsage && (
                                     <div
                                         className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-mono border border-slate-200"
@@ -2808,7 +2943,7 @@ ${attachedImagesNote}
                                 onLongPress={handleMessageLongPress}
                                 displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
                                 memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
-                                onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setModalType('member-profile'); } : undefined}
+                                onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); } : undefined}
                                 onAvatarPoke={char ? () => handlePokeMember(char.id) : undefined}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                                 mentionNames={mentionNames}
@@ -2816,6 +2951,7 @@ ${attachedImagesNote}
                                 onPollVote={votePoll}
                                 onPollClick={setPollDetailMsg}
                                 onRelayClick={setRelayDetailMsg}
+                                onCheckinClick={setCheckinDetailMsg}
                             />
                         </div>
                     );
@@ -2933,6 +3069,7 @@ ${attachedImagesNote}
                             {strip(<Wallet size={20} weight="bold" />, '发起收款', 'AA 收款·向群成员收钱', () => { setShowActions(false); setCollectMembers(new Set(activeGroup?.members || [])); setCollectAmount(''); setCollectNote(''); setModalType('collect'); })}
                             {strip(<ChartBar size={20} weight="bold" />, '发起投票', '群成员按性格投·看结果', () => { setShowActions(false); setPollQuestion(''); setPollOptions(['', '']); setModalType('poll'); })}
                             {strip(<ListNumbers size={20} weight="bold" />, '发起接龙', '主题接龙·成员自然加入', () => { setShowActions(false); setRelayTitle(''); setRelayFirst(''); setModalType('relay'); })}
+                            {strip(<CalendarCheck size={20} weight="bold" />, '群签到', '每日打卡·成员陆续报到', handleGroupCheckin)}
                             {strip(<CassetteTape size={20} weight="bold" />, '留个声', '录一段语音发群里', () => { setShowActions(false); void voice.startRecording(); })}
                             {strip(<MapTrifold size={20} weight="bold" />, '落脚点', '分享一个地点', () => setActionModal('location'))}
                             {strip(<PaintBrush size={20} weight="bold" />, '画一张', 'AI 现画一张图', () => setActionModal('image-gen'))}
@@ -3033,6 +3170,23 @@ ${attachedImagesNote}
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">{userCanManage(activeGroup) ? '群主/管理员可发布或撤下，发布后群里会发系统通知，成员都能"看到"并自然回应。' : '仅群主/管理员可发布，你可以查看。'}</p>
                     </div>
 
+                    {/* 全员禁言开关（群主/管理员） */}
+                    {userCanManage(activeGroup) && (
+                        <div className="flex items-center justify-between gap-3 py-1">
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-bold text-slate-700 flex items-center gap-1.5"><SpeakerSlash size={14} weight="bold" className="text-slate-400" />全员禁言</div>
+                                <p className="text-[9px] text-slate-400 mt-0.5 leading-tight">开启后群成员暂时都不发言，只有你能说话</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleToggleMuteAll}
+                                className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${activeGroup?.mutedAll ? 'bg-red-400' : 'bg-slate-200'}`}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${activeGroup?.mutedAll ? 'translate-x-5' : ''}`} />
+                            </button>
+                        </div>
+                    )}
+
                     {/* 群成员管理：点成员进资料页（管理员可禁言/设头衔/移除） */}
                     <div className="pt-2 border-t border-slate-100">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群成员 ({activeGroup?.members.length})</label>
@@ -3044,7 +3198,7 @@ ${attachedImagesNote}
                                 return (
                                     <div
                                         key={mid}
-                                        onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setModalType('member-profile'); }}
+                                        onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); }}
                                         className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all relative"
                                     >
                                         <img src={c.avatar} className={`w-10 h-10 rounded-full object-cover ${muted ? 'grayscale opacity-60' : ''}`} />
@@ -3396,6 +3550,41 @@ ${attachedImagesNote}
                 })()}
             </Modal>
 
+            {/* 群签到详情：今日打卡名单（谁 + 心情 + 时间） */}
+            <Modal isOpen={!!checkinDetailMsg} title="群签到" onClose={() => setCheckinDetailMsg(null)}>
+                {checkinDetailMsg && (() => {
+                    const cmeta: any = checkinDetailMsg.metadata || {};
+                    const entries: any[] = Array.isArray(cmeta.entries) ? cmeta.entries : [];
+                    return (
+                        <div className="space-y-3">
+                            <div className="text-center">
+                                <div className="text-[15px] font-bold text-slate-800">今日签到 · {cmeta.date}</div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">已打卡 {entries.length} 人</div>
+                            </div>
+                            <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                                {entries.length === 0 && <div className="text-center text-xs text-slate-300 py-6">还没人签到</div>}
+                                {entries.map((e: any, i: number) => {
+                                    const isU = e.by === 'user';
+                                    const c = characters.find(ch => ch.id === e.by);
+                                    const av = isU ? userProfile.avatar : c?.avatar;
+                                    return (
+                                        <div key={i} className="flex items-center gap-2.5">
+                                            <span className="text-[12px] font-bold text-emerald-400 w-5 text-right shrink-0">{i + 1}</span>
+                                            {av ? <img src={av} className="w-8 h-8 rounded-full object-cover shrink-0" /> : <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0" />}
+                                            <div className="min-w-0 flex-1">
+                                                <span className="text-[13px] font-medium text-slate-700">{e.name}</span>
+                                                {e.mood && <span className="text-[12px] text-slate-400 ml-1.5">{e.mood}</span>}
+                                            </div>
+                                            <span className="text-[10px] text-slate-300 shrink-0">{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
             {/* 落脚点 / 位置分享 */}
             <Modal isOpen={actionModal === 'location'} title="分享落脚点" onClose={() => setActionModal('none')} footer={<button onClick={sendGroupLocation} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">寄出位置</button>}>
                 <div className="space-y-3">
@@ -3498,6 +3687,20 @@ ${attachedImagesNote}
                                             <SpeakerSlash size={14} weight="bold" /> {muted ? '禁言管理' : '禁言此成员'}
                                         </button>
                                     </div>
+                                    {/* 群主专属：任命/取消管理员 · 转让群主（不能对群主本人操作） */}
+                                    {isUserOwner(activeGroup) && member.id !== (activeGroup?.ownerId || 'user') && (
+                                        <>
+                                            <button onClick={() => handleToggleAdmin(member.id)} className="w-full py-2.5 bg-violet-50 text-violet-600 font-bold rounded-xl border border-violet-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
+                                                <Crown size={14} weight="bold" /> {(activeGroup?.adminIds || []).includes(member.id) ? '取消管理员' : '设为管理员'}
+                                            </button>
+                                            <button
+                                                onClick={() => { if (confirmTransferId === member.id) handleTransferOwner(member.id); else setConfirmTransferId(member.id); }}
+                                                className={`w-full py-2.5 font-bold rounded-xl border active:scale-95 transition-all text-xs ${confirmTransferId === member.id ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200' : 'bg-violet-50 text-violet-600 border-violet-100'}`}
+                                            >
+                                                {confirmTransferId === member.id ? '再点一次确认转让群主' : '转让群主'}
+                                            </button>
+                                        </>
+                                    )}
                                     <button
                                         onClick={() => {
                                             if (confirmRemoveId === member.id) { handleRemoveMember(member.id); setConfirmRemoveId(null); }
