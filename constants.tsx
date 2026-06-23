@@ -29,6 +29,7 @@ import {
   Crosshair,
   Storefront,
   ShoppingBagOpen,
+  Crown,
   Brain,
   Notebook,
   Plugs,
@@ -94,6 +95,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Almanac: ({ className }) => <CalendarHeart className={className} weight="bold" />,
   Takeout: ({ className }) => <ForkKnife className={className} weight="bold" />,
   Shop: ({ className }) => <ShoppingBagOpen className={className} weight="bold" />,
+  Harem: ({ className }) => <Crown className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -137,6 +139,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
   { id: AppID.Takeout, name: '饭票', icon: 'Takeout', color: 'orange' },
   { id: AppID.Shop, name: '心意铺', icon: 'Shop', color: 'rose' },
+  { id: AppID.Harem, name: '椒房记', icon: 'Harem', color: 'red' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
