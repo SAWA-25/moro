@@ -12,7 +12,7 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
@@ -348,7 +348,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
@@ -385,6 +385,8 @@ const ChatHub: React.FC = () => {
     const [tempAdminIds, setTempAdminIds] = useState<Set<string>>(new Set());
     const [transferAmount, setTransferAmount] = useState('');
     const [transferNote, setTransferNote] = useState('');
+    // 群公告编辑草稿（打开「群公告」弹窗时回填当前公告）
+    const [tempAnnouncement, setTempAnnouncement] = useState('');
     // 红包类型：普通（整包给一人） / 拼手气（随机拆 N 份，群成员抢）
     const [transferRpType, setTransferRpType] = useState<'normal' | 'lucky'>('normal');
     // 拼手气份数（默认随群成员数变化，见 Transfer Modal）
@@ -850,6 +852,35 @@ const ChatHub: React.FC = () => {
         await handleSendMessage(`[戳了戳 ${name}]`, 'interaction', { targetCharId: charId });
     };
 
+    /** 群主/管理员发布、修改或撤下群公告（清空正文＝撤下）。落系统通知让成员"看到"。 */
+    const handleSaveAnnouncement = async () => {
+        if (!activeGroup) return;
+        if (!userCanManage(activeGroup)) { addToast('只有群主或管理员能发布群公告', 'info'); return; }
+        const text = tempAnnouncement.trim().slice(0, 800);
+        const hadAnnouncement = !!activeGroup.announcement?.text;
+        const updated = await applyGroupUpdate({
+            announcement: text ? { text, by: 'user', at: Date.now() } : undefined,
+        });
+        if (!updated) return;
+        setModalType('none');
+        if (text) {
+            const preview = text.length > 40 ? `${text.slice(0, 40)}…` : text;
+            await postGroupNotice(activeGroup.id, `你发布了群公告：「${preview}」`);
+            addToast('群公告已发布', 'success');
+        } else if (hadAnnouncement) {
+            await postGroupNotice(activeGroup.id, '你撤下了群公告');
+            addToast('群公告已撤下', 'success');
+        } else {
+            addToast('公告内容为空', 'info');
+        }
+    };
+
+    /** 打开群公告弹窗：回填当前公告草稿 */
+    const openAnnouncementModal = () => {
+        setTempAnnouncement(activeGroup?.announcement?.text || '');
+        setModalType('group-announcement');
+    };
+
     const handleGroupAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !activeGroup) return;
@@ -1293,11 +1324,15 @@ ${logText.substring(0, 10000)}
             const userNick = activeGroup.memberNicknames?.['user'];
             const userRosterLine = `- ${userProfile.name}（用户）${userNick ? ` | 群名片:「${userNick}」` : ''}${ownerId === 'user' ? ' | 群主' : ''}`;
 
+            const announcementBlock = activeGroup.announcement?.text
+                ? `\n📢 当前群公告（由 ${displayNameOf(activeGroup, activeGroup.announcement.by)} 发布）:\n"${activeGroup.announcement.text}"\n（这是群里置顶、所有成员都看得到的公告。可在合适时自然遵守、提及或回应它，但别每句话都围着它转。）\n`
+                : '';
+
             let context = `【系统：群聊模拟器配置】
 当前群名: "${activeGroup.name}"
 当前系统时间: ${currentTimeStr}
 时间流逝感知: ${timeGapInfo}
-
+${announcementBlock}
 群成员花名册（群名片 = 成员在本群显示的昵称，可自己修改；头衔由群主/管理员授予）:
 ${userRosterLine}
 ${rosterLines}
@@ -1494,7 +1529,7 @@ ${attachedImagesNote}
 - **气泡分段**: 在一条内容里用换行符分隔不同的气泡——一行一个气泡。短句多发几条 > 长句一坨。
 
 #### 六点五、群事件感知与群名片
-- 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶等——按各自性格来，也允许无视。
+- 聊天记录里的 \`[系统通知]\` 是真实发生的群事件（群名称被修改、某人被禁言/解除禁言、被授予头衔、被移出群聊、有人改了群名片、发布/撤下群公告等）。角色应**自然地对这些事件做出反应**：吐槽新群名、恭喜拿到头衔、调侃被禁言的人、对成员被移除表示惊讶、响应或讨论刚发布的群公告等——按各自性格来，也允许无视。
 - **被【禁言中】标记的成员本轮严禁发言**——不要为该成员生成任何消息（包括表情包）。其他成员可以提到ta、调侃ta只能干瞪眼。
 - **群名片**: 角色可以根据自己当下的心情或剧情发展修改自己的群名片，格式 \`[[SET_NICKNAME: 新群名片]]\`，也可以在后面用竖线带上「改名的小心思/动机」：\`[[SET_NICKNAME: 新群名片|为什么改成这个名字的真实想法]]\`（可与一句发言放在同一条 content 里）。这段小心思不会直接显示，用户点开那条系统提示才能看到——所以可以写得更真实私密。**低频使用**——只有真的有理由（心情变化、玩梗、重大剧情节点、跟风改名）才改，不要每轮都改。改完群里所有人都会看到系统通知。
 
@@ -2225,6 +2260,21 @@ ${attachedImagesNote}
             </div>
             </div>
 
+            {/* 群公告横幅（QQ 式）：进群置顶展示，点开看全文；群主/管理员可编辑 */}
+            {activeGroup?.announcement?.text && !selectionMode && (
+                <button
+                    onClick={openAnnouncementModal}
+                    className="shrink-0 w-full flex items-start gap-2 px-5 py-2.5 bg-[#fdf6e3] border-b border-[#f0e6c8] text-left active:bg-[#f8eecf] transition-colors"
+                >
+                    <Megaphone size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-[12px] text-amber-800/90 leading-snug line-clamp-2 flex-1 min-w-0">
+                        <span className="font-bold mr-1">群公告</span>
+                        {activeGroup.announcement.text}
+                    </p>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                </button>
+            )}
+
             {/* Messages Area */}
             <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 bg-[#faf9f6] scrap-panel" ref={scrollRef}>
                 {totalMsgCount > messages.length && activeGroup && (
@@ -2445,6 +2495,23 @@ ${attachedImagesNote}
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">我的群名片</label>
                         <input value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-slate-400 transition-all" />
                         <p className="text-[9px] text-slate-400 mt-1 leading-tight">你在本群显示的昵称，留空则用默认名字。成员也会根据心情或剧情改自己的群名片。</p>
+                    </div>
+
+                    {/* 群公告：群主/管理员可发布，所有成员可查看 */}
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群公告</label>
+                        <button
+                            type="button"
+                            onClick={openAnnouncementModal}
+                            className="w-full flex items-center gap-2.5 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-left active:scale-[0.99] transition-transform"
+                        >
+                            <Megaphone size={18} weight="fill" className="text-amber-500 shrink-0" />
+                            <span className={`flex-1 min-w-0 text-sm truncate ${activeGroup?.announcement?.text ? 'text-amber-800/90' : 'text-slate-400'}`}>
+                                {activeGroup?.announcement?.text || (userCanManage(activeGroup) ? '点此发布群公告' : '暂无群公告')}
+                            </span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-slate-400 shrink-0"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                        </button>
+                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">{userCanManage(activeGroup) ? '群主/管理员可发布或撤下，发布后群里会发系统通知，成员都能"看到"并自然回应。' : '仅群主/管理员可发布，你可以查看。'}</p>
                     </div>
 
                     {/* 群成员管理：点成员进资料页（管理员可禁言/设头衔/移除） */}
@@ -2738,6 +2805,46 @@ ${attachedImagesNote}
                 <div className="space-y-3">
                     <p className="text-xs text-slate-400">群名片只改变这位成员在本群的显示名，不影响 TA 的角色本名。清空保存即恢复角色名。群里所有人都会看到这条改动通知。</p>
                     <input value={tempMemberNickname} onChange={e => setTempMemberNickname(e.target.value)} maxLength={24} placeholder="给 TA 起个群里的昵称…" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-indigo-300 transition-all" autoFocus />
+                </div>
+            </Modal>
+
+            {/* 群公告 Modal：群主/管理员可编辑发布或撤下；普通成员只读查看 */}
+            <Modal
+                isOpen={modalType === 'group-announcement'} title="群公告" onClose={() => setModalType('none')}
+                footer={userCanManage(activeGroup) ? (
+                    <div className="flex gap-2 w-full">
+                        <button onClick={() => setTempAnnouncement('')} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
+                        <button onClick={handleSaveAnnouncement} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-2xl shadow-lg shadow-amber-200">
+                            {tempAnnouncement.trim() ? '发布' : (activeGroup?.announcement?.text ? '撤下公告' : '发布')}
+                        </button>
+                    </div>
+                ) : undefined}
+            >
+                <div className="space-y-3">
+                    {activeGroup?.announcement?.text && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                            <Megaphone size={13} weight="fill" className="text-amber-400" />
+                            <span>由 {displayNameOf(activeGroup, activeGroup.announcement.by)} 发布 · {new Date(activeGroup.announcement.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                    )}
+                    {userCanManage(activeGroup) ? (
+                        <>
+                            <textarea
+                                value={tempAnnouncement}
+                                onChange={e => setTempAnnouncement(e.target.value)}
+                                maxLength={800}
+                                rows={6}
+                                placeholder="写点群里要周知的事…（公告会置顶展示，成员都能看到并自然回应）"
+                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-amber-300 transition-all resize-none leading-relaxed"
+                                autoFocus
+                            />
+                            <p className="text-[10px] text-slate-400 text-right">{tempAnnouncement.length}/800 · 清空后发布即撤下公告</p>
+                        </>
+                    ) : (
+                        <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-900/90 leading-relaxed whitespace-pre-wrap min-h-[80px]">
+                            {activeGroup?.announcement?.text || '暂无群公告'}
+                        </div>
+                    )}
                 </div>
             </Modal>
 
