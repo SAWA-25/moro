@@ -4816,6 +4816,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     characters={characters}
                     apiConfig={apiConfig}
                     updateCharacter={updateCharacter}
+                    updateUserProfile={updateUserProfile}
                     addToast={addToast}
                     onEnd={handleCharPhoneCheckEnd}
                 />

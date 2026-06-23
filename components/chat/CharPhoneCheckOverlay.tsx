@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID } from '../../types';
 import { DB } from '../../utils/db';
+import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
 import { initUnblockAppeal } from '../../utils/unblockAppeal';
 import { recordCharUnlockFail } from '../../utils/lockAttempts';
@@ -26,8 +27,9 @@ import AppIcon from '../os/AppIcon';
 type StepApp = 'home' | 'chat-list' | 'chat-thread' | 'moments' | 'schedule' | 'gallery' | 'music';
 
 interface ScriptAction {
-    // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）
-    type: 'none' | 'reply' | 'block' | 'delete' | 'ignore' | 'post_moment';
+    // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）；
+    // clear_cart 作用在 shop（帮用户清空购物车·代付）
+    type: 'none' | 'reply' | 'block' | 'delete' | 'ignore' | 'post_moment' | 'clear_cart';
     content?: string;
 }
 
@@ -56,6 +58,7 @@ interface CharPhoneCheckOverlayProps {
     characters: CharacterProfile[];    // 全部联系人（含 char 自己）
     apiConfig: { baseUrl: string; apiKey: string; model: string };
     updateCharacter: (id: string, updates: Partial<CharacterProfile>) => Promise<void> | void;
+    updateUserProfile: (updates: Partial<UserProfile>) => void;
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
     /** 结束（记录已落库）。exitMode 用于宿主提示文案 */
     onEnd: (exitMode: 'consent' | 'questions' | 'forced' | 'finished') => void;
@@ -133,7 +136,7 @@ const safeParseScript = (raw: string): CheckScript | null => {
             thought: String(s.thought).slice(0, 300),
             action: s.action && typeof s.action === 'object'
                 ? {
-                    type: (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
+                    type: (['none', 'reply', 'block', 'delete', 'ignore', 'post_moment', 'clear_cart'].includes(s.action.type) ? s.action.type : 'none') as ScriptAction['type'],
                     content: typeof s.action.content === 'string' ? s.action.content.slice(0, 300) : undefined,
                 }
                 : undefined,
@@ -146,7 +149,7 @@ const safeParseScript = (raw: string): CheckScript | null => {
 };
 
 const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
-    char, userProfile, characters, apiConfig, updateCharacter, addToast, onEnd,
+    char, userProfile, characters, apiConfig, updateCharacter, updateUserProfile, addToast, onEnd,
 }) => {
     // 角色看到的是用户**实时真实**的桌面：真壁纸 + 真实安装的全部 App + 真实 dock
     const { theme } = useOS();
@@ -291,6 +294,11 @@ ${annivBrief || '（日程是空的）'}
 ### 相册
 ${gallerySnap.length > 0 ? `最近存了 ${gallerySnap.length} 张照片/聊天图` : '（相册几乎是空的）'}
 
+### ${userProfile.name} 的心意铺购物车（还没结算）
+${resolveCart(userProfile.shopCart).length > 0
+    ? resolveCart(userProfile.shopCart).map(({ item, qty }) => `- ${item.emoji}${item.name} ×${qty}`).join('\n') + `\n合计 ¥${fmtPrice(cartTotal(userProfile.shopCart))}`
+    : '（购物车是空的）'}
+
 ### 要求
 生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
 - "home" 桌面 / "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）/ "moments" 朋友圈 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
@@ -303,7 +311,9 @@ chat-thread 步骤可以带 action：
 - {"type":"ignore"} 看完冷哼一声不动
 moments（朋友圈）步骤可以带 action：
 - {"type":"post_moment","content":"…"} 代替 ${userProfile.name} 发一条朋友圈（content 是以 ${userProfile.name} 口吻写的动态正文，30~80字；可以宣示主权、撒糖、调皮地替TA说点话，也可能阴阳怪气）
-是否做这些动作、做哪种，严格按人设性格来：温柔的角色多半只看不动，占有欲强/醋劲大的角色才会下手——回复别人、拉黑、或抢着替TA发条朋友圈昭告关系。不要为了戏剧性乱拉黑、乱发。
+任意一步都可带 action（看到购物车有没结算的东西时）：
+- {"type":"clear_cart"} 帮 ${userProfile.name} 把心意铺购物车清空（你替 TA 代付）。宠溺/大方/想讨好或心疼 TA 的角色才会这么做；小气、在闹脾气或购物车是空的时候绝不要用。
+是否做这些动作、做哪种，严格按人设性格来：温柔的角色多半只看不动，占有欲强/醋劲大的角色才会下手——回复别人、拉黑、抢着替TA发朋友圈昭告关系、或大方地帮 TA 清空购物车。不要为了戏剧性乱来。
 另外生成 exitQuestions：3 个问题。${userProfile.name} 想中途拿回手机时，${char.name} 会要求 TA 先回答这 3 个问题（按人设出题：可以是审问、撒娇、试探）。
 endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用于之后 TA 主动发消息的语气基调）。
 
@@ -363,6 +373,22 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                         metadata: { sentByCharPhoneCheck: char.id, sentByCharPhoneCheckName: char.name },
                     } as any);
                     log(`在与「${target.name}」的对话里，以${userProfile.name}的名义回复了：「${act.content}」`);
+                } else if (act.type === 'clear_cart') {
+                    // 帮用户清空心意铺购物车（角色代付）：整车进用户背包 + 双方小票
+                    const items = expandCart(userProfile.shopCart);
+                    if (items.length > 0) {
+                        const total = cartTotal(userProfile.shopCart);
+                        const owned = items.map(makeOwnedItem);
+                        const userReceipts = items.map(it => makeReceipt(it, 'user', 'receive', char.id, char.name, '代付'));
+                        const charReceipts = items.map(it => makeReceipt(it, 'char', 'gift', 'user', userProfile.name || '我', '代付'));
+                        updateUserProfile({
+                            shopInventory: [...owned, ...(userProfile.shopInventory || [])],
+                            shopReceipts: [...userReceipts, ...(userProfile.shopReceipts || [])],
+                            shopCart: [],
+                        });
+                        await updateCharacter(char.id, { shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });
+                        log(`大方地帮 ${userProfile.name} 清空了心意铺购物车（${items.length}件，代付 ¥${fmtPrice(total)}）`);
+                    }
                 } else if ((act.type === 'block' || act.type === 'delete') && target && target.id !== char.id) {
                     await updateCharacter(target.id, { blacklisted: true, blacklistedAt: Date.now(), unblockAppeal: initUnblockAppeal() });
                     log(act.type === 'block'

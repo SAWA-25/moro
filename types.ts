@@ -1972,6 +1972,8 @@ export interface CharacterProfile {
   marriage?: MarriageState;
   /** 购物商城·角色小票：角色收到的礼物 / 自己买的 / 回赠用户的历史（最新在前）。供「查角色购物小票」与聊天上下文。 */
   shopReceipts?: ShopReceipt[];
+  /** 购物商城·角色购物车：角色逛商城时加进的「心愿购物车」，用户可帮 TA 清空（代付）。 */
+  shopCart?: ShopCartLine[];
   /** 来往·情侣空间（参考 QQ 情侣空间）：恋爱天数 / 亲密度 / 情侣动态 / 纪念日 / 相册 / 约定 / 悄悄话。
    *  挂在角色上（每个角色一份），由 ChatHub「情侣空间」标签页读写，并经 utils/context.ts 注入聊天上下文。 */
   coupleSpace?: CoupleSpace;
@@ -2457,6 +2459,8 @@ export interface UserProfile {
     balance?: number;
     /** 购物商城·背包：买下但还没送出去的礼物。 */
     shopInventory?: ShopOwnedItem[];
+    /** 购物商城·购物车：加购但还没结算的商品（淘宝式）。 */
+    shopCart?: ShopCartLine[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
     /**
@@ -3071,6 +3075,12 @@ export interface ShopOwnedItem {
     emoji: string;
     price: number;
     boughtAt: number;
+}
+
+/** 购物商城：购物车里的一行（某商品 + 数量）。user 与 char 各有一个购物车。 */
+export interface ShopCartLine {
+    itemId: string;
+    qty: number;
 }
 
 /** 购物商城：一条小票（购买 / 赠送 / 收礼）。user 与 char 各存一份历史。 */
