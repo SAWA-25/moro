@@ -105,3 +105,6 @@ pm run build passes after the time-gap grouping fix.
 - `MessageItem`: char-recalled bubbles show "{charName}撤回了一条消息" + a 「点击查看」 that reveals the stashed `recalledContent` in an amber 偷看 box (your own recalled messages still show 「重新编辑」). The model still only ever sees "撤回了一条消息".
 - Added a `[[WITHDRAW]]` capability line to the system prompt (low-frequency, emotion-driven). New `messageWithdraw.test.ts` (5 tests, incl. guarding against `[[RECALL: YYYY-MM]]` false-positives).
 - `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.
+
+- 单条消息转发 (forward a single message): the long-press menu only had 多选→转发 for bulk forwarding; added a direct 转发 entry. It seeds the selection with just that one message and opens the existing forward picker, reusing the same `handleForwardToCharacter` → `chat_forward` card flow (no new forwarding infra). Single chat (groups have no forward-to-character flow yet).
+- `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.

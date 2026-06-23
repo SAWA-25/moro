@@ -2860,6 +2860,16 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         setShowForwardModal(true);
     };
 
+    // 单条转发（QQ/微信式「转发」）：从长按菜单直接把这一条转给别的角色，
+    // 复用多选转发的同一套选人 + chat_forward 落卡逻辑（只是只勾这一条）。
+    const handleForwardSingle = () => {
+        if (!selectedMessage) return;
+        setSelectedMsgIds(new Set([selectedMessage.id]));
+        setModalType('none');
+        setSelectedMessage(null);
+        setShowForwardModal(true);
+    };
+
     const handleForwardToCharacter = async (targetCharId: string) => {
         if (!char) return;
         const selectedMsgs = messages
@@ -3642,7 +3652,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
                 onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (!next) { setShowingTargetIds(new Set()); } }}
