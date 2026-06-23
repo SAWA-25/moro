@@ -99,6 +99,8 @@ export interface CoupleSpaceBlockParams {
     pendingTaskTitles: string[];
     /** 未实现的共同心愿（愿望清单），最多调用方给 3 条 */
     pendingWishes?: string[];
+    /** 提问箱里近来的问答（已格式化，如「user问「…」，你答「…」」），最多 2 条 */
+    recentQaLines?: string[];
     /** 用户留的、角色还没回的最新悄悄话（无则不注入） */
     lastUserWhisper?: string;
 }
@@ -122,6 +124,11 @@ export function coupleSpaceBlock(p: CoupleSpaceBlockParams): string {
     if (p.pendingWishes && p.pendingWishes.length) {
         lines.push(`- 你们愿望清单上还没实现的心愿：${p.pendingWishes.map(w => `「${w}」`).join('、')}。这些是你们一起许下、盼着有天能实现的愿望，可以在合适时主动提起、憧憬一下、或张罗着去圆它。`);
     }
+    if (p.recentQaLines && p.recentQaLines.length) {
+        lines.push(`- 你最近在「提问箱」里回答过${p.userName}的问题：`);
+        p.recentQaLines.forEach(l => lines.push(`  · ${l}`));
+        lines.push(`  这些是你亲口说过的话，聊天时态度、喜好要和它们保持一致，别自相矛盾。`);
+    }
     if (p.lastUserWhisper) {
         lines.push(`- ${p.userName}在悄悄话信箱里给你留了言：「${p.lastUserWhisper}」，这句话 TA 没在明面上说、专门悄悄写给你——你可以在聊天里自然地、带着被这份心意触动的样子回应它。`);
     }
@@ -142,6 +149,11 @@ export function coupleCommentUserPrompt(userName: string, momentWhat: string, mo
 /** 用户留悄悄话后，角色的回信（user 文案）。 */
 export function coupleWhisperUserPrompt(userName: string, whisper: string): string {
     return `${userName}在情侣空间的悄悄话信箱里，悄悄给你留了言：「${whisper}」。\n这是只在你们俩之间的私密心里话。请你接住这份心意，温柔地回一条悄悄话（30 字左右，一两句）：贴着 TA 说的内容走，让 TA 觉得被认真听见、被放在心上，而不是泛泛地安慰或客套。`;
+}
+
+/** 提问箱：用户向角色提了一个问题，角色以恋人身份认真作答（user 文案）。 */
+export function coupleQuestionUserPrompt(userName: string, question: string): string {
+    return `${userName}在情侣空间的「提问箱」里问了你一个问题：「${question}」。\n这是 TA 想更懂你、和你拉近一点的小心思。请你以恋人的身份认真回答（40 字左右，一两句）：贴着问题本身走，给出真实、具体、带着你人设口吻和这段感情温度的回答，可以坦诚、可以撒娇、可以反问回去逗 TA，但别空泛敷衍、别答非所问。`;
 }
 
 /** 用户对角色「亲一下/抱一下/牵手/送礼物」后的即时反应（user 文案）。 */

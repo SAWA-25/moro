@@ -23,7 +23,7 @@ import type {
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
-  coupleInnerVoiceUserPrompt,
+  coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt,
 } from './laiwangPrompts';
 
 export interface CoupleApi {
@@ -48,6 +48,7 @@ export function createCoupleSpace(): CoupleSpace {
     tasks: [],
     whispers: [],
     wishes: [],
+    questions: [],
     interactions: [],
     createdAt: now,
     updatedAt: now,
@@ -68,6 +69,7 @@ export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | 
       tasks: cs.tasks || [],
       whispers: cs.whispers || [],
       wishes: cs.wishes || [],
+      questions: cs.questions || [],
       interactions: cs.interactions || [],
       intimacy: typeof cs.intimacy === 'number' ? cs.intimacy : 0,
     };
@@ -200,7 +202,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     !!cs.anniversaryDate || (cs.intimacy || 0) > 0 ||
     (cs.moments?.length || 0) > 0 || (cs.anniversaries?.length || 0) > 0 ||
     (cs.tasks?.length || 0) > 0 || (cs.whispers?.length || 0) > 0 ||
-    (cs.wishes?.length || 0) > 0 ||
+    (cs.wishes?.length || 0) > 0 || (cs.questions?.length || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
 
@@ -227,6 +229,12 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
   const pendingTaskTitles = (cs.tasks || []).filter(t => !t.done).slice(0, 3).map(t => t.title);
   const pendingWishes = (cs.wishes || []).filter(w => !w.fulfilled).slice(0, 3).map(w => w.text);
 
+  // 提问箱里你近来答过的问答（让角色言行与自己答过的话保持一致）
+  const recentQaLines = [...(cs.questions || [])]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 2)
+    .map(q => `${userName}问「${q.question.slice(0, 40)}」，你答「${q.answer.slice(0, 50)}」`);
+
   // 用户留的、角色还没回的悄悄话（最新一条）
   const whispers = [...(cs.whispers || [])].sort((a, b) => b.at - a.at);
   const lastUserWhisper = whispers.find(w => w.author === 'user');
@@ -244,6 +252,7 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     upcomingLines,
     pendingTaskTitles,
     pendingWishes,
+    recentQaLines,
     lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
   });
 }
@@ -359,6 +368,31 @@ export async function generateCharWhisperReply(opts: {
     { role: 'user', content: coupleWhisperUserPrompt(userName, whisper) },
   ], 160);
   return cleanLine(out, 100, [char.name, userName]);
+}
+
+/** 提问箱：角色（以恋人身份）回答用户提出的一个问题。 */
+export async function generateCharQuestionAnswer(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  question: string;
+}): Promise<string> {
+  const { char, userName, api, question } = opts;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleQuestionUserPrompt(userName, question) },
+  ], 200);
+  return cleanParagraph(out, 120, [char.name, userName]);
+}
+
+/** 提问箱兜底回答（LLM 失败 / 未配 API 时用）。 */
+export function fallbackQuestionAnswer(): string {
+  const pool = [
+    '这个问题…让我好好想想哦，其实我心里早有答案，只是想多回味一会儿和你有关的每一点。',
+    '唔，被你这么一问还有点害羞。不过只要是关于你、关于我们的，我都愿意认真回答。',
+    '嘿嘿，这种小问题最喜欢了。答案嘛——和你在一起的每个版本，我都喜欢。',
+  ];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** 角色被「亲一下 / 抱一下 / 牵手 / 送礼物」后的一句反应。 */

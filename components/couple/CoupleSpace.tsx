@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useOS } from '../../context/OSContext';
 import {
   CharacterProfile, CoupleSpace as CoupleSpaceData, CoupleMoment, CoupleAnniversary,
-  CouplePhoto, CoupleTask, CoupleWish, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
+  CouplePhoto, CoupleTask, CoupleWish, CoupleQuestion, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
 } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
@@ -13,6 +13,7 @@ import {
   fallbackCharInteractionNote, todayYmd, pushInteraction,
   generateCharCoupleComment, generateCharWhisperReply, generateCharInteractionNote, generateCharMoment,
   generateCharInnerVoice, fallbackInnerVoice,
+  generateCharQuestionAnswer, fallbackQuestionAnswer,
 } from '../../utils/coupleSpace';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
@@ -25,6 +26,7 @@ const MAX_IMAGES = 9;
 const MOOD_EMOJIS = ['😊', '🥰', '😍', '🤗', '😋', '🥳', '🤔', '😢', '😴', '💕', '🌙', '☀️'];
 const TASK_SUGGESTIONS = ['今天说晚安', '一起看一部电影', '给对方做顿饭', '一起散步半小时', '互道一句早安', '拍一张合照'];
 const WISH_SUGGESTIONS = ['一起去看海', '一起养一只猫', '去看一场演唱会', '一起跨年', '环游一座城市', '拍一组情侣写真'];
+const QUESTION_SUGGESTIONS = ['你最喜欢我哪一点？', '第一次见我时你什么感觉？', '理想中的约会是什么样？', '最想和我一起去哪里？', '今天有没有偷偷想我？', '最近有什么心事吗？'];
 
 // ── 全局设计 token（黑白灰拼贴手帐：强调色由粉紫改墨灰）──
 const ACCENT = 'linear-gradient(135deg, #3a352e 0%, #1f1d1a 100%)';                 // 强调墨灰渐变
@@ -397,6 +399,24 @@ const CoupleSpace: React.FC = () => {
     setWhisperBusy(false);
   };
 
+  // ── 提问箱 ──
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [questionInput, setQuestionInput] = useState('');
+  const [questionBusy, setQuestionBusy] = useState(false);
+  const askQuestion = async (q?: string) => {
+    if (!partner || questionBusy) return;
+    const question = (q ?? questionInput).trim();
+    if (!question) return;
+    setQuestionInput('');
+    setQuestionBusy(true);
+    let answer = '';
+    try { answer = await generateCharQuestionAnswer({ char: partner, userName, api: coupleApi, question }); } catch { /* ignore */ }
+    if (!answer) answer = fallbackQuestionAnswer();
+    const item: CoupleQuestion = { id: genCoupleId('qa'), question, answer, at: Date.now() };
+    mutate(cs => ({ ...cs, questions: [...(cs.questions || []), item] }), 3);
+    setQuestionBusy(false);
+  };
+
   // ── 渲染：未绑定 ──
   if (!partner) {
     const romantic = (c: CharacterProfile) => ['crush', 'lover', 'engaged', 'married'].includes(c.relationship?.stage || '');
@@ -759,6 +779,13 @@ const CoupleSpace: React.FC = () => {
         })()}
       </div>
 
+      {/* 提问箱浮动入口（叠在悄悄话上方） */}
+      <button onClick={() => setShowQuestions(true)}
+        className="absolute right-4 bottom-[4.5rem] z-20 w-12 h-12 rounded-full text-white shadow-lg shadow-pink-300/50 flex items-center justify-center active:scale-90 transition"
+        style={{ background: ACCENT }} title="提问箱">
+        <ChatCircleDots size={22} weight="fill" />
+      </button>
+
       {/* 悄悄话浮动入口 */}
       <button onClick={() => setShowWhispers(true)}
         className="absolute right-4 bottom-4 z-20 w-12 h-12 rounded-full text-white shadow-lg shadow-pink-300/50 flex items-center justify-center active:scale-90 transition"
@@ -843,6 +870,40 @@ const CoupleSpace: React.FC = () => {
             </div>
           ))}
           {whisperBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在回信…</div>}
+        </div>
+      </Modal>
+
+      {/* 提问箱 */}
+      <Modal isOpen={showQuestions} title="提问箱 ❓" onClose={() => setShowQuestions(false)} footer={<div className="w-full space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          {QUESTION_SUGGESTIONS.slice(0, 3).map(s => (
+            <button key={s} onClick={() => askQuestion(s)} disabled={questionBusy} className="text-[10px] px-2.5 py-1 rounded-full bg-white border border-[#f0e3e9] active:scale-95 transition disabled:opacity-40" style={{ color: '#c76b8e' }}>{s}</button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={questionInput} onChange={e => setQuestionInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !questionBusy) askQuestion(); }}
+            placeholder={`问 ${partnerName} 一个问题…`} className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
+          <button onClick={() => askQuestion()} disabled={questionBusy || !questionInput.trim()} className="px-4 text-white rounded-2xl active:scale-95 transition disabled:opacity-50" style={{ background: ACCENT }}>
+            {questionBusy ? <ArrowsClockwise size={18} className="animate-spin" /> : <PaperPlaneTilt size={18} weight="fill" />}
+          </button>
+        </div>
+      </div>}>
+        <div className="space-y-3">
+          {(space.questions || []).length === 0 && <div className="text-center text-[#bbb] text-xs py-6">问 {partnerName} 一个问题，更懂 TA 一点 💭</div>}
+          {[...(space.questions || [])].sort((a, b) => a.at - b.at).map(q => (
+            <div key={q.id} className="space-y-1.5">
+              <div className="flex justify-end">
+                <div className="max-w-[78%] px-3.5 py-2.5 rounded-2xl rounded-br-md text-[13px] text-white" style={{ background: ACCENT }}>{q.question}</div>
+              </div>
+              <div className="flex justify-start">
+                <div className="max-w-[82%] px-3.5 py-2.5 rounded-2xl rounded-bl-md text-[13px] text-[#444] leading-relaxed border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }}>
+                  {q.answer}
+                  <div className="text-[9px] mt-1 text-[#bbb]">{partnerName} · {timeAgo(q.at)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {questionBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在思考…</div>}
         </div>
       </Modal>
 

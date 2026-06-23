@@ -2218,6 +2218,14 @@ export interface CoupleWish {
   fulfilledAt?: number;
 }
 
+/** 提问箱：用户问一句，角色（AI）答一句，两边合存一条。 */
+export interface CoupleQuestion {
+  id: string;
+  question: string;
+  answer: string;
+  at: number;
+}
+
 /** 悄悄话 / 留言信箱：一条私密留言。 */
 export interface CoupleWhisper {
   id: string;
@@ -2256,6 +2264,8 @@ export interface CoupleSpace {
   whispers: CoupleWhisper[];
   /** 愿望清单：你们的共同心愿（可选，老数据可能缺） */
   wishes?: CoupleWish[];
+  /** 提问箱：你问 TA 答的问答记录（可选，老数据可能缺） */
+  questions?: CoupleQuestion[];
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;
