@@ -42,6 +42,7 @@ import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractWithdrawDirective, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
+import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
@@ -505,6 +506,18 @@ export async function applyAssistantPostProcessing(
             aiContent = withdrawExtract.content;
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_WITHDRAW_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // 角色给用户消息贴表情回应（QQ/微信 tap-to-react）。先剥后播：Chat.tsx 监听 CHAR_REACT_EVENT，
+    // 把该表情加到用户最近一条消息上。
+    {
+        const reactExtract = extractReactDirective(aiContent);
+        if (reactExtract.emoji) {
+            aiContent = reactExtract.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_REACT_EVENT, { detail: { charId: char.id, emoji: reactExtract.emoji } }));
             }
         }
     }

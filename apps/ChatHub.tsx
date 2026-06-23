@@ -19,6 +19,7 @@ import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
+import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -42,6 +43,7 @@ const GroupMessageItem = React.memo(({
     onToggleSelect,
     onLongPress,
     onReeditRecalled,
+    onReactToggle,
     displayName,
     memberTitle,
     onAvatarClick,
@@ -65,6 +67,8 @@ const GroupMessageItem = React.memo(({
     onLongPress: (id: number) => void,
     /** 撤回的自己消息点「重新编辑」：把原文还原回输入框 */
     onReeditRecalled?: (m: Message) => void,
+    /** 点表情回应小药丸：切换自己（'user'）对该表情的回应 */
+    onReactToggle?: (m: Message, emoji: string) => void,
     /** 群名片（成员在本群的昵称），不传则用角色名 */
     displayName?: string,
     /** 群主/管理员设置的头衔徽章 */
@@ -436,6 +440,21 @@ const GroupMessageItem = React.memo(({
                     </span>
                 )}
                 {renderContent()}
+                {/* 表情回应小药丸（QQ/微信 tap-to-react） */}
+                {Array.isArray(msg.metadata?.reactions) && msg.metadata.reactions.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                        {(msg.metadata.reactions as { emoji: string; by: string[] }[]).map(r => {
+                            const mine = r.by?.includes('user');
+                            return (
+                                <button key={r.emoji} onClick={(e) => { e.stopPropagation(); onReactToggle?.(msg, r.emoji); }}
+                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[12px] leading-none border transition-colors active:scale-90 ${mine ? 'bg-primary/15 border-primary/40' : 'bg-black/5 border-black/10'}`}>
+                                    <span>{r.emoji}</span>
+                                    {(r.by?.length || 0) > 1 && <span className="text-[9px] font-bold opacity-60">{r.by.length}</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 <span className="text-[9px] text-slate-300 mt-1 px-1">{timeStr}</span>
             </div>
 
@@ -959,6 +978,21 @@ const ChatHub: React.FC = () => {
         setInput(prev => (prev.trim() ? `${prev}\n${text}` : text));
         addToast('已还原到输入框', 'info');
     }, []);
+
+    // 表情回应（QQ/微信 tap-to-react）：切换 'user' 对群消息某表情的回应，落 metadata.reactions。
+    const reactToMessage = useCallback(async (target: Message, emoji: string) => {
+        if (!target) return;
+        const next = toggleReaction(target.metadata?.reactions, emoji, 'user');
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), reactions: next }));
+        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, metadata: { ...(m.metadata || {}), reactions: next } } : m));
+    }, []);
+    const handleReactToggle = useCallback((m: Message, emoji: string) => { void reactToMessage(m, emoji); }, [reactToMessage]);
+    const handleReactMessage = (emoji: string) => {
+        if (!selectedMessage) return;
+        void reactToMessage(selectedMessage, emoji);
+        setModalType('none');
+        setSelectedMessage(null);
+    };
 
     const handleDeleteSingleMessage = async () => {
         if (!selectedMessage) return;
@@ -3003,6 +3037,7 @@ ${attachedImagesNote}
                                 onToggleSelect={toggleMessageSelection}
                                 onLongPress={handleMessageLongPress}
                                 onReeditRecalled={handleReeditRecalled}
+                                onReactToggle={handleReactToggle}
                                 displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
                                 memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
                                 onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); } : undefined}
@@ -3347,6 +3382,19 @@ ${attachedImagesNote}
             {/* Message Options Modal */}
             <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
                 <div className="space-y-3">
+                    {/* 表情回应快捷条（QQ/微信 tap-to-react） */}
+                    <div className="flex items-center justify-between gap-1 px-1 pb-1">
+                        {REACTION_EMOJIS.map(emoji => {
+                            const reacted = Array.isArray(selectedMessage?.metadata?.reactions)
+                                && selectedMessage!.metadata.reactions.some((r: any) => r.emoji === emoji && r.by?.includes('user'));
+                            return (
+                                <button key={emoji} onClick={() => handleReactMessage(emoji)}
+                                    className={`w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform ${reacted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-slate-100'}`}>
+                                    {emoji}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <button onClick={handleEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         多选 / 批量删除
                     </button>

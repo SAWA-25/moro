@@ -108,3 +108,9 @@ pm run build passes after the time-gap grouping fix.
 
 - 单条消息转发 (forward a single message): the long-press menu only had 多选→转发 for bulk forwarding; added a direct 转发 entry. It seeds the selection with just that one message and opens the existing forward picker, reusing the same `handleForwardToCharacter` → `chat_forward` card flow (no new forwarding infra). Single chat (groups have no forward-to-character flow yet).
 - `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.
+
+- 消息表情回应 (message emoji reactions, QQ/微信 tap-to-react): long-press a message → quick emoji bar; tap to react. Reactions show as small pills under the bubble (emoji + count when >1); tapping a pill toggles your own reaction. Works in 单聊 + 群聊.
+- New `utils/messageReactions.ts`: `MessageReaction` shape (`metadata.reactions = {emoji,by[]}[]`, by holds 'user'/charId), pure `toggleReaction`, `REACTION_EMOJIS` quick-set, and the `[[REACT: 表情]]` directive (`extractReactDirective` + `CHAR_REACT_EVENT`). New `messageReactions.test.ts` (9 tests).
+- Char-side: the character can react to your latest message by emitting `[[REACT: 👍]]` — `applyAssistantPostProcessing` strips + dispatches, `Chat.tsx` adds it to your most-recent message; `sanitize.ts` strips the tag everywhere (also propagated into `worker.bundle.js`). Capability line added to the system prompt. (Char-side reactions in groups deferred.)
+- Context: the char is told when you react to its messages via a concise note in `chatPrompts.ts` live history (so it can play off your 👍/❤️). Both `MessageItem` and `GroupMessageItem` memo comparators now diff `reactions` so pills update.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 520 unit tests green.

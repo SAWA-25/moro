@@ -6,6 +6,7 @@ import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, ApiPreset, APIConfig } from '../../types';
 import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
+import { REACTION_EMOJIS } from '../../utils/messageReactions';
 
 interface ChatModalsProps {
     modalType: string;
@@ -77,6 +78,7 @@ interface ChatModalsProps {
     onDeleteMessage: () => void;
     onRecallMessage: () => void;
     onForwardMessage: () => void;
+    onReactMessage: (emoji: string) => void;
     onCopyMessage: () => void;
     onDeleteEmoji: () => void;
     onDeleteCategory: () => void;
@@ -149,7 +151,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onTransfer, onImportEmoji, onSaveSettings,
     onBgUpload, onRemoveBg, onClearHistory,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
-    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
+    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
@@ -862,6 +864,22 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => setModalType('none')}>
                 <div className="space-y-3">
+                    {/* 表情回应快捷条（QQ/微信 tap-to-react）：点一个表情即回应并关闭 */}
+                    <div className="flex items-center justify-between gap-1 px-1 pb-1">
+                        {REACTION_EMOJIS.map(emoji => {
+                            const reacted = Array.isArray(selectedMessage?.metadata?.reactions)
+                                && selectedMessage!.metadata.reactions.some((r: any) => r.emoji === emoji && r.by?.includes('user'));
+                            return (
+                                <button
+                                    key={emoji}
+                                    onClick={() => onReactMessage(emoji)}
+                                    className={`w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform ${reacted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-slate-100'}`}
+                                >
+                                    {emoji}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <button onClick={onEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         多选 / 批量删除
                     </button>

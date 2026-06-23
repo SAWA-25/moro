@@ -835,6 +835,8 @@ interface MessageItemProps {
     onSwipeReply?: (m: Message) => void;
     /** 撤回的自己消息点「重新编辑」：把原文还原回输入框（微信式）。 */
     onReeditRecalled?: (m: Message) => void;
+    /** 点表情回应小药丸：切换自己（'user'）对该表情的回应。 */
+    onReactToggle?: (m: Message, emoji: string) => void;
     selectionMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
@@ -902,6 +904,7 @@ const MessageItem = React.memo(({
     onLongPress,
     onSwipeReply,
     onReeditRecalled,
+    onReactToggle,
     selectionMode,
     isSelected,
     onToggleSelect,
@@ -3084,6 +3087,25 @@ const MessageItem = React.memo(({
                 </div>
                 );
             })()}
+
+            {/* Layer 7: 表情回应小药丸（QQ/微信 tap-to-react）。点切换自己的回应。 */}
+            {Array.isArray(m.metadata?.reactions) && m.metadata.reactions.length > 0 && (
+                <div className="relative z-10 mt-1.5 flex flex-wrap gap-1">
+                    {(m.metadata.reactions as { emoji: string; by: string[] }[]).map(r => {
+                        const mine = r.by?.includes('user');
+                        return (
+                            <button
+                                key={r.emoji}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onReactToggle?.(m, r.emoji); }}
+                                className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[12px] leading-none border transition-colors active:scale-90 ${mine ? 'bg-primary/15 border-primary/40' : 'bg-black/5 border-black/10'}`}
+                            >
+                                <span>{r.emoji}</span>
+                                {(r.by?.length || 0) > 1 && <span className="text-[9px] font-bold opacity-60">{r.by.length}</span>}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }, (prev, next) => {
@@ -3113,7 +3135,9 @@ const MessageItem = React.memo(({
            // 不动 content/id，需单独比对，否则 memo 会挡掉卡片状态更新。
            prev.msg.metadata?.status === next.msg.metadata?.status &&
            // 撤回只动 metadata.recalled、不动 content，同样要单独比对，否则气泡不会变成撤回提示。
-           prev.msg.metadata?.recalled === next.msg.metadata?.recalled;
+           prev.msg.metadata?.recalled === next.msg.metadata?.recalled &&
+           // 表情回应只动 metadata.reactions，需单独比对，否则回应小药丸不会更新。
+           JSON.stringify(prev.msg.metadata?.reactions) === JSON.stringify(next.msg.metadata?.reactions);
 });
 
 export default MessageItem;

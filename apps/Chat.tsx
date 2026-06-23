@@ -27,6 +27,7 @@ import UserActionSelectorModal from '../components/chat/UserActionSelectorModal'
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
 import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
+import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
@@ -1463,6 +1464,27 @@ ${recent || '（你们相处了很久）'}
         return () => window.removeEventListener(CHAR_WITHDRAW_EVENT, handler);
     }, []);
 
+    // ── 角色给用户消息贴表情：监听 [[REACT: 表情]] 广播，把该表情加到用户最近一条消息上。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string; emoji?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current || !d.emoji) return;
+            setMessages(prev => {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                    const mm = prev[i];
+                    if (mm.role === 'user' && mm.type !== 'system') {
+                        const next = toggleReaction(mm.metadata?.reactions, d.emoji!, d.charId!);
+                        void DB.updateMessageMetadata(mm.id, (p: any) => ({ ...(p || {}), reactions: next }));
+                        return prev.map((x, j) => j === i ? { ...x, metadata: { ...(x.metadata || {}), reactions: next } } : x);
+                    }
+                }
+                return prev;
+            });
+        };
+        window.addEventListener(CHAR_REACT_EVENT, handler);
+        return () => window.removeEventListener(CHAR_REACT_EVENT, handler);
+    }, []);
+
     // ── 角色给用户换备注：监听 [[SET_USER_REMARK]] 广播，弹「换备注」弹窗（点开看动机）──
     useEffect(() => {
         const handler = (e: Event) => {
@@ -2717,6 +2739,25 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         addToast('已撤回', 'success');
     };
 
+    // 表情回应（QQ/微信 tap-to-react）：切换 'user' 对某条消息某表情的回应，落 metadata.reactions。
+    const reactToMessage = useCallback(async (target: Message, emoji: string) => {
+        if (!target) return;
+        const next = toggleReaction(target.metadata?.reactions, emoji, 'user');
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), reactions: next }));
+        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, metadata: { ...(m.metadata || {}), reactions: next } } : m));
+    }, []);
+
+    // 长按菜单选表情：回应当前选中消息并关闭菜单
+    const handleReactMessage = (emoji: string) => {
+        if (!selectedMessage) return;
+        void reactToMessage(selectedMessage, emoji);
+        setModalType('none');
+        setSelectedMessage(null);
+    };
+
+    // 点已有回应小药丸：切换自己的回应
+    const handleReactToggle = useCallback((m: Message, emoji: string) => { void reactToMessage(m, emoji); }, [reactToMessage]);
+
     // 「重新编辑」：把撤回的原文还原回输入框（微信式）。已有草稿则换行追加，不直接覆盖。
     const handleReeditRecalled = useCallback((m: Message) => {
         const text = (m.metadata?.recalledContent ?? '').toString();
@@ -3652,7 +3693,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onReactMessage={handleReactMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
                 onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (!next) { setShowingTargetIds(new Set()); } }}
@@ -4133,6 +4174,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             onLongPress={handleMessageLongPress}
                             onSwipeReply={handleSwipeReply}
                             onReeditRecalled={handleReeditRecalled}
+                            onReactToggle={handleReactToggle}
                             selectionMode={selectionMode}
                             isSelected={selectedMsgIds.has(m.id)}
                             onToggleSelect={toggleMessageSelection}
