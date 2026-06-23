@@ -195,6 +195,74 @@ export const expandCart = (cart: ShopCartLine[] | undefined): ShopItem[] => {
     return out;
 };
 
+// ── 淘宝式商品资料：月销量 / 评分 / 评价（纯函数·确定性，按 itemId 稳定生成） ──────
+
+/** 简单字符串哈希（确定性，用于由 itemId 生成稳定的"假"销量/评价）。 */
+const hashStr = (s: string): number => {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0);
+};
+
+/** 月销量（确定性）：便宜的卖得多，贵的卖得少，叠加按 id 的稳定抖动。范围约 30 ~ 9999。 */
+export const monthlySales = (itemId: string): number => {
+    const it = getShopItem(itemId);
+    if (!it) return 0;
+    const base = Math.max(20, Math.round(4000 / Math.sqrt(it.price + 1)));
+    const jitter = hashStr(itemId) % 1200;
+    return Math.min(9999, base + jitter);
+};
+
+/** 把销量格式化成淘宝式「月销 1.2万」「月销 800」。 */
+export const formatSales = (n: number): string =>
+    n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
+
+/** 评分（确定性）：4.6 ~ 5.0 之间，按 id 稳定。 */
+export const itemRating = (itemId: string): number =>
+    Math.round((4.6 + (hashStr('r' + itemId) % 41) / 100) * 10) / 10;
+
+export interface ShopReview { user: string; stars: number; text: string; }
+
+const REVIEW_USERS = ['t**o', '甜**圈', '阿**', '小**鱼', 'L**y', 'momo', '一**风', '北**川', '橘**酱', '游**客'];
+const REVIEW_TEXTS = [
+    '比图片还好看，包装也用心，给对象很合适～',
+    '质感超出预期，回购了第二件。',
+    '物流很快，拆开心情都变好了。',
+    '送人很有面子，对方很喜欢！',
+    '颜值在线，细节做得好，好评。',
+    '性价比挺高的，会推荐给朋友。',
+    '收到啦，和描述一致，没有色差。',
+    '包装精致，像是认真挑过的礼物。',
+    '小贵但值得，仪式感拉满。',
+    '客服态度很好，整体很满意。',
+];
+
+/** 某商品的评价（确定性）：按 itemId 稳定地从评论池里取 2~4 条。 */
+export const getItemReviews = (itemId: string): ShopReview[] => {
+    const h = hashStr('rev' + itemId);
+    const count = 2 + (h % 3); // 2~4 条
+    const out: ShopReview[] = [];
+    for (let i = 0; i < count; i++) {
+        const u = REVIEW_USERS[(h + i * 7) % REVIEW_USERS.length];
+        const t = REVIEW_TEXTS[(h + i * 13) % REVIEW_TEXTS.length];
+        const stars = 4 + ((h + i * 5) % 2); // 4 或 5 星
+        out.push({ user: u, stars, text: t });
+    }
+    return out;
+};
+
+/** 搜索商品：按名称 / 描述 / 分类名（含 emoji）模糊匹配。 */
+export const searchShopItems = (query: string): ShopItem[] => {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return SHOP_ITEMS;
+    const catLabel = (key: string) => SHOP_CATEGORIES.find(c => c.key === key)?.label || '';
+    return SHOP_ITEMS.filter(i =>
+        i.name.toLowerCase().includes(q) ||
+        i.blurb.toLowerCase().includes(q) ||
+        catLabel(i.category).toLowerCase().includes(q) ||
+        i.emoji.includes(q));
+};
+
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────
 
 export interface CharShopDecision {

@@ -2461,6 +2461,8 @@ export interface UserProfile {
     shopInventory?: ShopOwnedItem[];
     /** 购物商城·购物车：加购但还没结算的商品（淘宝式）。 */
     shopCart?: ShopCartLine[];
+    /** 购物商城·收藏（淘宝式想要清单）：收藏的商品 id。 */
+    shopFavorites?: string[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
     /**

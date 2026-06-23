@@ -130,3 +130,11 @@ pm run build passes after the time-gap grouping fix.
   - **角色心愿购物车**: 邀请 TA 逛商城 can now `want`-add to the char's own cart; the 小票·角色 tab shows 「TA 的心愿购物车」with 「帮 TA 清空购物车（代付）」 (user pays, char gets a 你代付 receipt + system note).
   - **联动查手机 (反查岗)**: `CharPhoneCheckOverlay` now gets the user's cart in its browse prompt + a `clear_cart` script action — a doting/generous char may 「帮 TA 清空购物车」 while snooping (whole cart → your 背包, 代付 receipts both sides, logged in the 查手机记录).
   - `pnpm tsc --noEmit` clean, `vite build` passes, 533 unit tests green (7 new).
+
+- 心意铺·淘宝化界面革新 (搜索 / 详情页 / 收藏 / 月销·评价):
+  - Pure helpers in `utils/shop.ts`: deterministic `monthlySales` (cheaper sells more), `itemRating` (4.6–5.0), `getItemReviews` (seeded buyer reviews), `searchShopItems`, `formatSales` (万级). New `shopBrowse.test.ts` (6 tests).
+  - **搜索**: a Taobao-style search pill at the top of 商城 — filters by name / 描述 / 分类 / emoji.
+  - **商品卡革新**: big emoji 主图 with a 收藏 ❤️ corner button, ⭐ 评分 · 月销 line, Taobao 红 (#ee0a24) price + 购买 button; tap the card → 详情页.
+  - **商品详情页 (PDP)**: full-screen overlay — 大图 hero, price + 评分/月销, 标题/描述, 宝贝评价 list (stars + buyer), bottom bar with 收藏 / 加入购物车 / 立即购买.
+  - **收藏**: `shopFavorites` on `UserProfile`; ❤️ toggle on cards + PDP, and a 收藏 chip in the category row to filter to favorites.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 539 unit tests green (6 new).
