@@ -28,6 +28,7 @@ import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '.
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
 import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
 import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
+import { CHAR_PAT_EVENT, DEFAULT_PAT_SUFFIX } from '../utils/patSuffix';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
@@ -1484,6 +1485,21 @@ ${recent || '（你们相处了很久）'}
         window.addEventListener(CHAR_REACT_EVENT, handler);
         return () => window.removeEventListener(CHAR_REACT_EVENT, handler);
     }, []);
+
+    // ── 角色拍用户：监听 [[PAT]] 广播，落一条 interaction 消息「角色 拍了拍 你 的<用户后缀>」。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            const suffix = userProfile.patSuffix || DEFAULT_PAT_SUFFIX;
+            void (async () => {
+                await DB.saveMessage({ charId: d.charId!, role: 'assistant', type: 'interaction', content: `[拍了拍 ${userProfile.name || '你'}]`, metadata: { patSuffix: suffix } } as any);
+                reloadMessages(visibleCountRef.current);
+            })();
+        };
+        window.addEventListener(CHAR_PAT_EVENT, handler);
+        return () => window.removeEventListener(CHAR_PAT_EVENT, handler);
+    }, [userProfile, reloadMessages]);
 
     // ── 角色给用户换备注：监听 [[SET_USER_REMARK]] 广播，弹「换备注」弹窗（点开看动机）──
     useEffect(() => {
@@ -4199,7 +4215,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             onMcdCandidate={handleMcdCandidate}
                             thinkingChainOptions={thinkingChainOptions}
                             onAvatarClick={() => setShowCharProfile(true)}
-                            onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
+                            onAvatarPoke={() => handleSendText(`[拍了拍 ${char.name}]`, 'interaction', { patSuffix: (char.patSuffix || '脑袋') })}
                             blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
                             onClaimTransfer={handleClaimRequest}
                             onOpenTakeoutCard={handleOpenTakeoutCard}

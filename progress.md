@@ -114,3 +114,11 @@ pm run build passes after the time-gap grouping fix.
 - Char-side: the character can react to your latest message by emitting `[[REACT: 👍]]` — `applyAssistantPostProcessing` strips + dispatches, `Chat.tsx` adds it to your most-recent message; `sanitize.ts` strips the tag everywhere (also propagated into `worker.bundle.js`). Capability line added to the system prompt. (Char-side reactions in groups deferred.)
 - Context: the char is told when you react to its messages via a concise note in `chatPrompts.ts` live history (so it can play off your 👍/❤️). Both `MessageItem` and `GroupMessageItem` memo comparators now diff `reactions` so pills update.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 520 unit tests green.
+
+- 群聊补全 + 拍一拍后缀 (4 features in one pass):
+  1. **拍一拍后缀** (WeChat-style pat): `patSuffix` on `UserProfile` + `CharacterProfile`. User pats char → 「你 拍了拍 X 的<char.patSuffix>」; char pats user via `[[PAT]]` → 「X 拍了拍 你 的<userProfile.patSuffix>」. Char self-changes its own via `[[PAT_SUFFIX: 后缀]]` (`utils/patSuffix.ts` + `CHAR_PAT_SUFFIX_EVENT` handled in `OSContext`); user sets their own in 文具盒·我 (PersonaApp, global field). New `patSuffix.test.ts` (6 tests). Old 戳一戳 messages without patSuffix still render 「戳了戳」.
+  2. **群聊·角色撤回**: group director can emit `[[WITHDRAW]]` per member → recalls that member's last group message (parsed in the action loop; doc added to the director prompt).
+  3. **群聊·角色表情回应**: `[[REACT: 表情]]` per member → reacts (by charId) to the most recent non-self group message.
+  4. **群聊·单条转发**: new 转发 entry in the group message menu → character picker → drops a `chat_forward` card into that character's private chat (reuses the single-chat card shape; groups had no forward infra before).
+- `[[PAT]]` / `[[PAT_SUFFIX]]` / `[[WITHDRAW]]` / `[[REACT]]` all stripped in `sanitize.ts` (propagated to `worker.bundle.js`). Capability lines added to both the single-chat system prompt and the group director prompt.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 526 unit tests green (6 new).

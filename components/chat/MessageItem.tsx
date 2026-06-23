@@ -1424,6 +1424,9 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'interaction') {
+        // 拍一拍（微信式）：带 patSuffix 的显示「X 拍了拍 Y 的<后缀>」；旧的戳一戳无 patSuffix，仍显示「戳了戳」。
+        const patSuffix = m.metadata?.patSuffix as string | undefined;
+        const isPat = patSuffix !== undefined;
         return (
             <div className={`flex flex-col items-center ${marginBottom} w-full animate-fade-in relative transition-[padding] duration-300 ${selectionMode ? 'pl-8' : ''}`}>
                 {selectionMode && (
@@ -1438,8 +1441,9 @@ const MessageItem = React.memo(({
                         <div className="text-[11px] text-slate-500 bg-slate-200/50 backdrop-blur-sm px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-white/40 shadow-sm select-none">
                         <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-4 h-4 group-hover:animate-bounce" />
                         <span className="font-medium opacity-80">{isUser ? '你' : charName}</span>
-                        <span className="opacity-60">戳了戳</span>
+                        <span className="opacity-60">{isPat ? '拍了拍' : '戳了戳'}</span>
                         <span className="font-medium opacity-80">{isUser ? charName : '你'}</span>
+                        {isPat && patSuffix && <span className="opacity-60">的{patSuffix}</span>}
                     </div>
                 </div>
             </div>

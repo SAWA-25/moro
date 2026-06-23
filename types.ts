@@ -1851,6 +1851,8 @@ export interface CharacterProfile {
   /** 已进入「往来」会话列表：新建/导入即置 true，或首次打开私聊时置 true。
    *  让角色创建/导入后无需先「添加好友」即可在往来直接出现并开聊。 */
   addedToChat?: boolean;
+  /** 拍一拍后缀（微信式）：别人「拍了拍 TA 的<后缀>」里的后缀。角色可用 [[PAT_SUFFIX: x]] 自己改，默认「脑袋」。 */
+  patSuffix?: string;
   blacklisted?: boolean;
   /** 用户拉黑角色的时刻——此后角色发来的消息气泡旁带红色感叹号 */
   blacklistedAt?: number;
@@ -2462,6 +2464,8 @@ export interface UserProfile {
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
      */
     vrState?: UserVRState;
+    /** 拍一拍后缀（微信式）：别人「拍了拍 你 的<后缀>」里的后缀。用户自定义，默认「脑袋」。 */
+    patSuffix?: string;
 }
 
 export interface UserVRState {

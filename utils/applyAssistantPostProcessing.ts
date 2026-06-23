@@ -43,6 +43,7 @@ import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
 import { extractWithdrawDirective, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
 import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
+import { extractPatSuffixDirective, extractPatDirective, CHAR_PAT_SUFFIX_EVENT, CHAR_PAT_EVENT } from './patSuffix';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
@@ -518,6 +519,25 @@ export async function applyAssistantPostProcessing(
             aiContent = reactExtract.content;
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_REACT_EVENT, { detail: { charId: char.id, emoji: reactExtract.emoji } }));
+            }
+        }
+    }
+
+    // 拍一拍：角色改自己的后缀 [[PAT_SUFFIX: x]]（OSContext 落 char.patSuffix）/ 角色拍用户 [[PAT]]
+    // （Chat.tsx 落一条 interaction 消息，显示「角色 拍了拍 你 的<用户后缀>」）。先剥后播。
+    {
+        const sfx = extractPatSuffixDirective(aiContent);
+        if (sfx.suffix !== null) {
+            aiContent = sfx.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_PAT_SUFFIX_EVENT, { detail: { charId: char.id, suffix: sfx.suffix } }));
+            }
+        }
+        const pat = extractPatDirective(aiContent);
+        if (pat.pat) {
+            aiContent = pat.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_PAT_EVENT, { detail: { charId: char.id } }));
             }
         }
     }

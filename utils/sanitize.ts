@@ -58,6 +58,9 @@ const stripBusinessTagsForBubble = (t: string): string =>
     .replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '')
     // [[REACT: 表情]] 角色给用户消息贴表情回应：Chat.tsx 据此落 reactions；气泡里不该残留。
     .replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '')
+    // 拍一拍：[[PAT_SUFFIX: x]] 角色改后缀、[[PAT]] 角色拍用户；据此落副作用，气泡里不该残留。
+    .replace(/\[\[\s*PAT_SUFFIX\s*[:：][^\]]*\]\]/gi, '')
+    .replace(/\[\[\s*PAT\s*\]\]/gi, '')
     // 来往/求婚/外卖/婚事 指令（OSContext 已据此落库，气泡里不应残留）
     .replace(/\[\[(?:REL|TAKEOUT_ORDER|WEDDING_PLAN)[：:][\s\S]*?\]\]/g, '')
     .replace(/\[\[PROPOSE(?:[：:][\s\S]*?)?\]\]/g, '')

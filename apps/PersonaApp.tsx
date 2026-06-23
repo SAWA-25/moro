@@ -579,6 +579,18 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             />
                         </div>
 
+                        {/* 拍一拍后缀（全局，不分扮相）：别人「拍了拍 你 的<后缀>」里的后缀 */}
+                        <div>
+                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">拍一拍后缀 / PAT · 全局（别人拍你时显示）</label>
+                            <input
+                                value={userProfile.patSuffix ?? ''}
+                                onChange={e => updateUserProfile({ patSuffix: e.target.value.slice(0, 20) })}
+                                className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]"
+                                placeholder="脑袋 / 肩膀 / 头发…（拍了拍 你 的___）"
+                                maxLength={20}
+                            />
+                        </div>
+
                         {/* 自述寄送方式（ST persona_description_position） */}
                         <div>
                             <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">自述寄往何处 / DELIVERY</label>

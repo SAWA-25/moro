@@ -11,6 +11,7 @@ import { CHAR_BLOCK_EVENT, extractBlockUserDirective, isCharBlockDisabled, rando
 import { isAppealDue, generateUnblockAppeal } from '../utils/unblockAppeal';
 import { resolveAuxApi } from '../utils/auxApi';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
+import { CHAR_PAT_SUFFIX_EVENT } from '../utils/patSuffix';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT, buildRelationshipState, sanitizeRelationshipUpdate, isRelationshipStage, applyAffectionDelta } from '../utils/relationship';
 import { TAKEOUT_ORDER_EVENT, synthesizeCharOrder, postTakeoutPlacedToChat, buildTakeoutReceivedHint, notifyTakeoutUpdated } from '../utils/takeout';
 import { isBackgroundReplyNotifyEnabled } from '../utils/backgroundReply';
@@ -1564,8 +1565,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           } catch { /* ignore */ }
           setLastMsgTimestamp(Date.now());
       };
+      // 拍一拍：角色用 [[PAT_SUFFIX: x]] 改自己的拍一拍后缀（默认「脑袋」）
+      const onPatSuffix = (e: Event) => {
+          const { charId, suffix } = ((e as CustomEvent).detail || {}) as { charId?: string; suffix?: string };
+          if (!charId) return;
+          if (!charactersRef.current.find(c => c.id === charId)) return;
+          updateCharacter(charId, { patSuffix: (suffix || '').slice(0, 20) });
+      };
       window.addEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
-      return () => window.removeEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
+      window.addEventListener(CHAR_PAT_SUFFIX_EVENT, onPatSuffix);
+      return () => {
+          window.removeEventListener(CHAR_USER_REMARK_EVENT, onUserRemark);
+          window.removeEventListener(CHAR_PAT_SUFFIX_EVENT, onPatSuffix);
+      };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
 
