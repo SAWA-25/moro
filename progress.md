@@ -42,3 +42,10 @@ pm run build passes after the chat-avatar-frequency changes.
 - Updated chat message grouping in pps/Chat.tsx so consecutive messages now split not only by sender role but also by a 30-minute time gap, preventing early messages from visually merging into much later ones on either side of the conversation.
 - 
 pm run build passes after the time-gap grouping fix.
+
+2026-06-23
+- Added 角色关系网 (Character Relationship Network): a new `components/chat/RelationshipNetwork.tsx` that renders the user at the center of a radial graph with every character around them. Edge color/dashing comes from the relationship stage, line thickness/node distance from affection, so closeness reads at a glance.
+- Tapping a character node opens a detail card (affection bar, relationship label, days-together for lover+, current mood, recent relationship-change history) with a one-tap "进入聊天" jump.
+- Surfaced via a 关系网 button in the ChatHub 名册 (contacts) tab header; opens as a full-screen overlay over the list.
+- Added reusable stage visuals (`STAGE_NETWORK_META`, `STAGE_DASHED`) to `utils/relationship.ts`, reusing existing `STAGE_DEFAULT_LABEL` / `inferStageFromAffection`.
+- `pnpm tsc --noEmit` is clean and `vite build` passes.
