@@ -1755,6 +1755,17 @@ export interface CharCityConfig {
   fictionLevel?: number;
 }
 
+/** 角色备忘录的一条：TA 手机备忘录里的待办 / 随手记 / 小心事（TA 自己写或用户帮记）。注入聊天上下文让 TA 记得。 */
+export interface CharMemo {
+  id: string;
+  text: string;
+  createdAt: number;
+  /** 谁写的：'char'=角色自己记的（生成）；'user'=用户帮 TA 记的 */
+  by?: 'char' | 'user';
+  /** 待办勾掉（完成的不再注入上下文） */
+  done?: boolean;
+}
+
 export interface CharacterProfile {
   id: string;
   name: string;
@@ -1762,6 +1773,8 @@ export interface CharacterProfile {
   description: string;
   systemPrompt: string;
   worldview?: string;
+  /** 角色备忘录：TA 的待办/随手记/小心事，聊天时随身携带（注入上下文），TA 会记得自己写过的事。 */
+  memos?: CharMemo[];
   /** 外貌 Tag：booru 风格英文外貌标签，喂文生图（立绘/头像/相册）用。可从人设+绑定世界书一键生成（utils/appearanceTags.ts），也可手改。 */
   appearanceTags?: string;
   /**
