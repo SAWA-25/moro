@@ -833,6 +833,10 @@ interface MessageItemProps {
     onLongPress: (m: Message) => void;
     /** 左滑气泡触发引用回复（Telegram 式 swipe-to-reply）。 */
     onSwipeReply?: (m: Message) => void;
+    /** 撤回的自己消息点「重新编辑」：把原文还原回输入框（微信式）。 */
+    onReeditRecalled?: (m: Message) => void;
+    /** 点表情回应小药丸：切换自己（'user'）对该表情的回应。 */
+    onReactToggle?: (m: Message, emoji: string) => void;
     selectionMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: number) => void;
@@ -899,6 +903,8 @@ const MessageItem = React.memo(({
     userAvatar,
     onLongPress,
     onSwipeReply,
+    onReeditRecalled,
+    onReactToggle,
     selectionMode,
     isSelected,
     onToggleSelect,
@@ -947,6 +953,8 @@ const MessageItem = React.memo(({
     const [swipeX, setSwipeX] = useState(0);
     const swipeActive = useRef(false);
     const swipeTriggered = useRef(false);
+    // 角色撤回的消息：点「点击查看」偷看原文（防撤回）
+    const [recallPeeked, setRecallPeeked] = useState(false);
     const canSwipeReply = !!onSwipeReply && !selectionMode && m.role !== 'system';
     // 角色头像单击/双击区分：260ms 内第二次点击 = 戳一戳，否则单击进角色设置
     const avatarClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1374,7 +1382,51 @@ const MessageItem = React.memo(({
         );
     }
 
+    // 撤回的消息（QQ/微信语义）：不论原类型，一律渲染成居中灰条提示，原文不再显示。
+    // 自己撤回的可「重新编辑」；角色撤回的可「点击查看」偷看原文（防撤回）。
+    if (m.metadata?.recalled) {
+        const mine = m.role === 'user';
+        const canReedit = mine && !!m.metadata?.recalledContent && !!onReeditRecalled;
+        const canPeek = !mine && !!m.metadata?.recalledContent;
+        return (
+            <div className={`flex flex-col items-center w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>
+                {selectionMode && (
+                    <div className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer z-20" onClick={() => onToggleSelect(m.id)}>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 bg-white/80'}`}>
+                            {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                        </div>
+                    </div>
+                )}
+                <div className="flex justify-center my-4 px-6 w-full">
+                    <div className="flex items-center gap-1.5 bg-slate-200/40 backdrop-blur-md text-slate-400 px-3 py-1 rounded-full shadow-sm border border-white/20 select-none max-w-full min-w-0">
+                        <span className="text-[10px] font-medium tracking-wide truncate">{mine ? '你' : charName}撤回了一条消息</span>
+                        {canReedit && (
+                            <button onClick={() => onReeditRecalled!(m)} className="text-[10px] font-semibold text-primary shrink-0 active:opacity-60">重新编辑</button>
+                        )}
+                        {canPeek && !recallPeeked && (
+                            <button onClick={() => setRecallPeeked(true)} className="text-[10px] font-semibold text-primary shrink-0 active:opacity-60">点击查看</button>
+                        )}
+                    </div>
+                </div>
+                {canPeek && recallPeeked && (
+                    <div className="-mt-2 mb-4 px-6 w-full flex justify-center animate-fade-in">
+                        <div className="max-w-[78%] rounded-2xl bg-amber-50/80 border border-amber-200/70 px-3.5 py-2 shadow-sm">
+                            <div className="flex items-center gap-1 mb-1">
+                                <span className="text-[9px] font-bold tracking-wider text-amber-500">悄悄看了 TA 撤回的话</span>
+                                <button onClick={() => setRecallPeeked(false)} className="text-[9px] text-amber-400 ml-auto active:opacity-60">收起</button>
+                            </div>
+                            <div className="text-[12px] leading-relaxed text-slate-600 whitespace-pre-wrap break-words">{m.metadata?.recalledContent}</div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     if (m.type === 'interaction') {
+        // 拍一拍（微信式）：带 patSuffix 的显示「X 拍了拍 Y 的<后缀>」；旧的戳一戳无 patSuffix，仍显示「戳了戳」。
+        const patSuffix = m.metadata?.patSuffix as string | undefined;
+        const isPat = patSuffix !== undefined;
         return (
             <div className={`flex flex-col items-center ${marginBottom} w-full animate-fade-in relative transition-[padding] duration-300 ${selectionMode ? 'pl-8' : ''}`}>
                 {selectionMode && (
@@ -1389,8 +1441,9 @@ const MessageItem = React.memo(({
                         <div className="text-[11px] text-slate-500 bg-slate-200/50 backdrop-blur-sm px-4 py-1.5 rounded-full flex items-center gap-1.5 border border-white/40 shadow-sm select-none">
                         <img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/1f449.png" alt="poke" className="w-4 h-4 group-hover:animate-bounce" />
                         <span className="font-medium opacity-80">{isUser ? '你' : charName}</span>
-                        <span className="opacity-60">戳了戳</span>
+                        <span className="opacity-60">{isPat ? '拍了拍' : '戳了戳'}</span>
                         <span className="font-medium opacity-80">{isUser ? charName : '你'}</span>
+                        {isPat && patSuffix && <span className="opacity-60">的{patSuffix}</span>}
                     </div>
                 </div>
             </div>
@@ -3038,6 +3091,25 @@ const MessageItem = React.memo(({
                 </div>
                 );
             })()}
+
+            {/* Layer 7: 表情回应小药丸（QQ/微信 tap-to-react）。点切换自己的回应。 */}
+            {Array.isArray(m.metadata?.reactions) && m.metadata.reactions.length > 0 && (
+                <div className="relative z-10 mt-1.5 flex flex-wrap gap-1">
+                    {(m.metadata.reactions as { emoji: string; by: string[] }[]).map(r => {
+                        const mine = r.by?.includes('user');
+                        return (
+                            <button
+                                key={r.emoji}
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onReactToggle?.(m, r.emoji); }}
+                                className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[12px] leading-none border transition-colors active:scale-90 ${mine ? 'bg-primary/15 border-primary/40' : 'bg-black/5 border-black/10'}`}
+                            >
+                                <span>{r.emoji}</span>
+                                {(r.by?.length || 0) > 1 && <span className="text-[9px] font-bold opacity-60">{r.by.length}</span>}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }, (prev, next) => {
@@ -3065,7 +3137,11 @@ const MessageItem = React.memo(({
            prev.isLastUserMsg === next.isLastUserMsg &&
            // 转账 / 红包卡片的收款状态变化（pending→claimed/expired/declined）只动 metadata，
            // 不动 content/id，需单独比对，否则 memo 会挡掉卡片状态更新。
-           prev.msg.metadata?.status === next.msg.metadata?.status;
+           prev.msg.metadata?.status === next.msg.metadata?.status &&
+           // 撤回只动 metadata.recalled、不动 content，同样要单独比对，否则气泡不会变成撤回提示。
+           prev.msg.metadata?.recalled === next.msg.metadata?.recalled &&
+           // 表情回应只动 metadata.reactions，需单独比对，否则回应小药丸不会更新。
+           JSON.stringify(prev.msg.metadata?.reactions) === JSON.stringify(next.msg.metadata?.reactions);
 });
 
 export default MessageItem;

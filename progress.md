@@ -92,3 +92,33 @@ pm run build passes after the time-gap grouping fix.
 - On a `moments` step the generated script may include `{"type":"post_moment","content":"…"}`; applying it saves a public `SocialPost` authored as the user (so characters see it in context), prepends it to the on-screen 此刻 snapshot, and records it in the browse action log + the synthesized 查手机记录 system message. Personality still gates it (gentle chars just look; possessive/jealous ones grab the phone to reply, block, or post a relationship-flaunting moment).
 - Updated the script-gen prompt (action options, guidance, JSON example) so the model knows the new moments action.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.
+
+- 消息撤回 (message recall, QQ/微信 对标): the long-press message menu had 多选/引用/编辑/复制/删除 but no recall. Added 撤回 for your own messages in both 单聊 (`apps/Chat.tsx` + `MessageItem.tsx`) and 群聊 (`apps/ChatHub.tsx` + its `GroupMessageItem`).
+- Recalling sets `metadata.recalled` + stashes the original in `metadata.recalledContent`; the bubble (any type) collapses to a centered "你/对方/成员名 撤回了一条消息" hint, with a 微信式「重新编辑」link that restores the original text to the input box (appends after a newline if a draft exists).
+- The original text is hidden from the model everywhere it could leak: single-chat live history (`chatPrompts.ts`), group live transcript (`ChatHub.tsx`), the shared serializer used by archives + single-chat memory (`messageFormat.ts`), cross-group context (`summarizeGroupMsgContent`), and group memory extraction (`groupExtraction.ts`) — all emit only "[…撤回了一条消息]", so the character knows you recalled something (and can be curious) but can't read it.
+- Extended both `React.memo` comparators so a recall (metadata-only change) actually re-renders the bubble.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 506 unit tests green.
+
+- 角色撤回 + 用户偷看 (char-initiated recall + user peek): the character can now take back its own last message, and you can sneak a look at what it recalled (防撤回). Single chat for now.
+- New `utils/messageWithdraw.ts` (`[[WITHDRAW]]` directive — deliberately NOT `[[RECALL]]`, which already means memory-retrieval). `applyAssistantPostProcessing` strips it pre-render and dispatches `CHAR_WITHDRAW_EVENT` (mirrors the `[[CHECK_PHONE]]` flow); `sanitize.ts` also strips it so it never leaks as literal text on any path.
+- `Chat.tsx` listens and marks the char's most-recent non-recalled assistant message as recalled via `setMessages(prev=>…)`. The event fires before the new reply is persisted, so `prev`'s last assistant message is correctly the char's *prior* line.
+- `MessageItem`: char-recalled bubbles show "{charName}撤回了一条消息" + a 「点击查看」 that reveals the stashed `recalledContent` in an amber 偷看 box (your own recalled messages still show 「重新编辑」). The model still only ever sees "撤回了一条消息".
+- Added a `[[WITHDRAW]]` capability line to the system prompt (low-frequency, emotion-driven). New `messageWithdraw.test.ts` (5 tests, incl. guarding against `[[RECALL: YYYY-MM]]` false-positives).
+- `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.
+
+- 单条消息转发 (forward a single message): the long-press menu only had 多选→转发 for bulk forwarding; added a direct 转发 entry. It seeds the selection with just that one message and opens the existing forward picker, reusing the same `handleForwardToCharacter` → `chat_forward` card flow (no new forwarding infra). Single chat (groups have no forward-to-character flow yet).
+- `pnpm tsc --noEmit` clean, `vite build` passes, 511 unit tests green.
+
+- 消息表情回应 (message emoji reactions, QQ/微信 tap-to-react): long-press a message → quick emoji bar; tap to react. Reactions show as small pills under the bubble (emoji + count when >1); tapping a pill toggles your own reaction. Works in 单聊 + 群聊.
+- New `utils/messageReactions.ts`: `MessageReaction` shape (`metadata.reactions = {emoji,by[]}[]`, by holds 'user'/charId), pure `toggleReaction`, `REACTION_EMOJIS` quick-set, and the `[[REACT: 表情]]` directive (`extractReactDirective` + `CHAR_REACT_EVENT`). New `messageReactions.test.ts` (9 tests).
+- Char-side: the character can react to your latest message by emitting `[[REACT: 👍]]` — `applyAssistantPostProcessing` strips + dispatches, `Chat.tsx` adds it to your most-recent message; `sanitize.ts` strips the tag everywhere (also propagated into `worker.bundle.js`). Capability line added to the system prompt. (Char-side reactions in groups deferred.)
+- Context: the char is told when you react to its messages via a concise note in `chatPrompts.ts` live history (so it can play off your 👍/❤️). Both `MessageItem` and `GroupMessageItem` memo comparators now diff `reactions` so pills update.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 520 unit tests green.
+
+- 群聊补全 + 拍一拍后缀 (4 features in one pass):
+  1. **拍一拍后缀** (WeChat-style pat): `patSuffix` on `UserProfile` + `CharacterProfile`. User pats char → 「你 拍了拍 X 的<char.patSuffix>」; char pats user via `[[PAT]]` → 「X 拍了拍 你 的<userProfile.patSuffix>」. Char self-changes its own via `[[PAT_SUFFIX: 后缀]]` (`utils/patSuffix.ts` + `CHAR_PAT_SUFFIX_EVENT` handled in `OSContext`); user sets their own in 文具盒·我 (PersonaApp, global field). New `patSuffix.test.ts` (6 tests). Old 戳一戳 messages without patSuffix still render 「戳了戳」.
+  2. **群聊·角色撤回**: group director can emit `[[WITHDRAW]]` per member → recalls that member's last group message (parsed in the action loop; doc added to the director prompt).
+  3. **群聊·角色表情回应**: `[[REACT: 表情]]` per member → reacts (by charId) to the most recent non-self group message.
+  4. **群聊·单条转发**: new 转发 entry in the group message menu → character picker → drops a `chat_forward` card into that character's private chat (reuses the single-chat card shape; groups had no forward infra before).
+- `[[PAT]]` / `[[PAT_SUFFIX]]` / `[[WITHDRAW]]` / `[[REACT]]` all stripped in `sanitize.ts` (propagated to `worker.bundle.js`). Capability lines added to both the single-chat system prompt and the group director prompt.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 526 unit tests green (6 new).

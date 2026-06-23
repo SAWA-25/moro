@@ -41,6 +41,9 @@ import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemark
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
+import { extractWithdrawDirective, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
+import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
+import { extractPatSuffixDirective, extractPatDirective, CHAR_PAT_SUFFIX_EVENT, CHAR_PAT_EVENT } from './patSuffix';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
 import {
     AgenticToolCtx,
@@ -492,6 +495,49 @@ export async function applyAssistantPostProcessing(
             if (typeof window !== 'undefined') {
                 setPhoneCheckPending(char.id);
                 window.dispatchEvent(new CustomEvent(CHAR_PHONE_CHECK_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // 角色撤回上一条自己的消息（QQ/微信式）。先剥后播：Chat.tsx 监听 CHAR_WITHDRAW_EVENT，
+    // 把该角色最近一条未撤回的 assistant 消息标记为已撤回（原文留 metadata 供用户偷看）。
+    {
+        const withdrawExtract = extractWithdrawDirective(aiContent);
+        if (withdrawExtract.withdraw) {
+            aiContent = withdrawExtract.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_WITHDRAW_EVENT, { detail: { charId: char.id } }));
+            }
+        }
+    }
+
+    // 角色给用户消息贴表情回应（QQ/微信 tap-to-react）。先剥后播：Chat.tsx 监听 CHAR_REACT_EVENT，
+    // 把该表情加到用户最近一条消息上。
+    {
+        const reactExtract = extractReactDirective(aiContent);
+        if (reactExtract.emoji) {
+            aiContent = reactExtract.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_REACT_EVENT, { detail: { charId: char.id, emoji: reactExtract.emoji } }));
+            }
+        }
+    }
+
+    // 拍一拍：角色改自己的后缀 [[PAT_SUFFIX: x]]（OSContext 落 char.patSuffix）/ 角色拍用户 [[PAT]]
+    // （Chat.tsx 落一条 interaction 消息，显示「角色 拍了拍 你 的<用户后缀>」）。先剥后播。
+    {
+        const sfx = extractPatSuffixDirective(aiContent);
+        if (sfx.suffix !== null) {
+            aiContent = sfx.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_PAT_SUFFIX_EVENT, { detail: { charId: char.id, suffix: sfx.suffix } }));
+            }
+        }
+        const pat = extractPatDirective(aiContent);
+        if (pat.pat) {
+            aiContent = pat.content;
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_PAT_EVENT, { detail: { charId: char.id } }));
             }
         }
     }

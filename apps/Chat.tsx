@@ -26,6 +26,9 @@ import OfflineModeModal from '../components/chat/OfflineModeModal';
 import UserActionSelectorModal from '../components/chat/UserActionSelectorModal';
 import { OFFLINE_START_EVENT, consumeOfflinePending, hasOfflineSession } from '../utils/offlineMode';
 import { CHAR_PHONE_CHECK_EVENT, consumePhoneCheckPending } from '../utils/charPhoneCheck';
+import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
+import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
+import { CHAR_PAT_EVENT, DEFAULT_PAT_SUFFIX } from '../utils/patSuffix';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
@@ -1435,6 +1438,69 @@ ${recent || '（你们相处了很久）'}
         return () => window.removeEventListener(CHAR_PHONE_CHECK_EVENT, handler);
     }, []);
 
+    // ── 角色撤回自己上一条消息：监听 [[WITHDRAW]] 广播，把该角色最近一条未撤回的 assistant
+    //    消息标为已撤回（原文留 metadata.recalledContent 供用户点提示偷看）。事件在本轮回复
+    //    落库前发出，setMessages(prev=>) 拿到的 prev 即"撤回前"列表，末尾 assistant = 角色上一句。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            setMessages(prev => {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                    const mm = prev[i];
+                    if (mm.role === 'assistant' && mm.type !== 'system' && !mm.metadata?.recalled
+                        && typeof mm.content === 'string' && mm.content.trim()) {
+                        const original = mm.content;
+                        const recalledAt = Date.now();
+                        void DB.updateMessageMetadata(mm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: original, recalledAt }));
+                        return prev.map((x, j) => j === i
+                            ? { ...x, metadata: { ...(x.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+                            : x);
+                    }
+                }
+                return prev;
+            });
+        };
+        window.addEventListener(CHAR_WITHDRAW_EVENT, handler);
+        return () => window.removeEventListener(CHAR_WITHDRAW_EVENT, handler);
+    }, []);
+
+    // ── 角色给用户消息贴表情：监听 [[REACT: 表情]] 广播，把该表情加到用户最近一条消息上。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string; emoji?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current || !d.emoji) return;
+            setMessages(prev => {
+                for (let i = prev.length - 1; i >= 0; i--) {
+                    const mm = prev[i];
+                    if (mm.role === 'user' && mm.type !== 'system') {
+                        const next = toggleReaction(mm.metadata?.reactions, d.emoji!, d.charId!);
+                        void DB.updateMessageMetadata(mm.id, (p: any) => ({ ...(p || {}), reactions: next }));
+                        return prev.map((x, j) => j === i ? { ...x, metadata: { ...(x.metadata || {}), reactions: next } } : x);
+                    }
+                }
+                return prev;
+            });
+        };
+        window.addEventListener(CHAR_REACT_EVENT, handler);
+        return () => window.removeEventListener(CHAR_REACT_EVENT, handler);
+    }, []);
+
+    // ── 角色拍用户：监听 [[PAT]] 广播，落一条 interaction 消息「角色 拍了拍 你 的<用户后缀>」。──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as { charId?: string };
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            const suffix = userProfile.patSuffix || DEFAULT_PAT_SUFFIX;
+            void (async () => {
+                await DB.saveMessage({ charId: d.charId!, role: 'assistant', type: 'interaction', content: `[拍了拍 ${userProfile.name || '你'}]`, metadata: { patSuffix: suffix } } as any);
+                reloadMessages(visibleCountRef.current);
+            })();
+        };
+        window.addEventListener(CHAR_PAT_EVENT, handler);
+        return () => window.removeEventListener(CHAR_PAT_EVENT, handler);
+    }, [userProfile, reloadMessages]);
+
     // ── 角色给用户换备注：监听 [[SET_USER_REMARK]] 广播，弹「换备注」弹窗（点开看动机）──
     useEffect(() => {
         const handler = (e: Event) => {
@@ -2673,6 +2739,53 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         addToast('已复制到剪贴板', 'success');
     };
 
+    // 撤回消息（QQ/微信语义）：原文存进 metadata.recalledContent 供「重新编辑」，
+    // 气泡变成"你撤回了一条消息"，发给角色的上下文只剩"撤回了一条消息"（看不到原文）。
+    const handleRecallMessage = async () => {
+        if (!selectedMessage) return;
+        const target = selectedMessage;
+        const original = target.content;
+        const recalledAt = Date.now();
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), recalled: true, recalledContent: original, recalledAt }));
+        setMessages(prev => prev.map(m => m.id === target.id
+            ? { ...m, metadata: { ...(m.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+            : m));
+        setModalType('none');
+        setSelectedMessage(null);
+        addToast('已撤回', 'success');
+    };
+
+    // 表情回应（QQ/微信 tap-to-react）：切换 'user' 对某条消息某表情的回应，落 metadata.reactions。
+    const reactToMessage = useCallback(async (target: Message, emoji: string) => {
+        if (!target) return;
+        const next = toggleReaction(target.metadata?.reactions, emoji, 'user');
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), reactions: next }));
+        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, metadata: { ...(m.metadata || {}), reactions: next } } : m));
+    }, []);
+
+    // 长按菜单选表情：回应当前选中消息并关闭菜单
+    const handleReactMessage = (emoji: string) => {
+        if (!selectedMessage) return;
+        void reactToMessage(selectedMessage, emoji);
+        setModalType('none');
+        setSelectedMessage(null);
+    };
+
+    // 点已有回应小药丸：切换自己的回应
+    const handleReactToggle = useCallback((m: Message, emoji: string) => { void reactToMessage(m, emoji); }, [reactToMessage]);
+
+    // 「重新编辑」：把撤回的原文还原回输入框（微信式）。已有草稿则换行追加，不直接覆盖。
+    const handleReeditRecalled = useCallback((m: Message) => {
+        const text = (m.metadata?.recalledContent ?? '').toString();
+        if (!text) return;
+        setInput(prev => {
+            const next = prev.trim() ? `${prev}\n${text}` : text;
+            localStorage.setItem(draftKey, next);
+            return next;
+        });
+        addToast('已还原到输入框', 'info');
+    }, [draftKey]);
+
     const handleDeleteEmoji = async () => {
         if (!selectedEmoji) return;
         const emojisToDelete = Array.isArray(selectedEmoji) ? selectedEmoji : [selectedEmoji];
@@ -2801,6 +2914,16 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
     const handleForwardSelected = () => {
         if (selectedMsgIds.size === 0) return;
+        setShowForwardModal(true);
+    };
+
+    // 单条转发（QQ/微信式「转发」）：从长按菜单直接把这一条转给别的角色，
+    // 复用多选转发的同一套选人 + chat_forward 落卡逻辑（只是只勾这一条）。
+    const handleForwardSingle = () => {
+        if (!selectedMessage) return;
+        setSelectedMsgIds(new Set([selectedMessage.id]));
+        setModalType('none');
+        setSelectedMessage(null);
         setShowForwardModal(true);
     };
 
@@ -3586,7 +3709,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onReactMessage={handleReactMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
                 onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (!next) { setShowingTargetIds(new Set()); } }}
@@ -4066,6 +4189,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             userAvatar={displayUserAvatar}
                             onLongPress={handleMessageLongPress}
                             onSwipeReply={handleSwipeReply}
+                            onReeditRecalled={handleReeditRecalled}
+                            onReactToggle={handleReactToggle}
                             selectionMode={selectionMode}
                             isSelected={selectedMsgIds.has(m.id)}
                             onToggleSelect={toggleMessageSelection}
@@ -4090,7 +4215,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             onMcdCandidate={handleMcdCandidate}
                             thinkingChainOptions={thinkingChainOptions}
                             onAvatarClick={() => setShowCharProfile(true)}
-                            onAvatarPoke={() => handleSendText(`[戳了戳 ${char.name}]`, 'interaction')}
+                            onAvatarPoke={() => handleSendText(`[拍了拍 ${char.name}]`, 'interaction', { patSuffix: (char.patSuffix || '脑袋') })}
                             blockedMark={m.role === 'assistant' && userBlockedChar && !!char.blacklistedAt && m.timestamp >= char.blacklistedAt}
                             onClaimTransfer={handleClaimRequest}
                             onOpenTakeoutCard={handleOpenTakeoutCard}

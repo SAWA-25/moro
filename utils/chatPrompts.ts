@@ -27,6 +27,8 @@ import { buildRecentLifeContextBlock } from './autonomousLife';
 const GROUP_MSG_TEXT_CAP = 500;
 function summarizeGroupMsgContent(m: Message): string {
     const meta = (m.metadata as any) || {};
+    // 撤回的消息（QQ/微信语义）：跨群上下文也只留"撤回了一条消息"，不泄露原文。
+    if (meta.recalled) return '[撤回了一条消息]';
     switch (m.type) {
         case 'image': return '[图片]';
         case 'emoji': return '[表情]';
@@ -434,6 +436,9 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - 调取记忆: \`[[RECALL: YYYY-MM]]\`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作
    - **添加纪念日**: 如果你觉得今天是个值得纪念的日子（或者你们约定了某天），你可以**主动**将它添加到用户的日历中。单独起一行输出: \`[[ACTION:ADD_EVENT | 标题(Title) | YYYY-MM-DD]]\`。
    - **给用户换备注**: 当你们关系发生变化、玩梗、或你心情/称呼习惯改变时，你可以**主动**改掉自己对用户的称呼（备注）。格式: \`[[SET_USER_REMARK: 新备注]]\`，也可在竖线后写上「为什么这么改」的真实心思: \`[[SET_USER_REMARK: 新备注|改备注的动机]]\`。这段心思不会直接显示，用户点开弹窗才能看到，所以可以写得更真实私密。**低频使用**——只有真有理由才改，不要频繁更换。改完用户会收到一个弹窗，之后你就该一直用这个新称呼叫 TA。
+   - **撤回消息**: 如果你刚说出口的话想收回（口误、说漏嘴、太冲动、害羞后悔、发错对象…），单独起一行输出 \`[[WITHDRAW]]\`，系统会撤回你**上一条**消息——${userProfile.name} 那边只会看到"对方撤回了一条消息"（看不到原文）。通常再配一句打岔或解释（如"啊，当我没说"）。**低频使用**，只有真情绪上来了才用，别每轮都撤。
+   - **表情回应**: 想对 ${userProfile.name} 刚发的那条消息贴个表情态度（点赞/比心/大笑/惊讶/感动…）而不必专门回一句话时，单独起一行输出 \`[[REACT: 表情]]\`（如 \`[[REACT: 👍]]\`、\`[[REACT: ❤️]]\`），会以小表情贴在 TA 那条消息下。适合轻量附和，仍可同时正常说话；别滥用。
+   - **拍一拍**: 想亲昵地拍 ${userProfile.name} 一下（撒娇、调皮、提醒、安慰）时，单独起一行输出 \`[[PAT]]\`，会显示「${char.name} 拍了拍 ${userProfile.name} 的…」。你也可以用 \`[[PAT_SUFFIX: 后缀]]\` 改自己被拍时显示的后缀（如「狗头」「小脑袋」「肩膀」——${userProfile.name} 拍你时会显示「拍了拍 ${char.name} 的<后缀>」），按你的性格/外形/玩梗设定，想换就换、低频即可。
    - **定时发送消息**: 如果你想在未来某个时间主动发消息（比如晚安、早安或提醒），请单独起一行输出: \`[schedule_message | YYYY-MM-DD HH:MM:SS | fixed | 消息内容]\`，分行可以多输出很多该类消息。
 ${notionEnabled ? `   - **翻阅日记(Notion)**: 你的记忆本身是完整可靠的，回忆过去优先靠记忆和 \`[[RECALL]]\`，**不需要**靠翻日记来"想起"事情。只有当你**自己**特别想重温那天日记里写下的心情、措辞或私密小细节时，才翻阅: \`[[READ_DIARY: 日期]]\`。支持格式: \`昨天\`、\`前天\`、\`3天前\`、\`1月15日\`、\`2024-01-15\`。` : ''}${feishuEnabled ? `
    - **翻阅日记(飞书)**: 同上——回忆优先靠记忆和 \`[[RECALL]]\`，只有你自己想重温那天日记的内容时才用: \`[[FS_READ_DIARY: 日期]]\`。支持格式同上。` : ''}${notionNotesEnabled ? `
@@ -820,7 +825,13 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                     if (source === 'date') return '[约会]';
                     return '[聊天]';
                 })();
-                
+
+                // 撤回的消息（QQ/微信语义）：只让角色知道"撤回了一条消息"，看不到原文，可自然地好奇/在意。
+                if (m.metadata?.recalled) {
+                    const who = m.role === 'user' ? (userProfile?.name || '用户') : '你';
+                    return { role: m.role, content: `${timeStr} [系统: ${who}撤回了一条消息]` };
+                }
+
                 if (m.replyTo) {
                     // 引用回复：把"被引用的原话"做成独立的上下文框，用户的新回复另起一行突出出来。
                     // 旧格式 [回复 "引用前50字..."]: 回复 会把引用和回复挤在一行，引用往往比回复长得多，
@@ -1062,6 +1073,14 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                 // 导致「最后一条是非文本消息」时丢失「距上次多久」的注入。
                 // （image 分支自行 early-return、已在分支内处理过，不会走到这里。）
                 if (index === historySlice.length - 1 && timeGapHint && m.role === 'user') content = `${content}\n\n${timeGapHint}`;
+
+                // 表情回应：让角色知道用户给某条消息贴了表情（尤其用户回应"你"说的话时），可自然接梗。
+                const reactions = Array.isArray(m.metadata?.reactions) ? m.metadata.reactions as { emoji: string; by: string[] }[] : [];
+                const userReacted = reactions.filter(r => Array.isArray(r.by) && r.by.includes('user')).map(r => r.emoji);
+                if (userReacted.length > 0) {
+                    const whose = m.role === 'assistant' ? '你这条' : 'TA自己这条';
+                    content = `${content}\n（${userProfile?.name || '用户'}给${whose}消息贴了表情回应：${userReacted.join(' ')}）`;
+                }
 
                 return { role: m.role, content };
             }),

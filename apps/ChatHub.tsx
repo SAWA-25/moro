@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
@@ -19,6 +19,7 @@ import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
+import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -41,6 +42,8 @@ const GroupMessageItem = React.memo(({
     isSelected,
     onToggleSelect,
     onLongPress,
+    onReeditRecalled,
+    onReactToggle,
     displayName,
     memberTitle,
     onAvatarClick,
@@ -62,6 +65,10 @@ const GroupMessageItem = React.memo(({
     isSelected: boolean,
     onToggleSelect: (id: number) => void,
     onLongPress: (id: number) => void,
+    /** 撤回的自己消息点「重新编辑」：把原文还原回输入框 */
+    onReeditRecalled?: (m: Message) => void,
+    /** 点表情回应小药丸：切换自己（'user'）对该表情的回应 */
+    onReactToggle?: (m: Message, emoji: string) => void,
     /** 群名片（成员在本群的昵称），不传则用角色名 */
     displayName?: string,
     /** 群主/管理员设置的头衔徽章 */
@@ -123,13 +130,26 @@ const GroupMessageItem = React.memo(({
         );
     }
 
+    // 撤回的消息（QQ/微信语义）：居中灰色提示，原文不再显示；自己的可「重新编辑」。
+    if (msg.metadata?.recalled) {
+        const canReedit = isUser && !!(msg.metadata as any)?.recalledContent && !!onReeditRecalled;
+        return (
+            <div className="flex justify-center my-3 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
+                <span className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-200/70 text-slate-400 text-[10px] text-center leading-relaxed max-w-[85%] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
+                    {isUser ? '你' : (displayName || char?.name || '某成员')}撤回了一条消息
+                    {canReedit && <button onClick={() => onReeditRecalled!(msg)} className="text-primary font-semibold active:opacity-60">重新编辑</button>}
+                </span>
+            </div>
+        );
+    }
+
     // 戳一戳互动：居中小字 + 手指
     if (msg.type === 'interaction') {
         return (
             <div className="flex justify-center my-2 animate-fade-in" onClick={() => { if (selectionMode) onToggleSelect(msg.id); }}>
                 <span className={`flex items-center gap-1 px-3 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-500 text-[10px] ${selectionMode && isSelected ? 'ring-2 ring-slate-400' : ''}`}>
                     <img src={twemojiUrl('1f449')} alt="poke" className="w-3.5 h-3.5" />
-                    {isUser ? `我${msg.content.replace(/^\[|\]$/g, '')}` : msg.content.replace(/^\[|\]$/g, '')}
+                    {isUser ? `我${msg.content.replace(/^\[|\]$/g, '')}` : msg.content.replace(/^\[|\]$/g, '')}{msg.metadata?.patSuffix ? `的${msg.metadata.patSuffix}` : ''}
                 </span>
             </div>
         );
@@ -420,6 +440,21 @@ const GroupMessageItem = React.memo(({
                     </span>
                 )}
                 {renderContent()}
+                {/* 表情回应小药丸（QQ/微信 tap-to-react） */}
+                {Array.isArray(msg.metadata?.reactions) && msg.metadata.reactions.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                        {(msg.metadata.reactions as { emoji: string; by: string[] }[]).map(r => {
+                            const mine = r.by?.includes('user');
+                            return (
+                                <button key={r.emoji} onClick={(e) => { e.stopPropagation(); onReactToggle?.(msg, r.emoji); }}
+                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[12px] leading-none border transition-colors active:scale-90 ${mine ? 'bg-primary/15 border-primary/40' : 'bg-black/5 border-black/10'}`}>
+                                    <span>{r.emoji}</span>
+                                    {(r.by?.length || 0) > 1 && <span className="text-[9px] font-bold opacity-60">{r.by.length}</span>}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 <span className="text-[9px] text-slate-300 mt-1 px-1">{timeStr}</span>
             </div>
 
@@ -508,7 +543,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay' | 'forward-pick'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     const [showRelNet, setShowRelNet] = useState(false);
@@ -920,6 +955,66 @@ const ChatHub: React.FC = () => {
         }
     };
 
+    // 撤回群消息（QQ/微信语义）：原文存进 metadata 供「重新编辑」，气泡变成"X撤回了一条消息"，
+    // 群上下文里成员只看到"撤回了一条消息"（看不到原文）。
+    const handleRecallMessage = async () => {
+        if (!selectedMessage) return;
+        const target = selectedMessage;
+        const original = target.content;
+        const recalledAt = Date.now();
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), recalled: true, recalledContent: original, recalledAt }));
+        setMessages(prev => prev.map(m => m.id === target.id
+            ? { ...m, metadata: { ...(m.metadata || {}), recalled: true, recalledContent: original, recalledAt } }
+            : m));
+        setModalType('none');
+        setSelectedMessage(null);
+        addToast('已撤回', 'success');
+    };
+
+    // 「重新编辑」：把撤回的原文还原回输入框（微信式）。已有内容则换行追加。
+    const handleReeditRecalled = useCallback((m: Message) => {
+        const text = ((m.metadata as any)?.recalledContent ?? '').toString();
+        if (!text) return;
+        setInput(prev => (prev.trim() ? `${prev}\n${text}` : text));
+        addToast('已还原到输入框', 'info');
+    }, []);
+
+    // 表情回应（QQ/微信 tap-to-react）：切换 'user' 对群消息某表情的回应，落 metadata.reactions。
+    const reactToMessage = useCallback(async (target: Message, emoji: string) => {
+        if (!target) return;
+        const next = toggleReaction(target.metadata?.reactions, emoji, 'user');
+        await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), reactions: next }));
+        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, metadata: { ...(m.metadata || {}), reactions: next } } : m));
+    }, []);
+    const handleReactToggle = useCallback((m: Message, emoji: string) => { void reactToMessage(m, emoji); }, [reactToMessage]);
+    const handleReactMessage = (emoji: string) => {
+        if (!selectedMessage) return;
+        void reactToMessage(selectedMessage, emoji);
+        setModalType('none');
+        setSelectedMessage(null);
+    };
+
+    // 群·单条转发：把这一条群消息转给某个角色的私聊（复用单聊 chat_forward 卡片格式）。
+    const handleForwardGroupMessage = async (targetCharId: string) => {
+        const msg = selectedMessage;
+        if (!msg) return;
+        const senderName = msg.role === 'user' ? (userProfile.name || '我') : (characters.find(c => c.id === msg.charId)?.name || '成员');
+        const text = msg.type === 'text' ? String(msg.content || '').slice(0, 60)
+            : `[${msg.type === 'image' ? '图片' : msg.type === 'emoji' ? '表情' : msg.type === 'voice' ? '语音' : msg.type}]`;
+        const forwardData = {
+            fromUserName: userProfile.name,
+            fromCharName: activeGroup?.name || '群聊',
+            count: 1,
+            preview: [`${senderName}: ${text}`],
+            messages: [{ role: msg.role, type: msg.type, content: msg.content, timestamp: msg.timestamp || Date.now() }],
+        };
+        await DB.saveMessage({ charId: targetCharId, role: 'user', type: 'chat_forward' as MessageType, content: JSON.stringify(forwardData) });
+        const targetName = characters.find(c => c.id === targetCharId)?.name || '';
+        addToast(`已转发给 ${targetName}`, 'success');
+        setModalType('none');
+        setSelectedMessage(null);
+    };
+
     const handleDeleteSingleMessage = async () => {
         if (!selectedMessage) return;
         await DB.deleteMessage(selectedMessage.id);
@@ -1158,9 +1253,11 @@ const ChatHub: React.FC = () => {
     const handlePokeMember = async (charId: string) => {
         if (!activeGroup) return;
         const name = displayNameOf(activeGroup, charId);
+        const patSuffix = characters.find(c => c.id === charId)?.patSuffix || '脑袋';
         setProfileMemberId(null);
         setModalType('none');
-        await handleSendMessage(`[戳了戳 ${name}]`, 'interaction', { targetCharId: charId });
+        // 拍一拍（微信式）：拍某成员，显示「我 拍了拍 X 的<X的后缀>」
+        await handleSendMessage(`[拍了拍 ${name}]`, 'interaction', { targetCharId: charId, patSuffix });
     };
 
     /** 群主/管理员发布、修改或撤下群公告（清空正文＝撤下）。落系统通知让成员"看到"。 */
@@ -1864,6 +1961,11 @@ ${recentPrivate || '(暂无私聊)'}
                 if (m.role === 'system' || m.type === 'system') {
                     return `[系统通知] ${m.content}`;
                 }
+                // 撤回的消息（QQ/微信语义）：只让群成员知道"撤回了一条消息"，看不到原文。
+                if (m.metadata?.recalled) {
+                    const who = m.role === 'user' ? '用户' : (characters.find(c => c.id === m.charId)?.name || '未知');
+                    return `${who}: [撤回了一条消息]`;
+                }
                 let name = '用户';
                 if (m.role === 'assistant') {
                     name = characters.find(c => c.id === m.charId)?.name || '未知';
@@ -2024,6 +2126,8 @@ ${attachedImagesNote}
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
 - **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
 - **群签到**: 看到 \`[群签到 日期，已打卡N人: ...]\` = 今天群里在打卡。**还没签到的成员可以签到**：在自己的发言里加 \`[[CHECKIN: 一句此刻的心情/状态]]\`（如「摸鱼中」「刚下班累瘫」「今天超精神」，简短）。签到指令不显示，但可以配一句正常发言。**已经签过的人当天不要重复签**，没在状态的也可以不签。
+- **撤回消息**: 成员想收回自己刚在群里说的话（口误、说漏嘴、太冲动、害羞后悔）时，在自己的发言里加 \`[[WITHDRAW]]\`，系统会撤回该成员**上一条**群消息，群里只显示"X撤回了一条消息"（看不到原文）。通常再配一句打岔。**低频使用**，别每轮都撤。
+- **表情回应**: 成员想对群里最近某条消息贴个表情态度（点赞/比心/大笑/惊讶…）而不必专门回一句话时，在发言里加 \`[[REACT: 表情]]\`（如 \`[[REACT: 👍]]\`），会以小表情贴在群里最近那条别人的消息下。适合轻量附和，别滥用。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -2271,9 +2375,45 @@ ${attachedImagesNote}
                     }
                 }
 
+                // 1.8 群·角色撤回 [[WITHDRAW]]：撤回该成员最近一条未撤回的群消息（原文留 metadata 供偷看）
+                if (/\[\[\s*WITHDRAW\s*\]\]/i.test(action.content)) {
+                    action.content = action.content.replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').trim();
+                    const groupMsgs = await DB.getGroupMessages(activeGroup.id);
+                    for (let i = groupMsgs.length - 1; i >= 0; i--) {
+                        const gm = groupMsgs[i];
+                        if (gm.role === 'assistant' && gm.charId === targetId && gm.type !== 'system'
+                            && !gm.metadata?.recalled && typeof gm.content === 'string' && gm.content.trim()) {
+                            await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: gm.content, recalledAt: Date.now() }));
+                            break;
+                        }
+                    }
+                    setMessages(await DB.getGroupMessages(activeGroup.id));
+                }
+
+                // 1.9 群·角色表情回应 [[REACT: 表情]]：给群里最近一条非自己的消息贴表情（by = 该成员）
+                {
+                    const rm = /\[\[\s*REACT\s*[:：]\s*([^\]]+?)\s*\]\]/i.exec(action.content);
+                    if (rm) {
+                        const emoji = (rm[1] || '').trim();
+                        action.content = action.content.replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '').trim();
+                        if (emoji) {
+                            const groupMsgs = await DB.getGroupMessages(activeGroup.id);
+                            for (let i = groupMsgs.length - 1; i >= 0; i--) {
+                                const gm = groupMsgs[i];
+                                if (gm.id != null && gm.type !== 'system' && gm.role !== 'system' && gm.charId !== targetId && !gm.metadata?.recalled) {
+                                    const next = toggleReaction(gm.metadata?.reactions, emoji, targetId);
+                                    await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), reactions: next }));
+                                    break;
+                                }
+                            }
+                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                        }
+                    }
+                }
+
                 // 2. Text Splitting (Standard Chat Logic)
                 // Remove the emoji tag if it was processed, or just clean up
-                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').trim();
+                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[CHECKIN\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').replace(/\[\[\s*REACT\s*[:：][^\]]*\]\]/gi, '').trim();
                 
                 if (textContent) {
                     // Primary: split on line breaks
@@ -2957,6 +3097,8 @@ ${attachedImagesNote}
                                 isSelected={selectedMsgIds.has(m.id)}
                                 onToggleSelect={toggleMessageSelection}
                                 onLongPress={handleMessageLongPress}
+                                onReeditRecalled={handleReeditRecalled}
+                                onReactToggle={handleReactToggle}
                                 displayName={char ? displayNameOf(activeGroup, char.id) : undefined}
                                 memberTitle={char ? activeGroup?.memberTitles?.[char.id] : undefined}
                                 onAvatarClick={char ? () => { setProfileMemberId(char.id); setTempTitle(activeGroup?.memberTitles?.[char.id] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); } : undefined}
@@ -3301,6 +3443,19 @@ ${attachedImagesNote}
             {/* Message Options Modal */}
             <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
                 <div className="space-y-3">
+                    {/* 表情回应快捷条（QQ/微信 tap-to-react） */}
+                    <div className="flex items-center justify-between gap-1 px-1 pb-1">
+                        {REACTION_EMOJIS.map(emoji => {
+                            const reacted = Array.isArray(selectedMessage?.metadata?.reactions)
+                                && selectedMessage!.metadata.reactions.some((r: any) => r.emoji === emoji && r.by?.includes('user'));
+                            return (
+                                <button key={emoji} onClick={() => handleReactMessage(emoji)}
+                                    className={`w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform ${reacted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-slate-100'}`}>
+                                    {emoji}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <button onClick={handleEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
                         多选 / 批量删除
                     </button>
@@ -3314,9 +3469,31 @@ ${attachedImagesNote}
                             修改内容
                         </button>
                     )}
+                    <button onClick={() => setModalType('forward-pick')} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
+                        转发
+                    </button>
+                    {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
+                        <button onClick={handleRecallMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
+                            撤回
+                        </button>
+                    )}
                     <button onClick={handleDeleteSingleMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
                         删除消息
                     </button>
+                </div>
+            </Modal>
+
+            {/* 转发选人：把选中的群消息转给某个角色的私聊 */}
+            <Modal isOpen={modalType === 'forward-pick'} title="转发给" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
+                    {characters.length === 0 && <div className="text-center text-xs text-slate-400 py-8">还没有可转发的角色</div>}
+                    {characters.map(c => (
+                        <button key={c.id} onClick={() => handleForwardGroupMessage(c.id)}
+                            className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 active:bg-slate-100 transition-colors">
+                            <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" alt="" />
+                            <span className="text-sm text-slate-700 font-medium truncate">{c.name}</span>
+                        </button>
+                    ))}
                 </div>
             </Modal>
 

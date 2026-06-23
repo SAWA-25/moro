@@ -20,6 +20,10 @@ export function normalizeMessageContent(
     charName: string,
     userName: string,
 ): string {
+    // 撤回的消息（QQ/微信语义）：归档 / 记忆 / 总结一律只留"撤回了一条消息"，不泄露原文。
+    if (msg.metadata?.recalled) {
+        return `[${msg.role === 'user' ? userName : charName}撤回了一条消息]`;
+    }
     const type = msg.type as string;
 
     // 纯视觉/音频类：给个占位，别让 URL / base64 污染 LLM 上下文
