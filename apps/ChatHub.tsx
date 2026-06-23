@@ -12,7 +12,7 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
@@ -48,7 +48,8 @@ const GroupMessageItem = React.memo(({
     mentionNames,
     onCollectClick,
     onPollVote,
-    onPollClick
+    onPollClick,
+    onRelayClick
 }: {
     msg: Message,
     isUser: boolean,
@@ -76,7 +77,9 @@ const GroupMessageItem = React.memo(({
     /** 群投票：用户点某选项投票（单选） */
     onPollVote?: (msg: Message, optionIdx: number) => void,
     /** 群投票：点卡片头部打开票数详情 */
-    onPollClick?: (msg: Message) => void
+    onPollClick?: (msg: Message) => void,
+    /** 群接龙：点卡片打开接龙详情/加入 */
+    onRelayClick?: (msg: Message) => void
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -309,6 +312,33 @@ const GroupMessageItem = React.memo(({
                     </div>
                 );
             }
+            case 'relay_card': {
+                const rmeta = (msg.metadata as any) || {};
+                const entries: any[] = Array.isArray(rmeta.entries) ? rmeta.entries : [];
+                const shown = entries.slice(0, 4);
+                return (
+                    <button onClick={() => { if (!selectionMode) onRelayClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white text-left active:bg-slate-50 transition-colors">
+                        <div className="px-3.5 pt-3 pb-2 flex items-start gap-2 border-b border-slate-50">
+                            <div className="w-7 h-7 rounded-lg bg-orange-50 text-orange-500 flex items-center justify-center shrink-0"><ListNumbers size={16} weight="bold" /></div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[10px] text-orange-400 font-bold">接龙</div>
+                                <div className="text-[13px] font-bold text-slate-800 leading-snug break-all">{rmeta.title}</div>
+                            </div>
+                        </div>
+                        <div className="px-3.5 py-2 space-y-1">
+                            {entries.length === 0 ? (
+                                <div className="text-[11px] text-slate-300 py-1">还没人接 · 点开来接龙</div>
+                            ) : (
+                                shown.map((e, i) => (
+                                    <div key={i} className="text-[12px] text-slate-600 leading-snug truncate"><span className="text-orange-400 font-bold mr-1">{i + 1}.</span><span className="font-medium text-slate-700">{e.name}</span> {e.text}</div>
+                                ))
+                            )}
+                            {entries.length > shown.length && <div className="text-[10px] text-slate-300">…还有 {entries.length - shown.length} 条</div>}
+                        </div>
+                        <div className="px-3.5 pb-2.5 text-[10px] text-orange-400 font-bold">+ 点开接龙</div>
+                    </button>
+                );
+            }
             default:
                 return (
                     <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#2b2933] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
@@ -444,7 +474,7 @@ const ChatHub: React.FC = () => {
     // UI State
     const [showActions, setShowActions] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll'>('none');
+    const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     // 加好友页选中「拉黑你的角色」→ 好友验证弹窗
@@ -496,6 +526,11 @@ const ChatHub: React.FC = () => {
     const [pollQuestion, setPollQuestion] = useState('');
     const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
     const [pollDetailMsg, setPollDetailMsg] = useState<Message | null>(null);
+    // 群接龙：主题 / 我的第一条 / 接龙详情弹窗目标 / 详情里加入用的输入
+    const [relayTitle, setRelayTitle] = useState('');
+    const [relayFirst, setRelayFirst] = useState('');
+    const [relayDetailMsg, setRelayDetailMsg] = useState<Message | null>(null);
+    const [relayInput, setRelayInput] = useState('');
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
     const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
@@ -535,6 +570,7 @@ const ChatHub: React.FC = () => {
             setSearchTerm('');
             setCollectDetailMsg(null);
             setPollDetailMsg(null);
+            setRelayDetailMsg(null);
             DB.getRecentGroupMessagesWithCount(activeGroup.id, 30).then(({ messages: msgs, totalCount }) => {
                 setMessages(msgs);
                 setTotalMsgCount(totalCount);
@@ -804,6 +840,7 @@ const ChatHub: React.FC = () => {
             case 'emoji': return '[一枚贴纸]';
             case 'transfer': return (m.metadata as any)?.kind === 'collect' ? '[群收款]' : '[一点心意]';
             case 'poll_card': return '[群投票]';
+            case 'relay_card': return '[接龙]';
             case 'voice': return '[一段留声]';
             case 'interaction': return m.content || '[碰了碰]';
             case 'social_card': return '[转发的此刻]';
@@ -1487,6 +1524,40 @@ ${logText.substring(0, 10000)}
         setPollDetailMsg(prev => (prev && prev.id === msg.id ? (updated.find(m => m.id === msg.id) || null) : prev));
     };
 
+    // 群接龙：用户发起 → 大家按性格接（导演 [[JOIN_RELAY: ...]]）
+    const resetRelayModal = () => { setModalType('none'); setRelayTitle(''); setRelayFirst(''); };
+    const sendGroupRelay = async () => {
+        if (!activeGroup) return;
+        const title = relayTitle.trim();
+        if (!title) { addToast('写个接龙主题吧', 'info'); return; }
+        const userName = activeGroup.memberNicknames?.['user'] || userProfile.name || '我';
+        const first = relayFirst.trim();
+        const entries = first ? [{ by: 'user', name: userName, text: first.slice(0, 100), at: Date.now() }] : [];
+        await DB.saveMessage({
+            charId: 'user', groupId: activeGroup.id, role: 'user', type: 'relay_card',
+            content: `[接龙] ${title}`,
+            metadata: { kind: 'relay', title, entries },
+        } as any);
+        setMessages(await DB.getGroupMessages(activeGroup.id));
+        addToast('接龙已发起', 'success');
+        resetRelayModal();
+    };
+    /** 用户在接龙详情里接上自己这一条 */
+    const joinRelayAsUser = async (msg: Message) => {
+        if (!activeGroup || msg.id == null) return;
+        const text = relayInput.trim();
+        if (!text) return;
+        const userName = activeGroup.memberNicknames?.['user'] || userProfile.name || '我';
+        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
+            ...prev,
+            entries: [...(prev?.entries || []), { by: 'user', name: userName, text: text.slice(0, 100), at: Date.now() }],
+        }));
+        setRelayInput('');
+        const updated = await DB.getGroupMessages(activeGroup.id);
+        setMessages(updated);
+        setRelayDetailMsg(updated.find(m => m.id === msg.id) || null);
+    };
+
     // 落脚点：分享一个地点
     const sendGroupLocation = () => {
         const name = locName.trim();
@@ -1727,6 +1798,11 @@ ${recentPrivate || '(暂无私聊)'}
                     const opts: any[] = Array.isArray(m.metadata?.options) ? m.metadata.options : [];
                     const optStr = opts.map((o, idx) => `${idx + 1}.${o.text}(${o.voters?.length || 0}票)`).join(' ');
                     content = `[群投票「${m.metadata?.question}」单选，选项: ${optStr}]`;
+                } else if (m.type === 'relay_card') {
+                    // 群接龙：把主题与已有条目喂给导演，方便有兴趣的成员接龙
+                    const ents: any[] = Array.isArray(m.metadata?.entries) ? m.metadata.entries : [];
+                    const list = ents.map((e, idx) => `${idx + 1}.${e.name}:${e.text}`).join(' ');
+                    content = `[接龙「${m.metadata?.title}」已有${ents.length}条: ${list || '（还没人接）'}]`;
                 } else if (/^(data:|https?:\/\/)/i.test(rawText.trim())) {
                     content = '[媒体]';
                 } else {
@@ -1834,6 +1910,7 @@ ${attachedImagesNote}
 - **@提及（点名）**: 聊天记录里出现 \`@某成员的群名片/名字\` = 在**点名**那个人。**被 @ 的成员本轮应当回应**（除非 TA 被禁言）；\`@全体成员\` / \`@所有人\` = 叫上所有人，多数成员都该冒个头。成员之间、成员对用户也可以用 \`@名字\` 来点名、cue 人或回应，直接在正文里写出来即可（无需特殊格式）。但别滥用——没必要时正常聊天就行。
 - **群收款（AA）**: 看到 \`[群收款...待付]\` = 用户在群里发起 AA 收款向大家收钱。被点到的成员可按性格反应：爽快答应"这就转"、调侃、哭穷拖延、起哄让别人先付……这只是聊天反应，钱实际到没到账由用户在收款单上点收，**别替用户宣布已收齐**。
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
+- **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
 
 #### 七、私聊感知（避免说错话）
 - 检查每个角色的 [私聊空窗期]。如果某角色刚刚才私聊过用户，哪怕群里很冷清，也不能说"好久不见"或表现出疏离感。
@@ -1907,6 +1984,8 @@ ${attachedImagesNote}
             let groupChanged = false;
             // 群投票：本轮可投的目标＝最近一条投票卡（角色用 [[VOTE: n]] 投，记到该卡）
             const latestPollMsg = [...currentMsgs].reverse().find(m => m.type === 'poll_card');
+            // 群接龙：本轮可接的目标＝最近一条接龙卡（角色用 [[JOIN_RELAY: ...]] 接，追加到该卡）
+            const latestRelayMsg = [...currentMsgs].reverse().find(m => m.type === 'relay_card');
             for (const action of actions) {
                 const targetId = activeGroup.members.find(id => id === action.charId);
                 if (!targetId) continue;
@@ -1981,6 +2060,23 @@ ${attachedImagesNote}
                     }
                 }
 
+                // -0.4 群接龙 [[JOIN_RELAY: 内容]]：把该角色这一条追加到接龙
+                if (latestRelayMsg && latestRelayMsg.id != null) {
+                    const relayMatch = /\[\[JOIN_RELAY\s*[:：]\s*([\s\S]*?)\]\]/.exec(action.content);
+                    if (relayMatch) {
+                        action.content = action.content.replace(relayMatch[0], '').trim();
+                        const entryText = relayMatch[1].trim().slice(0, 100);
+                        if (entryText) {
+                            const entryName = liveGroup.memberNicknames?.[targetId] || charName;
+                            await DB.updateMessageMetadata(latestRelayMsg.id, (prev: any) => ({
+                                ...prev,
+                                entries: [...(prev?.entries || []), { by: targetId, name: entryName, text: entryText, at: Date.now() }],
+                            }));
+                            setMessages(await DB.getGroupMessages(activeGroup.id));
+                        }
+                    }
+                }
+
                 // 0. Check for Private Message Command (Regex updated for robustness)
                 const privateMatches = [];
                 // Handle multiple private messages in one block or mixed content
@@ -2043,7 +2139,7 @@ ${attachedImagesNote}
 
                 // 2. Text Splitting (Standard Chat Logic)
                 // Remove the emoji tag if it was processed, or just clean up
-                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').trim();
+                let textContent = action.content.replace(/\[\[SEND_EMOJI:.*?\]\]/g, '').replace(/\[\[VOTE\s*[:：][\s\S]*?\]\]/g, '').replace(/\[\[JOIN_RELAY\s*[:：][\s\S]*?\]\]/g, '').trim();
                 
                 if (textContent) {
                     // Primary: split on line breaks
@@ -2719,6 +2815,7 @@ ${attachedImagesNote}
                                 onCollectClick={setCollectDetailMsg}
                                 onPollVote={votePoll}
                                 onPollClick={setPollDetailMsg}
+                                onRelayClick={setRelayDetailMsg}
                             />
                         </div>
                     );
@@ -2835,6 +2932,7 @@ ${attachedImagesNote}
                             {strip(<Coins size={20} weight="bold" />, '寄零花', '塞红包·按钱包余额实扣', () => setModalType('transfer'))}
                             {strip(<Wallet size={20} weight="bold" />, '发起收款', 'AA 收款·向群成员收钱', () => { setShowActions(false); setCollectMembers(new Set(activeGroup?.members || [])); setCollectAmount(''); setCollectNote(''); setModalType('collect'); })}
                             {strip(<ChartBar size={20} weight="bold" />, '发起投票', '群成员按性格投·看结果', () => { setShowActions(false); setPollQuestion(''); setPollOptions(['', '']); setModalType('poll'); })}
+                            {strip(<ListNumbers size={20} weight="bold" />, '发起接龙', '主题接龙·成员自然加入', () => { setShowActions(false); setRelayTitle(''); setRelayFirst(''); setModalType('relay'); })}
                             {strip(<CassetteTape size={20} weight="bold" />, '留个声', '录一段语音发群里', () => { setShowActions(false); void voice.startRecording(); })}
                             {strip(<MapTrifold size={20} weight="bold" />, '落脚点', '分享一个地点', () => setActionModal('location'))}
                             {strip(<PaintBrush size={20} weight="bold" />, '画一张', 'AI 现画一张图', () => setActionModal('image-gen'))}
@@ -3245,6 +3343,54 @@ ${attachedImagesNote}
                                 })}
                             </div>
                             <p className="text-[10px] text-slate-300 text-center">空着输入框按回车 = 让大家接着聊（角色会按性格投票）</p>
+                        </div>
+                    );
+                })()}
+            </Modal>
+
+            {/* 群接龙：主题 + 我的第一条（可选） */}
+            <Modal isOpen={modalType === 'relay'} title="发起接龙" onClose={resetRelayModal} footer={<button onClick={sendGroupRelay} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">发起接龙</button>}>
+                <div className="space-y-3">
+                    <input value={relayTitle} onChange={e => setRelayTitle(e.target.value)} placeholder="接龙主题，如「周末爬山报名接龙」" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                    <input value={relayFirst} onChange={e => setRelayFirst(e.target.value)} placeholder="我的第一条（选填，如「1. 我，带相机」)" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-300 transition-all" />
+                    <p className="text-[10px] text-slate-400 text-center">发起后群成员会按各自性格陆续接龙</p>
+                </div>
+            </Modal>
+
+            {/* 接龙详情：看全部 + 加入 */}
+            <Modal
+                isOpen={!!relayDetailMsg} title="接龙" onClose={() => { setRelayDetailMsg(null); setRelayInput(''); }}
+                footer={
+                    <div className="flex gap-2 w-full">
+                        <input value={relayInput} onChange={e => setRelayInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && relayDetailMsg) { e.preventDefault(); joinRelayAsUser(relayDetailMsg); } }} placeholder="接上你这一条…" className="flex-1 px-3 py-2.5 bg-slate-100 rounded-xl text-sm outline-none text-slate-700 placeholder:text-slate-400" />
+                        <button onClick={() => relayDetailMsg && joinRelayAsUser(relayDetailMsg)} className="px-4 py-2.5 bg-orange-500 text-white font-bold rounded-xl shrink-0 active:scale-95 transition-transform">接龙</button>
+                    </div>
+                }
+            >
+                {relayDetailMsg && (() => {
+                    const rmeta: any = relayDetailMsg.metadata || {};
+                    const entries: any[] = Array.isArray(rmeta.entries) ? rmeta.entries : [];
+                    return (
+                        <div className="space-y-3">
+                            <div className="text-center text-[15px] font-bold text-slate-800">{rmeta.title}</div>
+                            <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                                {entries.length === 0 && <div className="text-center text-xs text-slate-300 py-6">还没人接龙，来当第一个～</div>}
+                                {entries.map((e: any, i: number) => {
+                                    const isU = e.by === 'user';
+                                    const c = characters.find(ch => ch.id === e.by);
+                                    const av = isU ? userProfile.avatar : c?.avatar;
+                                    return (
+                                        <div key={i} className="flex items-start gap-2.5">
+                                            <span className="text-[12px] font-bold text-orange-400 w-5 text-right shrink-0 pt-1.5">{i + 1}.</span>
+                                            {av ? <img src={av} className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" /> : <div className="w-7 h-7 rounded-full bg-slate-200 shrink-0 mt-0.5" />}
+                                            <div className="min-w-0 flex-1 bg-slate-50 rounded-xl px-3 py-1.5">
+                                                <div className="text-[11px] font-bold text-slate-500">{e.name}</div>
+                                                <div className="text-[13px] text-slate-700 break-all leading-snug">{e.text}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     );
                 })()}
