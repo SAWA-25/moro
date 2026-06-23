@@ -2358,6 +2358,31 @@ const MessageItem = React.memo(({
         return <TakeoutCardView m={m} charName={charName} commonLayout={commonLayout} onOpen={onOpenTakeoutCard} />;
     }
 
+    if (m.type === 'gift_card') {
+        // 购物商城礼物卡：user 送角色 / 角色回赠 user。展示礼物 + 赠言。
+        const g: any = m.metadata?.gift || {};
+        const fromName = g.fromName || (isUser ? '你' : charName);
+        return commonLayout(
+            <div
+                className="w-60 rounded-[1.5rem] overflow-hidden relative border border-rose-200"
+                style={{ background: 'linear-gradient(160deg,#fff7f3 0%,#ffe8df 100%)', boxShadow: '0 16px 30px -18px rgba(225,120,90,0.45)' }}
+            >
+                <div aria-hidden className="absolute -top-3 -right-2 text-[58px] opacity-15 select-none">🎁</div>
+                <div className="px-4 pt-3.5 pb-3.5 relative">
+                    <div className="text-[10px] font-mono font-bold tracking-[0.28em] uppercase mb-2" style={{ color: '#c2755a' }}>A&nbsp;Gift&nbsp;For&nbsp;You</div>
+                    <div className="flex items-center gap-2.5">
+                        <span className="w-11 h-11 rounded-2xl bg-white/80 flex items-center justify-center text-[24px] shrink-0 shadow-sm">{g.emoji || '🎁'}</span>
+                        <div className="min-w-0">
+                            <div className="text-[14px] font-black truncate" style={{ color: '#a8503a' }}>{g.name || '一份礼物'}</div>
+                            <div className="text-[11px] font-bold" style={{ color: '#c2755a' }}>{fromName} 送的</div>
+                        </div>
+                    </div>
+                    {g.note && <div className="mt-2.5 text-[12px] leading-relaxed line-clamp-3" style={{ color: '#8a5345' }}>「{String(g.note).slice(0, 60)}」</div>}
+                </div>
+            </div>
+        );
+    }
+
     if (m.type === 'proposal_card') {
         // 求婚小卡（角色/用户发起）。点开进入浪漫的求婚界面。
         const p = m.metadata?.proposal || {};

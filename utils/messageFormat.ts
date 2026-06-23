@@ -47,6 +47,15 @@ export function normalizeMessageContent(
         return amt !== undefined ? `[系统: ${userName}转账 ${amt}${note}]` : `[系统: ${userName}转账${note}]`;
     }
 
+    // 心意铺礼物卡：谁送了谁什么礼物（+ 赠言），供归档 / 总结 / 召回保留这份心意
+    if (type === 'gift_card') {
+        const g = msg.metadata?.gift || {};
+        const note = typeof g.note === 'string' && g.note.trim() ? `，赠言「${g.note.trim()}」` : '';
+        const giver = msg.role === 'user' ? userName : charName;
+        const receiver = msg.role === 'user' ? charName : userName;
+        return `[心意铺礼物] ${giver}送了${receiver} ${g.emoji || ''}${g.name || '一份礼物'}${note}`;
+    }
+
     // 结算卡：几种 app 产生，用字段逐一翻成自然文本
     if (type === 'score_card') {
         try {

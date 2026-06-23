@@ -5,6 +5,7 @@ import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { IMPORT_IN_PROGRESS_KEY, useOS } from '../context/OSContext';
 import StatusBar from './os/StatusBar';
 import DynamicIsland from './os/DynamicIsland';
+import FloatingQuickMenu from './os/FloatingQuickMenu';
 import Launcher from '../apps/Launcher';
 
 // 按需懒加载各 App —— 切到对应 App 时才下载/解析其代码块，首屏只加载 Launcher 与外壳，
@@ -96,6 +97,9 @@ const CreativeStudioApp = lazyApp(() => import('../apps/CreativeStudioApp'));
 const TheaterApp = lazyApp(() => import('../apps/TheaterApp'));
 const AlmanacApp = lazyApp(() => import('../apps/AlmanacApp'));
 const TakeoutApp = lazyApp(() => import('../apps/TakeoutApp'));
+const ShopApp = lazyApp(() => import('../apps/ShopApp'));
+const HaremApp = lazyApp(() => import('../apps/HaremApp'));
+const ForumApp = lazyApp(() => import('../apps/ForumApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
@@ -125,7 +129,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.VRWorld]: VRWorldApp, [AppID.CharCreatorDev]: CharCreatorDevApp, [AppID.SpecialMoments]: SpecialMomentsApp,
   [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
   [AppID.Creative]: CreativeStudioApp, [AppID.Theater]: TheaterApp, [AppID.Almanac]: AlmanacApp,
-  [AppID.Takeout]: TakeoutApp,
+  [AppID.Takeout]: TakeoutApp, [AppID.Shop]: ShopApp, [AppID.Harem]: HaremApp, [AppID.Forum]: ForumApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -607,6 +611,9 @@ const PhoneShell: React.FC = () => {
       case AppID.Theater: return <TheaterApp />;
       case AppID.Almanac: return <AlmanacApp />;
       case AppID.Takeout: return <TakeoutApp />;
+      case AppID.Shop: return <ShopApp />;
+      case AppID.Harem: return <HaremApp />;
+      case AppID.Forum: return <ForumApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;
@@ -687,6 +694,9 @@ const PhoneShell: React.FC = () => {
 
           {/* Overlays: 灵动岛（消息通知 + 下滑通知面板，点击直达对应角色聊天） */}
           <DynamicIsland />
+
+          {/* Overlays: 悬浮窗快捷菜单（可拖动悬浮球 → 常用 App 快捷入口；锁屏时隐藏，拼贴册可关） */}
+          {theme.floatingQuickMenu !== false && !isLocked && <FloatingQuickMenu />}
 
           {/* Overlays: 角色主动来电（[[CALL_USER]] 指令触发，接听跳电话 App） */}
           <IncomingCallOverlay />

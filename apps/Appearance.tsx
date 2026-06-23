@@ -870,6 +870,24 @@ const DesktopLockEditor: React.FC<{
                 </div>
             </section>
 
+            {/* 悬浮窗快捷菜单 开关 */}
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">悬浮窗快捷菜单</h2>
+                        <p className="text-[10px] text-[#6b6b6b] leading-snug">可拖动的悬浮球，点开是常用 App 快捷入口；拖动挪位、长按收起。</p>
+                    </div>
+                    <button
+                        onClick={() => updateTheme({ floatingQuickMenu: theme.floatingQuickMenu === false })}
+                        role="switch"
+                        aria-checked={theme.floatingQuickMenu !== false}
+                        className={`shrink-0 w-14 h-8 rounded-full border-2 border-[#2b2933] relative transition-colors ${theme.floatingQuickMenu !== false ? 'bg-[#2b2933]' : 'bg-[#f4f2ed]'}`}
+                    >
+                        <span className={`absolute top-[2px] w-6 h-6 rounded-full transition-all ${theme.floatingQuickMenu !== false ? 'left-[26px] bg-white' : 'left-[2px] bg-[#2b2933]'}`} />
+                    </button>
+                </div>
+            </section>
+
             {/* 02 灵动岛 */}
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">灵动岛</h2>

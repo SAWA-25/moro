@@ -293,6 +293,17 @@ export const ContextBuilder = {
 
             // 来往·情侣空间状态（恋爱天数 / 亲密度 / 动态 / 约定 / 悄悄话），让角色据此扮演
             context += buildCoupleSpacePromptBlock(char, user.name);
+
+            // 购物商城·礼物往来：最近收到/送出/自购的礼物，让角色自然回应这份心意（从角色视角描述）
+            if (char.shopReceipts && char.shopReceipts.length > 0) {
+                const fmt = (r: { action: string; counterpartName: string; emoji: string; name: string; note?: string }) => {
+                    if (r.action === 'receive') return `收到 ${r.counterpartName} 送的 ${r.emoji}${r.name}${r.note ? `（赠言：「${r.note}」）` : ''}`;
+                    if (r.action === 'gift') return `送给 ${r.counterpartName} ${r.emoji}${r.name}${r.note ? `（你说：「${r.note}」）` : ''}`;
+                    return `自己买了 ${r.emoji}${r.name}${r.note ? `（${r.note}）` : ''}`;
+                };
+                const lines = char.shopReceipts.slice(0, 6).map(r => `- ${fmt(r)}`).join('\n');
+                context += `### 礼物往来（心意铺）\n你的礼物记录（最新在前）：\n${lines}\n收到 ${user.name} 送的礼物时，请自然地表达感谢 / 惊喜 / 在意（可在聊天里回应，或写一封简短的感谢信）；不要凭空捏造没列出的礼物。\n\n`;
+            }
         }
 
         // 5. 记忆库 (Memory Bank)

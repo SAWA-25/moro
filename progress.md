@@ -49,3 +49,30 @@ pm run build passes after the time-gap grouping fix.
 - Surfaced via a 关系网 button in the ChatHub 名册 (contacts) tab header; opens as a full-screen overlay over the list.
 - Added reusable stage visuals (`STAGE_NETWORK_META`, `STAGE_DASHED`) to `utils/relationship.ts`, reusing existing `STAGE_DEFAULT_LABEL` / `inferStageFromAffection`.
 - `pnpm tsc --noEmit` is clean and `vite build` passes.
+
+- Added 购物商城「心意铺」(virtual gift shop): new `apps/ShopApp.tsx` + `utils/shop.ts` (built-in gift catalog with emoji/price/categories, receipt + owned-item + gift-card-meta helpers, char-shopping prompt/parser).
+- User flow: browse → buy with wallet balance (`adjustUserBalance`) → 背包 → 送给角色 (pick char + 赠言). Gifting drops a `gift_card` message into that char's chat and records a receipt on both sides.
+- Char flow: 「邀请 TA 逛商城」uses the aux API (`resolveAuxApi` + `llmComplete`) to let the character pick one item to self-buy or gift back to the user (gift-back adds to user inventory + drops an assistant `gift_card` into chat). Robust JSON parse with a random fallback.
+- 购物小票: per-user and per-character receipt history (查角色买/收了什么).
+- New `gift_card` MessageType rendered in `components/chat/MessageItem.tsx`; serialized for the LLM in `utils/chatPrompts.ts` (history builder + quote/summary switch) and `utils/messageFormat.ts`; received gifts injected into char context via `utils/context.ts` so the character naturally thanks/responds (can write a short 感谢信).
+- Registered AppID.Shop (icon `ShoppingBagOpen`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
+- `pnpm tsc --noEmit` clean, `vite build` passes, all 487 unit tests green.
+
+- Added 椒房记 (Harem-cultivation text-card game): new `apps/HaremApp.tsx` + `utils/haremGame.ts` (pure, serializable engine) + `utils/haremGame.test.ts`.
+- Pick characters into a "后宫"; each 日 has 行动点 and a hand of 文字卡 (同游/夜话/赐礼/独宠/设宴/冷落/抚慰…). Play cards on members to raise 宠爱/心情; crossing favor thresholds promotes 位分 (答应→…→皇贵妃). 独宠 cards ripple onto everyone else.
+- 「就寝」advances the day and may roll a night event (争宠/吃醋/谗言/侍寝/喜讯) with branching choices that reshape the court.
+- Game state is isolated from real affection (only seeded from it) and persisted to localStorage; not written back to character profiles.
+- Registered AppID.Harem (icon `Crown`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green (incl. 11 new for the engine).
+
+- Added 悬浮窗快捷菜单 (Floating quick-menu): new `components/os/FloatingQuickMenu.tsx` — a global draggable bubble that expands into shortcuts (来往 / 心意铺 / 相册 / 文具盒 / 回桌面 / 收起).
+- Drag to move (position persisted to localStorage), tap to expand/collapse (menu auto-flips up/down + left/right by where the bubble sits), long-press to hide; outside-tap closes.
+- Gated by new `OSTheme.floatingQuickMenu` (default on; hidden on lock screen). Re-enable / toggle from a new switch in 拼贴册 (Appearance) above 灵动岛.
+- Rendered as a PhoneShell overlay next to DynamicIsland.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
+
+- Added 茶话亭 (persistent forum App): new `apps/ForumApp.tsx` + `utils/forum.ts` — distinct from the one-shot faux forum in 折子戏. Boards (水区/树洞/吃瓜/同好/求助) → threads → floors.
+- User posts threads + replies; 「召唤网友盖楼」uses the aux API to generate a mix of in-character replies (your characters, real name + avatar) and anonymous netizens, with a template fallback when API is off/fails. 「让角色发帖」(header refresh) has a random character start a thread.
+- State persisted to localStorage; seeded with two ambient threads so it's not empty on first open.
+- Registered AppID.Forum (icon `ChatsCircle`) in `types.ts` / `constants.tsx` / `components/PhoneShell.tsx`.
+- `pnpm tsc --noEmit` clean, `vite build` passes, 498 unit tests green.
