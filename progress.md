@@ -122,3 +122,19 @@ pm run build passes after the time-gap grouping fix.
   4. **群聊·单条转发**: new 转发 entry in the group message menu → character picker → drops a `chat_forward` card into that character's private chat (reuses the single-chat card shape; groups had no forward infra before).
 - `[[PAT]]` / `[[PAT_SUFFIX]]` / `[[WITHDRAW]]` / `[[REACT]]` all stripped in `sanitize.ts` (propagated to `worker.bundle.js`). Capability lines added to both the single-chat system prompt and the group director prompt.
 - `pnpm tsc --noEmit` clean, `vite build` passes, 526 unit tests green (6 new).
+
+- 心意铺·购物车 + 代付 (对标淘宝): the shop only had instant buy + bag; added a full cart flow.
+  - `ShopCartLine` on `UserProfile` + `CharacterProfile`; pure cart helpers in `utils/shop.ts` (`addToCart` / `setCartQty` / `removeFromCart` / `cartCount` / `cartTotal` / `resolveCart` / `expandCart`). New `shopCart.test.ts` (7 tests).
+  - **购物车 tab** (badge with count): 商城 items now have 加购物车 + 购买; cart view has per-line qty steppers (− qty +, 0 removes) + 清空; a fixed bottom 结算条 with the total and two checkout paths.
+  - **结算**: 「自己支付」deducts wallet → whole cart into 背包 with receipts; 「求 TA 代付」opens a character picker → drops a 求代付 message in that char's chat, then a 副 API call lets the char decide (by persona / affection / amount) whether to pay — on yes, the cart lands in your 背包 with 代付 receipts on both sides + a chat reply; on no, a declining reply.
+  - **角色心愿购物车**: 邀请 TA 逛商城 can now `want`-add to the char's own cart; the 小票·角色 tab shows 「TA 的心愿购物车」with 「帮 TA 清空购物车（代付）」 (user pays, char gets a 你代付 receipt + system note).
+  - **联动查手机 (反查岗)**: `CharPhoneCheckOverlay` now gets the user's cart in its browse prompt + a `clear_cart` script action — a doting/generous char may 「帮 TA 清空购物车」 while snooping (whole cart → your 背包, 代付 receipts both sides, logged in the 查手机记录).
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 533 unit tests green (7 new).
+
+- 心意铺·淘宝化界面革新 (搜索 / 详情页 / 收藏 / 月销·评价):
+  - Pure helpers in `utils/shop.ts`: deterministic `monthlySales` (cheaper sells more), `itemRating` (4.6–5.0), `getItemReviews` (seeded buyer reviews), `searchShopItems`, `formatSales` (万级). New `shopBrowse.test.ts` (6 tests).
+  - **搜索**: a Taobao-style search pill at the top of 商城 — filters by name / 描述 / 分类 / emoji.
+  - **商品卡革新**: big emoji 主图 with a 收藏 ❤️ corner button, ⭐ 评分 · 月销 line, Taobao 红 (#ee0a24) price + 购买 button; tap the card → 详情页.
+  - **商品详情页 (PDP)**: full-screen overlay — 大图 hero, price + 评分/月销, 标题/描述, 宝贝评价 list (stars + buyer), bottom bar with 收藏 / 加入购物车 / 立即购买.
+  - **收藏**: `shopFavorites` on `UserProfile`; ❤️ toggle on cards + PDP, and a 收藏 chip in the category row to filter to favorites.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 539 unit tests green (6 new).

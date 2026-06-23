@@ -11,7 +11,7 @@
  * 不碰 DB / React，方便在 App、聊天上下文、副 API 流程里复用。
  */
 
-import type { ShopItem, ShopReceipt, ShopOwnedItem } from '../types';
+import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine } from '../types';
 
 /** 商城内容变动（买/送/角色逛完）后广播，相关页面据此刷新。 */
 export const SHOP_UPDATED_EVENT = 'moro-shop-updated';
@@ -143,10 +143,130 @@ export const receiptLine = (r: ShopReceipt): string => {
     return `${who} ${verb} ${r.emoji}${r.name}${target}${r.note ? `：「${r.note}」` : ''}`;
 };
 
+// ── 购物车（淘宝式）：纯函数，user 与 char 共用 ───────────────────────────────
+
+/** 加入购物车（已存在则数量 +qty）。返回新数组，不改原数组。 */
+export const addToCart = (cart: ShopCartLine[] | undefined, itemId: string, qty = 1): ShopCartLine[] => {
+    const list = (cart || []).map(l => ({ ...l }));
+    const hit = list.find(l => l.itemId === itemId);
+    if (hit) hit.qty = Math.min(99, hit.qty + qty);
+    else list.push({ itemId, qty: Math.max(1, qty) });
+    return list;
+};
+
+/** 设置某商品数量（<=0 则移除）。 */
+export const setCartQty = (cart: ShopCartLine[] | undefined, itemId: string, qty: number): ShopCartLine[] => {
+    const list = (cart || []).map(l => ({ ...l }));
+    if (qty <= 0) return list.filter(l => l.itemId !== itemId);
+    const hit = list.find(l => l.itemId === itemId);
+    if (hit) hit.qty = Math.min(99, qty);
+    else list.push({ itemId, qty: Math.min(99, qty) });
+    return list;
+};
+
+/** 从购物车移除某商品。 */
+export const removeFromCart = (cart: ShopCartLine[] | undefined, itemId: string): ShopCartLine[] =>
+    (cart || []).filter(l => l.itemId !== itemId);
+
+/** 购物车商品总件数。 */
+export const cartCount = (cart: ShopCartLine[] | undefined): number =>
+    (cart || []).reduce((s, l) => s + (l.qty || 0), 0);
+
+/** 购物车总价（元）。未知商品按 0 计。 */
+export const cartTotal = (cart: ShopCartLine[] | undefined): number => {
+    const cents = (cart || []).reduce((s, l) => {
+        const it = getShopItem(l.itemId);
+        return s + (it ? Math.round(it.price * 100) * (l.qty || 0) : 0);
+    }, 0);
+    return Math.round(cents) / 100;
+};
+
+/** 把购物车解析成 { item, qty } 列表（跳过下架/未知商品）。 */
+export const resolveCart = (cart: ShopCartLine[] | undefined): { item: ShopItem; qty: number }[] =>
+    (cart || []).map(l => ({ item: getShopItem(l.itemId), qty: l.qty }))
+        .filter((x): x is { item: ShopItem; qty: number } => !!x.item && x.qty > 0);
+
+/** 把购物车展开成逐件商品（送货 / 清空时按件生成背包物 / 小票）。 */
+export const expandCart = (cart: ShopCartLine[] | undefined): ShopItem[] => {
+    const out: ShopItem[] = [];
+    for (const { item, qty } of resolveCart(cart)) {
+        for (let i = 0; i < qty; i++) out.push(item);
+    }
+    return out;
+};
+
+// ── 淘宝式商品资料：月销量 / 评分 / 评价（纯函数·确定性，按 itemId 稳定生成） ──────
+
+/** 简单字符串哈希（确定性，用于由 itemId 生成稳定的"假"销量/评价）。 */
+const hashStr = (s: string): number => {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0);
+};
+
+/** 月销量（确定性）：便宜的卖得多，贵的卖得少，叠加按 id 的稳定抖动。范围约 30 ~ 9999。 */
+export const monthlySales = (itemId: string): number => {
+    const it = getShopItem(itemId);
+    if (!it) return 0;
+    const base = Math.max(20, Math.round(4000 / Math.sqrt(it.price + 1)));
+    const jitter = hashStr(itemId) % 1200;
+    return Math.min(9999, base + jitter);
+};
+
+/** 把销量格式化成淘宝式「月销 1.2万」「月销 800」。 */
+export const formatSales = (n: number): string =>
+    n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
+
+/** 评分（确定性）：4.6 ~ 5.0 之间，按 id 稳定。 */
+export const itemRating = (itemId: string): number =>
+    Math.round((4.6 + (hashStr('r' + itemId) % 41) / 100) * 10) / 10;
+
+export interface ShopReview { user: string; stars: number; text: string; }
+
+const REVIEW_USERS = ['t**o', '甜**圈', '阿**', '小**鱼', 'L**y', 'momo', '一**风', '北**川', '橘**酱', '游**客'];
+const REVIEW_TEXTS = [
+    '比图片还好看，包装也用心，给对象很合适～',
+    '质感超出预期，回购了第二件。',
+    '物流很快，拆开心情都变好了。',
+    '送人很有面子，对方很喜欢！',
+    '颜值在线，细节做得好，好评。',
+    '性价比挺高的，会推荐给朋友。',
+    '收到啦，和描述一致，没有色差。',
+    '包装精致，像是认真挑过的礼物。',
+    '小贵但值得，仪式感拉满。',
+    '客服态度很好，整体很满意。',
+];
+
+/** 某商品的评价（确定性）：按 itemId 稳定地从评论池里取 2~4 条。 */
+export const getItemReviews = (itemId: string): ShopReview[] => {
+    const h = hashStr('rev' + itemId);
+    const count = 2 + (h % 3); // 2~4 条
+    const out: ShopReview[] = [];
+    for (let i = 0; i < count; i++) {
+        const u = REVIEW_USERS[(h + i * 7) % REVIEW_USERS.length];
+        const t = REVIEW_TEXTS[(h + i * 13) % REVIEW_TEXTS.length];
+        const stars = 4 + ((h + i * 5) % 2); // 4 或 5 星
+        out.push({ user: u, stars, text: t });
+    }
+    return out;
+};
+
+/** 搜索商品：按名称 / 描述 / 分类名（含 emoji）模糊匹配。 */
+export const searchShopItems = (query: string): ShopItem[] => {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return SHOP_ITEMS;
+    const catLabel = (key: string) => SHOP_CATEGORIES.find(c => c.key === key)?.label || '';
+    return SHOP_ITEMS.filter(i =>
+        i.name.toLowerCase().includes(q) ||
+        i.blurb.toLowerCase().includes(q) ||
+        catLabel(i.category).toLowerCase().includes(q) ||
+        i.emoji.includes(q));
+};
+
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────
 
 export interface CharShopDecision {
-    action: 'buy' | 'gift';   // buy=给自己买；gift=回赠用户
+    action: 'buy' | 'gift' | 'want';   // buy=给自己买；gift=回赠用户；want=加进自己的心愿购物车（等用户代付）
     itemId: string;
     note: string;             // 角色的理由 / 赠言（第一人称，短）
 }
@@ -163,12 +283,15 @@ export function buildCharShopPrompt(
         .join('\n');
     const persona = (char.personaText || '').toString().slice(0, 800);
     const system = `你是「${char.name}」。下面是你的人设，请完全代入，用你自己的喜好和性格做决定。\n${persona ? `【人设】\n${persona}\n` : ''}`;
-    const user = `你正在逛一个礼物商城，预算大约 ¥${formatPrice(budget)}。请凭你的性格和喜好，从下面挑【一件】，决定是「给自己买」还是「送给${userName}」：
+    const user = `你正在逛一个礼物商城，预算大约 ¥${formatPrice(budget)}。请凭你的性格和喜好，从下面挑【一件】，决定怎么办：
+- "buy"：自己买下来
+- "gift"：买下送给${userName}
+- "want"：加进自己的「心愿购物车」先攒着（你想要但还没舍得买，${userName} 看到了可能会帮你代付）
 
 ${menu}
 
 只输出一个 JSON，不要任何多余文字、解释或代码块标记：
-{"action":"buy 或 gift","itemId":"上面列表里的 id","note":"一句话理由或赠言，第一人称，20字内，像你会说的话"}`;
+{"action":"buy / gift / want","itemId":"上面列表里的 id","note":"一句话理由或赠言，第一人称，20字内，像你会说的话"}`;
     return { system, user };
 }
 
@@ -183,7 +306,7 @@ export function parseCharShopDecision(raw: string): CharShopDecision | null {
         const obj = JSON.parse(txt.slice(start, end + 1));
         const item = getShopItem(String(obj.itemId || '').trim());
         if (!item) return null;
-        const action = obj.action === 'gift' ? 'gift' : 'buy';
+        const action: CharShopDecision['action'] = obj.action === 'gift' ? 'gift' : obj.action === 'want' ? 'want' : 'buy';
         const note = String(obj.note || '').trim().slice(0, 40);
         return { action, itemId: item.id, note };
     } catch {
