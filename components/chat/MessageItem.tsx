@@ -2438,11 +2438,13 @@ const MessageItem = React.memo(({
         const isClaimed = meta.status === 'claimed';
         const isDeclined = meta.status === 'declined';
         const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
+        const isPw = meta.rpType === 'password';
         const footerText = isUser
-            ? `发给${charName}的红包`
+            ? `发给${charName}的${isPw ? '口令红包' : '红包'}`
             : isClaimed ? '已收下 · 进了钱包 ✓'
             : isExpired ? '没来得及收 · 已过期退回'
             : isDeclined ? '你没有收下这个红包'
+            : isPw ? '口令红包 · 答对口令拆开'
             : '发给你的红包 · 点开收下';
         return commonLayout(
             <div

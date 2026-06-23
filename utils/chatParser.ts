@@ -119,6 +119,17 @@ export const ChatParser = {
             });
             content = content.replace(redpacketMatch[0], '').trim();
         }
+        // 口令红包：[[ACTION:REDPACKET_PW:100|口令|祝福语]] —— 用户要先答对口令才能拆开
+        const rpPwMatch = content.match(/\[\[ACTION:REDPACKET_PW:(\d+)\|([^|\]]+)(?:\|([^\]]*))?\]\]/);
+        if (rpPwMatch) {
+            const pw = (rpPwMatch[2] || '').trim();
+            const pwNote = (rpPwMatch[3] || '').trim();
+            await DB.saveMessage({
+                charId, role: 'assistant', type: 'transfer', content: '[口令红包]',
+                metadata: { amount: rpPwMatch[1], kind: 'redpacket', rpType: 'password', password: pw, ...(pwNote ? { note: pwNote } : {}), status: 'pending', expiresAt: Date.now() + CLAIM_WINDOW_MS },
+            });
+            content = content.replace(rpPwMatch[0], '').trim();
+        }
 
         // MUSIC_ACTION — char 对 user 正在听的歌表态（只处理第一次出现，每条消息最多一次插卡）
         // 支持的格式（后两种是为了让 char 自己挑歌单 / 新建歌单）：

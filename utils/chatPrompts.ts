@@ -424,6 +424,7 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - 回戳用户: \`[[ACTION:POKE]]\`
    - 转账: \`[[ACTION:TRANSFER:100]]\`（给 ${userProfile.name} 转一笔零花钱）
    - 发红包: \`[[ACTION:REDPACKET:100]]\`，也可带一句祝福: \`[[ACTION:REDPACKET:100|新年快乐]]\`
+   - 发口令红包: \`[[ACTION:REDPACKET_PW:100|口令|祝福语]]\`（${userProfile.name} 要先答对你设的「口令」才能拆开。口令请你自己定，并在正文里把口令告诉 TA、或让 TA 猜——玩心一点）。祝福语可省略。
    - **关于转账 / 红包**：发出后 ${userProfile.name} 需要在 **24 小时内点开「收款」** 才会真正到账；超时没领会自动退回，你会被告知并可以做出反应。请低频、应景使用，别为了刷钱频繁发。
    - 调取记忆: \`[[RECALL: YYYY-MM]]\`，请注意，当用户提及具体某个月份时，或者当你想仔细想某个月份的事情时，欢迎你随时使该动作
    - **添加纪念日**: 如果你觉得今天是个值得纪念的日子（或者你们约定了某天），你可以**主动**将它添加到用户的日历中。单独起一行输出: \`[[ACTION:ADD_EVENT | 标题(Title) | YYYY-MM-DD]]\`。
@@ -844,9 +845,14 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
                 else if (m.type === 'transfer') {
                     const isRedPacket = m.metadata?.kind === 'redpacket';
                     const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? `，附言「${m.metadata.note.trim()}」` : '';
-                    content = isRedPacket
-                        ? `${timeStr} [系统: 用户给你发了一个红包 ${m.metadata?.amount}${note}。请对红包做出符合你性格的反应]`
-                        : `${timeStr} [系统: 用户转账 ${m.metadata?.amount}${note}]`;
+                    if (m.metadata?.rpType === 'password') {
+                        const pw = String(m.metadata?.password || '').trim();
+                        content = `${timeStr} [系统: 用户给你发了一个口令红包 ${m.metadata?.amount}${note}，口令是「${pw}」。你要在回复里说出这个口令才能领到（也可以撒娇/讨价还价后再说），请按你的性格自然回应]`;
+                    } else {
+                        content = isRedPacket
+                            ? `${timeStr} [系统: 用户给你发了一个红包 ${m.metadata?.amount}${note}。请对红包做出符合你性格的反应]`
+                            : `${timeStr} [系统: 用户转账 ${m.metadata?.amount}${note}]`;
+                    }
                 }
                 else if (m.type === 'location') {
                     const address = typeof m.metadata?.address === 'string' && m.metadata.address.trim() ? `（${m.metadata.address.trim()}）` : '';

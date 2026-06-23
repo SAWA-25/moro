@@ -18,6 +18,9 @@ interface ChatModalsProps {
     setTransferMode: (v: 'transfer' | 'redpacket') => void;
     transferNote: string;
     setTransferNote: (v: string) => void;
+    /** 口令红包：填了就是口令红包，角色要答对口令才领得到 */
+    transferPassword: string;
+    setTransferPassword: (v: string) => void;
     /** 钱包余额（来自存钱罐营业所得），转账/红包从这里扣 */
     walletBalance?: number;
     emojiImportText: string;
@@ -129,7 +132,7 @@ interface ChatModalsProps {
 const ChatModals: React.FC<ChatModalsProps> = ({
     modalType, setModalType,
     transferAmt, setTransferAmt,
-    transferMode, setTransferMode, transferNote, setTransferNote,
+    transferMode, setTransferMode, transferNote, setTransferNote, transferPassword, setTransferPassword,
     walletBalance = 0,
     emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
@@ -333,6 +336,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             value={transferNote} onChange={e => setTransferNote(e.target.value)}
                             tag="封皮上的一句话"
                             placeholder="比如：恭喜发财，大吉大利" maxLength={30}
+                        />
+                    )}
+                    {transferMode === 'redpacket' && (
+                        <LinedInput
+                            value={transferPassword} onChange={e => setTransferPassword(e.target.value)}
+                            tag="口令（选填）"
+                            placeholder="填了就是口令红包 · TA 要答对才领得到" maxLength={20}
                         />
                     )}
                     {/* 钱包余额（存钱罐营业所得），转账/红包从这里扣 */}

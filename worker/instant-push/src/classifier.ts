@@ -159,6 +159,11 @@ const SIDE_EFFECT_TAGS: SideEffectSpec[] = [
     re: /\[\[ACTION:REDPACKET:(\d+)(?:\|[^\]]*)?\]\]/g,
     toDirective: (m) => ({ type: 'transfer', amount: Number(m[1]) }),
   },
+  // [[ACTION:REDPACKET_PW:123|口令|祝福语]]（口令红包：推送语义同转账，剥掉标签即可）
+  {
+    re: /\[\[ACTION:REDPACKET_PW:(\d+)\|[^|\]]+(?:\|[^\]]*)?\]\]/g,
+    toDirective: (m) => ({ type: 'transfer', amount: Number(m[1]) }),
+  },
   // [[ACTION:ADD_EVENT|title|date]]
   {
     re: /\[\[ACTION:ADD_EVENT\s*\|\s*(.*?)\s*\|\s*(.*?)\]\]/g,
