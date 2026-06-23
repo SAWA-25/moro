@@ -23,7 +23,7 @@ import type {
 import {
   coupleSpaceBlock, coupleChatPersonaSystem, coupleCommentUserPrompt,
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
-  coupleInnerVoiceUserPrompt,
+  coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
 } from './laiwangPrompts';
 
 export interface CoupleApi {
@@ -47,6 +47,8 @@ export function createCoupleSpace(): CoupleSpace {
     photos: [],
     tasks: [],
     whispers: [],
+    wishes: [],
+    questions: [],
     interactions: [],
     createdAt: now,
     updatedAt: now,
@@ -66,6 +68,8 @@ export function ensureCoupleSpace(char: Pick<CharacterProfile, 'coupleSpace'> | 
       photos: cs.photos || [],
       tasks: cs.tasks || [],
       whispers: cs.whispers || [],
+      wishes: cs.wishes || [],
+      questions: cs.questions || [],
       interactions: cs.interactions || [],
       intimacy: typeof cs.intimacy === 'number' ? cs.intimacy : 0,
     };
@@ -182,6 +186,39 @@ export function fallbackCharInteractionNote(kind: CoupleInteractionKind): string
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// ── 养盆栽 ──────────────────────────────────────────────────────────────────
+
+export interface PlantStage { emoji: string; name: string; min: number; }
+
+/** 盆栽成长阶段（按累计成长值递增）。 */
+export const PLANT_STAGES: PlantStage[] = [
+  { emoji: '🌰', name: '种子', min: 0 },
+  { emoji: '🌱', name: '发芽', min: 10 },
+  { emoji: '🌿', name: '幼苗', min: 30 },
+  { emoji: '🪴', name: '成株', min: 60 },
+  { emoji: '🌷', name: '花苞', min: 100 },
+  { emoji: '🌸', name: '绽放', min: 160 },
+];
+
+/** 每日照料动作的成长加成。 */
+export const PLANT_CARE: Record<'water' | 'fertilize' | 'sun', { emoji: string; label: string; gain: number }> = {
+  water: { emoji: '💧', label: '浇水', gain: 3 },
+  fertilize: { emoji: '🌾', label: '施肥', gain: 5 },
+  sun: { emoji: '☀️', label: '晒太阳', gain: 2 },
+};
+
+/** 由成长值算出当前阶段 + 到下一阶段的进度。 */
+export function plantStage(growth: number): { stage: PlantStage; index: number; next?: PlantStage; toNext: number; progress: number } {
+  const g = Math.max(0, growth || 0);
+  let i = 0;
+  for (let k = 0; k < PLANT_STAGES.length; k++) if (g >= PLANT_STAGES[k].min) i = k;
+  const stage = PLANT_STAGES[i];
+  const next = PLANT_STAGES[i + 1];
+  const toNext = next ? Math.max(0, next.min - g) : 0;
+  const progress = next ? (g - stage.min) / (next.min - stage.min) : 1;
+  return { stage, index: i, next, toNext, progress: Math.max(0, Math.min(1, progress)) };
+}
+
 // ── 提示词注入 ──────────────────────────────────────────────────────────────
 
 const authorLabel = (a: 'user' | 'char', userName: string, charName: string) =>
@@ -198,6 +235,8 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     !!cs.anniversaryDate || (cs.intimacy || 0) > 0 ||
     (cs.moments?.length || 0) > 0 || (cs.anniversaries?.length || 0) > 0 ||
     (cs.tasks?.length || 0) > 0 || (cs.whispers?.length || 0) > 0 ||
+    (cs.wishes?.length || 0) > 0 || (cs.questions?.length || 0) > 0 ||
+    (cs.plant?.growth || 0) > 0 ||
     (cs.photos?.length || 0) > 0;
   if (!hasContent) return '';
 
@@ -222,6 +261,20 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     .map(({ a, occ }) => `纪念日「${a.title}」${occ!.daysLeft === 0 ? '就是今天！' : `还有 ${occ!.daysLeft} 天`}。`);
 
   const pendingTaskTitles = (cs.tasks || []).filter(t => !t.done).slice(0, 3).map(t => t.title);
+  const pendingWishes = (cs.wishes || []).filter(w => !w.fulfilled).slice(0, 3).map(w => w.text);
+
+  // 提问箱里你近来答过的问答（让角色言行与自己答过的话保持一致）
+  const recentQaLines = [...(cs.questions || [])]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 2)
+    .map(q => `${userName}问「${q.question.slice(0, 40)}」，你答「${q.answer.slice(0, 50)}」`);
+
+  // 你们一起养的盆栽（有成长才提）
+  let plantLine: string | undefined;
+  if ((cs.plant?.growth || 0) > 0) {
+    const ps = plantStage(cs.plant!.growth);
+    plantLine = `你们一起养的小盆栽现在长到了「${ps.stage.name}」${ps.stage.emoji} 阶段（成长值 ${Math.round(cs.plant!.growth)}）`;
+  }
 
   // 用户留的、角色还没回的悄悄话（最新一条）
   const whispers = [...(cs.whispers || [])].sort((a, b) => b.at - a.at);
@@ -239,6 +292,9 @@ export function buildCoupleSpacePromptBlock(char: CharacterProfile, userName: st
     recentMomentLines,
     upcomingLines,
     pendingTaskTitles,
+    pendingWishes,
+    recentQaLines,
+    plantLine,
     lastUserWhisper: lastUserWhisper && !charRepliedAfter ? lastUserWhisper.text.slice(0, 60) : undefined,
   });
 }
@@ -354,6 +410,80 @@ export async function generateCharWhisperReply(opts: {
     { role: 'user', content: coupleWhisperUserPrompt(userName, whisper) },
   ], 160);
   return cleanLine(out, 100, [char.name, userName]);
+}
+
+/** 提问箱：角色（以恋人身份）回答用户提出的一个问题。 */
+export async function generateCharQuestionAnswer(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  question: string;
+}): Promise<string> {
+  const { char, userName, api, question } = opts;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleQuestionUserPrompt(userName, question) },
+  ], 200);
+  return cleanParagraph(out, 120, [char.name, userName]);
+}
+
+// ── 情侣小游戏：默契大考验（二选一，看你多懂 TA） ──────────────────────────
+export interface CompatQuestion { q: string; a: string; b: string; }
+
+export const COMPAT_QUESTIONS: CompatQuestion[] = [
+  { q: '周末更想怎么过？', a: '宅家窝着', b: '出门浪' },
+  { q: '吃的更偏爱？', a: '甜口', b: '咸辣口' },
+  { q: '吵架后更想要？', a: '先各自冷静', b: '马上和好' },
+  { q: '更想一起养？', a: '猫', b: '狗' },
+  { q: '约会更想？', a: '看场电影', b: '吃顿大餐' },
+  { q: '作息更偏？', a: '早睡早起', b: '熬夜星人' },
+  { q: '收礼物更看重？', a: '心意满满', b: '实用为王' },
+  { q: '旅行更想去？', a: '山林', b: '海边' },
+  { q: '表达爱更习惯？', a: '挂在嘴上', b: '藏在行动里' },
+  { q: '更喜欢的天气？', a: '晴天暖阳', b: '雨天慵懒' },
+  { q: '看电影更爱？', a: '甜甜爱情片', b: '刺激动作片' },
+  { q: '深夜更想？', a: '聊到天亮', b: '抱着早睡' },
+];
+
+/** 随机抽 n 道默契题。 */
+export function pickCompatQuestions(n = 5): CompatQuestion[] {
+  return [...COMPAT_QUESTIONS].sort(() => Math.random() - 0.5).slice(0, Math.min(n, COMPAT_QUESTIONS.length));
+}
+
+/** 让角色以人设对一组二选一作答，返回 'a'/'b' 数组；失败返回 null（组件用随机兜底）。 */
+export async function generateCharCompatAnswers(opts: {
+  char: CharacterProfile;
+  userName: string;
+  api: CoupleApi;
+  questions: CompatQuestion[];
+}): Promise<('a' | 'b')[] | null> {
+  const { char, userName, api, questions } = opts;
+  const out = await callCoupleLLM(api, [
+    { role: 'system', content: personaSystem(char, userName) },
+    { role: 'user', content: coupleCompatPrompt(questions) },
+  ], 120);
+  if (!out) return null;
+  try {
+    const m = out.match(/\[[\s\S]*\]/);
+    if (m) {
+      const arr = JSON.parse(m[0]);
+      if (Array.isArray(arr) && arr.length === questions.length) {
+        const norm = arr.map((x: any) => String(x).toLowerCase().trim());
+        if (norm.every((x: string) => x === 'a' || x === 'b')) return norm as ('a' | 'b')[];
+      }
+    }
+  } catch { /* fallthrough */ }
+  return null;
+}
+
+/** 提问箱兜底回答（LLM 失败 / 未配 API 时用）。 */
+export function fallbackQuestionAnswer(): string {
+  const pool = [
+    '这个问题…让我好好想想哦，其实我心里早有答案，只是想多回味一会儿和你有关的每一点。',
+    '唔，被你这么一问还有点害羞。不过只要是关于你、关于我们的，我都愿意认真回答。',
+    '嘿嘿，这种小问题最喜欢了。答案嘛——和你在一起的每个版本，我都喜欢。',
+  ];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** 角色被「亲一下 / 抱一下 / 牵手 / 送礼物」后的一句反应。 */

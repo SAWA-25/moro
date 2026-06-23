@@ -2,7 +2,8 @@ import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useOS } from '../../context/OSContext';
 import {
   CharacterProfile, CoupleSpace as CoupleSpaceData, CoupleMoment, CoupleAnniversary,
-  CouplePhoto, CoupleTask, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
+  CouplePhoto, CoupleTask, CoupleWish, CoupleQuestion, CoupleWhisper, CoupleInteractionKind, CoupleMedia, CoupleMediaKind,
+  CouplePlant,
 } from '../../types';
 import { processImage } from '../../utils/file';
 import { resolveAuxApi } from '../../utils/auxApi';
@@ -13,6 +14,9 @@ import {
   fallbackCharInteractionNote, todayYmd, pushInteraction,
   generateCharCoupleComment, generateCharWhisperReply, generateCharInteractionNote, generateCharMoment,
   generateCharInnerVoice, fallbackInnerVoice,
+  generateCharQuestionAnswer, fallbackQuestionAnswer,
+  plantStage, PLANT_CARE,
+  pickCompatQuestions, generateCharCompatAnswers, type CompatQuestion,
 } from '../../utils/coupleSpace';
 import {
   Heart, Sparkle, Trash, Plus, ArrowsClockwise, Camera, PaperPlaneTilt,
@@ -24,6 +28,8 @@ const PARTNER_KEY = 'moro_couple_partner_id';
 const MAX_IMAGES = 9;
 const MOOD_EMOJIS = ['😊', '🥰', '😍', '🤗', '😋', '🥳', '🤔', '😢', '😴', '💕', '🌙', '☀️'];
 const TASK_SUGGESTIONS = ['今天说晚安', '一起看一部电影', '给对方做顿饭', '一起散步半小时', '互道一句早安', '拍一张合照'];
+const WISH_SUGGESTIONS = ['一起去看海', '一起养一只猫', '去看一场演唱会', '一起跨年', '环游一座城市', '拍一组情侣写真'];
+const QUESTION_SUGGESTIONS = ['你最喜欢我哪一点？', '第一次见我时你什么感觉？', '理想中的约会是什么样？', '最想和我一起去哪里？', '今天有没有偷偷想我？', '最近有什么心事吗？'];
 
 // ── 全局设计 token（黑白灰拼贴手帐：强调色由粉紫改墨灰）──
 const ACCENT = 'linear-gradient(135deg, #3a352e 0%, #1f1d1a 100%)';                 // 强调墨灰渐变
@@ -65,7 +71,7 @@ const KIND_EMOJI: Record<CoupleAnniversary['kind'], string> = {
   love: '💞', birthday: '🎂', promise: '🤙', custom: '📌',
 };
 
-type Tab = 'moments' | 'anniversary' | 'album' | 'tasks';
+type Tab = 'moments' | 'anniversary' | 'album' | 'tasks' | 'wishlist' | 'plant' | 'achievements';
 
 // ── 心跳连线（SVG ECG，stroke-dashoffset 持续流动） ──
 const HeartbeatLine: React.FC = () => (
@@ -356,6 +362,72 @@ const CoupleSpace: React.FC = () => {
   };
   const deleteTask = (id: string) => mutate(cs => ({ ...cs, tasks: cs.tasks.filter(t => t.id !== id) }), 0);
 
+  // ── 愿望清单 ──
+  const [wishInput, setWishInput] = useState('');
+  const addWish = (text: string) => {
+    const t = text.trim(); if (!t) return;
+    const item: CoupleWish = { id: genCoupleId('ws'), text: t, fulfilled: false, by: 'user', createdAt: Date.now() };
+    mutate(cs => ({ ...cs, wishes: [...(cs.wishes || []), item] }), 0);
+    setWishInput('');
+  };
+  const toggleWish = (id: string) => {
+    let becameDone = false;
+    mutate(cs => {
+      const wishes = (cs.wishes || []).map(w => {
+        if (w.id !== id) return w;
+        const fulfilled = !w.fulfilled; if (fulfilled) becameDone = true;
+        return { ...w, fulfilled, fulfilledAt: fulfilled ? Date.now() : undefined };
+      });
+      return { ...cs, wishes, intimacy: Math.max(0, Math.round((cs.intimacy || 0) + (becameDone ? 8 : 0))) };
+    });
+    if (becameDone) addToast('心愿达成 +8 亲密度 🌟', 'success');
+  };
+  const deleteWish = (id: string) => mutate(cs => ({ ...cs, wishes: (cs.wishes || []).filter(w => w.id !== id) }), 0);
+
+  // ── 养盆栽 ──
+  const carePlant = (kind: 'water' | 'fertilize' | 'sun') => {
+    const today = todayYmd();
+    if (space.plant?.[kind] === today) { addToast('今天已经照料过啦，明天再来 🌱', 'info'); return; }
+    const { label, gain } = PLANT_CARE[kind];
+    mutate(cs => {
+      const plant: CouplePlant = cs.plant || { growth: 0, createdAt: Date.now() };
+      return { ...cs, plant: { ...plant, [kind]: today, growth: (plant.growth || 0) + gain } };
+    }, 1);
+    addToast(`${label} +${gain} 成长 🌱`, 'success');
+  };
+
+  // ── 情侣小游戏：默契大考验 ──
+  const [showGame, setShowGame] = useState(false);
+  const [gamePhase, setGamePhase] = useState<'intro' | 'playing' | 'reveal'>('intro');
+  const [gameQs, setGameQs] = useState<CompatQuestion[]>([]);
+  const [gameUserAns, setGameUserAns] = useState<('a' | 'b')[]>([]);
+  const [gameCharAns, setGameCharAns] = useState<('a' | 'b')[]>([]);
+  const [gameIdx, setGameIdx] = useState(0);
+  const [gameBusy, setGameBusy] = useState(false);
+  const openGame = () => { setGamePhase('intro'); setShowGame(true); };
+  const startGame = () => {
+    setGameQs(pickCompatQuestions(5));
+    setGameUserAns([]); setGameCharAns([]); setGameIdx(0);
+    setGamePhase('playing');
+  };
+  const pickGameAnswer = async (choice: 'a' | 'b') => {
+    if (!partner || gameBusy) return;
+    const next = [...gameUserAns, choice];
+    setGameUserAns(next);
+    if (next.length < gameQs.length) { setGameIdx(i => i + 1); return; }
+    // 答完 → 角色以人设作答，比对算默契
+    setGameBusy(true);
+    let charAns: ('a' | 'b')[] | null = null;
+    try { charAns = await generateCharCompatAnswers({ char: partner, userName, api: coupleApi, questions: gameQs }); } catch { /* ignore */ }
+    if (!charAns) charAns = gameQs.map(() => (Math.random() < 0.5 ? 'a' : 'b'));
+    setGameCharAns(charAns);
+    const matches = next.reduce((acc, a, i) => acc + (a === charAns![i] ? 1 : 0), 0);
+    const pct = Math.round((matches / gameQs.length) * 100);
+    mutate(cs => ({ ...cs, compatBest: Math.max(cs.compatBest || 0, pct) }), matches * 2);
+    setGameBusy(false);
+    setGamePhase('reveal');
+  };
+
   // ── 悄悄话 ──
   const [whisperInput, setWhisperInput] = useState('');
   const [whisperBusy, setWhisperBusy] = useState(false);
@@ -372,6 +444,24 @@ const CoupleSpace: React.FC = () => {
       mutate(cs => ({ ...cs, whispers: [...cs.whispers, { id: genCoupleId('wh'), author: 'char', text: reply, at: Date.now() }] }), 1);
     }
     setWhisperBusy(false);
+  };
+
+  // ── 提问箱 ──
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [questionInput, setQuestionInput] = useState('');
+  const [questionBusy, setQuestionBusy] = useState(false);
+  const askQuestion = async (q?: string) => {
+    if (!partner || questionBusy) return;
+    const question = (q ?? questionInput).trim();
+    if (!question) return;
+    setQuestionInput('');
+    setQuestionBusy(true);
+    let answer = '';
+    try { answer = await generateCharQuestionAnswer({ char: partner, userName, api: coupleApi, question }); } catch { /* ignore */ }
+    if (!answer) answer = fallbackQuestionAnswer();
+    const item: CoupleQuestion = { id: genCoupleId('qa'), question, answer, at: Date.now() };
+    mutate(cs => ({ ...cs, questions: [...(cs.questions || []), item] }), 3);
+    setQuestionBusy(false);
   };
 
   // ── 渲染：未绑定 ──
@@ -429,6 +519,23 @@ const CoupleSpace: React.FC = () => {
     .sort((x, y) => (x.occ?.daysLeft ?? 9e9) - (y.occ?.daysLeft ?? 9e9));
   const pendingTasks = space.tasks.filter(t => !t.done);
   const doneTasks = space.tasks.filter(t => t.done);
+  const wishes = space.wishes || [];
+  const pendingWishes = wishes.filter(w => !w.fulfilled);
+  const doneWishes = wishes.filter(w => w.fulfilled);
+
+  // 纪念日提醒：7 天内最近的一个（恋爱纪念日周年 + 各纪念日条目），点击跳到纪念日 tab
+  const annivReminder = (() => {
+    const cands: { label: string; daysLeft: number }[] = [];
+    if (space.anniversaryDate) {
+      const occ = nextOccurrence(space.anniversaryDate, true);
+      if (occ) cands.push({ label: '恋爱纪念日', daysLeft: occ.daysLeft });
+    }
+    (space.anniversaries || []).forEach(a => {
+      const occ = nextOccurrence(a.date, a.repeatYearly);
+      if (occ) cands.push({ label: a.title, daysLeft: occ.daysLeft });
+    });
+    return cands.filter(c => c.daysLeft >= 0 && c.daysLeft <= 7).sort((x, y) => x.daysLeft - y.daysLeft)[0] || null;
+  })();
 
   return (
     <div className="h-full w-full max-w-[480px] mx-auto flex flex-col relative overflow-hidden" style={{ background: BG, fontFamily: FONT_STACK }}>
@@ -502,6 +609,21 @@ const CoupleSpace: React.FC = () => {
         </div>
       </div>
 
+      {/* 纪念日提醒（7 天内） */}
+      {annivReminder && (
+        <button onClick={() => setTab('anniversary')}
+          className="shrink-0 mx-4 mt-2 px-3.5 py-2 rounded-2xl flex items-center gap-2 text-left active:scale-[0.98] transition border"
+          style={{ background: 'linear-gradient(135deg,#fff1f6 0%,#fdeef0 100%)', borderColor: '#f6d2de' }}>
+          <span className="text-base shrink-0">💝</span>
+          <span className="flex-1 min-w-0 text-[12px] font-bold leading-snug" style={{ color: '#c2607f' }}>
+            {annivReminder.daysLeft === 0
+              ? `今天是「${annivReminder.label}」，别忘了好好庆祝呀！`
+              : `距离「${annivReminder.label}」还有 ${annivReminder.daysLeft} 天，记得准备惊喜哦～`}
+          </span>
+          <span className="text-[10px] shrink-0" style={{ color: '#d99' }}>查看 ›</span>
+        </button>
+      )}
+
       {/* 每日互动 */}
       <div className="shrink-0 px-4 pt-3 pb-1">
         <div className="flex items-stretch gap-2">
@@ -528,7 +650,7 @@ const CoupleSpace: React.FC = () => {
       {/* 子标签 */}
       <div className="shrink-0 px-4 pt-2">
         <div className="flex rounded-full p-1 text-[12px] font-bold" style={{ background: '#f1eaee' }}>
-          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定']] as [Tab, string][]).map(([k, label]) => (
+          {([['moments', '动态'], ['anniversary', '纪念日'], ['album', '相册'], ['tasks', '约定'], ['wishlist', '心愿'], ['plant', '盆栽'], ['achievements', '成就']] as [Tab, string][]).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className="flex-1 py-1.5 rounded-full transition"
               style={tab === k ? { background: ACCENT, color: '#fff', boxShadow: '0 2px 8px rgba(255,154,158,0.4)' } : { color: '#b48aa0' }}>
@@ -658,7 +780,132 @@ const CoupleSpace: React.FC = () => {
             )}
           </>
         )}
+
+        {tab === 'wishlist' && (
+          <>
+            <div className="flex gap-2">
+              <input value={wishInput} onChange={e => setWishInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addWish(wishInput); }}
+                placeholder="许个一起实现的心愿…" className="flex-1 px-4 py-2.5 bg-white rounded-full text-[13px] outline-none border border-[#eee] focus:border-[#f3c0d2]" />
+              <button onClick={() => addWish(wishInput)} className={`px-5 text-white text-[13px] ${romanticBtn}`} style={{ background: ACCENT }}>许愿</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {WISH_SUGGESTIONS.map(s => (
+                <button key={s} onClick={() => addWish(s)} className="text-[11px] px-3 py-1.5 rounded-full bg-white border border-[#f0f0f0] active:scale-95 transition" style={{ color: '#c76b8e' }}>+ {s}</button>
+              ))}
+            </div>
+            {pendingWishes.map(w => (
+              <div key={w.id} className="bg-white rounded-2xl p-3 flex items-center gap-3 shadow-[0_2px_12px_rgba(0,0,0,0.04)] border border-[#f2f2f2]">
+                <button onClick={() => toggleWish(w.id)} className="active:scale-90 transition shrink-0" style={{ color: '#f0a8c4' }}><Circle size={22} /></button>
+                <span className="flex-1 text-sm text-[#333]">{w.text}</span>
+                <button onClick={() => deleteWish(w.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              </div>
+            ))}
+            {doneWishes.length > 0 && (
+              <div className="text-[11px] font-bold pt-1 pl-1" style={{ color: '#d9a' }}>已实现 {doneWishes.length} 💫</div>
+            )}
+            {doneWishes.map(w => (
+              <div key={w.id} className="bg-white/70 rounded-2xl p-3 flex items-center gap-3 border border-[#f4f4f4]">
+                <button onClick={() => toggleWish(w.id)} className="active:scale-90 transition shrink-0" style={{ color: '#e07a9c' }}><CheckCircle size={22} weight="fill" /></button>
+                <span className="flex-1 text-sm text-[#bbb] line-through">{w.text}</span>
+                <button onClick={() => deleteWish(w.id)} className="text-[#ccc] hover:text-rose-400 active:scale-90 transition shrink-0"><Trash size={15} /></button>
+              </div>
+            ))}
+            {wishes.length === 0 && (
+              <div className="text-center text-[#bbb] text-xs py-8">许下你们的第一个共同心愿吧 🌟</div>
+            )}
+          </>
+        )}
+
+        {tab === 'plant' && (() => {
+          const today = todayYmd();
+          const growth = space.plant?.growth || 0;
+          const ps = plantStage(growth);
+          const cares: ('water' | 'fertilize' | 'sun')[] = ['water', 'fertilize', 'sun'];
+          return (
+            <div className="flex flex-col items-center gap-4 pt-1">
+              <div className="w-full rounded-3xl p-6 flex flex-col items-center gap-2 border border-[#f2f2f2]" style={{ background: 'linear-gradient(180deg,#fbf7f0 0%,#f1f1ec 100%)' }}>
+                <div className="text-6xl leading-none">{ps.stage.emoji}</div>
+                <div className="text-sm font-black text-[#444]">{ps.stage.name}</div>
+                {ps.next ? (
+                  <div className="w-full max-w-[14rem] mt-1">
+                    <div className="h-2 rounded-full bg-[#ececec] overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(ps.progress * 100)}%`, background: ACCENT }} />
+                    </div>
+                    <div className="text-[10px] text-[#aaa] text-center mt-1">再 {ps.toNext} 成长值 → {ps.next.name} {ps.next.emoji}</div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] font-bold mt-1" style={{ color: '#e07a9c' }}>已完全绽放 · 你们的爱开花啦 🌸</div>
+                )}
+                <div className="text-[10px] text-[#bbb] mt-0.5">成长值 {Math.round(growth)}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2.5 w-full">
+                {cares.map(k => {
+                  const c = PLANT_CARE[k];
+                  const done = space.plant?.[k] === today;
+                  return (
+                    <button key={k} onClick={() => carePlant(k)} disabled={done}
+                      className="rounded-2xl py-3 flex flex-col items-center gap-1 border transition active:scale-95 disabled:opacity-60"
+                      style={done ? { background: '#f4f4f4', borderColor: '#eee' } : { background: '#fff', borderColor: '#f3c0d2' }}>
+                      <span className="text-xl">{c.emoji}</span>
+                      <span className="text-[12px] font-bold text-[#555]">{c.label}</span>
+                      <span className="text-[9px]" style={{ color: done ? '#bbb' : '#c76b8e' }}>{done ? '今天已照料' : `+${c.gain} 成长`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-center text-[11px] text-[#aaa] leading-relaxed px-4">
+                每天给小盆栽浇水、施肥、晒晒太阳，<br />看它陪着你们的感情一起长大 🌿
+              </div>
+            </div>
+          );
+        })()}
+
+        {tab === 'achievements' && (() => {
+          const lvl = intimacyLevel(space.intimacy || 0);
+          const days = loveDays(space.anniversaryDate);
+          const ACH = [
+            { e: '💓', t: '初次心动', d: '建立你们的情侣空间', ok: (space.intimacy || 0) > 0 || !!space.anniversaryDate, cur: 0, tar: 0 },
+            { e: '🔥', t: '热恋升级', d: '亲密度达到 Lv.3', ok: lvl >= 3, cur: lvl, tar: 3 },
+            { e: '💎', t: '情比金坚', d: '亲密度达到 Lv.6', ok: lvl >= 6, cur: lvl, tar: 6 },
+            { e: '📅', t: '百日纪念', d: '相恋满 100 天', ok: days >= 100, cur: days, tar: 100 },
+            { e: '🎂', t: '周年之约', d: '相恋满 365 天', ok: days >= 365, cur: days, tar: 365 },
+            { e: '📸', t: '生活记录者', d: '一起发 10 条动态', ok: space.moments.length >= 10, cur: space.moments.length, tar: 10 },
+            { e: '✅', t: '言出必行', d: '完成 5 个约定', ok: doneTasks.length >= 5, cur: doneTasks.length, tar: 5 },
+            { e: '🌟', t: '梦想成真', d: '实现 3 个心愿', ok: doneWishes.length >= 3, cur: doneWishes.length, tar: 3 },
+            { e: '💌', t: '悄悄话', d: '互留 5 条悄悄话', ok: space.whispers.length >= 5, cur: space.whispers.length, tar: 5 },
+            { e: '🖼️', t: '回忆收藏家', d: '相册攒满 9 张', ok: space.photos.length >= 9, cur: space.photos.length, tar: 9 },
+            { e: '🗓️', t: '纪念时刻', d: '记下 3 个纪念日', ok: space.anniversaries.length >= 3, cur: space.anniversaries.length, tar: 3 },
+            { e: '🌸', t: '园丁之心', d: '盆栽养到绽放', ok: (space.plant?.growth || 0) >= 160, cur: Math.round(space.plant?.growth || 0), tar: 160 },
+          ];
+          const unlocked = ACH.filter(a => a.ok).length;
+          return (
+            <>
+              <div className="text-center text-[13px] font-bold pb-1" style={{ color: '#c76b8e' }}>已解锁 {unlocked} / {ACH.length} 个里程碑</div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {ACH.map(a => (
+                  <div key={a.t} className={`rounded-2xl p-3 border flex flex-col items-center text-center gap-1 ${a.ok ? 'bg-white border-[#f3c0d2] shadow-[0_2px_12px_rgba(240,168,196,0.18)]' : 'bg-white/60 border-[#eee]'}`}>
+                    <div className={`text-2xl ${a.ok ? '' : 'grayscale opacity-40'}`}>{a.e}</div>
+                    <div className={`text-[12px] font-bold ${a.ok ? 'text-[#333]' : 'text-[#bbb]'}`}>{a.t}</div>
+                    <div className="text-[10px] leading-tight" style={{ color: a.ok ? '#c76b8e' : '#ccc' }}>{a.d}</div>
+                    {a.ok ? (
+                      <div className="text-[9px] font-bold" style={{ color: '#e07a9c' }}>✓ 已达成</div>
+                    ) : a.tar > 0 ? (
+                      <div className="text-[9px] text-[#ccc] mt-0.5">{Math.min(a.cur, a.tar)} / {a.tar}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </>
+          );
+        })()}
       </div>
+
+      {/* 提问箱浮动入口（叠在悄悄话上方） */}
+      <button onClick={() => setShowQuestions(true)}
+        className="absolute right-4 bottom-[4.5rem] z-20 w-12 h-12 rounded-full text-white shadow-lg shadow-pink-300/50 flex items-center justify-center active:scale-90 transition"
+        style={{ background: ACCENT }} title="提问箱">
+        <ChatCircleDots size={22} weight="fill" />
+      </button>
 
       {/* 悄悄话浮动入口 */}
       <button onClick={() => setShowWhispers(true)}
@@ -747,6 +994,105 @@ const CoupleSpace: React.FC = () => {
         </div>
       </Modal>
 
+      {/* 提问箱 */}
+      <Modal isOpen={showQuestions} title="提问箱 ❓" onClose={() => setShowQuestions(false)} footer={<div className="w-full space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          {QUESTION_SUGGESTIONS.slice(0, 3).map(s => (
+            <button key={s} onClick={() => askQuestion(s)} disabled={questionBusy} className="text-[10px] px-2.5 py-1 rounded-full bg-white border border-[#f0e3e9] active:scale-95 transition disabled:opacity-40" style={{ color: '#c76b8e' }}>{s}</button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input value={questionInput} onChange={e => setQuestionInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !questionBusy) askQuestion(); }}
+            placeholder={`问 ${partnerName} 一个问题…`} className="flex-1 px-4 py-3 rounded-2xl text-sm outline-none border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }} />
+          <button onClick={() => askQuestion()} disabled={questionBusy || !questionInput.trim()} className="px-4 text-white rounded-2xl active:scale-95 transition disabled:opacity-50" style={{ background: ACCENT }}>
+            {questionBusy ? <ArrowsClockwise size={18} className="animate-spin" /> : <PaperPlaneTilt size={18} weight="fill" />}
+          </button>
+        </div>
+      </div>}>
+        <div className="space-y-3">
+          {(space.questions || []).length === 0 && <div className="text-center text-[#bbb] text-xs py-6">问 {partnerName} 一个问题，更懂 TA 一点 💭</div>}
+          {[...(space.questions || [])].sort((a, b) => a.at - b.at).map(q => (
+            <div key={q.id} className="space-y-1.5">
+              <div className="flex justify-end">
+                <div className="max-w-[78%] px-3.5 py-2.5 rounded-2xl rounded-br-md text-[13px] text-white" style={{ background: ACCENT }}>{q.question}</div>
+              </div>
+              <div className="flex justify-start">
+                <div className="max-w-[82%] px-3.5 py-2.5 rounded-2xl rounded-bl-md text-[13px] text-[#444] leading-relaxed border border-[#f0e3e9]" style={{ background: ACCENT_SOFT }}>
+                  {q.answer}
+                  <div className="text-[9px] mt-1 text-[#bbb]">{partnerName} · {timeAgo(q.at)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {questionBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在思考…</div>}
+        </div>
+      </Modal>
+
+      {/* 默契大考验 */}
+      <Modal isOpen={showGame} title="默契大考验 💞" onClose={() => setShowGame(false)}>
+        {gamePhase === 'intro' && (
+          <div className="text-center space-y-4 py-2">
+            <div className="text-5xl">💞</div>
+            <p className="text-[13px] text-[#666] leading-relaxed px-2">
+              选出你觉得 <b>{partnerName}</b> 会选的答案，<br />答完看看你有多懂 TA～
+            </p>
+            {space.compatBest ? <div className="text-[12px]" style={{ color: '#c76b8e' }}>历史最高默契 {space.compatBest}%</div> : null}
+            <button onClick={startGame} className="w-full py-3 rounded-2xl font-bold text-white active:scale-95 transition" style={{ background: ACCENT }}>开始挑战</button>
+          </div>
+        )}
+        {gamePhase === 'playing' && gameQs[gameIdx] && (
+          <div className="space-y-4 py-1">
+            <div className="text-center text-[11px] text-[#bbb]">第 {gameIdx + 1} / {gameQs.length} 题</div>
+            <div className="text-center text-[15px] font-bold text-[#333] px-2">{gameQs[gameIdx].q}</div>
+            <div className="text-center text-[11px] text-[#aaa]">你猜 {partnerName} 会选——</div>
+            <div className="grid grid-cols-1 gap-2.5">
+              {(['a', 'b'] as const).map(opt => (
+                <button key={opt} disabled={gameBusy} onClick={() => pickGameAnswer(opt)}
+                  className="w-full py-3.5 rounded-2xl font-bold text-[14px] border-2 active:scale-95 transition disabled:opacity-50"
+                  style={{ background: '#fff', borderColor: '#f3c0d2', color: '#555' }}>
+                  {gameQs[gameIdx][opt]}
+                </button>
+              ))}
+            </div>
+            {gameBusy && <div className="text-center text-[11px]" style={{ color: '#d9a' }}>{partnerName} 正在作答…</div>}
+          </div>
+        )}
+        {gamePhase === 'reveal' && (() => {
+          const matches = gameUserAns.reduce((acc, a, i) => acc + (a === gameCharAns[i] ? 1 : 0), 0);
+          const pct = Math.round((matches / Math.max(1, gameQs.length)) * 100);
+          const verdict = pct >= 100 ? '心有灵犀·灵魂伴侣' : pct >= 80 ? '默契满分·超懂彼此' : pct >= 60 ? '相当合拍' : pct >= 40 ? '还在磨合期' : '相反相吸·要多了解';
+          return (
+            <div className="space-y-3 py-1">
+              <div className="text-center">
+                <div className="text-3xl font-black" style={{ color: '#e07a9c' }}>{pct}%</div>
+                <div className="text-[13px] font-bold text-[#444] mt-0.5">{verdict}</div>
+                <div className="text-[10px] text-[#bbb] mt-0.5">默契 +{matches * 2} 亲密度</div>
+              </div>
+              <div className="space-y-1.5">
+                {gameQs.map((q, i) => {
+                  const ok = gameUserAns[i] === gameCharAns[i];
+                  return (
+                    <div key={i} className="rounded-xl px-3 py-2 border" style={{ background: ok ? '#fdf2f6' : '#fafafa', borderColor: ok ? '#f3c0d2' : '#eee' }}>
+                      <div className="text-[12px] font-bold text-[#444]">{q.q}</div>
+                      <div className="text-[11px] mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: '#888' }}>
+                        <span>你猜：{q[gameUserAns[i]]}</span>
+                        <span>·</span>
+                        <span>{partnerName}：{q[gameCharAns[i]]}</span>
+                        <span className="ml-auto">{ok ? '✅' : '❌'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setShowGame(false)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition">收工</button>
+                <button onClick={startGame} className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition" style={{ background: ACCENT }}>再来一局</button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
       {/* 设置 / 菜单 */}
       <Modal isOpen={showSettings} title="情侣空间" onClose={() => setShowSettings(false)}>
         <div className="space-y-3">
@@ -757,6 +1103,10 @@ const CoupleSpace: React.FC = () => {
               <div className="text-[11px] text-[#999]">{partner.relationship?.label || '你的另一半'} · 亲密度 {Math.round(space.intimacy)}</div>
             </div>
           </div>
+          <button onClick={() => { setShowSettings(false); openGame(); }} className="w-full py-3 rounded-2xl font-bold text-white active:scale-95 transition flex items-center justify-center gap-2" style={{ background: ACCENT }}>
+            <span>💞 默契大考验</span>
+            {space.compatBest ? <span className="text-[11px] font-normal text-white/80">· 最高 {space.compatBest}%</span> : null}
+          </button>
           <p className="text-[12px] text-[#999] leading-relaxed px-1">
             解除绑定不会删除你们的回忆——重新绑定 {partnerName} 时，动态、纪念日、相册都还在。
           </p>

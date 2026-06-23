@@ -2221,6 +2221,35 @@ export interface CoupleTask {
   doneAt?: number;
 }
 
+/** 愿望清单：一条共同心愿（想一起做的事 / 想要的东西），可被实现勾掉。 */
+export interface CoupleWish {
+  id: string;
+  text: string;
+  by?: 'user' | 'char';
+  fulfilled?: boolean;
+  createdAt: number;
+  fulfilledAt?: number;
+}
+
+/** 提问箱：用户问一句，角色（AI）答一句，两边合存一条。 */
+export interface CoupleQuestion {
+  id: string;
+  question: string;
+  answer: string;
+  at: number;
+}
+
+/** 养盆栽：你们一起养的一株虚拟植物，每日照料攒成长值、随阶段长大。 */
+export interface CouplePlant {
+  /** 累计成长值（决定阶段） */
+  growth: number;
+  /** 上次浇水 / 施肥 / 晒太阳的本地日期 YYYY-MM-DD（每日各一次） */
+  water?: string;
+  fertilize?: string;
+  sun?: string;
+  createdAt: number;
+}
+
 /** 悄悄话 / 留言信箱：一条私密留言。 */
 export interface CoupleWhisper {
   id: string;
@@ -2257,6 +2286,14 @@ export interface CoupleSpace {
   photos: CouplePhoto[];
   tasks: CoupleTask[];
   whispers: CoupleWhisper[];
+  /** 愿望清单：你们的共同心愿（可选，老数据可能缺） */
+  wishes?: CoupleWish[];
+  /** 提问箱：你问 TA 答的问答记录（可选，老数据可能缺） */
+  questions?: CoupleQuestion[];
+  /** 养盆栽：你们一起养的小植物（可选，首次浇水时创建） */
+  plant?: CouplePlant;
+  /** 默契大考验·历史最高默契度（0~100，可选） */
+  compatBest?: number;
   /** 最近的每日互动记录（保留若干条） */
   interactions: CoupleInteraction[];
   createdAt: number;
