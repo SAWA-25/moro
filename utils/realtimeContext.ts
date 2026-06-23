@@ -15,6 +15,25 @@ export interface WeatherData {
     city: string;
 }
 
+/** 天气预报·单日（多天预报里的一天）。 */
+export interface WeatherForecastDay {
+    date: string;        // YYYY-MM-DD
+    label: string;       // 今天 / 明天 / 后天 / 周三 …
+    tempMax: number;     // 当日最高温（℃）
+    tempMin: number;     // 当日最低温（℃）
+    icon: string;        // OpenWeatherMap 风格 icon code（复用 WeatherGlyph 映射）
+    desc: string;        // 中文天气描述
+    precipProb: number;  // 当日最大降水概率（%）
+}
+
+/** 天气预报：当前实况 + 未来多天逐日预报。 */
+export interface WeatherForecast {
+    city: string;
+    current: WeatherData;
+    days: WeatherForecastDay[];
+    updatedAt: number;
+}
+
 export interface NewsItem {
     title: string;
     source?: string;
@@ -92,6 +111,7 @@ export const defaultRealtimeConfig: RealtimeConfig = {
 
 // 缓存
 let weatherCache: { data: WeatherData | null; timestamp: number } = { data: null, timestamp: 0 };
+let forecastCache: { data: WeatherForecast | null; timestamp: number } = { data: null, timestamp: 0 };
 let newsCache: { data: NewsItem[]; timestamp: number } = { data: [], timestamp: 0 };
 
 // ── 天气取数实现（定位 + 免密钥 Open-Meteo，兼容旧版 OpenWeatherMap） ──────────
@@ -225,6 +245,70 @@ const fetchWeatherOpenWeatherMap = async (config: RealtimeConfig): Promise<Weath
     };
 };
 
+// ── 天气预报（多天）：免密钥 Open-Meteo daily，geo / manual 两种取坐标方式 ──────
+
+const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+/** 预报里某一天的展示标签：今天/明天/后天，再往后用周几（按 idx 偏移，避免跨时区误差）。 */
+export const forecastDayLabel = (dateStr: string, idx: number): string => {
+    if (idx === 0) return '今天';
+    if (idx === 1) return '明天';
+    if (idx === 2) return '后天';
+    const d = new Date(`${dateStr}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? dateStr.slice(5) : (WEEKDAY_CN[d.getDay()] || dateStr.slice(5));
+};
+
+/** 免密钥地名 → 坐标（Open-Meteo Geocoding）；manual 模式手填城市名时用。 */
+const geocodeCity = async (city: string): Promise<{ lat: number; lon: number; name: string } | null> => {
+    const q = (city || '').trim();
+    if (!q) return null;
+    try {
+        const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=zh&format=json`;
+        const r = await fetch(url);
+        if (!r.ok) return null;
+        const d = await safeResponseJson(r);
+        const hit = d?.results?.[0];
+        if (hit && isFinite(Number(hit.latitude)) && isFinite(Number(hit.longitude))) {
+            return { lat: Number(hit.latitude), lon: Number(hit.longitude), name: String(hit.name || q) };
+        }
+    } catch { /* ignore */ }
+    return null;
+};
+
+/**
+ * 把 Open-Meteo 的 forecast 响应解析为 WeatherForecast（纯函数，便于单测）。
+ * 期望响应含 `current`（实况）与 `daily`（逐日数组）。任一缺失返回 null。
+ */
+export const parseOpenMeteoForecast = (data: any, cityName: string, now: number): WeatherForecast | null => {
+    const cur = data?.current;
+    const daily = data?.daily;
+    if (!cur || !daily || !Array.isArray(daily.time) || daily.time.length === 0) return null;
+
+    const curWmo = WMO_WEATHER[Number(cur.weather_code)] || { desc: '未知', icon: '03d' };
+    const city = cityName || '当前位置';
+    const current: WeatherData = {
+        temp: Math.round(Number(cur.temperature_2m)),
+        feelsLike: Math.round(Number(cur.apparent_temperature ?? cur.temperature_2m)),
+        humidity: Math.round(Number(cur.relative_humidity_2m) || 0),
+        description: curWmo.desc,
+        icon: curWmo.icon,
+        city,
+    };
+    const days: WeatherForecastDay[] = daily.time.map((date: string, i: number): WeatherForecastDay => {
+        const wmo = WMO_WEATHER[Number(daily.weather_code?.[i])] || { desc: '未知', icon: '03d' };
+        return {
+            date,
+            label: forecastDayLabel(date, i),
+            tempMax: Math.round(Number(daily.temperature_2m_max?.[i])),
+            tempMin: Math.round(Number(daily.temperature_2m_min?.[i])),
+            icon: wmo.icon,
+            desc: wmo.desc,
+            precipProb: Math.round(Number(daily.precipitation_probability_max?.[i]) || 0),
+        };
+    });
+    return { city, current, days, updatedAt: now };
+};
+
 // 特殊日期表
 const SPECIAL_DATES: Record<string, string> = {
     '01-01': '元旦',
@@ -280,6 +364,55 @@ export const RealtimeContextManager = {
 
         if (weather) weatherCache = { data: weather, timestamp: now };
         return weather;
+    },
+
+    /**
+     * 获取多天天气预报（当前实况 + 未来 7 天逐日）。
+     * 全程免密钥：坐标来自浏览器/IP 定位（geo 模式）或 Open-Meteo 地理编码（manual 模式手填城市），
+     * 预报数据统一走 Open-Meteo daily。结果按 cacheMinutes 缓存，并顺带刷新当前天气缓存。
+     */
+    fetchWeatherForecast: async (config: RealtimeConfig): Promise<WeatherForecast | null> => {
+        if (!config.weatherEnabled) return null;
+
+        const now = Date.now();
+        const cacheMs = (config.cacheMinutes || 30) * 60 * 1000;
+        if (forecastCache.data && (now - forecastCache.timestamp) < cacheMs) {
+            return forecastCache.data;
+        }
+
+        const mode = config.weatherMode || 'geo';
+        let coords: { lat: number; lon: number } | null = null;
+        let cityName = '';
+        try {
+            // manual 模式优先按手填城市名地理编码；否则（含失败）回退到定位坐标
+            if (mode === 'manual' && config.weatherCity) {
+                const geo = await geocodeCity(config.weatherCity);
+                if (geo) { coords = { lat: geo.lat, lon: geo.lon }; cityName = geo.name; }
+            }
+            if (!coords) {
+                coords = await getGeoPosition(cacheMs);
+                if (coords) cityName = await reverseGeocodeCity(coords.lat, coords.lon);
+            }
+            if (!coords) return null;
+
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}`
+                + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code`
+                + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max`
+                + `&timezone=auto&forecast_days=7`;
+            const r = await fetch(url);
+            if (!r.ok) { console.error('Open-Meteo forecast error:', r.status); return null; }
+            const data = await safeResponseJson(r);
+            const forecast = parseOpenMeteoForecast(data, cityName, now);
+            if (!forecast) return null;
+
+            forecastCache = { data: forecast, timestamp: now };
+            // 顺带把当前实况写进天气缓存，桌面小组件下次取数免一趟请求
+            weatherCache = { data: forecast.current, timestamp: now };
+            return forecast;
+        } catch (e) {
+            console.error('Failed to fetch weather forecast:', e);
+            return null;
+        }
     },
 
     // hot_news（orz.ai）平台 key → 中文展示名。用于 source 标注，让提示词读起来自然。
