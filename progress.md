@@ -138,3 +138,25 @@ pm run build passes after the time-gap grouping fix.
   - **商品详情页 (PDP)**: full-screen overlay — 大图 hero, price + 评分/月销, 标题/描述, 宝贝评价 list (stars + buyer), bottom bar with 收藏 / 加入购物车 / 立即购买.
   - **收藏**: `shopFavorites` on `UserProfile`; ❤️ toggle on cards + PDP, and a 收藏 chip in the category row to filter to favorites.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 539 unit tests green (6 new).
+
+- 心意铺·商品 + 评价全部改为 AI 实时生成:
+  - `utils/shop.ts`: `buildGenerateItemsPrompt` / `parseGeneratedItems` (robust JSON → `ShopItem[]`, stable `gen_` ids by name+category, dedupe, field validation) and `buildItemReviewsPrompt` / `parseGeneratedReviews`. New `shopGen.test.ts` (5 tests).
+  - **Dynamic item registry**: AI items are registered (`registerShopItems`) + persisted to localStorage so cart / 收藏 / 小票 ids still resolve via `getShopItem` after 换一批 or reopen.
+  - `ShopItem` gained `image?` (real image URL — rendered when present) + `generated?`; emoji stays the「文字图」fallback. 「图片可以用文字代替，有图就放图片」.
+  - **ShopApp**: catalog is now state-driven — on open it uses the last cached batch, else 实时生成 ≥20 件 (副 API; pads with built-ins if the model returns fewer); a 换一批 button regenerates a fresh batch with a loading state. Search/category/收藏 filter the live catalog (收藏 resolves globally via `getShopItem`).
+  - **PDP 评价**: generated in real-time per product on open (loading spinner), falling back to seeded reviews when 副 API is off/fails.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 544 unit tests green (5 new).
+
+- 心意铺·我的订单 + 物流配送进度 (淘宝式):
+  - `ShopOrder` / `ShopOrderItem` types + `userProfile.shopOrders`. Pure helpers in `utils/shop.ts`: `makeOrder` (12–30 min ETA), `orderProgress` (time-based 已下单→已发货→运输中→派送中→已送达, then 待收货 until confirmed), `orderReceivePayload` (确认收货 → 背包 + 双方小票). New `shopOrder.test.ts` (6 tests).
+  - **All purchases now ship**: 立即购买 / 商城购买 / 购物车自己支付 / 求代付成功 all create a 待收货 order instead of dropping straight into 背包; items land in 背包 only on **确认收货** (代付订单在收货时给代付角色记一笔「赠出」小票).
+  - New **订单 tab** (active-order badge): each order shows status + 商品 + a 红色物流进度条 with 5 stage dots + ETA text + 确认收货 button; a 30s ticker advances in-flight orders. Tab row is now horizontally scrollable for 5 tabs.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 550 unit tests green (6 new).
+
+- 心意铺·优惠券 + 秒杀/banner + 猜你喜欢 + AI 仿真好坏 (一批做完):
+  - **AI 商品/评价仿真有好有坏**: `ShopItem.rating` (1.0–5.0); the gen prompt now asks for a quality spread (好物/普通/踩雷·智商税) with a `rating` field, parsed + clamped. `itemRating` uses it (fallback widened to 3.0–5.0). Reviews prompt distributes by rating (低分→差评为主) and `parseGeneratedReviews` keeps 1–5 stars; seeded fallback `getItemReviews` mixes good/bad by rating.
+  - **优惠券/满减**: `ShopCoupon` + `SHOP_COUPONS`; `bestCoupon` / `applyCoupon` (pure). 领券中心 strip on the storefront; the cart 结算条 auto-applies the best claimed 满减券 (shows 已省 + 实付 vs 划线原价) and deducts the discounted total.
+  - **限时秒杀 + banner 轮播**: auto-rotating `ShopBanner`; `flashDeals` (整点一轮, deterministic pick + 20–60% off) rendered as a 秒杀 strip with a live 倒计时, buy at 秒杀价 (`buyItem` gained a price override).
+  - **猜你喜欢**: `recommendItems` (收藏分类加权 + 半小时打散) rendered as a feed under the catalog.
+  - New `shopPromo.test.ts` (7 tests); updated `shopBrowse`/`shopGen` tests for the wider rating/star ranges.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 557 unit tests green (7 new).

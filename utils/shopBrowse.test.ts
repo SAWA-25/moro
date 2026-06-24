@@ -14,19 +14,19 @@ describe('shop browse helpers (deterministic)', () => {
         expect(monthlySales('rose')).toBeGreaterThan(monthlySales('camera'));
     });
 
-    it('itemRating 在 4.6~5.0 且稳定', () => {
+    it('itemRating 在 3.0~5.0 且稳定（无自带 rating 时确定性派生）', () => {
         const r = itemRating('cake');
         expect(r).toBe(itemRating('cake'));
-        expect(r).toBeGreaterThanOrEqual(4.6);
+        expect(r).toBeGreaterThanOrEqual(3.0);
         expect(r).toBeLessThanOrEqual(5.0);
     });
 
-    it('getItemReviews 稳定，2~4 条，4/5 星', () => {
+    it('getItemReviews 稳定，2~4 条，1~5 星（仿真有好有坏）', () => {
         const rv = getItemReviews('ring');
         expect(rv).toEqual(getItemReviews('ring'));
         expect(rv.length).toBeGreaterThanOrEqual(2);
         expect(rv.length).toBeLessThanOrEqual(4);
-        rv.forEach(r => { expect([4, 5]).toContain(r.stars); expect(r.text.length).toBeGreaterThan(0); });
+        rv.forEach(r => { expect(r.stars).toBeGreaterThanOrEqual(1); expect(r.stars).toBeLessThanOrEqual(5); expect(r.text.length).toBeGreaterThan(0); });
     });
 
     it('formatSales 万级格式化', () => {
