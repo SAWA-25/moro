@@ -211,6 +211,7 @@ interface DeskItem {
     h: number;              // 占用行数（12 行制）
 }
 interface PlacedItem { item: DeskItem; col: number; row: number; }
+interface DeskLayoutCell { page: number; col: number; row: number; }
 
 const PAGE_COLS = 4;
 const PAGE_ROWS = 12;
@@ -221,6 +222,23 @@ const loadStoredDeskOrder = (): string[] => {
         const raw = JSON.parse(localStorage.getItem(DESK_ORDER_KEY) || '[]');
         return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
     } catch { return []; }
+};
+
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v2';
+const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
+    try {
+        const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const out: Record<string, DeskLayoutCell> = {};
+        for (const [key, value] of Object.entries(raw)) {
+            if (!value || typeof value !== 'object') continue;
+            const page = Math.max(0, Math.round(Number((value as any).page ?? 0)));
+            const col = Math.max(0, Math.min(PAGE_COLS - 1, Math.round(Number((value as any).col ?? 0))));
+            const row = Math.max(0, Math.min(PAGE_ROWS - 1, Math.round(Number((value as any).row ?? 0))));
+            out[key] = { page, col, row };
+        }
+        return out;
+    } catch { return {}; }
 };
 
 /** 首次使用（没存过布局）的默认顺序：复刻旧版「时钟+聊天卡+8 图标 / 日程+音乐+方图」分页 */
@@ -261,6 +279,104 @@ const packDeskPages = (items: DeskItem[]): PlacedItem[][] => {
         if (!tryPlace(it)) { addPage(); tryPlace(it); }
     }
     return pages;
+};
+
+const clampPlacement = (item: DeskItem, page: number, col: number, row: number): DeskLayoutCell => ({
+    page: Math.max(0, Math.round(page)),
+    col: Math.max(0, Math.min(PAGE_COLS - item.w, Math.round(col))),
+    row: Math.max(0, Math.min(PAGE_ROWS - item.h, Math.round(row))),
+});
+
+const cellsOverlap = (a: DeskLayoutCell, aw: number, ah: number, b: DeskLayoutCell, bw: number, bh: number) => {
+    if (a.page !== b.page) return false;
+    return !(a.col + aw <= b.col || b.col + bw <= a.col || a.row + ah <= b.row || b.row + bh <= a.row);
+};
+
+const findFirstFreeSpot = (
+    item: DeskItem,
+    itemsByKey: Map<string, DeskItem>,
+    layout: Record<string, DeskLayoutCell>,
+    excludedKey?: string,
+    pageStart = 0,
+): DeskLayoutCell => {
+    for (let page = Math.max(0, pageStart); page < Math.max(pageStart + 8, 24); page++) {
+        for (let row = 0; row <= PAGE_ROWS - item.h; row++) {
+            for (let col = 0; col <= PAGE_COLS - item.w; col++) {
+                const candidate: DeskLayoutCell = { page, col, row };
+                let blocked = false;
+                for (const [otherKey, otherItem] of itemsByKey.entries()) {
+                    if (otherKey === excludedKey) continue;
+                    const otherPos = layout[otherKey];
+                    if (!otherPos) continue;
+                    if (cellsOverlap(candidate, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (!blocked) return candidate;
+            }
+        }
+    }
+    return { page: Math.max(0, pageStart), col: 0, row: 0 };
+};
+
+const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Record<string, DeskLayoutCell> => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const layout: Record<string, DeskLayoutCell> = {};
+    for (const key of orderedKeys) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, 0);
+    }
+    return layout;
+};
+
+const normalizeDeskLayout = (items: DeskItem[], stored: Record<string, DeskLayoutCell>, orderedKeys: string[]): Record<string, DeskLayoutCell> => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const next: Record<string, DeskLayoutCell> = {};
+    for (const key of orderedKeys) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        const raw = stored[key];
+        const desired = raw ? clampPlacement(item, raw.page, raw.col, raw.row) : null;
+        if (desired) {
+            let blocked = false;
+            for (const [otherKey, otherPos] of Object.entries(next)) {
+                const otherItem = itemsByKey.get(otherKey);
+                if (!otherItem) continue;
+                if (cellsOverlap(desired, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (!blocked) {
+                next[key] = desired;
+                continue;
+            }
+        }
+        next[key] = findFirstFreeSpot(item, itemsByKey, next, key, desired?.page ?? 0);
+    }
+    return next;
+};
+
+const layoutToPages = (items: DeskItem[], layout: Record<string, DeskLayoutCell>, orderedKeys: string[]): PlacedItem[][] => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const orderIndex = new Map(orderedKeys.map((key, index) => [key, index]));
+    const maxPage = Math.max(0, ...Object.values(layout).map(cell => cell.page));
+    const pages: PlacedItem[][] = Array.from({ length: maxPage + 1 }, () => []);
+    for (const [key, cell] of Object.entries(layout)) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        if (!pages[cell.page]) pages[cell.page] = [];
+        pages[cell.page].push({ item, col: cell.col, row: cell.row });
+    }
+    return pages.map(page =>
+        page.sort((a, b) =>
+            a.row - b.row ||
+            a.col - b.col ||
+            ((orderIndex.get(a.item.key) ?? 0) - (orderIndex.get(b.item.key) ?? 0))
+        )
+    );
 };
 
 const WIDGET_LABELS: Record<string, string> = {
@@ -354,8 +470,10 @@ const Launcher: React.FC = () => {
 
   // --- 桌面项拖拽排序状态（app + widget 统一） ---
   const [deskOrder, setDeskOrder] = useState<string[]>(loadStoredDeskOrder);
+  const [deskLayout, setDeskLayout] = useState<Record<string, DeskLayoutCell>>(loadStoredDeskLayout);
   const [editMode, setEditMode] = useState(false);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dropTargetKey, setDropTargetKey] = useState<string | null>(null);
   const editModeRef = useRef(false);
   const draggingKeyRef = useRef<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
@@ -365,8 +483,15 @@ const Launcher: React.FC = () => {
   const lastFlipAt = useRef(0);
   const lastReorder = useRef({ id: '', t: 0 });
   const deskItemsRef = useRef<DeskItem[]>([]);
+  const deskLayoutRef = useRef<Record<string, DeskLayoutCell>>({});
   const ghostElRef = useRef<HTMLDivElement | null>(null);
   const blockTouchRef = useRef<((ev: TouchEvent) => void) | null>(null);
+  const dropTargetKeyRef = useRef<string | null>(null);
+  const dragMode = theme.desktopDragMode || 'balanced';
+  const editEffect = theme.desktopEditEffect || 'wiggle';
+  const reorderThrottle = dragMode === 'snappy' ? 110 : dragMode === 'gentle' ? 280 : 180;
+  const edgeFlipThreshold = dragMode === 'snappy' ? 56 : dragMode === 'gentle' ? 28 : 40;
+  const edgeFlipDelay = dragMode === 'snappy' ? 360 : dragMode === 'gentle' ? 780 : 560;
 
   // 旧版仅 app 排序的持久化只作首次迁移用：统一布局存的是 DESK_ORDER_KEY
   const legacyAppOrder = useMemo(loadStoredAppOrder, []);
@@ -446,13 +571,37 @@ const Launcher: React.FC = () => {
   }, [theme.desktopWidgetPrefs]);
 
   useEffect(() => { deskItemsRef.current = deskItems; }, [deskItems]);
+  useEffect(() => { deskLayoutRef.current = deskLayout; }, [deskLayout]);
   useEffect(() => { editModeRef.current = editMode; }, [editMode]);
   useEffect(() => {
       if (deskOrder.length === 0) return;
       try { localStorage.setItem(DESK_ORDER_KEY, JSON.stringify(deskOrder)); } catch {}
   }, [deskOrder]);
+  useEffect(() => {
+      const keys = deskItems.map(item => item.key);
+      const normalized = normalizeDeskLayout(deskItems, deskLayout, keys);
+      const changed =
+          keys.length !== Object.keys(deskLayout).length ||
+          keys.some(key => {
+              const a = deskLayout[key];
+              const b = normalized[key];
+              return !a || !b || a.page !== b.page || a.col !== b.col || a.row !== b.row;
+          });
+      if (changed) setDeskLayout(normalized);
+  }, [deskItems, deskLayout]);
+  useEffect(() => {
+      try { localStorage.setItem(DESK_LAYOUT_KEY, JSON.stringify(deskLayout)); } catch {}
+  }, [deskLayout]);
 
-  const packedPages = useMemo(() => packDeskPages(deskItems), [deskItems]);
+  const packedPages = useMemo(() => {
+      const keys = deskItems.map(item => item.key);
+      const baseLayout = Object.keys(deskLayout).length > 0
+          ? normalizeDeskLayout(deskItems, deskLayout, keys)
+          : buildDefaultDeskLayout(deskItems, keys);
+      return layoutToPages(deskItems, baseLayout, keys);
+  }, [deskItems, deskLayout]);
+  const renderedPages = packedPages.length > 0 ? packedPages : [([] as PlacedItem[])];
+  const totalPages = renderedPages.length;
 
   const beginItemDrag = React.useCallback((key: string, x: number, y: number) => {
       draggingKeyRef.current = key;
@@ -504,27 +653,84 @@ const Launcher: React.FC = () => {
           if (ghostElRef.current) {
               ghostElRef.current.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%) scale(1.12)`;
           }
-          const hit = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.('[data-desk-item]') as HTMLElement | null;
-          const targetKey = hit?.dataset?.deskItem;
           const now = Date.now();
-          if (targetKey && targetKey !== dragKey && (lastReorder.current.id !== targetKey || now - lastReorder.current.t > 250)) {
-              lastReorder.current = { id: targetKey, t: now };
-              const cur = deskItemsRef.current.map(i => i.key);
-              const from = cur.indexOf(dragKey);
-              const to = cur.indexOf(targetKey);
-              if (from >= 0 && to >= 0 && from !== to) {
-                  const next = [...cur];
-                  next.splice(to, 0, next.splice(from, 1)[0]);
-                  setDeskOrder(next);
+          const el = scrollContainerRef.current;
+          if (el && now - lastReorder.current.t > reorderThrottle) {
+              const rect = el.getBoundingClientRect();
+              const pageWidth = el.clientWidth || rect.width || 1;
+              const fallbackPage = Math.max(0, Math.floor((el.scrollLeft + Math.max(0, e.clientX - rect.left)) / pageWidth));
+              const maxExistingPage = Math.max(0, ...Object.values(deskLayoutRef.current).map(cell => cell.page));
+              const hitEl = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+              const pageEl = hitEl?.closest?.('[data-desk-page]') as HTMLElement | null;
+              const gridEl = pageEl?.querySelector?.('[data-desk-grid]') as HTMLElement | null;
+              let page = fallbackPage;
+              let gridRect = rect;
+              if (pageEl && gridEl) {
+                  const parsed = Number(pageEl.dataset.deskPage ?? pageEl.dataset.pageIndex ?? fallbackPage);
+                  page = Number.isFinite(parsed) ? Math.max(0, parsed) : fallbackPage;
+                  gridRect = gridEl.getBoundingClientRect();
+              }
+              const isAtTrailingEdge = rect.right - e.clientX < edgeFlipThreshold
+                  && Math.abs(el.scrollWidth - (el.scrollLeft + el.clientWidth)) < 2;
+              if (isAtTrailingEdge && page >= maxExistingPage) {
+                  page = maxExistingPage + 1;
+              }
+              const cellW = gridRect.width / PAGE_COLS;
+              const cellH = gridRect.height / PAGE_ROWS;
+              const item = deskItemsRef.current.find(it => it.key === dragKey);
+              if (item && cellW > 0 && cellH > 0) {
+                  const localX = Math.max(0, Math.min(gridRect.width - 1, e.clientX - gridRect.left));
+                  const localY = Math.max(0, Math.min(gridRect.height - 1, e.clientY - gridRect.top));
+                  const col = isAtTrailingEdge && page > maxExistingPage
+                      ? 0
+                      : Math.max(0, Math.min(PAGE_COLS - item.w, Math.floor(localX / cellW - item.w / 2 + 0.5)));
+                  const row = Math.max(0, Math.min(PAGE_ROWS - item.h, Math.floor(localY / cellH - item.h / 2 + 0.5)));
+                  const nextPos = clampPlacement(item, page, col, row);
+                  const currentPos = deskLayoutRef.current[dragKey];
+                  let nextLayout = deskLayoutRef.current;
+                  if (!currentPos || currentPos.page !== nextPos.page || currentPos.col !== nextPos.col || currentPos.row !== nextPos.row) {
+                      const itemsByKey = new Map(deskItemsRef.current.map(it => [it.key, it]));
+                      nextLayout = { ...deskLayoutRef.current, [dragKey]: nextPos };
+                      let displaced = true;
+                      while (displaced) {
+                          displaced = false;
+                          for (const [otherKey, otherItem] of itemsByKey.entries()) {
+                              if (otherKey === dragKey) continue;
+                              const otherPos = nextLayout[otherKey];
+                              if (!otherPos) continue;
+                              if (cellsOverlap(nextPos, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                                  nextLayout[otherKey] = findFirstFreeSpot(otherItem, itemsByKey, nextLayout, otherKey, otherPos.page);
+                                  displaced = true;
+                              }
+                          }
+                      }
+                      deskLayoutRef.current = nextLayout;
+                      lastReorder.current = { id: `${nextPos.page}:${nextPos.col}:${nextPos.row}`, t: now };
+                      setDeskLayout(nextLayout);
+                  }
+                  let hoverKey: string | null = null;
+                  const itemsByKey = new Map(deskItemsRef.current.map(it => [it.key, it]));
+                  for (const [otherKey, otherItem] of itemsByKey.entries()) {
+                      if (otherKey === dragKey) continue;
+                      const otherPos = nextLayout[otherKey];
+                      if (!otherPos) continue;
+                      if (cellsOverlap(nextPos, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                          hoverKey = otherKey;
+                          break;
+                      }
+                  }
+                  if (dropTargetKeyRef.current !== hoverKey) {
+                      dropTargetKeyRef.current = hoverKey;
+                      setDropTargetKey(hoverKey);
+                  }
               }
           }
-          const el = scrollContainerRef.current;
-          if (el && now - lastFlipAt.current > 650) {
+          if (el && now - lastFlipAt.current > edgeFlipDelay) {
               const rect = el.getBoundingClientRect();
-              if (e.clientX - rect.left < 36 && el.scrollLeft > 10) {
+              if (e.clientX - rect.left < edgeFlipThreshold && el.scrollLeft > 10) {
                   lastFlipAt.current = now;
                   el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
-              } else if (rect.right - e.clientX < 36) {
+              } else if (rect.right - e.clientX < edgeFlipThreshold) {
                   lastFlipAt.current = now;
                   el.scrollBy({ left: el.clientWidth, behavior: 'smooth' });
               }
@@ -535,6 +741,8 @@ const Launcher: React.FC = () => {
           if (draggingKeyRef.current) {
               draggingKeyRef.current = null;
               setDraggingKey(null);
+              dropTargetKeyRef.current = null;
+              setDropTargetKey(null);
               dragEndAtRef.current = Date.now();
           }
           if (blockTouchRef.current) { window.removeEventListener('touchmove', blockTouchRef.current); blockTouchRef.current = null; }
@@ -555,8 +763,14 @@ const Launcher: React.FC = () => {
     []
   );
 
-  // Total pages = Desk Pages + 1 Widget Page
-  const totalPages = packedPages.length;
+  useEffect(() => {
+      const maxIndex = Math.max(0, totalPages - 1);
+      if (_lastPageIndex > maxIndex) _lastPageIndex = maxIndex;
+      if (activePageIndex <= maxIndex) return;
+      setActivePageIndex(maxIndex);
+      const el = scrollContainerRef.current;
+      if (el) el.scrollLeft = el.clientWidth * maxIndex;
+  }, [activePageIndex, totalPages]);
 
   useEffect(() => {
       const loadData = async () => {
@@ -624,7 +838,7 @@ const Launcher: React.FC = () => {
       if (scrollContainerRef.current) {
           const width = scrollContainerRef.current.clientWidth;
           const scrollLeft = scrollContainerRef.current.scrollLeft;
-          const index = Math.round(scrollLeft / width);
+          const index = Math.max(0, Math.min(totalPages - 1, Math.round(scrollLeft / Math.max(1, width))));
           setActivePageIndex(index);
           _lastPageIndex = index; // Persist across remounts
       }
@@ -680,6 +894,26 @@ const Launcher: React.FC = () => {
   };
 
   const contentColor = theme.contentColor || '#2b2933';
+  const dockStyle = theme.desktopDockStyle || 'glass';
+  const dockShellStyle: React.CSSProperties =
+      dockStyle === 'minimal' ? {
+          background: 'transparent',
+          border: '1px solid rgba(43,41,51,0.08)',
+          boxShadow: 'none',
+      } : dockStyle === 'solid' ? {
+          background: 'rgba(43,41,51,0.92)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: '0 18px 36px -24px rgba(20,18,28,0.6)',
+      } : dockStyle === 'paper' ? {
+          background: 'rgba(251,250,247,0.95)',
+          border: '1px solid rgba(224,220,213,0.95)',
+          boxShadow: '0 18px 36px -24px rgba(43,41,51,0.3)',
+      } : {
+          background: 'rgba(255,255,255,0.38)',
+          border: '1px solid rgba(255,255,255,0.44)',
+          boxShadow: '0 18px 36px -24px rgba(43,41,51,0.34)',
+          backdropFilter: 'blur(16px)',
+      };
   // 已迁移 App 外壳已收回到可见 viewport 底边，dock 仅需自留视觉间距，无需再 + safe-bottom
   // （否则会比 home 条上方多让 34px，dock 看起来悬空）。
   const launcherBottomInset = '1.25rem';
@@ -769,7 +1003,12 @@ const Launcher: React.FC = () => {
       {/* 编辑模式：项目抖动动画 + 「完成」按钮 */}
       {editMode && (
         <>
-          <style>{`@keyframes iconJiggle{0%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}100%{transform:rotate(-1.6deg)}}.animate-icon-jiggle{animation:iconJiggle .35s ease-in-out infinite}`}</style>
+          <style>{`
+            @keyframes iconJiggle{0%{transform:rotate(-1.6deg)}50%{transform:rotate(1.6deg)}100%{transform:rotate(-1.6deg)}}
+            @keyframes iconBreathe{0%{transform:scale(1)}50%{transform:scale(1.028)}100%{transform:scale(1)}}
+            .animate-icon-jiggle{animation:iconJiggle .55s ease-in-out infinite}
+            .animate-icon-breathe{animation:iconBreathe 1.2s ease-in-out infinite}
+          `}</style>
           <button
             onClick={() => setEditMode(false)}
             className="absolute right-5 z-40 px-5 py-2 rounded-full text-white text-xs font-bold shadow-lg press-soft animate-pop-in"
@@ -785,7 +1024,7 @@ const Launcher: React.FC = () => {
               ghostElRef.current = el;
               if (el) el.style.transform = `translate(${lastPointerPos.current.x}px, ${lastPointerPos.current.y}px) translate(-50%, -50%) scale(1.12)`;
           }}
-          className="fixed left-0 top-0 z-[90] pointer-events-none opacity-90"
+          className="fixed left-0 top-0 z-[90] pointer-events-none opacity-95 drop-shadow-[0_18px_30px_rgba(20,18,28,0.22)]"
         >
           {draggingApp ? (
               <AppIcon app={draggingApp} onClick={() => {}} hideLabel size="md" />
@@ -834,9 +1073,11 @@ const Launcher: React.FC = () => {
         }}
       >
           {/* Render Desk Pages（统一网格：组件 + 图标按装箱位置摆放，全部可拖拽） */}
-          {packedPages.map((placed, idx) => (
+          {renderedPages.map((placed, idx) => (
               <div
                 key={idx}
+                data-desk-page={idx}
+                data-page-index={idx}
                 className="w-full flex-shrink-0 snap-center snap-always px-6 pt-12 pb-8 h-full relative"
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
@@ -864,6 +1105,7 @@ const Launcher: React.FC = () => {
                   )}
 
                   <div
+                      data-desk-grid="true"
                       className="w-full h-full grid grid-cols-4 gap-x-2 gap-y-2"
                       style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
                   >
@@ -871,10 +1113,12 @@ const Launcher: React.FC = () => {
                           <div
                               key={item.key}
                               data-desk-item={item.key}
-                              className={`relative min-w-0 min-h-0 ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode ? 'animate-icon-jiggle' : ''} ${draggingKey === item.key ? 'opacity-30' : ''}`}
+                              className={`relative min-w-0 min-h-0 transition-[transform,opacity,filter,box-shadow] duration-200 will-change-transform ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode && item.kind === 'app' && editEffect === 'wiggle' ? 'animate-icon-jiggle' : ''} ${editMode && item.kind === 'app' && editEffect === 'breathe' ? 'animate-icon-breathe' : ''} ${draggingKey === item.key ? 'opacity-25 scale-[0.97]' : ''} ${dropTargetKey === item.key ? 'scale-[1.02] z-10' : ''}`}
                               style={{
                                   gridColumn: `${col + 1} / span ${item.w}`,
                                   gridRow: `${row + 1} / span ${item.h}`,
+                                  boxShadow: dropTargetKey === item.key ? '0 0 0 2px rgba(43,41,51,0.16), 0 12px 24px -18px rgba(43,41,51,0.35)' : undefined,
+                                  filter: dropTargetKey === item.key ? 'saturate(1.04)' : undefined,
                                   ...(editMode ? { touchAction: 'none' as const } : {}),
                               }}
                               onPointerDown={(e) => handleItemPointerDown(item.key, e)}
@@ -912,8 +1156,9 @@ const Launcher: React.FC = () => {
            style={{ paddingBottom: launcherBottomInset }}
       >
            <div
-             className="moro-dock glass-pill rounded-full px-8 py-3.5 flex gap-7 sm:gap-10 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu"
-           >
+             className="moro-dock glass-pill rounded-full px-8 py-3.5 flex gap-7 sm:gap-10 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu transition-[background,border-color,box-shadow] duration-300"
+             style={dockShellStyle}
+            >
                {dockAppsConfig.map(app => (
                    <div key={app.id} className="relative">
                         <AppIcon app={app} onClick={() => openApp(app.id)} variant="dock" size="md" />

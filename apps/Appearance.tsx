@@ -730,6 +730,51 @@ const WIDGET_SIZE_PRESETS: { label: string; w: number; h: number }[] = [
     { label: '大卡 4×6', w: 4, h: 6 },
 ];
 
+const DESKTOP_ICON_SHAPES = [
+    { value: 'rounded', label: '圆角' },
+    { value: 'squircle', label: '超圆' },
+    { value: 'circle', label: '圆形' },
+    { value: 'stamp', label: '贴纸' },
+] as const;
+
+const DESKTOP_ICON_SURFACES = [
+    { value: 'paper', label: '纸片' },
+    { value: 'glass', label: '玻璃' },
+    { value: 'solid', label: '纯色' },
+    { value: 'minimal', label: '极简' },
+] as const;
+
+const DESKTOP_ICON_SCALES = [
+    { value: 'sm', label: '紧凑' },
+    { value: 'md', label: '默认' },
+    { value: 'lg', label: '舒展' },
+] as const;
+
+const DESKTOP_LABEL_MODES = [
+    { value: 'show', label: '常显' },
+    { value: 'fade', label: '淡显' },
+    { value: 'hide', label: '隐藏' },
+] as const;
+
+const DESKTOP_DOCK_STYLES = [
+    { value: 'glass', label: '玻璃' },
+    { value: 'paper', label: '纸片' },
+    { value: 'solid', label: '墨块' },
+    { value: 'minimal', label: '极简' },
+] as const;
+
+const DESKTOP_DRAG_MODES = [
+    { value: 'gentle', label: '温柔' },
+    { value: 'balanced', label: '平衡' },
+    { value: 'snappy', label: '利落' },
+] as const;
+
+const DESKTOP_EDIT_EFFECTS = [
+    { value: 'wiggle', label: '晃动' },
+    { value: 'breathe', label: '呼吸' },
+    { value: 'none', label: '静止' },
+] as const;
+
 const SmallChip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
     <button
         onClick={onClick}
@@ -1875,6 +1920,106 @@ const Appearance: React.FC = () => {
                 </section>
             </>
         ) : activeTab === 'icons' ? (
+            <div className="space-y-5">
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-2">桌面图标风格</h2>
+                    <p className="text-[10px] text-[#6b6b6b] mb-4">桌面图标、Dock 和拖拽手感统一在这里调。上面调风格，下面给单个 App 换图。</p>
+                    <div className="space-y-4">
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">图标形状</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_ICON_SHAPES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopIconShape || 'rounded') === opt.value} onClick={() => updateTheme({ desktopIconShape: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">图标材质</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_ICON_SURFACES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopIconSurface || 'paper') === opt.value} onClick={() => updateTheme({ desktopIconSurface: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">图标大小</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_ICON_SCALES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopIconScale || 'md') === opt.value} onClick={() => updateTheme({ desktopIconScale: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">标签显示</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_LABEL_MODES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopIconLabelMode || 'fade') === opt.value} onClick={() => updateTheme({ desktopIconLabelMode: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">Dock 风格</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_DOCK_STYLES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopDockStyle || 'glass') === opt.value} onClick={() => updateTheme({ desktopDockStyle: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">拖拽手感</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_DRAG_MODES.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopDragMode || 'balanced') === opt.value} onClick={() => updateTheme({ desktopDragMode: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">编辑态动效</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {DESKTOP_EDIT_EFFECTS.map(opt => (
+                                    <SmallChip key={opt.value} active={(theme.desktopEditEffect || 'wiggle') === opt.value} onClick={() => updateTheme({ desktopEditEffect: opt.value as any })}>{opt.label}</SmallChip>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                    <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-2">图标贴图</h2>
+                    <p className="text-[10px] text-[#6b6b6b] mb-4">给单个 App 换自己的封面图。保留原图标也没问题，上面的风格设置同样照常生效。</p>
+                    <div className="grid grid-cols-3 gap-4">
+                        {INSTALLED_APPS.map(app => {
+                            const Icon = Icons[app.icon];
+                            const customUrl = customIcons[app.id];
+                            return (
+                                <div key={app.id} className="flex flex-col items-center gap-2">
+                                     <div
+                                        className="w-16 h-16 border-2 border-[#2b2933] shadow-[2px_2px_0_#2b2933] bg-[#f4f2ed] overflow-hidden relative group cursor-pointer rounded-[1.15rem]"
+                                        onClick={() => { setSelectedAppId(app.id); iconInputRef.current?.click(); }}
+                                     >
+                                         {customUrl ? (
+                                             <img src={customUrl} className="w-full h-full object-cover" />
+                                         ) : (
+                                             <div className={`w-full h-full ${app.color} flex items-center justify-center text-white`}>
+                                                 <Icon className="w-8 h-8" />
+                                             </div>
+                                         )}
+                                         <div className="absolute inset-0 bg-[#2b2933]/45 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-[#fbfaf7]"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                         </div>
+                                     </div>
+                                     <span className="text-[10px] text-[#6b6b6b] font-bold">{app.name}</span>
+                                     {customUrl && (
+                                         <button onClick={() => setCustomIcon(app.id, undefined)} className="text-[10px] text-[#2b2933] underline label-mono">撕掉</button>
+                                     )}
+                                </div>
+                            );
+                        })}
+                        <input type="file" ref={iconInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && handleIconUpload(e.target.files[0])} />
+                    </div>
+                </section>
+            </div>
+        ) : false ? (
             <div className="grid grid-cols-3 gap-4">
                 {INSTALLED_APPS.map(app => {
                     const Icon = Icons[app.icon];

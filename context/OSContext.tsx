@@ -374,6 +374,13 @@ const defaultTheme: OSTheme = {
   lightness: 36,
   wallpaper: DEFAULT_WALLPAPER,
   darkMode: false,
+  desktopIconShape: 'rounded',
+  desktopIconSurface: 'paper',
+  desktopIconScale: 'md',
+  desktopIconLabelMode: 'fade',
+  desktopDockStyle: 'glass',
+  desktopDragMode: 'balanced',
+  desktopEditEffect: 'wiggle',
   contentColor: '#2b2933', // 默认墨色文字（浅色纸面背景）
 };
 
