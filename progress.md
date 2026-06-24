@@ -185,3 +185,14 @@ pm run build passes after the time-gap grouping fix.
   - **界面革新**: 贴吧蓝 `#2b6fe0`；顶部搜索栏(搜帖子/网友)、板块 chip 选中显「X吧」、吧介绍条 + 换一批、列表头像/作者/楼数/赞数/爆楼角标、生成中骨架、`kFmt`(w/k 计数)、详情页 4px 分隔的楼主主楼 + 楼层流 + 楼中楼卡 + 回帖框。
   - 纯函数全部进 `utils/forum.ts`，新增 `utils/forum.test.ts` (12 tests：楼数区间/解析夹紧/落地/楼中楼/兜底)。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 577 unit tests green (12 new)。
+
+- 椒房记(后宫养成)·全面引入 AI 生成 + 子嗣/选秀/史官评 (对标后宫养成模拟器, 界面革新):
+  - **AI 妃嫔台词**: 打出定向卡后，被宠/被冷落的妃嫔按人设 + 当前宠爱/心情用副 API 现说一句（`buildConcubineLinePrompt`/`parseConcubineLine`，去代码块/引号/「名字：」前缀取首行），落「起居注」speech 气泡；失败回退 `fallbackConcubineLine`（好/冷/中三套话术）。
+  - **AI 夜间事件**: 「就寝」先依当前后宫格局现拟一桩宫闱事（`buildAINightEventPrompt`/`parseAINightEvent`：名字→charId 映射、favor 夹 -20~20 / mood 夹 -25~25、按净值定 tone，选项<2 或非 JSON 返回 null），2~3 抉择各带数值后果 + 结果叙述；失败回退原模板事件 roller（含 50% 平安夜）。事件落地走新 `HaremPendingEvent.type:'ai'` + `ai:HaremAIResult[]`，`resolveHaremEvent` 套用该选项 effects。
+  - **子嗣系统**: `HaremMember` 加 `pregnant`/`heirs`；亲密类卡（独宠/夜话/同辇）与「侍寝·传召」记 `lastNightWith`，次日 `advanceDay` 结算 `maybeConceive`（宠≥50 起、宠/心情加权概率、可注入 rng），孕 3 日临盆 `progressPregnancies` 诞皇子/公主、母凭子贵涨宠涨心情。名册 🤰 标 + 皇嗣计数 + 顶栏皇嗣总数。
+  - **选秀**: `addMembers`（按 charId 去重并入、记起居注）中途纳新人，后宫上限提到 9 位；复用 `PickGrid` 选人。
+  - **史官评(结局)**: 「封笔修史」按钮 AI 为这段后宫岁月作传（`buildEndingPrompt`/`parseEnding` → 总评 + 每人定评，非 JSON 当总评兜底；`fallbackEnding` 按数据现写），米黄卷轴弹窗呈现，可继续临朝 / 改元重开。
+  - **头衔**: `memberTitles`（宠冠 / 协理六宫 / 有孕 / 皇嗣×n）纯计算，名册彩色徽章。
+  - **界面革新**: 顶栏日/行动点/皇嗣/宠冠状态条、差评卡描红、AI 拟旨「朱笔御批·拟旨中…」loader、妃嫔台词气泡、选秀底抽屉、史官卷轴结局；保留椒房宫红×金主色。
+  - 纯逻辑全进 `utils/haremGame.ts`，`utils/haremGame.test.ts` +11（受孕/临盆/选秀/头衔/AI 解析/兜底）。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 588 unit tests green (11 new)。
