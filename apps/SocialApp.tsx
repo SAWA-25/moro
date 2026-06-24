@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, ArrowLeft, BookmarkSimple, PencilSimpleLine, Scissors, PushPin, Broom } from '@phosphor-icons/react';
+import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, ArrowLeft, BookmarkSimple, PencilSimpleLine, Scissors, PushPin, Broom, X, HandWaving, MapPin, Spinner } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { AppID, XhsFeedPost } from '../types';
 import { DB } from '../utils/db';
 import { generateFeedBatch, generateAuthorReply, FEED_BATCH_SIZE } from '../utils/xhsFeed';
+import { generateDatingBatch, fallbackDatingProfiles, intentMeta, DatingProfile, DATING_INTENTS, DatingIntent, generateDatingReply, isMatch } from '../utils/socialDating';
 import { resolveAuxApi } from '../utils/auxApi';
 
 /**
@@ -67,8 +68,53 @@ const PostCard: React.FC<{ post: XhsFeedPost; onClick: () => void }> = ({ post, 
     </button>
 );
 
+/** 见闻 / 交友 切换条 */
+const TabBar: React.FC<{ mode: 'feed' | 'meet'; setMode: (m: 'feed' | 'meet') => void }> = ({ mode, setMode }) => (
+    <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
+        {([['feed', '📓 见闻'], ['meet', '💘 交友']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)}
+                className={`px-3 py-1 text-[12px] font-bold border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${mode === k ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
+                {label}
+            </button>
+        ))}
+    </div>
+);
+
+/** 交友卡片（探探/Soul 式，黑白手账皮肤）：头图 + 资料 + 简介 + 跳过/打招呼/喜欢 */
+const DatingCard: React.FC<{ p: DatingProfile; remaining: number; onAct: (a: 'skip' | 'like' | 'greet') => void }> = ({ p, remaining, onAct }) => {
+    const im = intentMeta(p.intent);
+    return (
+        <div className="w-full max-w-[360px] flex flex-col animate-fade-in">
+            <div className="relative bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.2)]">
+                <div className="relative w-full aspect-[4/5] border-b-2 border-[#2b2933] overflow-hidden flex items-center justify-center bg-[#f0eee8]">
+                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover grayscale" referrerPolicy="no-referrer" /> : <span className="text-[88px] select-none">{p.emoji}</span>}
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold px-2 py-0.5"><MapPin className="w-3 h-3" weight="fill" />{p.distanceKm}km</div>
+                    {p.online && <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#fbfaf7] border border-[#2b2933] text-[#2b2933] text-[10px] font-bold px-2 py-0.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />在线</div>}
+                    <div className="absolute bottom-2 left-2 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-[11px] font-bold px-2 py-0.5">{im.emoji} {im.label}</div>
+                    {p.isChar && <div className="absolute bottom-2 right-2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5">熟人</div>}
+                </div>
+                <div className="px-3 pt-2.5 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[16px] font-black text-[#2b2933]">{p.name}</span>
+                        {p.age != null && <span className="text-[12px] text-[#6b6b6b]">{p.age}</span>}
+                        {p.gender && <span className="text-[10px] text-[#fbfaf7] bg-[#2b2933] px-1.5 py-0.5">{p.gender}</span>}
+                    </div>
+                    {p.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{p.tags.map(t => <span key={t} className="text-[10px] text-[#2b2933] bg-[#f0eee8] border border-[#2b2933]/40 px-1.5 py-0.5">{t}</span>)}</div>}
+                    <div className="text-[13px] text-[#3a3842] leading-relaxed whitespace-pre-wrap mt-2">{p.bio}</div>
+                </div>
+            </div>
+            <div className="flex items-center justify-center gap-5 mt-4">
+                <button onClick={() => onAct('skip')} className="w-12 h-12 rounded-full bg-[#fbfaf7] border-2 border-[#2b2933] flex items-center justify-center active:scale-90 transition-transform" title="跳过"><X className="w-5 h-5 text-[#6b6b6b]" weight="bold" /></button>
+                <button onClick={() => onAct('greet')} className="w-14 h-14 rounded-full bg-[#2b2933] flex items-center justify-center active:scale-90 transition-transform shadow-[3px_3px_0_rgba(43,41,51,0.25)]" title="打招呼"><HandWaving className="w-6 h-6 text-[#fbfaf7]" weight="fill" /></button>
+                <button onClick={() => onAct('like')} className="w-12 h-12 rounded-full bg-rose-500 flex items-center justify-center active:scale-90 transition-transform" title="喜欢"><Heart className="w-5 h-5 text-white" weight="fill" /></button>
+            </div>
+            <div className="text-center text-[10px] text-[#8b8996] mt-2 font-hand">还有 {Math.max(0, remaining - 1)} 个待发现</div>
+        </div>
+    );
+};
+
 const SocialApp: React.FC = () => {
-    const { closeApp, openApp, addToast, apiConfig, auxApiConfig, characters, userProfile } = useOS();
+    const { closeApp, openApp, addToast, apiConfig, auxApiConfig, characters, userProfile, setActiveCharacterId } = useOS();
     // 见闻簿是「聊天以外」的辅助功能：走副 API（未配置时回落主 API）
     const feedApi = resolveAuxApi(auxApiConfig, apiConfig);
     const apiReady = !!feedApi?.baseUrl && !!feedApi?.model;
@@ -84,7 +130,86 @@ const SocialApp: React.FC = () => {
     const [forwardingPost, setForwardingPost] = useState<XhsFeedPost | null>(null);
     const [forwardNote, setForwardNote] = useState('');
 
+    // ── 交友·发现身边的人 ──
+    const [mode, setMode] = useState<'feed' | 'meet'>('feed');
+    const [dating, setDating] = useState<DatingProfile[]>([]);
+    const [datingIdx, setDatingIdx] = useState(0);
+    const [datingBusy, setDatingBusy] = useState(false);
+    const [meetFilter, setMeetFilter] = useState<DatingIntent | 'all'>('all');
+    const [liked, setLiked] = useState<(DatingProfile & { matched?: boolean })[]>(() => {
+        try { return JSON.parse(localStorage.getItem('moro_social_liked_v1') || '[]') || []; } catch { return []; }
+    });
+    const [showLiked, setShowLiked] = useState(false);
+    const [greetCard, setGreetCard] = useState<{ p: DatingProfile; reply: string; busy: boolean; matched: boolean } | null>(null);
+    const DATING_KEY = 'moro_social_dating_v1';
+    const LIKED_KEY = 'moro_social_liked_v1';
+
     const detail = useMemo(() => posts.find(p => p.id === detailId) || null, [posts, detailId]);
+
+    // 进交友页：先用缓存，没有就实时生成一批
+    useEffect(() => {
+        if (mode !== 'meet' || dating.length) return;
+        try { const c = JSON.parse(localStorage.getItem(DATING_KEY) || 'null'); if (Array.isArray(c) && c.length) { setDating(c); return; } } catch { /* ignore */ }
+        if (apiReady) void refreshDating(); else setDating(fallbackDatingProfiles(12));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode]);
+
+    const refreshDating = async () => {
+        if (datingBusy) return;
+        if (!apiReady) { addToast('先去「文具盒」把 API（模型 / 地址）补上', 'error'); setDating(fallbackDatingProfiles(12)); setDatingIdx(0); return; }
+        setDatingBusy(true);
+        try {
+            const batch = await generateDatingBatch(feedApi, characters, userProfile, 14);
+            setDating(batch); setDatingIdx(0);
+            try { localStorage.setItem(DATING_KEY, JSON.stringify(batch)); } catch { /* ignore */ }
+            addToast(`发现 ${batch.length} 个附近的人`, 'success');
+        } catch {
+            setDating(fallbackDatingProfiles(12)); setDatingIdx(0);
+            addToast('没刷到新的人，先看看这些', 'error');
+        } finally { setDatingBusy(false); }
+    };
+
+    const patchDating = (id: string, patch: Partial<DatingProfile>) =>
+        setDating(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+
+    const saveLiked = (next: (DatingProfile & { matched?: boolean })[]) => {
+        setLiked(next);
+        try { localStorage.setItem(LIKED_KEY, JSON.stringify(next.slice(0, 60))); } catch { /* ignore */ }
+    };
+
+    // 喜欢：记入「我喜欢的」，按目的/熟人判定是否匹配成功
+    const likeProfile = (p: DatingProfile) => {
+        patchDating(p.id, { liked: true });
+        const matched = isMatch(p);
+        if (!liked.some(l => l.id === p.id)) saveLiked([{ ...p, liked: true, matched }, ...liked]);
+        addToast(matched ? `🎉 和 ${p.name} 匹配成功！` : `❤️ 已喜欢 ${p.name}`, 'success');
+        setDatingIdx(i => i + 1);
+    };
+
+    // 打招呼：让对方 AI 实时回应（熟人可一键进「来往」聊天）
+    const greetProfile = async (p: DatingProfile) => {
+        patchDating(p.id, { greeted: true });
+        const matched = isMatch(p);
+        if (!liked.some(l => l.id === p.id)) saveLiked([{ ...p, matched }, ...liked]);
+        setGreetCard({ p, reply: '', busy: true, matched });
+        setDatingIdx(i => i + 1);
+        let reply = '';
+        if (apiReady) { try { reply = await generateDatingReply(feedApi, p, userProfile); } catch { /* fall to canned */ } }
+        setGreetCard(cur => cur && cur.p.id === p.id ? { ...cur, reply: reply || '（对方暂时没回应，等等再试试～）', busy: false } : cur);
+    };
+
+    // 熟人 → 进「来往」私聊
+    const openChatWith = (charId?: string) => {
+        if (!charId) return;
+        setActiveCharacterId(charId);
+        openApp(AppID.Chat);
+    };
+
+    const datingAct = (p: DatingProfile, act: 'skip' | 'like' | 'greet') => {
+        if (act === 'like') likeProfile(p);
+        else if (act === 'greet') void greetProfile(p);
+        else setDatingIdx(i => i + 1);
+    };
 
     // 启动：读本地信息流；空库且 API 可用时自动生成第一批
     useEffect(() => {
@@ -337,6 +462,111 @@ const SocialApp: React.FC = () => {
         );
     }
 
+    // ── 交友·发现身边的人 ──
+    if (mode === 'meet') {
+        const deck = meetFilter === 'all' ? dating : dating.filter(p => p.intent === meetFilter);
+        const cur = deck[datingIdx];
+        const remaining = deck.length - datingIdx;
+        return (
+            <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
+                    <button onClick={closeApp} className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
+                        <ArrowLeft className="w-4 h-4 text-[#2b2933]" weight="bold" />
+                    </button>
+                    <div className="min-w-0 flex-1 leading-none">
+                        <span className="text-[20px] font-black text-[#2b2933] select-none font-display-italic">发现</span>
+                        <div className="text-[10px] text-[#8b8996] font-hand mt-0.5">附近正在交友的人，各有各的目的</div>
+                    </div>
+                    <button onClick={() => setShowLiked(true)} title="我喜欢的"
+                        className="relative w-9 h-9 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] text-rose-500 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
+                        <Heart className="w-4 h-4" weight="fill" />
+                        {liked.length > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full">{liked.length}</span>}
+                    </button>
+                    <button onClick={() => void refreshDating()} disabled={datingBusy} title="换一批"
+                        className="inline-flex items-center gap-1 text-[12px] font-bold label-mono text-[#fbfaf7] bg-[#2b2933] px-2.5 py-2 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0 disabled:opacity-50">
+                        {datingBusy ? <Spinner className="w-4 h-4 animate-spin" weight="bold" /> : <Shuffle className="w-4 h-4" weight="bold" />}
+                        {datingBusy ? '搜寻中' : '换一批'}
+                    </button>
+                </div>
+                <TabBar mode={mode} setMode={setMode} />
+                {/* 按目的筛选 */}
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0 overflow-x-auto no-scrollbar">
+                    <button onClick={() => { setMeetFilter('all'); setDatingIdx(0); }}
+                        className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${meetFilter === 'all' ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>全部</button>
+                    {DATING_INTENTS.map(it => (
+                        <button key={it.key} onClick={() => { setMeetFilter(it.key); setDatingIdx(0); }}
+                            className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${meetFilter === it.key ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
+                            {it.emoji} {it.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col items-center justify-center px-4 py-5">
+                    {datingBusy && dating.length === 0 ? (
+                        <div className="text-[12px] text-[#8b8996] font-hand flex items-center gap-2"><Spinner className="w-4 h-4 animate-spin" />正在发现身边的人…</div>
+                    ) : !cur ? (
+                        <div className="text-center">
+                            <div className="text-3xl mb-3">👀</div>
+                            <div className="text-[14px] font-bold text-[#2b2933] mb-3 font-display-italic">{meetFilter === 'all' ? '附近的人都看完啦' : `这类目的的人看完了`}</div>
+                            <button onClick={() => meetFilter === 'all' ? void refreshDating() : (setMeetFilter('all'), setDatingIdx(0))} className="px-5 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">{meetFilter === 'all' ? '再发现一批' : '看看全部'}</button>
+                        </div>
+                    ) : (
+                        <DatingCard key={cur.id} p={cur} remaining={remaining} onAct={(a) => datingAct(cur, a)} />
+                    )}
+                </div>
+
+                {/* 我喜欢的 / 匹配 列表 */}
+                {showLiked && (
+                    <div className="absolute inset-0 z-20 bg-[#2b2933]/40 flex items-end" onClick={() => setShowLiked(false)}>
+                        <div className="w-full max-h-[75%] bg-[#fbfaf7] border-t-2 border-[#2b2933] rounded-t-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ paddingBottom: 'calc(var(--safe-bottom,0px) + 8px)' }}>
+                            <div className="flex items-center gap-2 px-4 py-3 border-b-2 border-[#2b2933] shrink-0">
+                                <Heart className="w-4 h-4 text-rose-500" weight="fill" />
+                                <span className="text-[14px] font-bold text-[#2b2933] font-display-italic">我喜欢的 · {liked.length}</span>
+                                <div className="flex-1" />
+                                <button onClick={() => setShowLiked(false)} className="w-7 h-7 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7]"><X className="w-4 h-4" weight="bold" /></button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
+                                {liked.length === 0 ? <div className="text-center text-[12px] text-[#8b8996] font-hand py-10">还没喜欢过谁，去右滑几个吧～</div> : liked.map(l => (
+                                    <div key={l.id} className="flex items-center gap-3 bg-[#f4f2ed] border-2 border-[#2b2933] p-2.5">
+                                        {l.avatar ? <img src={l.avatar} className="w-10 h-10 object-cover grayscale border-2 border-[#2b2933] shrink-0" /> : <span className="w-10 h-10 flex items-center justify-center text-[22px] bg-[#fbfaf7] border-2 border-[#2b2933] shrink-0">{l.emoji}</span>}
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1.5"><span className="text-[13px] font-bold text-[#2b2933] truncate">{l.name}</span>{l.matched && <span className="text-[9px] text-white bg-rose-500 px-1.5 py-0.5 shrink-0">已匹配</span>}<span className="text-[9px] text-[#2b2933] bg-[#fbfaf7] border border-[#2b2933] px-1 shrink-0">{intentMeta(l.intent).label}</span></div>
+                                            <div className="text-[11px] text-[#6b6b6b] truncate">{l.bio}</div>
+                                        </div>
+                                        {l.matched && l.isChar && <button onClick={() => openChatWith(l.charId)} className="shrink-0 text-[11px] font-bold text-[#fbfaf7] bg-[#2b2933] px-2.5 py-1.5 active:translate-x-[1px] active:translate-y-[1px] transition-transform">去聊</button>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* 打招呼·对方回应 */}
+                {greetCard && (
+                    <div className="absolute inset-0 z-30 bg-[#2b2933]/45 flex items-center justify-center p-5" onClick={() => setGreetCard(null)}>
+                        <div className="w-full max-w-[330px] bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.25)] p-4" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-2.5 mb-3">
+                                {greetCard.p.avatar ? <img src={greetCard.p.avatar} className="w-11 h-11 object-cover grayscale border-2 border-[#2b2933]" /> : <span className="w-11 h-11 flex items-center justify-center text-[24px] bg-[#f0eee8] border-2 border-[#2b2933]">{greetCard.p.emoji}</span>}
+                                <div className="min-w-0">
+                                    <div className="text-[14px] font-bold text-[#2b2933] flex items-center gap-1.5">{greetCard.p.name}{greetCard.matched && <span className="text-[9px] text-white bg-rose-500 px-1.5 py-0.5">🎉 匹配成功</span>}</div>
+                                    <div className="text-[10px] text-[#8b8996]">{intentMeta(greetCard.p.intent).emoji} {intentMeta(greetCard.p.intent).label} · {greetCard.p.distanceKm}km</div>
+                                </div>
+                            </div>
+                            <div className="bg-[#f4f2ed] border-2 border-[#2b2933] px-3 py-2.5 text-[13px] text-[#2b2933] leading-relaxed min-h-[52px] flex items-center">
+                                {greetCard.busy ? <span className="text-[#8b8996] font-hand flex items-center gap-1.5"><Spinner className="w-3.5 h-3.5 animate-spin" />{greetCard.p.name} 正在回复…</span> : greetCard.reply}
+                            </div>
+                            <div className="flex items-center gap-2 mt-3">
+                                <button onClick={() => setGreetCard(null)} className="px-4 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">先这样</button>
+                                {greetCard.p.isChar
+                                    ? <button onClick={() => openChatWith(greetCard.p.charId)} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">进「来往」聊</button>
+                                    : <div className="flex-1 text-center text-[10px] text-[#8b8996] font-hand self-center">路人甲，缘分到了再说～</div>}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     // ── 信息流首页 ──
     return (
         <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
@@ -358,6 +588,7 @@ const SocialApp: React.FC = () => {
                     <Binoculars className="w-4 h-4" weight="bold" />
                 </button>
             </div>
+            <TabBar mode={mode} setMode={setMode} />
 
             {/* 工具条：翻找 + 翻新页 + 撕掉整簿 */}
             <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">

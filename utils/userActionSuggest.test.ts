@@ -1,10 +1,17 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { parseActions, suggestUserActions } from './userActionSuggest';
+import { extractContent } from './safeApi';
 
 describe('parseActions —— 帮 user 回复候选解析', () => {
     it('正常 JSON 数组', () => {
         expect(parseActions('["在干嘛呀","你是不是在忙","刚才那事我想了想"]'))
             .toEqual(['在干嘛呀', '你是不是在忙', '刚才那事我想了想']);
+    });
+
+    it('模型把数组包进对象 {"suggestions":[…]} 也能解析（不再空白）', () => {
+        expect(parseActions('{"suggestions":["在干嘛","吃了吗","想你了"]}'))
+            .toEqual(['在干嘛', '吃了吗', '想你了']);
+        expect(parseActions('{"actions":["走起","下次约"]}')).toEqual(['走起', '下次约']);
     });
 
     it('```json 代码块包裹', () => {
@@ -96,5 +103,22 @@ describe('suggestUserActions —— 保底至少 4 条（不足自动补轮）',
         expect(out).toEqual(['就这两条', '没别的了']);
         // 第一轮 + 至多一轮补（发现没新增即停）
         expect((globalThis.fetch as any).mock.calls.length).toBeLessThanOrEqual(2);
+    });
+});
+
+describe('extractContent —— 兼容思考型模型 / 分片 content', () => {
+    it('content 为字符串：正常取出', () => {
+        expect(extractContent({ choices: [{ message: { content: '你好' } }] })).toBe('你好');
+    });
+    it('content 为分片数组（Gemini 风）：拍平拼接，不再崩成空白', () => {
+        const data = { choices: [{ message: { content: [{ type: 'text', text: '前半' }, { type: 'text', text: '后半' }] } }] };
+        expect(extractContent(data)).toBe('前半后半');
+    });
+    it('content 空 → 回退 reasoning_content / reasoning', () => {
+        expect(extractContent({ choices: [{ message: { content: '', reasoning_content: '推理里的答案' } }] })).toBe('推理里的答案');
+        expect(extractContent({ choices: [{ message: { content: '', reasoning: '另一个字段' } }] })).toBe('另一个字段');
+    });
+    it('去掉成对 <think> 思维链', () => {
+        expect(extractContent({ choices: [{ message: { content: '<think>想一想</think>["a","b"]' } }] })).toBe('["a","b"]');
     });
 });

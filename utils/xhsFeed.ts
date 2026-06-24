@@ -157,8 +157,9 @@ const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfi
         return `${i + 1}. 「${c.name}」${handle}：${persona || '（无人设描述）'}`;
     }).join('\n');
     const topics = pickTopics(22);
-    const charPostCount = chars.length ? Math.min(chars.length, 7) : 0;
-    return `你是小红书信息流生成器，为一个虚拟手机系统生成一批逼真的小红书帖子。
+    const charPostCount = chars.length ? Math.min(chars.length, 5) : 0;
+    const longMin = Math.max(4, Math.round(FEED_BATCH_SIZE * 0.4)); // 至少四成是有内容的长帖
+    return `你是最懂小红书的资深博主兼运营，为一个虚拟手机系统生成一屏**像真人真事、能让人想点进去看**的小红书帖子。真实小红书不是全是一句话水帖：有随手碎片，也有把一件事讲得有起承转合、有干货、有情绪的长帖（探店测评、旅行记录、情感长文、避雷开箱、经验贴）。坚决避免「只有标题、正文一句话就没了」的空壳帖。
 
 ## 可发帖的角色（用户认识的人，帖子要完全符合各自人设、生活背景与口吻）
 ${charLines || '（本批没有角色，全部生成 NPC 帖）'}
@@ -166,15 +167,18 @@ ${charLines || '（本批没有角色，全部生成 NPC 帖）'}
 ## 用户
 浏览这些帖子的用户叫「${userProfile.name}」。角色的帖子可以隐约透出 TA 们最近的生活状态，但不要直接 @ 用户。
 
-## 本批可围绕的热门话题（可选，自然融入 tags 与正文，让帖子有话题感、能聚成圈；也可自行发挥别的话题）
+## 本批可围绕的热门话题（自然融入 tags 与正文，让帖子有话题感、能聚成圈；也可自行发挥别的话题）
 ${topics.join('、')}
 
-## 要求
-- 一次生成 ${FEED_BATCH_SIZE} 条帖子：其中角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 必须与角色名完全一致，isCharacter=true，不要重复同一个角色超过 3 条）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨等，isCharacter=false，昵称要像真实小红书用户）。
-- 帖子题材要拉开差距、尽量覆盖更多不同话题/圈子：日常碎片、美食探店、穿搭、旅行、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、数码测评、母婴、职场、恋爱情感、运动户外等，文风像真实小红书（口语化、带 emoji、适当换行）。
-- title 简短有钩子、body 自然口语（一般几十到一百多字，像真实小红书，该短则短、别长篇大论以免写不完）；tags 4~8 个（不带 # 号，尽量贴合上面的话题或题材，方便聚合成圈）；likes 为 0~9999 的整数，分布要自然（大多数几十到几百，偶有爆款上千）。
-- 每条帖子带 3~6 条评论（让热门帖有「评论区」氛围）：author 为虚构昵称，content 口语化、有互动感，可以附和、提问、玩梗、抬杠；其中可有 1 条「热评」likes 偏高，其余 likes 0~500。
-- **务必输出完整且合法的 JSON**：只输出一个 JSON 数组，紧凑无多余空白、不要 markdown 围栏、不要任何解释；宁可帖子写短一点，也要把 ${FEED_BATCH_SIZE} 条全部写完、最后的 ] 收尾，绝不中途截断。格式：
+## 硬性要求
+1. 一次生成 ${FEED_BATCH_SIZE} 条帖子：角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 与角色名完全一致，isCharacter=true，**同一个角色最多发 1 条**）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨、健身教练、程序员…，isCharacter=false，昵称像真实小红书用户、各不相同）。
+2. **长短结合**：其中至少 ${longMin} 条是**有实质内容的长帖**（body 150~400 字、可分 2~4 段，把一件事讲清楚——有背景、有过程、有细节/干货、有情绪或观点、结尾带钩子或总结）；其余可以是短帖（几十字），但也要是具体的一件事，不能是空泛模板。
+3. **题材拉开差距、要有新意**：覆盖美食探店、旅行、穿搭、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、数码测评、母婴、职场、恋爱情感、运动户外等不同圈子；情感/八卦/树洞类要把事讲完整（起因经过+细节+心情），**绝不能只有标题或一句话**。具体到人物、地点、数字、对话才像真事，避免「今天好累」「求安慰」这种空壳。
+4. **不重复**：标题不重样、题材不撞车、昵称不重复。
+5. title 有钩子；tags 4~8 个（不带 #，贴合话题便于聚合）；likes 0~9999、分布自然（多数几十到几百、偶有爆款上千）。
+6. 每条帖子带 3~6 条评论（让热门帖有「评论区」氛围）：author 为各异的虚构昵称，content 口语化有互动感（附和/提问/玩梗/抬杠/求链接），可有 1 条「热评」likes 偏高，其余 0~500。
+
+**务必输出完整且合法的 JSON**：只输出一个紧凑的 JSON 数组（无多余空白、无 markdown 围栏、无解释），把 ${FEED_BATCH_SIZE} 条全部写完、最后用 ] 收尾，绝不中途截断。长帖该长就长，但要保证整批写完。格式：
 [{"author":"昵称","isCharacter":false,"title":"…","body":"…","tags":["…"],"likes":123,"comments":[{"author":"…","content":"…","likes":3}]}]`;
 };
 
@@ -205,9 +209,19 @@ export const generateFeedBatch = async (
         return img.url;
     };
 
-    return arr.map((p: any, i: number): XhsFeedPost => {
+    // 去重：标题撞车的丢掉；同一实名角色只当一次作者（其余转 NPC），治「重复话题/重复角色」
+    const seenTitle = new Set<string>();
+    const usedChar = new Set<string>();
+    return arr.filter((p: any) => {
+        const t = String(p?.title || '').trim().toLowerCase().replace(/\s+/g, '');
+        if (t && seenTitle.has(t)) return false;
+        if (t) seenTitle.add(t);
+        return true;
+    }).map((p: any, i: number): XhsFeedPost => {
         const authorName = String(p?.author || '小红薯').slice(0, 24);
-        const matched = p?.isCharacter ? posters.find(c => c.name === authorName) : undefined;
+        let matched = p?.isCharacter ? posters.find(c => c.name === authorName) : undefined;
+        if (matched && usedChar.has(matched.id)) matched = undefined; // 角色已发过→当 NPC
+        if (matched) usedChar.add(matched.id);
         const comments: XhsFeedComment[] = Array.isArray(p?.comments)
             ? p.comments.slice(0, FEED_COMMENTS_PER_POST).map((cm: any): XhsFeedComment => ({
                 id: uid(),

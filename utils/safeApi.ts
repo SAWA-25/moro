@@ -245,10 +245,25 @@ export async function safeFetchJson(
  *  - Falls back to `reasoning_content` when `content` is missing/empty
  *  - Strips hidden <think>...</think> chain-of-thought blocks
  */
+/** 把可能是「字符串 / 数组分片(Gemini 风) / null」的字段统一拍平成字符串。 */
+function flattenContent(c: any): string {
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) return c.map(p => typeof p === 'string' ? p : (p?.text ?? p?.content ?? '')).join('');
+    if (c && typeof c === 'object') return String(c.text ?? c.content ?? '');
+    return '';
+}
+
 export function extractContent(data: any): string {
-    const msg = data?.choices?.[0]?.message;
-    let text: string = msg?.content || '';
-    if (!text.trim()) text = msg?.reasoning_content || '';
+    const choice = data?.choices?.[0];
+    const msg = choice?.message;
+    // content 可能是字符串，也可能是 Gemini 兼容代理返回的「分片数组」[{type,text}]——
+    // 旧实现 `msg.content || ''` 遇到数组会把数组当真值返回、后续 .trim() 直接崩，
+    // 表现为「后台成功、前台空白/失败」。这里统一拍平。
+    let text = flattenContent(msg?.content);
+    // content 为空时回退思考型模型的推理字段（不同代理字段名不一）
+    if (!text.trim()) text = flattenContent(msg?.reasoning_content ?? msg?.reasoning);
+    // 个别代理把正文塞在 choices[0].text（legacy completion 风格）
+    if (!text.trim()) text = flattenContent(choice?.text);
     // Strip hidden chain-of-thought blocks: <think> / <thinking> / <thought>
     text = text.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '');
     text = text.replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, '');

@@ -65,6 +65,11 @@ export function parseActions(raw: string): string[] {
     // 1) 优先用通用 JSON 容错解析（处理 ```fence```、尾逗号、单引号、未转义内引号等）
     const parsed = extractJson(body);
     if (Array.isArray(parsed)) return fromArray(parsed);
+    // 模型有时把数组包进对象：{"actions":[…]} / {"suggestions":[…]} / {"options":[…]}
+    if (parsed && typeof parsed === 'object') {
+        const arr = Object.values(parsed).find(v => Array.isArray(v));
+        if (Array.isArray(arr)) { const r = fromArray(arr); if (r.length) return r; }
+    }
 
     // 2) JSON 被 max_tokens 截断（缺收尾 ]）时，打捞数组里已完整的字符串元素，
     //    丢掉最后那截没闭合的半句——避免把 ```json、[、半截串当成选项漏出来。
@@ -121,9 +126,11 @@ async function requestActionsOnce(args: {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
         body: JSON.stringify({
             model: api.model,
+            // 给足额度：思考型模型（gemini-3.1-pro 等）会先用掉一大截 token 推理，
+            // 1000 常被推理吃光、正文 JSON 数组被截断 → 解析为空 → 前台「没想出来」。
             messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
             temperature: 1.0,
-            max_tokens: 1000,
+            max_tokens: 4000,
             stream: false,
         }),
         signal,
