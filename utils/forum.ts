@@ -276,24 +276,38 @@ export function materializeReplies(
 
 // ── 一次性生成「一批帖子」（≥10 帖，贴吧式帖子列表）─────────────────────────
 
+/** 每个板块的「该长什么样」指引：题材方向 + 正文必须有的实质内容（避免一句话水贴）。 */
+const BOARD_BRIEF: Record<string, string> = {
+    chat: '日常碎片、突发奇想、玩梗、晒图、求陪伴、接龙话题。题材要具体到一件真事（不是空泛的「今天好累」）：比如「楼下早餐店老板今天多送我一个蛋」「凌晨三点的便利店遇到的怪事」。允许有水贴，但也要混入几条有头有尾、能聊起来的话题。',
+    emo: '情绪树洞，但要有具体情境与细节的真实心事——交代起因、经过、此刻的感受与纠结，像深夜真的写给陌生人看的一段独白（如「和最好的朋友三年没联系了，今天刷到她结婚」）。不要只写「我好难过求安慰」一句。多数应是有内容的中长文。',
+    gossip: '吃瓜八卦：每个帖子要讲清楚「一桩完整的瓜」——人物关系、起因、经过、关键细节、爆点或悬念，最后留个钩子（求鉴定/蹲后续/你们怎么看）。题材如：同事/室友/前任的离谱操作、相亲奇遇、邻里纠纷、群里塌房、撞见的狗血现场。**严禁只有标题没有内容、或正文只有一句话**——八卦贴正文必须是有细节的几段叙事。',
+    hobby: '兴趣同好：安利/避雷/攻略/晒收藏/求搭子。要有具体对象与干货（具体作品、型号、玩法、踩过的坑、私藏经验），像真的在跟同好交流，不是泛泛而谈。',
+    help: '在线求助：交代清楚背景、目前状况、已经试过什么、具体卡在哪、希望得到什么帮助，像真实的「在线等挺急的」帖。',
+};
+
 export function buildThreadsPrompt(
     board: ForumBoard,
     chars: CharBrief[],
     count: number,
 ): { system: string; user: string } {
     const roster = chars.slice(0, 6).map(c => `- ${c.name}：${(c.persona || '').slice(0, 100) || '（无设定）'}`).join('\n');
-    const system = `你在为一个百度贴吧风格的论坛板块「${board.emoji}${board.name}」生成一屏「帖子列表」。每个帖子是一个真实网友随手发的主题帖，标题有网感、正文口语化，风格多样（求助/吐槽/分享/晒图/提问/玩梗/树洞…），贴合板块「${board.desc}」。`;
+    const longMin = Math.max(3, Math.round(count * 0.4)); // 至少四成是有内容的长贴
+    const system = `你是百度贴吧某个吧的资深泡吧网友，最懂真实帖子长什么样。现在为「${board.emoji}${board.name}」吧生成一屏**像真人真事、能让人想点进去看**的帖子列表。真实贴吧不是全是水贴：有灌水接龙的短帖，也有讲一件事讲得绘声绘色的长帖、有头有尾的八卦/求助/树洞。坚决避免「只有标题、正文一句话就没了」的空壳帖。`;
     const user = `板块：${board.emoji}${board.name}（${board.desc}）
+本吧帖子应该是这样的：${BOARD_BRIEF[board.id] || '题材具体、有真实感，长短结合。'}
 
-可选「实名出镜」网友（其中少数帖子可由他们发，用其本名、贴合人设）：
+可「实名出镜」的网友（**每人最多发 1 个帖**，少数帖子由他们发，用其本名、贴合人设；其余都用你现编的、各不相同的网名）：
 ${roster || '（暂无实名角色）'}
 
-请一次性生成 ${count} 个不同的帖子，彼此话题不重复、长短不一：
-- 标题简短有钩子、正文自然展开，长短随意、不限字数；
-- 给每个帖子一个 "floors" 字段，表示这个帖子大概盖了多少楼（30~588 的整数，多数 30~150、少数爆楼几百）；
-- 多数帖子作者是匿名网友（你现编有网感的网名），1~2 个可由上面实名角色发（把 author 写成其本名）。
-只输出一个 JSON 数组，不要任何多余文字或代码块标记：
-[{"author":"网名或角色本名","title":"标题","body":"正文","floors":整数,"likes":整数}]`;
+一次性生成 ${count} 个帖子，硬性要求：
+1. **长短结合**：其中至少 ${longMin} 个是**有实质内容的长贴**（正文 150~400 字、可分 2~4 段，把一件事讲清楚、有细节有情绪有钩子）；其余可以是短帖/水贴（几十字），但也要是具体的一件事，不能是空泛模板。
+2. **八卦/吃瓜/求助/树洞类正文必须把事讲完整**，绝不允许正文只有一句话或只是复述标题。
+3. **话题各不相同、有新意**：覆盖不同人物关系、场景、情绪，避免雷同套路（别一堆「今天好累」「求安慰」「有人在吗」）。具体到细节（人物、地点、数字、对话）才像真事。
+4. **不重复**：标题不重样、内容不撞车；同一个实名角色不要发多个帖；网名各不相同。
+5. 每帖给 "floors"（这帖大概盖了多少楼，30~588 的整数；越有料/越有争议的帖楼越多，多数 30~150、少数爆楼几百），和 "likes"（点赞数，0~9999，自然分布）。
+
+只输出一个 JSON 数组，不要任何多余文字或代码块标记；务必把 ${count} 条全部写完、最后用 ] 收尾：
+[{"author":"网名或角色本名","title":"标题","body":"正文（按上面要求，该长则长）","floors":整数,"likes":整数}]`;
     return { system, user };
 }
 
@@ -302,19 +316,20 @@ export interface RawThread { author: string; title: string; body: string; floors
 export function parseThreads(raw: string): RawThread[] {
     if (!raw) return [];
     const arr = salvageFlat(raw);
-    return arr
-        .map((x: any) => {
-            const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
-            const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
-            return {
-                author: String(x?.author || '').trim().slice(0, 24),
-                title: String(x?.title || '').trim().slice(0, 200),
-                body: String(x?.body || '').trim(),
-                floors, likes,
-            };
-        })
-        .filter(x => x.title)
-        .slice(0, 24);
+    const seenTitle = new Set<string>();
+    const out: RawThread[] = [];
+    for (const x of arr) {
+        const title = String(x?.title || '').trim().slice(0, 200);
+        if (!title) continue;
+        const key = title.toLowerCase().replace(/\s+/g, '');
+        if (seenTitle.has(key)) continue;       // 去重复话题（标题撞车的丢掉）
+        seenTitle.add(key);
+        const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
+        const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
+        out.push({ author: String(x?.author || '').trim().slice(0, 24), title, body: String(x?.body || '').trim(), floors, likes });
+        if (out.length >= 24) break;
+    }
+    return out;
 }
 
 const FALLBACK_THREADS: Record<string, { t: string; b: string }[]> = {
@@ -398,8 +413,11 @@ export function materializeThreads(
     chars: { id: string; name: string; avatar?: string }[],
 ): ForumPost[] {
     const now = Date.now();
+    const usedChar = new Set<string>(); // 同一实名角色一批里只当一次楼主，避免「重复角色的帖子」
     return raw.map((t, i) => {
-        const ch = chars.find(c => c.name === t.author);
+        let ch = chars.find(c => c.name === t.author);
+        if (ch && usedChar.has(ch.id)) ch = undefined; // 角色已发过帖→这条当匿名网友处理
+        if (ch) usedChar.add(ch.id);
         const ago = Math.floor(Math.random() * 3600_000 * 24 * 3); // 近 3 天内
         const created = now - ago;
         return {
@@ -407,7 +425,7 @@ export function materializeThreads(
             boardId,
             authorType: ch ? 'char' : 'npc',
             authorId: ch?.id,
-            authorName: t.author || pick(NICKS),
+            authorName: ch ? ch.name : (t.author || pick(NICKS)),
             avatar: ch?.avatar,
             title: t.title,
             body: t.body,

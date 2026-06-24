@@ -75,7 +75,7 @@ const ForumApp: React.FC = () => {
             const { system, user } = buildThreadsPrompt(bd, charBriefs, THREAD_BATCH);
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 1.0, maxTokens: 6000 });
+            ], { temperature: 1.05, maxTokens: 8000 });
             raw = parseThreads(out);
         } catch { /* fall through */ }
         if (raw.length < THREAD_BATCH) raw = [...raw, ...fallbackThreads(boardId, THREAD_BATCH - raw.length)];

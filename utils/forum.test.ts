@@ -51,6 +51,22 @@ describe('parseThreads', () => {
         expect(ts[0].title).toBe('深夜睡不着');
         expect(ts[1].title).toBe('蹲后续');
     });
+    it('去重复话题：标题撞车的帖子只留一个', () => {
+        const ts = parseThreads('[{"author":"a","title":"深夜睡不着","body":"x","floors":50,"likes":1},{"author":"b","title":"深夜睡不着","body":"另一个但标题一样","floors":60,"likes":2},{"author":"c","title":"今天好开心","body":"y","floors":40,"likes":3}]');
+        expect(ts.length).toBe(2);
+        expect(ts.map(t => t.title)).toEqual(['深夜睡不着', '今天好开心']);
+    });
+});
+
+describe('materializeThreads · 去重复角色', () => {
+    it('同一实名角色一批里只当一次楼主，其余转匿名', () => {
+        const chars = [{ id: 'c1', name: '林夏', avatar: 'a.png' }];
+        const raw = parseThreads('[{"author":"林夏","title":"帖一","body":"x","floors":50,"likes":1},{"author":"林夏","title":"帖二","body":"y","floors":50,"likes":1},{"author":"路人","title":"帖三","body":"z","floors":50,"likes":1}]');
+        const posts = materializeThreads(raw, 'chat', chars);
+        const charPosts = posts.filter(p => p.authorType === 'char');
+        expect(charPosts.length).toBe(1);            // 林夏只当一次楼主
+        expect(charPosts[0].authorId).toBe('c1');
+    });
 });
 
 describe('materializeThreads', () => {
