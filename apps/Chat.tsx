@@ -2417,12 +2417,14 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            // 全部清除：连角色的情绪（心情 / buff）与日程一并抹掉 —— 只有勾选「留最近10条」时才保留。
-            // 否则清空后旧心情/日程还残留会污染下一轮 prompt，与「全部清除」语义不符。
-            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '' });
+            // 全部清除：连角色的情绪（心情 / buff）、日程、备忘录、离线自主生活轨迹一并抹掉 ——
+            // 只有勾选「留最近10条」时才保留。否则清空后这些旧记录还会被注入下一轮 prompt（角色「记得」
+            // 已被清掉的事），与「全部清除」语义不符。备忘录(memos)、自主轨迹(life events) 都会进角色上下文。
+            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '', memos: [] });
             await DB.deleteDailySchedulesByChar(char.id);
+            await DB.deleteLifeEventsForChar(char.id);
             setScheduleData(null);
-            addToast('已清空（含心情与日程）', 'success');
+            addToast('已彻底清空（含心情·日程·备忘录·自主生活轨迹）', 'success');
         }
         setModalType('none');
     };

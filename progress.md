@@ -207,3 +207,8 @@ pm run build passes after the time-gap grouping fix.
   - **见闻簿生成失败**：`xhsFeed.ts` `parseJsonLoose` 新增 `unwrapArray`——模型把数组包进 `{"posts":[…]}` 时取出其中数组（之前返回对象→`generateFeedBatch` 抛「生成结果为空」），并加无 `[` 时从首个 `{` 打捞兜底。
   - **自主生活标签截断**：`ChatHub` 聊天列表「此刻 · …」状态从单行 `truncate` 改为 `items-start + 多行 break-words`，完整显示不再被切。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 589 unit tests green（+1：商品截断打捞）。
+
+- 修复 2 项：自主生活轨迹「离线即生成」 + 清空上下文清除不干净:
+  - **自主生活轨迹无反应 → 用户一离线就自主生成**：之前角色生活只在「主动消息触发」或「用户回来时 catchUpOfflineLife 补齐（且 gap ≥2h）」才生成，用户离开当下毫无动静、短时离线永远不生成 → 体感「无反应」。现在 `OSContext` 在页面转入后台（`visibilitychange→hidden`）或窗口失焦（`blur`）时调用新增的 `runOnLeave`：为每个开了自主生活、未拉黑、配了线（副 API 优先）的角色**立刻** `advanceLife` 过一格日子（fire-and-forget，趁挂起前发出），并广播 `autonomous-life-advanced`。每角色 30 分钟节流（`LEAVE_MIN_GAP_MS`）防快速切后台刷爆 API；回来时的 `catchUpOfflineLife` 仍补齐更长 gap。
+  - **清空上下文清除不干净 → 连日常/自主轨迹一并清**：`Chat.tsx handleClearHistory` 的「全部清除」分支（未勾「留最近10条」）此前只清消息 + 心情/buff + 日程，残留**角色备忘录（memos，会注入 context.ts）** 与**离线自主生活轨迹（CharLifeEvents，经 buildRecentLifeContextBlock 注入 + 喂主动消息）**，导致清空后角色仍「记得」已删的事、列表「此刻」状态还在。现一并 `updateCharacter({…, memos: []})` + `DB.deleteLifeEventsForChar(char.id)`，toast 改为「已彻底清空（含心情·日程·备忘录·自主生活轨迹）」。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 589 unit tests green。
