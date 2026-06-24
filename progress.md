@@ -249,3 +249,25 @@ pm run build passes after the time-gap grouping fix.
   - **浏览足迹 + 淘金币**：打开详情记 `shopFootprints`（去重置顶限量），「我的→浏览足迹」可看/清空；`shopCoins`/`shopCheckinAt` + `checkinAvailable`/`dailyCheckinReward`（当日确定性 10~60）。
   - types：`UserProfile` 加 `shopFootprints/shopReviews/shopCoins/shopCheckinAt`；`ShopOrder` 加 `refundedAt/coinDiscount`；新增 `ShopFootprint`/`ShopUserReview`。新 `shopMy.test.ts`（15 测）。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green (+15)。
+
+- 絮语（来往/群聊）全部功能弹窗统一换肤「黑白拼贴手账」+ 原创文案:
+  - **新增弹窗套件** `components/chat/ScrapModal.tsx`：复用折子戏 `apps/theater/scrapbook.tsx` 的米白纸面/墨黑/牛皮胶带/缝线虚线/邮票/网点半调，做成与旧 `components/os/Modal` **同 props 的 drop-in**（多收 en/icon/tape/maxWidth），外加一组同皮肤积木 `ScrapBtn`(墨/纸/透明/危险斜纹四款)、`ScrapInput`/`ScrapTextarea`(纸条缝线输入)、`ScrapLabel`(墨色小旗分区)、`ScrapNote`(脚注)、`ScrapDivider`(票根虚线)、`ScrapPickTile`(头像挑选格)、`ScrapChip`(药丸开关)、`ScrapRowBtn`(整行选项钮)、`ScrapStamp`(邮票图标盒)。全用**行内 hex 样式**，绕开 index.html `.moro-laiwang` 那套「ins 浅白覆盖」，稳稳落在黑白拼贴身份上。
+  - **`apps/ChatHub.tsx` 26 个弹窗整体换肤**：换 import 即整窗换壳，再逐个把 footer 改 `ScrapBtn`、body 改纸条积木——创建群聊/添加好友/右上+号菜单/群设置(头像/群名/我的名片/公告/全员闭麦/成员格/上下文滑杆/记忆总结/危险区)/消息操作/转发/编辑/红包(普通·拼手气)/AA 收款(+逐笔点收)/投票(+票数明细)/接龙(+接龙现场)/签到名单/落脚点/AI 画一张/后台纸条/选成员/成员资料/改群名片/设头衔/添加成员/禁言/@谁/改名小心思。`components/chat/FriendVerifyModal.tsx` 同步换肤。
+  - **图标黑白、头像保留彩色**：弹窗内 phosphor 图标一律墨色、标题挂邮票图标盒；所有头像/照片不去色（`ScrapPickTile`/`ScrapRowBtn` 默认彩色，仅禁言态显式灰）。
+  - **原创文案**：按手账口吻重写全部弹窗标题/占位/按钮/脚注（如「攒个新群/这就开张」「包个红包·一点心意」「发起 AA·开收」「拉个投票·开投」「起个接龙·开个头」「递张好友申请·递过去」），并配英文小邮戳副标。
+  - 业务逻辑/handler/数据零改动，纯表现层。`pnpm tsc --noEmit` clean（仅 api/ 服务端 process/Buffer 既有告警），`vite build` passes, 623 tests green。
+
+- 絮语·单聊侧弹窗一并并入「黑白拼贴手账」（接上条，覆盖单聊 `AppID.Chat`）:
+  - **一处换肤、十一处生效**：`components/chat/JournalSheet.tsx`（仅单聊侧使用的抽屉/便笺套件）整体从「糖果暖色」regrade 成黑白拼贴——米白纸面 + 墨黑 + 牛皮胶带 + 缝线 + 网点；`SealBtn`(墨/纸两系)、`CandyToggle`(开=墨底斜纹/关=纸底)、`StickerChip`、`LinedInput`/`LinedArea`(墨色光标+缝线)、`NoteStrip`(黑白灰四态)同步换肤。保持原 props/导出不变，单聊里 11 处 JournalSheet 抽屉一次性变黑白（转账信封/装订成册/笔法手稿/今日作息 + 各设置弹层）。
+  - **`components/chat/ChatModals.tsx` 11 个 os/Modal 弹窗换肤**：新开贴纸页/收贴纸/消息操作/历史断点/隐藏起点确认/撕贴纸/撕分页/分页选项/可见角色/编辑内容——footer 改 `ScrapBtn`、行改 `ScrapRowBtn`、`PAPER_TONES.*` 紫灰文字与残留糖果色（粉行选中/薄荷·薰衣草日程笔法块）全部改墨。
+  - **`apps/Chat.tsx` 内联弹层换肤**：转交聊天记录(`Modal`→`ScrapModal`)、白框自定义抽屉、偷看心声主页卡(白卡→米纸、玫瑰关系徽→墨)、「已拉黑」提示、「换备注」提示、画图拍立得预览全转黑白拼贴；系统指令/位置/画图三个 JournalSheet 抽屉随套件自动变黑白。
+  - **自包含组件换肤**：`ActiveMsg2SettingsModal`(`Modal`→`ScrapModal` + 品红强调改墨)、`OfflineModeModal`(线下见面，整套糖果粉/紫调改墨灰纸)、`UserActionSelectorModal`(帮想话术，粉色渐变改墨)；`ProactiveSettingsModal`/`ThinkingChainSettingsModal`/`TabloidModal`/`LifeRecapModal` 借 JournalSheet regrade 自动变黑白，内部残留糖果输入框/标签也改墨。
+  - **保留语义色**：外卖订单小票(美团橙)、主动求婚撰写 + 浪漫求婚 `ProposalOverlay`(婚礼粉)、角色发来的红包/转账信封（本就黑白拼贴）按「内容卡」保留其专属色，与「头像不去色」同理。
+  - 全程纯表现层、零逻辑改动。`pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green。
+
+- 修复「撤回消息」穿帮（模型自己打字模仿系统撤回播报，漏成气泡）:
+  - **现象**（见 bug 截图）：让角色撤回时，模型不发 `[[WITHDRAW]]` 指令，反而把系统该渲染的东西当台词敲出来——「条新消息」「【系统消息】流浪者」「撤回了一条消息」一串假系统行漏成了白气泡，而真正的撤回没发生。
+  - **兜底识别 + 真撤回**：`utils/messageWithdraw.ts` 新增 `stripFakeWithdrawNotice(content, charName?)`——识别模型「自己打字模仿」的系统撤回播报（系统标记行 `【系统消息】…` / 假通知 `N条新消息` / 纯系统口吻 `对方撤回了一条消息` / `<角色名>撤回了一条消息`），命中即：① 触发一次真撤回；② 把这些假系统行整段剥掉，只留角色真说的话（如「啊，当我没说」）。对正常叙述里出现的「撤回」字样不误伤（需「撤回…(一/那)条…消息」的播报句式 + 系统语境才命中）。
+  - **接入两条管线**：单聊 `utils/applyAssistantPostProcessing.ts` 与群聊 `apps/ChatHub.tsx` 导演动作循环都在 `[[WITHDRAW]]` 之外再跑一遍兜底，命中就广播/执行真撤回（撤掉该角色上一条、原文留 metadata 供偷看）。
+  - **提示词加固**：单聊 `utils/chatPrompts.ts` 与群聊导演 prompt 的撤回条目都补上「⚠️撤回提示由系统渲染，绝不要自己打字模仿『【系统消息】/X条新消息/撤回了一条消息』，只输出 `[[WITHDRAW]]` 指令本身」。
+  - 新增 6 条回归测试（`messageWithdraw.test.ts`）。`pnpm tsc --noEmit` clean, `vite build` passes, 629 tests green（+6）。

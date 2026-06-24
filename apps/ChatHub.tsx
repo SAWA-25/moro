@@ -4,7 +4,7 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
-import Modal from '../components/os/Modal';
+import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import { ContextBuilder } from '../utils/context';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { processGroupNewMessages, deleteGroupMemoriesByGroupId } from '../utils/memoryPalace/groupPipeline';
@@ -12,7 +12,7 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
@@ -20,6 +20,7 @@ import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
+import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -2126,7 +2127,7 @@ ${attachedImagesNote}
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
 - **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
 - **群签到**: 看到 \`[群签到 日期，已打卡N人: ...]\` = 今天群里在打卡。**还没签到的成员可以签到**：在自己的发言里加 \`[[CHECKIN: 一句此刻的心情/状态]]\`（如「摸鱼中」「刚下班累瘫」「今天超精神」，简短）。签到指令不显示，但可以配一句正常发言。**已经签过的人当天不要重复签**，没在状态的也可以不签。
-- **撤回消息**: 成员想收回自己刚在群里说的话（口误、说漏嘴、太冲动、害羞后悔）时，在自己的发言里加 \`[[WITHDRAW]]\`，系统会撤回该成员**上一条**群消息，群里只显示"X撤回了一条消息"（看不到原文）。通常再配一句打岔。**低频使用**，别每轮都撤。
+- **撤回消息**: 成员想收回自己刚在群里说的话（口误、说漏嘴、太冲动、害羞后悔）时，在自己的发言里加 \`[[WITHDRAW]]\`，系统会撤回该成员**上一条**群消息，群里只显示"X撤回了一条消息"（看不到原文）。通常再配一句打岔。**低频使用**，别每轮都撤。⚠️撤回提示由系统渲染——**绝不要自己打字模仿**「【系统消息】」「X条新消息」「X撤回了一条消息」这类系统文本，只输出 \`[[WITHDRAW]]\` 指令本身。
 - **表情回应**: 成员想对群里最近某条消息贴个表情态度（点赞/比心/大笑/惊讶…）而不必专门回一句话时，在发言里加 \`[[REACT: 表情]]\`（如 \`[[REACT: 👍]]\`），会以小表情贴在群里最近那条别人的消息下。适合轻量附和，别滥用。
 
 #### 七、私聊感知（避免说错话）
@@ -2375,19 +2376,26 @@ ${attachedImagesNote}
                     }
                 }
 
-                // 1.8 群·角色撤回 [[WITHDRAW]]：撤回该成员最近一条未撤回的群消息（原文留 metadata 供偷看）
-                if (/\[\[\s*WITHDRAW\s*\]\]/i.test(action.content)) {
-                    action.content = action.content.replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').trim();
-                    const groupMsgs = await DB.getGroupMessages(activeGroup.id);
-                    for (let i = groupMsgs.length - 1; i >= 0; i--) {
-                        const gm = groupMsgs[i];
-                        if (gm.role === 'assistant' && gm.charId === targetId && gm.type !== 'system'
-                            && !gm.metadata?.recalled && typeof gm.content === 'string' && gm.content.trim()) {
-                            await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: gm.content, recalledAt: Date.now() }));
-                            break;
+                // 1.8 群·角色撤回：[[WITHDRAW]] 指令，或模型「自己打字模仿」的系统撤回播报
+                //（「【系统消息】X撤回了一条消息」之类），都撤回该成员最近一条未撤回的群消息（原文留 metadata 供偷看）
+                {
+                    const tokenHit = /\[\[\s*WITHDRAW\s*\]\]/i.test(action.content);
+                    if (tokenHit) action.content = action.content.replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').trim();
+                    const memberName = characters.find(c => c.id === targetId)?.name;
+                    const fake = stripFakeWithdrawNotice(action.content, memberName);
+                    if (fake.withdraw) action.content = fake.content;
+                    if (tokenHit || fake.withdraw) {
+                        const groupMsgs = await DB.getGroupMessages(activeGroup.id);
+                        for (let i = groupMsgs.length - 1; i >= 0; i--) {
+                            const gm = groupMsgs[i];
+                            if (gm.role === 'assistant' && gm.charId === targetId && gm.type !== 'system'
+                                && !gm.metadata?.recalled && typeof gm.content === 'string' && gm.content.trim()) {
+                                await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: gm.content, recalledAt: Date.now() }));
+                                break;
+                            }
                         }
+                        setMessages(await DB.getGroupMessages(activeGroup.id));
                     }
-                    setMessages(await DB.getGroupMessages(activeGroup.id));
                 }
 
                 // 1.9 群·角色表情回应 [[REACT: 表情]]：给群里最近一条非自己的消息贴表情（by = 该成员）
@@ -2561,21 +2569,24 @@ ${attachedImagesNote}
                                 <>
                                     {/* 点空白处收起菜单 */}
                                     <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
-                                    <div className="absolute right-0 top-full mt-2 z-50 w-40 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
+                                    <div
+                                        className="absolute right-0 top-full mt-2 z-50 w-44 overflow-hidden animate-pop-in"
+                                        style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -5, borderRadius: 16, boxShadow: '0 22px 44px -20px rgba(20,18,14,0.55)', transform: 'rotate(-0.8deg)', color: INK }}
+                                    >
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('add-friend'); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-[#f4f1ea] active:bg-[#ece7dc] transition-colors"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-transform"
                                         >
-                                            <AddressBook size={18} className="text-[#2b2933] shrink-0" />
-                                            添加好友
+                                            <AddressBook size={18} weight="bold" className="shrink-0" style={{ color: INK }} />
+                                            添个新朋友
                                         </button>
-                                        <div className="h-px bg-slate-100 mx-3" />
+                                        <ScrapDivider className="mx-3" />
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm text-slate-700 hover:bg-[#f4f1ea] active:bg-[#ece7dc] transition-colors"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-transform"
                                         >
-                                            <UsersThree size={18} className="text-[#2b2933] shrink-0" />
-                                            创建群聊
+                                            <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: INK }} />
+                                            拉个新群聊
                                         </button>
                                     </div>
                                 </>
@@ -2753,35 +2764,28 @@ ${attachedImagesNote}
                     </div>
                 </div>
 
-                <Modal isOpen={modalType === 'create'} title="创建群聊" onClose={() => setModalType('none')} footer={<button onClick={handleCreateGroup} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">创建</button>}>
+                <Modal isOpen={modalType === 'create'} title="攒个新群" en="NEW GROUP · 拉一桌人" icon={<ScrapStamp><UsersThree size={16} weight="bold" /></ScrapStamp>} onClose={() => setModalType('none')} footer={<ScrapBtn onClick={handleCreateGroup} icon={<UsersThree size={16} weight="bold" />}>这就开张</ScrapBtn>}>
                     <div className="space-y-4">
-                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} placeholder="群聊名称" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-slate-400/20 transition-all" />
+                        <ScrapInput value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} placeholder="给这个群起个名字…" />
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">选择成员</label>
-                            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
+                            <ScrapLabel en="MEMBERS">把谁拉进来</ScrapLabel>
+                            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
                                 {characters.map(c => (
-                                    <div key={c.id} onClick={() => toggleMemberSelection(c.id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all cursor-pointer ${selectedMembers.has(c.id) ? 'border-[#2b2933] bg-[#f4f1ea] ring-1 ring-[#2b2933]' : 'border-slate-100 bg-white hover:border-slate-300'}`}>
-                                        <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
-                                        <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{c.name}</span>
-                                    </div>
+                                    <ScrapPickTile key={c.id} src={c.avatar} label={c.name} selected={selectedMembers.has(c.id)} onClick={() => toggleMemberSelection(c.id)} />
                                 ))}
                             </div>
                         </div>
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群主</label>
+                            <ScrapLabel en="OWNER">谁当群主</ScrapLabel>
                             <div className="flex flex-wrap gap-2">
-                                <button
-                                    onClick={() => setTempOwnerId('user')}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempOwnerId === 'user' ? 'border-amber-400 bg-amber-50 text-amber-600 ring-1 ring-amber-400' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
-                                >
-                                    👑 我自己
-                                </button>
+                                <ScrapChip selected={tempOwnerId === 'user'} onClick={() => setTempOwnerId('user')}>{tempOwnerId === 'user' ? '👑 ' : ''}我自己</ScrapChip>
                                 {Array.from(selectedMembers).map(id => {
                                     const c = characters.find(ch => ch.id === id);
                                     if (!c) return null;
                                     return (
-                                        <button
+                                        <ScrapChip
                                             key={id}
+                                            selected={tempOwnerId === id}
                                             onClick={() => {
                                                 setTempOwnerId(id);
                                                 // 群主天然有管理员权限，从管理员列表中移除
@@ -2791,34 +2795,29 @@ ${attachedImagesNote}
                                                     setTempAdminIds(admins);
                                                 }
                                             }}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempOwnerId === id ? 'border-amber-400 bg-amber-50 text-amber-600 ring-1 ring-amber-400' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
                                         >
                                             {tempOwnerId === id ? '👑 ' : ''}{c.name}
-                                        </button>
+                                        </ScrapChip>
                                     );
                                 })}
                             </div>
-                            {selectedMembers.size === 0 && <p className="text-[10px] text-slate-300 mt-1.5">先选择成员，即可把任意角色设为群主</p>}
+                            {selectedMembers.size === 0 && <ScrapNote className="mt-1.5">先挑几个人进来，就能把谁都点成群主。</ScrapNote>}
                         </div>
                         {selectedMembers.size > 0 && (
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">管理员（可多选）</label>
+                                <ScrapLabel en="ADMINS">谁来帮忙管（可多选）</ScrapLabel>
                                 <div className="flex flex-wrap gap-2">
                                     {Array.from(selectedMembers).filter(id => id !== tempOwnerId).map(id => {
                                         const c = characters.find(ch => ch.id === id);
                                         if (!c) return null;
                                         return (
-                                            <button
-                                                key={id}
-                                                onClick={() => toggleAdminSelection(id)}
-                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${tempAdminIds.has(id) ? 'border-[#2b2933] bg-[#f4f1ea] text-[#2b2933] ring-1 ring-[#2b2933]' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'}`}
-                                            >
+                                            <ScrapChip key={id} selected={tempAdminIds.has(id)} onClick={() => toggleAdminSelection(id)}>
                                                 {tempAdminIds.has(id) ? '🛡 ' : ''}{c.name}
-                                            </button>
+                                            </ScrapChip>
                                         );
                                     })}
                                     {Array.from(selectedMembers).filter(id => id !== tempOwnerId).length === 0 && (
-                                        <p className="text-[10px] text-slate-300">没有可设为管理员的成员（群主天然拥有管理员权限）</p>
+                                        <ScrapNote>群主天生说了算，暂时没有别人可以加封管理员。</ScrapNote>
                                     )}
                                 </div>
                             </div>
@@ -2828,30 +2827,30 @@ ${attachedImagesNote}
 
                 {/* 添加好友：弹窗选择角色，直接进入与该角色的会话（不跳角色设置）。
                     把你拉黑的角色 → 需先发送好友验证，由 TA 决定是否拉回 */}
-                <Modal isOpen={modalType === 'add-friend'} title="选择要添加的角色" onClose={() => setModalType('none')}>
-                    <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+                <Modal isOpen={modalType === 'add-friend'} title="找谁说说话" en="ADD FRIEND · 翻翻名册" icon={<ScrapStamp><AddressBook size={16} weight="bold" /></ScrapStamp>} onClose={() => setModalType('none')}>
+                    <div className="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar pr-1">
                         {characters.map(c => {
                             const blockedByChar = !!c.charBlock?.active;
                             return (
-                                <button
+                                <ScrapRowBtn
                                     key={c.id}
+                                    avatar={c.avatar}
+                                    avatarDim={blockedByChar}
                                     onClick={() => {
                                         setModalType('none');
                                         if (blockedByChar) setVerifyCharId(c.id);
                                         else openPrivateChat(c.id);
                                     }}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-slate-400 hover:bg-[#f7f4ee] active:scale-[0.98] transition-all"
+                                    trailing={blockedByChar
+                                        ? <span className="text-[10px] px-2 py-0.5 rounded-full font-black shrink-0" style={{ background: INK, color: '#f6f3ec' }}>把你拉黑了 · 得验证</span>
+                                        : undefined}
                                 >
-                                    <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${blockedByChar ? 'grayscale' : ''}`} />
-                                    <span className="text-sm text-slate-700 font-medium truncate flex-1">{c.name}</span>
-                                    {blockedByChar && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已把你拉黑 · 需验证</span>
-                                    )}
-                                </button>
+                                    {c.name}
+                                </ScrapRowBtn>
                             );
                         })}
                         {characters.length === 0 && (
-                            <div className="text-center text-slate-400 text-xs py-8">还没有角色，先去「角色」App 创建一个吧</div>
+                            <ScrapNote center className="py-8">名册还空着，先去「剪影集」捏一个人出来吧。</ScrapNote>
                         )}
                     </div>
                 </Modal>
@@ -3289,160 +3288,165 @@ ${attachedImagesNote}
             {/* --- Modals --- */}
 
             {/* Group Settings Modal */}
-            <Modal isOpen={modalType === 'settings'} title="群组设置" onClose={() => setModalType('none')} footer={<button onClick={handleUpdateGroupInfo} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">保存修改</button>}>
+            <Modal isOpen={modalType === 'settings'} title="群聊设置" en="GROUP SETTINGS · 后台" icon={<ScrapStamp><GearSix size={16} weight="bold" /></ScrapStamp>} onClose={() => setModalType('none')} footer={<ScrapBtn onClick={handleUpdateGroupInfo} icon={<GearSix size={16} weight="bold" />}>记下这些改动</ScrapBtn>}>
                 <div className="space-y-6">
                     {/* Header Info */}
                     <div className="flex justify-center">
-                        <div onClick={() => groupAvatarInputRef.current?.click()} className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center cursor-pointer overflow-hidden relative group hover:border-slate-400">
-                            {activeGroup?.avatar ? <img src={activeGroup.avatar} className="w-full h-full object-cover opacity-90 group-hover:opacity-100" /> : <span className="text-xs text-slate-400 font-bold">更换头像</span>}
-                            <div className="absolute inset-0 bg-black/20 hidden group-hover:flex items-center justify-center text-white"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" /></svg></div>
+                        <div onClick={() => groupAvatarInputRef.current?.click()} className="w-24 h-24 flex items-center justify-center cursor-pointer overflow-hidden relative group active:scale-95 transition-transform" style={{ background: '#efece3', border: `1.5px dashed ${INK_SOFT}`, borderRadius: 22 }}>
+                            {activeGroup?.avatar ? <img src={activeGroup.avatar} className="w-full h-full object-cover" /> : <span className="text-[11px] font-black" style={{ color: INK_SOFT }}>贴张群头像</span>}
+                            <div className="absolute inset-0 hidden group-hover:flex items-center justify-center" style={{ background: 'rgba(31,29,26,0.45)', color: '#f6f3ec' }}><ImageSquare size={24} weight="bold" /></div>
                         </div>
                         <input type="file" ref={groupAvatarInputRef} className="hidden" accept="image/*" onChange={handleGroupAvatarUpload} />
                     </div>
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群名称</label>
-                        <input value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-slate-400 transition-all" />
-                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">修改后会在群里发系统通知，成员们都能"看到"群名变化。</p>
+                        <ScrapLabel en="NAME">群名字</ScrapLabel>
+                        <ScrapInput value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} />
+                        <ScrapNote className="mt-1.5">改完群里会贴张系统纸条，成员们都「看得见」群名变了。</ScrapNote>
                     </div>
 
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">我的群名片</label>
-                        <input value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-slate-400 transition-all" />
-                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">你在本群显示的昵称，留空则用默认名字。成员也会根据心情或剧情改自己的群名片。</p>
+                        <ScrapLabel en="MY CARD">我的群名片</ScrapLabel>
+                        <ScrapInput value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} />
+                        <ScrapNote className="mt-1.5">你在这个群里挂的名字，留空就用本名。成员们也会随心情和剧情给自己改名片。</ScrapNote>
                     </div>
 
                     {/* 群公告：群主/管理员可发布，所有成员可查看 */}
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群公告</label>
+                        <ScrapLabel en="NOTICE">群里公告</ScrapLabel>
                         <button
                             type="button"
                             onClick={openAnnouncementModal}
-                            className="w-full flex items-center gap-2.5 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-left active:scale-[0.99] transition-transform"
+                            className="w-full flex items-center gap-2.5 px-4 py-3 text-left active:scale-[0.99] transition-transform"
+                            style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -4, borderRadius: 12 }}
                         >
-                            <Megaphone size={18} weight="fill" className="text-amber-500 shrink-0" />
-                            <span className={`flex-1 min-w-0 text-sm truncate ${activeGroup?.announcement?.text ? 'text-amber-800/90' : 'text-slate-400'}`}>
-                                {activeGroup?.announcement?.text || (userCanManage(activeGroup) ? '点此发布群公告' : '暂无群公告')}
+                            <Megaphone size={18} weight="fill" className="shrink-0" style={{ color: INK }} />
+                            <span className="flex-1 min-w-0 text-sm font-bold truncate" style={{ color: activeGroup?.announcement?.text ? INK : INK_SOFT }}>
+                                {activeGroup?.announcement?.text || (userCanManage(activeGroup) ? '点这儿钉一条公告…' : '还没有公告')}
                             </span>
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-slate-400 shrink-0"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                            <span className="shrink-0" style={{ color: INK_SOFT }}>›</span>
                         </button>
-                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">{userCanManage(activeGroup) ? '群主/管理员可发布或撤下，发布后群里会发系统通知，成员都能"看到"并自然回应。' : '仅群主/管理员可发布，你可以查看。'}</p>
+                        <ScrapNote className="mt-1.5">{userCanManage(activeGroup) ? '群主和管理员能钉能撤，钉上后群里发系统纸条，成员都「看得见」并自然回应。' : '只有群主和管理员能钉公告，你能看。'}</ScrapNote>
                     </div>
 
                     {/* 全员禁言开关（群主/管理员） */}
                     {userCanManage(activeGroup) && (
                         <div className="flex items-center justify-between gap-3 py-1">
                             <div className="min-w-0">
-                                <div className="text-[13px] font-bold text-slate-700 flex items-center gap-1.5"><SpeakerSlash size={14} weight="bold" className="text-slate-400" />全员禁言</div>
-                                <p className="text-[9px] text-slate-400 mt-0.5 leading-tight">开启后群成员暂时都不发言，只有你能说话</p>
+                                <div className="text-[13px] font-black flex items-center gap-1.5" style={{ color: INK }}><SpeakerSlash size={14} weight="bold" style={{ color: INK_SOFT }} />全员闭麦</div>
+                                <ScrapNote className="mt-0.5">开了之后大家先安静，只剩你能开口。</ScrapNote>
                             </div>
                             <button
                                 type="button"
                                 onClick={handleToggleMuteAll}
-                                className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${activeGroup?.mutedAll ? 'bg-red-400' : 'bg-slate-200'}`}
+                                className="relative w-11 h-6 rounded-full shrink-0 transition-colors"
+                                style={{ background: activeGroup?.mutedAll ? INK : '#d9d3c7', backgroundImage: activeGroup?.mutedAll ? 'repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 10px)' : undefined }}
                             >
-                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${activeGroup?.mutedAll ? 'translate-x-5' : ''}`} />
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${activeGroup?.mutedAll ? 'translate-x-5' : ''}`} style={{ background: '#fbf9f2', boxShadow: '0 1px 3px rgba(31,29,26,0.4)' }} />
                             </button>
                         </div>
                     )}
 
                     {/* 群成员管理：点成员进资料页（管理员可禁言/设头衔/移除） */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">群成员 ({activeGroup?.members.length})</label>
-                        <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="MEMBERS">在场的人 · {activeGroup?.members.length}</ScrapLabel>
+                        <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto no-scrollbar pr-1">
                             {(activeGroup?.members || []).map(mid => {
                                 const c = characters.find(ch => ch.id === mid);
                                 if (!c) return null;
                                 const muted = isMuted(activeGroup, mid);
                                 return (
-                                    <div
+                                    <ScrapPickTile
                                         key={mid}
+                                        src={c.avatar}
+                                        label={displayNameOf(activeGroup, mid)}
+                                        dim={muted}
+                                        badge={muted ? <SpeakerSlash size={12} weight="fill" style={{ color: INK }} /> : undefined}
                                         onClick={() => { setProfileMemberId(mid); setTempTitle(activeGroup?.memberTitles?.[mid] || ''); setConfirmRemoveId(null); setConfirmTransferId(null); setModalType('member-profile'); }}
-                                        className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all relative"
-                                    >
-                                        <img src={c.avatar} className={`w-10 h-10 rounded-full object-cover ${muted ? 'grayscale opacity-60' : ''}`} />
-                                        {muted && <SpeakerSlash size={12} weight="fill" className="absolute top-1.5 right-1.5 text-red-400" />}
-                                        <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{displayNameOf(activeGroup, mid)}</span>
-                                    </div>
+                                    />
                                 );
                             })}
                             {userCanManage(activeGroup) && !activeGroup?.dissolved && (
-                                <div onClick={() => setModalType('add-member')} className="flex flex-col items-center justify-center gap-1 p-2 rounded-xl border-2 border-dashed border-slate-200 hover:border-slate-400 cursor-pointer transition-all text-slate-300 hover:text-slate-500">
+                                <button onClick={() => setModalType('add-member')} className="flex flex-col items-center justify-center gap-1 p-2 active:scale-95 transition-transform" style={{ border: `1.5px dashed ${INK_SOFT}`, borderRadius: 12, color: INK_SOFT }}>
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-8 h-8"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                                    <span className="text-[9px] font-medium">添加</span>
-                                </div>
+                                    <span className="text-[9px] font-black">拉人</span>
+                                </button>
                             )}
                         </div>
-                        <p className="text-[9px] text-slate-400 mt-2 leading-tight">点击成员查看资料；聊天里点成员头像也能进入，双击头像可以戳一戳。</p>
+                        <ScrapNote className="mt-2">点成员看资料；聊天里点头像也能进，连点两下就是戳一戳。</ScrapNote>
                     </div>
 
                     {/* Context Limit */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">AI 上下文条数 ({contextLimit})</label>
-                        <input type="range" min="20" max="5000" step="10" value={contextLimit} onChange={e => { const v = parseInt(e.target.value); setContextLimit(v); localStorage.setItem('groupchat_context_limit', String(v)); }} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-[#2b2933]" />
-                        <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>20 (省流)</span><span>5000 (超长记忆)</span></div>
-                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">控制每次触发AI导演时发送的群聊历史消息数量。越多上下文越丰富，但消耗更多token。</p>
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="CONTEXT">导演能翻多少条 · {contextLimit}</ScrapLabel>
+                        <input type="range" min="20" max="5000" step="10" value={contextLimit} onChange={e => { const v = parseInt(e.target.value); setContextLimit(v); localStorage.setItem('groupchat_context_limit', String(v)); }} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>20 · 省着用</span><span>5000 · 记得牢</span></div>
+                        <ScrapNote className="mt-1">每次叫 AI 导演，往里塞多少条群历史。塞得多更懂上下文，也更费 token。</ScrapNote>
                     </div>
 
                     {/* Private Chat Group Context Cap */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">私聊里"近期群活动"取条数 ({tempPrivateContextCap})</label>
-                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => setTempPrivateContextCap(parseInt(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-[#2b2933]" />
-                        <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>20 (省流)</span><span>500 (完整)</span></div>
-                        <p className="text-[9px] text-slate-400 mt-1 leading-tight">本群成员在自己的私聊里，最多看到本群最近多少条消息作为"近期群活动"上下文。每个群独立配额，避免活跃群把安静群挤掉。</p>
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="SPILLOVER">私聊里捎带的群动静 · {tempPrivateContextCap}</ScrapLabel>
+                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => setTempPrivateContextCap(parseInt(e.target.value))} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>20 · 省着用</span><span>500 · 全带上</span></div>
+                        <ScrapNote className="mt-1">成员各自的私聊里，最多捎上本群最近这么多条当「近来群里的事」。每个群单独算，免得热闹的群把安静的群挤没了。</ScrapNote>
                     </div>
 
                     {/* Memory & Context Management */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 block">群聊记忆 (Neural Link)</label>
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="MEMORY">把这段日子收进记忆</ScrapLabel>
 
                         {/* Prompt Selection */}
-                        <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 mb-3">
-                            <label className="text-[9px] font-bold text-indigo-400 uppercase mb-2 block">选择总结提示词</label>
+                        <div className="p-3 mb-3" style={{ background: 'rgba(255,253,247,0.7)', border: `1px solid ${INK_SOFT}44`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 12 }}>
+                            <div className="text-[9px] font-black uppercase tracking-widest mb-2" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>挑个总结笔法</div>
                             <div className="flex flex-col gap-1.5">
                                 {archivePrompts.map(p => (
-                                    <div key={p.id} onClick={() => setSelectedPromptId(p.id)} className={`px-3 py-2 rounded-lg border cursor-pointer text-xs font-bold transition-all ${selectedPromptId === p.id ? 'bg-white border-indigo-400 text-indigo-700 shadow-sm' : 'bg-white/50 border-indigo-100 text-slate-500 hover:bg-white'}`}>
+                                    <div key={p.id} onClick={() => setSelectedPromptId(p.id)} className="px-3 py-2 cursor-pointer text-xs font-black transition-all" style={selectedPromptId === p.id
+                                        ? { background: INK, color: '#f6f3ec', borderRadius: 9, outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -3 }
+                                        : { background: 'rgba(255,253,247,0.6)', color: '#605a4e', border: `1px solid ${INK_SOFT}44`, borderRadius: 9 }}>
                                         {p.name}
                                     </div>
                                 ))}
                             </div>
-                            <p className="text-[8px] text-indigo-300 mt-2 leading-tight">提示词与聊天-归档共享，可在聊天设置中自定义。</p>
+                            <ScrapNote className="mt-2">笔法跟「聊天·归档」共用一套，可以在聊天设置里改。</ScrapNote>
                         </div>
 
-                        <button onClick={handleGroupSummary} disabled={isSummarizing} className="w-full py-3 bg-indigo-50 text-indigo-600 font-bold rounded-2xl border border-indigo-100 active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2">
+                        <button onClick={handleGroupSummary} disabled={isSummarizing} className="w-full py-3 font-black active:scale-95 transition-transform flex items-center justify-center gap-2 mb-2" style={{ background: 'rgba(255,253,247,0.96)', color: INK, border: `1px solid ${INK_SOFT}66`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -4, borderRadius: 9999 }}>
                             {isSummarizing ? (
-                                <><div className="w-4 h-4 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin"></div><span className="text-xs">{summaryProgress || '处理中...'}</span></>
+                                <><div className="w-4 h-4 rounded-full animate-spin" style={{ border: `2px solid ${INK_SOFT}55`, borderTopColor: INK }}></div><span className="text-xs">{summaryProgress || '正在收拢…'}</span></>
                             ) : (
-                                <><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" /></svg> 生成总结并同步到全员记忆</>
+                                <><BookBookmark size={16} weight="bold" /> 总结成册 · 塞进每个人脑海</>
                             )}
                         </button>
-                        <p className="text-[9px] text-slate-400 leading-tight px-1">使用选中的提示词风格生成群聊总结，并作为记忆植入到所有群成员的大脑中。</p>
+                        <ScrapNote className="px-1">用挑中的笔法把群里这阵子写成一页，再当成记忆悄悄种进每位成员心里。</ScrapNote>
                     </div>
 
                     {/* Danger Zone */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <label className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-3 block">危险区域</label>
-                        
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="HANDLE WITH CARE">小心轻放</ScrapLabel>
+
                         <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => setPreserveContext(!preserveContext)}>
-                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-[#2b2933] border-[#2b2933]' : 'bg-slate-100 border-slate-300'}`}>
-                                 {preserveContext && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                             <div className="w-5 h-5 flex items-center justify-center transition-colors" style={{ borderRadius: 6, background: preserveContext ? INK : 'rgba(255,253,247,0.82)', border: `1px solid ${preserveContext ? INK : INK_SOFT + '66'}` }}>
+                                 {preserveContext && <svg className="w-3 h-3" style={{ color: '#f6f3ec' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
                              </div>
-                             <span className="text-xs text-slate-600">清空时保留最后10条记录 (维持语境)</span>
+                             <span className="text-xs font-bold" style={{ color: INK }}>清空时留住最后 10 条，别断了话头</span>
                         </div>
 
                         <div className="flex gap-2">
-                            <button onClick={handleClearHistory} className="flex-1 py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 active:scale-95 transition-transform flex items-center justify-center gap-2 text-xs">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
-                                清空聊天
-                            </button>
-                            <button onClick={() => { if(activeGroup) handleDissolveGroup(activeGroup.id); }} className="flex-1 py-3 text-white bg-red-500 hover:bg-red-600 rounded-2xl text-xs font-bold transition-colors shadow-lg shadow-red-200">解散群聊</button>
+                            <ScrapBtn variant="paper" full={false} className="flex-1 text-xs" onClick={handleClearHistory} icon={<Eraser size={15} weight="bold" />}>抹掉记录</ScrapBtn>
+                            <ScrapBtn variant="danger" full={false} className="flex-1 text-xs" onClick={() => { if(activeGroup) handleDissolveGroup(activeGroup.id); }} icon={<Trash size={15} weight="bold" />}>就地解散</ScrapBtn>
                         </div>
                     </div>
                 </div>
             </Modal>
 
             {/* Message Options Modal */}
-            <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
-                <div className="space-y-3">
+            <Modal isOpen={modalType === 'message-options'} title="这条怎么处理" en="MESSAGE" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
+                <div className="space-y-2.5">
                     {/* 表情回应快捷条（QQ/微信 tap-to-react） */}
                     <div className="flex items-center justify-between gap-1 px-1 pb-1">
                         {REACTION_EMOJIS.map(emoji => {
@@ -3450,67 +3454,54 @@ ${attachedImagesNote}
                                 && selectedMessage!.metadata.reactions.some((r: any) => r.emoji === emoji && r.by?.includes('user'));
                             return (
                                 <button key={emoji} onClick={() => handleReactMessage(emoji)}
-                                    className={`w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform ${reacted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-slate-100'}`}>
+                                    className="w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform"
+                                    style={reacted ? { background: INK, outline: '1px dashed rgba(255,255,255,0.35)', outlineOffset: -3 } : { background: 'rgba(255,253,247,0.7)', border: `1px solid ${INK_SOFT}44` }}>
                                     {emoji}
                                 </button>
                             );
                         })}
                     </div>
-                    <button onClick={handleEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        多选 / 批量删除
-                    </button>
+                    <ScrapRowBtn onClick={handleEnterSelectionMode} icon={<ListNumbers size={18} weight="bold" />}>挑几条一起收拾</ScrapRowBtn>
                     {selectedMessage?.type === 'text' && (
-                        <button onClick={handleCopyMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            复制文字
-                        </button>
+                        <ScrapRowBtn onClick={handleCopyMessage} icon={<Copy size={18} weight="bold" />}>抄下这段字</ScrapRowBtn>
                     )}
                     {selectedMessage?.type === 'text' && (
-                        <button onClick={handleStartEditMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            修改内容
-                        </button>
+                        <ScrapRowBtn onClick={handleStartEditMessage} icon={<PencilSimpleLine size={18} weight="bold" />}>改改措辞</ScrapRowBtn>
                     )}
-                    <button onClick={() => setModalType('forward-pick')} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        转发
-                    </button>
+                    <ScrapRowBtn onClick={() => setModalType('forward-pick')} icon={<ShareNetwork size={18} weight="bold" />}>转给别人看</ScrapRowBtn>
                     {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
-                        <button onClick={handleRecallMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            撤回
-                        </button>
+                        <ScrapRowBtn onClick={handleRecallMessage} icon={<ClockCounterClockwise size={18} weight="bold" />}>当作没说过</ScrapRowBtn>
                     )}
-                    <button onClick={handleDeleteSingleMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                        删除消息
-                    </button>
+                    <ScrapRowBtn onClick={handleDeleteSingleMessage} danger icon={<Trash size={18} weight="bold" />}>撕掉这条</ScrapRowBtn>
                 </div>
             </Modal>
 
             {/* 转发选人：把选中的群消息转给某个角色的私聊 */}
-            <Modal isOpen={modalType === 'forward-pick'} title="转发给" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
+            <Modal isOpen={modalType === 'forward-pick'} title="捎给谁" en="FORWARD" icon={<ScrapStamp><ShareNetwork size={16} weight="bold" /></ScrapStamp>} onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
-                    {characters.length === 0 && <div className="text-center text-xs text-slate-400 py-8">还没有可转发的角色</div>}
+                    {characters.length === 0 && <ScrapNote center className="py-8">名册里还没人能捎。</ScrapNote>}
                     {characters.map(c => (
-                        <button key={c.id} onClick={() => handleForwardGroupMessage(c.id)}
-                            className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 active:bg-slate-100 transition-colors">
-                            <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" alt="" />
-                            <span className="text-sm text-slate-700 font-medium truncate">{c.name}</span>
-                        </button>
+                        <ScrapRowBtn key={c.id} avatar={c.avatar} onClick={() => handleForwardGroupMessage(c.id)} trailing={<span style={{ color: INK_SOFT }}>›</span>}>
+                            {c.name}
+                        </ScrapRowBtn>
                     ))}
                 </div>
             </Modal>
 
             {/* Edit Message Modal */}
             <Modal
-                isOpen={modalType === 'edit-message'} title="编辑内容" onClose={() => { setModalType('none'); setSelectedMessage(null); }}
-                footer={<><button onClick={() => { setModalType('none'); setSelectedMessage(null); }} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={confirmEditMessage} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">保存</button></>}
+                isOpen={modalType === 'edit-message'} title="改改这句" en="EDIT" onClose={() => { setModalType('none'); setSelectedMessage(null); }}
+                footer={<><ScrapBtn variant="paper" onClick={() => { setModalType('none'); setSelectedMessage(null); }}>算了</ScrapBtn><ScrapBtn onClick={confirmEditMessage}>就这么改</ScrapBtn></>}
             >
-                <textarea
+                <ScrapTextarea
                     value={editContent}
                     onChange={e => setEditContent(e.target.value)}
-                    className="w-full h-32 bg-slate-100 rounded-2xl p-4 resize-none focus:ring-1 focus:ring-primary/20 transition-all text-sm leading-relaxed"
+                    className="h-32"
                 />
             </Modal>
 
             {/* Transfer Modal —— 钱包实扣（普通红包 / 拼手气红包） */}
-            <Modal isOpen={modalType === 'transfer'} title="塞个红包" onClose={resetTransferModal} footer={<button onClick={sendGroupTransfer} className="w-full py-3 text-white font-bold rounded-2xl" style={{ background: '#1f1d1a', boxShadow: '0 10px 22px -12px rgba(31,29,26,0.6)' }}>{transferRpType === 'lucky' ? '塞进群里抢' : '塞进红包'}</button>}>
+            <Modal isOpen={modalType === 'transfer'} title="包个红包" en="RED PACKET · 一点心意" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={resetTransferModal} footer={<ScrapBtn onClick={sendGroupTransfer} icon={<Coins size={16} weight="bold" />}>{transferRpType === 'lucky' ? '撒进群里让大家抢' : '把心意递出去'}</ScrapBtn>}>
                 {(() => {
                     const memberCount = activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)).length : 0;
                     return (
@@ -3518,69 +3509,66 @@ ${attachedImagesNote}
                             <div className="text-center py-2 animate-bounce"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto" /></div>
                             {/* 红包类型：普通整包 / 拼手气随机拆 */}
                             <div className="grid grid-cols-2 gap-2">
-                                {([['normal', '普通红包', '整包心意'], ['lucky', '拼手气红包', '随机拆 · 群成员抢']] as const).map(([t, label, hint]) => (
-                                    <button key={t} onClick={() => setTransferRpType(t)}
-                                        className="py-2.5 rounded-2xl text-center transition-all active:scale-95"
-                                        style={{
-                                            background: transferRpType === t ? '#1f1d1a' : '#f1f5f9',
-                                            color: transferRpType === t ? '#fff' : '#64748b',
-                                            boxShadow: transferRpType === t ? '0 8px 18px -10px rgba(31,29,26,0.6)' : 'none',
-                                        }}>
-                                        <div className="text-[13px] font-bold">{label}</div>
-                                        <div className="text-[10px] mt-0.5" style={{ opacity: 0.75 }}>{hint}</div>
-                                    </button>
-                                ))}
+                                {([['normal', '整包送', '一份给到位'], ['lucky', '拼手气', '随机拆 · 大家抢']] as const).map(([t, label, hint]) => {
+                                    const on = transferRpType === t;
+                                    return (
+                                        <button key={t} onClick={() => setTransferRpType(t)}
+                                            className="py-2.5 text-center transition-transform active:scale-95"
+                                            style={on
+                                                ? { background: INK, color: '#f6f3ec', borderRadius: 13, outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }
+                                                : { background: 'rgba(255,253,247,0.82)', color: '#605a4e', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 13 }}>
+                                            <div className="text-[13px] font-black">{label}</div>
+                                            <div className="text-[10px] mt-0.5" style={{ opacity: 0.78 }}>{hint}</div>
+                                        </button>
+                                    );
+                                })}
                             </div>
-                            <input type="number" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '红包总额' : '金额'} className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                            <ScrapInput type="number" big value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '一共多少' : '金额'} autoFocus />
                             {transferRpType === 'lucky' && (
-                                <input type="number" min={1} max={memberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={memberCount ? `红包个数（默认 ${memberCount}，最多 ${memberCount}）` : '红包个数'} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-center text-sm font-bold outline-none text-slate-700 placeholder:text-slate-300" />
+                                <ScrapInput type="number" center min={1} max={memberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={memberCount ? `拆几个（默认 ${memberCount}，最多 ${memberCount}）` : '拆几个'} />
                             )}
-                            <input value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附言（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
-                            <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1 text-slate-400"><Wallet size={13} weight="fill" />钱包余额 ¥{wallet}</div>
+                            <ScrapInput value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附句话（选填）" />
+                            <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1" style={{ color: INK_SOFT }}><Wallet size={13} weight="fill" />钱包里还有 ¥{wallet}</div>
                         </div>
                     );
                 })()}
             </Modal>
 
             {/* 群收款（AA）：选成员 + 总额 → 均摊发起 */}
-            <Modal isOpen={modalType === 'collect'} title="发起群收款" onClose={resetCollectModal} footer={<button onClick={sendGroupCollect} className="w-full py-3 bg-teal-600 text-white font-bold rounded-2xl shadow-lg shadow-teal-200">发起收款</button>}>
+            <Modal isOpen={modalType === 'collect'} title="发起 AA" en="SPLIT THE BILL" icon={<ScrapStamp><Wallet size={15} weight="bold" /></ScrapStamp>} onClose={resetCollectModal} footer={<ScrapBtn onClick={sendGroupCollect} icon={<Wallet size={16} weight="bold" />}>开收</ScrapBtn>}>
                 {(() => {
                     const ids = Array.from(collectMembers).filter(id => activeGroup?.members.includes(id));
                     const total = Math.round(parseFloat(collectAmount) * 100) / 100;
                     const per = ids.length > 0 && total > 0 ? Math.round((total / ids.length) * 100) / 100 : 0;
                     return (
                         <div className="space-y-4">
-                            <div className="text-center py-1 text-teal-600"><Wallet size={40} weight="fill" className="mx-auto" /></div>
-                            <input type="number" value={collectAmount} onChange={e => setCollectAmount(e.target.value)} placeholder="收款总额" className="w-full px-4 py-4 bg-slate-100 rounded-2xl text-center text-2xl font-bold outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
-                            <input value={collectNote} onChange={e => setCollectNote(e.target.value)} placeholder="收款事由（如：上次聚餐 AA）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                            <div className="text-center py-1" style={{ color: INK }}><Wallet size={40} weight="fill" className="mx-auto" /></div>
+                            <ScrapInput type="number" big value={collectAmount} onChange={e => setCollectAmount(e.target.value)} placeholder="一共多少" autoFocus />
+                            <ScrapInput value={collectNote} onChange={e => setCollectNote(e.target.value)} placeholder="为啥收（比如：上回聚餐 AA）" />
                             <div>
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">向谁收（{ids.length} 人）</span>
-                                    {ids.length > 0 && total > 0 && <span className="text-[11px] text-teal-600 font-bold">每人 ¥{per}</span>}
+                                    <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: INK_SOFT }}>找谁收 · {ids.length} 人</span>
+                                    {ids.length > 0 && total > 0 && <span className="text-[11px] font-black px-2 py-0.5 rounded-full" style={{ background: INK, color: '#f6f3ec' }}>每人 ¥{per}</span>}
                                 </div>
-                                <div className="grid grid-cols-4 gap-2 max-h-44 overflow-y-auto pr-1">
+                                <div className="grid grid-cols-4 gap-2 max-h-44 overflow-y-auto no-scrollbar pr-1">
                                     {(activeGroup?.members || []).map(mid => {
                                         const c = characters.find(ch => ch.id === mid);
                                         if (!c) return null;
                                         const on = collectMembers.has(mid);
                                         return (
-                                            <button key={mid} onClick={() => setCollectMembers(prev => { const n = new Set(prev); if (n.has(mid)) n.delete(mid); else n.add(mid); return n; })}
-                                                className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${on ? 'border-teal-400 bg-teal-50 ring-1 ring-teal-300' : 'border-slate-100 bg-white'}`}>
-                                                <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover ${on ? '' : 'opacity-60 grayscale'}`} />
-                                                <span className="text-[9px] text-slate-600 truncate w-full text-center">{displayNameOf(activeGroup, mid)}</span>
-                                            </button>
+                                            <ScrapPickTile key={mid} src={c.avatar} label={displayNameOf(activeGroup, mid)} selected={on} dim={!on} onClick={() => setCollectMembers(prev => { const n = new Set(prev); if (n.has(mid)) n.delete(mid); else n.add(mid); return n; })} />
                                         );
                                     })}
                                 </div>
                             </div>
-                            <div className="text-center text-[11px] text-slate-400">AA 均摊 · 钱随「点收」逐笔进钱包（当前 ¥{wallet}）</div>
+                            <ScrapNote center>平摊 · 谁「给了」就逐笔进你钱包（现在 ¥{wallet}）</ScrapNote>
                         </div>
                     );
                 })()}
             </Modal>
 
             {/* 群收款详情：逐笔点收 / 一键收齐 */}
-            <Modal isOpen={!!collectDetailMsg} title="群收款" onClose={() => setCollectDetailMsg(null)}>
+            <Modal isOpen={!!collectDetailMsg} title="这笔 AA" en="SPLIT" onClose={() => setCollectDetailMsg(null)}>
                 {collectDetailMsg && (() => {
                     const meta: any = collectDetailMsg.metadata || {};
                     const shares: any[] = Array.isArray(meta.shares) ? meta.shares : [];
@@ -3590,58 +3578,58 @@ ${attachedImagesNote}
                     return (
                         <div className="space-y-3">
                             <div className="text-center">
-                                <div className="text-2xl font-bold text-slate-800">¥{meta.total}</div>
-                                <div className="text-[12px] text-slate-400 mt-0.5">{meta.note || 'AA 收款'} · {done ? '已收齐' : `已收 ¥${paidSum} · ${paidCount}/${shares.length} 人`}</div>
+                                <div className="text-2xl font-black" style={{ color: INK }}>¥{meta.total}</div>
+                                <div className="text-[12px] mt-0.5" style={{ color: INK_SOFT }}>{meta.note || 'AA 收款'} · {done ? '都给齐了' : `已收 ¥${paidSum} · ${paidCount}/${shares.length} 人`}</div>
                             </div>
-                            <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+                            <div className="space-y-1.5 max-h-[40vh] overflow-y-auto no-scrollbar pr-1">
                                 {shares.map((s: any) => {
                                     const c = characters.find(ch => ch.id === s.id);
                                     return (
-                                        <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
-                                            {c?.avatar ? <img src={c.avatar} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-slate-200" />}
-                                            <span className="text-sm text-slate-700 font-medium truncate flex-1">{displayNameOf(activeGroup, s.id)}</span>
-                                            <span className="text-[13px] font-bold text-slate-500">¥{s.amount}</span>
+                                        <div key={s.id} className="flex items-center gap-3 px-3 py-2" style={{ background: 'rgba(255,253,247,0.78)', border: `1px solid ${INK_SOFT}44`, borderRadius: 11 }}>
+                                            {c?.avatar ? <img src={c.avatar} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full" style={{ background: '#e6e2d8' }} />}
+                                            <span className="text-sm font-bold truncate flex-1" style={{ color: INK }}>{displayNameOf(activeGroup, s.id)}</span>
+                                            <span className="text-[13px] font-black" style={{ color: INK_SOFT }}>¥{s.amount}</span>
                                             {s.paid ? (
-                                                <span className="text-[11px] text-teal-600 font-bold flex items-center gap-0.5 shrink-0"><svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7 7a1 1 0 01-1.4 0l-3-3a1 1 0 111.4-1.4L9 11.6l6.3-6.3a1 1 0 011.4 0z" clipRule="evenodd" /></svg>已付</span>
+                                                <span className="text-[11px] font-black flex items-center gap-0.5 shrink-0" style={{ color: INK }}><svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7 7a1 1 0 01-1.4 0l-3-3a1 1 0 111.4-1.4L9 11.6l6.3-6.3a1 1 0 011.4 0z" clipRule="evenodd" /></svg>到账</span>
                                             ) : (
-                                                <button onClick={() => payCollectShare(collectDetailMsg, s.id)} className="text-[12px] font-bold text-white bg-teal-600 px-3 py-1 rounded-full shrink-0 active:scale-95">收</button>
+                                                <button onClick={() => payCollectShare(collectDetailMsg, s.id)} className="text-[12px] font-black px-3 py-1 rounded-full shrink-0 active:scale-95 transition-transform" style={{ background: INK, color: '#f6f3ec' }}>收下</button>
                                             )}
                                         </div>
                                     );
                                 })}
                             </div>
                             {!done && (
-                                <button onClick={() => collectAllRemaining(collectDetailMsg)} className="w-full py-2.5 bg-teal-600 text-white font-bold rounded-2xl shadow-lg shadow-teal-200 active:scale-95 transition-transform">一键收齐剩余</button>
+                                <ScrapBtn onClick={() => collectAllRemaining(collectDetailMsg)} className="text-sm">把剩下的一次收齐</ScrapBtn>
                             )}
-                            <p className="text-[10px] text-slate-300 text-center">点「收」即把那一份记入钱包</p>
+                            <ScrapNote center>点「收下」就把那一份记进钱包。</ScrapNote>
                         </div>
                     );
                 })()}
             </Modal>
 
             {/* 群投票：问题 + 2~6 选项（单选） */}
-            <Modal isOpen={modalType === 'poll'} title="发起群投票" onClose={resetPollModal} footer={<button onClick={sendGroupPoll} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">发起投票</button>}>
+            <Modal isOpen={modalType === 'poll'} title="拉个投票" en="POLL · 举手表决" icon={<ScrapStamp><ChartBar size={15} weight="bold" /></ScrapStamp>} onClose={resetPollModal} footer={<ScrapBtn onClick={sendGroupPoll} icon={<ChartBar size={16} weight="bold" />}>开投</ScrapBtn>}>
                 <div className="space-y-3">
-                    <input value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="投票问题，如「周末去哪玩」" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
+                    <ScrapInput value={pollQuestion} onChange={e => setPollQuestion(e.target.value)} placeholder="想问大家啥，比如「周末去哪玩」" autoFocus />
                     <div className="space-y-2">
                         {pollOptions.map((opt, i) => (
                             <div key={i} className="flex items-center gap-2">
-                                <input value={opt} onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))} placeholder={`选项 ${i + 1}`} className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-indigo-300 transition-all" />
+                                <ScrapInput value={opt} onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))} placeholder={`第 ${i + 1} 个选项`} />
                                 {pollOptions.length > 2 && (
-                                    <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-400 shrink-0"><XCircle size={20} weight="fill" /></button>
+                                    <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} className="shrink-0 active:scale-90 transition-transform" style={{ color: INK_SOFT }}><XCircle size={20} weight="fill" /></button>
                                 )}
                             </div>
                         ))}
                     </div>
                     {pollOptions.length < 6 && (
-                        <button onClick={() => setPollOptions(prev => [...prev, ''])} className="w-full py-2 text-[13px] font-bold text-indigo-500 border border-dashed border-indigo-200 rounded-xl active:scale-95 transition-transform">+ 加一个选项</button>
+                        <ScrapBtn variant="ghost" onClick={() => setPollOptions(prev => [...prev, ''])} className="text-[13px] py-2">＋ 再添一个</ScrapBtn>
                     )}
-                    <p className="text-[10px] text-slate-400 text-center">单选 · 发起后群成员会按各自性格投票</p>
+                    <ScrapNote center>单选 · 开投后大家会照各自的性子投。</ScrapNote>
                 </div>
             </Modal>
 
             {/* 群投票详情：看每个选项是谁投的 + 理由 */}
-            <Modal isOpen={!!pollDetailMsg} title="投票详情" onClose={() => setPollDetailMsg(null)}>
+            <Modal isOpen={!!pollDetailMsg} title="票数明细" en="POLL" onClose={() => setPollDetailMsg(null)}>
                 {pollDetailMsg && (() => {
                     const pmeta: any = pollDetailMsg.metadata || {};
                     const options: any[] = Array.isArray(pmeta.options) ? pmeta.options : [];
@@ -3650,20 +3638,20 @@ ${attachedImagesNote}
                     return (
                         <div className="space-y-3">
                             <div className="text-center">
-                                <div className="text-[15px] font-bold text-slate-800">{pmeta.question}</div>
-                                <div className="text-[11px] text-slate-400 mt-0.5">{totalVotes} 票</div>
+                                <div className="text-[15px] font-black" style={{ color: INK }}>{pmeta.question}</div>
+                                <div className="text-[11px] mt-0.5" style={{ color: INK_SOFT }}>共 {totalVotes} 票</div>
                             </div>
-                            <div className="space-y-2.5 max-h-[45vh] overflow-y-auto pr-1">
+                            <div className="space-y-2.5 max-h-[45vh] overflow-y-auto no-scrollbar pr-1">
                                 {options.map((o, i) => {
                                     const voters: string[] = o.voters || [];
                                     const pct = totalVotes > 0 ? Math.round((voters.length / totalVotes) * 100) : 0;
                                     return (
-                                        <div key={i} className="rounded-xl border border-slate-100 overflow-hidden">
-                                            <div className="relative px-3 py-2 bg-slate-50">
-                                                <div className="absolute inset-0 bg-indigo-50" style={{ width: `${pct}%` }} />
+                                        <div key={i} className="overflow-hidden" style={{ border: `1px solid ${INK_SOFT}44`, borderRadius: 11 }}>
+                                            <div className="relative px-3 py-2" style={{ background: 'rgba(255,253,247,0.7)' }}>
+                                                <div className="absolute inset-y-0 left-0" style={{ width: `${pct}%`, background: 'rgba(31,29,26,0.12)', backgroundImage: 'repeating-linear-gradient(45deg, rgba(31,29,26,0.06) 0 6px, transparent 6px 12px)' }} />
                                                 <div className="relative flex items-center justify-between">
-                                                    <span className="text-[13px] font-bold text-slate-700 truncate">{o.text}</span>
-                                                    <span className="text-[11px] text-slate-400 font-bold shrink-0">{voters.length} 票</span>
+                                                    <span className="text-[13px] font-black truncate" style={{ color: INK }}>{o.text}</span>
+                                                    <span className="text-[11px] font-black shrink-0" style={{ color: INK_SOFT }}>{voters.length} 票</span>
                                                 </div>
                                             </div>
                                             {voters.length > 0 && (
@@ -3675,10 +3663,10 @@ ${attachedImagesNote}
                                                         const reason = reasons[vid];
                                                         return (
                                                             <div key={vid} className="flex items-start gap-2">
-                                                                {av ? <img src={av} className="w-6 h-6 rounded-full object-cover shrink-0" /> : <div className="w-6 h-6 rounded-full bg-slate-200 shrink-0" />}
+                                                                {av ? <img src={av} className="w-6 h-6 rounded-full object-cover shrink-0" /> : <div className="w-6 h-6 rounded-full shrink-0" style={{ background: '#e6e2d8' }} />}
                                                                 <div className="min-w-0">
-                                                                    <span className="text-[12px] font-medium text-slate-600">{isU ? (activeGroup?.memberNicknames?.['user'] || userProfile.name) : displayNameOf(activeGroup, vid)}</span>
-                                                                    {reason && <span className="text-[11px] text-slate-400 ml-1">· {reason}</span>}
+                                                                    <span className="text-[12px] font-bold" style={{ color: INK }}>{isU ? (activeGroup?.memberNicknames?.['user'] || userProfile.name) : displayNameOf(activeGroup, vid)}</span>
+                                                                    {reason && <span className="text-[11px] ml-1" style={{ color: INK_SOFT }}>· {reason}</span>}
                                                                 </div>
                                                             </div>
                                                         );
@@ -3689,28 +3677,28 @@ ${attachedImagesNote}
                                     );
                                 })}
                             </div>
-                            <p className="text-[10px] text-slate-300 text-center">空着输入框按回车 = 让大家接着聊（角色会按性格投票）</p>
+                            <ScrapNote center>输入框空着按回车 = 让大家继续聊（角色会照性子投）。</ScrapNote>
                         </div>
                     );
                 })()}
             </Modal>
 
             {/* 群接龙：主题 + 我的第一条（可选） */}
-            <Modal isOpen={modalType === 'relay'} title="发起接龙" onClose={resetRelayModal} footer={<button onClick={sendGroupRelay} className="w-full py-3 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200">发起接龙</button>}>
+            <Modal isOpen={modalType === 'relay'} title="起个接龙" en="RELAY · 一个接一个" icon={<ScrapStamp><ListNumbers size={15} weight="bold" /></ScrapStamp>} onClose={resetRelayModal} footer={<ScrapBtn onClick={sendGroupRelay} icon={<ListNumbers size={16} weight="bold" />}>开个头</ScrapBtn>}>
                 <div className="space-y-3">
-                    <input value={relayTitle} onChange={e => setRelayTitle(e.target.value)} placeholder="接龙主题，如「周末爬山报名接龙」" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
-                    <input value={relayFirst} onChange={e => setRelayFirst(e.target.value)} placeholder="我的第一条（选填，如「1. 我，带相机」)" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-orange-300 transition-all" />
-                    <p className="text-[10px] text-slate-400 text-center">发起后群成员会按各自性格陆续接龙</p>
+                    <ScrapInput value={relayTitle} onChange={e => setRelayTitle(e.target.value)} placeholder="接龙主题，比如「周末爬山报名」" autoFocus />
+                    <ScrapInput value={relayFirst} onChange={e => setRelayFirst(e.target.value)} placeholder="先垫一条（选填，比如「1. 我，带相机」）" />
+                    <ScrapNote center>起好后，大家会照各自的性子一条条接上。</ScrapNote>
                 </div>
             </Modal>
 
             {/* 接龙详情：看全部 + 加入 */}
             <Modal
-                isOpen={!!relayDetailMsg} title="接龙" onClose={() => { setRelayDetailMsg(null); setRelayInput(''); }}
+                isOpen={!!relayDetailMsg} title="接龙现场" en="RELAY" onClose={() => { setRelayDetailMsg(null); setRelayInput(''); }}
                 footer={
-                    <div className="flex gap-2 w-full">
-                        <input value={relayInput} onChange={e => setRelayInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && relayDetailMsg) { e.preventDefault(); joinRelayAsUser(relayDetailMsg); } }} placeholder="接上你这一条…" className="flex-1 px-3 py-2.5 bg-slate-100 rounded-xl text-sm outline-none text-slate-700 placeholder:text-slate-400" />
-                        <button onClick={() => relayDetailMsg && joinRelayAsUser(relayDetailMsg)} className="px-4 py-2.5 bg-orange-500 text-white font-bold rounded-xl shrink-0 active:scale-95 transition-transform">接龙</button>
+                    <div className="flex gap-2 w-full items-stretch">
+                        <ScrapInput value={relayInput} onChange={e => setRelayInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && relayDetailMsg) { e.preventDefault(); joinRelayAsUser(relayDetailMsg); } }} placeholder="接上你这一条…" className="flex-1" />
+                        <ScrapBtn full={false} className="shrink-0 px-5" onClick={() => relayDetailMsg && joinRelayAsUser(relayDetailMsg)}>接</ScrapBtn>
                     </div>
                 }
             >
@@ -3719,20 +3707,20 @@ ${attachedImagesNote}
                     const entries: any[] = Array.isArray(rmeta.entries) ? rmeta.entries : [];
                     return (
                         <div className="space-y-3">
-                            <div className="text-center text-[15px] font-bold text-slate-800">{rmeta.title}</div>
-                            <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
-                                {entries.length === 0 && <div className="text-center text-xs text-slate-300 py-6">还没人接龙，来当第一个～</div>}
+                            <div className="text-center text-[15px] font-black" style={{ color: INK }}>{rmeta.title}</div>
+                            <div className="space-y-2 max-h-[45vh] overflow-y-auto no-scrollbar pr-1">
+                                {entries.length === 0 && <ScrapNote center className="py-6">还没人接，来当第一个～</ScrapNote>}
                                 {entries.map((e: any, i: number) => {
                                     const isU = e.by === 'user';
                                     const c = characters.find(ch => ch.id === e.by);
                                     const av = isU ? userProfile.avatar : c?.avatar;
                                     return (
                                         <div key={i} className="flex items-start gap-2.5">
-                                            <span className="text-[12px] font-bold text-orange-400 w-5 text-right shrink-0 pt-1.5">{i + 1}.</span>
-                                            {av ? <img src={av} className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" /> : <div className="w-7 h-7 rounded-full bg-slate-200 shrink-0 mt-0.5" />}
-                                            <div className="min-w-0 flex-1 bg-slate-50 rounded-xl px-3 py-1.5">
-                                                <div className="text-[11px] font-bold text-slate-500">{e.name}</div>
-                                                <div className="text-[13px] text-slate-700 break-all leading-snug">{e.text}</div>
+                                            <span className="text-[12px] font-black w-5 text-right shrink-0 pt-1.5" style={{ color: INK }}>{i + 1}.</span>
+                                            {av ? <img src={av} className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" /> : <div className="w-7 h-7 rounded-full shrink-0 mt-0.5" style={{ background: '#e6e2d8' }} />}
+                                            <div className="min-w-0 flex-1 px-3 py-1.5" style={{ background: 'rgba(255,253,247,0.78)', border: `1px solid ${INK_SOFT}44`, borderRadius: 11 }}>
+                                                <div className="text-[11px] font-black" style={{ color: INK_SOFT }}>{e.name}</div>
+                                                <div className="text-[13px] break-all leading-snug" style={{ color: INK }}>{e.text}</div>
                                             </div>
                                         </div>
                                     );
@@ -3744,31 +3732,31 @@ ${attachedImagesNote}
             </Modal>
 
             {/* 群签到详情：今日打卡名单（谁 + 心情 + 时间） */}
-            <Modal isOpen={!!checkinDetailMsg} title="群签到" onClose={() => setCheckinDetailMsg(null)}>
+            <Modal isOpen={!!checkinDetailMsg} title="今日打卡" en="CHECK-IN" icon={<ScrapStamp><CalendarCheck size={15} weight="bold" /></ScrapStamp>} onClose={() => setCheckinDetailMsg(null)}>
                 {checkinDetailMsg && (() => {
                     const cmeta: any = checkinDetailMsg.metadata || {};
                     const entries: any[] = Array.isArray(cmeta.entries) ? cmeta.entries : [];
                     return (
                         <div className="space-y-3">
                             <div className="text-center">
-                                <div className="text-[15px] font-bold text-slate-800">今日签到 · {cmeta.date}</div>
-                                <div className="text-[11px] text-slate-400 mt-0.5">已打卡 {entries.length} 人</div>
+                                <div className="text-[15px] font-black" style={{ color: INK }}>报到 · {cmeta.date}</div>
+                                <div className="text-[11px] mt-0.5" style={{ color: INK_SOFT }}>已经 {entries.length} 人冒泡</div>
                             </div>
-                            <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
-                                {entries.length === 0 && <div className="text-center text-xs text-slate-300 py-6">还没人签到</div>}
+                            <div className="space-y-2 max-h-[45vh] overflow-y-auto no-scrollbar pr-1">
+                                {entries.length === 0 && <ScrapNote center className="py-6">还没人报到。</ScrapNote>}
                                 {entries.map((e: any, i: number) => {
                                     const isU = e.by === 'user';
                                     const c = characters.find(ch => ch.id === e.by);
                                     const av = isU ? userProfile.avatar : c?.avatar;
                                     return (
                                         <div key={i} className="flex items-center gap-2.5">
-                                            <span className="text-[12px] font-bold text-emerald-400 w-5 text-right shrink-0">{i + 1}</span>
-                                            {av ? <img src={av} className="w-8 h-8 rounded-full object-cover shrink-0" /> : <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0" />}
+                                            <span className="text-[12px] font-black w-5 text-right shrink-0" style={{ color: INK }}>{i + 1}</span>
+                                            {av ? <img src={av} className="w-8 h-8 rounded-full object-cover shrink-0" /> : <div className="w-8 h-8 rounded-full shrink-0" style={{ background: '#e6e2d8' }} />}
                                             <div className="min-w-0 flex-1">
-                                                <span className="text-[13px] font-medium text-slate-700">{e.name}</span>
-                                                {e.mood && <span className="text-[12px] text-slate-400 ml-1.5">{e.mood}</span>}
+                                                <span className="text-[13px] font-bold" style={{ color: INK }}>{e.name}</span>
+                                                {e.mood && <span className="text-[12px] ml-1.5" style={{ color: INK_SOFT }}>{e.mood}</span>}
                                             </div>
-                                            <span className="text-[10px] text-slate-300 shrink-0">{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            <span className="text-[10px] shrink-0" style={{ color: INK_SOFT }}>{new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                         </div>
                                     );
                                 })}
@@ -3779,43 +3767,41 @@ ${attachedImagesNote}
             </Modal>
 
             {/* 落脚点 / 位置分享 */}
-            <Modal isOpen={actionModal === 'location'} title="分享落脚点" onClose={() => setActionModal('none')} footer={<button onClick={sendGroupLocation} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">寄出位置</button>}>
+            <Modal isOpen={actionModal === 'location'} title="发个落脚点" en="LOCATION" icon={<ScrapStamp><MapPin size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={sendGroupLocation} icon={<MapPin size={16} weight="bold" />}>把位置寄出去</ScrapBtn>}>
                 <div className="space-y-3">
-                    <input value={locName} onChange={e => setLocName(e.target.value)} placeholder="地点名称，如「街角咖啡馆」" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-800 placeholder:text-slate-300" autoFocus />
-                    <input value={locDetail} onChange={e => setLocDetail(e.target.value)} placeholder="详细地址（选填）" className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none text-slate-700 placeholder:text-slate-300" />
+                    <ScrapInput value={locName} onChange={e => setLocName(e.target.value)} placeholder="地方叫啥，比如「街角咖啡馆」" autoFocus />
+                    <ScrapInput value={locDetail} onChange={e => setLocDetail(e.target.value)} placeholder="具体在哪儿（选填）" />
                 </div>
             </Modal>
 
             {/* 画一张 / AI 生图 */}
-            <Modal isOpen={actionModal === 'image-gen'} title="AI 画一张" onClose={() => { setActionModal('none'); setImgPreview(null); }} footer={imgPreview ? <button onClick={sendGroupImage} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">寄进群里</button> : <button onClick={() => void genGroupImage()} disabled={imgBusy} className="w-full py-3 bg-violet-500 text-white font-bold rounded-2xl shadow-lg disabled:opacity-50">{imgBusy ? '正在画…' : '开始画'}</button>}>
+            <Modal isOpen={actionModal === 'image-gen'} title="随手画一张" en="DRAW" icon={<ScrapStamp><PaintBrush size={15} weight="bold" /></ScrapStamp>} onClose={() => { setActionModal('none'); setImgPreview(null); }} footer={imgPreview ? <ScrapBtn onClick={sendGroupImage} icon={<ImageSquare size={16} weight="bold" />}>贴进群里</ScrapBtn> : <ScrapBtn onClick={() => void genGroupImage()} disabled={imgBusy} icon={!imgBusy ? <PaintBrush size={16} weight="bold" /> : undefined}>{imgBusy ? '正在落笔…' : '开画'}</ScrapBtn>}>
                 <div className="space-y-3">
-                    <textarea value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} placeholder="描述想画的画面…" rows={3} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none resize-none text-slate-800 placeholder:text-slate-300" autoFocus />
-                    <input value={imgModel} onChange={e => setImgModel(e.target.value)} placeholder="生图模型（选填）" className="w-full px-4 py-2.5 bg-slate-100 rounded-2xl text-xs outline-none text-slate-600 placeholder:text-slate-300" />
-                    {imgPreview && <img src={imgPreview} className="w-full rounded-2xl border border-slate-200" alt="preview" />}
+                    <ScrapTextarea value={imgPrompt} onChange={e => setImgPrompt(e.target.value)} placeholder="想画个什么画面…" rows={3} autoFocus />
+                    <ScrapInput value={imgModel} onChange={e => setImgModel(e.target.value)} placeholder="用哪个生图模型（选填）" className="text-xs" />
+                    {imgPreview && <img src={imgPreview} className="w-full" style={{ borderRadius: 12, border: `1px solid ${INK_SOFT}66` }} alt="preview" />}
                 </div>
             </Modal>
 
             {/* 幕后指令 / OOC */}
-            <Modal isOpen={actionModal === 'system-cmd'} title="幕后指令" onClose={() => setActionModal('none')} footer={<button onClick={sendGroupSystemCmd} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg">下达指令</button>}>
-                <div className="space-y-2">
-                    <p className="text-[12px] text-slate-400">以「导演/旁白」身份给群成员一条幕后指令（作为系统提示出现在群里，成员据此演）。</p>
-                    <textarea value={sysCmd} onChange={e => setSysCmd(e.target.value)} placeholder="如：突然停电了，大家摸黑找蜡烛…" rows={3} className="w-full px-4 py-3 bg-slate-100 rounded-2xl text-sm outline-none resize-none text-slate-800 placeholder:text-slate-300" autoFocus />
+            <Modal isOpen={actionModal === 'system-cmd'} title="递张后台纸条" en="OFF-STAGE" icon={<ScrapStamp><Detective size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={sendGroupSystemCmd} icon={<Detective size={16} weight="bold" />}>悄悄递进去</ScrapBtn>}>
+                <div className="space-y-2.5">
+                    <ScrapNote>你当「导演/旁白」，给全群递一条后台提示（作为系统提示出现，大家照着演）。</ScrapNote>
+                    <ScrapTextarea value={sysCmd} onChange={e => setSysCmd(e.target.value)} placeholder="比如：忽然停电了，大家摸黑找蜡烛…" rows={3} autoFocus />
                 </div>
             </Modal>
 
             {/* 成员选择器：单聊专属功能在群里选「对谁」 */}
-            <Modal isOpen={!!memberPicker} title={memberPicker?.title || '选择成员'} onClose={() => setMemberPicker(null)}>
+            <Modal isOpen={!!memberPicker} title={memberPicker?.title || '对谁'} en="PICK SOMEONE" onClose={() => setMemberPicker(null)}>
                 {memberPicker && (
-                    <div className="space-y-1.5">
-                        {memberPicker.hint && <p className="text-[12px] text-slate-400 mb-1">{memberPicker.hint}</p>}
+                    <div className="space-y-2">
+                        {memberPicker.hint && <ScrapNote className="mb-1">{memberPicker.hint}</ScrapNote>}
                         {(activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)) : []).map(c => (
-                            <button key={c.id} onClick={() => routeToMemberAction(c.id, memberPicker.action)} className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 active:scale-[0.98] transition text-left">
-                                <img src={c.avatar} className="w-10 h-10 rounded-full object-cover border border-slate-100 shrink-0" alt={c.name} />
-                                <span className="flex-1 min-w-0 text-sm font-bold text-slate-700 truncate">{displayNameOf(activeGroup!, c.id)}</span>
-                                <span className="text-slate-300">›</span>
-                            </button>
+                            <ScrapRowBtn key={c.id} avatar={c.avatar} onClick={() => routeToMemberAction(c.id, memberPicker.action)} trailing={<span style={{ color: INK_SOFT }}>›</span>}>
+                                {displayNameOf(activeGroup!, c.id)}
+                            </ScrapRowBtn>
                         ))}
-                        {activeGroup && characters.filter(c => activeGroup.members.includes(c.id)).length === 0 && <div className="text-center text-xs text-slate-400 py-8">这个群还没有成员</div>}
+                        {activeGroup && characters.filter(c => activeGroup.members.includes(c.id)).length === 0 && <ScrapNote center className="py-8">这个群里还没人。</ScrapNote>}
                     </div>
                 )}
             </Modal>
@@ -3824,8 +3810,8 @@ ${attachedImagesNote}
             {(() => {
                 const member = profileMemberId ? characters.find(c => c.id === profileMemberId) : null;
                 if (!member) return (
-                    <Modal isOpen={modalType === 'member-profile'} title="成员资料" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
-                        <div className="text-center text-xs text-slate-400 py-6">成员不存在</div>
+                    <Modal isOpen={modalType === 'member-profile'} title="成员资料" en="MEMBER" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
+                        <ScrapNote center className="py-6">这个人好像已经不在了。</ScrapNote>
                     </Modal>
                 );
                 const nickname = activeGroup?.memberNicknames?.[member.id];
@@ -3834,75 +3820,73 @@ ${attachedImagesNote}
                 const mutedUntilTs = activeGroup?.mutedUntil?.[member.id];
                 const canManage = userCanManage(activeGroup) && !activeGroup?.dissolved;
                 return (
-                    <Modal isOpen={modalType === 'member-profile'} title="成员资料" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
+                    <Modal isOpen={modalType === 'member-profile'} title={nickname || member.name} en="MEMBER · 这个人" onClose={() => { setModalType('none'); setProfileMemberId(null); }}>
                         <div className="space-y-4">
-                            <div className="flex flex-col items-center gap-2 py-2">
-                                <img src={member.avatar} className={`w-20 h-20 rounded-3xl object-cover shadow-md border-2 border-white ${muted ? 'grayscale' : ''}`} />
-                                <div className="flex items-center gap-1.5">
-                                    {title && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-600 border border-amber-200 text-[9px] font-bold flex items-center gap-0.5"><Crown size={9} weight="fill" />{title}</span>}
-                                    <span className="font-bold text-slate-800 text-base">{nickname || member.name}</span>
+                            <div className="flex flex-col items-center gap-2 py-1">
+                                <div className="p-1.5 pb-2" style={{ background: '#fffdf8', border: `1px solid ${INK_SOFT}66`, borderRadius: 8, boxShadow: '0 9px 18px -12px rgba(31,29,26,0.5)', transform: 'rotate(-2deg)' }}>
+                                    <img src={member.avatar} className="w-20 h-20 object-cover" style={{ borderRadius: 4, filter: muted ? 'grayscale(1)' : 'contrast(1.03)' }} />
                                 </div>
-                                {nickname && <span className="text-[10px] text-slate-400">角色名：{member.name}</span>}
+                                <div className="flex items-center gap-1.5 mt-1">
+                                    {title && <span className="px-1.5 py-0.5 text-[9px] font-black flex items-center gap-0.5" style={{ background: INK, color: '#f6f3ec', borderRadius: 4 }}><Crown size={9} weight="fill" />{title}</span>}
+                                    <span className="font-black text-base" style={{ color: INK }}>{nickname || member.name}</span>
+                                </div>
+                                {nickname && <span className="text-[10px]" style={{ color: INK_SOFT }}>本名：{member.name}</span>}
                                 {muted && mutedUntilTs && (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 flex items-center gap-1">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-bold" style={{ background: INK, color: '#f6f3ec', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 10px)' }}>
                                         <SpeakerSlash size={10} weight="fill" />
-                                        禁言中，至 {new Date(mutedUntilTs).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        闭麦到 {new Date(mutedUntilTs).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                 )}
                             </div>
 
                             <div className="grid grid-cols-3 gap-2">
-                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openPrivateChat(member.id); }} className="py-3 bg-[#f4f1ea] text-[#2b2933] font-bold rounded-2xl border border-[#e7e2d8] active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
-                                    发消息
+                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openPrivateChat(member.id); }} className="py-3 font-black active:scale-95 transition-transform text-xs flex flex-col items-center gap-1.5" style={{ background: INK, color: '#f6f3ec', borderRadius: 13, outline: '1px dashed rgba(255,255,255,0.3)', outlineOffset: -4 }}>
+                                    <ChatsTeardrop size={20} weight="bold" />
+                                    单独聊聊
                                 </button>
-                                <button onClick={() => handlePokeMember(member.id)} disabled={!!activeGroup?.dissolved} className="py-3 bg-sky-50 text-sky-600 font-bold rounded-2xl border border-sky-100 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1 disabled:opacity-40">
+                                <button onClick={() => handlePokeMember(member.id)} disabled={!!activeGroup?.dissolved} className="py-3 font-black active:scale-95 transition-transform text-xs flex flex-col items-center gap-1.5 disabled:opacity-40" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: `1px solid ${INK_SOFT}66`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -4, borderRadius: 13 }}>
                                     <HandPointing size={20} weight="bold" />
                                     戳一戳
                                 </button>
-                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openCharacterSettings(member.id); }} className="py-3 bg-slate-50 text-slate-600 font-bold rounded-2xl border border-slate-200 active:scale-95 transition-transform text-xs flex flex-col items-center gap-1">
+                                <button onClick={() => { setModalType('none'); setProfileMemberId(null); openCharacterSettings(member.id); }} className="py-3 font-black active:scale-95 transition-transform text-xs flex flex-col items-center gap-1.5" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: `1px solid ${INK_SOFT}66`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -4, borderRadius: 13 }}>
                                     <GearSix size={20} weight="bold" />
-                                    角色设置
+                                    角色档案
                                 </button>
                             </div>
 
                             {canManage && (
-                                <div className="pt-3 border-t border-slate-100 space-y-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">管理操作（{isUserOwner(activeGroup) ? '群主' : '管理员'}）</label>
-                                    <button onClick={() => { setTempMemberNickname(nickname || ''); setModalType('set-member-nickname'); }} className="w-full py-2.5 bg-indigo-50 text-indigo-600 font-bold rounded-xl border border-indigo-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
-                                        <IdentificationCard size={14} weight="bold" /> 改群名片
-                                    </button>
+                                <div className="pt-3 space-y-2">
+                                    <ScrapDivider className="mb-3" />
+                                    <ScrapLabel en={isUserOwner(activeGroup) ? 'OWNER' : 'ADMIN'}>{isUserOwner(activeGroup) ? '群主能动的' : '管理员能动的'}</ScrapLabel>
+                                    <ScrapBtn variant="paper" onClick={() => { setTempMemberNickname(nickname || ''); setModalType('set-member-nickname'); }} icon={<IdentificationCard size={15} weight="bold" />} className="text-xs">替 TA 改群名片</ScrapBtn>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <button onClick={() => { setTempTitle(title || ''); setModalType('set-title'); }} className="py-2.5 bg-amber-50 text-amber-600 font-bold rounded-xl border border-amber-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
-                                            <Crown size={14} weight="bold" /> 设置头衔
-                                        </button>
-                                        <button onClick={() => setModalType('mute-member')} className="py-2.5 bg-orange-50 text-orange-600 font-bold rounded-xl border border-orange-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
-                                            <SpeakerSlash size={14} weight="bold" /> {muted ? '禁言管理' : '禁言此成员'}
-                                        </button>
+                                        <ScrapBtn variant="paper" full={false} onClick={() => { setTempTitle(title || ''); setModalType('set-title'); }} icon={<Crown size={15} weight="bold" />} className="text-xs">封个头衔</ScrapBtn>
+                                        <ScrapBtn variant="paper" full={false} onClick={() => setModalType('mute-member')} icon={<SpeakerSlash size={15} weight="bold" />} className="text-xs">{muted ? '改闭麦' : '让 TA 闭麦'}</ScrapBtn>
                                     </div>
                                     {/* 群主专属：任命/取消管理员 · 转让群主（不能对群主本人操作） */}
                                     {isUserOwner(activeGroup) && member.id !== (activeGroup?.ownerId || 'user') && (
                                         <>
-                                            <button onClick={() => handleToggleAdmin(member.id)} className="w-full py-2.5 bg-violet-50 text-violet-600 font-bold rounded-xl border border-violet-100 active:scale-95 transition-transform text-xs flex items-center justify-center gap-1.5">
-                                                <Crown size={14} weight="bold" /> {(activeGroup?.adminIds || []).includes(member.id) ? '取消管理员' : '设为管理员'}
-                                            </button>
-                                            <button
+                                            <ScrapBtn variant="paper" onClick={() => handleToggleAdmin(member.id)} icon={<Crown size={15} weight="bold" />} className="text-xs">{(activeGroup?.adminIds || []).includes(member.id) ? '收回管理员' : '请 TA 当管理员'}</ScrapBtn>
+                                            <ScrapBtn
+                                                variant={confirmTransferId === member.id ? 'danger' : 'paper'}
                                                 onClick={() => { if (confirmTransferId === member.id) handleTransferOwner(member.id); else setConfirmTransferId(member.id); }}
-                                                className={`w-full py-2.5 font-bold rounded-xl border active:scale-95 transition-all text-xs ${confirmTransferId === member.id ? 'bg-violet-600 text-white border-violet-600 shadow-lg shadow-violet-200' : 'bg-violet-50 text-violet-600 border-violet-100'}`}
+                                                className="text-xs"
                                             >
-                                                {confirmTransferId === member.id ? '再点一次确认转让群主' : '转让群主'}
-                                            </button>
+                                                {confirmTransferId === member.id ? '再按一次，群主就归 TA 了' : '把群主让给 TA'}
+                                            </ScrapBtn>
                                         </>
                                     )}
-                                    <button
+                                    <ScrapBtn
+                                        variant={confirmRemoveId === member.id ? 'danger' : 'paper'}
                                         onClick={() => {
                                             if (confirmRemoveId === member.id) { handleRemoveMember(member.id); setConfirmRemoveId(null); }
                                             else setConfirmRemoveId(member.id);
                                         }}
-                                        className={`w-full py-2.5 font-bold rounded-xl border active:scale-95 transition-all text-xs ${confirmRemoveId === member.id ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-200' : 'bg-red-50 text-red-500 border-red-100'}`}
+                                        icon={<Wind size={15} weight="bold" />}
+                                        className="text-xs"
                                     >
-                                        {confirmRemoveId === member.id ? '再点一次确认移除' : '移出群聊'}
-                                    </button>
+                                        {confirmRemoveId === member.id ? '再按一次，请 TA 离开' : '请出这个群'}
+                                    </ScrapBtn>
                                 </div>
                             )}
                         </div>
@@ -3912,69 +3896,62 @@ ${attachedImagesNote}
 
             {/* 改群名片 Modal（群主/管理员代成员改） */}
             <Modal
-                isOpen={modalType === 'set-member-nickname'} title="改群名片" onClose={() => setModalType('member-profile')}
-                footer={<div className="flex gap-2 w-full">
-                    <button onClick={() => { setTempMemberNickname(''); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
-                    <button onClick={handleSetMemberNickname} className="flex-1 py-3 bg-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200">保存</button>
-                </div>}
+                isOpen={modalType === 'set-member-nickname'} title="替 TA 改群名片" en="NICKNAME" onClose={() => setModalType('member-profile')}
+                footer={<>
+                    <ScrapBtn variant="paper" onClick={() => { setTempMemberNickname(''); }}>留白</ScrapBtn>
+                    <ScrapBtn onClick={handleSetMemberNickname}>记下</ScrapBtn>
+                </>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">群名片只改变这位成员在本群的显示名，不影响 TA 的角色本名。清空保存即恢复角色名。群里所有人都会看到这条改动通知。</p>
-                    <input value={tempMemberNickname} onChange={e => setTempMemberNickname(e.target.value)} maxLength={24} placeholder="给 TA 起个群里的昵称…" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-indigo-300 transition-all" autoFocus />
+                    <ScrapNote>群名片只换 TA 在这个群里挂的名字，本名不动。留白记下就还原成本名。群里每个人都会看到这条改动。</ScrapNote>
+                    <ScrapInput value={tempMemberNickname} onChange={e => setTempMemberNickname(e.target.value)} maxLength={24} placeholder="给 TA 在群里取个名…" autoFocus />
                 </div>
             </Modal>
 
             {/* 群公告 Modal：群主/管理员可编辑发布或撤下；普通成员只读查看 */}
             <Modal
-                isOpen={modalType === 'group-announcement'} title="群公告" onClose={() => setModalType('none')}
+                isOpen={modalType === 'group-announcement'} title="钉在群顶上的话" en="NOTICE" icon={<ScrapStamp><Megaphone size={15} weight="fill" /></ScrapStamp>} onClose={() => setModalType('none')}
                 footer={userCanManage(activeGroup) ? (
-                    <div className="flex gap-2 w-full">
-                        <button onClick={() => setTempAnnouncement('')} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
-                        <button onClick={handleSaveAnnouncement} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-2xl shadow-lg shadow-amber-200">
-                            {tempAnnouncement.trim() ? '发布' : (activeGroup?.announcement?.text ? '撤下公告' : '发布')}
-                        </button>
-                    </div>
+                    <>
+                        <ScrapBtn variant="paper" onClick={() => setTempAnnouncement('')}>清空</ScrapBtn>
+                        <ScrapBtn onClick={handleSaveAnnouncement}>
+                            {tempAnnouncement.trim() ? '钉上去' : (activeGroup?.announcement?.text ? '取下来' : '钉上去')}
+                        </ScrapBtn>
+                    </>
                 ) : undefined}
             >
                 <div className="space-y-3">
                     {activeGroup?.announcement?.text && (
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                            <Megaphone size={13} weight="fill" className="text-amber-400" />
-                            <span>由 {displayNameOf(activeGroup, activeGroup.announcement.by)} 发布 · {new Date(activeGroup.announcement.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: INK_SOFT }}>
+                            <Megaphone size={13} weight="fill" style={{ color: INK }} />
+                            <span>{displayNameOf(activeGroup, activeGroup.announcement.by)} 钉的 · {new Date(activeGroup.announcement.at).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                     )}
                     {userCanManage(activeGroup) ? (
                         <>
-                            <textarea
+                            <ScrapTextarea
                                 value={tempAnnouncement}
                                 onChange={e => setTempAnnouncement(e.target.value)}
                                 maxLength={800}
                                 rows={6}
-                                placeholder="写点群里要周知的事…（公告会置顶展示，成员都能看到并自然回应）"
-                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-amber-300 transition-all resize-none leading-relaxed"
+                                placeholder="写点想让全群都记着的事…（会钉在最上面，大家都看得见、会接话）"
                                 autoFocus
                             />
-                            <p className="text-[10px] text-slate-400 text-right">{tempAnnouncement.length}/800 · 清空后发布即撤下公告</p>
+                            <ScrapNote className="text-right">{tempAnnouncement.length}/800 · 清空再钉就等于撤下</ScrapNote>
                         </>
                     ) : (
-                        <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-900/90 leading-relaxed whitespace-pre-wrap min-h-[80px]">
-                            {activeGroup?.announcement?.text || '暂无群公告'}
+                        <div className="p-4 text-sm leading-relaxed whitespace-pre-wrap min-h-[80px]" style={{ background: 'rgba(255,253,247,0.8)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 12, color: INK }}>
+                            {activeGroup?.announcement?.text || '这群还没钉公告。'}
                         </div>
                     )}
                 </div>
             </Modal>
 
             {/* @ 成员选择器：点名让 TA 本轮优先回应；群主/管理员可 @全体成员 */}
-            <Modal isOpen={modalType === 'mention-picker'} title="@ 谁" onClose={() => setModalType('none')}>
-                <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+            <Modal isOpen={modalType === 'mention-picker'} title="喊一声谁" en="MENTION" onClose={() => setModalType('none')}>
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar pr-1">
                     {userCanManage(activeGroup) && (
-                        <button
-                            onClick={() => insertMention('全体成员')}
-                            className="w-full px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-left hover:border-amber-300 active:scale-[0.98] transition-all"
-                        >
-                            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0 text-amber-500"><UsersThree size={18} weight="bold" /></div>
-                            <span className="text-sm text-amber-700 font-bold flex-1">@全体成员</span>
-                        </button>
+                        <ScrapRowBtn onClick={() => insertMention('全体成员')} icon={<UsersThree size={18} weight="bold" />}>@所有人</ScrapRowBtn>
                     )}
                     {(activeGroup?.members || []).map(mid => {
                         const c = characters.find(ch => ch.id === mid);
@@ -3982,37 +3959,37 @@ ${attachedImagesNote}
                         const dn = displayNameOf(activeGroup, mid);
                         const muted = isMuted(activeGroup, mid);
                         return (
-                            <button
+                            <ScrapRowBtn
                                 key={mid}
+                                avatar={c.avatar}
+                                avatarDim={muted}
                                 onClick={() => insertMention(dn)}
-                                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3 text-left hover:border-slate-400 hover:bg-[#f7f4ee] active:scale-[0.98] transition-all"
+                                trailing={muted ? <span className="text-[10px] shrink-0 font-bold" style={{ color: INK_SOFT }}>闭麦中</span> : undefined}
                             >
-                                <img src={c.avatar} className={`w-9 h-9 rounded-full object-cover shrink-0 ${muted ? 'grayscale opacity-60' : ''}`} />
-                                <span className="text-sm text-slate-700 font-medium truncate flex-1">{dn}</span>
-                                {muted && <span className="text-[10px] text-red-400 shrink-0">禁言中</span>}
-                            </button>
+                                {dn}
+                            </ScrapRowBtn>
                         );
                     })}
                     {(activeGroup?.members || []).length === 0 && (
-                        <div className="text-center text-slate-400 text-xs py-8">群里还没有其他成员</div>
+                        <ScrapNote center className="py-8">群里还没别人。</ScrapNote>
                     )}
                 </div>
             </Modal>
 
             {/* 改名小心思 Modal（点系统提示弹出，查看角色为什么改群名片） */}
-            <Modal isOpen={!!nicknameThoughtMsg} title="改名的小心思" onClose={() => setNicknameThoughtMsg(null)}>
+            <Modal isOpen={!!nicknameThoughtMsg} title="改名背后的小心思" en="WHY" onClose={() => setNicknameThoughtMsg(null)}>
                 {nicknameThoughtMsg && (() => {
                     const md: any = nicknameThoughtMsg.metadata || {};
                     return (
                         <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                                <IdentificationCard size={14} weight="bold" />
-                                <span>{md.nicknameChar || '某位成员'} 改成了「{md.nicknameNew || ''}」</span>
+                            <div className="flex items-center gap-2 text-[11px]" style={{ color: INK_SOFT }}>
+                                <IdentificationCard size={14} weight="bold" style={{ color: INK }} />
+                                <span>{md.nicknameChar || '某位成员'} 把自己改叫「{md.nicknameNew || ''}」</span>
                             </div>
-                            <div className="rounded-2xl bg-indigo-50/70 border border-indigo-100 p-4 text-sm text-slate-700 leading-relaxed">
-                                {md.nicknameThought || '（没有留下想法）'}
+                            <div className="p-4 text-sm leading-relaxed" style={{ background: 'rgba(255,253,247,0.8)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 12, color: INK }}>
+                                {md.nicknameThought || '（什么也没说，就这么改了）'}
                             </div>
-                            <p className="text-[10px] text-slate-300 text-center">只有你能看到这段心声</p>
+                            <ScrapNote center>这点心思只飘到你这儿。</ScrapNote>
                         </div>
                     );
                 })()}
@@ -4020,31 +3997,28 @@ ${attachedImagesNote}
 
             {/* 设置头衔 Modal */}
             <Modal
-                isOpen={modalType === 'set-title'} title="设置头衔" onClose={() => setModalType('member-profile')}
-                footer={<div className="flex gap-2 w-full">
-                    <button onClick={() => { setTempTitle(''); }} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">清空</button>
-                    <button onClick={handleSetTitle} className="flex-1 py-3 bg-amber-500 text-white font-bold rounded-2xl shadow-lg shadow-amber-200">保存</button>
-                </div>}
+                isOpen={modalType === 'set-title'} title="封个头衔" en="TITLE" icon={<ScrapStamp><Crown size={15} weight="bold" /></ScrapStamp>} onClose={() => setModalType('member-profile')}
+                footer={<>
+                    <ScrapBtn variant="paper" onClick={() => { setTempTitle(''); }}>撤了</ScrapBtn>
+                    <ScrapBtn onClick={handleSetTitle}>挂上</ScrapBtn>
+                </>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">头衔会显示在该成员名字旁边，群里所有人（包括角色自己）都能看到。清空保存即撤销头衔。</p>
-                    <input value={tempTitle} onChange={e => setTempTitle(e.target.value)} maxLength={12} placeholder="例如：气氛担当 / 沙发王" className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-amber-300 transition-all" autoFocus />
+                    <ScrapNote>头衔挂在 TA 名字旁边，群里所有人（连 TA 自己）都看得见。清空再挂就等于摘掉。</ScrapNote>
+                    <ScrapInput value={tempTitle} onChange={e => setTempTitle(e.target.value)} maxLength={12} placeholder="比如：气氛担当 / 沙发王" autoFocus />
                 </div>
             </Modal>
 
             {/* 添加成员 Modal */}
-            <Modal isOpen={modalType === 'add-member'} title="添加成员" onClose={() => setModalType('settings')}>
+            <Modal isOpen={modalType === 'add-member'} title="再拉个人进来" en="ADD MEMBER" icon={<ScrapStamp><UsersThree size={15} weight="bold" /></ScrapStamp>} onClose={() => setModalType('settings')}>
                 <div className="space-y-3">
                     {(() => {
                         const candidates = characters.filter(c => !activeGroup?.members.includes(c.id));
-                        if (candidates.length === 0) return <p className="text-xs text-slate-400 text-center py-6">所有角色都已在群里</p>;
+                        if (candidates.length === 0) return <ScrapNote center className="py-6">名册里的人都已经在群里了。</ScrapNote>;
                         return (
-                            <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto pr-1">
+                            <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto no-scrollbar pr-1">
                                 {candidates.map(c => (
-                                    <div key={c.id} onClick={() => handleAddMember(c.id)} className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-100 bg-white hover:border-slate-400 cursor-pointer transition-all">
-                                        <img src={c.avatar} className="w-10 h-10 rounded-full object-cover" />
-                                        <span className="text-[9px] text-slate-600 truncate w-full text-center font-medium">{c.name}</span>
-                                    </div>
+                                    <ScrapPickTile key={c.id} src={c.avatar} label={c.name} onClick={() => handleAddMember(c.id)} />
                                 ))}
                             </div>
                         );
@@ -4053,20 +4027,20 @@ ${attachedImagesNote}
             </Modal>
 
             {/* 禁言 Modal */}
-            <Modal isOpen={modalType === 'mute-member'} title="禁言成员" onClose={() => setModalType('member-profile')}>
+            <Modal isOpen={modalType === 'mute-member'} title="让 TA 安静一会儿" en="MUTE" icon={<ScrapStamp><SpeakerSlash size={15} weight="bold" /></ScrapStamp>} onClose={() => setModalType('member-profile')}>
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">禁言期间该成员不会在群里发言（AI 导演也会跳过ta），群里会发系统通知。</p>
+                    <ScrapNote>闭麦期间 TA 不会在群里开口（AI 导演也会跳过 TA），群里会贴张系统纸条。</ScrapNote>
                     <div className="grid grid-cols-2 gap-2">
                         {MUTE_OPTIONS.map(opt => (
-                            <button key={opt.ms} onClick={() => handleMuteMember(opt.ms)} className="py-3 bg-orange-50 text-orange-600 font-bold rounded-xl border border-orange-100 active:scale-95 transition-transform text-xs">
+                            <ScrapBtn key={opt.ms} variant="paper" full={false} onClick={() => handleMuteMember(opt.ms)} className="text-xs">
                                 {opt.label}
-                            </button>
+                            </ScrapBtn>
                         ))}
                     </div>
                     {profileMemberId && isMuted(activeGroup, profileMemberId) && (
-                        <button onClick={() => handleMuteMember(null)} className="w-full py-3 bg-emerald-50 text-emerald-600 font-bold rounded-xl border border-emerald-100 active:scale-95 transition-transform text-xs">
-                            解除禁言
-                        </button>
+                        <ScrapBtn onClick={() => handleMuteMember(null)} className="text-xs" icon={<Megaphone size={14} weight="bold" />}>
+                            放 TA 出来说话
+                        </ScrapBtn>
                     )}
                 </div>
             </Modal>

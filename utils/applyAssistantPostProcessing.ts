@@ -41,7 +41,7 @@ import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemark
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
-import { extractWithdrawDirective, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
+import { extractWithdrawDirective, stripFakeWithdrawNotice, CHAR_WITHDRAW_EVENT } from './messageWithdraw';
 import { extractReactDirective, CHAR_REACT_EVENT } from './messageReactions';
 import { extractPatSuffixDirective, extractPatDirective, CHAR_PAT_SUFFIX_EVENT, CHAR_PAT_EVENT } from './patSuffix';
 import { extractOfflineStartDirective, setOfflinePending, OFFLINE_START_EVENT } from './offlineMode';
@@ -502,12 +502,15 @@ export async function applyAssistantPostProcessing(
     // 角色撤回上一条自己的消息（QQ/微信式）。先剥后播：Chat.tsx 监听 CHAR_WITHDRAW_EVENT，
     // 把该角色最近一条未撤回的 assistant 消息标记为已撤回（原文留 metadata 供用户偷看）。
     {
+        let didWithdraw = false;
         const withdrawExtract = extractWithdrawDirective(aiContent);
-        if (withdrawExtract.withdraw) {
-            aiContent = withdrawExtract.content;
-            if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent(CHAR_WITHDRAW_EVENT, { detail: { charId: char.id } }));
-            }
+        if (withdrawExtract.withdraw) { aiContent = withdrawExtract.content; didWithdraw = true; }
+        // 兜底：模型没发 [[WITHDRAW]]、而是自己打字模仿系统撤回播报（「【系统消息】…撤回了一条消息」），
+        // 也识别成一次真撤回，并把这些假系统行剥掉，免得漏成气泡。
+        const fakeNotice = stripFakeWithdrawNotice(aiContent, char.name);
+        if (fakeNotice.withdraw) { aiContent = fakeNotice.content; didWithdraw = true; }
+        if (didWithdraw && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(CHAR_WITHDRAW_EVENT, { detail: { charId: char.id } }));
         }
     }
 
