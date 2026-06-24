@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import Modal from '../os/Modal';
+import Modal, { ScrapBtn, ScrapTextarea, ScrapNote, ScrapStamp, INK, INK_SOFT } from './ScrapModal';
+import { EnvelopeOpen } from '@phosphor-icons/react';
 import { CharacterProfile } from '../../types';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
@@ -169,57 +170,53 @@ ${historyText || '（没有可用的聊天记录）'}
     };
 
     return (
-        <Modal isOpen={isOpen} title="好友验证" onClose={onClose} footer={
+        <Modal isOpen={isOpen} title="递张好友申请" en="VERIFY · 重新加回" icon={<ScrapStamp><EnvelopeOpen size={15} weight="bold" /></ScrapStamp>} onClose={onClose} footer={
             phase === 'input' || phase === 'sending' ? (
                 <>
-                    <button onClick={onClose} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl active:scale-95 transition-transform">取消</button>
-                    <button
-                        onClick={handleSend}
-                        disabled={phase === 'sending'}
-                        className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg disabled:opacity-50"
-                    >
-                        {phase === 'sending' ? '等待对方处理…' : '发送验证'}
-                    </button>
+                    <ScrapBtn variant="paper" onClick={onClose}>算了</ScrapBtn>
+                    <ScrapBtn onClick={handleSend} disabled={phase === 'sending'}>
+                        {phase === 'sending' ? '等 TA 看…' : '递过去'}
+                    </ScrapBtn>
                 </>
             ) : (
-                <button onClick={onClose} className="flex-1 py-3 bg-violet-500 text-white font-bold rounded-2xl active:scale-95 transition-transform shadow-lg">
-                    {phase === 'accepted' ? '去聊天' : '知道了'}
-                </button>
+                <ScrapBtn onClick={onClose}>
+                    {phase === 'accepted' ? '去找 TA 聊' : '知道了'}
+                </ScrapBtn>
             )
         }>
             <div className="space-y-4">
                 <div className="flex items-center gap-3">
                     <img src={char.avatar} alt={char.name} className="w-11 h-11 rounded-xl object-cover shrink-0" />
                     <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-700 truncate">{char.name}</div>
-                        <div className="text-[11px] text-red-400">对方把你拉黑了，需要发送好友验证</div>
+                        <div className="text-sm font-black truncate" style={{ color: INK }}>{char.name}</div>
+                        <div className="text-[11px] font-bold" style={{ color: INK_SOFT }}>TA 把你拉黑了，得先递张申请。</div>
                     </div>
                 </div>
 
                 {(phase === 'input' || phase === 'sending') && (
-                    <textarea
+                    <ScrapTextarea
                         value={text}
                         onChange={e => setText(e.target.value)}
                         disabled={phase === 'sending'}
-                        placeholder={`和 ${char.name} 说点什么…（解释、道歉、撒娇都行，能不能拉回就看 TA 的心情了）`}
-                        className="w-full h-24 bg-slate-50 rounded-2xl p-3 text-sm resize-none border border-slate-200 focus:border-violet-300 focus:outline-none transition-colors"
+                        placeholder={`跟 ${char.name} 说点什么…（解释、道歉、撒个娇都行，拉不拉回就看 TA 心情了）`}
+                        className="h-24"
                     />
                 )}
 
                 {phase === 'accepted' && (
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 space-y-1.5">
-                        <div className="text-sm font-bold text-emerald-600">✓ {char.name} 通过了你的好友验证</div>
-                        {reply && <div className="text-[12px] text-slate-600 leading-relaxed">{char.name}：{reply}</div>}
+                    <div className="p-4 space-y-1.5" style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}66`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -4, borderRadius: 12 }}>
+                        <div className="text-sm font-black" style={{ color: INK }}>✓ {char.name} 把你加回来了</div>
+                        {reply && <div className="text-[12px] leading-relaxed" style={{ color: '#54504a' }}>{char.name}：{reply}</div>}
                     </div>
                 )}
 
                 {phase === 'rejected' && (
-                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 space-y-1.5">
-                        <div className="text-sm font-bold text-red-500">对方拒绝了你的好友验证</div>
-                        <div className="text-[12px] text-slate-600 leading-relaxed">
-                            {reply ? `${char.name}：${reply}` : `${char.name} 没有任何回应…`}
+                    <div className="p-4 space-y-1.5" style={{ background: INK, backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.08) 0 7px, transparent 7px 14px)', borderRadius: 12, color: '#f6f3ec' }}>
+                        <div className="text-sm font-black">TA 还是没点头</div>
+                        <div className="text-[12px] leading-relaxed" style={{ color: '#e6dfd2' }}>
+                            {reply ? `${char.name}：${reply}` : `${char.name} 一句话也没回…`}
                         </div>
-                        <div className="text-[10px] text-slate-400">TA 也可能在某个时刻自己想通把你拉回，再等等吧。</div>
+                        <div className="text-[10px]" style={{ color: '#b3ada0' }}>说不定哪天 TA 自己想通就把你拉回了，再等等。</div>
                     </div>
                 )}
             </div>

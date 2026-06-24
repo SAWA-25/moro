@@ -249,3 +249,10 @@ pm run build passes after the time-gap grouping fix.
   - **浏览足迹 + 淘金币**：打开详情记 `shopFootprints`（去重置顶限量），「我的→浏览足迹」可看/清空；`shopCoins`/`shopCheckinAt` + `checkinAvailable`/`dailyCheckinReward`（当日确定性 10~60）。
   - types：`UserProfile` 加 `shopFootprints/shopReviews/shopCoins/shopCheckinAt`；`ShopOrder` 加 `refundedAt/coinDiscount`；新增 `ShopFootprint`/`ShopUserReview`。新 `shopMy.test.ts`（15 测）。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green (+15)。
+
+- 絮语（来往/群聊）全部功能弹窗统一换肤「黑白拼贴手账」+ 原创文案:
+  - **新增弹窗套件** `components/chat/ScrapModal.tsx`：复用折子戏 `apps/theater/scrapbook.tsx` 的米白纸面/墨黑/牛皮胶带/缝线虚线/邮票/网点半调，做成与旧 `components/os/Modal` **同 props 的 drop-in**（多收 en/icon/tape/maxWidth），外加一组同皮肤积木 `ScrapBtn`(墨/纸/透明/危险斜纹四款)、`ScrapInput`/`ScrapTextarea`(纸条缝线输入)、`ScrapLabel`(墨色小旗分区)、`ScrapNote`(脚注)、`ScrapDivider`(票根虚线)、`ScrapPickTile`(头像挑选格)、`ScrapChip`(药丸开关)、`ScrapRowBtn`(整行选项钮)、`ScrapStamp`(邮票图标盒)。全用**行内 hex 样式**，绕开 index.html `.moro-laiwang` 那套「ins 浅白覆盖」，稳稳落在黑白拼贴身份上。
+  - **`apps/ChatHub.tsx` 26 个弹窗整体换肤**：换 import 即整窗换壳，再逐个把 footer 改 `ScrapBtn`、body 改纸条积木——创建群聊/添加好友/右上+号菜单/群设置(头像/群名/我的名片/公告/全员闭麦/成员格/上下文滑杆/记忆总结/危险区)/消息操作/转发/编辑/红包(普通·拼手气)/AA 收款(+逐笔点收)/投票(+票数明细)/接龙(+接龙现场)/签到名单/落脚点/AI 画一张/后台纸条/选成员/成员资料/改群名片/设头衔/添加成员/禁言/@谁/改名小心思。`components/chat/FriendVerifyModal.tsx` 同步换肤。
+  - **图标黑白、头像保留彩色**：弹窗内 phosphor 图标一律墨色、标题挂邮票图标盒；所有头像/照片不去色（`ScrapPickTile`/`ScrapRowBtn` 默认彩色，仅禁言态显式灰）。
+  - **原创文案**：按手账口吻重写全部弹窗标题/占位/按钮/脚注（如「攒个新群/这就开张」「包个红包·一点心意」「发起 AA·开收」「拉个投票·开投」「起个接龙·开个头」「递张好友申请·递过去」），并配英文小邮戳副标。
+  - 业务逻辑/handler/数据零改动，纯表现层。`pnpm tsc --noEmit` clean（仅 api/ 服务端 process/Buffer 既有告警），`vite build` passes, 623 tests green。
