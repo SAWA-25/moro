@@ -178,14 +178,24 @@ const TakeoutApp: React.FC = () => {
         }
     }, [characters]);
 
-    const loadStoresAI = async () => {
+    const loadStoresAI = async (q?: string) => {
         if (!aiReady || aiLoading) return;
         setAiLoading(true);
         try {
-            const next = await generateStoresAI(api, 20); // 每批至少 20 家，实时生成
+            const next = await generateStoresAI(api, 20, q); // 每批至少 20 家，实时生成（q 时紧扣搜索词）
             setStores(next);
             try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
         } catch { /* 失败保留现有 */ } finally { setAiLoading(false); }
+    };
+
+    // 搜索栏实时生成：按搜索词现搜一批相关店铺（生成后清掉文字过滤，直接展示这批结果）
+    const searchGen = async () => {
+        const q = query.trim();
+        if (!q) return;
+        if (!aiReady) { addToast('配好副 API 才能现搜哦', 'info'); return; }
+        addToast(`正在为「${q}」现搜全城…`, 'info');
+        await loadStoresAI(q);
+        setQuery(''); setCat('全部'); setFilter({});
     };
     // 进 App：没有缓存才实时生成一批（有缓存就先看缓存，点「换一条街」再现写）
     useEffect(() => {
@@ -467,11 +477,17 @@ const TakeoutApp: React.FC = () => {
                 <div className="relative z-10 px-5 pt-2.5">
                     <div className="flex items-center gap-2 px-3 py-2 rounded-[10px]" style={paperInput}>
                         <MagnifyingGlass size={15} color={INK_SOFT} />
-                        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="翻翻铺子，找点想吃的…" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
+                        <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && query.trim()) void searchGen(); }} placeholder="搜店名/菜品/药品…回车现搜全城" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
                         <button onClick={refresh} disabled={aiLoading} className="text-[11px] font-black flex items-center gap-1 disabled:opacity-50" style={{ color: INK }}>
                             {aiLoading ? <><Sparkle size={13} weight="fill" className="animate-pulse" />现写中…</> : <><ArrowClockwise size={13} weight="bold" />{aiReady ? '现写一条街' : '另逛一条街'}</>}
                         </button>
                     </div>
+                    {/* 搜索栏实时生成：按搜索词现搜一批相关店铺 */}
+                    {query.trim() && aiReady && (
+                        <button onClick={() => void searchGen()} disabled={aiLoading} className="mt-2 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-[10px] text-[12px] font-black active:scale-[0.98] transition-transform disabled:opacity-50" style={{ background: '#d2452f', color: '#fff', boxShadow: '0 10px 18px -12px rgba(210,69,47,0.7)' }}>
+                            <MagnifyingGlass size={14} weight="bold" />为「{query.trim()}」现搜全城相关的店
+                        </button>
+                    )}
                     <button onClick={randomPick} className="mt-2.5 w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-[10px] text-[13px] font-black active:scale-[0.98] transition-transform" style={{ background: INK, color: PAPER, outline: '1px dashed rgba(255,255,255,0.32)', outlineOffset: -4, boxShadow: '0 12px 22px -14px rgba(31,29,26,0.6)' }}>
                         <Shuffle size={16} weight="bold" />抽张饭票 · 替我拿主意
                     </button>
@@ -535,7 +551,13 @@ const TakeoutApp: React.FC = () => {
                 <ScrapScroll className="px-5 pt-2 pb-10">
                     <SectionTag en="THE STREET" className="mb-3">这条街上的铺子</SectionTag>
                     {aiLoading && stores.length === 0 && <div className="text-center text-[12px] py-12 flex items-center justify-center gap-1.5" style={{ color: INK_SOFT }}><Sparkle size={16} weight="fill" className="animate-pulse" />正在一笔笔现写这条街…</div>}
-                    {filteredStores.length === 0 && !aiLoading && <div className="text-center text-[12px] py-12" style={{ color: INK_SOFT }}>这条街上没找着，换个词或点「{aiReady ? '现写一条街' : '另逛一条街'}」。</div>}
+                    {filteredStores.length === 0 && !aiLoading && (
+                        <div className="text-center text-[12px] py-12" style={{ color: INK_SOFT }}>
+                            {query.trim()
+                                ? <>没找着「{query.trim()}」，{aiReady ? <button onClick={() => void searchGen()} className="font-black underline" style={{ color: '#d2452f' }}>现搜全城</button> : '换个词试试'}。</>
+                                : <>这条街上没找着，换个词或点「{aiReady ? '现写一条街' : '另逛一条街'}」。</>}
+                        </div>
+                    )}
                     <div className="space-y-3.5">
                         {filteredStores.map((s, i) => {
                             const tape = (['amber', 'sage', 'lilac', 'butter'] as const)[i % 4];

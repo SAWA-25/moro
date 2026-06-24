@@ -76,6 +76,16 @@ const ShopApp: React.FC = () => {
         } finally { setGenBusy(false); }
     };
 
+    // 搜索栏实时生成：按搜索词现搜一批相关礼物（生成后清掉文字过滤，直接展示这批结果）
+    const searchGen = (q: string) => {
+        const term = q.trim();
+        if (!term) return;
+        if (!resolveAuxApi(auxApiConfig, apiConfig).apiKey) { addToast('配好副 API 才能现搜哦', 'info'); return; }
+        addToast(`正在为「${term}」现搜相关好物…`, 'info');
+        void generateCatalog(`请紧扣关键词「${term}」生成尽量相关的礼物（围绕该主题/场景/送礼对象/节日）`);
+        setSearch(''); setCat('all');
+    };
+
     // 进入商城：先用上次缓存（避免空白），没有缓存才实时生成；副 API 没配则回退内置目录
     useEffect(() => {
         try {
@@ -319,7 +329,7 @@ const ShopApp: React.FC = () => {
             <div className="flex-1 overflow-y-auto px-4 pb-6" style={{ scrollbarWidth: 'none' }}>
                 {tab === 'shop' && (
                     <ShopCatalog
-                        catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()}
+                        catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()} onSearchGen={searchGen}
                         cat={cat} setCat={setCat} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
                         claimedCoupons={claimedCoupons} onClaimCoupon={claimCoupon} onBuyFlash={(it, p) => buyItem(it, p)}
@@ -474,14 +484,14 @@ const ShopApp: React.FC = () => {
 
 // ── 商城目录（淘宝式：搜索 + 金刚区分类 + 月销/评分/收藏 商品卡） ──
 const ShopCatalog: React.FC<{
-    catalog: ShopItem[]; genBusy: boolean; onRefresh: () => void;
+    catalog: ShopItem[]; genBusy: boolean; onRefresh: () => void; onSearchGen: (q: string) => void;
     cat: string; setCat: (c: string) => void;
     search: string; setSearch: (s: string) => void;
     balance: number; favorites: string[];
     claimedCoupons: string[]; onClaimCoupon: (id: string) => void; onBuyFlash: (item: ShopItem, price: number) => void;
     onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     onOpenDetail: (i: ShopItem) => void; onToggleFav: (id: string) => void;
-}> = ({ catalog, genBusy, onRefresh, cat, setCat, search, setSearch, balance, favorites, claimedCoupons, onClaimCoupon, onBuyFlash, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
+}> = ({ catalog, genBusy, onRefresh, onSearchGen, cat, setCat, search, setSearch, balance, favorites, claimedCoupons, onClaimCoupon, onBuyFlash, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
     const home = cat === 'all' && !search.trim(); // 首页态才展示 banner / 秒杀 / 猜你喜欢
     const items = useMemo(() => {
         if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x);
@@ -501,7 +511,8 @@ const ShopCatalog: React.FC<{
                     <MagnifyingGlass size={16} weight="bold" className="text-[#c2755a] shrink-0" />
                     <input
                         value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="搜点什么送给 TA…"
+                        onKeyDown={e => { if (e.key === 'Enter' && search.trim()) onSearchGen(search); }}
+                        placeholder="搜礼物 · 回车现搜相关好物…"
                         className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-[#c9b3a8] min-w-0"
                     />
                     {search && <button onClick={() => setSearch('')} className="text-[#c9b3a8] text-sm shrink-0 active:opacity-60">✕</button>}
@@ -511,6 +522,13 @@ const ShopCatalog: React.FC<{
                     <Sparkle size={13} weight="fill" />{genBusy ? '上新中' : '换一批'}
                 </button>
             </div>
+            {/* 搜索栏实时生成：按搜索词现搜一批相关礼物 */}
+            {search.trim() && (
+                <button onClick={() => onSearchGen(search)} disabled={genBusy}
+                    className="w-full mb-2.5 inline-flex items-center justify-center gap-1.5 py-2 rounded-full bg-[#fff1ee] text-[#e84e2f] border border-[#ffd9cf] text-[12px] font-bold active:scale-[0.98] transition-transform disabled:opacity-60">
+                    <MagnifyingGlass size={14} weight="bold" />为「{search.trim()}」现搜相关好物
+                </button>
+            )}
             {/* 首页营销位：banner 轮播 + 领券 + 限时秒杀 */}
             {home && (
                 <>

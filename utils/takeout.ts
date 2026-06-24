@@ -27,7 +27,7 @@ const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-export const CATS = ['中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
+export const CATS = ['中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉', '药品'];
 
 // ── 店铺 / 菜品 种子库 ────────────────────────────────────────────
 interface StoreSeed { name: string; emoji: string; category: string; dishes: [string, number, string?][]; }
@@ -221,16 +221,18 @@ interface AiStoreRaw {
  * 让 AI 现场生成一批外卖店（含菜品、价格、店铺公告、隐藏良心值）。
  * 失败 / 未配 API 时回退到本地种子 generateStores()。
  */
-export async function generateStoresAI(api: ResolvedApi, count = 12): Promise<TakeoutStore[]> {
+export async function generateStoresAI(api: ResolvedApi, count = 12, query?: string): Promise<TakeoutStore[]> {
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     if (!baseUrl || !api.model) return generateStores(count);
+    const q = (query || '').trim();
     const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
-要求（越像真的越好，别像广告）：
+${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧扣「${q}」——主营该菜品/品类/口味/场景（店名、招牌菜都要相关），让用户一搜就搜到对的店。\n` : ''}要求（越像真的越好，别像广告）：
 - 店名要有烟火气、有记忆点：可带店主姓氏 / 街巷地名 / 老字号味（如「城西巷·阿婆糖水」「老周烧腊」「深夜两点面」），别千篇一律。
 - 大多数是踏实经营的良心店；但务必混进 2~3 家「黑心铺子」：缺斤少两、图文严重不符、后厨卫生堪忧、专靠超低价促销坑新客、甚至收了钱迟迟不接单。黑心店 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
 - 黑心店有的会露出马脚（warning，如「近期卫生差评偏多·谨慎」「多人反馈缺斤少两」「差评回复阴阳怪气」），有的伪装得好（虚高分刷单、夸张满减引流）就把 warning 留空，专坑没防备的人。
-- 每家 5~9 道菜，菜名与定价贴合该品类与现实（¥3~¥88），口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的食物 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
-- blurb 是店主写在招牌上的一句话（≤20 字，有人味，如「慢工出细活，急单请改期」「老板娘手抖，料给得多」）。emoji 是这家的门脸 logo（一个食物 emoji）。category 必须取自给定品类。
+- 每家 5~9 道菜/商品，名称与定价贴合该品类与现实，口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
+- **药品 品类＝药店（24h/连锁/社区药房）**：卖非处方药与医疗用品（感冒灵颗粒、布洛芬、连花清瘟、创可贴、医用口罩、维C、健胃消食片、退热贴、酒精棉片…），价格按现实（¥3~¥68），desc 写适应症/规格（「感冒发热」「24粒装」），emoji 用 💊🩹😷🧴 之类；${q && /药|病|感冒|发烧|咳|止|创可贴|口罩|维|消炎|退/.test(q) ? '本次搜索与买药相关，请多生成几家药店。' : '正常批次里也放 1~2 家药店。'}
+- blurb 是店主写在招牌上的一句话（≤20 字，有人味）。emoji 是门脸 logo（一个 emoji）。category 必须取自给定品类。
 只输出 JSON，不要任何解释或前后缀，格式：
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
     try {

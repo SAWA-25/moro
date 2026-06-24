@@ -172,3 +172,8 @@ pm run build passes after the time-gap grouping fix.
   - **满减 + 红包落地**: 结算页明细新增「店铺满减」「平台红包」两行抵扣，实付按 `storePromoDiscount + bestRedpacket` 扣减（`placeOrder` 同步）。`takeoutRedpackets` 存已领红包。
   - **店内菜单分组**: 菜牌按 `groupDishes` 分「招牌/主食/饮品/小食/汤…」分组展示（含每组计数）。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 565 unit tests green (7 new).
+
+- 搜索栏实时生成 + 饭票·药品栏目:
+  - **饭票/心意铺 搜索即现搜**: 输入关键词回车（或点 CTA）就实时生成一批**紧扣该词**的相关结果——饭票现搜全城相关店铺（`generateStoresAI(api, 20, query)` 的 prompt 加了「本次搜 X，让这批都紧扣 X」），心意铺现搜相关礼物（`generateCatalog` 传强关键词 hint）；生成后清掉文字过滤直接展示这批结果。空结果态也给「现搜全城」入口。
+  - **饭票·药品栏目**: `CATS` 加入「药品」品类（顶部多一个药品 chip）；`generateStoresAI` 的 prompt 增加「药品＝药店」规则（卖感冒灵/布洛芬/连花清瘟/创可贴/口罩/维C 等非处方药与医疗用品，价格/规格/emoji 贴现实），正常批次放 1~2 家药店、搜买药相关词时多生成几家。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 565 unit tests green.
