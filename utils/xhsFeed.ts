@@ -105,9 +105,19 @@ const salvageObjects = (s: string): any[] => {
 
 /** 剥离 ```json 围栏后解析 JSON；失败时截取首个 [ … ] 区间再解析；仍失败则按完整对象兜底打捞
  *  （帖子多/评论多时一旦被 max_tokens 截断，整批 JSON 不再合法——兜底能保住已完成的那部分帖子）。 */
+/** 若模型把数组包进了对象（如 {"posts":[…]} / {"feed":[…]}），取出其中第一个数组属性。 */
+const unwrapArray = (v: any): any => {
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === 'object') {
+        const arr = Object.values(v).find(x => Array.isArray(x));
+        if (Array.isArray(arr)) return arr;
+    }
+    return v;
+};
+
 const parseJsonLoose = (raw: string): any => {
     let text = raw.replace(/```(?:json)?/gi, '').trim();
-    try { return JSON.parse(text); } catch { /* fallthrough */ }
+    try { return unwrapArray(JSON.parse(text)); } catch { /* fallthrough */ }
     const start = text.indexOf('[');
     const end = text.lastIndexOf(']');
     if (start >= 0 && end > start) {
@@ -115,6 +125,12 @@ const parseJsonLoose = (raw: string): any => {
     }
     if (start >= 0) {
         const objs = salvageObjects(text.slice(start + 1));
+        if (objs.length) return objs;
+    }
+    // 整体没有 [ … ]，但可能是 {"posts":[…]} 被截断：从首个 { 后打捞完整对象
+    const objStart = text.indexOf('{');
+    if (objStart >= 0) {
+        const objs = salvageObjects(text.slice(objStart));
         if (objs.length) return objs;
     }
     throw new Error('生成结果不是合法 JSON');
@@ -155,7 +171,7 @@ ${topics.join('、')}
 ## 要求
 - 一次生成 ${FEED_BATCH_SIZE} 条帖子：其中角色帖 ${chars.length ? `${charPostCount} 条左右（作者从上面角色里选，author 必须与角色名完全一致，isCharacter=true，不要重复同一个角色超过 3 条）` : '0 条'}，其余为 NPC 帖（虚构形形色色的普通小红薯：学生、上班族、宝妈、店主、博主、自由职业者、退休阿姨等，isCharacter=false，昵称要像真实小红书用户）。
 - 帖子题材要拉开差距、尽量覆盖更多不同话题/圈子：日常碎片、美食探店、穿搭、旅行、情绪树洞、搞钱副业、学习考证、宠物、家居改造、二手交易、兴趣手作、追剧追番、健身、数码测评、母婴、职场、恋爱情感、运动户外等，文风像真实小红书（口语化、带 emoji、适当换行）。
-- title ≤ 20 字；body 80~300 字；tags 4~8 个（不带 # 号，尽量贴合上面的话题或题材，方便聚合成圈）；likes 为 0~9999 的整数，分布要自然（大多数几十到几百，偶有爆款上千）。
+- title 简短有钩子、body 自然展开（想写多长写多长，不限字数，像真实小红书那样该长则长该短则短）；tags 4~8 个（不带 # 号，尽量贴合上面的话题或题材，方便聚合成圈）；likes 为 0~9999 的整数，分布要自然（大多数几十到几百，偶有爆款上千）。
 - 每条帖子带 8~16 条评论（让热门帖更有「评论区」氛围）：author 为虚构昵称，content 口语化、有互动感，可以有人附和、提问、玩梗、抬杠、盖楼；其中可有 1~2 条「热评」likes 偏高（几十到几百），其余 likes 0~500。
 - 只输出 JSON 数组，不要任何解释或围栏外文字。格式：
 [{"author":"昵称","isCharacter":false,"title":"…","body":"…","tags":["…"],"likes":123,"comments":[{"author":"…","content":"…","likes":3}]}]`;
@@ -195,7 +211,7 @@ export const generateFeedBatch = async (
             ? p.comments.slice(0, FEED_COMMENTS_PER_POST).map((cm: any): XhsFeedComment => ({
                 id: uid(),
                 author: String(cm?.author || '小红薯').slice(0, 24),
-                content: String(cm?.content || '').slice(0, 500),
+                content: String(cm?.content || '').trim(),
                 likes: Math.max(0, Math.floor(Number(cm?.likes) || 0)),
                 timestamp: now - Math.floor(Math.random() * 86400000),
             })).filter((cm: XhsFeedComment) => cm.content)
@@ -206,8 +222,8 @@ export const generateFeedBatch = async (
             charId: matched?.id,
             author: matched?.name || authorName,
             authorAvatar: matched?.avatar,
-            title: String(p?.title || '').slice(0, 40) || '（无标题）',
-            body: String(p?.body || '').slice(0, 2000),
+            title: String(p?.title || '').trim() || '（无标题）',
+            body: String(p?.body || '').trim(),
             tags: Array.isArray(p?.tags) ? p.tags.slice(0, 8).map((t: any) => String(t).replace(/^#/, '').slice(0, 20)).filter(Boolean) : [],
             coverUrl: pickCover(),
             likes: Math.max(0, Math.floor(Number(p?.likes) || 0)),
@@ -233,7 +249,7 @@ export const generateAuthorReply = async (
     const raw = await callLlm(
         apiConfig,
         `${personaLine}
-只输出回复文本本身（≤80 字，口语化，可带 emoji），不要任何前缀、引号或解释。`,
+只输出回复文本本身（口语化、可长可短、可带 emoji），不要任何前缀、引号或解释。`,
         `你的帖子《${post.title}》正文：${post.body.slice(0, 400)}
 
 「${userProfile.name}」刚刚评论了：「${userComment}」
@@ -244,7 +260,7 @@ export const generateAuthorReply = async (
         id: uid(),
         author: post.author,
         charId: post.charId,
-        content: raw.replace(/^["「『]|["」』]$/g, '').slice(0, 200) || '谢谢你的评论～',
+        content: raw.replace(/^["「『]|["」』]$/g, '').trim() || '谢谢你的评论～',
         likes: 0,
         timestamp: Date.now(),
     };

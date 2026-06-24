@@ -2657,12 +2657,12 @@ ${attachedImagesNote}
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
                                         {/* 「此刻」TA 的线下生活状态：把线下自主生活带进列表，线上线下一眼关联 */}
                                         {cv.lifeStatus && (
-                                            <div className="flex items-center gap-1.5 mt-1">
-                                                <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
+                                            <div className="flex items-start gap-1.5 mt-1">
+                                                <span className="relative flex h-1.5 w-1.5 shrink-0 mt-[5px]" aria-hidden>
                                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
                                                     <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500/80" />
                                                 </span>
-                                                <span className="text-[10px] text-emerald-700/70 truncate min-w-0">此刻 · {cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}</span>
+                                                <span className="text-[10px] text-emerald-700/70 leading-snug min-w-0 break-words">此刻 · {cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}</span>
                                             </div>
                                         )}
                                     </div>

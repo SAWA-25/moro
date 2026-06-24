@@ -185,7 +185,11 @@ const TakeoutApp: React.FC = () => {
             const next = await generateStoresAI(api, 20, q); // 每批至少 20 家，实时生成（q 时紧扣搜索词）
             setStores(next);
             try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-        } catch { /* 失败保留现有 */ } finally { setAiLoading(false); }
+            addToast(q ? `为「${q}」现搜到 ${next.length} 家` : `现写了 ${next.length} 家店`, 'success');
+        } catch {
+            // 失败明确提示并保留现有列表（不静默回退离线种子冒充成功）
+            addToast('现写没成功，要不再点一次现写？', 'error');
+        } finally { setAiLoading(false); }
     };
 
     // 搜索栏实时生成：按搜索词现搜一批相关店铺（生成后清掉文字过滤，直接展示这批结果）

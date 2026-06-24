@@ -155,7 +155,7 @@ export function buildForumPrompt(
 ${roster || '（暂无实名角色）'}
 
 请生成 ${count} 条跟帖（这是第 ${startFloor}~${endFloor} 楼）：其中若干条来自上面的实名角色（用其本名、合乎人设地回应），其余来自匿名网友（你为每位现编一个有网感的网名，可重复出现像在对话）。
-- 每条不超过 40 字，自然、有梗、不复读、有来有回；
+- 口语、自然、有梗、不复读、有来有回，长短随意、不限字数；
 - 让其中 2~4 条带 "reply_to" 字段（楼中楼，回复前面某位网友的名字），形成对话感；
 只输出一个 JSON 数组，不要任何多余文字或代码块标记：
 [{"name":"网友名","body":"跟帖内容","reply_to":"（可选）被回复者网名"}]`;
@@ -172,7 +172,7 @@ export function parseForumReplies(raw: string): RawReply[] {
         if (!Array.isArray(arr)) return [];
         return arr
             .map((x: any) => {
-                const o: RawReply = { name: String(x?.name || '').trim().slice(0, 16), body: String(x?.body || '').trim().slice(0, 80) };
+                const o: RawReply = { name: String(x?.name || '').trim().slice(0, 24), body: String(x?.body || '').trim() };
                 const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
                 if (rt) o.reply_to = rt;
                 return o;
@@ -187,7 +187,7 @@ export function buildCharThreadPrompt(char: CharBrief): { system: string; user: 
     const boards = FORUM_BOARDS.map(b => `${b.id}（${b.emoji}${b.name}：${b.desc}）`).join('、');
     const system = `你是「${char.name}」，正打算上论坛发个帖子。请完全代入人设。${char.persona ? `\n【人设】${char.persona.slice(0, 400)}` : ''}`;
     const user = `从这些板块里挑一个最贴合你此刻心情的：${boards}。
-然后以你的口吻发一个帖子（标题 18 字内、正文 60 字内，自然、像真人随手发的，不要太正式）。
+然后以你的口吻发一个帖子（标题简短有钩子、正文自然展开、长短随意不限字数，像真人随手发的，不要太正式）。
 只输出一个 JSON，不要多余文字或代码块标记：
 {"boardId":"板块 id","title":"标题","body":"正文"}`;
     return { system, user };
@@ -200,10 +200,10 @@ export function parseCharThread(raw: string): { boardId: string; title: string; 
     if (s === -1 || e === -1 || e <= s) return null;
     try {
         const o = JSON.parse(txt.slice(s, e + 1));
-        const title = String(o?.title || '').trim().slice(0, 40);
+        const title = String(o?.title || '').trim().slice(0, 200);
         if (!title) return null;
         const boardId = boardOf(String(o?.boardId || '').trim()) ? String(o.boardId).trim() : 'chat';
-        return { boardId, title, body: String(o?.body || '').trim().slice(0, 200) };
+        return { boardId, title, body: String(o?.body || '').trim() };
     } catch { return null; }
 }
 
@@ -273,7 +273,7 @@ export function buildThreadsPrompt(
 ${roster || '（暂无实名角色）'}
 
 请一次性生成 ${count} 个不同的帖子，彼此话题不重复、长短不一：
-- 标题 ≤ 20 字，正文 ≤ 70 字；
+- 标题简短有钩子、正文自然展开，长短随意、不限字数；
 - 给每个帖子一个 "floors" 字段，表示这个帖子大概盖了多少楼（30~588 的整数，多数 30~150、少数爆楼几百）；
 - 多数帖子作者是匿名网友（你现编有网感的网名），1~2 个可由上面实名角色发（把 author 写成其本名）。
 只输出一个 JSON 数组，不要任何多余文字或代码块标记：
@@ -296,9 +296,9 @@ export function parseThreads(raw: string): RawThread[] {
                 const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
                 const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
                 return {
-                    author: String(x?.author || '').trim().slice(0, 16),
-                    title: String(x?.title || '').trim().slice(0, 40),
-                    body: String(x?.body || '').trim().slice(0, 160),
+                    author: String(x?.author || '').trim().slice(0, 24),
+                    title: String(x?.title || '').trim().slice(0, 200),
+                    body: String(x?.body || '').trim(),
                     floors, likes,
                 };
             })

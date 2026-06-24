@@ -196,3 +196,14 @@ pm run build passes after the time-gap grouping fix.
   - **界面革新**: 顶栏日/行动点/皇嗣/宠冠状态条、差评卡描红、AI 拟旨「朱笔御批·拟旨中…」loader、妃嫔台词气泡、选秀底抽屉、史官卷轴结局；保留椒房宫红×金主色。
   - 纯逻辑全进 `utils/haremGame.ts`，`utils/haremGame.test.ts` +11（受孕/临盆/选秀/头衔/AI 解析/兜底）。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 588 unit tests green (11 new)。
+
+- 杂项修复（5 项）：桌面小组件页 / 饭票心意铺现写无反应 / 茶话亭见闻簿字数限制 / 自主生活标签截断 / 见闻簿生成失败:
+  - **删桌面第四页**：Launcher 移除「日历 + Upcoming Events」小组件页（`WidgetsPage` 组件 + 渲染 + `totalPages` -1 + 清理 `anniversaries` 取数/状态/import）。
+  - **饭票/心意铺「现写无反应只剩离线店」根因＝截断后静默回退**：
+    - `utils/shop.ts` 新增 `salvageObjects`：整体 JSON.parse 失败时逐个抠出完整 `{…}` 救回（被 max_tokens 截断也不整批丢），`parseGeneratedItems`/`parseGeneratedReviews` 改用它。
+    - 心意铺 `generateCatalog` 删掉「不足 20 件就拿内置商品补足」的假成功逻辑（之前截断→0 件→被内置商品垫场冒充上新）；解析为 0 改为明确报错让用户重试；`maxTokens` 2200→6000。
+    - 饭票 `generateStoresAI`：`max_tokens` 3200→8000、改用 `extractContent`、解析为 0 **抛错**而非静默回退本地种子；`loadStoresAI` 成功/失败都给 toast、失败保留现有列表。
+  - **删字数限制**：茶话亭（`forum.ts` 跟帖/标题/正文 parse 去掉 `.slice` 硬截断、prompt 去掉「≤N字」；`ForumApp` 发帖输入去掉 `maxLength`）+ 见闻簿（`xhsFeed.ts` 标题/正文/评论/回复 parse 去截断、prompt 去「title≤20/body80~300字、回复≤80字」；`SocialApp` 转发去截断）。
+  - **见闻簿生成失败**：`xhsFeed.ts` `parseJsonLoose` 新增 `unwrapArray`——模型把数组包进 `{"posts":[…]}` 时取出其中数组（之前返回对象→`generateFeedBatch` 抛「生成结果为空」），并加无 `[` 时从首个 `{` 打捞兜底。
+  - **自主生活标签截断**：`ChatHub` 聊天列表「此刻 · …」状态从单行 `truncate` 改为 `items-start + 多行 break-words`，完整显示不再被切。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 589 unit tests green（+1：商品截断打捞）。

@@ -61,11 +61,16 @@ const ShopApp: React.FC = () => {
         try {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
             const { system, user } = buildGenerateItemsPrompt(22, hint);
-            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 2200 });
-            let items = parseGeneratedItems(raw);
-            // 解析不足时用内置商品补足，保证「至少 20 件」的体验
-            if (items.length < 20) items = [...items, ...SHOP_ITEMS.filter(s => !items.some(i => i.name === s.name))];
-            if (items.length === 0) { setCatalog(prev => (prev.length ? prev : SHOP_ITEMS)); return; }
+            // 给足 token：22 件带评分/文案的商品 JSON 容易被旧的 2200 截断 → 解析为 0 → 被内置商品垫场，
+            // 表现为「调了 API 却只有离线商品」。提到 6000 基本能完整生成一整批。
+            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 6000 });
+            const items = parseGeneratedItems(raw);
+            // 解析为 0 = 真·失败（截断/格式坏），明确报错让用户重试，绝不悄悄用内置商品冒充「上新成功」。
+            if (items.length === 0) {
+                setCatalog(prev => (prev.length ? prev : SHOP_ITEMS));
+                addToast('上新没成功，要不再点一次？', 'error');
+                return;
+            }
             registerShopItems(items);
             setCatalog(items);
             try { localStorage.setItem(CATALOG_KEY, JSON.stringify(items)); } catch { /* ignore */ }
