@@ -3063,10 +3063,12 @@ export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer
 export interface ShopItem {
     id: string;
     name: string;
-    emoji: string;          // 礼物图标（emoji）
+    emoji: string;          // 礼物图标（emoji）；没有真实图片时作为「文字图」展示
     price: number;          // 价格（元）
     category: string;       // 分类 key
     blurb: string;          // 一句话描述
+    image?: string;         // 真实商品图 URL（AI 生成/有图时填，渲染时优先用图，否则用 emoji 文字图）
+    generated?: boolean;    // 是否 AI 实时生成（区分内置兜底商品）
 }
 
 /** 购物商城：背包里拥有的一件物品（user 买下但还没送出去的）。 */

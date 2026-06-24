@@ -8,7 +8,9 @@ import {
     buildGiftCardMeta, getShopItem, receiptLine, buildCharShopPrompt, parseCharShopDecision,
     emitShopUpdated, SHOP_UPDATED_EVENT,
     addToCart, setCartQty, cartCount, cartTotal, resolveCart, expandCart,
-    monthlySales, formatSales, itemRating, getItemReviews, searchShopItems,
+    monthlySales, formatSales, itemRating, getItemReviews,
+    registerShopItems, buildGenerateItemsPrompt, parseGeneratedItems,
+    buildItemReviewsPrompt, parseGeneratedReviews, type ShopReview,
 } from '../utils/shop';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
@@ -23,6 +25,8 @@ const ShopApp: React.FC = () => {
     const [cat, setCat] = useState<string>('all');
     const [search, setSearch] = useState('');
     const [detailItem, setDetailItem] = useState<ShopItem | null>(null);
+    const [catalog, setCatalog] = useState<ShopItem[]>([]);
+    const [genBusy, setGenBusy] = useState(false);
     const [, forceTick] = useState(0);
 
     // 别处（聊天回赠等）改了商城数据时刷新
@@ -43,6 +47,52 @@ const ShopApp: React.FC = () => {
         const next = fav.includes(itemId) ? fav.filter(x => x !== itemId) : [itemId, ...fav];
         updateUserProfile({ shopFavorites: next });
         addToast(fav.includes(itemId) ? '已取消收藏' : '已收藏 ❤️', 'success');
+    };
+
+    // ── 商品 AI 实时生成（每批 ≥20 件；缓存到本地，「换一批」可刷新） ──
+    const CATALOG_KEY = 'moro_shop_catalog_v1';
+    const generateCatalog = async (hint?: string) => {
+        if (genBusy) return;
+        setGenBusy(true);
+        try {
+            const api = resolveAuxApi(auxApiConfig, apiConfig);
+            const { system, user } = buildGenerateItemsPrompt(22, hint);
+            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 2200 });
+            let items = parseGeneratedItems(raw);
+            // 解析不足时用内置商品补足，保证「至少 20 件」的体验
+            if (items.length < 20) items = [...items, ...SHOP_ITEMS.filter(s => !items.some(i => i.name === s.name))];
+            if (items.length === 0) { setCatalog(prev => (prev.length ? prev : SHOP_ITEMS)); return; }
+            registerShopItems(items);
+            setCatalog(items);
+            try { localStorage.setItem(CATALOG_KEY, JSON.stringify(items)); } catch { /* ignore */ }
+            addToast(`上新 ${items.length} 件好物`, 'success');
+        } catch {
+            setCatalog(prev => (prev.length ? prev : SHOP_ITEMS));
+            addToast('上新失败，先逛逛内置好物', 'error');
+        } finally { setGenBusy(false); }
+    };
+
+    // 进入商城：先用上次缓存（避免空白），没有缓存才实时生成；副 API 没配则回退内置目录
+    useEffect(() => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(CATALOG_KEY) || 'null');
+            if (Array.isArray(cached) && cached.length) { setCatalog(cached); registerShopItems(cached); return; }
+        } catch { /* ignore */ }
+        if (resolveAuxApi(auxApiConfig, apiConfig).apiKey) void generateCatalog();
+        else setCatalog(SHOP_ITEMS);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // 商品详情页·评价：实时生成（失败 / 无 API 回退到内置 seeded 评价）
+    const genReviews = async (item: ShopItem): Promise<ShopReview[]> => {
+        try {
+            const api = resolveAuxApi(auxApiConfig, apiConfig);
+            if (!api.apiKey) return getItemReviews(item.id);
+            const { system, user } = buildItemReviewsPrompt(item, 4);
+            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 600 });
+            const rv = parseGeneratedReviews(raw);
+            return rv.length ? rv : getItemReviews(item.id);
+        } catch { return getItemReviews(item.id); }
     };
 
     // ── 购买（直接进背包） ──
@@ -234,6 +284,7 @@ const ShopApp: React.FC = () => {
             <div className="flex-1 overflow-y-auto px-4 pb-6" style={{ scrollbarWidth: 'none' }}>
                 {tab === 'shop' && (
                     <ShopCatalog
+                        catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()}
                         cat={cat} setCat={setCat} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
                         onBuy={buyItem} onAddCart={addItemToCart}
@@ -303,6 +354,7 @@ const ShopApp: React.FC = () => {
             {detailItem && (
                 <ProductDetail
                     item={detailItem} faved={favorites.includes(detailItem.id)} balance={balance}
+                    genReviews={genReviews}
                     onClose={() => setDetailItem(null)} onToggleFav={toggleFav}
                     onAddCart={addItemToCart} onBuy={buyItem}
                 />
@@ -376,21 +428,26 @@ const ShopApp: React.FC = () => {
 
 // ── 商城目录（淘宝式：搜索 + 金刚区分类 + 月销/评分/收藏 商品卡） ──
 const ShopCatalog: React.FC<{
+    catalog: ShopItem[]; genBusy: boolean; onRefresh: () => void;
     cat: string; setCat: (c: string) => void;
     search: string; setSearch: (s: string) => void;
     balance: number; favorites: string[];
     onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     onOpenDetail: (i: ShopItem) => void; onToggleFav: (id: string) => void;
-}> = ({ cat, setCat, search, setSearch, balance, favorites, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
+}> = ({ catalog, genBusy, onRefresh, cat, setCat, search, setSearch, balance, favorites, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
     const items = useMemo(() => {
-        let list = search.trim() ? searchShopItems(search) : SHOP_ITEMS;
-        if (cat === 'fav') list = list.filter(i => favorites.includes(i.id));
-        else if (cat !== 'all') list = list.filter(i => i.category === cat);
+        if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x);
+        let list = catalog;
+        const q = search.trim().toLowerCase();
+        if (q) list = list.filter(i =>
+            i.name.toLowerCase().includes(q) || i.blurb.toLowerCase().includes(q) ||
+            (SHOP_CATEGORIES.find(c => c.key === i.category)?.label || '').includes(q) || i.emoji.includes(q));
+        if (cat !== 'all') list = list.filter(i => i.category === cat);
         return list;
-    }, [cat, search, favorites]);
+    }, [cat, search, favorites, catalog]);
     return (
         <>
-            {/* 搜索条（淘宝式胶囊） */}
+            {/* 搜索条（淘宝式胶囊）+ 换一批（AI 实时上新） */}
             <div className="flex items-center gap-2 mb-2.5 -mt-1">
                 <div className="flex-1 flex items-center gap-2 bg-white rounded-full px-3.5 py-2 shadow-sm border border-rose-100">
                     <MagnifyingGlass size={16} weight="bold" className="text-[#c2755a] shrink-0" />
@@ -401,6 +458,10 @@ const ShopCatalog: React.FC<{
                     />
                     {search && <button onClick={() => setSearch('')} className="text-[#c9b3a8] text-sm shrink-0 active:opacity-60">✕</button>}
                 </div>
+                <button onClick={onRefresh} disabled={genBusy}
+                    className="shrink-0 px-3 py-2 rounded-full bg-gradient-to-r from-[#ff6034] to-[#ee0a24] text-white text-[12px] font-bold active:scale-95 transition-transform disabled:opacity-60 flex items-center gap-1">
+                    <Sparkle size={13} weight="fill" />{genBusy ? '上新中' : '换一批'}
+                </button>
             </div>
             {/* 分类金刚区 + 收藏 */}
             <div className="flex gap-2 overflow-x-auto pb-2.5 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
@@ -411,8 +472,13 @@ const ShopCatalog: React.FC<{
                     </button>
                 ))}
             </div>
-            {items.length === 0 ? (
-                <div className="text-center text-[#b89a8c] text-xs pt-16">{cat === 'fav' ? '还没有收藏，点商品上的 ❤️ 收起来' : '没找到相关商品'}</div>
+            {genBusy && items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-[#c2755a] gap-3 pt-20">
+                    <div className="w-8 h-8 border-[3px] border-rose-200 border-t-[#c2755a] rounded-full animate-spin" />
+                    <div className="text-xs">正在为你实时上新好物…</div>
+                </div>
+            ) : items.length === 0 ? (
+                <div className="text-center text-[#b89a8c] text-xs pt-16">{cat === 'fav' ? '还没有收藏，点商品上的 ❤️ 收起来' : '没找到相关商品，点「换一批」试试'}</div>
             ) : (
                 <div className="grid grid-cols-2 gap-3">
                     {items.map(item => {
@@ -420,9 +486,11 @@ const ShopCatalog: React.FC<{
                         const faved = favorites.includes(item.id);
                         return (
                             <div key={item.id} className="rounded-2xl bg-white flex flex-col shadow-sm border border-rose-50 overflow-hidden">
-                                {/* 主图（emoji 大图）+ 收藏角标，点开详情 */}
+                                {/* 主图（有图用图，否则 emoji 文字图）+ 收藏角标，点开详情 */}
                                 <div className="relative cursor-pointer" onClick={() => onOpenDetail(item)}>
-                                    <div className="text-[44px] text-center leading-none pt-3 pb-1.5 select-none bg-gradient-to-b from-[#fff7f2] to-white">{item.emoji}</div>
+                                    {item.image
+                                        ? <img src={item.image} className="w-full h-[92px] object-cover" alt="" loading="lazy" />
+                                        : <div className="text-[44px] text-center leading-none pt-3 pb-1.5 select-none bg-gradient-to-b from-[#fff7f2] to-white">{item.emoji}</div>}
                                     <button
                                         onClick={(e) => { e.stopPropagation(); onToggleFav(item.id); }}
                                         className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/80 backdrop-blur flex items-center justify-center active:scale-90 transition-transform shadow-sm">
@@ -462,10 +530,17 @@ const ShopCatalog: React.FC<{
 // ── 商品详情页（淘宝式 PDP：大图 + 月销/评分 + 收藏 + 评价 + 加购/立即购买） ──
 const ProductDetail: React.FC<{
     item: ShopItem; faved: boolean; balance: number;
+    genReviews: (item: ShopItem) => Promise<ShopReview[]>;
     onClose: () => void; onToggleFav: (id: string) => void;
     onAddCart: (i: ShopItem) => void; onBuy: (i: ShopItem) => void;
-}> = ({ item, faved, balance, onClose, onToggleFav, onAddCart, onBuy }) => {
-    const reviews = useMemo(() => getItemReviews(item.id), [item.id]);
+}> = ({ item, faved, balance, genReviews, onClose, onToggleFav, onAddCart, onBuy }) => {
+    const [reviews, setReviews] = useState<ShopReview[] | null>(null);
+    useEffect(() => {
+        let alive = true;
+        setReviews(null);
+        genReviews(item).then(rv => { if (alive) setReviews(rv); }).catch(() => { if (alive) setReviews(getItemReviews(item.id)); });
+        return () => { alive = false; };
+    }, [item.id]);
     const afford = balance >= item.price;
     return (
         <div className="absolute inset-0 z-[60] flex flex-col bg-[#f7eee8] animate-fade-in">
@@ -475,8 +550,10 @@ const ProductDetail: React.FC<{
                 <span className="font-black text-[#7a4a38] text-[15px]">商品详情</span>
             </div>
             <div className="flex-1 overflow-y-auto px-4 pb-4" style={{ scrollbarWidth: 'none' }}>
-                {/* 主图 */}
-                <div className="rounded-3xl bg-gradient-to-b from-[#fff7f2] to-white flex items-center justify-center text-[110px] leading-none py-8 shadow-sm border border-rose-50 select-none">{item.emoji}</div>
+                {/* 主图（有图用图，否则 emoji 文字大图） */}
+                {item.image
+                    ? <img src={item.image} className="w-full h-60 object-cover rounded-3xl shadow-sm border border-rose-50" alt="" />
+                    : <div className="rounded-3xl bg-gradient-to-b from-[#fff7f2] to-white flex items-center justify-center text-[110px] leading-none py-8 shadow-sm border border-rose-50 select-none">{item.emoji}</div>}
                 {/* 价格 + 标题 */}
                 <div className="mt-3 rounded-2xl bg-white p-4 shadow-sm border border-rose-50">
                     <div className="flex items-end gap-2">
@@ -486,23 +563,29 @@ const ProductDetail: React.FC<{
                     <div className="text-[15px] font-black text-[#5a3a2e] mt-1.5">{item.name}</div>
                     <div className="text-[12px] text-[#a98c7e] leading-relaxed mt-1">{item.blurb}</div>
                 </div>
-                {/* 评价 */}
+                {/* 评价（AI 实时生成） */}
                 <div className="mt-3 rounded-2xl bg-white p-4 shadow-sm border border-rose-50">
-                    <div className="text-[13px] font-black text-[#7a4a38] mb-2.5">宝贝评价（{reviews.length}）</div>
-                    <div className="space-y-3">
-                        {reviews.map((r, i) => (
-                            <div key={i} className="flex gap-2.5">
-                                <div className="w-7 h-7 rounded-full bg-rose-100 text-[#c2755a] flex items-center justify-center text-[11px] font-black shrink-0">{r.user[0]}</div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="text-[11px] font-bold text-[#7a4a38]">{r.user}</span>
-                                        <span className="flex">{Array.from({ length: 5 }).map((_, k) => <Star key={k} size={9} weight="fill" className={k < r.stars ? 'text-amber-400' : 'text-slate-200'} />)}</span>
+                    <div className="text-[13px] font-black text-[#7a4a38] mb-2.5">宝贝评价{reviews ? `（${reviews.length}）` : ''}</div>
+                    {reviews === null ? (
+                        <div className="flex items-center justify-center gap-2 py-4 text-[11px] text-[#b89a8c]">
+                            <span className="w-3.5 h-3.5 border-2 border-rose-200 border-t-[#c2755a] rounded-full animate-spin" />正在生成真实买家评价…
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {reviews.map((r, i) => (
+                                <div key={i} className="flex gap-2.5">
+                                    <div className="w-7 h-7 rounded-full bg-rose-100 text-[#c2755a] flex items-center justify-center text-[11px] font-black shrink-0">{r.user[0]}</div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-[11px] font-bold text-[#7a4a38]">{r.user}</span>
+                                            <span className="flex">{Array.from({ length: 5 }).map((_, k) => <Star key={k} size={9} weight="fill" className={k < r.stars ? 'text-amber-400' : 'text-slate-200'} />)}</span>
+                                        </div>
+                                        <div className="text-[12px] text-[#5a3a2e] leading-snug mt-0.5">{r.text}</div>
                                     </div>
-                                    <div className="text-[12px] text-[#5a3a2e] leading-snug mt-0.5">{r.text}</div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
             {/* 底部操作条 */}

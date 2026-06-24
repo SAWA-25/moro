@@ -68,7 +68,44 @@ export const SHOP_ITEMS: ShopItem[] = [
     { id: 'fireworks', name: '一场烟花', emoji: '🎆', price: 520, category: 'romance', blurb: '为你专门放一次。' },
 ];
 
-export const getShopItem = (id: string): ShopItem | undefined => SHOP_ITEMS.find(i => i.id === id);
+// ── 动态商品注册表（AI 实时生成的商品）──────────────────────────────────────
+// 商品改成 AI 实时生成后，购物车/收藏/小票里存的是 itemId；为了让这些 id 在「换一批」或
+// 重新打开后仍能解析出商品，把见过的所有生成商品登记在这里，并持久化到 localStorage。
+const DYNAMIC_ITEMS_KEY = 'moro_shop_dynamic_items_v1';
+let _dynamicItems: Map<string, ShopItem> | null = null;
+
+const loadDynamicItems = (): Map<string, ShopItem> => {
+    if (_dynamicItems) return _dynamicItems;
+    _dynamicItems = new Map();
+    try {
+        const raw = localStorage.getItem(DYNAMIC_ITEMS_KEY);
+        if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) for (const it of arr) { if (it && it.id) _dynamicItems.set(it.id, it); }
+        }
+    } catch { /* ignore */ }
+    return _dynamicItems;
+};
+
+const persistDynamicItems = (): void => {
+    if (!_dynamicItems) return;
+    try {
+        // 控制体量：最多留最近 200 件
+        const arr = Array.from(_dynamicItems.values()).slice(-200);
+        localStorage.setItem(DYNAMIC_ITEMS_KEY, JSON.stringify(arr));
+    } catch { /* ignore */ }
+};
+
+/** 登记一批生成商品（供后续 getShopItem 解析 id）。 */
+export const registerShopItems = (items: ShopItem[]): void => {
+    const reg = loadDynamicItems();
+    for (const it of items) if (it && it.id) reg.set(it.id, it);
+    persistDynamicItems();
+};
+
+/** 先查内置兜底目录，再查动态注册表（AI 生成商品）。 */
+export const getShopItem = (id: string): ShopItem | undefined =>
+    SHOP_ITEMS.find(i => i.id === id) || loadDynamicItems().get(id);
 
 export const formatPrice = (n: number): string =>
     Number.isInteger(n) ? String(n) : n.toFixed(1);
@@ -262,6 +299,95 @@ export const searchShopItems = (query: string): ShopItem[] => {
         catLabel(i.category).toLowerCase().includes(q) ||
         i.emoji.includes(q));
 };
+
+// ── 商品 / 评价 AI 实时生成（副 API 驱动） ─────────────────────────────────────
+
+/** 由名称+分类生成稳定 id（同名商品映射到同一 id，利于去重 + 收藏/购物车稳定）。 */
+const stableItemId = (name: string, category: string): string => `gen_${hashStr(`${name}|${category}`).toString(36)}`;
+
+const CAT_KEYS = SHOP_CATEGORIES.map(c => c.key).join(' / ');
+
+/** 组装「实时生成一批商品」的 prompt（默认 ≥20 件，礼物商城主题）。 */
+export function buildGenerateItemsPrompt(count = 22, hint?: string): { system: string; user: string } {
+    const system = '你是一个礼物电商「心意铺」的选品编辑，按要求产出商品清单。只输出 JSON，不要任何多余文字或代码块标记。';
+    const user = `请为「心意铺」礼物商城实时生成 ${count} 件**各不相同**的商品（要有新鲜感、别老是玫瑰蛋糕，可涵盖小众/有趣/应季/数码/手作/体验券等）。${hint ? `本次主题倾向：${hint}。` : ''}
+每件包含：
+- name：商品名（6~14字，具体、有卖点）
+- emoji：一个最贴切的 emoji（用作文字图）
+- price：价格（元，5~999 的数字，可带小数）
+- category：从这些分类里选一个 key：${CAT_KEYS}
+- blurb：一句话种草文案（15~30字）
+
+只输出一个 JSON 数组，形如：
+[{"name":"…","emoji":"🎁","price":59,"category":"life","blurb":"…"}]
+共 ${count} 个对象，不要编号、不要解释。`;
+    return { system, user };
+}
+
+/** 解析「实时生成商品」的模型输出为 ShopItem[]（健壮解析；自动补全 id / 校验字段 / 去重）。 */
+export function parseGeneratedItems(raw: string): ShopItem[] {
+    if (!raw) return [];
+    let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
+    const start = txt.indexOf('[');
+    const end = txt.lastIndexOf(']');
+    if (start === -1 || end === -1 || end <= start) return [];
+    let arr: any[];
+    try { arr = JSON.parse(txt.slice(start, end + 1)); } catch { return []; }
+    if (!Array.isArray(arr)) return [];
+    const validCats = new Set(SHOP_CATEGORIES.map(c => c.key));
+    const seen = new Set<string>();
+    const out: ShopItem[] = [];
+    for (const o of arr) {
+        if (!o || typeof o.name !== 'string') continue;
+        const name = o.name.trim().slice(0, 20);
+        if (!name) continue;
+        const category = validCats.has(o.category) ? o.category : 'life';
+        const id = stableItemId(name, category);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        let price = Number(o.price);
+        if (!isFinite(price) || price <= 0) price = 9.9;
+        price = Math.min(9999, Math.round(price * 10) / 10);
+        const emoji = (typeof o.emoji === 'string' && o.emoji.trim()) ? o.emoji.trim().slice(0, 4) : '🎁';
+        const blurb = (typeof o.blurb === 'string' ? o.blurb.trim() : '').slice(0, 40) || '一份用心挑的小礼物。';
+        const image = (typeof o.image === 'string' && /^https?:\/\//.test(o.image)) ? o.image : undefined;
+        out.push({ id, name, emoji, price, category, blurb, image, generated: true });
+    }
+    return out;
+}
+
+/** 组装「为某商品实时生成买家评价」的 prompt。 */
+export function buildItemReviewsPrompt(item: Pick<ShopItem, 'name' | 'blurb' | 'price'>, count = 4): { system: string; user: string } {
+    const system = '你在扮演一批买过某商品的真实买家，写淘宝式短评。只输出 JSON 数组，不要多余文字或代码块标记。';
+    const user = `商品：「${item.name}」（¥${formatPrice(item.price)}，${item.blurb}）。
+请生成 ${count} 条不同口吻的买家评价（有夸有中肯，真实自然，别全是彩虹屁）：
+- user：脱敏昵称（如 "t**o"、"甜**圈"）
+- stars：4 或 5（多数 5，可有个别 4）
+- text：评价正文（15~40字，提到使用/物流/送人/质感等具体感受）
+
+只输出 JSON 数组：[{"user":"…","stars":5,"text":"…"}]，共 ${count} 条。`;
+    return { system, user };
+}
+
+/** 解析「实时生成评价」的模型输出为 ShopReview[]（健壮解析 + 校验）。 */
+export function parseGeneratedReviews(raw: string): ShopReview[] {
+    if (!raw) return [];
+    let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
+    const start = txt.indexOf('[');
+    const end = txt.lastIndexOf(']');
+    if (start === -1 || end === -1 || end <= start) return [];
+    let arr: any[];
+    try { arr = JSON.parse(txt.slice(start, end + 1)); } catch { return []; }
+    if (!Array.isArray(arr)) return [];
+    const out: ShopReview[] = [];
+    for (const o of arr) {
+        if (!o || typeof o.text !== 'string' || !o.text.trim()) continue;
+        const user = (typeof o.user === 'string' && o.user.trim()) ? o.user.trim().slice(0, 12) : '匿名';
+        const stars = (Number(o.stars) === 4) ? 4 : 5;
+        out.push({ user, stars, text: o.text.trim().slice(0, 60) });
+    }
+    return out;
+}
 
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────
 

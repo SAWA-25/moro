@@ -138,3 +138,11 @@ pm run build passes after the time-gap grouping fix.
   - **商品详情页 (PDP)**: full-screen overlay — 大图 hero, price + 评分/月销, 标题/描述, 宝贝评价 list (stars + buyer), bottom bar with 收藏 / 加入购物车 / 立即购买.
   - **收藏**: `shopFavorites` on `UserProfile`; ❤️ toggle on cards + PDP, and a 收藏 chip in the category row to filter to favorites.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 539 unit tests green (6 new).
+
+- 心意铺·商品 + 评价全部改为 AI 实时生成:
+  - `utils/shop.ts`: `buildGenerateItemsPrompt` / `parseGeneratedItems` (robust JSON → `ShopItem[]`, stable `gen_` ids by name+category, dedupe, field validation) and `buildItemReviewsPrompt` / `parseGeneratedReviews`. New `shopGen.test.ts` (5 tests).
+  - **Dynamic item registry**: AI items are registered (`registerShopItems`) + persisted to localStorage so cart / 收藏 / 小票 ids still resolve via `getShopItem` after 换一批 or reopen.
+  - `ShopItem` gained `image?` (real image URL — rendered when present) + `generated?`; emoji stays the「文字图」fallback. 「图片可以用文字代替，有图就放图片」.
+  - **ShopApp**: catalog is now state-driven — on open it uses the last cached batch, else 实时生成 ≥20 件 (副 API; pads with built-ins if the model returns fewer); a 换一批 button regenerates a fresh batch with a loading state. Search/category/收藏 filter the live catalog (收藏 resolves globally via `getShopItem`).
+  - **PDP 评价**: generated in real-time per product on open (loading spinner), falling back to seeded reviews when 副 API is off/fails.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 544 unit tests green (5 new).
