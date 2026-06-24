@@ -13,7 +13,7 @@ import {
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
     consumeTakeoutIntent, notifyTakeoutUpdated,
-    generateStoreReviews, reviewQuickTags, generateReviewReplies,
+    generateStoreReviews, generateStoreReviewsAI, reviewQuickTags, generateReviewReplies,
     getPinnedStores, togglePinnedStore, type StoreNpcReview,
 } from '../utils/takeout';
 import {
@@ -87,7 +87,15 @@ const TakeoutApp: React.FC = () => {
     const wallet = Math.round((userProfile.balance || 0) * 100) / 100;
 
     const [view, setView] = useState<View>('home');
-    const [stores, setStores] = useState<TakeoutStore[]>(() => generateStores(12));
+    // 店铺缓存：进 App 先用上次实时生成的那条街（避免空白/本地占位闪一下），没有才本地占位
+    const STORES_CACHE_KEY = 'moro_takeout_stores_v1';
+    const [stores, setStores] = useState<TakeoutStore[]>(() => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null');
+            if (Array.isArray(cached) && cached.length) return cached;
+        } catch { /* ignore */ }
+        return generateStores(20);
+    });
     const [aiLoading, setAiLoading] = useState(false);
     const [cat, setCat] = useState('全部');
     const [query, setQuery] = useState('');
@@ -116,7 +124,23 @@ const TakeoutApp: React.FC = () => {
     const [reviewRating, setReviewRating] = useState(5);
     const [reviewTags, setReviewTags] = useState<string[]>([]);
     const [reviewText, setReviewText] = useState('');
-    const storeReviews = useMemo<StoreNpcReview[]>(() => activeStore ? generateStoreReviews(activeStore.name, activeStore.rating) : [], [activeStore]);
+    // 食评：进店实时 AI 生成（仿真有好有坏，按店铺评分调好坏比例）；加载时先用算法版垫场，失败回退算法版
+    const [storeReviews, setStoreReviews] = useState<StoreNpcReview[]>([]);
+    const [reviewsLoading, setReviewsLoading] = useState(false);
+    useEffect(() => {
+        if (!activeStore) { setStoreReviews([]); return; }
+        let alive = true;
+        setStoreReviews(generateStoreReviews(activeStore.name, activeStore.rating)); // 垫场
+        if (aiReady) {
+            setReviewsLoading(true);
+            generateStoreReviewsAI(api, activeStore, 8)
+                .then(rv => { if (alive) setStoreReviews(rv); })
+                .catch(() => { /* 已垫场 */ })
+                .finally(() => { if (alive) setReviewsLoading(false); });
+        }
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStore?.id]);
 
     const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
     useEffect(() => { void reloadOrders(); }, []);
@@ -133,11 +157,17 @@ const TakeoutApp: React.FC = () => {
         if (!aiReady || aiLoading) return;
         setAiLoading(true);
         try {
-            const next = await generateStoresAI(api, 12);
+            const next = await generateStoresAI(api, 20); // 每批至少 20 家，实时生成
             setStores(next);
+            try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
         } catch { /* 失败保留现有 */ } finally { setAiLoading(false); }
     };
-    useEffect(() => { if (aiReady) void loadStoresAI(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+    // 进 App：没有缓存才实时生成一批（有缓存就先看缓存，点「换一条街」再现写）
+    useEffect(() => {
+        const hasCache = (() => { try { return !!JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null')?.length; } catch { return false; } })();
+        if (aiReady && !hasCache) void loadStoresAI();
+        /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    }, []);
 
     const activeOrder = orders.find(o => o.id === activeOrderId) || null;
 
@@ -160,7 +190,7 @@ const TakeoutApp: React.FC = () => {
     // ── 操作 ──
     const refresh = () => {
         if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
-        else { setStores(generateStores(12)); addToast('翻到另一条街啦～', 'info'); }
+        else { const s = generateStores(20); setStores(s); try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(s)); } catch { /* ignore */ } addToast('翻到另一条街啦～', 'info'); }
     };
     const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setView('store'); };
     const setQty = (dishId: string, delta: number) => setCart(prev => ({ ...prev, [dishId]: Math.max(0, (prev[dishId] || 0) + delta) }));
@@ -526,7 +556,10 @@ const TakeoutApp: React.FC = () => {
                     <SectionTag en="DINERS' WALL" className="mt-6 mb-3">食客留言墙</SectionTag>
                     <PaperCard tilt={0.4} className="px-4 py-3.5">
                         <div className="flex items-center justify-between mb-2.5">
-                            <span className="text-[12px] font-black" style={{ color: INK }}>大伙儿吃过都说</span>
+                            <span className="text-[12px] font-black flex items-center gap-1.5" style={{ color: INK }}>
+                                大伙儿吃过都说
+                                {reviewsLoading && <span className="text-[9px] font-bold opacity-50">· 现写食评中…</span>}
+                            </span>
                             <span className="flex items-center gap-1 text-[12px] font-black" style={{ color: INK }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
                         </div>
                         <DashedRule className="mb-3" />

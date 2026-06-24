@@ -636,6 +636,70 @@ export function generateStoreReviews(storeName: string, baseRating = 4.5, count 
     return out.sort((a, b) => b.likes - a.likes);
 }
 
+interface AiReviewRaw { name?: string; emoji?: string; rating?: number; text?: string; reply?: string; }
+
+/**
+ * AI 现场为某店生成买家食评（仿真有好有坏，按店铺评分/红旗调好坏比例）。
+ * 失败 / 未配 API 回退到算法版 generateStoreReviews。
+ */
+export async function generateStoreReviewsAI(
+    api: ResolvedApi,
+    store: Pick<TakeoutStore, 'name' | 'category' | 'rating' | 'warning' | 'dishes'>,
+    count = 8,
+): Promise<StoreNpcReview[]> {
+    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    if (!baseUrl || !api.model) return generateStoreReviews(store.name, store.rating, count);
+    const rating = store.rating ?? 4.3;
+    const dishHint = (store.dishes || []).slice(0, 4).map(d => d.name).join('、');
+    const tone = rating >= 4.5 ? '大多是好评（细节具体、夸分量/出餐快/味道好），可夹 1 条挑刺中评'
+        : rating >= 4.0 ? '好坏参半，3~5 星都有，吐槽与认可都要有'
+        : '差评/中评为主（1~3 星居多），骂到点子上：缺斤少两、图文不符、送得慢凉了、卫生差、态度差，可留 1 条还行的';
+    const prompt = `你在为外卖店「${store.name}」（${store.category}，综合 ${rating} 分${store.warning ? `，有用户提醒「${store.warning}」` : ''}）现写 ${count} 条真实买家食评。招牌菜：${dishHint || '家常菜'}。
+分布要求：${tone}。要像真人——口吻各异、有具体细节（哪道菜、份量、温度、配送、包装、老板态度），别像广告、别千篇一律。
+每条：name（食客昵称，有梗）、emoji（一个动物头像 emoji）、rating（1~5 整数，按上面分布）、text（15~45字）、可选 reply（商家或其他食客的一句回复）。
+只输出 JSON，不要解释：{"reviews":[{"name":"","emoji":"🐱","rating":5,"text":"","reply":""}]}`;
+    try {
+        const data = await safeFetchJson(
+            `${baseUrl}/chat/completions`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
+                body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 1600, stream: false }),
+            },
+            2, 0, { appName: '外卖', purpose: 'AI 生成食评' },
+        );
+        const raw = data?.choices?.[0]?.message?.content || '';
+        const parsed = extractJson(raw);
+        const list: AiReviewRaw[] = Array.isArray(parsed?.reviews) ? parsed.reviews : (Array.isArray(parsed) ? parsed : []);
+        const out: StoreNpcReview[] = [];
+        list.forEach((r, i) => {
+            const text = (r?.text || '').toString().trim();
+            if (!text) return;
+            let rt = Math.round(Number(r?.rating));
+            if (!Number.isFinite(rt)) rt = 5;
+            rt = Math.max(1, Math.min(5, rt));
+            const daysAgo = 1 + (hashStr(store.name + i) % 60);
+            const d = new Date(Date.now() - daysAgo * 86400000);
+            const rev: StoreNpcReview = {
+                id: `air_${hashStr(store.name)}_${i}`,
+                name: (r?.name || '匿名食客').toString().trim().slice(0, 16),
+                emoji: (r?.emoji || '🐱').toString().trim().slice(0, 4) || '🐱',
+                rating: rt,
+                text: text.slice(0, 80),
+                date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
+                likes: hashStr('l' + store.name + i) % 60,
+            };
+            const reply = (r?.reply || '').toString().trim();
+            if (reply) rev.reply = reply.slice(0, 60);
+            out.push(rev);
+        });
+        if (out.length < 3) return generateStoreReviews(store.name, store.rating, count);
+        return out.sort((a, b) => b.likes - a.likes);
+    } catch {
+        return generateStoreReviews(store.name, store.rating, count);
+    }
+}
+
 const QUICK_TAGS_POS = ['分量足', '送得快', '味道赞', '包装好', '性价比高', '会回购'];
 const QUICK_TAGS_NEG = ['送得慢', '偏咸', '分量少', '包装一般', '与图不符'];
 /** 评价时可选的快捷标签（按打分给正/负面）。 */

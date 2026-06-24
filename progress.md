@@ -160,3 +160,8 @@ pm run build passes after the time-gap grouping fix.
   - **猜你喜欢**: `recommendItems` (收藏分类加权 + 半小时打散) rendered as a feed under the catalog.
   - New `shopPromo.test.ts` (7 tests); updated `shopBrowse`/`shopGen` tests for the wider rating/star ranges.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 557 unit tests green (7 new).
+
+- 饭票(外卖)·商品 + 食评全部 AI 实时生成 (对标美团第一步):
+  - Stores+dishes were already AI (`generateStoresAI`); bumped batches to **≥20 家/批**, and made the storefront **cache-first** (`moro_takeout_stores_v1`): open uses the last live batch (no local-seed flash / no API burn), 换一条街 regenerates ≥20 and re-caches.
+  - **食评改为 AI 实时生成**: new `generateStoreReviewsAI` (mirrors `generateStoresAI`: `safeFetchJson` + `extractJson`), 仿真**有好有坏**——好坏比例按店铺评分/红旗调（低分/黑心店多差评：缺斤少两/图文不符/送得慢凉了/卫生差），1~5 星，可含商家回复。进店时实时生成（先用算法版垫场 + 「现写食评中…」提示），失败/无 API 回退算法版 `generateStoreReviews`. New fallback test.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 558 unit tests green (1 new).

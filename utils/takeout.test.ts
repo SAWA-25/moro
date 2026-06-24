@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { generateStores, rollOrderIssues, resolveComplaint, PACK_FEE } from './takeout';
+import { generateStores, rollOrderIssues, resolveComplaint, PACK_FEE, generateStoreReviewsAI } from './takeout';
 import type { TakeoutOrder, TakeoutOrderItem } from '../types';
+
+describe('generateStoreReviewsAI fallback', () => {
+    it('未配 API 时回退到算法版食评（非空、含好评有差评的可能）', async () => {
+        const store = { name: '老地方家常菜', category: '中餐', rating: 3.4, warning: '多人反馈缺斤少两', dishes: [{ id: 'd', name: '盖饭', price: 18 }] } as any;
+        const rv = await generateStoreReviewsAI({ baseUrl: '', apiKey: '', model: '' }, store, 8);
+        expect(rv.length).toBeGreaterThan(0);
+        rv.forEach(r => { expect(r.rating).toBeGreaterThanOrEqual(1); expect(r.rating).toBeLessThanOrEqual(5); expect(r.text.length).toBeGreaterThan(0); });
+    });
+});
 
 const items: TakeoutOrderItem[] = [
     { dishId: 'd1', name: '招牌牛肉堡', price: 24, qty: 1 },
