@@ -219,3 +219,9 @@ pm run build passes after the time-gap grouping fix.
   - **收敛单条体量 + 硬约束写完**：见闻簿评论 8~16→3~6、正文回到「几十到一百多字、别长篇大论」；饭票每店菜品 5~9→4~6；三处 prompt 均加「务必输出完整合法、紧凑无空白、把 N 条全部写完再收尾、绝不中途截断」。
   - **打捞兜底全覆盖**：饭票新增 `salvageStoreObjects`（深度遍历抠出已写完的店铺对象，正确处理字符串/转义/嵌套 dishes），解析为空时启用；茶话亭 `parseThreads`/`parseForumReplies` 改用新 `salvageFlat`（扁平对象逐个救回），不再「截断＝整批丢」。见闻簿已有 `salvageObjects`、心意铺已有 `salvageObjects`。
   - 新增 2 条回归测试（forum 截断打捞）。`pnpm tsc --noEmit` clean, `vite build` passes, 591 tests green (+2)。
+
+- 修复茶话亭帖子质量（全是水贴/无长贴/重复话题角色/八卦只有标题/毫无新意）:
+  - **prompt 大改 buildThreadsPrompt**：① 新增 per-board `BOARD_BRIEF`，按板块给「该长什么样」的实质指引——吃瓜=把一桩完整的瓜讲清楚（人物关系/起因/经过/爆点/钩子，严禁只标题或一句话）、树洞=有情境有细节的中长心事、求助=交代背景+已试+卡点、同好=具体干货、水区=具体一件事；② 硬性「长短结合」：至少四成（`Math.round(count*0.4)`，≥3）是 150~400 字、分段、有细节有钩子的**长贴**，其余短帖也得是具体的事不能空泛模板；③「话题各不相同有新意」「同一实名角色最多发 1 帖、网名各异、不撞车」「写完再用 ] 收尾」。system 改成「资深泡吧网友、最懂真实帖子长什么样、坚决避免空壳帖」。
+  - **去重**：`parseThreads` 按标题归一化去重复话题；`materializeThreads` 用 `usedChar` 保证同一实名角色一批里只当一次楼主（其余转匿名），治「重复角色的帖子」。
+  - `ForumApp` 帖子生成 maxTokens 6000→8000、temperature 1.05（容纳长贴 + 更有新意）。
+  - 新增 2 条回归测试（标题去重 / 角色去重）。`pnpm tsc --noEmit` clean, `vite build` passes, 593 tests green (+2)。
