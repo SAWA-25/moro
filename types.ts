@@ -2465,6 +2465,8 @@ export interface UserProfile {
     shopFavorites?: string[];
     /** 购物商城·我的订单（淘宝式，含物流进度；确认收货后才进背包）。 */
     shopOrders?: ShopOrder[];
+    /** 购物商城·已领优惠券 id（满减券，结算自动用最优的一张）。 */
+    shopCoupons?: string[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
     /**
@@ -3071,6 +3073,15 @@ export interface ShopItem {
     blurb: string;          // 一句话描述
     image?: string;         // 真实商品图 URL（AI 生成/有图时填，渲染时优先用图，否则用 emoji 文字图）
     generated?: boolean;    // 是否 AI 实时生成（区分内置兜底商品）
+    rating?: number;        // 评分 1.0~5.0（AI 生成，有好有坏；缺省时按 id 确定性派生）
+}
+
+/** 购物商城：优惠券（满减券）。满 threshold 元减 discount 元。 */
+export interface ShopCoupon {
+    id: string;
+    title: string;
+    threshold: number;      // 使用门槛（满 X 元）
+    discount: number;       // 立减金额（元）
 }
 
 /** 购物商城：背包里拥有的一件物品（user 买下但还没送出去的）。 */

@@ -152,3 +152,11 @@ pm run build passes after the time-gap grouping fix.
   - **All purchases now ship**: 立即购买 / 商城购买 / 购物车自己支付 / 求代付成功 all create a 待收货 order instead of dropping straight into 背包; items land in 背包 only on **确认收货** (代付订单在收货时给代付角色记一笔「赠出」小票).
   - New **订单 tab** (active-order badge): each order shows status + 商品 + a 红色物流进度条 with 5 stage dots + ETA text + 确认收货 button; a 30s ticker advances in-flight orders. Tab row is now horizontally scrollable for 5 tabs.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 550 unit tests green (6 new).
+
+- 心意铺·优惠券 + 秒杀/banner + 猜你喜欢 + AI 仿真好坏 (一批做完):
+  - **AI 商品/评价仿真有好有坏**: `ShopItem.rating` (1.0–5.0); the gen prompt now asks for a quality spread (好物/普通/踩雷·智商税) with a `rating` field, parsed + clamped. `itemRating` uses it (fallback widened to 3.0–5.0). Reviews prompt distributes by rating (低分→差评为主) and `parseGeneratedReviews` keeps 1–5 stars; seeded fallback `getItemReviews` mixes good/bad by rating.
+  - **优惠券/满减**: `ShopCoupon` + `SHOP_COUPONS`; `bestCoupon` / `applyCoupon` (pure). 领券中心 strip on the storefront; the cart 结算条 auto-applies the best claimed 满减券 (shows 已省 + 实付 vs 划线原价) and deducts the discounted total.
+  - **限时秒杀 + banner 轮播**: auto-rotating `ShopBanner`; `flashDeals` (整点一轮, deterministic pick + 20–60% off) rendered as a 秒杀 strip with a live 倒计时, buy at 秒杀价 (`buyItem` gained a price override).
+  - **猜你喜欢**: `recommendItems` (收藏分类加权 + 半小时打散) rendered as a feed under the catalog.
+  - New `shopPromo.test.ts` (7 tests); updated `shopBrowse`/`shopGen` tests for the wider rating/star ranges.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 557 unit tests green (7 new).

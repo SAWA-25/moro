@@ -12,6 +12,8 @@ import {
     registerShopItems, buildGenerateItemsPrompt, parseGeneratedItems,
     buildItemReviewsPrompt, parseGeneratedReviews, type ShopReview,
     makeOrder, orderProgress, orderReceivePayload, ORDER_STAGES,
+    SHOP_COUPONS, bestCoupon, applyCoupon,
+    flashDeals, flashEndsAt, recommendItems,
 } from '../utils/shop';
 import type { ShopOrder } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
@@ -131,12 +133,21 @@ const ShopApp: React.FC = () => {
         emitShopUpdated();
     };
 
-    // ── 购买（淘宝式：下单 → 物流 → 确认收货才进背包） ──
-    const buyItem = (item: ShopItem) => {
-        if (balance < item.price) { addToast('余额不够啦，去存钱罐挣点零花钱', 'error'); return; }
-        adjustUserBalance(-item.price);
-        placeOrder([{ item, qty: 1 }], 'self');
+    // ── 购买（淘宝式：下单 → 物流 → 确认收货才进背包；priceOverride 用于秒杀价） ──
+    const buyItem = (item: ShopItem, priceOverride?: number) => {
+        const price = priceOverride != null ? priceOverride : item.price;
+        if (balance < price) { addToast('余额不够啦，去存钱罐挣点零花钱', 'error'); return; }
+        adjustUserBalance(-price);
+        placeOrder([{ item: priceOverride != null ? { ...item, price } : item, qty: 1 }], 'self');
         addToast(`下单成功 ${item.emoji}${item.name}，物流配送中`, 'success');
+    };
+
+    // 优惠券：领取（存 id）
+    const claimedCoupons = userProfile.shopCoupons || [];
+    const claimCoupon = (id: string) => {
+        if (claimedCoupons.includes(id)) { addToast('已领过这张券', 'info'); return; }
+        updateUserProfile({ shopCoupons: [id, ...claimedCoupons] });
+        addToast('优惠券已领取 🎟️', 'success');
     };
 
     // ── 购物车（淘宝式：加购 → 结算） ──
@@ -151,15 +162,18 @@ const ShopApp: React.FC = () => {
     };
     const clearMyCart = () => { updateUserProfile({ shopCart: [] }); emitShopUpdated(); };
 
-    // 自己支付：扣钱包 → 下单（物流配送，确认收货才进背包）
+    // 自己支付：满减券抵扣后扣钱包 → 下单（物流配送，确认收货才进背包）
     const checkoutSelf = () => {
         const total = cartTotal(cart);
         if (cartNum === 0) return;
-        if (balance < total) { addToast('余额不够，先去存钱罐挣点零花钱', 'error'); return; }
-        adjustUserBalance(-total);
+        const coupon = bestCoupon(claimedCoupons, total);
+        const payable = applyCoupon(total, coupon);
+        if (balance < payable) { addToast('余额不够，先去存钱罐挣点零花钱', 'error'); return; }
+        adjustUserBalance(-payable);
         const order = makeOrder(resolveCart(cart), 'self');
+        order.total = payable; // 实付（已抵扣优惠券）
         updateUserProfile({ shopOrders: [order, ...(userProfile.shopOrders || [])], shopCart: [] });
-        addToast('下单成功，物流配送中', 'success');
+        addToast(coupon ? `已用「${coupon.title}」，实付 ¥${formatPrice(payable)}` : '下单成功，物流配送中', 'success');
         emitShopUpdated();
         setTab('orders');
     };
@@ -308,6 +322,7 @@ const ShopApp: React.FC = () => {
                         catalog={catalog} genBusy={genBusy} onRefresh={() => generateCatalog()}
                         cat={cat} setCat={setCat} search={search} setSearch={setSearch}
                         balance={balance} favorites={favorites}
+                        claimedCoupons={claimedCoupons} onClaimCoupon={claimCoupon} onBuyFlash={(it, p) => buyItem(it, p)}
                         onBuy={buyItem} onAddCart={addItemToCart}
                         onOpenDetail={setDetailItem} onToggleFav={toggleFav}
                     />
@@ -382,19 +397,28 @@ const ShopApp: React.FC = () => {
                 />
             )}
 
-            {/* 购物车结算条：固定在 App 底部（自己支付 / 求 TA 代付） */}
-            {tab === 'cart' && cartNum > 0 && (
-                <div className="shrink-0 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+10px)] pt-2.5 border-t border-rose-100/70 bg-[#faf2ec]">
-                    <div className="flex items-center gap-2">
-                        <div className="flex-1 min-w-0">
-                            <div className="text-[10px] text-[#9a6b56]">合计</div>
-                            <div className="text-[18px] font-black text-[#c2755a] leading-none">¥{formatPrice(cartTotal(cart))}</div>
+            {/* 购物车结算条：固定在 App 底部（满减券抵扣 + 自己支付 / 求 TA 代付） */}
+            {tab === 'cart' && cartNum > 0 && (() => {
+                const total = cartTotal(cart);
+                const coupon = bestCoupon(claimedCoupons, total);
+                const payable = applyCoupon(total, coupon);
+                return (
+                    <div className="shrink-0 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+10px)] pt-2.5 border-t border-rose-100/70 bg-[#faf2ec]">
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                                {coupon && <div className="text-[9px] text-[#e84e2f] font-bold truncate">🎟️ {coupon.title}，已省 ¥{formatPrice(coupon.discount)}</div>}
+                                <div className="flex items-baseline gap-1.5">
+                                    <span className="text-[10px] text-[#9a6b56]">实付</span>
+                                    <span className="text-[18px] font-black text-[#e84e2f] leading-none">¥{formatPrice(payable)}</span>
+                                    {coupon && <span className="text-[10px] text-[#b89a8c] line-through">¥{formatPrice(total)}</span>}
+                                </div>
+                            </div>
+                            <button onClick={() => setPayPicker(true)} className="px-4 py-2.5 rounded-full bg-white border border-[#c2755a]/40 text-[#c2755a] text-[13px] font-bold active:scale-95 transition-transform shrink-0">求 TA 代付</button>
+                            <button onClick={checkoutSelf} disabled={balance < payable} className={`px-5 py-2.5 rounded-full text-[13px] font-bold active:scale-95 transition-transform shrink-0 ${balance >= payable ? 'bg-gradient-to-r from-[#ff6034] to-[#ee0a24] text-white shadow-md shadow-rose-200' : 'bg-slate-200 text-slate-400'}`}>{balance >= payable ? '自己支付' : '余额不足'}</button>
                         </div>
-                        <button onClick={() => setPayPicker(true)} className="px-4 py-2.5 rounded-full bg-white border border-[#c2755a]/40 text-[#c2755a] text-[13px] font-bold active:scale-95 transition-transform shrink-0">求 TA 代付</button>
-                        <button onClick={checkoutSelf} disabled={balance < cartTotal(cart)} className={`px-5 py-2.5 rounded-full text-[13px] font-bold active:scale-95 transition-transform shrink-0 ${balance >= cartTotal(cart) ? 'bg-[#c2755a] text-white shadow-md shadow-rose-200' : 'bg-slate-200 text-slate-400'}`}>{balance >= cartTotal(cart) ? '自己支付' : '余额不足'}</button>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* 送礼：选角色 */}
             <Modal
@@ -454,9 +478,11 @@ const ShopCatalog: React.FC<{
     cat: string; setCat: (c: string) => void;
     search: string; setSearch: (s: string) => void;
     balance: number; favorites: string[];
+    claimedCoupons: string[]; onClaimCoupon: (id: string) => void; onBuyFlash: (item: ShopItem, price: number) => void;
     onBuy: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void;
     onOpenDetail: (i: ShopItem) => void; onToggleFav: (id: string) => void;
-}> = ({ catalog, genBusy, onRefresh, cat, setCat, search, setSearch, balance, favorites, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
+}> = ({ catalog, genBusy, onRefresh, cat, setCat, search, setSearch, balance, favorites, claimedCoupons, onClaimCoupon, onBuyFlash, onBuy, onAddCart, onOpenDetail, onToggleFav }) => {
+    const home = cat === 'all' && !search.trim(); // 首页态才展示 banner / 秒杀 / 猜你喜欢
     const items = useMemo(() => {
         if (cat === 'fav') return favorites.map(id => getShopItem(id)).filter((x): x is ShopItem => !!x);
         let list = catalog;
@@ -485,6 +511,14 @@ const ShopCatalog: React.FC<{
                     <Sparkle size={13} weight="fill" />{genBusy ? '上新中' : '换一批'}
                 </button>
             </div>
+            {/* 首页营销位：banner 轮播 + 领券 + 限时秒杀 */}
+            {home && (
+                <>
+                    <ShopBanner />
+                    <CouponStrip claimed={claimedCoupons} onClaim={onClaimCoupon} />
+                    <FlashSaleStrip catalog={catalog} balance={balance} onBuy={onBuyFlash} onOpen={onOpenDetail} />
+                </>
+            )}
             {/* 分类金刚区 + 收藏 */}
             <div className="flex gap-2 overflow-x-auto pb-2.5 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
                 {[{ key: 'all', label: '全部', emoji: '🛍️' }, { key: 'fav', label: '收藏', emoji: '❤️' }, ...SHOP_CATEGORIES].map(c => (
@@ -545,7 +579,135 @@ const ShopCatalog: React.FC<{
                     })}
                 </div>
             )}
+            {/* 猜你喜欢 */}
+            {home && <RecommendSection catalog={catalog} favorites={favorites} onOpen={onOpenDetail} onAddCart={onAddCart} />}
         </>
+    );
+};
+
+// ── 营销位：banner 轮播（自动切换） ──
+const BANNERS = [
+    { t: '心意铺 · 替你把心意送到', s: '挑一份好物，比一句"在吗"更动人', g: 'linear-gradient(120deg,#ff6034,#ee0a24)' },
+    { t: '今日上新 · AI 实时选品', s: '点「换一批」，每次都是新货架', g: 'linear-gradient(120deg,#c2755a,#e0a06f)' },
+    { t: '满减券已就位', s: '满 49 减 5 起，结算自动用最优券', g: 'linear-gradient(120deg,#7a4a38,#b07a52)' },
+    { t: '限时秒杀进行中', s: '整点开抢，手慢无', g: 'linear-gradient(120deg,#ff4d6d,#c9184a)' },
+];
+const ShopBanner: React.FC = () => {
+    const [i, setI] = useState(0);
+    useEffect(() => { const t = setInterval(() => setI(x => (x + 1) % BANNERS.length), 3500); return () => clearInterval(t); }, []);
+    const b = BANNERS[i];
+    return (
+        <div className="rounded-2xl overflow-hidden mb-2.5 relative h-24 shadow-sm" style={{ background: b.g }}>
+            <div className="absolute inset-0 px-4 flex flex-col justify-center text-white">
+                <div className="text-[15px] font-black drop-shadow-sm">{b.t}</div>
+                <div className="text-[11px] opacity-90 mt-0.5">{b.s}</div>
+            </div>
+            <div className="absolute bottom-2 right-3 flex gap-1">
+                {BANNERS.map((_, k) => <span key={k} className={`w-1.5 h-1.5 rounded-full transition-all ${k === i ? 'bg-white' : 'bg-white/40'}`} />)}
+            </div>
+        </div>
+    );
+};
+
+// ── 营销位：领券中心（满减券） ──
+const CouponStrip: React.FC<{ claimed: string[]; onClaim: (id: string) => void; }> = ({ claimed, onClaim }) => (
+    <div className="mb-2.5">
+        <div className="text-[11px] font-black text-[#7a4a38] mb-1.5 flex items-center gap-1">🎟️ 领券中心</div>
+        <div className="flex gap-2 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+            {SHOP_COUPONS.map(c => {
+                const got = claimed.includes(c.id);
+                return (
+                    <div key={c.id} className="shrink-0 rounded-xl bg-white border border-dashed border-[#e84e2f]/40 px-3 py-1.5 flex items-center gap-2">
+                        <div className="leading-tight">
+                            <div className="text-[14px] font-black text-[#e84e2f]">¥{formatPrice(c.discount)}</div>
+                            <div className="text-[8.5px] text-[#b89a8c]">满{c.threshold}可用</div>
+                        </div>
+                        <button onClick={() => onClaim(c.id)} disabled={got}
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform ${got ? 'bg-rose-50 text-[#c9b3a8]' : 'bg-[#e84e2f] text-white'}`}>
+                            {got ? '已领' : '领取'}
+                        </button>
+                    </div>
+                );
+            })}
+        </div>
+    </div>
+);
+
+// ── 营销位：限时秒杀（整点一轮 + 倒计时） ──
+const FlashSaleStrip: React.FC<{ catalog: ShopItem[]; balance: number; onBuy: (item: ShopItem, price: number) => void; onOpen: (i: ShopItem) => void; }> = ({ catalog, balance, onBuy, onOpen }) => {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+    const deals = useMemo(() => flashDeals(catalog, now, 4), [catalog, Math.floor(now / 60000)]);
+    if (deals.length === 0) return null;
+    const remain = Math.max(0, flashEndsAt(now) - now);
+    const hh = String(Math.floor(remain / 3600000)).padStart(2, '0');
+    const mm = String(Math.floor((remain % 3600000) / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((remain % 60000) / 1000)).padStart(2, '0');
+    return (
+        <div className="mb-2.5 rounded-2xl bg-gradient-to-b from-[#fff1ee] to-white border border-[#ffd9cf] p-2.5">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] font-black text-[#e84e2f] flex items-center gap-1">⚡ 限时秒杀</span>
+                <span className="flex items-center gap-1 text-[10px] text-[#7a4a38]">
+                    距结束
+                    {[hh, mm, ss].map((v, k) => <span key={k} className="bg-[#2b2933] text-white rounded px-1 py-0.5 font-mono text-[10px] tabular-nums">{v}</span>)}
+                </span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+                {deals.map(({ item, dealPrice, offPct }) => (
+                    <div key={item.id} className="shrink-0 w-[88px]">
+                        <div className="rounded-xl bg-white border border-rose-50 overflow-hidden cursor-pointer" onClick={() => onOpen(item)}>
+                            {item.image
+                                ? <img src={item.image} className="w-full h-14 object-cover" alt="" loading="lazy" />
+                                : <div className="text-[30px] text-center leading-none py-2 bg-gradient-to-b from-[#fff7f2] to-white">{item.emoji}</div>}
+                        </div>
+                        <div className="text-[10px] text-[#5a3a2e] truncate mt-1">{item.name}</div>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-[12px] font-black text-[#e84e2f]">¥{formatPrice(dealPrice)}</span>
+                            <span className="text-[8px] text-[#b89a8c] line-through">¥{formatPrice(item.price)}</span>
+                        </div>
+                        <button onClick={() => onBuy(item, dealPrice)} disabled={balance < dealPrice}
+                            className={`w-full mt-0.5 py-1 rounded-full text-[10px] font-bold active:scale-95 transition-transform ${balance >= dealPrice ? 'bg-gradient-to-r from-[#ff6034] to-[#ee0a24] text-white' : 'bg-slate-100 text-slate-300'}`}>
+                            {balance >= dealPrice ? `抢·${offPct}%off` : '差点钱'}
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// ── 猜你喜欢（推荐 feed） ──
+const RecommendSection: React.FC<{ catalog: ShopItem[]; favorites: string[]; onOpen: (i: ShopItem) => void; onAddCart: (i: ShopItem) => void; }> = ({ catalog, favorites, onOpen, onAddCart }) => {
+    const recs = useMemo(() => recommendItems(catalog, favorites, 8), [catalog, favorites]);
+    if (recs.length === 0) return null;
+    return (
+        <div className="mt-4">
+            <div className="text-[12px] font-black text-[#7a4a38] mb-2 flex items-center gap-1">💗 猜你喜欢</div>
+            <div className="grid grid-cols-2 gap-3">
+                {recs.map(item => (
+                    <div key={item.id} className="rounded-2xl bg-white flex flex-col shadow-sm border border-rose-50 overflow-hidden">
+                        <div className="cursor-pointer" onClick={() => onOpen(item)}>
+                            {item.image
+                                ? <img src={item.image} className="w-full h-[92px] object-cover" alt="" loading="lazy" />
+                                : <div className="text-[44px] text-center leading-none pt-3 pb-1.5 select-none bg-gradient-to-b from-[#fff7f2] to-white">{item.emoji}</div>}
+                        </div>
+                        <div className="px-3 pb-3 flex flex-col flex-1">
+                            <div className="text-[13px] font-black text-[#5a3a2e] truncate cursor-pointer" onClick={() => onOpen(item)}>{item.name}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5 mb-2 text-[9.5px] text-[#b89a8c]">
+                                <span className="flex items-center gap-0.5 text-amber-500"><Star size={10} weight="fill" />{itemRating(item.id)}</span>
+                                <span>·</span><span>月销 {formatSales(monthlySales(item.id))}</span>
+                            </div>
+                            <div className="flex items-center justify-between mt-auto">
+                                <span className="text-[15px] font-black text-[#e84e2f]">¥{formatPrice(item.price)}</span>
+                                <button onClick={() => onAddCart(item)} className="w-7 h-7 rounded-full bg-amber-50 text-[#c2755a] flex items-center justify-center active:scale-90 transition-transform border border-amber-100">
+                                    <ShoppingCart size={14} weight="bold" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
     );
 };
 

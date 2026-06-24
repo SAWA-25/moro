@@ -31,12 +31,12 @@ describe('parseGeneratedItems', () => {
 });
 
 describe('parseGeneratedReviews', () => {
-    it('解析、stars 归一到 4/5、脱敏兜底', () => {
-        const raw = '[{"user":"t**o","stars":5,"text":"很好看，送人有面子"},{"stars":3,"text":"还行吧凑合"},{"user":"x","text":""}]';
+    it('解析、stars 保留 1~5（仿真有好有坏）、脱敏兜底', () => {
+        const raw = '[{"user":"t**o","stars":5,"text":"很好看，送人有面子"},{"stars":2,"text":"踩雷了不推荐"},{"user":"x","text":""}]';
         const rv = parseGeneratedReviews(raw);
         expect(rv.length).toBe(2);            // 空 text 被丢
         expect(rv[0].stars).toBe(5);
-        expect(rv[1].stars).toBe(5);          // 非 4 的都归 5
+        expect(rv[1].stars).toBe(2);          // 低星差评保留
     });
     it('非 JSON 返回空', () => {
         expect(parseGeneratedReviews('nope')).toEqual([]);

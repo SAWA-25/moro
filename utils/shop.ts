@@ -11,7 +11,7 @@
  * 不碰 DB / React，方便在 App、聊天上下文、副 API 流程里复用。
  */
 
-import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem } from '../types';
+import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem, ShopCoupon } from '../types';
 
 /** 商城内容变动（买/送/角色逛完）后广播，相关页面据此刷新。 */
 export const SHOP_UPDATED_EVENT = 'moro-shop-updated';
@@ -254,36 +254,48 @@ export const monthlySales = (itemId: string): number => {
 export const formatSales = (n: number): string =>
     n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
 
-/** 评分（确定性）：4.6 ~ 5.0 之间，按 id 稳定。 */
-export const itemRating = (itemId: string): number =>
-    Math.round((4.6 + (hashStr('r' + itemId) % 41) / 100) * 10) / 10;
+/** 评分 1.0~5.0：优先用商品自带 rating（AI 生成，有好有坏），否则按 id 确定性派生（3.0~5.0）。 */
+export const itemRating = (itemId: string): number => {
+    const it = getShopItem(itemId);
+    if (it && typeof it.rating === 'number' && it.rating >= 1 && it.rating <= 5) return Math.round(it.rating * 10) / 10;
+    return Math.round((3.0 + (hashStr('r' + itemId) % 201) / 100) * 10) / 10; // 3.0~5.0
+};
 
 export interface ShopReview { user: string; stars: number; text: string; }
 
 const REVIEW_USERS = ['t**o', '甜**圈', '阿**', '小**鱼', 'L**y', 'momo', '一**风', '北**川', '橘**酱', '游**客'];
-const REVIEW_TEXTS = [
+const REVIEW_TEXTS_GOOD = [
     '比图片还好看，包装也用心，给对象很合适～',
     '质感超出预期，回购了第二件。',
     '物流很快，拆开心情都变好了。',
     '送人很有面子，对方很喜欢！',
     '颜值在线，细节做得好，好评。',
     '性价比挺高的，会推荐给朋友。',
-    '收到啦，和描述一致，没有色差。',
-    '包装精致，像是认真挑过的礼物。',
-    '小贵但值得，仪式感拉满。',
-    '客服态度很好，整体很满意。',
+];
+const REVIEW_TEXTS_BAD = [
+    '和图片差挺多，有点踩雷。',
+    '质量一般，价格偏贵了，不太值。',
+    '物流太慢，等了一个多礼拜。',
+    '做工粗糙，细节拉胯，差评。',
+    '收到有点失望，和描述不符。',
+    '客服爱答不理，体验很差。',
 ];
 
-/** 某商品的评价（确定性）：按 itemId 稳定地从评论池里取 2~4 条。 */
+/** 某商品的评价（确定性·仿真有好有坏）：评分越低，差评比例越高，取 2~4 条。 */
 export const getItemReviews = (itemId: string): ShopReview[] => {
+    const rating = itemRating(itemId);
     const h = hashStr('rev' + itemId);
     const count = 2 + (h % 3); // 2~4 条
+    const badProb = Math.max(0, Math.min(0.85, (4.6 - rating) / 2.6)); // rating 越低差评概率越高
     const out: ShopReview[] = [];
     for (let i = 0; i < count; i++) {
+        const isBad = (((h + i * 17) % 100) / 100) < badProb;
         const u = REVIEW_USERS[(h + i * 7) % REVIEW_USERS.length];
-        const t = REVIEW_TEXTS[(h + i * 13) % REVIEW_TEXTS.length];
-        const stars = 4 + ((h + i * 5) % 2); // 4 或 5 星
-        out.push({ user: u, stars, text: t });
+        if (isBad) {
+            out.push({ user: u, stars: 1 + ((h + i * 5) % 3), text: REVIEW_TEXTS_BAD[(h + i * 13) % REVIEW_TEXTS_BAD.length] });
+        } else {
+            out.push({ user: u, stars: 4 + ((h + i * 5) % 2), text: REVIEW_TEXTS_GOOD[(h + i * 13) % REVIEW_TEXTS_GOOD.length] });
+        }
     }
     return out;
 };
@@ -311,15 +323,17 @@ const CAT_KEYS = SHOP_CATEGORIES.map(c => c.key).join(' / ');
 export function buildGenerateItemsPrompt(count = 22, hint?: string): { system: string; user: string } {
     const system = '你是一个礼物电商「心意铺」的选品编辑，按要求产出商品清单。只输出 JSON，不要任何多余文字或代码块标记。';
     const user = `请为「心意铺」礼物商城实时生成 ${count} 件**各不相同**的商品（要有新鲜感、别老是玫瑰蛋糕，可涵盖小众/有趣/应季/数码/手作/体验券等）。${hint ? `本次主题倾向：${hint}。` : ''}
+**要仿真、有好有坏**：像真实淘宝那样混着卖——大部分是不错的好物，但也要掺几件「智商税 / 货不对板 / 翻车踩雷 / 廉价感」的商品（用 rating 体现，别都打高分）。
 每件包含：
-- name：商品名（6~14字，具体、有卖点）
+- name：商品名（6~14字，具体、有卖点；踩雷款也可以名字很唬人）
 - emoji：一个最贴切的 emoji（用作文字图）
-- price：价格（元，5~999 的数字，可带小数）
+- price：价格（元，5~999 的数字，可带小数；踩雷款常虚高）
 - category：从这些分类里选一个 key：${CAT_KEYS}
-- blurb：一句话种草文案（15~30字）
+- blurb：一句话文案（15~30字，好物种草、踩雷款可中性或暗示一般）
+- rating：真实评分（1.0~5.0 的数字，好物 4.3~5.0，普通 3.5~4.2，踩雷/智商税 1.5~3.4，请拉开差距）
 
 只输出一个 JSON 数组，形如：
-[{"name":"…","emoji":"🎁","price":59,"category":"life","blurb":"…"}]
+[{"name":"…","emoji":"🎁","price":59,"category":"life","blurb":"…","rating":4.7}]
 共 ${count} 个对象，不要编号、不要解释。`;
     return { system, user };
 }
@@ -351,19 +365,26 @@ export function parseGeneratedItems(raw: string): ShopItem[] {
         const emoji = (typeof o.emoji === 'string' && o.emoji.trim()) ? o.emoji.trim().slice(0, 4) : '🎁';
         const blurb = (typeof o.blurb === 'string' ? o.blurb.trim() : '').slice(0, 40) || '一份用心挑的小礼物。';
         const image = (typeof o.image === 'string' && /^https?:\/\//.test(o.image)) ? o.image : undefined;
-        out.push({ id, name, emoji, price, category, blurb, image, generated: true });
+        let rating = Number(o.rating);
+        rating = isFinite(rating) ? Math.max(1, Math.min(5, Math.round(rating * 10) / 10)) : undefined as any;
+        out.push({ id, name, emoji, price, category, blurb, image, generated: true, ...(rating ? { rating } : {}) });
     }
     return out;
 }
 
-/** 组装「为某商品实时生成买家评价」的 prompt。 */
-export function buildItemReviewsPrompt(item: Pick<ShopItem, 'name' | 'blurb' | 'price'>, count = 4): { system: string; user: string } {
-    const system = '你在扮演一批买过某商品的真实买家，写淘宝式短评。只输出 JSON 数组，不要多余文字或代码块标记。';
-    const user = `商品：「${item.name}」（¥${formatPrice(item.price)}，${item.blurb}）。
-请生成 ${count} 条不同口吻的买家评价（有夸有中肯，真实自然，别全是彩虹屁）：
+/** 组装「为某商品实时生成买家评价」的 prompt（仿真：评价分布要贴合评分，有好有坏）。 */
+export function buildItemReviewsPrompt(item: Pick<ShopItem, 'name' | 'blurb' | 'price' | 'rating'>, count = 5): { system: string; user: string } {
+    const rating = item.rating;
+    const tone = rating == null ? '好评为主、夹带一两条中肯小缺点'
+        : rating >= 4.3 ? '大多 4~5 星好评，可有 1 条挑刺的中评，真实不浮夸'
+        : rating >= 3.5 ? '好坏参半，有 3~4 星也有 5 星，吐槽和认可都要有'
+        : '差评/中评为主（1~3 星居多），具体吐槽货不对板/质量差/物流慢/智商税，可留 1 条还行的';
+    const system = '你在扮演一批买过某商品的真实买家，写淘宝式短评。买家有夸有骂、口吻各异，真实自然。只输出 JSON 数组，不要多余文字或代码块标记。';
+    const user = `商品：「${item.name}」（¥${formatPrice(item.price)}，${item.blurb}）${rating != null ? `，综合评分约 ${rating} 星` : ''}。
+请生成 ${count} 条评价，分布要求：${tone}。
 - user：脱敏昵称（如 "t**o"、"甜**圈"）
-- stars：4 或 5（多数 5，可有个别 4）
-- text：评价正文（15~40字，提到使用/物流/送人/质感等具体感受）
+- stars：1~5 的整数（按上面的分布来，别都打 5 星）
+- text：评价正文（15~40字，提到使用/物流/送人/质感/做工等具体感受，差评要骂到点子上）
 
 只输出 JSON 数组：[{"user":"…","stars":5,"text":"…"}]，共 ${count} 条。`;
     return { system, user };
@@ -383,7 +404,9 @@ export function parseGeneratedReviews(raw: string): ShopReview[] {
     for (const o of arr) {
         if (!o || typeof o.text !== 'string' || !o.text.trim()) continue;
         const user = (typeof o.user === 'string' && o.user.trim()) ? o.user.trim().slice(0, 12) : '匿名';
-        const stars = (Number(o.stars) === 4) ? 4 : 5;
+        let stars = Math.round(Number(o.stars));
+        if (!isFinite(stars)) stars = 5;
+        stars = Math.max(1, Math.min(5, stars));
         out.push({ user, stars, text: o.text.trim().slice(0, 60) });
     }
     return out;
@@ -444,6 +467,65 @@ export function orderReceivePayload(order: ShopOrder, userName: string): { owned
         }
     }
     return { owned, userReceipts, charReceipts };
+}
+
+// ── 优惠券（满减券） ──────────────────────────────────────────────────────
+export const SHOP_COUPONS: ShopCoupon[] = [
+    { id: 'c5', title: '满49减5', threshold: 49, discount: 5 },
+    { id: 'c10', title: '满99减10', threshold: 99, discount: 10 },
+    { id: 'c25', title: '满199减25', threshold: 199, discount: 25 },
+    { id: 'c60', title: '满399减60', threshold: 399, discount: 60 },
+    { id: 'c100', title: '满599减100', threshold: 599, discount: 100 },
+];
+export const getCoupon = (id: string): ShopCoupon | undefined => SHOP_COUPONS.find(c => c.id === id);
+
+/** 在已领券里挑「满足门槛且立减最多」的一张；都不满足返回 null。 */
+export function bestCoupon(claimedIds: string[] | undefined, total: number): ShopCoupon | null {
+    let best: ShopCoupon | null = null;
+    for (const id of (claimedIds || [])) {
+        const c = getCoupon(id);
+        if (c && total >= c.threshold && (!best || c.discount > best.discount)) best = c;
+    }
+    return best;
+}
+
+/** 应用优惠券后的实付（不低于 0）。 */
+export const applyCoupon = (total: number, coupon: ShopCoupon | null): number =>
+    coupon ? Math.max(0, Math.round((total - coupon.discount) * 100) / 100) : Math.round(total * 100) / 100;
+
+// ── 限时秒杀（每小时一轮，确定性挑品 + 折扣） ──────────────────────────────────
+const FLASH_WINDOW_MS = 60 * 60 * 1000;
+/** 本轮秒杀结束时间戳（下一个整点）。 */
+export const flashEndsAt = (now: number = Date.now()): number => (Math.floor(now / FLASH_WINDOW_MS) + 1) * FLASH_WINDOW_MS;
+
+/** 给定目录，确定性挑出 count 件秒杀品 + 折扣（一小时内稳定，整点换一批）。 */
+export function flashDeals(catalog: ShopItem[], now: number = Date.now(), count = 4): { item: ShopItem; dealPrice: number; offPct: number }[] {
+    if (!catalog.length) return [];
+    const w = Math.floor(now / FLASH_WINDOW_MS);
+    const ranked = [...catalog].sort((a, b) => hashStr(w + a.id) - hashStr(w + b.id)).slice(0, count);
+    return ranked.map(item => {
+        const offPct = 20 + (hashStr(w + 'off' + item.id) % 41); // 20%~60%
+        const dealPrice = Math.max(0.1, Math.round(item.price * (100 - offPct)) / 100);
+        return { item, dealPrice, offPct };
+    });
+}
+
+/** 某商品本轮是否在秒杀 + 秒杀价。 */
+export function flashDealFor(catalog: ShopItem[], itemId: string, now: number = Date.now()): { dealPrice: number; offPct: number } | null {
+    const d = flashDeals(catalog, now).find(x => x.item.id === itemId);
+    return d ? { dealPrice: d.dealPrice, offPct: d.offPct } : null;
+}
+
+// ── 猜你喜欢（按收藏分类加权 + 确定性打散，半小时换一批） ──────────────────────
+export function recommendItems(catalog: ShopItem[], favorites: string[], count = 8): ShopItem[] {
+    if (!catalog.length) return [];
+    const favCats = new Set((favorites || []).map(id => getShopItem(id)?.category).filter(Boolean) as string[]);
+    const seed = Math.floor(Date.now() / (30 * 60 * 1000));
+    return catalog
+        .map(it => ({ it, score: (favCats.has(it.category) ? 100000 : 0) + (hashStr(seed + it.id) % 1000) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, count)
+        .map(x => x.it);
 }
 
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────
