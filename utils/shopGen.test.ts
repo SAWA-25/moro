@@ -22,6 +22,18 @@ describe('parseGeneratedItems', () => {
         expect(parseGeneratedItems('')).toEqual([]);
     });
 
+    it('被 max_tokens 截断（数组没收尾）也能救回已写完的商品', () => {
+        // 模拟模型写到一半被截断：前 2 件完整，第 3 件残缺、数组无 ]
+        const raw = '```json\n[' +
+            '{"name":"绒月抱枕","emoji":"🌙","price":69,"category":"life","blurb":"软乎乎","rating":4.6},' +
+            '{"name":"星空夜灯","emoji":"🌌","price":88,"category":"life","blurb":"小宇宙","rating":4.8},' +
+            '{"name":"半截商品","emoji":"';
+        const items = parseGeneratedItems(raw);
+        expect(items.length).toBe(2);            // 救回 2 件完整的，丢掉残缺的
+        expect(items[0].name).toBe('绒月抱枕');
+        expect(items[1].name).toBe('星空夜灯');
+    });
+
     it('registerShopItems 后 getShopItem 能解析生成的 id', () => {
         const items = parseGeneratedItems('[{"name":"绒绒月亮抱枕","emoji":"🌙","price":69,"category":"plush","blurb":"抱着像抱住月亮"}]');
         registerShopItems(items);

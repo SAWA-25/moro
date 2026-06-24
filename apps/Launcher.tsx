@@ -4,7 +4,7 @@ import { INSTALLED_APPS, DOCK_APPS } from '../constants';
 import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
 import AppIcon from '../components/os/AppIcon';
 import { DB } from '../utils/db';
-import { CharacterProfile, Anniversary, AppID, DailySchedule } from '../types';
+import { CharacterProfile, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
@@ -186,123 +186,7 @@ const CALENDAR_WEEKDAYS = [
     { key: 'sat', label: 'S' },
 ] as const;
 
-// 4. Widget Page Component (Calendar + Events)
-const WidgetsPage = React.memo(({ contentColor, openApp, anniversaries, characters }: any) => {
-    const accentDot = '#2b2933'; // 墨色事件点，呼应黑白手帐配色
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    const monthName = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][currentMonth];
-
-    const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-    const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-
-    const totalDays = getDaysInMonth(currentYear, currentMonth);
-    const startOffset = getFirstDayOfMonth(currentYear, currentMonth);
-
-    const calendarDays = Array.from({ length: totalDays }, (_, i) => i + 1);
-    const paddingDays = Array.from({ length: startOffset }, () => null);
-
-    // --- Upcoming events: only today + future, soonest first (non-mutating), paginated ---
-    const todayStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const upcomingEvents = useMemo(
-        () => [...(anniversaries as any[])]
-            .filter((a: any) => a.date >= todayStr)
-            .sort((a: any, b: any) => a.date.localeCompare(b.date)),
-        [anniversaries, todayStr]
-    );
-    const EVENTS_PER_PAGE = 4;
-    const eventPageCount = Math.max(1, Math.ceil(upcomingEvents.length / EVENTS_PER_PAGE));
-    const [eventPage, setEventPage] = useState(0);
-    // Clamp the page if the list shrinks (e.g. an event passes / is removed)
-    useEffect(() => {
-        if (eventPage > eventPageCount - 1) setEventPage(eventPageCount - 1);
-    }, [eventPageCount, eventPage]);
-    const pagedEvents = upcomingEvents.slice(eventPage * EVENTS_PER_PAGE, eventPage * EVENTS_PER_PAGE + EVENTS_PER_PAGE);
-
-    return (
-        <div className="w-full flex-shrink-0 snap-center snap-always flex flex-col px-6 pt-24 pb-8 space-y-6 h-full overflow-y-auto no-scrollbar">
-              <div className="moro-widget-card glass-card rounded-3xl p-6 animate-rise-in">
-                  <div className="flex justify-between items-center mb-4" style={{ color: contentColor }}>
-                      <h3 className="text-xl font-display-italic font-semibold tracking-wide">{monthName} <span className="label-mono text-[11px] font-bold opacity-50 align-middle ml-1">{currentYear}</span></h3>
-                      <div onClick={() => openApp('schedule')} className="p-2 rounded-full cursor-pointer transition-colors bg-white/60 border border-[#ececf2] hover:bg-white press-soft">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                      </div>
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-y-3 gap-x-1 text-center mb-2">
-                      {CALENDAR_WEEKDAYS.map(day => <div key={day.key} className="text-[10px] font-bold opacity-40" style={{ color: contentColor }}>{day.label}</div>)}
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-y-2 gap-x-1 text-center">
-                      {paddingDays.map((_, i) => <div key={`pad-${i}`} />)}
-                      {calendarDays.map(day => {
-                          const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                          const isToday = day === now.getDate();
-                          const hasEvent = anniversaries.some((a: any) => a.date === dateStr);
-
-                          return (
-                              <div key={day} className="flex flex-col items-center justify-center h-8 relative">
-                                  <div
-                                    className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium ${isToday ? 'text-white font-bold shadow-lg' : 'opacity-80'}`}
-                                    style={isToday ? { background: '#2c2a35' } : { color: contentColor }}
-                                  >
-                                      {day}
-                                  </div>
-                                  {hasEvent && <div className="w-1.5 h-1.5 rounded-full absolute bottom-0 shadow-sm" style={{ background: accentDot }}></div>}
-                              </div>
-                          );
-                      })}
-                  </div>
-              </div>
-
-              <div className="moro-widget-card glass-card rounded-3xl p-5 flex flex-col flex-1 min-h-[200px] animate-rise-in" style={{ animationDelay: '80ms' }}>
-                  <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-[10px] font-bold opacity-60 label-mono flex items-center gap-2" style={{ color: contentColor }}>
-                          <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: accentDot }}></span> Upcoming Events
-                      </h3>
-                      {eventPageCount > 1 && (
-                          <div className="flex items-center gap-2 shrink-0" style={{ color: contentColor }}>
-                              <button
-                                  onClick={(e) => { e.stopPropagation(); setEventPage(p => Math.max(0, p - 1)); }}
-                                  disabled={eventPage === 0}
-                                  className="w-6 h-6 rounded-full bg-black/5 border border-[#ececf2] flex items-center justify-center disabled:opacity-25 hover:bg-black/10 transition-colors active:scale-90"
-                                  aria-label="Previous events"
-                              >
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-                              </button>
-                              <span className="text-[10px] font-mono opacity-60 tabular-nums">{eventPage + 1}/{eventPageCount}</span>
-                              <button
-                                  onClick={(e) => { e.stopPropagation(); setEventPage(p => Math.min(eventPageCount - 1, p + 1)); }}
-                                  disabled={eventPage >= eventPageCount - 1}
-                                  className="w-6 h-6 rounded-full bg-black/5 border border-[#ececf2] flex items-center justify-center disabled:opacity-25 hover:bg-black/10 transition-colors active:scale-90"
-                                  aria-label="Next events"
-                              >
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                              </button>
-                          </div>
-                      )}
-                  </div>
-                  <div className="space-y-3">
-                      {upcomingEvents.length > 0 ? pagedEvents.map((anni: any) => (
-                          <div key={anni.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/70 border border-[#f0ede6]">
-                              <div className="w-10 h-10 shrink-0 rounded-xl flex flex-col items-center justify-center bg-[#f4f2ec] text-[#2b2933] border border-[#e7e4dc]">
-                                  <span className="text-[9px] opacity-70">{anni.date.split('-')[1]}</span>
-                                  <span className="text-sm font-bold leading-none">{anni.date.split('-')[2]}</span>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-bold truncate" style={{ color: contentColor }}>{anni.title}</div>
-                                  <div className="text-[10px] opacity-50 truncate" style={{ color: contentColor }}>{characters.find((c: any) => c.id === anni.charId)?.name || 'Unknown'}</div>
-                              </div>
-                          </div>
-                      )) : (
-                          <div className="text-center opacity-30 text-xs py-8" style={{ color: contentColor }}>No upcoming events</div>
-                      )}
-                  </div>
-              </div>
-        </div>
-    );
-});
+// (Calendar + Upcoming Events 小组件页已移除)
 
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
 let _lastPageIndex = 0;
@@ -449,7 +333,6 @@ const Launcher: React.FC = () => {
   // Local state for widget data to prevent context trashing
   const [widgetChar, setWidgetChar] = useState<CharacterProfile | null>(null);
   const [lastMessage, setLastMessage] = useState<string>('');
-  const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
   const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
   const [scheduleCharId, setScheduleCharId] = useState<string | null>(null);
   const [scheduleViewerOpen, setScheduleViewerOpen] = useState(false);
@@ -673,7 +556,7 @@ const Launcher: React.FC = () => {
   );
 
   // Total pages = Desk Pages + 1 Widget Page
-  const totalPages = packedPages.length + 1;
+  const totalPages = packedPages.length;
 
   useEffect(() => {
       const loadData = async () => {
@@ -681,7 +564,6 @@ const Launcher: React.FC = () => {
           if (!characters || characters.length === 0) {
               setWidgetChar(null);
               setLastMessage('No Character Connected');
-              setAnniversaries([]);
               return;
           }
 
@@ -689,10 +571,7 @@ const Launcher: React.FC = () => {
           setWidgetChar(targetChar);
 
           try {
-              const [msgs, annis] = await Promise.all([
-                  DB.getMessagesByCharId(targetChar.id),
-                  DB.getAllAnniversaries()
-              ]);
+              const msgs = await DB.getMessagesByCharId(targetChar.id);
 
               if (msgs.length > 0) {
                   const visibleMsgs = msgs.filter(m => m.role !== 'system');
@@ -706,7 +585,6 @@ const Launcher: React.FC = () => {
               } else {
                   setLastMessage(targetChar.description || "System Ready.");
               }
-              setAnniversaries(annis);
           } catch (e) {
               console.error(e);
           }
@@ -1011,14 +889,6 @@ const Launcher: React.FC = () => {
                   </div>
               </div>
           ))}
-
-          {/* Final Page: Widgets */}
-          <WidgetsPage
-            contentColor={contentColor}
-            openApp={openApp}
-            anniversaries={anniversaries}
-            characters={characters}
-          />
 
       </div>
 

@@ -387,9 +387,9 @@ const ForumApp: React.FC = () => {
                                 </button>
                             ))}
                         </div>
-                        <input value={compose.title} onChange={e => setCompose(c => c && { ...c, title: e.target.value })} placeholder="标题" maxLength={40}
+                        <input value={compose.title} onChange={e => setCompose(c => c && { ...c, title: e.target.value })} placeholder="标题"
                             className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[15px] font-bold outline-none focus:border-[#2b6fe0]" />
-                        <textarea value={compose.body} onChange={e => setCompose(c => c && { ...c, body: e.target.value })} placeholder="正文（可选）" rows={6} maxLength={500}
+                        <textarea value={compose.body} onChange={e => setCompose(c => c && { ...c, body: e.target.value })} placeholder="正文（可选）" rows={6}
                             className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[14px] outline-none focus:border-[#2b6fe0] resize-none leading-relaxed" />
                         <p className="text-[11px] text-slate-400">发完进帖会自动「召唤网友盖楼」，角色和网友会按人设来回复。</p>
                     </div>

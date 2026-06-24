@@ -223,7 +223,7 @@ interface AiStoreRaw {
  */
 export async function generateStoresAI(api: ResolvedApi, count = 12, query?: string): Promise<TakeoutStore[]> {
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-    if (!baseUrl || !api.model) return generateStores(count);
+    if (!baseUrl || !api.model) throw new Error('未配置副 API');
     const q = (query || '').trim();
     const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
 ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧扣「${q}」——主营该菜品/品类/口味/场景（店名、招牌菜都要相关），让用户一搜就搜到对的店。\n` : ''}要求（越像真的越好，别像广告）：
@@ -235,25 +235,24 @@ ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧�
 - blurb 是店主写在招牌上的一句话（≤20 字，有人味）。emoji 是门脸 logo（一个 emoji）。category 必须取自给定品类。
 只输出 JSON，不要任何解释或前后缀，格式：
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
-    try {
-        const data = await safeFetchJson(
-            `${baseUrl}/chat/completions`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-                body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 3200, stream: false }),
-            },
-            2, 0, { appName: '外卖', purpose: 'AI 生成店铺' },
-        );
-        const raw = data?.choices?.[0]?.message?.content || '';
-        const parsed = extractJson(raw);
-        const list: AiStoreRaw[] = Array.isArray(parsed?.stores) ? parsed.stores : (Array.isArray(parsed) ? parsed : []);
-        const stores = list.map(mapAiStore).filter((s): s is TakeoutStore => !!s);
-        if (stores.length < 4) return generateStores(count);   // 解析太少，兜底
-        return stores;
-    } catch {
-        return generateStores(count);
-    }
+    // 给足 token：20 家带菜品的店铺 JSON 很长，旧的 3200 常被截断 → 解析为空 → 静默回退本地种子，
+    // 表现为「调了 API 却只有离线店铺」。提到 8000 + extractJson 的截断修复，基本能完整拿到一整批。
+    const data = await safeFetchJson(
+        `${baseUrl}/chat/completions`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
+            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 8000, stream: false }),
+        },
+        2, 0, { appName: '外卖', purpose: 'AI 生成店铺' },
+    );
+    const raw = extractContent(data) || data?.choices?.[0]?.message?.content || '';
+    const parsed = extractJson(raw);
+    const list: AiStoreRaw[] = Array.isArray(parsed?.stores) ? parsed.stores : (Array.isArray(parsed) ? parsed : []);
+    const stores = list.map(mapAiStore).filter((s): s is TakeoutStore => !!s);
+    // 解析不到任何店铺 = 真·失败：抛出让调用方明确提示并保留现有列表，而不是悄悄换成本地种子冒充成功。
+    if (stores.length === 0) throw new Error('店铺生成解析失败');
+    return stores;
 }
 
 function mapAiStore(raw: AiStoreRaw): TakeoutStore | null {

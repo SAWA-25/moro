@@ -339,15 +339,34 @@ export function buildGenerateItemsPrompt(count = 22, hint?: string): { system: s
 }
 
 /** 解析「实时生成商品」的模型输出为 ShopItem[]（健壮解析；自动补全 id / 校验字段 / 去重）。 */
+/**
+ * 健壮解析「一批扁平对象」：先整体 JSON.parse，失败则逐个抠出完整的 {...} 再解析。
+ * 关键：AI 因 max_tokens 被截断、数组没收尾时，也能把已写完的对象救回来，
+ * 不至于整批丢弃后被「内置商品」垫场（表现为「调了 API 却只有离线商品」）。
+ */
+function salvageObjects(txt: string): any[] {
+    const start = txt.indexOf('[');
+    if (start === -1) {
+        // 没有数组括号：尝试单个对象
+        const o = txt.match(/\{[^{}]*\}/);
+        if (o) { try { return [JSON.parse(o[0])]; } catch { return []; } }
+        return [];
+    }
+    const end = txt.lastIndexOf(']');
+    if (end > start) {
+        try { const arr = JSON.parse(txt.slice(start, end + 1)); if (Array.isArray(arr) && arr.length) return arr; } catch { /* fall to salvage */ }
+    }
+    const objs = txt.slice(start).match(/\{[^{}]*\}/g) || [];
+    const out: any[] = [];
+    for (const o of objs) { try { out.push(JSON.parse(o)); } catch { /* skip broken tail */ } }
+    return out;
+}
+
 export function parseGeneratedItems(raw: string): ShopItem[] {
     if (!raw) return [];
     let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
-    const start = txt.indexOf('[');
-    const end = txt.lastIndexOf(']');
-    if (start === -1 || end === -1 || end <= start) return [];
-    let arr: any[];
-    try { arr = JSON.parse(txt.slice(start, end + 1)); } catch { return []; }
-    if (!Array.isArray(arr)) return [];
+    const arr = salvageObjects(txt);
+    if (arr.length === 0) return [];
     const validCats = new Set(SHOP_CATEGORIES.map(c => c.key));
     const seen = new Set<string>();
     const out: ShopItem[] = [];
@@ -394,12 +413,8 @@ export function buildItemReviewsPrompt(item: Pick<ShopItem, 'name' | 'blurb' | '
 export function parseGeneratedReviews(raw: string): ShopReview[] {
     if (!raw) return [];
     let txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
-    const start = txt.indexOf('[');
-    const end = txt.lastIndexOf(']');
-    if (start === -1 || end === -1 || end <= start) return [];
-    let arr: any[];
-    try { arr = JSON.parse(txt.slice(start, end + 1)); } catch { return []; }
-    if (!Array.isArray(arr)) return [];
+    const arr = salvageObjects(txt);
+    if (arr.length === 0) return [];
     const out: ShopReview[] = [];
     for (const o of arr) {
         if (!o || typeof o.text !== 'string' || !o.text.trim()) continue;
