@@ -264,3 +264,10 @@ pm run build passes after the time-gap grouping fix.
   - **自包含组件换肤**：`ActiveMsg2SettingsModal`(`Modal`→`ScrapModal` + 品红强调改墨)、`OfflineModeModal`(线下见面，整套糖果粉/紫调改墨灰纸)、`UserActionSelectorModal`(帮想话术，粉色渐变改墨)；`ProactiveSettingsModal`/`ThinkingChainSettingsModal`/`TabloidModal`/`LifeRecapModal` 借 JournalSheet regrade 自动变黑白，内部残留糖果输入框/标签也改墨。
   - **保留语义色**：外卖订单小票(美团橙)、主动求婚撰写 + 浪漫求婚 `ProposalOverlay`(婚礼粉)、角色发来的红包/转账信封（本就黑白拼贴）按「内容卡」保留其专属色，与「头像不去色」同理。
   - 全程纯表现层、零逻辑改动。`pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green。
+
+- 修复「撤回消息」穿帮（模型自己打字模仿系统撤回播报，漏成气泡）:
+  - **现象**（见 bug 截图）：让角色撤回时，模型不发 `[[WITHDRAW]]` 指令，反而把系统该渲染的东西当台词敲出来——「条新消息」「【系统消息】流浪者」「撤回了一条消息」一串假系统行漏成了白气泡，而真正的撤回没发生。
+  - **兜底识别 + 真撤回**：`utils/messageWithdraw.ts` 新增 `stripFakeWithdrawNotice(content, charName?)`——识别模型「自己打字模仿」的系统撤回播报（系统标记行 `【系统消息】…` / 假通知 `N条新消息` / 纯系统口吻 `对方撤回了一条消息` / `<角色名>撤回了一条消息`），命中即：① 触发一次真撤回；② 把这些假系统行整段剥掉，只留角色真说的话（如「啊，当我没说」）。对正常叙述里出现的「撤回」字样不误伤（需「撤回…(一/那)条…消息」的播报句式 + 系统语境才命中）。
+  - **接入两条管线**：单聊 `utils/applyAssistantPostProcessing.ts` 与群聊 `apps/ChatHub.tsx` 导演动作循环都在 `[[WITHDRAW]]` 之外再跑一遍兜底，命中就广播/执行真撤回（撤掉该角色上一条、原文留 metadata 供偷看）。
+  - **提示词加固**：单聊 `utils/chatPrompts.ts` 与群聊导演 prompt 的撤回条目都补上「⚠️撤回提示由系统渲染，绝不要自己打字模仿『【系统消息】/X条新消息/撤回了一条消息』，只输出 `[[WITHDRAW]]` 指令本身」。
+  - 新增 6 条回归测试（`messageWithdraw.test.ts`）。`pnpm tsc --noEmit` clean, `vite build` passes, 629 tests green（+6）。

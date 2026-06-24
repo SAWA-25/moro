@@ -20,6 +20,7 @@ import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
+import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -2126,7 +2127,7 @@ ${attachedImagesNote}
 - **群投票**: 看到 \`[群投票「问题」单选，选项: 1.xxx 2.yyy...]\` = 群里有进行中的投票。**还没投过的成员可以投票**：在自己的发言里加 \`[[VOTE: 选项序号]]\`（按 TA 的性格/喜好选**一个**），也可以在序号后用竖线带上一句理由：\`[[VOTE: 2|想去海边吹风]]\`。投票指令不会显示出来，但可以配一句吐槽/安利/拉票的正常发言。**已经投过的人不要重复投**，没兴趣的成员也可以不投。
 - **群接龙**: 看到 \`[接龙「主题」已有N条: ...]\` = 群里有进行中的接龙。**有兴趣/被点到的成员可以接龙**：在自己的发言里加 \`[[JOIN_RELAY: 自己这一条的内容]]\`（按性格接——报名、加项、接梗、补一句，内容简短）。接龙指令不显示，但可以配一句正常发言。**已经接过的人不必重复接**，没兴趣的可以不接，别全员都接——按真实意愿来。
 - **群签到**: 看到 \`[群签到 日期，已打卡N人: ...]\` = 今天群里在打卡。**还没签到的成员可以签到**：在自己的发言里加 \`[[CHECKIN: 一句此刻的心情/状态]]\`（如「摸鱼中」「刚下班累瘫」「今天超精神」，简短）。签到指令不显示，但可以配一句正常发言。**已经签过的人当天不要重复签**，没在状态的也可以不签。
-- **撤回消息**: 成员想收回自己刚在群里说的话（口误、说漏嘴、太冲动、害羞后悔）时，在自己的发言里加 \`[[WITHDRAW]]\`，系统会撤回该成员**上一条**群消息，群里只显示"X撤回了一条消息"（看不到原文）。通常再配一句打岔。**低频使用**，别每轮都撤。
+- **撤回消息**: 成员想收回自己刚在群里说的话（口误、说漏嘴、太冲动、害羞后悔）时，在自己的发言里加 \`[[WITHDRAW]]\`，系统会撤回该成员**上一条**群消息，群里只显示"X撤回了一条消息"（看不到原文）。通常再配一句打岔。**低频使用**，别每轮都撤。⚠️撤回提示由系统渲染——**绝不要自己打字模仿**「【系统消息】」「X条新消息」「X撤回了一条消息」这类系统文本，只输出 \`[[WITHDRAW]]\` 指令本身。
 - **表情回应**: 成员想对群里最近某条消息贴个表情态度（点赞/比心/大笑/惊讶…）而不必专门回一句话时，在发言里加 \`[[REACT: 表情]]\`（如 \`[[REACT: 👍]]\`），会以小表情贴在群里最近那条别人的消息下。适合轻量附和，别滥用。
 
 #### 七、私聊感知（避免说错话）
@@ -2375,19 +2376,26 @@ ${attachedImagesNote}
                     }
                 }
 
-                // 1.8 群·角色撤回 [[WITHDRAW]]：撤回该成员最近一条未撤回的群消息（原文留 metadata 供偷看）
-                if (/\[\[\s*WITHDRAW\s*\]\]/i.test(action.content)) {
-                    action.content = action.content.replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').trim();
-                    const groupMsgs = await DB.getGroupMessages(activeGroup.id);
-                    for (let i = groupMsgs.length - 1; i >= 0; i--) {
-                        const gm = groupMsgs[i];
-                        if (gm.role === 'assistant' && gm.charId === targetId && gm.type !== 'system'
-                            && !gm.metadata?.recalled && typeof gm.content === 'string' && gm.content.trim()) {
-                            await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: gm.content, recalledAt: Date.now() }));
-                            break;
+                // 1.8 群·角色撤回：[[WITHDRAW]] 指令，或模型「自己打字模仿」的系统撤回播报
+                //（「【系统消息】X撤回了一条消息」之类），都撤回该成员最近一条未撤回的群消息（原文留 metadata 供偷看）
+                {
+                    const tokenHit = /\[\[\s*WITHDRAW\s*\]\]/i.test(action.content);
+                    if (tokenHit) action.content = action.content.replace(/\[\[\s*WITHDRAW\s*\]\]/gi, '').trim();
+                    const memberName = characters.find(c => c.id === targetId)?.name;
+                    const fake = stripFakeWithdrawNotice(action.content, memberName);
+                    if (fake.withdraw) action.content = fake.content;
+                    if (tokenHit || fake.withdraw) {
+                        const groupMsgs = await DB.getGroupMessages(activeGroup.id);
+                        for (let i = groupMsgs.length - 1; i >= 0; i--) {
+                            const gm = groupMsgs[i];
+                            if (gm.role === 'assistant' && gm.charId === targetId && gm.type !== 'system'
+                                && !gm.metadata?.recalled && typeof gm.content === 'string' && gm.content.trim()) {
+                                await DB.updateMessageMetadata(gm.id, (p: any) => ({ ...(p || {}), recalled: true, recalledContent: gm.content, recalledAt: Date.now() }));
+                                break;
+                            }
                         }
+                        setMessages(await DB.getGroupMessages(activeGroup.id));
                     }
-                    setMessages(await DB.getGroupMessages(activeGroup.id));
                 }
 
                 // 1.9 群·角色表情回应 [[REACT: 表情]]：给群里最近一条非自己的消息贴表情（by = 该成员）
