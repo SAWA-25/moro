@@ -13,8 +13,10 @@ import {
     buildDeliveryReply, postTakeoutPlacedToChat, postTakeoutDeliveredToChat, postTakeoutIssueToChat,
     rollOrderIssues, resolveComplaint, incidentsSummary, hasOpenIssues,
     consumeTakeoutIntent, notifyTakeoutUpdated,
-    generateStoreReviews, reviewQuickTags, generateReviewReplies,
+    generateStoreReviews, generateStoreReviewsAI, reviewQuickTags, generateReviewReplies,
     getPinnedStores, togglePinnedStore, type StoreNpcReview,
+    sortStores, filterStores, storePromoDiscount, bestRedpacket, TAKEOUT_REDPACKETS,
+    recommendStores, groupDishes, type StoreSort, type StoreFilter,
 } from '../utils/takeout';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
@@ -79,15 +81,46 @@ const Shopfront: React.FC<{ e?: string; size?: number; box?: number }> = ({ e, s
     </div>
 );
 
+const TAKEOUT_BANNERS = [
+    { t: '准时达 · 慢必赔', s: '超时有补偿，安心点', g: 'linear-gradient(120deg,#ffd24d,#ffb300)' },
+    { t: '神券天天领', s: '满20减3起，结算自动用最优', g: 'linear-gradient(120deg,#ff7a45,#fa541c)' },
+    { t: 'AI 现写一条街', s: '点「现写一条街」，每次都是新铺子', g: 'linear-gradient(120deg,#36322b,#6b5b4a)' },
+    { t: '免配送费专区', s: '筛选「免配送费」，省到就是赚到', g: 'linear-gradient(120deg,#52c41a,#389e0d)' },
+];
+const TakeoutBanner: React.FC = () => {
+    const [i, setI] = useState(0);
+    useEffect(() => { const t = setInterval(() => setI(x => (x + 1) % TAKEOUT_BANNERS.length), 3500); return () => clearInterval(t); }, []);
+    const b = TAKEOUT_BANNERS[i];
+    return (
+        <div className="rounded-[10px] overflow-hidden relative h-[64px]" style={{ background: b.g }}>
+            <div className="absolute inset-0 px-3.5 flex flex-col justify-center text-white">
+                <div className="text-[14px] font-black drop-shadow-sm">{b.t}</div>
+                <div className="text-[10px] opacity-90 mt-0.5">{b.s}</div>
+            </div>
+            <div className="absolute bottom-1.5 right-2.5 flex gap-1">
+                {TAKEOUT_BANNERS.map((_, k) => <span key={k} className={`w-1.5 h-1.5 rounded-full ${k === i ? 'bg-white' : 'bg-white/40'}`} />)}
+            </div>
+        </div>
+    );
+};
+
 const TakeoutApp: React.FC = () => {
-    const { closeApp, characters, userProfile, apiConfig, auxApiConfig, addToast, adjustUserBalance } = useOS();
+    const { closeApp, characters, userProfile, updateUserProfile, apiConfig, auxApiConfig, addToast, adjustUserBalance } = useOS();
     const api = resolveAuxApi(auxApiConfig, apiConfig);
     const aiReady = !!(api.baseUrl && api.model);
     const nameOf = (id: string) => characters.find(c => c.id === id)?.name || '';
     const wallet = Math.round((userProfile.balance || 0) * 100) / 100;
 
     const [view, setView] = useState<View>('home');
-    const [stores, setStores] = useState<TakeoutStore[]>(() => generateStores(12));
+    // 店铺缓存：进 App 先用上次实时生成的那条街（避免空白/本地占位闪一下），没有才本地占位
+    const STORES_CACHE_KEY = 'moro_takeout_stores_v1';
+    const [stores, setStores] = useState<TakeoutStore[]>(() => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null');
+            if (Array.isArray(cached) && cached.length) return cached;
+        } catch { /* ignore */ }
+        return generateStores(20);
+    });
     const [aiLoading, setAiLoading] = useState(false);
     const [cat, setCat] = useState('全部');
     const [query, setQuery] = useState('');
@@ -116,7 +149,23 @@ const TakeoutApp: React.FC = () => {
     const [reviewRating, setReviewRating] = useState(5);
     const [reviewTags, setReviewTags] = useState<string[]>([]);
     const [reviewText, setReviewText] = useState('');
-    const storeReviews = useMemo<StoreNpcReview[]>(() => activeStore ? generateStoreReviews(activeStore.name, activeStore.rating) : [], [activeStore]);
+    // 食评：进店实时 AI 生成（仿真有好有坏，按店铺评分调好坏比例）；加载时先用算法版垫场，失败回退算法版
+    const [storeReviews, setStoreReviews] = useState<StoreNpcReview[]>([]);
+    const [reviewsLoading, setReviewsLoading] = useState(false);
+    useEffect(() => {
+        if (!activeStore) { setStoreReviews([]); return; }
+        let alive = true;
+        setStoreReviews(generateStoreReviews(activeStore.name, activeStore.rating)); // 垫场
+        if (aiReady) {
+            setReviewsLoading(true);
+            generateStoreReviewsAI(api, activeStore, 8)
+                .then(rv => { if (alive) setStoreReviews(rv); })
+                .catch(() => { /* 已垫场 */ })
+                .finally(() => { if (alive) setReviewsLoading(false); });
+        }
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeStore?.id]);
 
     const reloadOrders = async () => setOrders(await DB.getTakeoutOrders().catch(() => []));
     useEffect(() => { void reloadOrders(); }, []);
@@ -129,23 +178,52 @@ const TakeoutApp: React.FC = () => {
         }
     }, [characters]);
 
-    const loadStoresAI = async () => {
+    const loadStoresAI = async (q?: string) => {
         if (!aiReady || aiLoading) return;
         setAiLoading(true);
         try {
-            const next = await generateStoresAI(api, 12);
+            const next = await generateStoresAI(api, 20, q); // 每批至少 20 家，实时生成（q 时紧扣搜索词）
             setStores(next);
+            try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
         } catch { /* 失败保留现有 */ } finally { setAiLoading(false); }
     };
-    useEffect(() => { if (aiReady) void loadStoresAI(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+    // 搜索栏实时生成：按搜索词现搜一批相关店铺（生成后清掉文字过滤，直接展示这批结果）
+    const searchGen = async () => {
+        const q = query.trim();
+        if (!q) return;
+        if (!aiReady) { addToast('配好副 API 才能现搜哦', 'info'); return; }
+        addToast(`正在为「${q}」现搜全城…`, 'info');
+        await loadStoresAI(q);
+        setQuery(''); setCat('全部'); setFilter({});
+    };
+    // 进 App：没有缓存才实时生成一批（有缓存就先看缓存，点「换一条街」再现写）
+    useEffect(() => {
+        const hasCache = (() => { try { return !!JSON.parse(localStorage.getItem(STORES_CACHE_KEY) || 'null')?.length; } catch { return false; } })();
+        if (aiReady && !hasCache) void loadStoresAI();
+        /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    }, []);
 
     const activeOrder = orders.find(o => o.id === activeOrderId) || null;
 
+    // 美团式：排序 / 筛选 / 平台红包
+    const [sort, setSort] = useState<StoreSort>('recommend');
+    const [filter, setFilter] = useState<StoreFilter>({});
+    const claimedRedpackets = userProfile.takeoutRedpackets || [];
+    const claimRedpacket = (id: string) => {
+        if (claimedRedpackets.includes(id)) { addToast('已领过这张红包', 'info'); return; }
+        updateUserProfile({ takeoutRedpackets: [id, ...claimedRedpackets] });
+        addToast('平台红包已领取 🧧', 'success');
+    };
+
     // ── 派生 ──
-    const filteredStores = useMemo(() => stores.filter(s =>
-        (cat === '全部' || s.category === cat) &&
-        (!query.trim() || s.name.includes(query.trim()) || s.dishes.some(d => d.name.includes(query.trim())))
-    ), [stores, cat, query]);
+    const filteredStores = useMemo(() => {
+        const base = stores.filter(s =>
+            (cat === '全部' || s.category === cat) &&
+            (!query.trim() || s.name.includes(query.trim()) || s.dishes.some(d => d.name.includes(query.trim()))));
+        return sortStores(filterStores(base, filter), sort);
+    }, [stores, cat, query, filter, sort]);
+    const recommended = useMemo(() => recommendStores(stores, 6), [stores]);
 
     const cartItems = useMemo((): TakeoutOrderItem[] => {
         if (!activeStore) return [];
@@ -160,7 +238,7 @@ const TakeoutApp: React.FC = () => {
     // ── 操作 ──
     const refresh = () => {
         if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
-        else { setStores(generateStores(12)); addToast('翻到另一条街啦～', 'info'); }
+        else { const s = generateStores(20); setStores(s); try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(s)); } catch { /* ignore */ } addToast('翻到另一条街啦～', 'info'); }
     };
     const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setView('store'); };
     const setQty = (dishId: string, delta: number) => setCart(prev => ({ ...prev, [dishId]: Math.max(0, (prev[dishId] || 0) + delta) }));
@@ -212,9 +290,14 @@ const TakeoutApp: React.FC = () => {
         setView('checkout');
     };
 
+    // 满减 + 平台红包 抵扣（按当前购物车小计）
+    const promoDisc = activeStore ? storePromoDiscount(activeStore.promo, cartSubtotal) : 0;
+    const bestRp = bestRedpacket(claimedRedpackets, cartSubtotal);
+    const orderDiscount = Math.min(cartSubtotal, promoDisc + (bestRp?.discount || 0));
+
     const placeOrder = async () => {
         if (!activeStore || cartItems.length === 0) return;
-        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip;
+        const total = Math.max(0, cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip - orderDiscount);
         const payByMe = payer === 'me';
         if (payByMe && wallet < total) { addToast(`饭钱不够：钱包 ¥${wallet} / 这张票要 ¥${total}`, 'error'); return; }
         try { localStorage.setItem(ADDR_KEY, address); } catch { /* ignore */ }
@@ -394,14 +477,39 @@ const TakeoutApp: React.FC = () => {
                 <div className="relative z-10 px-5 pt-2.5">
                     <div className="flex items-center gap-2 px-3 py-2 rounded-[10px]" style={paperInput}>
                         <MagnifyingGlass size={15} color={INK_SOFT} />
-                        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="翻翻铺子，找点想吃的…" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
+                        <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && query.trim()) void searchGen(); }} placeholder="搜店名/菜品/药品…回车现搜全城" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
                         <button onClick={refresh} disabled={aiLoading} className="text-[11px] font-black flex items-center gap-1 disabled:opacity-50" style={{ color: INK }}>
                             {aiLoading ? <><Sparkle size={13} weight="fill" className="animate-pulse" />现写中…</> : <><ArrowClockwise size={13} weight="bold" />{aiReady ? '现写一条街' : '另逛一条街'}</>}
                         </button>
                     </div>
+                    {/* 搜索栏实时生成：按搜索词现搜一批相关店铺 */}
+                    {query.trim() && aiReady && (
+                        <button onClick={() => void searchGen()} disabled={aiLoading} className="mt-2 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-[10px] text-[12px] font-black active:scale-[0.98] transition-transform disabled:opacity-50" style={{ background: '#d2452f', color: '#fff', boxShadow: '0 10px 18px -12px rgba(210,69,47,0.7)' }}>
+                            <MagnifyingGlass size={14} weight="bold" />为「{query.trim()}」现搜全城相关的店
+                        </button>
+                    )}
                     <button onClick={randomPick} className="mt-2.5 w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-[10px] text-[13px] font-black active:scale-[0.98] transition-transform" style={{ background: INK, color: PAPER, outline: '1px dashed rgba(255,255,255,0.32)', outlineOffset: -4, boxShadow: '0 12px 22px -14px rgba(31,29,26,0.6)' }}>
                         <Shuffle size={16} weight="bold" />抽张饭票 · 替我拿主意
                     </button>
+                </div>
+
+                {/* banner 轮播 + 平台红包·领券 */}
+                <div className="relative z-10 px-5 pt-3 space-y-2">
+                    <TakeoutBanner />
+                    <div className="rounded-[10px] px-3 py-2" style={{ background: 'linear-gradient(120deg,#ffe9e3,#fff6f2)', border: '1px dashed rgba(210,69,47,0.4)' }}>
+                        <div className="flex items-center gap-1 text-[10px] font-black mb-1.5" style={{ color: '#d2452f' }}>🧧 平台红包 · 结算自动用最优</div>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                            {TAKEOUT_REDPACKETS.map(r => {
+                                const got = claimedRedpackets.includes(r.id);
+                                return (
+                                    <div key={r.id} className="shrink-0 flex items-center gap-1.5 rounded-[8px] bg-white px-2 py-1" style={{ border: '1px solid rgba(210,69,47,0.25)' }}>
+                                        <div className="leading-tight"><div className="text-[13px] font-black" style={{ color: '#d2452f' }}>¥{r.discount}</div><div className="text-[8px]" style={{ color: INK_SOFT }}>满{r.threshold}</div></div>
+                                        <button onClick={() => claimRedpacket(r.id)} disabled={got} className="px-2 py-0.5 rounded-full text-[9px] font-bold active:scale-95 transition-transform" style={got ? { background: '#f3ece6', color: '#b0a99e' } : { background: '#d2452f', color: '#fff' }}>{got ? '已领' : '领'}</button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
 
                 {/* 钉在墙上的常去铺子 */}
@@ -423,11 +531,33 @@ const TakeoutApp: React.FC = () => {
                     ))}
                 </div>
 
+                {/* 美团式：排序 + 筛选 */}
+                <div className="relative z-10 shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar px-5 pt-1.5 pb-0.5">
+                    {(([['recommend', '综合'], ['sales', '销量'], ['rating', '评分'], ['distance', '距离'], ['delivery', '最快']]) as [StoreSort, string][]).map(([k, label]) => (
+                        <button key={k} onClick={() => setSort(k)} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
+                            style={sort === k ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
+                    ))}
+                    <span className="shrink-0 w-px h-4" style={{ background: 'rgba(176,170,158,0.5)' }} />
+                    {(([['freeDelivery', '免配送费'], ['zeroMinOrder', '0起送'], ['promoOnly', '有优惠'], ['goodOnly', '4.5+']]) as [keyof StoreFilter, string][]).map(([k, label]) => {
+                        const on = !!filter[k];
+                        return (
+                            <button key={k} onClick={() => setFilter(f => ({ ...f, [k]: !f[k] }))} className="shrink-0 px-2.5 py-1 rounded-[6px] text-[11px] font-bold active:scale-95 transition-transform"
+                                style={on ? { background: '#d2452f', color: '#fff' } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{label}</button>
+                        );
+                    })}
+                </div>
+
                 {/* 铺子列表 */}
                 <ScrapScroll className="px-5 pt-2 pb-10">
                     <SectionTag en="THE STREET" className="mb-3">这条街上的铺子</SectionTag>
                     {aiLoading && stores.length === 0 && <div className="text-center text-[12px] py-12 flex items-center justify-center gap-1.5" style={{ color: INK_SOFT }}><Sparkle size={16} weight="fill" className="animate-pulse" />正在一笔笔现写这条街…</div>}
-                    {filteredStores.length === 0 && !aiLoading && <div className="text-center text-[12px] py-12" style={{ color: INK_SOFT }}>这条街上没找着，换个词或点「{aiReady ? '现写一条街' : '另逛一条街'}」。</div>}
+                    {filteredStores.length === 0 && !aiLoading && (
+                        <div className="text-center text-[12px] py-12" style={{ color: INK_SOFT }}>
+                            {query.trim()
+                                ? <>没找着「{query.trim()}」，{aiReady ? <button onClick={() => void searchGen()} className="font-black underline" style={{ color: '#d2452f' }}>现搜全城</button> : '换个词试试'}。</>
+                                : <>这条街上没找着，换个词或点「{aiReady ? '现写一条街' : '另逛一条街'}」。</>}
+                        </div>
+                    )}
                     <div className="space-y-3.5">
                         {filteredStores.map((s, i) => {
                             const tape = (['amber', 'sage', 'lilac', 'butter'] as const)[i % 4];
@@ -460,6 +590,23 @@ const TakeoutApp: React.FC = () => {
                             );
                         })}
                     </div>
+
+                    {/* 猜你喜欢 */}
+                    {cat === '全部' && !query.trim() && recommended.length > 0 && (
+                        <div className="mt-6">
+                            <SectionTag en="FOR YOU" className="mb-3">猜你喜欢</SectionTag>
+                            <div className="flex gap-2.5 overflow-x-auto no-scrollbar pb-1">
+                                {recommended.map(s => (
+                                    <button key={s.id} onClick={() => openStore(s)} className="shrink-0 w-[120px] text-left rounded-[10px] p-2.5 active:scale-[0.97] transition-transform" style={{ background: 'rgba(255,253,247,0.95)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                        <div className="mb-1"><Emo e={s.emoji} size={26} /></div>
+                                        <div className="text-[12px] font-black truncate" style={{ color: INK }}>{s.name}</div>
+                                        <div className="text-[9px] mt-0.5" style={{ color: INK_SOFT }}>★{s.rating} · 月售{s.monthlySales}</div>
+                                        {s.promo && <div className="text-[8.5px] font-bold mt-0.5" style={{ color: '#d2452f' }}>{s.promo}</div>}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </ScrapScroll>
             </PaperShell>
         );
@@ -500,23 +647,33 @@ const TakeoutApp: React.FC = () => {
 
                 <ScrapScroll className="px-5 pt-3 pb-28">
                     <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
-                    <div className="space-y-2.5">
-                        {activeStore.dishes.map(d => (
-                            <div key={d.id} className="flex gap-3 items-center px-3 py-2.5 rounded-[12px]" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: '1px solid rgba(176,170,158,0.55)' }}>
-                                <Shopfront e={d.emoji} size={24} box={46} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
-                                        {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
-                                    </div>
-                                    {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
-                                    <div className="text-[14px] font-black mt-1" style={{ color: INK }}>¥{d.price}</div>
+                    {/* 美团式菜单分组（招牌/主食/饮品/小食…） */}
+                    <div className="space-y-3.5">
+                        {groupDishes(activeStore.dishes).map(({ group, dishes }) => (
+                            <div key={group}>
+                                <div className="text-[10px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: INK_SOFT, letterSpacing: '0.08em' }}>
+                                    <span className="w-3 h-px" style={{ background: 'rgba(176,170,158,0.7)' }} />{group}<span className="opacity-50">· {dishes.length}</span>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    {(cart[d.id] || 0) > 0 && <>
-                                        <button onClick={() => setQty(d.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
-                                        <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{cart[d.id]}</span>
-                                    </>}
-                                    <button onClick={() => setQty(d.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>
+                                <div className="space-y-2.5">
+                                    {dishes.map(d => (
+                                        <div key={d.id} className="flex gap-3 items-center px-3 py-2.5 rounded-[12px]" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                            <Shopfront e={d.emoji} size={24} box={46} />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
+                                                    {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
+                                                </div>
+                                                {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
+                                                <div className="text-[14px] font-black mt-1" style={{ color: INK }}>¥{d.price}</div>
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                {(cart[d.id] || 0) > 0 && <>
+                                                    <button onClick={() => setQty(d.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
+                                                    <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{cart[d.id]}</span>
+                                                </>}
+                                                <button onClick={() => setQty(d.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         ))}
@@ -526,7 +683,10 @@ const TakeoutApp: React.FC = () => {
                     <SectionTag en="DINERS' WALL" className="mt-6 mb-3">食客留言墙</SectionTag>
                     <PaperCard tilt={0.4} className="px-4 py-3.5">
                         <div className="flex items-center justify-between mb-2.5">
-                            <span className="text-[12px] font-black" style={{ color: INK }}>大伙儿吃过都说</span>
+                            <span className="text-[12px] font-black flex items-center gap-1.5" style={{ color: INK }}>
+                                大伙儿吃过都说
+                                {reviewsLoading && <span className="text-[9px] font-bold opacity-50">· 现写食评中…</span>}
+                            </span>
                             <span className="flex items-center gap-1 text-[12px] font-black" style={{ color: INK }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
                         </div>
                         <DashedRule className="mb-3" />
@@ -572,7 +732,7 @@ const TakeoutApp: React.FC = () => {
 
     // ════════════════════════ 写一张饭票·结算 ════════════════════════
     if (view === 'checkout' && activeStore) {
-        const total = cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip;
+        const total = Math.max(0, cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip - orderDiscount);
         const payByMe = payer === 'me';
         const notEnough = payByMe && wallet < total;
         return (
@@ -636,6 +796,8 @@ const TakeoutApp: React.FC = () => {
                             <div className="flex justify-between"><span>跑腿费</span><span>¥{activeStore.deliveryFee}</span></div>
                             <div className="flex justify-between"><span>打包费</span><span>¥{PACK_FEE}</span></div>
                             {tip > 0 && <div className="flex justify-between"><span>跑腿小费</span><span>¥{tip}</span></div>}
+                            {promoDisc > 0 && <div className="flex justify-between" style={{ color: '#d2452f' }}><span>店铺满减（{activeStore.promo}）</span><span>-¥{promoDisc}</span></div>}
+                            {bestRp && <div className="flex justify-between" style={{ color: '#d2452f' }}><span>平台红包（{bestRp.title}）</span><span>-¥{bestRp.discount}</span></div>}
                         </div>
                         <div className="mt-3">
                             <input value={note} onChange={e => setNote(e.target.value)} placeholder="给铺子和跑腿留句话…" className="w-full rounded-[8px] px-2.5 py-2 text-[12px] outline-none" style={paperInput} />

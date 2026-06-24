@@ -160,3 +160,20 @@ pm run build passes after the time-gap grouping fix.
   - **猜你喜欢**: `recommendItems` (收藏分类加权 + 半小时打散) rendered as a feed under the catalog.
   - New `shopPromo.test.ts` (7 tests); updated `shopBrowse`/`shopGen` tests for the wider rating/star ranges.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 557 unit tests green (7 new).
+
+- 饭票(外卖)·商品 + 食评全部 AI 实时生成 (对标美团第一步):
+  - Stores+dishes were already AI (`generateStoresAI`); bumped batches to **≥20 家/批**, and made the storefront **cache-first** (`moro_takeout_stores_v1`): open uses the last live batch (no local-seed flash / no API burn), 换一条街 regenerates ≥20 and re-caches.
+  - **食评改为 AI 实时生成**: new `generateStoreReviewsAI` (mirrors `generateStoresAI`: `safeFetchJson` + `extractJson`), 仿真**有好有坏**——好坏比例按店铺评分/红旗调（低分/黑心店多差评：缺斤少两/图文不符/送得慢凉了/卫生差），1~5 星，可含商家回复。进店时实时生成（先用算法版垫场 + 「现写食评中…」提示），失败/无 API 回退算法版 `generateStoreReviews`. New fallback test.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 558 unit tests green (1 new).
+
+- 饭票·美团式四件套 (排序/筛选 · 满减红包 · 菜单分组/猜你喜欢 · 界面革新, 一批做完):
+  - Pure helpers in `utils/takeout.ts`: `sortStores` (综合/销量/评分/距离/最快), `filterStores` (免配送费/0起送/有优惠/4.5+), `parseStorePromo` + `storePromoDiscount` (把店铺「满X减Y / 立减N」文案落实成结算抵扣), `TAKEOUT_REDPACKETS` + `bestRedpacket`, `recommendStores`, `groupDishes` (招牌/主食/饮品/小食). New `takeoutMeituan.test.ts` (7 tests).
+  - **首页革新**: 排序条 + 筛选 chips（红色高亮）; 自动轮播 `TakeoutBanner`; 平台红包·领券 strip; 底部「猜你喜欢」横滑推荐。
+  - **满减 + 红包落地**: 结算页明细新增「店铺满减」「平台红包」两行抵扣，实付按 `storePromoDiscount + bestRedpacket` 扣减（`placeOrder` 同步）。`takeoutRedpackets` 存已领红包。
+  - **店内菜单分组**: 菜牌按 `groupDishes` 分「招牌/主食/饮品/小食/汤…」分组展示（含每组计数）。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 565 unit tests green (7 new).
+
+- 搜索栏实时生成 + 饭票·药品栏目:
+  - **饭票/心意铺 搜索即现搜**: 输入关键词回车（或点 CTA）就实时生成一批**紧扣该词**的相关结果——饭票现搜全城相关店铺（`generateStoresAI(api, 20, query)` 的 prompt 加了「本次搜 X，让这批都紧扣 X」），心意铺现搜相关礼物（`generateCatalog` 传强关键词 hint）；生成后清掉文字过滤直接展示这批结果。空结果态也给「现搜全城」入口。
+  - **饭票·药品栏目**: `CATS` 加入「药品」品类（顶部多一个药品 chip）；`generateStoresAI` 的 prompt 增加「药品＝药店」规则（卖感冒灵/布洛芬/连花清瘟/创可贴/口罩/维C 等非处方药与医疗用品，价格/规格/emoji 贴现实），正常批次放 1~2 家药店、搜买药相关词时多生成几家。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 565 unit tests green.

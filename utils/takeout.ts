@@ -27,7 +27,7 @@ const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 
-export const CATS = ['中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
+export const CATS = ['中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉', '药品'];
 
 // ── 店铺 / 菜品 种子库 ────────────────────────────────────────────
 interface StoreSeed { name: string; emoji: string; category: string; dishes: [string, number, string?][]; }
@@ -125,6 +125,91 @@ export function generateStores(count = 12): TakeoutStore[] {
     return stores;
 }
 
+// ── 美团式：排序 / 筛选 / 满减红包 / 推荐 / 菜单分组（纯函数） ──────────────────
+
+export type StoreSort = 'recommend' | 'sales' | 'rating' | 'distance' | 'delivery';
+const recommendScore = (s: TakeoutStore) =>
+    (s.rating || 4) * 2 + Math.log10((s.monthlySales || 1) + 1) * 1.5 - (s.distanceKm || 1) * 0.3 - (s.deliveryMinutes || 30) * 0.01;
+
+export function sortStores(stores: TakeoutStore[], sort: StoreSort): TakeoutStore[] {
+    const a = [...stores];
+    switch (sort) {
+        case 'sales': return a.sort((x, y) => (y.monthlySales || 0) - (x.monthlySales || 0));
+        case 'rating': return a.sort((x, y) => (y.rating || 0) - (x.rating || 0));
+        case 'distance': return a.sort((x, y) => (x.distanceKm || 0) - (y.distanceKm || 0));
+        case 'delivery': return a.sort((x, y) => (x.deliveryMinutes || 0) - (y.deliveryMinutes || 0));
+        default: return a.sort((x, y) => recommendScore(y) - recommendScore(x));
+    }
+}
+
+export interface StoreFilter { freeDelivery?: boolean; zeroMinOrder?: boolean; promoOnly?: boolean; goodOnly?: boolean; }
+export function filterStores(stores: TakeoutStore[], f: StoreFilter): TakeoutStore[] {
+    return stores.filter(s =>
+        (!f.freeDelivery || (s.deliveryFee || 0) === 0) &&
+        (!f.zeroMinOrder || (s.minOrder || 0) === 0) &&
+        (!f.promoOnly || !!s.promo) &&
+        (!f.goodOnly || (s.rating || 0) >= 4.5));
+}
+
+/** 解析店铺满减文案 → {threshold, discount}。支持「满X减Y」「(新客)立减N(元)」。 */
+export function parseStorePromo(promo?: string): { threshold: number; discount: number } | null {
+    if (!promo) return null;
+    let m = promo.match(/满\s*(\d+(?:\.\d+)?)\s*减\s*(\d+(?:\.\d+)?)/);
+    if (m) return { threshold: Number(m[1]), discount: Number(m[2]) };
+    m = promo.match(/立减\s*(\d+(?:\.\d+)?)/);
+    if (m) return { threshold: 0, discount: Number(m[1]) };
+    return null;
+}
+/** 店铺满减实际可减金额（满足门槛时，不超过小计）。 */
+export function storePromoDiscount(promo: string | undefined, subtotal: number): number {
+    const p = parseStorePromo(promo);
+    if (!p || subtotal < p.threshold) return 0;
+    return Math.min(p.discount, subtotal);
+}
+
+/** 平台红包（满减券，可领，结算自动用最优一张）。 */
+export interface TakeoutRedpacket { id: string; title: string; threshold: number; discount: number; }
+export const TAKEOUT_REDPACKETS: TakeoutRedpacket[] = [
+    { id: 't3', title: '满20减3', threshold: 20, discount: 3 },
+    { id: 't6', title: '满40减6', threshold: 40, discount: 6 },
+    { id: 't12', title: '满60减12', threshold: 60, discount: 12 },
+    { id: 'tnew', title: '新客立减8', threshold: 0, discount: 8 },
+];
+export const getRedpacket = (id: string): TakeoutRedpacket | undefined => TAKEOUT_REDPACKETS.find(r => r.id === id);
+export function bestRedpacket(claimedIds: string[] | undefined, total: number): TakeoutRedpacket | null {
+    let best: TakeoutRedpacket | null = null;
+    for (const id of (claimedIds || [])) {
+        const r = getRedpacket(id);
+        if (r && total >= r.threshold && (!best || r.discount > best.discount)) best = r;
+    }
+    return best;
+}
+
+/** 猜你喜欢：按推荐分排序取前 count。 */
+export function recommendStores(stores: TakeoutStore[], count = 6): TakeoutStore[] {
+    return [...stores].sort((a, b) => recommendScore(b) - recommendScore(a)).slice(0, count);
+}
+
+/** 菜单分组（美团式左侧分类）：招牌 + 按菜名粗分主食/饮品/小食。 */
+export function groupDishes(dishes: TakeoutDish[]): { group: string; dishes: TakeoutDish[] }[] {
+    const popular = dishes.filter(d => d.popular);
+    const rest = dishes.filter(d => !d.popular);
+    const bucket = (d: TakeoutDish): string => {
+        const n = d.name;
+        if (/(奶茶|奶绿|茶|咖啡|可乐|饮|汁|啤酒|气泡|豆浆|酸梅|水|波波|甘露)/.test(n)) return '饮品';
+        if (/(饭|面|粉|盖|包|粥|披萨|意面|饺|馒头|烧麦|拉面|卷|堡)/.test(n)) return '主食';
+        if (/(汤|沙拉|小料|加|蛋|串|薯|圈|挞|布朗尼|甜筒|冰|派|翅)/.test(n)) return '小食/汤';
+        return '其他';
+    };
+    const groups: { group: string; dishes: TakeoutDish[] }[] = [];
+    if (popular.length) groups.push({ group: '招牌', dishes: popular });
+    const order = ['主食', '饮品', '小食/汤', '其他'];
+    const map = new Map<string, TakeoutDish[]>();
+    for (const d of rest) { const b = bucket(d); (map.get(b) || map.set(b, []).get(b)!).push(d); }
+    for (const g of order) { const ds = map.get(g); if (ds && ds.length) groups.push({ group: g, dishes: ds }); }
+    return groups.length ? groups : [{ group: '全部', dishes }];
+}
+
 // ── AI 现搓店铺（含菜品） ──────────────────────────────────────────
 interface AiStoreRaw {
     name?: string; emoji?: string; category?: string; blurb?: string;
@@ -136,16 +221,18 @@ interface AiStoreRaw {
  * 让 AI 现场生成一批外卖店（含菜品、价格、店铺公告、隐藏良心值）。
  * 失败 / 未配 API 时回退到本地种子 generateStores()。
  */
-export async function generateStoresAI(api: ResolvedApi, count = 12): Promise<TakeoutStore[]> {
+export async function generateStoresAI(api: ResolvedApi, count = 12, query?: string): Promise<TakeoutStore[]> {
     const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
     if (!baseUrl || !api.model) return generateStores(count);
+    const q = (query || '').trim();
     const prompt = `你在为一座小城手写「这条街上的吃食铺子」名册，请现编 ${count} 家像真开在街角、各有性格的小馆子，覆盖这些品类：${CATS.join('、')}。
-要求（越像真的越好，别像广告）：
+${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧扣「${q}」——主营该菜品/品类/口味/场景（店名、招牌菜都要相关），让用户一搜就搜到对的店。\n` : ''}要求（越像真的越好，别像广告）：
 - 店名要有烟火气、有记忆点：可带店主姓氏 / 街巷地名 / 老字号味（如「城西巷·阿婆糖水」「老周烧腊」「深夜两点面」），别千篇一律。
 - 大多数是踏实经营的良心店；但务必混进 2~3 家「黑心铺子」：缺斤少两、图文严重不符、后厨卫生堪忧、专靠超低价促销坑新客、甚至收了钱迟迟不接单。黑心店 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
 - 黑心店有的会露出马脚（warning，如「近期卫生差评偏多·谨慎」「多人反馈缺斤少两」「差评回复阴阳怪气」），有的伪装得好（虚高分刷单、夸张满减引流）就把 warning 留空，专坑没防备的人。
-- 每家 5~9 道菜，菜名与定价贴合该品类与现实（¥3~¥88），口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的食物 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
-- blurb 是店主写在招牌上的一句话（≤20 字，有人味，如「慢工出细活，急单请改期」「老板娘手抖，料给得多」）。emoji 是这家的门脸 logo（一个食物 emoji）。category 必须取自给定品类。
+- 每家 5~9 道菜/商品，名称与定价贴合该品类与现实，口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
+- **药品 品类＝药店（24h/连锁/社区药房）**：卖非处方药与医疗用品（感冒灵颗粒、布洛芬、连花清瘟、创可贴、医用口罩、维C、健胃消食片、退热贴、酒精棉片…），价格按现实（¥3~¥68），desc 写适应症/规格（「感冒发热」「24粒装」），emoji 用 💊🩹😷🧴 之类；${q && /药|病|感冒|发烧|咳|止|创可贴|口罩|维|消炎|退/.test(q) ? '本次搜索与买药相关，请多生成几家药店。' : '正常批次里也放 1~2 家药店。'}
+- blurb 是店主写在招牌上的一句话（≤20 字，有人味）。emoji 是门脸 logo（一个 emoji）。category 必须取自给定品类。
 只输出 JSON，不要任何解释或前后缀，格式：
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
     try {
@@ -634,6 +721,70 @@ export function generateStoreReviews(storeName: string, baseRating = 4.5, count 
         out.push(review);
     }
     return out.sort((a, b) => b.likes - a.likes);
+}
+
+interface AiReviewRaw { name?: string; emoji?: string; rating?: number; text?: string; reply?: string; }
+
+/**
+ * AI 现场为某店生成买家食评（仿真有好有坏，按店铺评分/红旗调好坏比例）。
+ * 失败 / 未配 API 回退到算法版 generateStoreReviews。
+ */
+export async function generateStoreReviewsAI(
+    api: ResolvedApi,
+    store: Pick<TakeoutStore, 'name' | 'category' | 'rating' | 'warning' | 'dishes'>,
+    count = 8,
+): Promise<StoreNpcReview[]> {
+    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    if (!baseUrl || !api.model) return generateStoreReviews(store.name, store.rating, count);
+    const rating = store.rating ?? 4.3;
+    const dishHint = (store.dishes || []).slice(0, 4).map(d => d.name).join('、');
+    const tone = rating >= 4.5 ? '大多是好评（细节具体、夸分量/出餐快/味道好），可夹 1 条挑刺中评'
+        : rating >= 4.0 ? '好坏参半，3~5 星都有，吐槽与认可都要有'
+        : '差评/中评为主（1~3 星居多），骂到点子上：缺斤少两、图文不符、送得慢凉了、卫生差、态度差，可留 1 条还行的';
+    const prompt = `你在为外卖店「${store.name}」（${store.category}，综合 ${rating} 分${store.warning ? `，有用户提醒「${store.warning}」` : ''}）现写 ${count} 条真实买家食评。招牌菜：${dishHint || '家常菜'}。
+分布要求：${tone}。要像真人——口吻各异、有具体细节（哪道菜、份量、温度、配送、包装、老板态度），别像广告、别千篇一律。
+每条：name（食客昵称，有梗）、emoji（一个动物头像 emoji）、rating（1~5 整数，按上面分布）、text（15~45字）、可选 reply（商家或其他食客的一句回复）。
+只输出 JSON，不要解释：{"reviews":[{"name":"","emoji":"🐱","rating":5,"text":"","reply":""}]}`;
+    try {
+        const data = await safeFetchJson(
+            `${baseUrl}/chat/completions`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
+                body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 1600, stream: false }),
+            },
+            2, 0, { appName: '外卖', purpose: 'AI 生成食评' },
+        );
+        const raw = data?.choices?.[0]?.message?.content || '';
+        const parsed = extractJson(raw);
+        const list: AiReviewRaw[] = Array.isArray(parsed?.reviews) ? parsed.reviews : (Array.isArray(parsed) ? parsed : []);
+        const out: StoreNpcReview[] = [];
+        list.forEach((r, i) => {
+            const text = (r?.text || '').toString().trim();
+            if (!text) return;
+            let rt = Math.round(Number(r?.rating));
+            if (!Number.isFinite(rt)) rt = 5;
+            rt = Math.max(1, Math.min(5, rt));
+            const daysAgo = 1 + (hashStr(store.name + i) % 60);
+            const d = new Date(Date.now() - daysAgo * 86400000);
+            const rev: StoreNpcReview = {
+                id: `air_${hashStr(store.name)}_${i}`,
+                name: (r?.name || '匿名食客').toString().trim().slice(0, 16),
+                emoji: (r?.emoji || '🐱').toString().trim().slice(0, 4) || '🐱',
+                rating: rt,
+                text: text.slice(0, 80),
+                date: `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`,
+                likes: hashStr('l' + store.name + i) % 60,
+            };
+            const reply = (r?.reply || '').toString().trim();
+            if (reply) rev.reply = reply.slice(0, 60);
+            out.push(rev);
+        });
+        if (out.length < 3) return generateStoreReviews(store.name, store.rating, count);
+        return out.sort((a, b) => b.likes - a.likes);
+    } catch {
+        return generateStoreReviews(store.name, store.rating, count);
+    }
 }
 
 const QUICK_TAGS_POS = ['分量足', '送得快', '味道赞', '包装好', '性价比高', '会回购'];

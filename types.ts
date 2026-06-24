@@ -2467,6 +2467,8 @@ export interface UserProfile {
     shopOrders?: ShopOrder[];
     /** 购物商城·已领优惠券 id（满减券，结算自动用最优的一张）。 */
     shopCoupons?: string[];
+    /** 饭票(外卖)·已领平台红包 id（满减券，结算自动用最优的一张）。 */
+    takeoutRedpackets?: string[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
     /**
