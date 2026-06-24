@@ -162,24 +162,40 @@ ${roster || '（暂无实名角色）'}
     return { system, user };
 }
 
+/**
+ * 健壮解析「一批扁平对象」：先整体 JSON.parse，失败/截断时逐个抠出完整的 {…} 再解析。
+ * 跟帖/帖子对象都是扁平的（无嵌套），被 max_tokens 截断也能把写完的那部分救回来，不整批丢。
+ */
+function salvageFlat(raw: string): any[] {
+    const txt = (raw || '').trim().replace(/```(?:json)?/gi, '').trim();
+    const s = txt.indexOf('[');
+    if (s === -1) {
+        const o = txt.match(/\{[^{}]*\}/);
+        if (o) { try { return [JSON.parse(o[0])]; } catch { return []; } }
+        return [];
+    }
+    const e = txt.lastIndexOf(']');
+    if (e > s) {
+        try { const arr = JSON.parse(txt.slice(s, e + 1)); if (Array.isArray(arr) && arr.length) return arr; } catch { /* salvage */ }
+    }
+    const objs = txt.slice(s).match(/\{[^{}]*\}/g) || [];
+    const out: any[] = [];
+    for (const o of objs) { try { out.push(JSON.parse(o)); } catch { /* skip broken tail */ } }
+    return out;
+}
+
 export function parseForumReplies(raw: string): RawReply[] {
     if (!raw) return [];
-    const txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
-    const s = txt.indexOf('['); const e = txt.lastIndexOf(']');
-    if (s === -1 || e === -1 || e <= s) return [];
-    try {
-        const arr = JSON.parse(txt.slice(s, e + 1));
-        if (!Array.isArray(arr)) return [];
-        return arr
-            .map((x: any) => {
-                const o: RawReply = { name: String(x?.name || '').trim().slice(0, 24), body: String(x?.body || '').trim() };
-                const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
-                if (rt) o.reply_to = rt;
-                return o;
-            })
-            .filter(x => x.name && x.body)
-            .slice(0, 20);
-    } catch { return []; }
+    const arr = salvageFlat(raw);
+    return arr
+        .map((x: any) => {
+            const o: RawReply = { name: String(x?.name || '').trim().slice(0, 24), body: String(x?.body || '').trim() };
+            const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
+            if (rt) o.reply_to = rt;
+            return o;
+        })
+        .filter(x => x.name && x.body)
+        .slice(0, 20);
 }
 
 /** 让某个角色「开一个帖」：选板块 + 写标题正文（按人设）。 */
@@ -285,26 +301,20 @@ export interface RawThread { author: string; title: string; body: string; floors
 
 export function parseThreads(raw: string): RawThread[] {
     if (!raw) return [];
-    const txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
-    const s = txt.indexOf('['); const e = txt.lastIndexOf(']');
-    if (s === -1 || e === -1 || e <= s) return [];
-    try {
-        const arr = JSON.parse(txt.slice(s, e + 1));
-        if (!Array.isArray(arr)) return [];
-        return arr
-            .map((x: any) => {
-                const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
-                const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
-                return {
-                    author: String(x?.author || '').trim().slice(0, 24),
-                    title: String(x?.title || '').trim().slice(0, 200),
-                    body: String(x?.body || '').trim(),
-                    floors, likes,
-                };
-            })
-            .filter(x => x.title)
-            .slice(0, 24);
-    } catch { return []; }
+    const arr = salvageFlat(raw);
+    return arr
+        .map((x: any) => {
+            const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
+            const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
+            return {
+                author: String(x?.author || '').trim().slice(0, 24),
+                title: String(x?.title || '').trim().slice(0, 200),
+                body: String(x?.body || '').trim(),
+                floors, likes,
+            };
+        })
+        .filter(x => x.title)
+        .slice(0, 24);
 }
 
 const FALLBACK_THREADS: Record<string, { t: string; b: string }[]> = {

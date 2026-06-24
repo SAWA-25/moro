@@ -75,7 +75,7 @@ const ForumApp: React.FC = () => {
             const { system, user } = buildThreadsPrompt(bd, charBriefs, THREAD_BATCH);
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 1.0, maxTokens: 1400 });
+            ], { temperature: 1.0, maxTokens: 6000 });
             raw = parseThreads(out);
         } catch { /* fall through */ }
         if (raw.length < THREAD_BATCH) raw = [...raw, ...fallbackThreads(boardId, THREAD_BATCH - raw.length)];
@@ -112,7 +112,7 @@ const ForumApp: React.FC = () => {
             const { system, user } = buildForumPrompt(post, charBriefs, count, startFloor);
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
-            ], { temperature: 0.98, maxTokens: 900 });
+            ], { temperature: 0.98, maxTokens: 4000 });
             raw = parseForumReplies(out);
         } catch { /* fall through */ }
         if (raw.length === 0) raw = fallbackReplies(count);

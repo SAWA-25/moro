@@ -230,29 +230,64 @@ ${q ? `**本次是用户在搜「${q}」**：请让这一批店铺尽量都紧�
 - 店名要有烟火气、有记忆点：可带店主姓氏 / 街巷地名 / 老字号味（如「城西巷·阿婆糖水」「老周烧腊」「深夜两点面」），别千篇一律。
 - 大多数是踏实经营的良心店；但务必混进 2~3 家「黑心铺子」：缺斤少两、图文严重不符、后厨卫生堪忧、专靠超低价促销坑新客、甚至收了钱迟迟不接单。黑心店 integrity 压低（0.15~0.45），普通店 0.55~0.8，良心店 0.8~1.0。
 - 黑心店有的会露出马脚（warning，如「近期卫生差评偏多·谨慎」「多人反馈缺斤少两」「差评回复阴阳怪气」），有的伪装得好（虚高分刷单、夸张满减引流）就把 warning 留空，专坑没防备的人。
-- 每家 5~9 道菜/商品，名称与定价贴合该品类与现实，口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
+- 每家 4~6 道菜/商品，名称与定价贴合该品类与现实，口味/做法写具体（「现炒」「招牌秘制」），给每道配一个最贴切的 emoji；挑 1~2 道镇店招牌设 popular:true，并在 desc 里写一句卖点（≤12 字）。
 - **药品 品类＝药店（24h/连锁/社区药房）**：卖非处方药与医疗用品（感冒灵颗粒、布洛芬、连花清瘟、创可贴、医用口罩、维C、健胃消食片、退热贴、酒精棉片…），价格按现实（¥3~¥68），desc 写适应症/规格（「感冒发热」「24粒装」），emoji 用 💊🩹😷🧴 之类；${q && /药|病|感冒|发烧|咳|止|创可贴|口罩|维|消炎|退/.test(q) ? '本次搜索与买药相关，请多生成几家药店。' : '正常批次里也放 1~2 家药店。'}
 - blurb 是店主写在招牌上的一句话（≤20 字，有人味）。emoji 是门脸 logo（一个 emoji）。category 必须取自给定品类。
-只输出 JSON，不要任何解释或前后缀，格式：
+**务必输出完整且合法的 JSON**：紧凑无多余空白、不要 markdown 围栏、不要任何解释；宁可每家菜少写一两道，也要把 ${count} 家全部写完、最后的 }]} 收尾，绝不中途截断。格式：
 {"stores":[{"name":"","emoji":"🍔","category":"快餐","blurb":"","integrity":0.9,"warning":"","dishes":[{"name":"","price":24,"emoji":"🍔","desc":"","popular":true}]}]}`;
-    // 给足 token：20 家带菜品的店铺 JSON 很长，旧的 3200 常被截断 → 解析为空 → 静默回退本地种子，
-    // 表现为「调了 API 却只有离线店铺」。提到 8000 + extractJson 的截断修复，基本能完整拿到一整批。
+    // 给足 token：20 家带菜品的店铺 JSON 很长，实测 gemini 等会一路写到上限——8000 仍常被截在
+    // 半个店铺里导致整批 JSON 不合法。提到 16000 + 上面「写完再收尾」的硬约束 + extractJson 截断修复。
     const data = await safeFetchJson(
         `${baseUrl}/chat/completions`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
-            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 8000, stream: false }),
+            body: JSON.stringify({ model: api.model, messages: [{ role: 'user', content: prompt }], temperature: 1.0, max_tokens: 16000, stream: false }),
         },
         2, 0, { appName: '外卖', purpose: 'AI 生成店铺' },
     );
     const raw = extractContent(data) || data?.choices?.[0]?.message?.content || '';
     const parsed = extractJson(raw);
-    const list: AiStoreRaw[] = Array.isArray(parsed?.stores) ? parsed.stores : (Array.isArray(parsed) ? parsed : []);
+    let list: AiStoreRaw[] = Array.isArray(parsed?.stores) ? parsed.stores : (Array.isArray(parsed) ? parsed : []);
+    // 截断兜底：整体解析拿不到店铺时，从 stores 数组里逐个抠出「已写完」的店铺对象（被 max_tokens
+    // 截在半个店铺也能把前面完整的救回来），避免整批报废。
+    if (list.length === 0) list = salvageStoreObjects(raw) as AiStoreRaw[];
     const stores = list.map(mapAiStore).filter((s): s is TakeoutStore => !!s);
     // 解析不到任何店铺 = 真·失败：抛出让调用方明确提示并保留现有列表，而不是悄悄换成本地种子冒充成功。
     if (stores.length === 0) throw new Error('店铺生成解析失败');
     return stores;
+}
+
+/**
+ * 从模型原文里逐个抠出「完整的」店铺对象（正确处理字符串/转义/嵌套），丢弃被截断的最后一个。
+ * 用于 {"stores":[…]} 被 max_tokens 截断、整体 JSON.parse 失败时打捞已写完的店铺。
+ */
+function salvageStoreObjects(raw: string): any[] {
+    const text = (raw || '').replace(/```(?:json)?/gi, '');
+    const lb = text.indexOf('[');               // stores 数组起点
+    if (lb < 0) return [];
+    const s = text.slice(lb + 1);
+    const out: any[] = [];
+    let depth = 0, startIdx = -1, inStr = false, esc = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (ch === '\\') esc = true;
+            else if (ch === '"') inStr = false;
+            continue;
+        }
+        if (ch === '"') { inStr = true; continue; }
+        if (ch === '{') { if (depth === 0) startIdx = i; depth++; }
+        else if (ch === '}') {
+            if (depth > 0) depth--;
+            if (depth === 0 && startIdx >= 0) {
+                try { out.push(JSON.parse(s.slice(startIdx, i + 1))); } catch { /* 跳过坏对象 */ }
+                startIdx = -1;
+            }
+        } else if (ch === ']' && depth === 0) break; // 数组正常收尾
+    }
+    return out;
 }
 
 function mapAiStore(raw: AiStoreRaw): TakeoutStore | null {

@@ -61,9 +61,9 @@ const ShopApp: React.FC = () => {
         try {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
             const { system, user } = buildGenerateItemsPrompt(22, hint);
-            // 给足 token：22 件带评分/文案的商品 JSON 容易被旧的 2200 截断 → 解析为 0 → 被内置商品垫场，
-            // 表现为「调了 API 却只有离线商品」。提到 6000 基本能完整生成一整批。
-            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 6000 });
+            // 给足 token：22 件带评分/文案的商品 JSON，配合会「写到上限」的模型（gemini 等），
+            // 6000 仍可能被截断 → 解析为 0 → 被内置商品垫场。提到 12000 + parseGeneratedItems 的逐个打捞兜底。
+            const raw = await llmComplete(api, [{ role: 'system', content: system }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 12000 });
             const items = parseGeneratedItems(raw);
             // 解析为 0 = 真·失败（截断/格式坏），明确报错让用户重试，绝不悄悄用内置商品冒充「上新成功」。
             if (items.length === 0) {

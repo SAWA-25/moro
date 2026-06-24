@@ -41,6 +41,16 @@ describe('parseThreads', () => {
         expect(parseThreads('[{"author":"a","body":"无标题"}]')).toEqual([]);
         expect(parseThreads('抱歉')).toEqual([]);
     });
+    it('被 max_tokens 截断（数组没收尾）也能救回已写完的帖子', () => {
+        const raw = '```json\n[' +
+            '{"author":"夜航船","title":"深夜睡不着","body":"来报个到","floors":80,"likes":12},' +
+            '{"author":"吃瓜群众","title":"蹲后续","body":"在线等","floors":60,"likes":3},' +
+            '{"author":"半截","title":"还没写完';   // 截断
+        const ts = parseThreads(raw);
+        expect(ts.length).toBe(2);
+        expect(ts[0].title).toBe('深夜睡不着');
+        expect(ts[1].title).toBe('蹲后续');
+    });
 });
 
 describe('materializeThreads', () => {
@@ -85,6 +95,13 @@ describe('parseForumReplies', () => {
         expect(rs.length).toBe(3);
         expect(rs[1].reply_to).toBe('a');
         expect(rs[2].reply_to).toBe('b');
+    });
+    it('被截断（数组没收尾）也能救回已写完的跟帖', () => {
+        const raw = '[{"name":"夜航船","body":"前排，蹲后续。"},{"name":"今天也emo","body":"握手。"},{"name":"半截","body":"还没写';
+        const rs = parseForumReplies(raw);
+        expect(rs.length).toBe(2);
+        expect(rs[0].name).toBe('夜航船');
+        expect(rs[1].name).toBe('今天也emo');
     });
 });
 
