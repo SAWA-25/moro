@@ -125,6 +125,91 @@ export function generateStores(count = 12): TakeoutStore[] {
     return stores;
 }
 
+// ── 美团式：排序 / 筛选 / 满减红包 / 推荐 / 菜单分组（纯函数） ──────────────────
+
+export type StoreSort = 'recommend' | 'sales' | 'rating' | 'distance' | 'delivery';
+const recommendScore = (s: TakeoutStore) =>
+    (s.rating || 4) * 2 + Math.log10((s.monthlySales || 1) + 1) * 1.5 - (s.distanceKm || 1) * 0.3 - (s.deliveryMinutes || 30) * 0.01;
+
+export function sortStores(stores: TakeoutStore[], sort: StoreSort): TakeoutStore[] {
+    const a = [...stores];
+    switch (sort) {
+        case 'sales': return a.sort((x, y) => (y.monthlySales || 0) - (x.monthlySales || 0));
+        case 'rating': return a.sort((x, y) => (y.rating || 0) - (x.rating || 0));
+        case 'distance': return a.sort((x, y) => (x.distanceKm || 0) - (y.distanceKm || 0));
+        case 'delivery': return a.sort((x, y) => (x.deliveryMinutes || 0) - (y.deliveryMinutes || 0));
+        default: return a.sort((x, y) => recommendScore(y) - recommendScore(x));
+    }
+}
+
+export interface StoreFilter { freeDelivery?: boolean; zeroMinOrder?: boolean; promoOnly?: boolean; goodOnly?: boolean; }
+export function filterStores(stores: TakeoutStore[], f: StoreFilter): TakeoutStore[] {
+    return stores.filter(s =>
+        (!f.freeDelivery || (s.deliveryFee || 0) === 0) &&
+        (!f.zeroMinOrder || (s.minOrder || 0) === 0) &&
+        (!f.promoOnly || !!s.promo) &&
+        (!f.goodOnly || (s.rating || 0) >= 4.5));
+}
+
+/** 解析店铺满减文案 → {threshold, discount}。支持「满X减Y」「(新客)立减N(元)」。 */
+export function parseStorePromo(promo?: string): { threshold: number; discount: number } | null {
+    if (!promo) return null;
+    let m = promo.match(/满\s*(\d+(?:\.\d+)?)\s*减\s*(\d+(?:\.\d+)?)/);
+    if (m) return { threshold: Number(m[1]), discount: Number(m[2]) };
+    m = promo.match(/立减\s*(\d+(?:\.\d+)?)/);
+    if (m) return { threshold: 0, discount: Number(m[1]) };
+    return null;
+}
+/** 店铺满减实际可减金额（满足门槛时，不超过小计）。 */
+export function storePromoDiscount(promo: string | undefined, subtotal: number): number {
+    const p = parseStorePromo(promo);
+    if (!p || subtotal < p.threshold) return 0;
+    return Math.min(p.discount, subtotal);
+}
+
+/** 平台红包（满减券，可领，结算自动用最优一张）。 */
+export interface TakeoutRedpacket { id: string; title: string; threshold: number; discount: number; }
+export const TAKEOUT_REDPACKETS: TakeoutRedpacket[] = [
+    { id: 't3', title: '满20减3', threshold: 20, discount: 3 },
+    { id: 't6', title: '满40减6', threshold: 40, discount: 6 },
+    { id: 't12', title: '满60减12', threshold: 60, discount: 12 },
+    { id: 'tnew', title: '新客立减8', threshold: 0, discount: 8 },
+];
+export const getRedpacket = (id: string): TakeoutRedpacket | undefined => TAKEOUT_REDPACKETS.find(r => r.id === id);
+export function bestRedpacket(claimedIds: string[] | undefined, total: number): TakeoutRedpacket | null {
+    let best: TakeoutRedpacket | null = null;
+    for (const id of (claimedIds || [])) {
+        const r = getRedpacket(id);
+        if (r && total >= r.threshold && (!best || r.discount > best.discount)) best = r;
+    }
+    return best;
+}
+
+/** 猜你喜欢：按推荐分排序取前 count。 */
+export function recommendStores(stores: TakeoutStore[], count = 6): TakeoutStore[] {
+    return [...stores].sort((a, b) => recommendScore(b) - recommendScore(a)).slice(0, count);
+}
+
+/** 菜单分组（美团式左侧分类）：招牌 + 按菜名粗分主食/饮品/小食。 */
+export function groupDishes(dishes: TakeoutDish[]): { group: string; dishes: TakeoutDish[] }[] {
+    const popular = dishes.filter(d => d.popular);
+    const rest = dishes.filter(d => !d.popular);
+    const bucket = (d: TakeoutDish): string => {
+        const n = d.name;
+        if (/(奶茶|奶绿|茶|咖啡|可乐|饮|汁|啤酒|气泡|豆浆|酸梅|水|波波|甘露)/.test(n)) return '饮品';
+        if (/(饭|面|粉|盖|包|粥|披萨|意面|饺|馒头|烧麦|拉面|卷|堡)/.test(n)) return '主食';
+        if (/(汤|沙拉|小料|加|蛋|串|薯|圈|挞|布朗尼|甜筒|冰|派|翅)/.test(n)) return '小食/汤';
+        return '其他';
+    };
+    const groups: { group: string; dishes: TakeoutDish[] }[] = [];
+    if (popular.length) groups.push({ group: '招牌', dishes: popular });
+    const order = ['主食', '饮品', '小食/汤', '其他'];
+    const map = new Map<string, TakeoutDish[]>();
+    for (const d of rest) { const b = bucket(d); (map.get(b) || map.set(b, []).get(b)!).push(d); }
+    for (const g of order) { const ds = map.get(g); if (ds && ds.length) groups.push({ group: g, dishes: ds }); }
+    return groups.length ? groups : [{ group: '全部', dishes }];
+}
+
 // ── AI 现搓店铺（含菜品） ──────────────────────────────────────────
 interface AiStoreRaw {
     name?: string; emoji?: string; category?: string; blurb?: string;
