@@ -225,3 +225,9 @@ pm run build passes after the time-gap grouping fix.
   - **去重**：`parseThreads` 按标题归一化去重复话题；`materializeThreads` 用 `usedChar` 保证同一实名角色一批里只当一次楼主（其余转匿名），治「重复角色的帖子」。
   - `ForumApp` 帖子生成 maxTokens 6000→8000、temperature 1.05（容纳长贴 + 更有新意）。
   - 新增 2 条回归测试（标题去重 / 角色去重）。`pnpm tsc --noEmit` clean, `vite build` passes, 593 tests green (+2)。
+
+- 见闻簿（小红书）帖子质量大改 + 新增「交友·发现身边的人」系统:
+  - **帖子质量**（对标真实小红书）：`buildFeedSystemPrompt` 重写——system 改「资深博主、坚决避免空壳帖」；硬性「长短结合」≥四成是 150~400 字、分段、有背景/过程/细节/钩子的长帖；情感/八卦/树洞类必须把事讲完整、绝不只标题一句话；题材拉开差距要有新意；不重复（标题/题材/昵称）、同一角色最多 1 帖。`generateFeedBatch` 加去重（标题归一化去重 + 同一实名角色只当一次作者，其余转 NPC）。
+  - **新增交友系统**（参考探探/Soul/陌陌）：`utils/socialDating.ts`——`DATING_INTENTS`（找对象/恋爱/随缘约会/**圈内·SM**/单纯无聊/游戏·饭·运动·学习搭子/灵魂共鸣/线下面基，不限题材）、`DatingProfile`、`buildDatingPrompt`（要求人物多样、目的五花八门含成人向 SM 点到为止、bio 有实质内容像真人自我介绍、各异不套模板）、`parseDatingProfiles`（校验/夹紧/截断打捞/去重昵称+角色只出镜一次/命中角色带头像）、`fallbackDatingProfiles`（12 张各异兜底）、`generateDatingBatch`（max_tokens 12000）。
+  - **UI**：`SocialApp` 加「📓见闻 / 💘交友」TabBar；交友页是探探式单卡浏览（头图/距离/在线/目的徽章/熟人标/年龄性别/标签/简介 + 跳过·打招呼·喜欢三键 + 换一批），cache-first localStorage、空/失败回退兜底卡。打招呼对熟人提示去「来往」找 TA。
+  - 新增 `utils/socialDating.test.ts`（8 测）。`pnpm tsc --noEmit` clean, `vite build` passes, 601 tests green (+8)。

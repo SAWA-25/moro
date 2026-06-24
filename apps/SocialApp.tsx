@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, ArrowLeft, BookmarkSimple, PencilSimpleLine, Scissors, PushPin, Broom } from '@phosphor-icons/react';
+import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, ArrowLeft, BookmarkSimple, PencilSimpleLine, Scissors, PushPin, Broom, X, HandWaving, MapPin, Spinner } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { AppID, XhsFeedPost } from '../types';
 import { DB } from '../utils/db';
 import { generateFeedBatch, generateAuthorReply, FEED_BATCH_SIZE } from '../utils/xhsFeed';
+import { generateDatingBatch, fallbackDatingProfiles, intentMeta, DatingProfile } from '../utils/socialDating';
 import { resolveAuxApi } from '../utils/auxApi';
 
 /**
@@ -67,6 +68,51 @@ const PostCard: React.FC<{ post: XhsFeedPost; onClick: () => void }> = ({ post, 
     </button>
 );
 
+/** 见闻 / 交友 切换条 */
+const TabBar: React.FC<{ mode: 'feed' | 'meet'; setMode: (m: 'feed' | 'meet') => void }> = ({ mode, setMode }) => (
+    <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
+        {([['feed', '📓 见闻'], ['meet', '💘 交友']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)}
+                className={`px-3 py-1 text-[12px] font-bold border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${mode === k ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
+                {label}
+            </button>
+        ))}
+    </div>
+);
+
+/** 交友卡片（探探/Soul 式，黑白手账皮肤）：头图 + 资料 + 简介 + 跳过/打招呼/喜欢 */
+const DatingCard: React.FC<{ p: DatingProfile; remaining: number; onAct: (a: 'skip' | 'like' | 'greet') => void }> = ({ p, remaining, onAct }) => {
+    const im = intentMeta(p.intent);
+    return (
+        <div className="w-full max-w-[360px] flex flex-col animate-fade-in">
+            <div className="relative bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.2)]">
+                <div className="relative w-full aspect-[4/5] border-b-2 border-[#2b2933] overflow-hidden flex items-center justify-center bg-[#f0eee8]">
+                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover grayscale" referrerPolicy="no-referrer" /> : <span className="text-[88px] select-none">{p.emoji}</span>}
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold px-2 py-0.5"><MapPin className="w-3 h-3" weight="fill" />{p.distanceKm}km</div>
+                    {p.online && <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#fbfaf7] border border-[#2b2933] text-[#2b2933] text-[10px] font-bold px-2 py-0.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />在线</div>}
+                    <div className="absolute bottom-2 left-2 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-[11px] font-bold px-2 py-0.5">{im.emoji} {im.label}</div>
+                    {p.isChar && <div className="absolute bottom-2 right-2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5">熟人</div>}
+                </div>
+                <div className="px-3 pt-2.5 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[16px] font-black text-[#2b2933]">{p.name}</span>
+                        {p.age != null && <span className="text-[12px] text-[#6b6b6b]">{p.age}</span>}
+                        {p.gender && <span className="text-[10px] text-[#fbfaf7] bg-[#2b2933] px-1.5 py-0.5">{p.gender}</span>}
+                    </div>
+                    {p.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{p.tags.map(t => <span key={t} className="text-[10px] text-[#2b2933] bg-[#f0eee8] border border-[#2b2933]/40 px-1.5 py-0.5">{t}</span>)}</div>}
+                    <div className="text-[13px] text-[#3a3842] leading-relaxed whitespace-pre-wrap mt-2">{p.bio}</div>
+                </div>
+            </div>
+            <div className="flex items-center justify-center gap-5 mt-4">
+                <button onClick={() => onAct('skip')} className="w-12 h-12 rounded-full bg-[#fbfaf7] border-2 border-[#2b2933] flex items-center justify-center active:scale-90 transition-transform" title="跳过"><X className="w-5 h-5 text-[#6b6b6b]" weight="bold" /></button>
+                <button onClick={() => onAct('greet')} className="w-14 h-14 rounded-full bg-[#2b2933] flex items-center justify-center active:scale-90 transition-transform shadow-[3px_3px_0_rgba(43,41,51,0.25)]" title="打招呼"><HandWaving className="w-6 h-6 text-[#fbfaf7]" weight="fill" /></button>
+                <button onClick={() => onAct('like')} className="w-12 h-12 rounded-full bg-rose-500 flex items-center justify-center active:scale-90 transition-transform" title="喜欢"><Heart className="w-5 h-5 text-white" weight="fill" /></button>
+            </div>
+            <div className="text-center text-[10px] text-[#8b8996] mt-2 font-hand">还有 {Math.max(0, remaining - 1)} 个待发现</div>
+        </div>
+    );
+};
+
 const SocialApp: React.FC = () => {
     const { closeApp, openApp, addToast, apiConfig, auxApiConfig, characters, userProfile } = useOS();
     // 见闻簿是「聊天以外」的辅助功能：走副 API（未配置时回落主 API）
@@ -84,7 +130,49 @@ const SocialApp: React.FC = () => {
     const [forwardingPost, setForwardingPost] = useState<XhsFeedPost | null>(null);
     const [forwardNote, setForwardNote] = useState('');
 
+    // ── 交友·发现身边的人 ──
+    const [mode, setMode] = useState<'feed' | 'meet'>('feed');
+    const [dating, setDating] = useState<DatingProfile[]>([]);
+    const [datingIdx, setDatingIdx] = useState(0);
+    const [datingBusy, setDatingBusy] = useState(false);
+    const DATING_KEY = 'moro_social_dating_v1';
+
     const detail = useMemo(() => posts.find(p => p.id === detailId) || null, [posts, detailId]);
+
+    // 进交友页：先用缓存，没有就实时生成一批
+    useEffect(() => {
+        if (mode !== 'meet' || dating.length) return;
+        try { const c = JSON.parse(localStorage.getItem(DATING_KEY) || 'null'); if (Array.isArray(c) && c.length) { setDating(c); return; } } catch { /* ignore */ }
+        if (apiReady) void refreshDating(); else setDating(fallbackDatingProfiles(12));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode]);
+
+    const refreshDating = async () => {
+        if (datingBusy) return;
+        if (!apiReady) { addToast('先去「文具盒」把 API（模型 / 地址）补上', 'error'); setDating(fallbackDatingProfiles(12)); setDatingIdx(0); return; }
+        setDatingBusy(true);
+        try {
+            const batch = await generateDatingBatch(feedApi, characters, userProfile, 14);
+            setDating(batch); setDatingIdx(0);
+            try { localStorage.setItem(DATING_KEY, JSON.stringify(batch)); } catch { /* ignore */ }
+            addToast(`发现 ${batch.length} 个附近的人`, 'success');
+        } catch {
+            setDating(fallbackDatingProfiles(12)); setDatingIdx(0);
+            addToast('没刷到新的人，先看看这些', 'error');
+        } finally { setDatingBusy(false); }
+    };
+
+    const patchDating = (id: string, patch: Partial<DatingProfile>) =>
+        setDating(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+
+    const datingAct = (p: DatingProfile, act: 'skip' | 'like' | 'greet') => {
+        if (act === 'like') { patchDating(p.id, { liked: true }); addToast('❤️ 已喜欢', 'success'); }
+        else if (act === 'greet') {
+            patchDating(p.id, { greeted: true });
+            addToast(p.isChar ? `去「来往」找 ${p.name} 聊聊吧～` : `已向 ${p.name} 打招呼，等回应吧`, 'success');
+        }
+        setDatingIdx(i => i + 1);
+    };
 
     // 启动：读本地信息流；空库且 API 可用时自动生成第一批
     useEffect(() => {
@@ -337,6 +425,44 @@ const SocialApp: React.FC = () => {
         );
     }
 
+    // ── 交友·发现身边的人 ──
+    if (mode === 'meet') {
+        const cur = dating[datingIdx];
+        const remaining = dating.length - datingIdx;
+        return (
+            <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
+                    <button onClick={closeApp} className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
+                        <ArrowLeft className="w-4 h-4 text-[#2b2933]" weight="bold" />
+                    </button>
+                    <div className="min-w-0 flex-1 leading-none">
+                        <span className="text-[20px] font-black text-[#2b2933] select-none font-display-italic">发现</span>
+                        <div className="text-[10px] text-[#8b8996] font-hand mt-0.5">附近正在交友的人，各有各的目的</div>
+                    </div>
+                    <button onClick={() => void refreshDating()} disabled={datingBusy} title="换一批"
+                        className="inline-flex items-center gap-1 text-[12px] font-bold label-mono text-[#fbfaf7] bg-[#2b2933] px-2.5 py-2 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0 disabled:opacity-50">
+                        {datingBusy ? <Spinner className="w-4 h-4 animate-spin" weight="bold" /> : <Shuffle className="w-4 h-4" weight="bold" />}
+                        {datingBusy ? '搜寻中' : '换一批'}
+                    </button>
+                </div>
+                <TabBar mode={mode} setMode={setMode} />
+                <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col items-center justify-center px-4 py-5">
+                    {datingBusy && dating.length === 0 ? (
+                        <div className="text-[12px] text-[#8b8996] font-hand flex items-center gap-2"><Spinner className="w-4 h-4 animate-spin" />正在发现身边的人…</div>
+                    ) : !cur ? (
+                        <div className="text-center">
+                            <div className="text-3xl mb-3">👀</div>
+                            <div className="text-[14px] font-bold text-[#2b2933] mb-3 font-display-italic">附近的人都看完啦</div>
+                            <button onClick={() => void refreshDating()} className="px-5 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">再发现一批</button>
+                        </div>
+                    ) : (
+                        <DatingCard key={cur.id} p={cur} remaining={remaining} onAct={(a) => datingAct(cur, a)} />
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     // ── 信息流首页 ──
     return (
         <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
@@ -358,6 +484,7 @@ const SocialApp: React.FC = () => {
                     <Binoculars className="w-4 h-4" weight="bold" />
                 </button>
             </div>
+            <TabBar mode={mode} setMode={setMode} />
 
             {/* 工具条：翻找 + 翻新页 + 撕掉整簿 */}
             <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
