@@ -332,9 +332,8 @@ export function buildGenerateItemsPrompt(count = 22, hint?: string): { system: s
 - blurb：一句话文案（15~30字，好物种草、踩雷款可中性或暗示一般）
 - rating：真实评分（1.0~5.0 的数字，好物 4.3~5.0，普通 3.5~4.2，踩雷/智商税 1.5~3.4，请拉开差距）
 
-只输出一个 JSON 数组，形如：
-[{"name":"…","emoji":"🎁","price":59,"category":"life","blurb":"…","rating":4.7}]
-共 ${count} 个对象，不要编号、不要解释。`;
+**务必输出完整且合法的 JSON**：只输出一个紧凑的 JSON 数组（无多余空白、无 markdown 围栏、无解释），把 ${count} 个对象全部写完、最后用 ] 收尾，绝不中途截断。形如：
+[{"name":"…","emoji":"🎁","price":59,"category":"life","blurb":"…","rating":4.7}]`;
     return { system, user };
 }
 

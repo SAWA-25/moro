@@ -212,3 +212,10 @@ pm run build passes after the time-gap grouping fix.
   - **自主生活轨迹无反应 → 用户一离线就自主生成**：之前角色生活只在「主动消息触发」或「用户回来时 catchUpOfflineLife 补齐（且 gap ≥2h）」才生成，用户离开当下毫无动静、短时离线永远不生成 → 体感「无反应」。现在 `OSContext` 在页面转入后台（`visibilitychange→hidden`）或窗口失焦（`blur`）时调用新增的 `runOnLeave`：为每个开了自主生活、未拉黑、配了线（副 API 优先）的角色**立刻** `advanceLife` 过一格日子（fire-and-forget，趁挂起前发出），并广播 `autonomous-life-advanced`。每角色 30 分钟节流（`LEAVE_MIN_GAP_MS`）防快速切后台刷爆 API；回来时的 `catchUpOfflineLife` 仍补齐更长 gap。
   - **清空上下文清除不干净 → 连日常/自主轨迹一并清**：`Chat.tsx handleClearHistory` 的「全部清除」分支（未勾「留最近10条」）此前只清消息 + 心情/buff + 日程，残留**角色备忘录（memos，会注入 context.ts）** 与**离线自主生活轨迹（CharLifeEvents，经 buildRecentLifeContextBlock 注入 + 喂主动消息）**，导致清空后角色仍「记得」已删的事、列表「此刻」状态还在。现一并 `updateCharacter({…, memos: []})` + `DB.deleteLifeEventsForChar(char.id)`，toast 改为「已彻底清空（含心情·日程·备忘录·自主生活轨迹）」。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 589 unit tests green。
+
+- 修复见闻簿/饭票/心意铺「生成 JSON 不合法」（API 调用记录显示成功、输出≈max_tokens）:
+  - **根因＝输出被 max_tokens 截断**：API 记录里输出 token ≈ 7996 ≈ 旧上限 8000，模型（gemini-3.1-pro 等会一路写到上限）把 JSON 截在半个对象里 → 整批不合法。上次给见闻簿改「正文不限字数」更是雪上加霜（首个对象就写超、打捞不到任何完整对象 → 报「生成结果不是合法 JSON」）。
+  - **提高 token 预算**：见闻簿 callLlm 8000→16000、饭票 generateStoresAI 8000→16000、心意铺 generateCatalog 6000→12000、茶话亭 帖子 1400→6000 / 楼层 900→4000。
+  - **收敛单条体量 + 硬约束写完**：见闻簿评论 8~16→3~6、正文回到「几十到一百多字、别长篇大论」；饭票每店菜品 5~9→4~6；三处 prompt 均加「务必输出完整合法、紧凑无空白、把 N 条全部写完再收尾、绝不中途截断」。
+  - **打捞兜底全覆盖**：饭票新增 `salvageStoreObjects`（深度遍历抠出已写完的店铺对象，正确处理字符串/转义/嵌套 dishes），解析为空时启用；茶话亭 `parseThreads`/`parseForumReplies` 改用新 `salvageFlat`（扁平对象逐个救回），不再「截断＝整批丢」。见闻簿已有 `salvageObjects`、心意铺已有 `salvageObjects`。
+  - 新增 2 条回归测试（forum 截断打捞）。`pnpm tsc --noEmit` clean, `vite build` passes, 591 tests green (+2)。
