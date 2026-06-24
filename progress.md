@@ -236,3 +236,16 @@ pm run build passes after the time-gap grouping fix.
   - **帮 user 回复候选 空白/失败修复**（根因＝思考型模型）：`gemini-3.1-pro` 等推理模型把 1000 的 max_tokens 几乎全用在推理上、正文 JSON 数组被截断→解析空→前台「没想出来」。① `requestActionsOnce` max_tokens 1000→4000；② `extractContent` 加固：content 为「分片数组(Gemini 风)」时拍平拼接（旧实现遇数组会让后续 .trim() 崩→空白）、空时回退 `reasoning_content`/`reasoning`/`choices[0].text`；③ `parseActions` 支持对象包裹 `{"actions":[…]}/{"suggestions":[…]}`。新增 7 测（对象包裹 + extractContent 分片/回退/去 think）。
   - **交友系统 3 项增强**：① 「我喜欢的」列表（右上 ♥ 入口，localStorage 持久化，显示已匹配/目的/简介），喜欢时按目的+熟人 `isMatch` 判定「🎉 匹配成功」；② 打招呼 → 对方 `generateDatingReply` AI 实时回应（弹窗气泡，熟人附「进来往聊」一键 `setActiveCharacterId`+开 Chat）；③ 按目的筛选卡片（全部 + 各 intent chip，含只看游戏搭子/SM）。`socialDating.ts` 加 `isMatch`/`generateDatingReply`/`fallbackDatingReply`。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 608 tests green (+7)。
+
+- 心意铺·全面对标淘宝（功能 + 界面，一批做完）:
+  - **淘宝式底部导航栏**：整个 App 改成 `首页 / 分类 / 购物车 / 我的` 四 tab 底栏（红色高亮 + 购物车角标），顶栏精简为标题 + 🪙淘金币 + ¥钱包。原「订单/背包/小票」收进「我的」。
+  - **「我的」个人中心**：渐变会员卡（头像/昵称/钱包/淘金币 + 每日签到领币）；「我的订单」四宫格快捷入口（待收货/待评价/退款售后/已完成，带角标，点入直达过滤后的订单）；「我的工具」九宫格（背包/收藏/足迹/领券/小票/角色逛铺）。
+  - **分类页**：淘宝式左侧分类竖栏 + 右侧商品网格，按 `SHOP_CATEGORIES` 切换。
+  - **商品评价系统**：确认收货后订单进「待评价」，可写评价（1~5 星 + 文案，奖励 5 淘金币）；`shopReviews` 存 `UserProfile`，PDP 把「我的评价」置顶并显示**好评率**。pure：`makeUserReview`/`userReviewsForItem`/`isItemReviewed`/`pendingReviewItems`/`goodRate`。
+  - **选规格/数量 sheet**（淘宝式底部弹层）：加购/立即购买前选款式（`itemSpecs` 按分类派生）+ 数量；卡片「购买」/PDP 两键都走它。
+  - **购物车多选结算**：每行勾选框 + 全选，结算仅算勾选项；单行减到 1 再点变删除；满减券基础上叠加**淘金币抵现**（`coinsToYuan`，最多抵实付 50%）。
+  - **物流详情**：`orderTrace` 生成带时间戳的轨迹时间轴（运单号 + 节点高亮），订单卡「查看物流」打开。
+  - **退款/售后**：自己支付且未收货的订单可「申请退款」，退回钱包 + 返还所用金币 + 标记 `refundedAt`；「我的→退款/售后」可查。
+  - **浏览足迹 + 淘金币**：打开详情记 `shopFootprints`（去重置顶限量），「我的→浏览足迹」可看/清空；`shopCoins`/`shopCheckinAt` + `checkinAvailable`/`dailyCheckinReward`（当日确定性 10~60）。
+  - types：`UserProfile` 加 `shopFootprints/shopReviews/shopCoins/shopCheckinAt`；`ShopOrder` 加 `refundedAt/coinDiscount`；新增 `ShopFootprint`/`ShopUserReview`。新 `shopMy.test.ts`（15 测）。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green (+15)。

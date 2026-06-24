@@ -11,7 +11,7 @@
  * 不碰 DB / React，方便在 App、聊天上下文、副 API 流程里复用。
  */
 
-import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem, ShopCoupon } from '../types';
+import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem, ShopCoupon, ShopFootprint, ShopUserReview } from '../types';
 
 /** 商城内容变动（买/送/角色逛完）后广播，相关页面据此刷新。 */
 export const SHOP_UPDATED_EVENT = 'moro-shop-updated';
@@ -591,4 +591,136 @@ export function parseCharShopDecision(raw: string): CharShopDecision | null {
     } catch {
         return null;
     }
+}
+
+// ── 物流详情时间轴（淘宝式：带时间戳的轨迹节点） ─────────────────────────────────
+export interface TraceNode { key: OrderStage; label: string; desc: string; at: number; done: boolean; current: boolean; }
+
+const TRACE_FRACS: { key: OrderStage; label: string; desc: string; f: number }[] = [
+    { key: 'placed',     label: '已下单',  desc: '心意铺已收到你的订单，正在通知商家备货', f: 0 },
+    { key: 'shipped',    label: '已发货',  desc: '商家已打包发出，包裹交由心意速递揽收', f: 0.18 },
+    { key: 'transit',    label: '运输中',  desc: '包裹已离开发货地，正在飞速赶往你的城市', f: 0.45 },
+    { key: 'delivering', label: '派送中',  desc: '快递小哥已揽件，正在为你火速派送', f: 0.78 },
+    { key: 'arrived',    label: '已送达',  desc: '包裹已抵达，记得点确认收货签收哦', f: 1 },
+];
+
+/**
+ * 订单物流轨迹（纯函数·确定性）：按 placedAt→etaAt 把各节点摊到时间线上。
+ * 返回**倒序**（最新节点在前，贴合淘宝物流详情）。已签收追加签收节点。
+ */
+export function orderTrace(order: ShopOrder, now: number = Date.now()): TraceNode[] {
+    const span = Math.max(1, order.etaAt - order.placedAt);
+    const reached = order.receivedAt != null ? Infinity : (now - order.placedAt) / span;
+    const nodes: TraceNode[] = TRACE_FRACS.map((s, i) => {
+        const at = order.placedAt + Math.round(s.f * span);
+        const done = reached >= s.f;
+        const nextF = TRACE_FRACS[i + 1]?.f ?? Infinity;
+        return { key: s.key, label: s.label, desc: s.desc, at, done, current: done && reached < nextF };
+    });
+    const out = nodes.filter(n => n.done);
+    if (order.receivedAt != null) {
+        out.push({ key: 'received', label: '已签收', desc: '宝贝已签收，期待你的好评～', at: order.receivedAt, done: true, current: true });
+    }
+    return out.reverse();
+}
+
+// ── 订单状态归类 + 各状态数量（「我的」订单快捷入口的角标） ────────────────────────
+export type OrderStatusKey = 'toReceive' | 'toReview' | 'done' | 'refunded';
+
+/** 单个订单当前归到哪个状态桶（结合是否已评价）。 */
+export function orderStatusKey(order: ShopOrder, reviews: ShopUserReview[] | undefined, now: number = Date.now()): OrderStatusKey {
+    if (order.refundedAt) return 'refunded';
+    if (!order.receivedAt) return 'toReceive';
+    // 已签收：只要还有未评价的商品行就算「待评价」，否则「已完成」
+    const hasPending = order.items.some(it => !isItemReviewed(reviews, order.id, it.itemId));
+    return hasPending ? 'toReview' : 'done';
+}
+
+/** 统计四个状态桶各有多少订单（给「我的」页角标）。 */
+export function orderStatusCounts(orders: ShopOrder[] | undefined, reviews: ShopUserReview[] | undefined, now: number = Date.now()): Record<OrderStatusKey, number> {
+    const out: Record<OrderStatusKey, number> = { toReceive: 0, toReview: 0, done: 0, refunded: 0 };
+    for (const o of (orders || [])) out[orderStatusKey(o, reviews, now)]++;
+    return out;
+}
+
+// ── 商品评价（用户晒单）：写评价 / 查评价 / 好评率 ─────────────────────────────────
+/** 某订单里的某商品是否已被用户评价过。 */
+export const isItemReviewed = (reviews: ShopUserReview[] | undefined, orderId: string, itemId: string): boolean =>
+    (reviews || []).some(r => r.orderId === orderId && r.itemId === itemId);
+
+/** 待评价清单：已签收（未退款）订单里、尚未评价的商品行。 */
+export function pendingReviewItems(orders: ShopOrder[] | undefined, reviews: ShopUserReview[] | undefined): { order: ShopOrder; item: ShopOrderItem }[] {
+    const out: { order: ShopOrder; item: ShopOrderItem }[] = [];
+    for (const o of (orders || [])) {
+        if (!o.receivedAt || o.refundedAt) continue;
+        for (const it of o.items) if (!isItemReviewed(reviews, o.id, it.itemId)) out.push({ order: o, item: it });
+    }
+    return out;
+}
+
+/** 构造一条用户评价。 */
+export const makeUserReview = (itemId: string, orderId: string, stars: number, text: string): ShopUserReview => ({
+    id: uid(),
+    itemId,
+    orderId,
+    stars: Math.max(1, Math.min(5, Math.round(stars))),
+    text: text.trim().slice(0, 200),
+    at: Date.now(),
+});
+
+/** 某商品我写过的评价（最新在前）。 */
+export const userReviewsForItem = (reviews: ShopUserReview[] | undefined, itemId: string): ShopUserReview[] =>
+    (reviews || []).filter(r => r.itemId === itemId).sort((a, b) => b.at - a.at);
+
+/** 好评率（stars≥4 占比，0~100 的整数）。空列表按评分派生一个体面的默认值。 */
+export function goodRate(stars: number[], fallbackRating?: number): number {
+    if (!stars.length) return fallbackRating != null ? Math.round(Math.max(60, Math.min(99, fallbackRating / 5 * 100))) : 96;
+    const good = stars.filter(s => s >= 4).length;
+    return Math.round((good / stars.length) * 100);
+}
+
+// ── 淘金币 + 每日签到 ───────────────────────────────────────────────────────
+/** 淘金币兑换比例：100 金币 = 1 元。 */
+export const COIN_PER_YUAN = 100;
+/** 金币可抵现金额（元，向下取整到分；最多抵实付的 50%）。 */
+export const coinsToYuan = (coins: number, payable: number): number => {
+    const byCoin = Math.floor((coins || 0) / COIN_PER_YUAN * 100) / 100;
+    const cap = Math.floor(payable * 0.5 * 100) / 100;
+    return Math.max(0, Math.min(byCoin, cap));
+};
+/** 抵扣某金额需要消耗多少金币。 */
+export const yuanToCoins = (yuan: number): number => Math.round(yuan * COIN_PER_YUAN);
+
+/** 把时间戳归一化到「自然日」序号（按本地时区）。 */
+const dayIndex = (ts: number): number => { const d = new Date(ts); return Math.floor((ts - d.getTimezoneOffset() * 60000) / 86400000); };
+/** 今天是否还能签到（上次签到不在今天）。 */
+export const checkinAvailable = (lastAt: number | undefined, now: number = Date.now()): boolean =>
+    lastAt == null || dayIndex(lastAt) < dayIndex(now);
+/** 当日签到奖励金币（确定性·按日期，10~60）。 */
+export const dailyCheckinReward = (now: number = Date.now()): number => 10 + (hashStr('checkin' + dayIndex(now)) % 51);
+
+// ── 浏览足迹 ────────────────────────────────────────────────────────────────
+/** 记一条足迹：移到最前、去重、最多留 60 条。返回新数组。 */
+export function pushFootprint(list: ShopFootprint[] | undefined, itemId: string, now: number = Date.now()): ShopFootprint[] {
+    const rest = (list || []).filter(f => f.itemId !== itemId);
+    return [{ itemId, at: now }, ...rest].slice(0, 60);
+}
+/** 解析足迹为 { item, at }（跳过已下架/未知商品）。 */
+export const resolveFootprints = (list: ShopFootprint[] | undefined): { item: ShopItem; at: number }[] =>
+    (list || []).map(f => ({ item: getShopItem(f.itemId), at: f.at }))
+        .filter((x): x is { item: ShopItem; at: number } => !!x.item);
+
+// ── 商品规格（淘宝式「选规格」faux SKU；按分类确定性派生，仅用于下单仪式感） ──────────
+const SPECS_BY_CAT: Record<string, { label: string; opts: string[] }> = {
+    flower:  { label: '包装', opts: ['牛皮纸款', '丝带礼盒', '鲜花速递'] },
+    food:    { label: '口味', opts: ['经典原味', '抹茶限定', '巧克力'] },
+    jewel:   { label: '款式', opts: ['银色', '玫瑰金', '附赠礼盒'] },
+    plush:   { label: '尺寸', opts: ['小号·25cm', '中号·45cm', '大号·65cm'] },
+    tech:    { label: '颜色', opts: ['星河黑', '月光白', '樱花粉'] },
+    life:    { label: '规格', opts: ['标准装', '加量装', '礼盒装'] },
+    romance: { label: '版本', opts: ['基础版', '定制版', '豪华版'] },
+};
+/** 某商品的规格选项（label + 选项数组）；无对应分类时给通用款式。 */
+export function itemSpecs(item: Pick<ShopItem, 'id' | 'category'>): { label: string; opts: string[] } {
+    return SPECS_BY_CAT[item.category] || { label: '款式', opts: ['标准款', '升级款'] };
 }

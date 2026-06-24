@@ -2471,6 +2471,14 @@ export interface UserProfile {
     takeoutRedpackets?: string[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
+    /** 购物商城·浏览足迹（淘宝式）：看过的商品 id + 时间（最新在前，去重，限量）。 */
+    shopFootprints?: ShopFootprint[];
+    /** 购物商城·我写的评价（确认收货后对商品的「晒单」，注入商品详情评价区置顶）。 */
+    shopReviews?: ShopUserReview[];
+    /** 购物商城·淘金币余额（签到/下单获得，结算可抵现）。 */
+    shopCoins?: number;
+    /** 购物商城·上次每日签到的时间戳（同一自然日只能签到一次）。 */
+    shopCheckinAt?: number;
     /**
      * 用户本人接入「彼方」的状态：捏的 chibi、此刻所在房间、在干嘛。可随时改。
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
@@ -3122,6 +3130,24 @@ export interface ShopOrder {
     placedAt: number;
     etaAt: number;          // 预计送达时间戳
     receivedAt?: number;    // 用户点「确认收货」的时刻
+    refundedAt?: number;    // 用户申请退款（退款/售后）成功的时刻；退款后订单不再进背包
+    coinDiscount?: number;  // 本单用淘金币抵扣的金额（元，仅展示用）
+}
+
+/** 购物商城·浏览足迹：看过某商品的记录。 */
+export interface ShopFootprint {
+    itemId: string;
+    at: number;
+}
+
+/** 购物商城·我写的商品评价（确认收货后晒单；按 orderId+itemId 唯一）。 */
+export interface ShopUserReview {
+    id: string;
+    itemId: string;
+    orderId: string;
+    stars: number;          // 1~5
+    text: string;
+    at: number;
 }
 
 /** 购物商城：一条小票（购买 / 赠送 / 收礼）。user 与 char 各存一份历史。 */
