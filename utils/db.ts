@@ -652,6 +652,101 @@ export const DB = {
       });
   },
 
+  deleteByIndex: async (storeName: string, indexName: string, value: IDBValidKey): Promise<number> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(storeName)) return 0;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, 'readwrite');
+          const store = tx.objectStore(storeName);
+          let deleted = 0;
+          const deleteCursor = (request: IDBRequest<IDBCursorWithValue | null>) => {
+              request.onsuccess = () => {
+                  const cursor = request.result;
+                  if (!cursor) return;
+                  cursor.delete();
+                  deleted++;
+                  cursor.continue();
+              };
+              request.onerror = () => reject(request.error);
+          };
+          if (!store.indexNames.contains(indexName)) {
+              const request = store.openCursor();
+              request.onsuccess = () => {
+                  const cursor = request.result;
+                  if (!cursor) return;
+                  if ((cursor.value as any)?.[indexName] === value) {
+                      cursor.delete();
+                      deleted++;
+                  }
+                  cursor.continue();
+              };
+              request.onerror = () => reject(request.error);
+              tx.oncomplete = () => resolve(deleted);
+              tx.onerror = () => reject(tx.error);
+              tx.onabort = () => reject(tx.error);
+              return;
+          }
+          const index = store.index(indexName);
+          const request = index.openCursor(IDBKeyRange.only(value));
+          deleteCursor(request);
+          tx.oncomplete = () => resolve(deleted);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  updateByCursor: async (storeName: string, updater: (value: any, key: IDBValidKey) => false | 'delete' | any): Promise<number> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(storeName)) return 0;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, 'readwrite');
+          const store = tx.objectStore(storeName);
+          const request = store.openCursor();
+          let touched = 0;
+          request.onsuccess = () => {
+              const cursor = request.result;
+              if (!cursor) return;
+              const next = updater(cursor.value, cursor.key);
+              if (next === 'delete') {
+                  cursor.delete();
+                  touched++;
+              } else if (next) {
+                  cursor.update(next);
+                  touched++;
+              }
+              cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+          tx.oncomplete = () => resolve(touched);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  deleteByCursor: async (storeName: string, predicate: (value: any, key: IDBValidKey) => boolean): Promise<number> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(storeName)) return 0;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, 'readwrite');
+          const store = tx.objectStore(storeName);
+          const request = store.openCursor();
+          let deleted = 0;
+          request.onsuccess = () => {
+              const cursor = request.result;
+              if (!cursor) return;
+              if (predicate(cursor.value, cursor.key)) {
+                  cursor.delete();
+                  deleted++;
+              }
+              cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+          tx.oncomplete = () => resolve(deleted);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
   getAllCharacters: async (): Promise<CharacterProfile[]> => {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -949,20 +1044,26 @@ export const DB = {
 
   clearMessages: async (charId: string): Promise<void> => {
     const db = await openDB();
-    const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
-    const store = transaction.objectStore(STORE_MESSAGES);
-    const index = store.index('charId');
-    const request = index.openCursor(IDBKeyRange.only(charId));
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) { 
-          const m = cursor.value as Message;
-          if (!m.groupId) { 
-              store.delete(cursor.primaryKey); 
-          }
-          cursor.continue(); 
-      }
-    };
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+      const store = transaction.objectStore(STORE_MESSAGES);
+      const index = store.index('charId');
+      const request = index.openCursor(IDBKeyRange.only(charId));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+            const m = cursor.value as Message;
+            if (!m.groupId) {
+                cursor.delete();
+            }
+            cursor.continue();
+        }
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   },
 
   getGroups: async (): Promise<GroupProfile[]> => {
@@ -1055,6 +1156,44 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
       transaction.objectStore(STORE_SOCIAL_POSTS).clear();
+  },
+
+  deleteSocialPostsByChar: async (charId: string): Promise<number> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_SOCIAL_POSTS)) return 0;
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_SOCIAL_POSTS, 'readwrite');
+          const store = tx.objectStore(STORE_SOCIAL_POSTS);
+          const request = store.openCursor();
+          let touched = 0;
+          request.onsuccess = () => {
+              const cursor = request.result;
+              if (!cursor) return;
+              const post = cursor.value as SocialPost;
+              if (post?.authorCharId === charId) {
+                  cursor.delete();
+                  touched++;
+                  cursor.continue();
+                  return;
+              }
+              const comments = Array.isArray(post?.comments) ? post.comments.filter(c => c?.authorCharId !== charId) : post.comments;
+              const likedBy = Array.isArray(post?.likedBy) ? post.likedBy.filter(l => l?.id !== charId) : post.likedBy;
+              const mentionedCharIds = Array.isArray(post?.mentionedCharIds) ? post.mentionedCharIds.filter(id => id !== charId) : post.mentionedCharIds;
+              const changed =
+                  (Array.isArray(post?.comments) && comments.length !== post.comments.length) ||
+                  (Array.isArray(post?.likedBy) && (likedBy?.length || 0) !== post.likedBy.length) ||
+                  (Array.isArray(post?.mentionedCharIds) && (mentionedCharIds?.length || 0) !== post.mentionedCharIds.length);
+              if (changed) {
+                  cursor.update({ ...post, comments, likedBy, mentionedCharIds });
+                  touched++;
+              }
+              cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+          tx.oncomplete = () => resolve(touched);
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
   },
 
   getEmojis: async (): Promise<Emoji[]> => {
@@ -1275,6 +1414,10 @@ export const DB = {
       });
   },
 
+  deleteTalkSessionsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_TALK_SESSIONS, 'charId', charId);
+  },
+
   // ─── 折子戏·狼人杀对局 ───
   getAllWerewolfGames: async (): Promise<WerewolfGame[]> => {
       const db = await openDB();
@@ -1362,6 +1505,12 @@ export const DB = {
       });
   },
 
+  deleteCollectionItemsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_COLLECTION_ITEMS, (item: CollectionItem) => (
+          Array.isArray(item?.charIds) && item.charIds.includes(charId)
+      ));
+  },
+
   // ─── 外卖订单 ───
   getTakeoutOrders: async (): Promise<TakeoutOrder[]> => {
       const db = await openDB();
@@ -1398,6 +1547,12 @@ export const DB = {
           tx.oncomplete = () => resolve();
           tx.onerror = () => reject(tx.error);
       });
+  },
+
+  deleteTakeoutOrdersByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_TAKEOUT_ORDERS, (order: TakeoutOrder) => (
+          order?.charId === charId || order?.recipient === charId || order?.payer === charId
+      ));
   },
 
   // ── 小剧场·占卜牌库 ──────────────────────────────────────────────
@@ -1593,6 +1748,10 @@ export const DB = {
       transaction.objectStore(STORE_GALLERY).delete(id);
   },
 
+  deleteGalleryImagesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_GALLERY, 'charId', charId);
+  },
+
   // --- XHS Stock Images ---
   getXhsStockImages: async (): Promise<XhsStockImage[]> => {
       const db = await openDB();
@@ -1678,11 +1837,27 @@ export const DB = {
   clearXhsActivities: async (characterId: string): Promise<void> => {
       const activities = await DB.getXhsActivities(characterId);
       const db = await openDB();
-      const transaction = db.transaction(STORE_XHS_ACTIVITIES, 'readwrite');
-      const store = transaction.objectStore(STORE_XHS_ACTIVITIES);
-      for (const a of activities) {
-          store.delete(a.id);
-      }
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_XHS_ACTIVITIES, 'readwrite');
+          const store = transaction.objectStore(STORE_XHS_ACTIVITIES);
+          for (const a of activities) {
+              store.delete(a.id);
+          }
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+      });
+  },
+
+  deleteXhsFeedPostsByCharId: async (charId: string): Promise<number> => {
+      return DB.updateByCursor(STORE_XHS_FEED, (post: XhsFeedPost) => {
+          if (post?.authorType === 'character' && post.charId === charId) return 'delete';
+          const comments = Array.isArray(post?.comments) ? post.comments.filter(c => c?.charId !== charId) : post.comments;
+          if (Array.isArray(post?.comments) && comments.length !== post.comments.length) {
+              return { ...post, comments };
+          }
+          return false;
+      });
   },
 
   // --- XHS Feed Posts (小红书 App 本地生成信息流) ---
@@ -1754,6 +1929,10 @@ export const DB = {
       transaction.objectStore(STORE_SCHEDULED).delete(id);
   },
 
+  deleteScheduledMessagesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_SCHEDULED, 'charId', charId);
+  },
+
   saveUserProfile: async (profile: UserProfile): Promise<void> => {
       const db = await openDB();
       const transaction = db.transaction(STORE_USER, 'readwrite');
@@ -1802,6 +1981,10 @@ export const DB = {
       transaction.objectStore(STORE_DIARIES).delete(id);
   },
 
+  deleteDiariesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_DIARIES, 'charId', charId);
+  },
+
   // --- 电话 App：通话记录 ---
   savePhoneCallLog: async (log: PhoneCallLog): Promise<void> => {
       const db = await openDB();
@@ -1823,6 +2006,10 @@ export const DB = {
   deletePhoneCallLog: async (id: string): Promise<void> => {
       const db = await openDB();
       db.transaction(STORE_PHONE_CALL_LOGS, 'readwrite').objectStore(STORE_PHONE_CALL_LOGS).delete(id);
+  },
+
+  deletePhoneCallLogsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_PHONE_CALL_LOGS, 'charId', charId);
   },
 
   clearPhoneCallLogs: async (): Promise<void> => {
@@ -1853,6 +2040,26 @@ export const DB = {
       db.transaction(STORE_EXCHANGE_DIARY, 'readwrite').objectStore(STORE_EXCHANGE_DIARY).delete(id);
   },
 
+  deleteExchangeDiaryBooksByCharId: async (charId: string): Promise<number> => {
+      return DB.updateByCursor(STORE_EXCHANGE_DIARY, (book: ExchangeDiaryBook) => {
+          const nextEntries = Array.isArray(book?.entries) ? book.entries.filter(e => e?.charId !== charId) : [];
+          const nextCharIds = Array.isArray(book?.charIds) ? book.charIds.filter(id => id !== charId) : [];
+          const changed =
+              nextEntries.length !== (book?.entries?.length || 0) ||
+              nextCharIds.length !== (book?.charIds?.length || 0) ||
+              book?.activeCharId === charId;
+          if (!changed) return false;
+          if (nextCharIds.length === 0 && nextEntries.length === 0) return 'delete';
+          return {
+              ...book,
+              charIds: nextCharIds,
+              activeCharId: book.activeCharId === charId ? (nextCharIds[0] || '') : book.activeCharId,
+              entries: nextEntries,
+              updatedAt: Date.now(),
+          };
+      });
+  },
+
   // --- 偷看心声 ---
   saveInnerVoice: async (entry: InnerVoiceEntry): Promise<void> => {
       const db = await openDB();
@@ -1875,6 +2082,10 @@ export const DB = {
   deleteInnerVoice: async (id: string): Promise<void> => {
       const db = await openDB();
       db.transaction(STORE_INNER_VOICES, 'readwrite').objectStore(STORE_INNER_VOICES).delete(id);
+  },
+
+  deleteInnerVoicesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_INNER_VOICES, 'charId', charId);
   },
 
   getAllTasks: async (): Promise<Task[]> => {
@@ -1927,6 +2138,10 @@ export const DB = {
       transaction.objectStore(STORE_ANNIVERSARIES).delete(id);
   },
 
+  deleteAnniversariesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_ANNIVERSARIES, 'charId', charId);
+  },
+
   // --- 岁时记 · 实时日历贴纸 ---
   getAllCalendarMarks: async (): Promise<CalendarMark[]> => {
       const db = await openDB();
@@ -1949,6 +2164,10 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_CALENDAR_MARKS, 'readwrite');
       transaction.objectStore(STORE_CALENDAR_MARKS).delete(id);
+  },
+
+  deleteCalendarMarksByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_CALENDAR_MARKS, (mark: CalendarMark) => mark?.charId === charId);
   },
 
   // --- 存钱罐 · 角色账本 ---
@@ -1975,6 +2194,10 @@ export const DB = {
       transaction.objectStore(STORE_CHAR_LEDGERS).delete(id);
   },
 
+  deleteCharLedgerEntriesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_CHAR_LEDGERS, 'charId', charId);
+  },
+
   getRoomTodo: async (charId: string, date: string): Promise<RoomTodo | null> => {
       const db = await openDB();
       const id = `${charId}_${date}`;
@@ -1992,6 +2215,12 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_ROOM_TODOS, 'readwrite');
       transaction.objectStore(STORE_ROOM_TODOS).put(todo);
+  },
+
+  deleteRoomTodosByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_ROOM_TODOS, (todo: RoomTodo, key: IDBValidKey) => (
+          todo?.charId === charId || (typeof key === 'string' && key.startsWith(`${charId}_`))
+      ));
   },
 
   getRoomNotes: async (charId: string): Promise<RoomNote[]> => {
@@ -2017,6 +2246,10 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_ROOM_NOTES, 'readwrite');
       transaction.objectStore(STORE_ROOM_NOTES).delete(id);
+  },
+
+  deleteRoomNotesByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByIndex(STORE_ROOM_NOTES, 'charId', charId);
   },
 
   // ─── Daily Schedule (角色日程表) ───
@@ -2886,6 +3119,10 @@ export const DB = {
       transaction.objectStore(STORE_GUIDEBOOK).delete(id);
   },
 
+  deleteGuidebookSessionsByCharId: async (charId: string): Promise<number> => {
+      return DB.deleteByCursor(STORE_GUIDEBOOK, (session: GuidebookSession) => session?.charId === charId);
+  },
+
   // ── LifeSim (模拟人生) ────────────────────────────────────
   getLifeSimState: async (): Promise<LifeSimState | null> => {
       const db = await openDB();
@@ -2912,6 +3149,41 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_LIFE_SIM, 'readwrite');
       transaction.objectStore(STORE_LIFE_SIM).clear();
+  },
+
+  removeLifeSimCharacterContext: async (charId: string): Promise<number> => {
+      const state = await DB.getLifeSimState();
+      if (!state) return 0;
+      let changed = false;
+      const participantCharIds = Array.isArray(state.participantCharIds)
+          ? state.participantCharIds.filter(id => id !== charId)
+          : state.participantCharIds;
+      if (participantCharIds !== state.participantCharIds) changed = true;
+      const charQueue = Array.isArray(state.charQueue)
+          ? state.charQueue.filter(id => id !== charId)
+          : [];
+      if (charQueue.length !== (state.charQueue?.length || 0)) changed = true;
+      const replayPending = Array.isArray(state.replayPending)
+          ? state.replayPending.filter(action => action?.actorId !== charId)
+          : [];
+      if (replayPending.length !== (state.replayPending?.length || 0)) changed = true;
+      const actionLog = Array.isArray(state.actionLog)
+          ? state.actionLog.filter(action => action?.actorId !== charId)
+          : [];
+      if (actionLog.length !== (state.actionLog?.length || 0)) changed = true;
+      const currentActorId = state.currentActorId === charId ? 'user' : state.currentActorId;
+      if (currentActorId !== state.currentActorId) changed = true;
+      if (!changed) return 0;
+      await DB.saveLifeSimState({
+          ...state,
+          participantCharIds,
+          charQueue,
+          replayPending,
+          actionLog,
+          currentActorId,
+          isProcessingCharTurn: state.isProcessingCharTurn && currentActorId !== 'user',
+      });
+      return 1;
   },
 
   getRawStoreData: async (storeName: string): Promise<any[]> => {

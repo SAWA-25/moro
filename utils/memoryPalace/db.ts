@@ -541,3 +541,136 @@ export const AnticipationDB = {
     getActive: (charId: string) =>
         AnticipationDB.getByStatus(charId, 'active'),
 };
+
+function clearMemoryPalaceLocalStateForChar(charId: string): number {
+    let removed = 0;
+    try {
+        const exact = new Set([
+            `mp_lastMsgId_${charId}`,
+            `mp_working_memory_${charId}`,
+            `mp_recall_receipts_${charId}`,
+            `mp_recall_round_${charId}`,
+            `mp_anchor_last_seen_${charId}`,
+            `mp_cognized_clusters_${charId}`,
+            `mp_digestRounds_${charId}`,
+            `mp_lastDigest_${charId}`,
+            `mp_anchor_cooldown_${charId}`,
+            `os_mp_recall_receipts_${charId}`,
+            `mp_personality_tried_${charId}`,
+        ]);
+        const prefixes = [
+            `mp_cognition_cluster_`,
+            `mp_digest_last_turn_${charId}`,
+            `mp_first_archive_notice_${charId}`,
+        ];
+        const toRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (exact.has(key) || prefixes.some(p => key.startsWith(p) && key.includes(charId))) {
+                toRemove.push(key);
+            }
+        }
+        for (const key of toRemove) {
+            localStorage.removeItem(key);
+            removed++;
+        }
+    } catch { /* ignore */ }
+    return removed;
+}
+
+export interface ClearMemoryPalaceForCharResult {
+    nodes: number;
+    vectors: number;
+    links: number;
+    batches: number;
+    topicBoxes: number;
+    eventBoxes: number;
+    anticipations: number;
+    localState: number;
+}
+
+/** 清掉某个角色的本地记忆宫殿数据；保留全局配置，不触碰远程 Supabase。 */
+export async function clearMemoryPalaceForChar(charId: string): Promise<ClearMemoryPalaceForCharResult> {
+    const db = await openDB();
+    const stores = [
+        STORE_MEMORY_NODES,
+        STORE_MEMORY_VECTORS,
+        STORE_MEMORY_LINKS,
+        STORE_MEMORY_BATCHES,
+        STORE_TOPIC_BOXES,
+        STORE_ANTICIPATIONS,
+        STORE_EVENT_BOXES,
+    ].filter(name => db.objectStoreNames.contains(name));
+
+    const result: ClearMemoryPalaceForCharResult = {
+        nodes: 0,
+        vectors: 0,
+        links: 0,
+        batches: 0,
+        topicBoxes: 0,
+        eventBoxes: 0,
+        anticipations: 0,
+        localState: 0,
+    };
+    if (stores.length === 0) {
+        result.localState = clearMemoryPalaceLocalStateForChar(charId);
+        return result;
+    }
+
+    const existingNodes = stores.includes(STORE_MEMORY_NODES)
+        ? await getAllByIndex<MemoryNode>(STORE_MEMORY_NODES, 'charId', charId)
+        : [];
+    const nodeIds = new Set(existingNodes.map(n => n.id));
+
+    await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(stores, 'readwrite');
+        let pending = 0;
+        const fail = (err: any) => reject(err);
+        const doneOne = () => { pending--; };
+        const deleteByCharIndex = (storeName: string, countKey: keyof ClearMemoryPalaceForCharResult) => {
+            if (!stores.includes(storeName)) return;
+            pending++;
+            const req = tx.objectStore(storeName).index('charId').openCursor(IDBKeyRange.only(charId));
+            req.onsuccess = () => {
+                const cursor = req.result;
+                if (!cursor) { doneOne(); return; }
+                (result[countKey] as number)++;
+                cursor.delete();
+                cursor.continue();
+            };
+            req.onerror = () => fail(req.error);
+        };
+
+        deleteByCharIndex(STORE_MEMORY_NODES, 'nodes');
+        deleteByCharIndex(STORE_MEMORY_VECTORS, 'vectors');
+        deleteByCharIndex(STORE_MEMORY_BATCHES, 'batches');
+        deleteByCharIndex(STORE_TOPIC_BOXES, 'topicBoxes');
+        deleteByCharIndex(STORE_EVENT_BOXES, 'eventBoxes');
+        deleteByCharIndex(STORE_ANTICIPATIONS, 'anticipations');
+
+        if (stores.includes(STORE_MEMORY_LINKS)) {
+            pending++;
+            const req = tx.objectStore(STORE_MEMORY_LINKS).openCursor();
+            req.onsuccess = () => {
+                const cursor = req.result;
+                if (!cursor) { doneOne(); return; }
+                const link = cursor.value as MemoryLink;
+                if (nodeIds.has(link.sourceId) || nodeIds.has(link.targetId)) {
+                    result.links++;
+                    cursor.delete();
+                }
+                cursor.continue();
+            };
+            req.onerror = () => fail(req.error);
+        }
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => fail(tx.error);
+        tx.onabort = () => fail(tx.error);
+    });
+
+    bm25Index.drop(charId);
+    result.localState = clearMemoryPalaceLocalStateForChar(charId);
+    return result;
+}

@@ -429,6 +429,48 @@ const Chat: React.FC = () => {
         }
     };
 
+    const clearCharacterContextLocalState = (charId: string) => {
+        try {
+            const exact = new Set([
+                `moro_last_autonomous_catchup_${charId}`,
+            ]);
+            const jsonByCharIdKeys = [
+                'moro_takeout_intent_v1',
+                'proactive_schedules',
+                'proactive_last_fire_map',
+            ];
+            const prefixes = [
+                `moro_life_recap_seen_${charId}`,
+                `moro_life_catchup_lock_${charId}`,
+                `moro_proactive_last_${charId}`,
+                `moro_proactive_next_${charId}`,
+            ];
+            const toRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (exact.has(key) || prefixes.some(p => key.startsWith(p)))) toRemove.push(key);
+            }
+            for (const key of toRemove) localStorage.removeItem(key);
+            for (const key of jsonByCharIdKeys) {
+                const raw = localStorage.getItem(key);
+                if (!raw) continue;
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (parsed?.recipientCharId === charId) {
+                        localStorage.removeItem(key);
+                    } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed[charId] !== undefined) {
+                        delete parsed[charId];
+                        if (Object.keys(parsed).length > 0) localStorage.setItem(key, JSON.stringify(parsed));
+                        else localStorage.removeItem(key);
+                    }
+                } catch { /* ignore malformed local state */ }
+            }
+            if (localStorage.getItem('moro_couple_partner_id') === charId) {
+                localStorage.removeItem('moro_couple_partner_id');
+            }
+        } catch { /* ignore */ }
+    };
+
     const handlePlayVoice = (msgId: number) => {
         const data = voiceDataMap[msgId];
         if (!data) {
@@ -2349,8 +2391,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
     const handleClearHistory = async () => {
         if (!char) return;
 
-        // 记忆宫殿安全检查：如果角色启用了记忆宫殿，检查是否有未被向量化处理的消息
-        if (char.memoryPalaceEnabled) {
+        // 记忆宫殿安全检查：保留最近 10 条时仍保护未处理消息；全量清除语义是重置角色上下文。
+        if (preserveContext && char.memoryPalaceEnabled) {
             const hwm = await getMemoryPalaceHWM(char.id);
             const allMessages = await DB.getMessagesByCharId(char.id, true);
             const textMessages = allMessages.filter(m => m.type === 'text' && m.content?.trim());
@@ -2417,14 +2459,69 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             setTotalMsgCount(0);
             setVisibleCount(LOAD_BATCH_SIZE);
             visibleCountRef.current = LOAD_BATCH_SIZE;
-            // 全部清除：连角色的情绪（心情 / buff）、日程、备忘录、离线自主生活轨迹一并抹掉 ——
-            // 只有勾选「留最近10条」时才保留。否则清空后这些旧记录还会被注入下一轮 prompt（角色「记得」
-            // 已被清掉的事），与「全部清除」语义不符。备忘录(memos)、自主轨迹(life events) 都会进角色上下文。
-            await updateCharacter(char.id, { currentMood: undefined, activeBuffs: [], buffInjection: '', memos: [] });
-            await DB.deleteDailySchedulesByChar(char.id);
-            await DB.deleteLifeEventsForChar(char.id);
+            const [{ clearMemoryPalaceForChar }, { notifyTakeoutUpdated }] = await Promise.all([
+                import('../utils/memoryPalace/db'),
+                import('../utils/takeout'),
+            ]);
+            await Promise.all([
+                DB.deleteDailySchedulesByChar(char.id),
+                DB.deleteLifeEventsForChar(char.id),
+                DB.deleteSocialPostsByChar(char.id),
+                DB.deleteXhsFeedPostsByCharId(char.id),
+                DB.deleteTakeoutOrdersByCharId(char.id),
+                DB.deleteInnerVoicesByCharId(char.id),
+                DB.deleteScheduledMessagesByCharId(char.id),
+                DB.deletePhoneCallLogsByCharId(char.id),
+                DB.deleteDiariesByCharId(char.id),
+                DB.deleteAnniversariesByCharId(char.id),
+                DB.deleteCalendarMarksByCharId(char.id),
+                DB.deleteGalleryImagesByCharId(char.id),
+                DB.deleteCharLedgerEntriesByCharId(char.id),
+                DB.deleteRoomTodosByCharId(char.id),
+                DB.deleteRoomNotesByCharId(char.id),
+                DB.deleteExchangeDiaryBooksByCharId(char.id),
+                DB.deleteTalkSessionsByCharId(char.id),
+                DB.deleteGuidebookSessionsByCharId(char.id),
+                DB.deleteCollectionItemsByCharId(char.id),
+                DB.removeLifeSimCharacterContext(char.id),
+                DB.clearXhsActivities(char.id),
+                clearMemoryPalaceForChar(char.id),
+            ]);
+            clearCharacterContextLocalState(char.id);
+            notifyTakeoutUpdated();
+            await updateCharacter(char.id, {
+                memories: [],
+                refinedMemories: {},
+                activeMemoryMonths: [],
+                memos: [],
+                selfInsights: [],
+                lifeProfile: undefined,
+                recenterCalibration: undefined,
+                memoryPalaceInjection: undefined,
+                hideBeforeMessageId: undefined,
+                currentMood: undefined,
+                affection: undefined,
+                relationship: undefined,
+                marriage: undefined,
+                activeBuffs: [],
+                buffInjection: '',
+                coupleSpace: undefined,
+                shopReceipts: [],
+                shopCart: [],
+                generatedTabloids: {},
+                guidebookInsights: [],
+                savedDateState: undefined,
+                specialMomentRecords: undefined,
+                savedRoomState: undefined,
+                lastRoomDate: undefined,
+                phoneState: undefined,
+            });
             setScheduleData(null);
-            addToast('已彻底清空（含心情·日程·备忘录·自主生活轨迹）', 'success');
+            setInnerVoiceHistory([]);
+            setInnerVoiceCurrent(null);
+            setTakeoutCardTarget(null);
+            setTakeoutCardOrder(null);
+            addToast('已清空角色上下文，仅保留角色设定', 'success');
         }
         setModalType('none');
     };
