@@ -177,3 +177,11 @@ pm run build passes after the time-gap grouping fix.
   - **饭票/心意铺 搜索即现搜**: 输入关键词回车（或点 CTA）就实时生成一批**紧扣该词**的相关结果——饭票现搜全城相关店铺（`generateStoresAI(api, 20, query)` 的 prompt 加了「本次搜 X，让这批都紧扣 X」），心意铺现搜相关礼物（`generateCatalog` 传强关键词 hint）；生成后清掉文字过滤直接展示这批结果。空结果态也给「现搜全城」入口。
   - **饭票·药品栏目**: `CATS` 加入「药品」品类（顶部多一个药品 chip）；`generateStoresAI` 的 prompt 增加「药品＝药店」规则（卖感冒灵/布洛芬/连花清瘟/创可贴/口罩/维C 等非处方药与医疗用品，价格/规格/emoji 贴现实），正常批次放 1~2 家药店、搜买药相关词时多生成几家。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 565 unit tests green.
+
+- 茶话亭(论坛)·全 AI 实时生成 + 贴吧式盖楼 (对标百度贴吧, 界面革新):
+  - **帖子列表全 AI 实时生成、cache-first**: 进一个「吧」(板块) 自动一次性生成 **≥10 个帖子** (`buildThreadsPrompt`/`parseThreads`/`materializeThreads`, `THREAD_BATCH=12`)，话题不重复、长短不一；空时不再只靠 2 条种子。每个吧底栏「换一批」重生成并替换该吧的生成帖。无 API/失败回退 `fallbackThreads`(每吧 10 条模板) 兜满，不留空屏。
+  - **楼层根据帖子生成、30~几百楼、懒加载**: `targetFloorCount()` 给每帖一个「声称总楼数」(`replyCount`，加权 30~150、少数爆楼到 ~588，**最低 30**)；进帖自动盖第一批楼，「加载更多楼层」按 `FLOOR_BATCH=12` 续盖直到 `replyCount`，到顶显示「已经到底了，共 X 楼」。`buildForumPrompt` 现接 `startFloor`，按真实楼号区间出题。
+  - **楼中楼 + 楼主 + 只看楼主 + 点赞 (贴吧式)**: 跟帖支持 `reply_to` → `materializeReplies` 落成嵌套 `subReplies`(不占楼号、缩进「X 回复 Y：」渲染)，命中楼主名标 `isOp`(👑楼主标)；详情页「只看楼主」过滤、楼号(1楼=楼主主楼, 跟帖 2楼+)、点赞、爆楼标记、热帖🔥。
+  - **界面革新**: 贴吧蓝 `#2b6fe0`；顶部搜索栏(搜帖子/网友)、板块 chip 选中显「X吧」、吧介绍条 + 换一批、列表头像/作者/楼数/赞数/爆楼角标、生成中骨架、`kFmt`(w/k 计数)、详情页 4px 分隔的楼主主楼 + 楼层流 + 楼中楼卡 + 回帖框。
+  - 纯函数全部进 `utils/forum.ts`，新增 `utils/forum.test.ts` (12 tests：楼数区间/解析夹紧/落地/楼中楼/兜底)。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 577 unit tests green (12 new)。

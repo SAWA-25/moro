@@ -21,6 +21,17 @@ export const boardOf = (id: string): ForumBoard | undefined => FORUM_BOARDS.find
 
 export type AuthorType = 'user' | 'char' | 'npc';
 
+/** 楼中楼：对某层楼的嵌套回复（百度贴吧式）。 */
+export interface ForumSubReply {
+    id: string;
+    authorType: AuthorType;
+    authorId?: string;
+    authorName: string;
+    avatar?: string;
+    body: string;
+    createdAt: number;
+}
+
 export interface ForumReply {
     id: string;
     floor: number;
@@ -31,6 +42,8 @@ export interface ForumReply {
     body: string;
     createdAt: number;
     likes: number;
+    isOp?: boolean;           // 是否楼主（与帖子作者同名）
+    subReplies?: ForumSubReply[]; // 楼中楼
 }
 
 export interface ForumPost {
@@ -46,6 +59,9 @@ export interface ForumPost {
     lastActiveAt: number;
     likes: number;
     replies: ForumReply[];
+    replyCount?: number;   // 帖子「声称」的总楼层（30~几百），楼层懒加载到此数
+    hot?: boolean;         // 热帖标记（贴吧式）
+    generated?: boolean;   // 是否 AI 实时生成（区别于种子/用户帖）
 }
 
 export interface ForumState { posts: ForumPost[]; }
@@ -68,6 +84,18 @@ const NETIZEN_LINES = [
     '又是被共鸣到的一天。', '蹲一个，顺便许愿。', '这届网友很会啊。', '路过，给楼主递茶。🍵',
 ];
 
+/**
+ * 帖子「声称」的总楼层数：贴吧帖子有的几十楼、有的几百楼。
+ * 加权偏向 30~150，偶尔窜到几百（最高 ~588）。最低 30。
+ */
+export function targetFloorCount(seed?: number): number {
+    const r = typeof seed === 'number' ? Math.abs(Math.sin(seed) ) : Math.random();
+    // 70% 落在 30~150；24% 落在 150~320；6% 爆楼 320~588
+    if (r < 0.70) return 30 + Math.floor((r / 0.70) * 120);          // 30~150
+    if (r < 0.94) return 150 + Math.floor(((r - 0.70) / 0.24) * 170); // 150~320
+    return 320 + Math.floor(((r - 0.94) / 0.06) * 268);               // 320~588
+}
+
 /** 模板兜底：没配 API / 生成失败时也能盖几层楼。 */
 export function fallbackReplies(count: number): { name: string; body: string }[] {
     const used = new Set<string>();
@@ -89,7 +117,8 @@ export function seedForum(): ForumState {
         return {
             id: fid(), boardId, authorType: 'npc', authorName: pick(NICKS), title, body,
             createdAt: created, lastActiveAt: created + 60000, likes: Math.floor(Math.random() * 30),
-            replies: replies.map((r, i) => ({ id: fid(), floor: i + 1, authorType: 'npc', authorName: r.n, body: r.b, createdAt: created + (i + 1) * 60000, likes: Math.floor(Math.random() * 10) })),
+            replies: replies.map((r, i) => ({ id: fid(), floor: i + 2, authorType: 'npc', authorName: r.n, body: r.b, createdAt: created + (i + 1) * 60000, likes: Math.floor(Math.random() * 10) })),
+            replyCount: 30 + Math.floor(Math.random() * 60),
         };
     };
     return {
@@ -106,28 +135,34 @@ export function seedForum(): ForumState {
 
 export interface CharBrief { id: string; name: string; persona?: string; }
 
+export interface RawReply { name: string; body: string; reply_to?: string; }
+
 export function buildForumPrompt(
     post: Pick<ForumPost, 'title' | 'body' | 'boardId'>,
     chars: CharBrief[],
     count: number,
+    startFloor = 2,
 ): { system: string; user: string } {
     const board = boardOf(post.boardId);
     const roster = chars.slice(0, 6).map(c => `- ${c.name}：${(c.persona || '').slice(0, 120) || '（无设定）'}`).join('\n');
-    const system = '你在为一个网络论坛生成「跟帖区」。跟帖要口语、简短、风格各异（有人共鸣、有人吐槽、有人抬杠玩梗、有人认真建议），像真实网友。';
+    const system = '你在为一个网络论坛（百度贴吧风格）生成「跟帖区」楼层。跟帖要口语、简短、风格各异（有人共鸣、有人吐槽、有人抬杠玩梗、有人认真建议、有人单纯顶帖/接楼），像真实网友盖楼。';
+    const endFloor = startFloor + count - 1;
     const user = `板块：${board?.emoji || ''}${board?.name || ''}
 帖子标题：「${post.title}」
 正文：${post.body || '（无）'}
 
-下面这些是「实名出镜」的网友（你认识的角色），他们也会来跟帖，请严格用其本名、并贴合各自人设说话：
+下面这些是「实名出镜」的网友（你认识的角色），他们也可能来盖楼，请严格用其本名、并贴合各自人设说话：
 ${roster || '（暂无实名角色）'}
 
-请生成 ${count} 条跟帖：其中 1~3 条来自上面的实名角色（用其本名、合乎人设地回应这个帖子），其余来自匿名网友（你为每位现编一个有网感的网名）。每条不超过 40 字，自然、有梗、不复读。
+请生成 ${count} 条跟帖（这是第 ${startFloor}~${endFloor} 楼）：其中若干条来自上面的实名角色（用其本名、合乎人设地回应），其余来自匿名网友（你为每位现编一个有网感的网名，可重复出现像在对话）。
+- 每条不超过 40 字，自然、有梗、不复读、有来有回；
+- 让其中 2~4 条带 "reply_to" 字段（楼中楼，回复前面某位网友的名字），形成对话感；
 只输出一个 JSON 数组，不要任何多余文字或代码块标记：
-[{"name":"出镜网友名或匿名网名","body":"跟帖内容"}]`;
+[{"name":"网友名","body":"跟帖内容","reply_to":"（可选）被回复者网名"}]`;
     return { system, user };
 }
 
-export function parseForumReplies(raw: string): { name: string; body: string }[] {
+export function parseForumReplies(raw: string): RawReply[] {
     if (!raw) return [];
     const txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
     const s = txt.indexOf('['); const e = txt.lastIndexOf(']');
@@ -136,9 +171,14 @@ export function parseForumReplies(raw: string): { name: string; body: string }[]
         const arr = JSON.parse(txt.slice(s, e + 1));
         if (!Array.isArray(arr)) return [];
         return arr
-            .map((x: any) => ({ name: String(x?.name || '').trim().slice(0, 16), body: String(x?.body || '').trim().slice(0, 80) }))
+            .map((x: any) => {
+                const o: RawReply = { name: String(x?.name || '').trim().slice(0, 16), body: String(x?.body || '').trim().slice(0, 80) };
+                const rt = String(x?.reply_to || x?.replyTo || '').trim().slice(0, 16);
+                if (rt) o.reply_to = rt;
+                return o;
+            })
             .filter(x => x.name && x.body)
-            .slice(0, 8);
+            .slice(0, 20);
     } catch { return []; }
 }
 
@@ -167,18 +207,44 @@ export function parseCharThread(raw: string): { boardId: string; title: string; 
     } catch { return null; }
 }
 
-/** 把「名字+正文」批量落成楼层；名字命中实名角色则带上其头像/身份。 */
+/**
+ * 把「名字+正文(+reply_to)」批量落成楼层；名字命中实名角色则带上其头像/身份。
+ * 带 reply_to 且能在已有楼层里找到被回复者 → 落成「楼中楼」嵌进那层，不单独占楼号。
+ * opName：帖子楼主名，命中则标 isOp。
+ */
 export function materializeReplies(
-    raw: { name: string; body: string }[],
+    raw: RawReply[],
     chars: { id: string; name: string; avatar?: string }[],
     startFloor: number,
+    opName?: string,
+    existing: ForumReply[] = [],
 ): ForumReply[] {
     const now = Date.now();
-    return raw.map((r, i) => {
-        const ch = chars.find(c => c.name === r.name);
-        return {
+    const out: ForumReply[] = [];
+    const findChar = (n: string) => chars.find(c => c.name === n);
+    let floor = startFloor;
+    for (let i = 0; i < raw.length; i++) {
+        const r = raw[i];
+        const ch = findChar(r.name);
+        // 楼中楼：挂到本批 / 已有楼层里同名作者的最近一层
+        if (r.reply_to) {
+            const host = [...existing, ...out].reverse().find(f => f.authorName === r.reply_to);
+            if (host) {
+                (host.subReplies ||= []).push({
+                    id: fid(),
+                    authorType: ch ? 'char' : 'npc',
+                    authorId: ch?.id,
+                    authorName: r.name,
+                    avatar: ch?.avatar,
+                    body: r.body,
+                    createdAt: now + i * 1000,
+                });
+                continue;
+            }
+        }
+        out.push({
             id: fid(),
-            floor: startFloor + i,
+            floor: floor++,
             authorType: ch ? 'char' : 'npc',
             authorId: ch?.id,
             authorName: r.name,
@@ -186,6 +252,162 @@ export function materializeReplies(
             body: r.body,
             createdAt: now + i * 1000,
             likes: Math.floor(Math.random() * 6),
-        } as ForumReply;
-    });
+            isOp: !!opName && r.name === opName,
+        });
+    }
+    return out;
+}
+
+// ── 一次性生成「一批帖子」（≥10 帖，贴吧式帖子列表）─────────────────────────
+
+export function buildThreadsPrompt(
+    board: ForumBoard,
+    chars: CharBrief[],
+    count: number,
+): { system: string; user: string } {
+    const roster = chars.slice(0, 6).map(c => `- ${c.name}：${(c.persona || '').slice(0, 100) || '（无设定）'}`).join('\n');
+    const system = `你在为一个百度贴吧风格的论坛板块「${board.emoji}${board.name}」生成一屏「帖子列表」。每个帖子是一个真实网友随手发的主题帖，标题有网感、正文口语化，风格多样（求助/吐槽/分享/晒图/提问/玩梗/树洞…），贴合板块「${board.desc}」。`;
+    const user = `板块：${board.emoji}${board.name}（${board.desc}）
+
+可选「实名出镜」网友（其中少数帖子可由他们发，用其本名、贴合人设）：
+${roster || '（暂无实名角色）'}
+
+请一次性生成 ${count} 个不同的帖子，彼此话题不重复、长短不一：
+- 标题 ≤ 20 字，正文 ≤ 70 字；
+- 给每个帖子一个 "floors" 字段，表示这个帖子大概盖了多少楼（30~588 的整数，多数 30~150、少数爆楼几百）；
+- 多数帖子作者是匿名网友（你现编有网感的网名），1~2 个可由上面实名角色发（把 author 写成其本名）。
+只输出一个 JSON 数组，不要任何多余文字或代码块标记：
+[{"author":"网名或角色本名","title":"标题","body":"正文","floors":整数,"likes":整数}]`;
+    return { system, user };
+}
+
+export interface RawThread { author: string; title: string; body: string; floors: number; likes: number; }
+
+export function parseThreads(raw: string): RawThread[] {
+    if (!raw) return [];
+    const txt = raw.trim().replace(/```(?:json)?/gi, '').trim();
+    const s = txt.indexOf('['); const e = txt.lastIndexOf(']');
+    if (s === -1 || e === -1 || e <= s) return [];
+    try {
+        const arr = JSON.parse(txt.slice(s, e + 1));
+        if (!Array.isArray(arr)) return [];
+        return arr
+            .map((x: any) => {
+                const floors = Math.max(30, Math.min(588, Math.floor(Number(x?.floors) || 0) || (30 + Math.floor(Math.random() * 120))));
+                const likes = Math.max(0, Math.min(99999, Math.floor(Number(x?.likes) || 0) || Math.floor(Math.random() * 200)));
+                return {
+                    author: String(x?.author || '').trim().slice(0, 16),
+                    title: String(x?.title || '').trim().slice(0, 40),
+                    body: String(x?.body || '').trim().slice(0, 160),
+                    floors, likes,
+                };
+            })
+            .filter(x => x.title)
+            .slice(0, 24);
+    } catch { return []; }
+}
+
+const FALLBACK_THREADS: Record<string, { t: string; b: string }[]> = {
+    chat: [
+        { t: '有没有人陪我熬夜', b: '睡不着，来个搭子一起灌水。' },
+        { t: '今天份的快乐已签收', b: '一杯奶茶就能哄好，廉价又满足。' },
+        { t: '工位摸鱼报到', b: '划水第八小时，假装很忙。' },
+        { t: '突然好想吃火锅', b: '一个人也要吃，谁懂。' },
+        { t: '楼里接龙说句晚安', b: '从你开始，一层一层传下去。' },
+        { t: '存钱永远是明天的事', b: '今天先花了再说，哈哈。' },
+        { t: '猫又把我吵醒了', b: '凌晨四点踩脸，气死。' },
+        { t: '随手发个今日份天空', b: '云像棉花糖，拍下来存着。' },
+        { t: '打工人续命指南', b: '咖啡因+不想上班=正常的我。' },
+        { t: '来盖一栋摸鱼楼', b: '在的扣1，看看有多少同道中人。' },
+    ],
+    emo: [
+        { t: '深夜的情绪又上来了', b: '白天好好的，一到夜里就崩。' },
+        { t: '好像谁都不需要我', b: '说不上来的空，蹲个抱抱。' },
+        { t: '又把自己熬到失眠', b: '脑子停不下来，好累。' },
+        { t: '想被人好好抱一下', b: '不用说话，就抱一会儿。' },
+        { t: '今天还是没能开心起来', b: '试着笑了，没成功。' },
+        { t: '在树洞偷偷说句心里话', b: '其实我没有看起来那么好。' },
+        { t: '害怕让别人失望', b: '所以总是先把自己累垮。' },
+        { t: '一个人住的第N天', b: '安静得能听见心跳。' },
+        { t: '想哭但哭不出来', b: '是不是太久没好好难过了。' },
+        { t: '给今天的自己留句话', b: '辛苦了，明天再试一次。' },
+    ],
+    gossip: [
+        { t: '你们是怎么发现自己心动的', b: '突然很在意对方有没有回消息……' },
+        { t: '前任突然来加我', b: '该不该通过？在线等。' },
+        { t: '蹲一个公司八卦后续', b: '昨天那事今天有进展了吗。' },
+        { t: '暧昧到底算不算喜欢', b: '分不清了，求过来人解读。' },
+        { t: '闺蜜的对象好像有问题', b: '要不要提醒她，纠结。' },
+        { t: '相亲遇到奇葩', b: '第一句话就把我问懵了。' },
+        { t: '楼下情侣又吵架了', b: '吃瓜中，剧情比电视还精彩。' },
+        { t: '到底要不要先表白', b: '怕破坏现在的关系。' },
+        { t: '收到匿名礼物', b: '猜不出是谁，心跳加速。' },
+        { t: '同事的瓜保熟', b: '我啥都没说，你们自己悟。' },
+    ],
+    hobby: [
+        { t: '安利一个最近的快乐源泉', b: '入坑警告，谁来一起。' },
+        { t: '找个一起追剧的搭子', b: '进度同步那种，蹲。' },
+        { t: '今天又手作了一个小东西', b: '丑萌丑萌的，但开心。' },
+        { t: '求歌单，要那种深夜的', b: '听着能放空的最好。' },
+        { t: '周末想去citywalk', b: '有没有同城的一起。' },
+        { t: '入了新爱好钱包空了', b: '快乐是真的，破产也是。' },
+        { t: '晒一下我的小收藏', b: '攒了好久，终于成系列了。' },
+        { t: '求推荐入门相机', b: '预算有限，想拍点日常。' },
+        { t: '一起来拼图吗', b: '一千片，拼到怀疑人生。' },
+        { t: '健身第一天打卡', b: '明天大概率会放弃，先立帖。' },
+    ],
+    help: [
+        { t: '在线等，挺急的', b: '这个问题困住我一晚上了。' },
+        { t: '求助：到底怎么选', b: '两个都还行，纠结到头秃。' },
+        { t: '有没有懂行的指点一下', b: '萌新一枚，求别嫌弃。' },
+        { t: '手机突然变好卡', b: '没装什么东西啊，求排查。' },
+        { t: '租房被中介坑了怎么办', b: '合同没细看，在线等支招。' },
+        { t: '求一个万能的借口', b: '不想去聚会，又不想伤人。' },
+        { t: '电脑蓝屏了急救', b: '资料还没存，瑟瑟发抖。' },
+        { t: '怎么委婉拒绝同事', b: '老让我帮忙，烦但不好说。' },
+        { t: '求推荐靠谱的师傅', b: '同城，急修，谢谢大家。' },
+        { t: '这种情况要去医院吗', b: '不严重但有点慌，求安心。' },
+    ],
+};
+
+/** 兜底：没配 API 时也能填满一个板块（≥count 个帖子）。 */
+export function fallbackThreads(boardId: string, count: number): RawThread[] {
+    const pool = FALLBACK_THREADS[boardId] || FALLBACK_THREADS.chat;
+    const out: RawThread[] = [];
+    for (let i = 0; i < count; i++) {
+        const t = pool[i % pool.length];
+        out.push({ author: pick(NICKS), title: t.t, body: t.b, floors: targetFloorCount(), likes: Math.floor(Math.random() * 260) });
+    }
+    return out;
+}
+
+/** 把生成的一批帖子落成 ForumPost[]（楼层先空着，进帖懒加载）。 */
+export function materializeThreads(
+    raw: RawThread[],
+    boardId: string,
+    chars: { id: string; name: string; avatar?: string }[],
+): ForumPost[] {
+    const now = Date.now();
+    return raw.map((t, i) => {
+        const ch = chars.find(c => c.name === t.author);
+        const ago = Math.floor(Math.random() * 3600_000 * 24 * 3); // 近 3 天内
+        const created = now - ago;
+        return {
+            id: fid(),
+            boardId,
+            authorType: ch ? 'char' : 'npc',
+            authorId: ch?.id,
+            authorName: t.author || pick(NICKS),
+            avatar: ch?.avatar,
+            title: t.title,
+            body: t.body,
+            createdAt: created,
+            lastActiveAt: created + Math.floor(Math.random() * 3600_000 * 6) + i * 1000,
+            likes: t.likes,
+            replies: [],
+            replyCount: t.floors,
+            hot: t.floors >= 200 || t.likes >= 300,
+            generated: true,
+        } as ForumPost;
+    }).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
 }
