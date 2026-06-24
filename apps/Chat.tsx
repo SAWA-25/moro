@@ -41,7 +41,7 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
-import Modal from '../components/os/Modal';
+import Modal, { ScrapBtn, ScrapRowBtn, ScrapNote, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK } from '../components/handbook/paper';
 import { PhoneSlash } from '@phosphor-icons/react';
@@ -3457,12 +3457,12 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     {imageGenPreview ? (
                         <div className="px-4 py-1">
                             {/* 刚画好的拍立得 */}
-                            <div className="relative bg-white p-2 pb-8 rounded-[4px]" style={{ boxShadow: '0 4px 14px rgba(122,90,114,0.28)', transform: 'rotate(-1.2deg)' }}>
-                                <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(245,226,149,0.85)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                            <div className="relative p-2 pb-8 rounded-[4px]" style={{ background: '#fffdf8', boxShadow: '0 4px 14px rgba(31,29,26,0.28)', transform: 'rotate(-1.2deg)' }}>
+                                <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(31,29,26,0.82)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.18) 0 5px, transparent 5px 11px)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
                                 <img src={imageGenPreview} className="w-full" alt="刚画好的一张" />
                                 <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
-                                    <span className="text-[10px] font-bold" style={{ ...CUTE_STACK, color: '#7a5a72' }}>刚晾干的一张</span>
-                                    <span className="text-[8px] tracking-[0.2em] uppercase select-none" style={{ ...MONO_STACK, color: '#bfa8b8' }}>fresh print</span>
+                                    <span className="text-[10px] font-bold" style={{ ...CUTE_STACK, color: INK }}>刚晾干的一张</span>
+                                    <span className="text-[8px] tracking-[0.2em] uppercase select-none" style={{ ...MONO_STACK, color: INK_SOFT }}>fresh print</span>
                                 </div>
                             </div>
                         </div>
@@ -3485,11 +3485,12 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onClick={() => setShowInnerVoiceModal(false)}
                 >
                     <div
-                        className="w-full max-w-sm bg-white rounded-[1.8rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up relative"
+                        className="w-full max-w-sm rounded-[1.8rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up relative"
+                        style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}55`, color: INK }}
                         onClick={e => e.stopPropagation()}
                     >
                         {/* 右上角书签缎带 */}
-                        <div className="absolute top-0 right-7 w-6 h-10 bg-slate-900 z-10" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)' }} />
+                        <div className="absolute top-0 right-7 w-6 h-10 z-10" style={{ background: INK, clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)' }} />
 
                         {/* 标题条：居中标题 + 左上关闭 */}
                         <div className="relative flex items-center justify-center px-6 pt-5 pb-1 shrink-0">
@@ -3538,8 +3539,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             </div>
                             {/* 关系状态徽标（来往·关系系统）：由 AI 依好感/设定/剧情自动更新 */}
                             <div className="px-5 pt-2.5 flex items-center justify-center gap-1.5">
-                                <span className="text-[11px] text-slate-400">你们的关系</span>
-                                <span className="text-[12px] font-black px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-500 border border-rose-100">
+                                <span className="text-[11px]" style={{ color: INK_SOFT }}>你们的关系</span>
+                                <span className="text-[12px] font-black px-2.5 py-0.5 rounded-full" style={{ background: INK, color: '#f6f3ec' }}>
                                     {char.marriage?.active ? '💍 ' : ''}{char.relationship?.label || '尚未明确'}
                                 </span>
                             </div>
@@ -4495,18 +4496,18 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
             {/* 角色专属「白框自定义」Modal —— 从加号面板「白框」进入；写到 char.chromeCustomCss，叠加在全局之上 */}
             {char && modalType === 'chrome-css' && (
-                <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/5" onClick={() => setModalType('none')}>
+                <div className="fixed inset-0 z-[110] flex items-end justify-center" style={{ background: 'rgba(20,18,16,0.18)' }} onClick={() => setModalType('none')}>
                     <div
-                        className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl border-t border-white/60 bg-white/95 p-5 shadow-[0_-12px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                        style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))' }}
+                        className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl p-5 backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))', background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', borderTop: `1px solid ${INK_SOFT}66`, boxShadow: '0 -12px 40px rgba(20,18,14,0.4)', color: INK }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="mb-2 flex items-start justify-between">
                             <div>
-                                <div className="text-sm font-bold text-slate-800">白框自定义 · {char.name}</div>
-                                <div className="mt-0.5 text-[10px] text-slate-400">↑ 上方聊天界面即实时预览；仅对该角色生效，叠加在全局设置之上。</div>
+                                <div className="text-sm font-black" style={{ color: INK }}>白框自定义 · {char.name}</div>
+                                <div className="mt-0.5 text-[10px]" style={{ color: INK_SOFT }}>↑ 上方聊天界面即实时预览；仅对该角色生效，叠加在全局设置之上。</div>
                             </div>
-                            <button onClick={() => setModalType('none')} className="px-2 text-xl leading-none text-slate-400 hover:text-slate-600">{'×'}</button>
+                            <button onClick={() => setModalType('none')} className="px-2 text-xl leading-none active:scale-90 transition-transform" style={{ color: INK_SOFT }}>{'×'}</button>
                         </div>
                         <ChromeCssEditor value={char.chromeCustomCss || ''} onChange={(css) => updateCharacter(char.id, { chromeCustomCss: css } as any)} />
                     </div>
@@ -4550,25 +4551,21 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
 
             {/* Forward Modal */}
-            <Modal isOpen={showForwardModal} title="转交聊天记录" onClose={() => setShowForwardModal(false)}>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                    <p className="text-xs text-slate-400 mb-3">选择要把这几页转交给谁（已选 {selectedMsgIds.size} 条消息）</p>
+            <Modal isOpen={showForwardModal} title="把这几页捎给谁" en="FORWARD" onClose={() => setShowForwardModal(false)}>
+                <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar">
+                    <ScrapNote className="mb-3">挑个人，把这几页转交过去（已选 {selectedMsgIds.size} 条）。</ScrapNote>
                     {characters.filter(c => c.id !== activeCharacterId).map(c => (
-                        <button
+                        <ScrapRowBtn
                             key={c.id}
+                            avatar={c.avatar}
                             onClick={() => handleForwardToCharacter(c.id)}
-                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 hover:bg-slate-100 active:scale-[0.98] transition-all border border-slate-100"
+                            trailing={<span style={{ color: INK_SOFT }}>›</span>}
                         >
-                            <img src={c.avatar} className="w-10 h-10 rounded-xl object-cover" />
-                            <div className="flex-1 text-left">
-                                <div className="font-bold text-sm text-slate-700">{c.name}</div>
-                                <div className="text-[10px] text-slate-400 truncate">{c.description}</div>
-                            </div>
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-slate-300"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
-                        </button>
+                            {c.name}
+                        </ScrapRowBtn>
                     ))}
                     {characters.filter(c => c.id !== activeCharacterId).length === 0 && (
-                        <div className="text-center text-xs text-slate-400 py-8">没有其他角色可以转发</div>
+                        <ScrapNote center className="py-8">没有别的角色可以转交。</ScrapNote>
                     )}
                 </div>
             </Modal>
@@ -4652,26 +4649,28 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
             {/* 「你已将对方拉黑」弹窗：回到聊天界面时提示一次 */}
             {showUserBlockNotice && char && (
-                <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in" onClick={() => setShowUserBlockNotice(false)}>
-                    <div className="w-[min(80vw,300px)] bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setShowUserBlockNotice(false)}>
+                    <div className="w-[min(80vw,300px)] rounded-2xl overflow-hidden animate-pop-in" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}66`, boxShadow: '0 30px 60px -24px rgba(20,18,14,0.6)', color: INK }} onClick={e => e.stopPropagation()}>
                         <div className="px-6 pt-6 pb-5 text-center">
-                            <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-[#fa5151] text-white text-xl font-bold flex items-center justify-center">!</div>
-                            <div className="text-[16px] font-medium text-slate-800">已拉黑 {char.name}</div>
-                            <div className="text-[13px] text-slate-500 mt-2 leading-relaxed">
-                                你已将 TA 加入黑名单，无法继续私聊。TA 发来的消息仍会显示在聊天中，气泡旁带有红色感叹号。
-                                可在「角色资料 → 朋友设置」解除拉黑。
+                            <div className="w-10 h-10 mx-auto mb-3 rounded-full text-xl font-black flex items-center justify-center" style={{ background: INK, color: '#f6f3ec', backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 10px)' }}>!</div>
+                            <div className="text-[16px] font-black" style={{ color: INK }}>已拉黑 {char.name}</div>
+                            <div className="text-[13px] mt-2 leading-relaxed" style={{ color: INK_SOFT }}>
+                                你把 TA 加进了黑名单，暂时聊不了。TA 发来的消息照样显示，气泡旁会带个感叹号。
+                                想解除就去「角色资料 → 朋友设置」。
                             </div>
                         </div>
                         <button
                             onClick={() => { void handlePeekBlockedChar(); }}
                             disabled={isTyping}
-                            className="w-full py-3.5 text-[16px] text-[#fa5151] font-medium border-t border-slate-100 active:bg-slate-50 disabled:opacity-50"
+                            className="w-full py-3.5 text-[15px] font-black active:scale-[0.99] transition-transform disabled:opacity-50"
+                            style={{ color: INK, borderTop: `1px dashed ${INK_SOFT}66` }}
                         >
                             看看 TA 在做什么
                         </button>
                         <button
                             onClick={() => setShowUserBlockNotice(false)}
-                            className="w-full py-3.5 text-[16px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
+                            className="w-full py-3.5 text-[15px] font-bold active:scale-[0.99] transition-transform"
+                            style={{ color: INK_SOFT, borderTop: `1px dashed ${INK_SOFT}66` }}
                         >
                             知道了
                         </button>
@@ -4760,24 +4759,25 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
             {/* 「角色给你换备注」弹窗：点开看动机 */}
             {remarkChangeNotice && char && (
-                <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => setRemarkChangeNotice(null)}>
-                    <div className="w-[min(82vw,320px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 z-[400] flex items-center justify-center p-6 animate-fade-in" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setRemarkChangeNotice(null)}>
+                    <div className="w-[min(82vw,320px)] rounded-3xl overflow-hidden animate-pop-in" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}66`, boxShadow: '0 30px 60px -24px rgba(20,18,14,0.6)', color: INK }} onClick={e => e.stopPropagation()}>
                         <div className="px-6 pt-6 pb-5 text-center">
-                            <img src={displayCharAvatar} className="w-12 h-12 mx-auto mb-3 rounded-full object-cover ring-2 ring-white shadow" alt="" />
-                            <div className="text-[15px] font-bold text-slate-800">{displayCharName} 给你换了备注</div>
-                            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100">
-                                <span className="text-[11px] text-indigo-400">现在叫你</span>
-                                <span className="text-[14px] font-bold text-indigo-600">{remarkChangeNotice.remark}</span>
+                            <img src={displayCharAvatar} className="w-12 h-12 mx-auto mb-3 rounded-full object-cover shadow" style={{ border: '2px solid #fbf9f2', outline: `1px solid ${INK_SOFT}66` }} alt="" />
+                            <div className="text-[15px] font-black" style={{ color: INK }}>{displayCharName} 给你换了备注</div>
+                            <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full" style={{ background: INK, color: '#f6f3ec' }}>
+                                <span className="text-[11px]" style={{ color: '#cfc7b8' }}>现在叫你</span>
+                                <span className="text-[14px] font-black">{remarkChangeNotice.remark}</span>
                             </div>
                             {remarkChangeNotice.motivation && (
                                 remarkMotivationOpen ? (
-                                    <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-100 p-3.5 text-[13px] text-slate-600 leading-relaxed text-left animate-fade-in">
+                                    <div className="mt-4 rounded-2xl p-3.5 text-[13px] leading-relaxed text-left animate-fade-in" style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}44`, outlineOffset: -4, color: INK }}>
                                         {remarkChangeNotice.motivation}
                                     </div>
                                 ) : (
                                     <button
                                         onClick={() => setRemarkMotivationOpen(true)}
-                                        className="mt-4 text-[12px] text-indigo-500 font-bold active:scale-95 transition-transform"
+                                        className="mt-4 text-[12px] font-black active:scale-95 transition-transform"
+                                        style={{ color: INK }}
                                     >
                                         TA 为什么这么改？ 💭
                                     </button>
@@ -4786,7 +4786,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         </div>
                         <button
                             onClick={() => setRemarkChangeNotice(null)}
-                            className="w-full py-3.5 text-[15px] text-[#576b95] font-medium border-t border-slate-100 active:bg-slate-50"
+                            className="w-full py-3.5 text-[15px] font-bold active:scale-[0.99] transition-transform"
+                            style={{ color: INK_SOFT, borderTop: `1px dashed ${INK_SOFT}66` }}
                         >
                             知道了
                         </button>

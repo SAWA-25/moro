@@ -256,3 +256,11 @@ pm run build passes after the time-gap grouping fix.
   - **图标黑白、头像保留彩色**：弹窗内 phosphor 图标一律墨色、标题挂邮票图标盒；所有头像/照片不去色（`ScrapPickTile`/`ScrapRowBtn` 默认彩色，仅禁言态显式灰）。
   - **原创文案**：按手账口吻重写全部弹窗标题/占位/按钮/脚注（如「攒个新群/这就开张」「包个红包·一点心意」「发起 AA·开收」「拉个投票·开投」「起个接龙·开个头」「递张好友申请·递过去」），并配英文小邮戳副标。
   - 业务逻辑/handler/数据零改动，纯表现层。`pnpm tsc --noEmit` clean（仅 api/ 服务端 process/Buffer 既有告警），`vite build` passes, 623 tests green。
+
+- 絮语·单聊侧弹窗一并并入「黑白拼贴手账」（接上条，覆盖单聊 `AppID.Chat`）:
+  - **一处换肤、十一处生效**：`components/chat/JournalSheet.tsx`（仅单聊侧使用的抽屉/便笺套件）整体从「糖果暖色」regrade 成黑白拼贴——米白纸面 + 墨黑 + 牛皮胶带 + 缝线 + 网点；`SealBtn`(墨/纸两系)、`CandyToggle`(开=墨底斜纹/关=纸底)、`StickerChip`、`LinedInput`/`LinedArea`(墨色光标+缝线)、`NoteStrip`(黑白灰四态)同步换肤。保持原 props/导出不变，单聊里 11 处 JournalSheet 抽屉一次性变黑白（转账信封/装订成册/笔法手稿/今日作息 + 各设置弹层）。
+  - **`components/chat/ChatModals.tsx` 11 个 os/Modal 弹窗换肤**：新开贴纸页/收贴纸/消息操作/历史断点/隐藏起点确认/撕贴纸/撕分页/分页选项/可见角色/编辑内容——footer 改 `ScrapBtn`、行改 `ScrapRowBtn`、`PAPER_TONES.*` 紫灰文字与残留糖果色（粉行选中/薄荷·薰衣草日程笔法块）全部改墨。
+  - **`apps/Chat.tsx` 内联弹层换肤**：转交聊天记录(`Modal`→`ScrapModal`)、白框自定义抽屉、偷看心声主页卡(白卡→米纸、玫瑰关系徽→墨)、「已拉黑」提示、「换备注」提示、画图拍立得预览全转黑白拼贴；系统指令/位置/画图三个 JournalSheet 抽屉随套件自动变黑白。
+  - **自包含组件换肤**：`ActiveMsg2SettingsModal`(`Modal`→`ScrapModal` + 品红强调改墨)、`OfflineModeModal`(线下见面，整套糖果粉/紫调改墨灰纸)、`UserActionSelectorModal`(帮想话术，粉色渐变改墨)；`ProactiveSettingsModal`/`ThinkingChainSettingsModal`/`TabloidModal`/`LifeRecapModal` 借 JournalSheet regrade 自动变黑白，内部残留糖果输入框/标签也改墨。
+  - **保留语义色**：外卖订单小票(美团橙)、主动求婚撰写 + 浪漫求婚 `ProposalOverlay`(婚礼粉)、角色发来的红包/转账信封（本就黑白拼贴）按「内容卡」保留其专属色，与「头像不去色」同理。
+  - 全程纯表现层、零逻辑改动。`pnpm tsc --noEmit` clean, `vite build` passes, 623 tests green。

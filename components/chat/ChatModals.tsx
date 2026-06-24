@@ -1,12 +1,13 @@
 
 import React, { useRef, useState } from 'react';
-import Modal from '../os/Modal';
+import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapNote, ScrapDivider, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from './ScrapModal';
 import JournalSheet, { SealBtn, CandyToggle, LinedInput, LinedArea, NoteStrip } from './JournalSheet';
-import { MONO_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
+import { MONO_STACK, CUTE_STACK } from '../handbook/paper';
 import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, ApiPreset, APIConfig } from '../../types';
 import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { REACTION_EMOJIS } from '../../utils/messageReactions';
+import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye } from '@phosphor-icons/react';
 
 interface ChatModalsProps {
     modalType: string;
@@ -311,7 +312,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                             type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
                             placeholder="写个数目"
                             className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-dashed border-[#cfc8ba] focus:border-[#8a8479] placeholder:text-[#c4bdb0] placeholder:text-[15px]"
-                            style={{ color: PAPER_TONES.ink, caretColor: '#8a8479' }}
+                            style={{ color: INK, caretColor: '#8a8479' }}
                             autoFocus
                         />
                     </div>
@@ -364,26 +365,26 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             </JournalSheet>
 
             {/* New Category Modal */}
-            <Modal 
-                isOpen={modalType === 'add-category'} title="新开一页贴纸" onClose={() => setModalType('none')}
-                footer={<button onClick={onAddCategory} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">建好</button>}
+            <Modal
+                isOpen={modalType === 'add-category'} title="新开一页贴纸" en="NEW PAGE" onClose={() => setModalType('none')}
+                footer={<ScrapBtn onClick={onAddCategory}>翻开新的一页</ScrapBtn>}
             >
-                <input
+                <ScrapInput
                     value={newCategoryName}
                     onChange={e => setNewCategoryName(e.target.value)}
                     placeholder="给这页贴纸起个名…"
-                    className="w-full bg-slate-100 rounded-2xl px-5 py-4 text-base font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-slate-700" 
-                    autoFocus 
+                    className="text-base font-bold"
+                    autoFocus
                 />
             </Modal>
 
-            <Modal 
-                isOpen={modalType === 'emoji-import'} title="收集贴纸" onClose={() => setModalType('none')}
-                footer={<button onClick={onImportEmoji} className="w-full py-4 bg-primary text-white font-bold rounded-2xl">贴进当前分类</button>}
+            <Modal
+                isOpen={modalType === 'emoji-import'} title="收一批贴纸" en="STICKERS" icon={<ScrapStamp><span className="text-[13px]">✄</span></ScrapStamp>} onClose={() => setModalType('none')}
+                footer={<ScrapBtn onClick={onImportEmoji}>贴进这一页</ScrapBtn>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400">贴纸会收进你当前选中的分类。可在末尾追加描述（用于贴纸搜索，AI 选贴纸时也能看到）。</p>
-                    <textarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL (每行一个)\n名字--URL--描述 (描述可选)"} className="w-full h-40 bg-slate-100 rounded-2xl p-4 resize-none" />
+                    <ScrapNote>贴纸会收进你当前选中的那一页。末尾能补一句描述（用来搜贴纸，AI 挑贴纸时也看得到）。</ScrapNote>
+                    <ScrapTextarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL（每行一个）\n名字--URL--描述（描述可选）"} className="h-40" />
                 </div>
             </Modal>
 
@@ -605,8 +606,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 onClose={() => { if (!isSummarizing) setModalType('none'); }}
                 footer={
                     isSummarizing
-                        ? <div className="w-full py-3 rounded-[12px] text-[13px] font-bold text-center flex items-center justify-center gap-2" style={{ background: '#fffdfa', border: '1.5px dashed #ddc9d3', color: '#8a6478', ...CUTE_STACK }}>
-                            <div className="w-4 h-4 border-2 border-[#d18ba0] border-t-transparent rounded-full animate-spin" />
+                        ? <div className="w-full py-3 rounded-[12px] text-[13px] font-bold text-center flex items-center justify-center gap-2" style={{ background: '#fffdfa', border: `1.5px dashed ${INK_SOFT}`, color: INK, ...CUTE_STACK }}>
+                            <div className="w-4 h-4 rounded-full animate-spin" style={{ border: `2px solid ${INK_SOFT}55`, borderTopColor: INK }} />
                             {archiveProgress || '正在穿针装订…'}
                         </div>
                         : <SealBtn kind="rose" full onClick={onArchive} disabled={isSummarizing}>送去装订</SealBtn>
@@ -646,7 +647,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     })()}
                     {/* 笔法（提示词模板）列表 */}
                     <div>
-                        <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>挑一种装订笔法</div>
+                        <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: INK_SOFT }}>挑一种装订笔法</div>
                         <div className="flex flex-col gap-2">
                             {archivePrompts.map(p => {
                                 const isSelected = selectedPromptId === p.id;
@@ -656,27 +657,27 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                         onClick={() => setSelectedPromptId(p.id)}
                                         className="px-3 py-2.5 cursor-pointer flex items-center justify-between gap-2 transition-all"
                                         style={{
-                                            background: isSelected ? '#fdeef3' : '#fffdfa',
-                                            border: isSelected ? '1.5px solid #e6a3b8' : '1px dashed #ddc9d3',
+                                            background: isSelected ? INK : '#fffdfa',
+                                            border: isSelected ? '1.5px solid #000' : `1px dashed ${INK_SOFT}`,
                                             borderRadius: '6px 12px 7px 12px',
-                                            boxShadow: isSelected ? '0 1px 3px rgba(122,90,114,0.2)' : 'none',
+                                            boxShadow: isSelected ? '0 1px 3px rgba(31,29,26,0.25)' : 'none',
                                         }}
                                     >
                                         <div className="flex items-center gap-1.5 min-w-0">
                                             {isSelected && <span aria-hidden className="text-[11px] shrink-0">📌</span>}
-                                            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: isSelected ? '#8a3d55' : PAPER_TONES.inkSoft }}>{p.name}</span>
+                                            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: isSelected ? '#f6f3ec' : INK_SOFT }}>{p.name}</span>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setSelectedPromptId(p.id); onEditPrompt(); }}
                                                 className="text-[10px] font-bold px-2 py-1 rounded-full active:scale-95 transition-transform"
-                                                style={{ background: '#fff', border: '1px dashed #ddc9d3', color: '#a07a8c' }}
+                                                style={{ background: '#fffdfa', border: `1px dashed ${INK_SOFT}`, color: INK }}
                                             >翻开看看</button>
                                             {!p.id.startsWith('preset_') && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onDeletePrompt(p.id); }}
                                                     className="text-[10px] px-2 py-1 rounded-full active:scale-95 transition-transform"
-                                                    style={{ color: '#d4798f', border: '1px dashed #eab6c6' }}
+                                                    style={{ color: isSelected ? '#f6f3ec' : INK, border: `1px dashed ${isSelected ? 'rgba(255,255,255,0.5)' : INK_SOFT}` }}
                                                     aria-label={`撕掉《${p.name}》`}
                                                 >撕掉</button>
                                             )}
@@ -688,7 +689,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         <button
                             onClick={onCreatePrompt}
                             className="mt-2.5 w-full py-2 text-[11px] font-bold rounded-[10px] active:scale-[0.98] transition-transform"
-                            style={{ border: '1.5px dashed #d6b8c6', color: '#b25e7a', background: 'rgba(255,253,250,0.6)', ...CUTE_STACK }}
+                            style={{ border: `1.5px dashed ${INK_SOFT}`, color: INK, background: 'rgba(255,253,250,0.6)', ...CUTE_STACK }}
                         >＋ 自创一种笔法</button>
                     </div>
                     <NoteStrip>
@@ -725,25 +726,26 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             {/* History Manager Modal */}
             <Modal
-                isOpen={modalType === 'history-manager'} title="历史记录断点" onClose={() => { setModalType('none'); setHistoryPage(0); setHistorySearch(''); setPendingHideMsgId(null); }}
-                footer={<><button onClick={() => onSetHistoryStart(undefined)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">恢复全部</button><button onClick={() => { setModalType('none'); setHistoryPage(0); setHistorySearch(''); setPendingHideMsgId(null); }} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">完成</button></>}
+                isOpen={modalType === 'history-manager'} title="从哪条起翻给 AI 看" en="HISTORY" onClose={() => { setModalType('none'); setHistoryPage(0); setHistorySearch(''); setPendingHideMsgId(null); }}
+                footer={<><ScrapBtn variant="paper" onClick={() => onSetHistoryStart(undefined)}>全都放出来</ScrapBtn><ScrapBtn onClick={() => { setModalType('none'); setHistoryPage(0); setHistorySearch(''); setPendingHideMsgId(null); }}>好了</ScrapBtn></>}
             >
                 <div className="space-y-2 max-h-[50vh] overflow-y-auto no-scrollbar p-1">
-                    <p className="text-xs text-slate-400 text-center mb-2"><b>短按</b>消息 = 设为隐藏起点（会再次确认） · <b>长按</b>消息 = 跳转到聊天里查看原文</p>
+                    <ScrapNote center className="mb-2"><b>轻点</b>一条 = 设成隐藏起点（会再确认） · <b>长按</b>一条 = 跳到聊天里看原文</ScrapNote>
                     {typeof activeCharacter.hideBeforeMessageId === 'number' && activeCharacter.hideBeforeMessageId > 0 && (
-                        <div className="bg-[#f4f1ea] border border-[#e3ddcf] rounded-xl p-2.5 text-[11px] text-[#5a5648] leading-relaxed mb-2">
-                            <b>💡 已经有隐藏起点了</b>：灰色消息是自动/手动归档时标记为"已总结"的，AI 现在看不到原文，但能看到它们的总结。<br/>
-                            <span className="text-[#8a8270]">回忆标本馆向量记忆有自己的水位线（和这里无关），不用手动管。</span>
+                        <div className="p-2.5 text-[11px] leading-relaxed mb-2" style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 12, color: INK }}>
+                            <b>💡 已经设了隐藏起点</b>：灰掉的消息是归档时标「已总结」的，AI 看不到原文、但读得到它们的总结。<br/>
+                            <span style={{ color: INK_SOFT }}>回忆标本馆的向量记忆另有自己的水位线（跟这儿无关），不用手动管。</span>
                         </div>
                     )}
-                    <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-10 pb-1.5 -mx-1 px-1">
+                    <div className="sticky top-0 backdrop-blur-sm z-10 pb-1.5 -mx-1 px-1" style={{ background: 'rgba(246,243,236,0.95)' }}>
                         <div className="relative">
                             <input
                                 type="text"
                                 value={historySearch}
                                 onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(0); }}
-                                placeholder="模糊搜索历史消息（关键词 / 字符顺序匹配）"
-                                className="w-full pl-8 pr-8 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-primary focus:bg-white transition-colors"
+                                placeholder="翻找旧消息（关键词 / 字序模糊匹配）"
+                                className="w-full pl-8 pr-8 py-2 text-xs focus:outline-none transition-colors"
+                                style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}44`, outlineOffset: -3, borderRadius: 12, color: INK }}
                             />
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
@@ -825,22 +827,23 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             {/* Confirm Set Hide Start Point */}
             <Modal
                 isOpen={pendingHideMsgId !== null}
-                title="设为隐藏起点？"
+                title="从这条起藏起来？"
+                en="SET START"
                 onClose={() => setPendingHideMsgId(null)}
                 footer={<>
-                    <button onClick={() => setPendingHideMsgId(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl">取消</button>
-                    <button onClick={() => { if (pendingHideMsgId !== null) onSetHistoryStart(pendingHideMsgId); setPendingHideMsgId(null); }} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">确认</button>
+                    <ScrapBtn variant="paper" onClick={() => setPendingHideMsgId(null)}>再想想</ScrapBtn>
+                    <ScrapBtn onClick={() => { if (pendingHideMsgId !== null) onSetHistoryStart(pendingHideMsgId); setPendingHideMsgId(null); }}>就从这儿</ScrapBtn>
                 </>}
             >
-                <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+                <div className="space-y-3 text-xs leading-relaxed" style={{ color: INK }}>
                     {(() => {
                         const m = allHistoryMessages.find(x => x.id === pendingHideMsgId);
-                        if (!m) return <p>消息不存在</p>;
+                        if (!m) return <ScrapNote>这条消息找不到了。</ScrapNote>;
                         return (<>
-                            <p>该条之前的消息将被隐藏，不再发送给 AI（你仍能在聊天里翻看）。</p>
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-                                <div className="font-bold text-slate-600 mb-1">{m.role === 'user' ? '我' : activeCharacter.name} <span className="text-slate-400 font-normal text-[10px] ml-1">{new Date(m.timestamp).toLocaleString()}</span></div>
-                                <div className="text-slate-500 line-clamp-3">{m.content}</div>
+                            <p>这条之前的消息都会被藏起来、不再发给 AI（你自己还能在聊天里翻看）。</p>
+                            <div className="p-3" style={{ background: 'rgba(255,253,247,0.82)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}44`, outlineOffset: -4, borderRadius: 12 }}>
+                                <div className="font-black mb-1" style={{ color: INK }}>{m.role === 'user' ? '我' : activeCharacter.name} <span className="font-normal text-[10px] ml-1" style={{ color: INK_SOFT }}>{new Date(m.timestamp).toLocaleString()}</span></div>
+                                <div className="line-clamp-3" style={{ color: INK_SOFT }}>{m.content}</div>
                             </div>
                             {onJumpToMessageInChat && (
                                 <button
@@ -852,9 +855,10 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                         setHistorySearch('');
                                         if (id !== null) onJumpToMessageInChat(id);
                                     }}
-                                    className="w-full py-2 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-colors"
+                                    className="w-full py-2 text-xs font-bold transition-transform active:scale-[0.98]"
+                                    style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: `1px solid ${INK_SOFT}66`, outline: `1px dashed ${INK_SOFT}55`, outlineOffset: -4, borderRadius: 11 }}
                                 >
-                                    或：跳转到聊天里查看原文
+                                    要不先跳去聊天里看看原文
                                 </button>
                             )}
                         </>);
@@ -862,8 +866,8 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 </div>
             </Modal>
 
-            <Modal isOpen={modalType === 'message-options'} title="消息操作" onClose={() => setModalType('none')}>
-                <div className="space-y-3">
+            <Modal isOpen={modalType === 'message-options'} title="这条怎么处理" en="MESSAGE" onClose={() => setModalType('none')}>
+                <div className="space-y-2.5">
                     {/* 表情回应快捷条（QQ/微信 tap-to-react）：点一个表情即回应并关闭 */}
                     <div className="flex items-center justify-between gap-1 px-1 pb-1">
                         {REACTION_EMOJIS.map(emoji => {
@@ -873,144 +877,117 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 <button
                                     key={emoji}
                                     onClick={() => onReactMessage(emoji)}
-                                    className={`w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform ${reacted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-slate-100'}`}
+                                    className="w-9 h-9 rounded-full text-[18px] leading-none flex items-center justify-center active:scale-90 transition-transform"
+                                    style={reacted ? { background: INK, outline: '1px dashed rgba(255,255,255,0.35)', outlineOffset: -3 } : { background: 'rgba(255,253,247,0.7)', border: `1px solid ${INK_SOFT}44` }}
                                 >
                                     {emoji}
                                 </button>
                             );
                         })}
                     </div>
-                    <button onClick={onEnterSelectionMode} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        多选 / 批量删除
-                    </button>
-                    <button onClick={onReplyMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        引用 / 回复
-                    </button>
-                    <button onClick={onForwardMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        转发
-                    </button>
+                    <ScrapRowBtn onClick={onEnterSelectionMode} icon={<ListNumbers size={18} weight="bold" />}>挑几条一起收拾</ScrapRowBtn>
+                    <ScrapRowBtn onClick={onReplyMessage} icon={<Quotes size={18} weight="bold" />}>引一句来回</ScrapRowBtn>
+                    <ScrapRowBtn onClick={onForwardMessage} icon={<ShareNetwork size={18} weight="bold" />}>转给别人看</ScrapRowBtn>
                     {selectedMessage?.type === 'text' && (
-                        <button onClick={onEditMessageStart} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            编辑内容
-                        </button>
+                        <ScrapRowBtn onClick={onEditMessageStart} icon={<PencilSimpleLine size={18} weight="bold" />}>改改措辞</ScrapRowBtn>
                     )}
                     {selectedMessage?.type === 'text' && (
-                        <button onClick={onCopyMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            复制文字
-                        </button>
+                        <ScrapRowBtn onClick={onCopyMessage} icon={<Copy size={18} weight="bold" />}>抄下这段字</ScrapRowBtn>
                     )}
                     {voiceAvailable && selectedMessage?.role === 'assistant' && selectedMessage?.type === 'text' && onGenerateVoice && (
-                        <button onClick={() => { onGenerateVoice(); setModalType('none'); }} className="w-full py-3 bg-emerald-50 text-emerald-600 font-medium rounded-2xl active:bg-emerald-100 transition-colors flex items-center justify-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z" /></svg>
-                            转换语音
-                        </button>
+                        <ScrapRowBtn onClick={() => { onGenerateVoice(); setModalType('none'); }} icon={<SpeakerHigh size={18} weight="bold" />}>读成一段声音</ScrapRowBtn>
                     )}
                     {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
-                        <button onClick={onRecallMessage} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                            撤回
-                        </button>
+                        <ScrapRowBtn onClick={onRecallMessage} icon={<ClockCounterClockwise size={18} weight="bold" />}>当作没说过</ScrapRowBtn>
                     )}
-                    <button onClick={onDeleteMessage} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                        删除消息
-                    </button>
+                    <ScrapRowBtn onClick={onDeleteMessage} danger icon={<Trash size={18} weight="bold" />}>撕掉这条</ScrapRowBtn>
                 </div>
             </Modal>
             
              <Modal
-                isOpen={modalType === 'delete-emoji'} title="撕下贴纸" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteEmoji} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">撕掉</button></>}
+                isOpen={modalType === 'delete-emoji'} title="撕下贴纸" en="REMOVE" onClose={() => setModalType('none')}
+                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>留着</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteEmoji}>撕掉</ScrapBtn></>}
             >
                 <div className="flex flex-col items-center gap-4 py-2">
                     {Array.isArray(selectedEmoji) ? (
                         <div className="flex flex-wrap justify-center gap-2 max-h-48 overflow-y-auto no-scrollbar w-full px-2">
                             {selectedEmoji.map((e: any, idx: number) => (
-                                <img key={idx} src={e.url} className="w-16 h-16 object-contain rounded-xl border border-slate-200" />
+                                <img key={idx} src={e.url} className="w-16 h-16 object-contain rounded-xl" style={{ border: `1px solid ${INK_SOFT}55` }} />
                             ))}
                         </div>
                     ) : (
-                        selectedEmoji && <img src={selectedEmoji.url} className="w-24 h-24 object-contain rounded-xl border" />
+                        selectedEmoji && <img src={selectedEmoji.url} className="w-24 h-24 object-contain rounded-xl" style={{ border: `1px solid ${INK_SOFT}55` }} />
                     )}
-                    <p className="text-center text-sm text-slate-500">
-                        {Array.isArray(selectedEmoji) ? `确定要撕下这 ${selectedEmoji.length} 张贴纸吗？` : "确定要撕下这张贴纸吗？"}
-                    </p>
+                    <ScrapNote center>
+                        {Array.isArray(selectedEmoji) ? `这 ${selectedEmoji.length} 张贴纸要撕下来吗？` : "这张贴纸要撕下来吗？"}
+                    </ScrapNote>
                 </div>
             </Modal>
 
             {/* Delete Category Modal */}
             <Modal
-                isOpen={modalType === 'delete-category'} title="撕掉这一页" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onDeleteCategory} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl">撕掉</button></>}
+                isOpen={modalType === 'delete-category'} title="撕掉这一页" en="REMOVE PAGE" onClose={() => setModalType('none')}
+                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>留着</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteCategory}>撕掉</ScrapBtn></>}
             >
-                <div className="py-4 text-center">
-                    <p className="text-sm text-slate-600">确定要撕掉贴纸分类 <br/><span className="font-bold">"{selectedCategory?.name}"</span> 吗？</p>
-                    <p className="text-[10px] text-red-400 mt-2">注意：这一页上的所有贴纸也会一起被撕掉！</p>
+                <div className="py-4 text-center space-y-2">
+                    <p className="text-sm font-bold" style={{ color: INK }}>这一页贴纸 <br/><span className="font-black">「{selectedCategory?.name}」</span> 要整页撕掉吗？</p>
+                    <ScrapNote center>当心：这页上的贴纸会跟着一起没。</ScrapNote>
                 </div>
             </Modal>
 
             {/* Category Options Modal (shown on long-press) */}
-            <Modal isOpen={modalType === 'category-options'} title="这一页贴纸" onClose={() => setModalType('none')}>
-                <div className="space-y-3">
-                    <button onClick={openVisibilityModal} className="w-full py-3 bg-slate-50 text-slate-700 font-medium rounded-2xl active:bg-slate-100 transition-colors flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                        </svg>
-                        设置可见角色
-                    </button>
+            <Modal isOpen={modalType === 'category-options'} title="这一页贴纸" en="PAGE" onClose={() => setModalType('none')}>
+                <div className="space-y-2.5">
+                    <ScrapRowBtn onClick={openVisibilityModal} icon={<Eye size={18} weight="bold" />}>谁能用这页</ScrapRowBtn>
                     {selectedCategory && !selectedCategory.isSystem && selectedCategory.id !== 'default' && (
-                        <button onClick={() => setModalType('delete-category')} className="w-full py-3 bg-red-50 text-red-500 font-medium rounded-2xl active:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                            撕掉这一页
-                        </button>
+                        <ScrapRowBtn onClick={() => setModalType('delete-category')} danger icon={<Trash size={18} weight="bold" />}>整页撕掉</ScrapRowBtn>
                     )}
                 </div>
             </Modal>
 
             {/* Category Visibility Modal */}
             <Modal
-                isOpen={modalType === 'category-visibility'} title={`"${selectedCategory?.name}" 可见角色`} onClose={() => setModalType('none')}
-                footer={<button onClick={handleSaveVisibility} className="w-full py-3 bg-primary text-white font-bold rounded-2xl">保存设置</button>}
+                isOpen={modalType === 'category-visibility'} title={`「${selectedCategory?.name}」谁能用`} en="WHO CAN USE" onClose={() => setModalType('none')}
+                footer={<ScrapBtn onClick={handleSaveVisibility}>就这么定</ScrapBtn>}
             >
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400 leading-relaxed">
-                        选择哪些角色可以使用这页贴纸。不勾选任何角色表示所有角色均可使用。
-                    </p>
+                    <ScrapNote>挑出能用这页贴纸的角色。一个都不勾，就是谁都能用。</ScrapNote>
                     <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar">
-                        {allCharacters.map(c => (
-                            <div
-                                key={c.id}
-                                onClick={() => toggleVisibilityChar(c.id)}
-                                className={`flex items-center gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${visibilitySelection.has(c.id) ? 'bg-primary/5 border-primary/30' : 'bg-white border-slate-100 hover:bg-slate-50'}`}
-                            >
-                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors shrink-0 ${visibilitySelection.has(c.id) ? 'bg-primary border-primary' : 'bg-slate-100 border-slate-300'}`}>
-                                    {visibilitySelection.has(c.id) && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                        {allCharacters.map(c => {
+                            const on = visibilitySelection.has(c.id);
+                            return (
+                                <div
+                                    key={c.id}
+                                    onClick={() => toggleVisibilityChar(c.id)}
+                                    className="flex items-center gap-3 p-3 cursor-pointer transition-all"
+                                    style={{ background: on ? INK : 'rgba(255,253,247,0.82)', border: `1px solid ${on ? INK : INK_SOFT + '55'}`, outline: `1px dashed ${on ? 'rgba(255,255,255,0.3)' : INK_SOFT + '55'}`, outlineOffset: -4, borderRadius: 13 }}
+                                >
+                                    <div className="w-5 h-5 flex items-center justify-center transition-colors shrink-0" style={{ borderRadius: 6, background: on ? '#f6f3ec' : 'rgba(255,253,247,0.6)', border: `1px solid ${on ? '#f6f3ec' : INK_SOFT + '66'}` }}>
+                                        {on && <svg className="w-3 h-3" style={{ color: INK }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                                    </div>
+                                    <img src={c.avatar} className="w-9 h-9 rounded-xl object-cover" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-black text-sm" style={{ color: on ? '#f6f3ec' : INK }}>{c.name}</div>
+                                        <div className="text-[10px] truncate" style={{ color: on ? '#cfc7b8' : INK_SOFT }}>{c.description}</div>
+                                    </div>
                                 </div>
-                                <img src={c.avatar} className="w-9 h-9 rounded-xl object-cover" />
-                                <div className="flex-1 min-w-0">
-                                    <div className="font-bold text-sm text-slate-700">{c.name}</div>
-                                    <div className="text-[10px] text-slate-400 truncate">{c.description}</div>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                     {visibilitySelection.size > 0 && (
-                        <div className="text-[11px] text-center text-slate-500 bg-slate-50 rounded-lg py-2">
-                            已选 <span className="font-bold text-primary">{visibilitySelection.size}</span> 个角色可使用此分组
-                        </div>
+                        <ScrapNote center>挑了 <span className="font-black" style={{ color: INK }}>{visibilitySelection.size}</span> 个角色能用这页。</ScrapNote>
                     )}
                 </div>
             </Modal>
 
             <Modal
-                isOpen={modalType === 'edit-message'} title="编辑内容" onClose={() => setModalType('none')}
-                footer={<><button onClick={() => setModalType('none')} className="flex-1 py-3 bg-slate-100 rounded-2xl">取消</button><button onClick={onConfirmEditMessage} className="flex-1 py-3 bg-primary text-white font-bold rounded-2xl">保存</button></>}
+                isOpen={modalType === 'edit-message'} title="改改这句" en="EDIT" onClose={() => setModalType('none')}
+                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>算了</ScrapBtn><ScrapBtn onClick={onConfirmEditMessage}>就这么改</ScrapBtn></>}
             >
-                <textarea
+                <ScrapTextarea
                     value={editContent}
                     onChange={e => setEditContent(e.target.value)}
-                    className="w-full h-32 bg-slate-100 rounded-2xl p-4 resize-none focus:ring-1 focus:ring-primary/20 transition-all text-sm leading-relaxed"
+                    className="h-32"
                 />
             </Modal>
 
@@ -1024,13 +1001,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 <div>
                     {/* 总开关：关闭时不调副 API、不生成日程、不注入情绪 buff */}
                     {onToggleScheduleFeature && (
-                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b border-dashed" style={{ borderColor: 'rgba(133,127,116,0.32)' }}>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>☘</span>
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>作息与心情挂件</span>
+                                    <span className="text-[11px] leading-none" style={{ color: INK }} aria-hidden>☘</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>作息与心情挂件</span>
                                 </div>
-                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
                                     {isScheduleFeatureEnabled
                                         ? '开着：会请副 API 排出 TA 今天的日程，聊天时顺带掂量心情 buff。'
                                         : '关着：不请副 API、不排日程，也不会往对话里塞心情 buff。'}
@@ -1059,11 +1036,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
                                             style={{
                                                 transform: 'rotate(-0.5deg)',
-                                                background: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#bfe1cf' : '#fffdfa',
-                                                color: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#264a36' : '#a892a3',
-                                                border: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '1px solid rgba(38,74,54,0.2)' : '1px dashed #ddc9d3',
+                                                background: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? INK : '#fffdfa',
+                                                color: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#f6f3ec' : INK_SOFT,
+                                                border: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '1px solid #000' : `1px dashed ${INK_SOFT}`,
                                                 borderRadius: '6px 12px 7px 12px',
-                                                boxShadow: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                                boxShadow: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '0 1px 2px rgba(31,29,26,0.25)' : 'none',
                                             }}
                                         >
                                             <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>生活系</span>
@@ -1075,11 +1052,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
                                             style={{
                                                 transform: 'rotate(0.6deg)',
-                                                background: activeCharacter?.scheduleStyle === 'mindful' ? '#d6c8e8' : '#fffdfa',
-                                                color: activeCharacter?.scheduleStyle === 'mindful' ? '#3a2c50' : '#a892a3',
-                                                border: activeCharacter?.scheduleStyle === 'mindful' ? '1px solid rgba(58,44,80,0.2)' : '1px dashed #ddc9d3',
+                                                background: activeCharacter?.scheduleStyle === 'mindful' ? INK : '#fffdfa',
+                                                color: activeCharacter?.scheduleStyle === 'mindful' ? '#f6f3ec' : INK_SOFT,
+                                                border: activeCharacter?.scheduleStyle === 'mindful' ? '1px solid #000' : `1px dashed ${INK_SOFT}`,
                                                 borderRadius: '12px 6px 12px 7px',
-                                                boxShadow: activeCharacter?.scheduleStyle === 'mindful' ? '0 1px 2px rgba(122,90,114,0.25)' : 'none',
+                                                boxShadow: activeCharacter?.scheduleStyle === 'mindful' ? '0 1px 2px rgba(31,29,26,0.25)' : 'none',
                                             }}
                                         >
                                             <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>意识系</span>
@@ -1099,7 +1076,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 onCoverImageChange={onScheduleCoverChange}
                                 isGenerating={isScheduleGenerating}
                             />
-                            <p className="text-[10px] text-center mt-3 leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                            <p className="text-[10px] text-center mt-3 leading-relaxed" style={{ color: INK_SOFT }}>
                                 点一条可以改 · 按住不放是删掉
                             </p>
 

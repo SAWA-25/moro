@@ -101,9 +101,9 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                     <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>✉</span>
-                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>开启悄悄来信</span>
+                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>开启悄悄来信</span>
                         </div>
-                        <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                        <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                             开了之后，{char.name} 会按下面的安排自己先发消息来——就像真人忽然想起你，随手敲来一句。
                         </p>
                     </div>
@@ -125,9 +125,9 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-[11px] leading-none" aria-hidden>🌱</span>
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>让 TA 过自己的生活</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>让 TA 过自己的生活</span>
                                 </div>
-                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                                     开了之后，{char.name} 在你不在时会有自己的日常（上班、吃饭、追剧、和朋友出门…）。
                                     来信会从 TA 正在经历的事里取材——分享自己的生活，而不是每次都催你回复。
                                     你离开一阵子再回来，还能看到「你不在时 TA 经历了…」的回顾。
@@ -138,7 +138,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
 
                         {/* 触发方式 */}
                         <div className="pt-1">
-                            <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>什么时候来信</div>
+                            <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>什么时候来信</div>
                             <div className="flex gap-2 mb-3">
                                 <StickerChip seed="pm-fixed" active={!randomMode} candy="#d6c8e8" onClick={() => setRandomMode(false)}>掐着点来</StickerChip>
                                 <StickerChip seed="pm-random" active={randomMode} candy="#d6c8e8" onClick={() => setRandomMode(true)}>凭 TA 心情</StickerChip>
@@ -150,7 +150,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                 </NoteStrip>
                             ) : (
                                 <>
-                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>隔多久寄一封</div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>隔多久寄一封</div>
                                     <div className="flex flex-wrap gap-2">
                                         {INTERVAL_OPTIONS.map(opt => (
                                             <StickerChip
@@ -172,10 +172,10 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                             min={5}
                                             value={interval}
                                             onChange={e => setInterval_(Math.max(5, parseInt(e.target.value) || 5))}
-                                            className="w-16 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0]"
-                                            style={{ color: PAPER_TONES.ink, caretColor: '#f29db0' }}
+                                            className="w-16 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-dashed border-[#b0aa9e] focus:border-[#857f74]"
+                                            style={{ color: '#1f1d1a', caretColor: '#857f74' }}
                                         />
-                                        <span className="text-[10px]" style={{ color: PAPER_TONES.inkSoft }}>分钟一封（最少 5 分钟）</span>
+                                        <span className="text-[10px]" style={{ color: '#857f74' }}>分钟一封（最少 5 分钟）</span>
                                     </div>
                                 </>
                             )}
@@ -185,8 +185,8 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                         <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
                             <div className="flex items-start justify-between gap-3 mb-1">
                                 <div className="min-w-0">
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>走另一条邮路（副 API）</span>
-                                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>走另一条邮路（副 API）</span>
+                                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                                         来信单独走一条 API，不占主线路的额度；不开就还走主 API。
                                     </p>
                                 </div>
@@ -227,9 +227,9 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                         <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] leading-none" aria-hidden>📣</span>
-                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>离线也能收到弹窗</span>
+                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>离线也能收到弹窗</span>
                             </div>
-                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                                 授权一次浏览器通知，{char.name} 来信时即使你切到别的标签或最小化，也会弹出系统通知。电脑版 Chrome / Edge 体验最好。
                             </p>
                             <div className="mt-2.5">
@@ -242,7 +242,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                 {notifyPerm === 'default' && (
                                     <button type="button" onClick={handleRequestNotify}
                                         className="rounded-[10px] px-3.5 py-1.5 text-[11.5px] font-bold transition active:scale-95"
-                                        style={{ ...CUTE_STACK, color: '#fff', background: 'linear-gradient(135deg,#c8a3dd,#f29db0)', boxShadow: '0 2px 6px rgba(200,140,180,0.35)' }}>
+                                        style={{ ...CUTE_STACK, color: '#fff', background: 'linear-gradient(135deg,#c8a3dd,#857f74)', boxShadow: '0 2px 6px rgba(200,140,180,0.35)' }}>
                                         开启浏览器通知
                                     </button>
                                 )}
@@ -258,7 +258,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                 )}
                             </div>
                             {notifyPerm !== 'granted' && notifyPerm !== 'unsupported' && !isRecommendedForWebNotify() && (
-                                <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                                <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: '#857f74' }}>
                                     提示：当前是 {detectBrowser().name}。离线弹窗在电脑版 Chrome / Edge 上最稳定。
                                 </p>
                             )}

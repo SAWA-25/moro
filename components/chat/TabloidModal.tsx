@@ -68,14 +68,14 @@ const TabloidModal: React.FC<{ char: CharacterProfile; isOpen: boolean; onClose:
             </div>
 
             {busy && (
-                <div className="flex flex-col items-center justify-center gap-3 py-12" style={{ color: PAPER_TONES.inkSoft }}>
+                <div className="flex flex-col items-center justify-center gap-3 py-12" style={{ color: '#857f74' }}>
                     <div className="w-7 h-7 border-2 rounded-full animate-spin" style={{ borderColor: '#e8c4d0', borderTopColor: '#c14a64' }} />
                     <div className="text-[12px]">{char.name} 正在把{meta.windowLabel}剪成一份小报…</div>
                 </div>
             )}
 
             {!busy && !cached && (
-                <div className="flex flex-col items-center justify-center gap-2 py-12 text-center" style={{ color: PAPER_TONES.inkFaint }}>
+                <div className="flex flex-col items-center justify-center gap-2 py-12 text-center" style={{ color: '#857f74' }}>
                     <div className="text-3xl">🗞️</div>
                     <div className="text-[12px] leading-relaxed px-6">
                         还没有这一期。点下面「✎ 出这期小报」，让 {char.name} 把{meta.windowLabel}里你们之间的事，<br />揉成一份俏皮的娱乐小报。
@@ -91,21 +91,21 @@ const TabloidModal: React.FC<{ char: CharacterProfile; isOpen: boolean; onClose:
 const TabloidSheet: React.FC<{ tab: Tabloid; charName: string }> = ({ tab, charName }) => (
     <div className="animate-fade-in">
         {/* 报头 */}
-        <div className="text-center pb-2 mb-3 border-b-2" style={{ borderColor: PAPER_TONES.ink }}>
-            <div className="flex items-center justify-center gap-2 text-[8px] tracking-[0.2em] uppercase mb-1.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>
+        <div className="text-center pb-2 mb-3 border-b-2" style={{ borderColor: '#1f1d1a' }}>
+            <div className="flex items-center justify-center gap-2 text-[8px] tracking-[0.2em] uppercase mb-1.5" style={{ ...MONO_STACK, color: '#857f74' }}>
                 <span>VOL.{new Date(tab.generatedAt).getFullYear()}</span>
                 <span>·</span>
                 <span>{charName} 编辑部</span>
                 <span>·</span>
                 <span>{new Date(tab.rangeFrom).toLocaleDateString()} – {new Date(tab.rangeTo).toLocaleDateString()}</span>
             </div>
-            <h1 className="text-[22px] leading-tight font-black" style={{ ...SERIF_STACK, color: PAPER_TONES.ink }}>{tab.headline}</h1>
-            {tab.subhead && <div className="text-[11px] mt-1.5" style={{ color: PAPER_TONES.inkSoft }}>{tab.subhead}</div>}
+            <h1 className="text-[22px] leading-tight font-black" style={{ ...SERIF_STACK, color: '#1f1d1a' }}>{tab.headline}</h1>
+            {tab.subhead && <div className="text-[11px] mt-1.5" style={{ color: '#857f74' }}>{tab.subhead}</div>}
         </div>
 
         {/* 主笔手记 */}
         {tab.editorNote && (
-            <p className="text-[12.5px] leading-relaxed italic mb-4 px-1" style={{ color: PAPER_TONES.inkSoft }}>
+            <p className="text-[12.5px] leading-relaxed italic mb-4 px-1" style={{ color: '#857f74' }}>
                 {tab.editorNote}
             </p>
         )}
@@ -115,10 +115,10 @@ const TabloidSheet: React.FC<{ tab: Tabloid; charName: string }> = ({ tab, charN
             {tab.sections.map((s, i) => (
                 <div key={i} className="pb-3 border-b border-dashed" style={{ borderColor: 'rgba(122,90,114,0.2)' }}>
                     <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded" style={{ ...MONO_STACK, background: '#f3d3dc', color: '#8a3450' }}>{s.tag}</span>
-                        <span className="text-[14px] font-black" style={{ ...SERIF_STACK, color: PAPER_TONES.ink }}>{s.title}</span>
+                        <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded" style={{ ...MONO_STACK, background: '#e7e2d8', color: '#1f1d1a' }}>{s.tag}</span>
+                        <span className="text-[14px] font-black" style={{ ...SERIF_STACK, color: '#1f1d1a' }}>{s.title}</span>
                     </div>
-                    <p className="text-[12px] leading-relaxed whitespace-pre-wrap" style={{ color: PAPER_TONES.ink }}>{s.body}</p>
+                    <p className="text-[12px] leading-relaxed whitespace-pre-wrap" style={{ color: '#1f1d1a' }}>{s.body}</p>
                     {s.quote && (
                         <div className="mt-2 pl-3 border-l-2 text-[12px] italic" style={{ borderColor: '#e26b84', color: '#9c4a60' }}>
                             “{s.quote}”
@@ -134,7 +134,7 @@ const TabloidSheet: React.FC<{ tab: Tabloid; charName: string }> = ({ tab, charN
                 <div className="text-[8.5px] tracking-[0.18em] uppercase mb-1.5" style={{ ...MONO_STACK, color: '#c07a90' }}>花絮 · GOSSIP</div>
                 <ul className="space-y-1">
                     {tab.sidebar.map((s, i) => (
-                        <li key={i} className="text-[11.5px] leading-relaxed flex gap-1.5" style={{ color: PAPER_TONES.inkSoft }}>
+                        <li key={i} className="text-[11.5px] leading-relaxed flex gap-1.5" style={{ color: '#857f74' }}>
                             <span style={{ color: '#e26b84' }}>✦</span>
                             <span>{s}</span>
                         </li>
@@ -145,10 +145,10 @@ const TabloidSheet: React.FC<{ tab: Tabloid; charName: string }> = ({ tab, charN
 
         {/* 签名 */}
         {tab.signoff && (
-            <div className="text-right mt-4 text-[15px]" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{tab.signoff}</div>
+            <div className="text-right mt-4 text-[15px]" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>{tab.signoff}</div>
         )}
 
-        <div className="text-center mt-3 text-[8px] tracking-[0.2em] uppercase" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>— 本期完 · {new Date(tab.generatedAt).toLocaleString()} —</div>
+        <div className="text-center mt-3 text-[8px] tracking-[0.2em] uppercase" style={{ ...MONO_STACK, color: '#857f74' }}>— 本期完 · {new Date(tab.generatedAt).toLocaleString()} —</div>
     </div>
 );
 

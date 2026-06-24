@@ -28,7 +28,7 @@ const STYLE_LIST: Array<{ id: ThinkingChainStyleId; name: string; sub: string }>
 
 const ColorField: React.FC<{ label: string; value: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => (
     <label className="flex items-center gap-3 text-[12px]">
-        <span className="w-10 shrink-0 font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>{label}</span>
+        <span className="w-10 shrink-0 font-bold" style={{ ...CUTE_STACK, color: '#857f74' }}>{label}</span>
         <input
             type="color"
             value={value.startsWith('#') ? value : '#1f2937'}
@@ -40,8 +40,8 @@ const ColorField: React.FC<{ label: string; value: string; onChange: (v: string)
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="flex-1 px-1 py-1.5 bg-transparent text-[11px] outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#f29db0] placeholder:text-[#cfb8c4]"
-            style={{ ...MONO_STACK, color: PAPER_TONES.ink, caretColor: '#f29db0' }}
+            className="flex-1 px-1 py-1.5 bg-transparent text-[11px] outline-none border-0 border-b border-dashed border-[#b0aa9e] focus:border-[#857f74] placeholder:text-[#a9a195]"
+            style={{ ...MONO_STACK, color: '#1f1d1a', caretColor: '#857f74' }}
             placeholder="#rrggbb 或 css 渐变"
         />
     </label>
@@ -92,7 +92,7 @@ const StylePreview: React.FC<{ styleId: ThinkingChainStyleId; customColors: Thin
 
 /** 小节标头：打字机角标，与手账纸页统一 */
 const SectionTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{children}</div>
+    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>{children}</div>
 );
 
 const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, onChange }) => {
@@ -132,7 +132,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                     <p className="mt-2">
                         看着跳戏、出戏、太「AI」？直接关掉就好，一点损失都没有，回复本身完全不受影响。
                     </p>
-                    <p className="mt-2" style={{ color: PAPER_TONES.inkFaint }}>看不懂上面在讲什么？去问给你 API 的人，他/她讲得比这里清楚。</p>
+                    <p className="mt-2" style={{ color: '#857f74' }}>看不懂上面在讲什么？去问给你 API 的人，他/她讲得比这里清楚。</p>
                     <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px dashed #ecd9a0' }}>
                         <div className="font-bold mb-1 text-[11px]" style={{ color: '#b08f3a' }}>开了却一直没看到「思绪」卡片？</div>
                         <ul className="list-disc pl-4 space-y-0.5">
@@ -160,9 +160,9 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                     <div className="min-w-0 pointer-events-none">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>✎</span>
-                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>让页边小字现身</span>
+                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>让页边小字现身</span>
                         </div>
-                        <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                        <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                             关掉后，新回复不再贴「思绪」卡片；以前消息上已有的照旧留着。
                         </p>
                     </div>
@@ -190,8 +190,8 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                                     <StylePreview styleId={item.id} customColors={value.customColors} compact />
                                     <div className="mt-1.5 flex items-baseline gap-1.5">
                                         {active && <span aria-hidden className="text-[10px]">📌</span>}
-                                        <span className="text-[12px] font-bold" style={{ ...CUTE_STACK, color: active ? '#8a3d55' : PAPER_TONES.inkSoft }}>{item.name}</span>
-                                        <span className="text-[9px]" style={{ color: PAPER_TONES.inkFaint }}>{item.sub}</span>
+                                        <span className="text-[12px] font-bold" style={{ ...CUTE_STACK, color: active ? '#8a3d55' : '#857f74' }}>{item.name}</span>
+                                        <span className="text-[9px]" style={{ color: '#857f74' }}>{item.sub}</span>
                                     </div>
                                 </button>
                             );
@@ -216,7 +216,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                                 value={value.customColors.text}
                                 onChange={text => onChange({ customColors: { ...value.customColors, text } })}
                             />
-                            <div className="text-[9.5px] leading-relaxed" style={{ color: PAPER_TONES.inkFaint }}>
+                            <div className="text-[9.5px] leading-relaxed" style={{ color: '#857f74' }}>
                                 底色支持 CSS 渐变（例：linear-gradient(135deg, #1a1a2e, #16213e)）。
                             </div>
                         </div>
@@ -232,7 +232,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                 {/* 3. 追加提示词 */}
                 <div>
                     <SectionTag>追加叮嘱</SectionTag>
-                    <p className="text-[10px] mb-2 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                    <p className="text-[10px] mb-2 leading-relaxed" style={{ color: '#857f74' }}>
                         原生提示词（让模型用角色第一人称、中文意识流来想）原样不动；这里写的会<b>追在最后</b>，算你对这段内心独白的额外要求。
                     </p>
                     <LinedArea
@@ -242,7 +242,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                         placeholder="比如：想事情时偶尔蹦句日语 / 多写点感官细节 / 想到用户时要用昵称…"
                         className="h-28"
                     />
-                    <div className="text-[9.5px] mt-1" style={{ color: PAPER_TONES.inkFaint }}>空着 = 只用原生提示词。</div>
+                    <div className="text-[9.5px] mt-1" style={{ color: '#857f74' }}>空着 = 只用原生提示词。</div>
                 </div>
             </div>
         </JournalSheet>

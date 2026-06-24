@@ -104,12 +104,12 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
     return (
         <div
             className="absolute inset-0 z-[460] flex flex-col justify-end animate-fade-in"
-            style={{ background: 'rgba(30,24,33,0.42)', backdropFilter: 'blur(2px)' }}
+            style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(2px)' }}
             onClick={onClose}
         >
             <div
-                className="relative w-full rounded-t-[22px] bg-white shadow-2xl flex flex-col max-h-[78%]"
-                style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+                className="relative w-full rounded-t-[22px] shadow-2xl flex flex-col max-h-[78%]"
+                style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)', background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', borderTop: '1px solid rgba(176,170,158,0.7)', color: '#1f1d1a' }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* 抓手 + 标题 */}
@@ -136,9 +136,9 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                     {loading && options.length === 0 ? (
                         <div className="py-10 flex flex-col items-center gap-2 text-slate-400">
                             <span className="inline-flex gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-pink-300 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                <span className="w-1.5 h-1.5 rounded-full bg-pink-300 animate-bounce" style={{ animationDelay: '120ms' }} />
-                                <span className="w-1.5 h-1.5 rounded-full bg-pink-300 animate-bounce" style={{ animationDelay: '240ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1f1d1a] animate-bounce" style={{ animationDelay: '0ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1f1d1a] animate-bounce" style={{ animationDelay: '120ms' }} />
+                                <span className="w-1.5 h-1.5 rounded-full bg-[#1f1d1a] animate-bounce" style={{ animationDelay: '240ms' }} />
                             </span>
                             <span className="text-[11.5px]">正在帮你想几句…</span>
                         </div>
@@ -146,10 +146,10 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                         options.map((opt, i) => (
                             <div
                                 key={i}
-                                className="group rounded-2xl border border-slate-150 bg-slate-50/80 px-3 py-2.5 flex items-start gap-2 focus-within:border-pink-200 focus-within:bg-white transition-colors"
+                                className="group rounded-2xl border border-slate-150 bg-slate-50/80 px-3 py-2.5 flex items-start gap-2 focus-within:border-[#1f1d1a] focus-within:bg-white transition-colors"
                                 style={{ borderColor: '#eef0f3' }}
                             >
-                                <span className="mt-1.5 w-5 h-5 shrink-0 rounded-full bg-white text-pink-400 text-[10px] font-bold flex items-center justify-center ring-1 ring-pink-100">{i + 1}</span>
+                                <span className="mt-1.5 w-5 h-5 shrink-0 rounded-full bg-white text-[#1f1d1a] text-[10px] font-bold flex items-center justify-center ring-1 ring-[#b0aa9e]">{i + 1}</span>
                                 <AutoGrowTextarea
                                     value={opt}
                                     onChange={val => updateOption(i, val)}
@@ -158,7 +158,7 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                                 <div className="flex items-center gap-1 shrink-0 self-center">
                                     <button
                                         onClick={() => removeOption(i)}
-                                        className="w-7 h-7 rounded-full text-slate-300 hover:text-rose-400 text-[15px] flex items-center justify-center active:scale-90 transition"
+                                        className="w-7 h-7 rounded-full text-slate-300 hover:text-[#1f1d1a] text-[15px] flex items-center justify-center active:scale-90 transition"
                                         aria-label="删除这条"
                                         title="删除"
                                     >🗑</button>
@@ -166,7 +166,7 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                                         onClick={() => send(opt)}
                                         disabled={!opt.trim()}
                                         className="px-3.5 h-8 rounded-full text-white text-[12px] font-bold flex items-center justify-center active:scale-95 transition disabled:opacity-40"
-                                        style={{ background: 'linear-gradient(135deg,#ff9eb5,#ff7aa0)' }}
+                                        style={{ background: '#1f1d1a' }}
                                     >发送</button>
                                 </div>
                             </div>
@@ -186,8 +186,8 @@ const UserActionSelectorModal: React.FC<Props> = ({ char, userProfile, recent, a
                     </button>
                     <button
                         onClick={addOption}
-                        className="flex-1 h-10 rounded-full text-pink-500 text-[12.5px] font-bold active:scale-95 transition flex items-center justify-center gap-1"
-                        style={{ background: 'rgba(255,158,181,0.14)' }}
+                        className="flex-1 h-10 rounded-full text-[#1f1d1a] text-[12.5px] font-bold active:scale-95 transition flex items-center justify-center gap-1"
+                        style={{ background: 'rgba(31,29,26,0.07)' }}
                     >＋ 自己加一条</button>
                 </div>
             </div>
