@@ -231,3 +231,8 @@ pm run build passes after the time-gap grouping fix.
   - **新增交友系统**（参考探探/Soul/陌陌）：`utils/socialDating.ts`——`DATING_INTENTS`（找对象/恋爱/随缘约会/**圈内·SM**/单纯无聊/游戏·饭·运动·学习搭子/灵魂共鸣/线下面基，不限题材）、`DatingProfile`、`buildDatingPrompt`（要求人物多样、目的五花八门含成人向 SM 点到为止、bio 有实质内容像真人自我介绍、各异不套模板）、`parseDatingProfiles`（校验/夹紧/截断打捞/去重昵称+角色只出镜一次/命中角色带头像）、`fallbackDatingProfiles`（12 张各异兜底）、`generateDatingBatch`（max_tokens 12000）。
   - **UI**：`SocialApp` 加「📓见闻 / 💘交友」TabBar；交友页是探探式单卡浏览（头图/距离/在线/目的徽章/熟人标/年龄性别/标签/简介 + 跳过·打招呼·喜欢三键 + 换一批），cache-first localStorage、空/失败回退兜底卡。打招呼对熟人提示去「来往」找 TA。
   - 新增 `utils/socialDating.test.ts`（8 测）。`pnpm tsc --noEmit` clean, `vite build` passes, 601 tests green (+8)。
+
+- 修复絮语「帮 user 想接下来说啥」后台成功但前台空白/失败 + 交友系统 3 项增强:
+  - **帮 user 回复候选 空白/失败修复**（根因＝思考型模型）：`gemini-3.1-pro` 等推理模型把 1000 的 max_tokens 几乎全用在推理上、正文 JSON 数组被截断→解析空→前台「没想出来」。① `requestActionsOnce` max_tokens 1000→4000；② `extractContent` 加固：content 为「分片数组(Gemini 风)」时拍平拼接（旧实现遇数组会让后续 .trim() 崩→空白）、空时回退 `reasoning_content`/`reasoning`/`choices[0].text`；③ `parseActions` 支持对象包裹 `{"actions":[…]}/{"suggestions":[…]}`。新增 7 测（对象包裹 + extractContent 分片/回退/去 think）。
+  - **交友系统 3 项增强**：① 「我喜欢的」列表（右上 ♥ 入口，localStorage 持久化，显示已匹配/目的/简介），喜欢时按目的+熟人 `isMatch` 判定「🎉 匹配成功」；② 打招呼 → 对方 `generateDatingReply` AI 实时回应（弹窗气泡，熟人附「进来往聊」一键 `setActiveCharacterId`+开 Chat）；③ 按目的筛选卡片（全部 + 各 intent chip，含只看游戏搭子/SM）。`socialDating.ts` 加 `isMatch`/`generateDatingReply`/`fallbackDatingReply`。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 608 tests green (+7)。

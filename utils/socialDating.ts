@@ -169,6 +169,45 @@ export function fallbackDatingProfiles(count: number): DatingProfile[] {
     return out.sort((a, b) => a.distanceKm - b.distanceKm);
 }
 
+// ── 打招呼：对方 AI 回应 + 匹配判定 ──────────────────────────────────────────
+const GREET_FALLBACK: Record<string, string[]> = {
+    sm: ['嗯？先聊聊，看你懂不懂规矩。', '别急，先报一下你的取向和底线。'],
+    serious: ['哈喽～你也是认真找的吗？', '你好呀，看你资料挺正经的，想多了解下。'],
+    gamemate: ['来了来了，什么段位？开黑不？', '正缺人，你玩什么位置？'],
+    bored: ['哈哈正好无聊，聊点啥？', '在的在的，你也睡不着？'],
+};
+export function fallbackDatingReply(p: Pick<DatingProfile, 'intent' | 'name'>): string {
+    return pick(GREET_FALLBACK[p.intent] || ['哈喽～你好呀，怎么突然跟我打招呼啦？', '嗨，看到你了，想聊点什么？']);
+}
+
+/** 打招呼后对方是否「匹配成功」：实名熟人必中，其余按目的给个概率。 */
+export function isMatch(p: Pick<DatingProfile, 'isChar' | 'intent'>, rng: () => number = Math.random): boolean {
+    if (p.isChar) return true;
+    const base = p.intent === 'bored' || p.intent === 'soul' ? 0.55 : p.intent === 'sm' ? 0.3 : 0.4;
+    return rng() < base;
+}
+
+/** 让某个交友对象用 AI 回应用户的打招呼（短、贴人设/目的、第一人称）。 */
+export async function generateDatingReply(api: DatingApi, p: DatingProfile, userProfile: UserProfile, greeting?: string): Promise<string> {
+    const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
+    if (!baseUrl || !api.model) return fallbackDatingReply(p);
+    const im = intentMeta(p.intent);
+    const sys = `你是交友软件上的用户「${p.name}」。你的简介：「${p.bio}」。你的交友目的：${im.label}。${p.tags.length ? `标签：${p.tags.join('、')}。` : ''}用户「${userProfile.name || '对方'}」刚在交友软件上跟你打招呼。请用第一人称、完全贴合你的人设与交友目的、口语化地回应 1~2 句，自然、有点钩子或个性，只输出你说的话本身，不要旁白/引号/解释。`;
+    const usr = `${userProfile.name || '对方'} 对你说：「${greeting || '你好呀，看到你了～'}」\n你的回应：`;
+    try {
+        const res = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${api.apiKey || 'sk-none'}` },
+            body: JSON.stringify({ model: api.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }], temperature: 1.0, max_tokens: 2000, stream: false }),
+        });
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        let t = (extractContent(await safeResponseJson(res)) || '').trim();
+        t = t.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+        t = t.replace(/^["“「『（(]+/, '').replace(/["”」』）)]+$/, '').replace(/^[^：:]{1,8}[：:]\s*/, '').trim();
+        return t.slice(0, 120) || fallbackDatingReply(p);
+    } catch { return fallbackDatingReply(p); }
+}
+
 // ── 调 LLM 生成一批 ──────────────────────────────────────────────────────────
 export async function generateDatingBatch(
     api: DatingApi, characters: CharacterProfile[], userProfile: UserProfile, count = 14,

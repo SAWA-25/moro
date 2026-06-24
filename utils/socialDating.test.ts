@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     parseDatingProfiles, fallbackDatingProfiles, buildDatingPrompt, intentMeta,
-    DATING_INTENTS, type CharBrief,
+    DATING_INTENTS, isMatch, fallbackDatingReply, type CharBrief,
 } from './socialDating';
 
 const chars: CharBrief[] = [{ id: 'c1', name: '林夏', persona: '高冷御姐', avatar: 'a.png' }];
@@ -66,5 +66,14 @@ describe('socialDating · 兜底 / prompt', () => {
     it('intentMeta 命中与兜底', () => {
         expect(intentMeta('gamemate').label).toContain('游戏');
         expect(intentMeta('不存在').label.length).toBeGreaterThan(0);
+    });
+    it('isMatch：熟人必匹配；路人按概率（rng 可控）', () => {
+        expect(isMatch({ isChar: true, intent: 'sm' }, () => 0.99)).toBe(true);   // 熟人必中
+        expect(isMatch({ isChar: false, intent: 'bored' }, () => 0)).toBe(true);   // rng 低必中
+        expect(isMatch({ isChar: false, intent: 'sm' }, () => 0.99)).toBe(false);  // rng 高不中
+    });
+    it('fallbackDatingReply 永远给一句非空回应', () => {
+        expect(fallbackDatingReply({ intent: 'gamemate', name: 'A' }).length).toBeGreaterThan(0);
+        expect(fallbackDatingReply({ intent: 'date', name: 'B' }).length).toBeGreaterThan(0);
     });
 });
