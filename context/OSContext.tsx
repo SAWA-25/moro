@@ -2287,10 +2287,37 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       if (!isDataLoaded) return;
       const LAST_SEEN_KEY = 'autonomous_life_last_seen';
       const BUSY_KEY = 'autonomous_life_catchup_busy';
+      const LEAVE_GEN_KEY = 'autonomous_life_leave_gen'; // 每角色「离线即生成」的上次时刻（防快速切后台刷爆 API）
+      const LEAVE_MIN_GAP_MS = 30 * 60 * 1000;           // 同一角色两次「离线即生成」至少间隔 30 分钟
       let cancelled = false;
 
       const markSeen = () => {
           try { localStorage.setItem(LAST_SEEN_KEY, String(Date.now())); } catch { /* ignore */ }
+      };
+
+      // 用户「刚离开」（切后台 / 锁屏 / 关页前）：让开了自主生活的角色**立刻**过一格日子，
+      // 趁页面挂起前把请求发出去（best-effort）。这样「一离线 TA 就开始过自己的日子」，
+      // 不必干等到 2 小时后回来才一次性补——回来时的 catchUpOfflineLife 仍会补齐更长的 gap。
+      const runOnLeave = () => {
+          const chars = charactersRef.current.filter(c => isAutonomousLifeEnabled(c) && !c.charBlock?.active);
+          if (chars.length === 0) return;
+          let stamps: Record<string, number> = {};
+          try { stamps = JSON.parse(localStorage.getItem(LEAVE_GEN_KEY) || '{}') || {}; } catch { /* ignore */ }
+          const now = Date.now();
+          const main = apiConfigRef.current;
+          let touched = false;
+          for (const char of chars) {
+              if (now - (stamps[char.id] || 0) < LEAVE_MIN_GAP_MS) continue; // 刚生成过，跳过防刷
+              const api = resolveLifeApi(char, auxApiConfigRef.current, { baseUrl: main.baseUrl, apiKey: main.apiKey, model: main.model });
+              if (!api.baseUrl) continue;
+              stamps[char.id] = now;
+              touched = true;
+              // fire-and-forget：不 await（页面要挂起了），成功落库后广播让列表「此刻」状态刷新
+              void advanceLife(char, api, { source: 'proactive', now }).then(ev => {
+                  if (ev) window.dispatchEvent(new CustomEvent('autonomous-life-advanced', { detail: { charId: char.id, charName: char.name } }));
+              }).catch(() => { /* 离线生成失败忽略 */ });
+          }
+          if (touched) { try { localStorage.setItem(LEAVE_GEN_KEY, JSON.stringify(stamps)); } catch { /* ignore */ } }
       };
 
       const runCatchUp = async () => {
@@ -2331,19 +2358,22 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       const onVisibility = () => {
           if (document.visibilityState === 'visible') void runCatchUp();
-          else markSeen();
+          else { markSeen(); runOnLeave(); } // 一切后台/锁屏即视为「离线」，让角色立刻过一格日子
       };
       const onFocus = () => { void runCatchUp(); };
+      const onBlur = () => { runOnLeave(); }; // 桌面切走窗口（未必触发 visibilitychange）也算离线
 
       // 启动即跑一次（覆盖「整页关闭后重开」的离线 gap），再挂可见性 / focus 监听。
       void runCatchUp();
       document.addEventListener('visibilitychange', onVisibility);
       window.addEventListener('focus', onFocus);
+      window.addEventListener('blur', onBlur);
       return () => {
           cancelled = true;
           markSeen();
           document.removeEventListener('visibilitychange', onVisibility);
           window.removeEventListener('focus', onFocus);
+          window.removeEventListener('blur', onBlur);
       };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDataLoaded]);
