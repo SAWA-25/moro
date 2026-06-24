@@ -2463,6 +2463,8 @@ export interface UserProfile {
     shopCart?: ShopCartLine[];
     /** 购物商城·收藏（淘宝式想要清单）：收藏的商品 id。 */
     shopFavorites?: string[];
+    /** 购物商城·我的订单（淘宝式，含物流进度；确认收货后才进背包）。 */
+    shopOrders?: ShopOrder[];
     /** 购物商城·我的小票：购买 / 赠送 / 收礼历史（最新在前）。 */
     shopReceipts?: ShopReceipt[];
     /**
@@ -3085,6 +3087,28 @@ export interface ShopOwnedItem {
 export interface ShopCartLine {
     itemId: string;
     qty: number;
+}
+
+/** 购物商城：订单里的一件商品（带数量快照）。 */
+export interface ShopOrderItem {
+    itemId: string;
+    name: string;
+    emoji: string;
+    price: number;
+    qty: number;
+}
+
+/** 购物商城：一笔订单（淘宝式，含物流配送进度）。下单 → 物流推进 → 确认收货后进背包。 */
+export interface ShopOrder {
+    id: string;
+    items: ShopOrderItem[];
+    total: number;
+    /** 'self'=自己付；'char'=角色代付（payerName 记角色名） */
+    paidBy: 'self' | 'char';
+    payerName?: string;
+    placedAt: number;
+    etaAt: number;          // 预计送达时间戳
+    receivedAt?: number;    // 用户点「确认收货」的时刻
 }
 
 /** 购物商城：一条小票（购买 / 赠送 / 收礼）。user 与 char 各存一份历史。 */

@@ -11,7 +11,7 @@
  * 不碰 DB / React，方便在 App、聊天上下文、副 API 流程里复用。
  */
 
-import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine } from '../types';
+import type { ShopItem, ShopReceipt, ShopOwnedItem, ShopCartLine, ShopOrder, ShopOrderItem } from '../types';
 
 /** 商城内容变动（买/送/角色逛完）后广播，相关页面据此刷新。 */
 export const SHOP_UPDATED_EVENT = 'moro-shop-updated';
@@ -387,6 +387,63 @@ export function parseGeneratedReviews(raw: string): ShopReview[] {
         out.push({ user, stars, text: o.text.trim().slice(0, 60) });
     }
     return out;
+}
+
+// ── 订单 + 物流配送进度（淘宝式；下单 → 物流推进 → 确认收货进背包） ──────────────
+
+/** 由购物车行生成一笔订单（预计 12~30 分钟送达，时间内逐步推进物流）。 */
+export function makeOrder(lines: { item: ShopItem; qty: number }[], paidBy: 'self' | 'char', payerName?: string): ShopOrder {
+    const items: ShopOrderItem[] = lines.map(({ item, qty }) => ({ itemId: item.id, name: item.name, emoji: item.emoji, price: item.price, qty }));
+    const total = Math.round(items.reduce((s, it) => s + it.price * it.qty, 0) * 100) / 100;
+    const placedAt = Date.now();
+    const span = (12 + Math.floor(Math.random() * 18)) * 60000; // 12~30 分钟
+    return { id: uid(), items, total, paidBy, payerName, placedAt, etaAt: placedAt + span };
+}
+
+export type OrderStage = 'placed' | 'shipped' | 'transit' | 'delivering' | 'arrived' | 'received';
+export interface OrderProgress { stage: OrderStage; label: string; pct: number; canReceive: boolean; etaText: string; }
+
+/** 物流进度（纯函数）：按 (now-placedAt)/(etaAt-placedAt) 分段；到点后等用户确认收货。 */
+export function orderProgress(order: ShopOrder, now: number = Date.now()): OrderProgress {
+    if (order.receivedAt) return { stage: 'received', label: '已签收', pct: 100, canReceive: false, etaText: '交易完成' };
+    const span = Math.max(1, order.etaAt - order.placedAt);
+    const f = (now - order.placedAt) / span;
+    if (f >= 1) return { stage: 'arrived', label: '待收货', pct: 100, canReceive: true, etaText: '已送达，待确认收货' };
+    const pct = Math.max(2, Math.min(99, Math.round(f * 100)));
+    const remainMin = Math.max(1, Math.ceil((order.etaAt - now) / 60000));
+    const etaText = `预计 ${remainMin} 分钟后送达`;
+    if (f < 0.1) return { stage: 'placed', label: '商家备货中', pct, canReceive: false, etaText };
+    if (f < 0.4) return { stage: 'shipped', label: '已发货', pct, canReceive: false, etaText };
+    if (f < 0.7) return { stage: 'transit', label: '运输中', pct, canReceive: false, etaText };
+    return { stage: 'delivering', label: '派送中', pct, canReceive: false, etaText };
+}
+
+export const ORDER_STAGES: { key: OrderStage; label: string }[] = [
+    { key: 'placed', label: '已下单' },
+    { key: 'shipped', label: '已发货' },
+    { key: 'transit', label: '运输中' },
+    { key: 'delivering', label: '派送中' },
+    { key: 'arrived', label: '已送达' },
+];
+
+/** 确认收货：把订单商品展开成背包物 + 双方小票（self 记 buy；char 代付记 receive/gift）。 */
+export function orderReceivePayload(order: ShopOrder, userName: string): { owned: ShopOwnedItem[]; userReceipts: ShopReceipt[]; charReceipts: ShopReceipt[] } {
+    const owned: ShopOwnedItem[] = [];
+    const userReceipts: ShopReceipt[] = [];
+    const charReceipts: ShopReceipt[] = [];
+    for (const it of order.items) {
+        const base = { id: it.itemId, name: it.name, emoji: it.emoji, price: it.price };
+        for (let i = 0; i < it.qty; i++) {
+            owned.push(makeOwnedItem(base as ShopItem));
+            if (order.paidBy === 'char') {
+                userReceipts.push(makeReceipt(base, 'user', 'receive', 'char', order.payerName || 'TA', '代付'));
+                charReceipts.push(makeReceipt(base, 'char', 'gift', 'user', userName, '代付'));
+            } else {
+                userReceipts.push(makeReceipt(base, 'user', 'buy', 'self', userName));
+            }
+        }
+    }
+    return { owned, userReceipts, charReceipts };
 }
 
 // ── 角色逛商城（副 API 驱动） ──────────────────────────────────────────────

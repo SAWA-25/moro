@@ -11,12 +11,14 @@ import {
     monthlySales, formatSales, itemRating, getItemReviews,
     registerShopItems, buildGenerateItemsPrompt, parseGeneratedItems,
     buildItemReviewsPrompt, parseGeneratedReviews, type ShopReview,
+    makeOrder, orderProgress, orderReceivePayload, ORDER_STAGES,
 } from '../utils/shop';
+import type { ShopOrder } from '../types';
 import { resolveAuxApi } from '../utils/auxApi';
 import { llmComplete } from '../utils/llmComplete';
-import { CaretLeft, Storefront, Handbag, Receipt as ReceiptIcon, Coins, Gift, Sparkle, ShoppingBagOpen, ShoppingCart, Plus, Minus, Trash, MagnifyingGlass, Heart, Star } from '@phosphor-icons/react';
+import { CaretLeft, Storefront, Handbag, Receipt as ReceiptIcon, Coins, Gift, Sparkle, ShoppingBagOpen, ShoppingCart, Plus, Minus, Trash, MagnifyingGlass, Heart, Star, Truck, CheckCircle } from '@phosphor-icons/react';
 
-type Tab = 'shop' | 'cart' | 'bag' | 'receipts';
+type Tab = 'shop' | 'cart' | 'orders' | 'bag' | 'receipts';
 
 const ShopApp: React.FC = () => {
     const { closeApp, characters, userProfile, updateUserProfile, apiConfig, auxApiConfig, addToast, adjustUserBalance, updateCharacter } = useOS();
@@ -95,18 +97,46 @@ const ShopApp: React.FC = () => {
         } catch { return getItemReviews(item.id); }
     };
 
-    // ── 购买（直接进背包） ──
+    const orders = userProfile.shopOrders || [];
+    const activeOrders = orders.filter(o => !o.receivedAt).length;
+
+    // 进度条随时间推进：有在途订单时每 30s 触发一次重渲染
+    useEffect(() => {
+        if (!(userProfile.shopOrders || []).some(o => !o.receivedAt)) return;
+        const t = setInterval(() => forceTick(x => x + 1), 30000);
+        return () => clearInterval(t);
+    }, [userProfile.shopOrders]);
+
+    const placeOrder = (lines: { item: ShopItem; qty: number }[], paidBy: 'self' | 'char', payerName?: string) => {
+        const order = makeOrder(lines, paidBy, payerName);
+        updateUserProfile({ shopOrders: [order, ...(userProfile.shopOrders || [])] });
+        emitShopUpdated();
+        return order;
+    };
+
+    // 确认收货：订单商品进背包 + 双方小票，标记 receivedAt
+    const confirmReceipt = (order: ShopOrder) => {
+        const { owned, userReceipts, charReceipts } = orderReceivePayload(order, userProfile.name || '我');
+        updateUserProfile({
+            shopInventory: [...owned, ...(userProfile.shopInventory || [])],
+            shopReceipts: [...userReceipts, ...(userProfile.shopReceipts || [])],
+            shopOrders: (userProfile.shopOrders || []).map(o => o.id === order.id ? { ...o, receivedAt: Date.now() } : o),
+        });
+        // 角色代付的订单：给代付角色记一笔「赠出」小票
+        if (order.paidBy === 'char' && charReceipts.length > 0) {
+            const payer = characters.find(c => c.name === order.payerName);
+            if (payer) updateCharacter(payer.id, { shopReceipts: [...charReceipts, ...(payer.shopReceipts || [])] });
+        }
+        addToast(`已确认收货 · ${owned.length} 件进背包`, 'success');
+        emitShopUpdated();
+    };
+
+    // ── 购买（淘宝式：下单 → 物流 → 确认收货才进背包） ──
     const buyItem = (item: ShopItem) => {
         if (balance < item.price) { addToast('余额不够啦，去存钱罐挣点零花钱', 'error'); return; }
         adjustUserBalance(-item.price);
-        const owned = makeOwnedItem(item);
-        const receipt = makeReceipt(item, 'user', 'buy', 'self', userProfile.name || '我');
-        updateUserProfile({
-            shopInventory: [owned, ...(userProfile.shopInventory || [])],
-            shopReceipts: [receipt, ...(userProfile.shopReceipts || [])],
-        });
-        addToast(`买下了 ${item.emoji}${item.name}`, 'success');
-        emitShopUpdated();
+        placeOrder([{ item, qty: 1 }], 'self');
+        addToast(`下单成功 ${item.emoji}${item.name}，物流配送中`, 'success');
     };
 
     // ── 购物车（淘宝式：加购 → 结算） ──
@@ -121,22 +151,17 @@ const ShopApp: React.FC = () => {
     };
     const clearMyCart = () => { updateUserProfile({ shopCart: [] }); emitShopUpdated(); };
 
-    // 自己支付：扣钱包 → 整车逐件进背包
+    // 自己支付：扣钱包 → 下单（物流配送，确认收货才进背包）
     const checkoutSelf = () => {
         const total = cartTotal(cart);
         if (cartNum === 0) return;
         if (balance < total) { addToast('余额不够，先去存钱罐挣点零花钱', 'error'); return; }
         adjustUserBalance(-total);
-        const items = expandCart(cart);
-        const owned = items.map(makeOwnedItem);
-        const receipts = items.map(it => makeReceipt(it, 'user', 'buy', 'self', userProfile.name || '我'));
-        updateUserProfile({
-            shopInventory: [...owned, ...(userProfile.shopInventory || [])],
-            shopReceipts: [...receipts, ...(userProfile.shopReceipts || [])],
-            shopCart: [],
-        });
-        addToast(`已下单 ${items.length} 件，进背包啦`, 'success');
+        const order = makeOrder(resolveCart(cart), 'self');
+        updateUserProfile({ shopOrders: [order, ...(userProfile.shopOrders || [])], shopCart: [] });
+        addToast('下单成功，物流配送中', 'success');
         emitShopUpdated();
+        setTab('orders');
     };
 
     // 求 TA 代付：由副 API 让角色按人设/好感/金额决定是否代付。代付成功 → 整车进用户背包 + 双方小票 + 聊天告知。
@@ -166,15 +191,9 @@ const ShopApp: React.FC = () => {
             if (s >= 0 && e > s) { const o = JSON.parse(txt.slice(s, e + 1)); agree = !!o.pay; reply = String(o.reply || '').slice(0, 60); }
         } catch { agree = (char.affection ?? 50) >= 60; }
         if (agree) {
-            const owned = items.map(makeOwnedItem);
-            const userReceipts = items.map(it => makeReceipt(it, 'user', 'receive', char.id, char.name, '代付'));
-            const charReceipts = items.map(it => makeReceipt(it, 'char', 'gift', 'user', userProfile.name || '我', '代付'));
-            updateCharacter(char.id, { shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });
-            updateUserProfile({
-                shopInventory: [...owned, ...(userProfile.shopInventory || [])],
-                shopReceipts: [...userReceipts, ...(userProfile.shopReceipts || [])],
-                shopCart: [],
-            });
+            // 代付成功 → 下单（物流配送，确认收货才进背包；角色「赠出」小票在确认收货时记）
+            const order = makeOrder(resolveCart(cart), 'char', char.name);
+            updateUserProfile({ shopOrders: [order, ...(userProfile.shopOrders || [])], shopCart: [] });
             try {
                 await DB.saveMessage({
                     charId: char.id, role: 'assistant', type: 'text',
@@ -182,7 +201,8 @@ const ShopApp: React.FC = () => {
                     metadata: { shopPaidForUser: true },
                 } as any);
             } catch { /* ignore */ }
-            addToast(`${char.name} 帮你付了 ¥${formatPrice(total)}`, 'success');
+            addToast(`${char.name} 帮你付了 ¥${formatPrice(total)}，物流配送中`, 'success');
+            setTab('orders');
         } else {
             try {
                 await DB.saveMessage({ charId: char.id, role: 'assistant', type: 'text', content: reply || '这个有点超预算啦，下次的好不好～' } as any);
@@ -262,17 +282,18 @@ const ShopApp: React.FC = () => {
                     </div>
                 </div>
                 {/* tabs */}
-                <div className="flex px-4 gap-2 pb-2">
+                <div className="flex px-4 gap-2 pb-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {([
                         { id: 'shop', label: '商城', Icon: Storefront },
                         { id: 'cart', label: `购物车${cartNum ? ` ${cartNum}` : ''}`, Icon: ShoppingCart },
+                        { id: 'orders', label: `订单${activeOrders ? ` ${activeOrders}` : ''}`, Icon: Truck },
                         { id: 'bag', label: `背包${inventory.length ? ` ${inventory.length}` : ''}`, Icon: Handbag },
                         { id: 'receipts', label: '小票', Icon: ReceiptIcon },
                     ] as const).map(t => {
                         const active = tab === t.id;
                         return (
                             <button key={t.id} onClick={() => setTab(t.id)}
-                                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-bold transition-all active:scale-95 ${active ? 'bg-[#c2755a] text-white shadow-md shadow-rose-200' : 'bg-white/70 text-[#9a6b56]'}`}>
+                                className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-bold transition-all active:scale-95 ${active ? 'bg-[#c2755a] text-white shadow-md shadow-rose-200' : 'bg-white/70 text-[#9a6b56]'}`}>
                                 <t.Icon size={15} weight={active ? 'fill' : 'bold'} />{t.label}
                             </button>
                         );
@@ -294,6 +315,7 @@ const ShopApp: React.FC = () => {
                 {tab === 'cart' && (
                     <CartView cart={cart} onQty={changeQty} onClear={clearMyCart} />
                 )}
+                {tab === 'orders' && <OrdersView orders={orders} onReceive={confirmReceipt} onGoShop={() => setTab('shop')} />}
                 {tab === 'bag' && <BagView inventory={inventory} onGift={(o) => { setGiftTarget(o); setGiftNote(''); }} />}
                 {tab === 'receipts' && (
                     <ReceiptsView
@@ -642,6 +664,67 @@ const CartView: React.FC<{
                     </div>
                 ))}
             </div>
+        </div>
+    );
+};
+
+// ── 我的订单 + 物流配送进度（淘宝式时间轴 + 确认收货） ──
+const OrdersView: React.FC<{ orders: ShopOrder[]; onReceive: (o: ShopOrder) => void; onGoShop: () => void; }> = ({ orders, onReceive, onGoShop }) => {
+    if (orders.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center text-center text-[#b89a8c] gap-2 pt-20">
+                <Truck size={42} weight="thin" />
+                <p className="text-sm">还没有订单</p>
+                <button onClick={onGoShop} className="mt-1 px-4 py-1.5 rounded-full bg-[#c2755a] text-white text-[12px] font-bold active:scale-95 transition-transform">去逛逛</button>
+            </div>
+        );
+    }
+    const now = Date.now();
+    return (
+        <div className="space-y-3 pt-1">
+            {orders.map(o => {
+                const p = orderProgress(o, now);
+                const stageIdx = ORDER_STAGES.findIndex(s => s.key === p.stage);
+                const done = p.stage === 'received';
+                return (
+                    <div key={o.id} className="rounded-2xl bg-white p-3.5 shadow-sm border border-rose-50">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className={`text-[12px] font-black ${done ? 'text-[#9a6b56]' : 'text-[#e84e2f]'}`}>{done ? '交易完成' : p.label}</span>
+                            <span className="text-[11px] text-[#b89a8c]">{o.paidBy === 'char' ? `${o.payerName || 'TA'}代付` : '自己支付'} · ¥{formatPrice(o.total)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-2.5">
+                            {o.items.map((it, i) => (
+                                <span key={i} className="inline-flex items-center gap-1 text-[12px] text-[#5a3a2e] bg-rose-50 rounded-full px-2 py-0.5">
+                                    <span className="text-[14px]">{it.emoji}</span>{it.name}{it.qty > 1 ? `×${it.qty}` : ''}
+                                </span>
+                            ))}
+                        </div>
+                        {!done && (
+                            <>
+                                <div className="h-1.5 rounded-full bg-rose-50 overflow-hidden mb-1.5">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-[#ff6034] to-[#ee0a24] transition-all" style={{ width: `${p.pct}%` }} />
+                                </div>
+                                <div className="flex justify-between mb-2">
+                                    {ORDER_STAGES.map((s, i) => (
+                                        <div key={s.key} className="flex flex-col items-center gap-0.5">
+                                            <span className={`w-2 h-2 rounded-full ${i <= stageIdx ? 'bg-[#ee0a24]' : 'bg-rose-100'}`} />
+                                            <span className={`text-[8px] ${i <= stageIdx ? 'text-[#c2755a] font-bold' : 'text-[#cbb6ac]'}`}>{s.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="text-[10px] text-[#b89a8c] mb-2">{p.etaText}</div>
+                            </>
+                        )}
+                        {p.canReceive ? (
+                            <button onClick={() => onReceive(o)} className="w-full py-2 rounded-xl bg-gradient-to-r from-[#ff6034] to-[#ee0a24] text-white text-[12px] font-bold active:scale-[0.98] transition-transform flex items-center justify-center gap-1">
+                                <CheckCircle size={14} weight="fill" />确认收货
+                            </button>
+                        ) : done ? (
+                            <div className="text-[10px] text-[#b89a8c] text-right">{new Date(o.receivedAt!).toLocaleString()} 已签收</div>
+                        ) : null}
+                    </div>
+                );
+            })}
         </div>
     );
 };

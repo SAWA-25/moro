@@ -146,3 +146,9 @@ pm run build passes after the time-gap grouping fix.
   - **ShopApp**: catalog is now state-driven — on open it uses the last cached batch, else 实时生成 ≥20 件 (副 API; pads with built-ins if the model returns fewer); a 换一批 button regenerates a fresh batch with a loading state. Search/category/收藏 filter the live catalog (收藏 resolves globally via `getShopItem`).
   - **PDP 评价**: generated in real-time per product on open (loading spinner), falling back to seeded reviews when 副 API is off/fails.
   - `pnpm tsc --noEmit` clean, `vite build` passes, 544 unit tests green (5 new).
+
+- 心意铺·我的订单 + 物流配送进度 (淘宝式):
+  - `ShopOrder` / `ShopOrderItem` types + `userProfile.shopOrders`. Pure helpers in `utils/shop.ts`: `makeOrder` (12–30 min ETA), `orderProgress` (time-based 已下单→已发货→运输中→派送中→已送达, then 待收货 until confirmed), `orderReceivePayload` (确认收货 → 背包 + 双方小票). New `shopOrder.test.ts` (6 tests).
+  - **All purchases now ship**: 立即购买 / 商城购买 / 购物车自己支付 / 求代付成功 all create a 待收货 order instead of dropping straight into 背包; items land in 背包 only on **确认收货** (代付订单在收货时给代付角色记一笔「赠出」小票).
+  - New **订单 tab** (active-order badge): each order shows status + 商品 + a 红色物流进度条 with 5 stage dots + ETA text + 确认收货 button; a 30s ticker advances in-flight orders. Tab row is now horizontally scrollable for 5 tabs.
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 550 unit tests green (6 new).
