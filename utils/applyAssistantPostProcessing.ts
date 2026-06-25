@@ -34,6 +34,7 @@ import { XhsMcpClient } from './xhsMcpClient';
 import { safeFetchJson } from './safeApi';
 import { extractHtmlBlocks } from './htmlPrompt';
 import { splitOutRichBlocks } from './chatRichContent';
+import { extractThinkingChainFromCompletion } from './llmReasoning';
 import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from './blockSystem';
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
 import { TAKEOUT_ORDER_EVENT } from './takeout';
@@ -592,30 +593,6 @@ export async function applyAssistantPostProcessing(
     const QUOTE_CLEAN_SINGLE = /\[(?:QU[OA]TE|引用)[：:][^\]]*\]/g;
     const REPLY_CLEAN_CN = /\[回复\s*[""“][^""”]*?[""”](?:\.{0,3})\]\s*[：:]?\s*/g;
 
-    // 抽取思考链 (showThinkingChain 开启时): reasoning_content + 内联 <think> 块。
-    const extractThinkingChain = (dataObj: any, reasoningOverride?: string): string | null => {
-        if (!(char as any).showThinkingChain) return null;
-        const lastRaw = dataObj?.choices?.[0]?.message?.content || '';
-        const lastReasoning = (
-            (reasoningOverride && reasoningOverride.trim())
-            || dataObj?.choices?.[0]?.message?.reasoning_content
-            || ''
-        ).trim();
-        const thinkBlocks: string[] = [];
-        const thinkPat = /<(think|thinking|thought)>([\s\S]*?)<\/\1>/gi;
-        let tm: RegExpExecArray | null;
-        while ((tm = thinkPat.exec(lastRaw)) !== null) {
-            const t = tm[2].trim();
-            if (t) thinkBlocks.push(t);
-        }
-        if (!/<\/(?:think|thinking|thought)>/i.test(lastRaw)) {
-            const openOnly = lastRaw.match(/<(?:think|thinking|thought)>([\s\S]*$)/i);
-            if (openOnly && openOnly[1].trim()) thinkBlocks.push(openOnly[1].trim());
-        }
-        const chain = [lastReasoning, ...thinkBlocks].filter(s => !!s).join('\n\n').trim();
-        return chain || null;
-    };
-
     // 把一段文本 (parseAndExecuteActions / HTML 之外的部分) 渲染成气泡并落库 —— 双语 / 表情 / 引用 / 分段
     // 与原 inline 末尾逻辑一致。抽出来是为了让"执行功能前的本轮正文 A"能在二轮前先展示, 二轮结果 B 复用同一套。
     const renderAndPersist = async (rawContent: string, firstThinkingChain: string | null): Promise<void> => {
@@ -838,7 +815,9 @@ export async function applyAssistantPostProcessing(
     // A 气泡 → "正在搜索/调阅…" 状态 → 二轮结果 B 气泡 (而不是等 B 回来才一起冒出来)。
     // XHS_*/READ_NOTE 标签 sanitize 不剥, 这里先剥掉; 其余 RECALL/SEARCH/DIARY... 由 renderAndPersist
     // 内 sanitize 统一清。A 的思考链取一轮 reasoning。
-    const round1ThinkingChain = extractThinkingChain(initialData, pushReasoningContent);
+    const round1ThinkingChain = (char as any).showThinkingChain
+        ? extractThinkingChainFromCompletion(initialData, pushReasoningContent)
+        : null;
     let leadInRendered = false;
     const renderLeadIn = async (raw: string): Promise<void> => {
         if (leadInRendered) return;
@@ -1948,7 +1927,11 @@ export async function applyAssistantPostProcessing(
     // ─── Step 4: thinking chain 抽取 (本轮末尾展示用) ───
     // 跑过二轮 (data !== initialData) → 取二轮 data 的 reasoning; 没跑二轮 → 取一轮 (round1ThinkingChain,
     // 已含 push 路径 reasoning)。一轮正文 A 的思考链在 Step 2 开头展示时已单独带上。
-    let pendingThinkingChain: string | null = data !== initialData ? extractThinkingChain(data) : round1ThinkingChain;
+    let pendingThinkingChain: string | null = (char as any).showThinkingChain
+        ? (data !== initialData
+            ? extractThinkingChainFromCompletion(data)
+            : round1ThinkingChain)
+        : null;
     const mergeAssistantMeta = (base: any): any => {
         if (!pendingThinkingChain) return base;
         const merged = { ...(base || {}), thinkingChain: pendingThinkingChain };

@@ -12,6 +12,7 @@
 // 后者的 meta 通过下面 safeFetchJson 的第 5 个参数挂到 __moroMeta 上传出去。
 import { appendDevDebugApiLog, makeDebugLogger } from './devDebug';
 import { type ApiCallMeta } from './apiCallLog';
+import { flattenContent, stripThinkBlocks } from './llmReasoning';
 
 const log = makeDebugLogger('api', 'SafeAPI');
 
@@ -70,6 +71,7 @@ export async function safeResponseJson(response: Response): Promise<any> {
  */
 function parseSseToCompletion(raw: string): any | null {
     let assembled = '';
+    let reasoning = '';
     let role = 'assistant';
     let finishReason: string | null = null;
     let firstChunk: any = null;
@@ -93,14 +95,28 @@ function parseSseToCompletion(raw: string): any | null {
         if (!choice) continue;
         // delta 路径（OpenAI 流式常见）
         if (choice.delta) {
-            if (typeof choice.delta.content === 'string') assembled += choice.delta.content;
+            assembled += flattenContent(choice.delta.content);
+            reasoning += flattenContent(
+                choice.delta.reasoning_content
+                ?? choice.delta.reasoning
+                ?? choice.delta.reasoningContent
+                ?? choice.delta.thinking_content
+                ?? choice.delta.thinking
+                ?? choice.delta.thought,
+            );
             if (choice.delta.role) role = choice.delta.role;
         }
         // message 路径（一次性 SSE，不常见但兼容）
         else if (choice.message) {
-            if (typeof choice.message.content === 'string') {
-                assembled += choice.message.content;
-            }
+            assembled += flattenContent(choice.message.content);
+            reasoning = flattenContent(
+                choice.message.reasoning_content
+                ?? choice.message.reasoning
+                ?? choice.message.reasoningContent
+                ?? choice.message.thinking_content
+                ?? choice.message.thinking
+                ?? choice.message.thought,
+            );
             if (choice.message.role) role = choice.message.role;
         }
         if (choice.finish_reason) finishReason = choice.finish_reason;
@@ -116,7 +132,7 @@ function parseSseToCompletion(raw: string): any | null {
         model: firstChunk?.model || '',
         choices: [{
             index: 0,
-            message: { role, content: assembled },
+            message: { role, content: assembled, ...(reasoning ? { reasoning_content: reasoning } : {}) },
             finish_reason: finishReason,
         }],
         usage: usage || firstChunk?.usage,
@@ -245,14 +261,6 @@ export async function safeFetchJson(
  *  - Falls back to `reasoning_content` when `content` is missing/empty
  *  - Strips hidden <think>...</think> chain-of-thought blocks
  */
-/** 把可能是「字符串 / 数组分片(Gemini 风) / null」的字段统一拍平成字符串。 */
-function flattenContent(c: any): string {
-    if (typeof c === 'string') return c;
-    if (Array.isArray(c)) return c.map(p => typeof p === 'string' ? p : (p?.text ?? p?.content ?? '')).join('');
-    if (c && typeof c === 'object') return String(c.text ?? c.content ?? '');
-    return '';
-}
-
 export function extractContent(data: any): string {
     const choice = data?.choices?.[0];
     const msg = choice?.message;
@@ -264,10 +272,7 @@ export function extractContent(data: any): string {
     if (!text.trim()) text = flattenContent(msg?.reasoning_content ?? msg?.reasoning);
     // 个别代理把正文塞在 choices[0].text（legacy completion 风格）
     if (!text.trim()) text = flattenContent(choice?.text);
-    // Strip hidden chain-of-thought blocks: <think> / <thinking> / <thought>
-    text = text.replace(/<(think|thinking|thought)>[\s\S]*?<\/\1>/gi, '');
-    text = text.replace(/<(?:think|thinking|thought)>[\s\S]*$/gi, '');
-    return text.trim();
+    return stripThinkBlocks(text).trim();
 }
 
 /**

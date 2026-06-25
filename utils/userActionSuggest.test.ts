@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { parseActions, suggestUserActions } from './userActionSuggest';
-import { extractContent } from './safeApi';
+import { extractContent, safeResponseJson } from './safeApi';
 
 describe('parseActions —— 帮 user 回复候选解析', () => {
     it('正常 JSON 数组', () => {
@@ -120,5 +120,19 @@ describe('extractContent —— 兼容思考型模型 / 分片 content', () => {
     });
     it('去掉成对 <think> 思维链', () => {
         expect(extractContent({ choices: [{ message: { content: '<think>想一想</think>["a","b"]' } }] })).toBe('["a","b"]');
+    });
+});
+
+describe('safeResponseJson —— SSE reasoning 保留', () => {
+    it('代理强行返回 SSE 时保留 reasoning_content，供「看看思绪」展示', async () => {
+        const body = [
+            `data: ${JSON.stringify({ choices: [{ delta: { reasoning: '先想一下', content: '' } }] })}`,
+            `data: ${JSON.stringify({ choices: [{ delta: { content: '你好' }, finish_reason: 'stop' }] })}`,
+            'data: [DONE]',
+        ].join('\n');
+        const res = { status: 200, text: async () => body } as unknown as Response;
+        const data = await safeResponseJson(res);
+        expect(data.choices[0].message.content).toBe('你好');
+        expect(data.choices[0].message.reasoning_content).toBe('先想一下');
     });
 });

@@ -10,6 +10,8 @@
  * data: 开头）时，按 JSON 解析直接返回 —— 调用方拿到的仍是完整 completion。
  */
 
+import { flattenContent } from './llmReasoning';
+
 export interface StreamChatResult {
     choices: Array<{ message: { content: string; reasoning_content?: string }; finish_reason?: string }>;
     usage?: any;
@@ -78,11 +80,26 @@ export async function streamChatCompletion(
         // delta 流（标准）与 message 整段（部分代理一次性 SSE）两种形态都接
         const delta = choice.delta;
         if (delta) {
-            if (typeof delta.content === 'string') content += delta.content;
-            if (typeof delta.reasoning_content === 'string') reasoning += delta.reasoning_content;
+            content += flattenContent(delta.content);
+            reasoning += flattenContent(
+                delta.reasoning_content
+                ?? delta.reasoning
+                ?? delta.reasoningContent
+                ?? delta.thinking_content
+                ?? delta.thinking
+                ?? delta.thought,
+            );
         } else if (choice.message) {
-            if (typeof choice.message.content === 'string') content = choice.message.content;
-            if (typeof choice.message.reasoning_content === 'string') reasoning = choice.message.reasoning_content;
+            const msg = choice.message;
+            content += flattenContent(msg.content);
+            reasoning = flattenContent(
+                msg.reasoning_content
+                ?? msg.reasoning
+                ?? msg.reasoningContent
+                ?? msg.thinking_content
+                ?? msg.thinking
+                ?? msg.thought,
+            );
         }
         emit();
     };
