@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID } from '../../types';
+import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
@@ -8,6 +8,7 @@ import { recordCharUnlockFail } from '../../utils/lockAttempts';
 import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
 import { useOS } from '../../context/OSContext';
 import AppIcon from '../os/AppIcon';
+import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 
 /**
  * 角色查用户手机（反向查手机）。
@@ -24,7 +25,20 @@ import AppIcon from '../os/AppIcon';
  * 在记录里如实标注，角色行为语义不变。
  */
 
-type StepApp = 'home' | 'chat-list' | 'chat-thread' | 'moments' | 'schedule' | 'gallery' | 'music';
+type StepApp =
+    | 'home'
+    | 'chat-list'
+    | 'chat-thread'
+    | 'moments'
+    | 'schedule'
+    | 'gallery'
+    | 'music'
+    | 'phone'
+    | 'shop'
+    | 'takeout'
+    | 'wallet'
+    | 'browser'
+    | 'map';
 
 interface ScriptAction {
     // reply/block/delete/ignore 作用在 chat-thread；post_moment 作用在 moments（代发朋友圈）；
@@ -52,6 +66,13 @@ interface ContactSnap {
     lastAt: number;
 }
 
+interface LocationSnap {
+    source: string;
+    title: string;
+    detail?: string;
+    at: number;
+}
+
 interface CharPhoneCheckOverlayProps {
     char: CharacterProfile;            // 正在查手机的角色
     userProfile: UserProfile;
@@ -71,9 +92,31 @@ const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
     'chat-list': 'Chat',
     'chat-thread': 'Chat',
     'moments': 'Social',
-    'schedule': 'Schedule',
+    'schedule': 'Almanac',
     'gallery': 'Gallery',
     'music': 'Music',
+    'phone': 'Phone',
+    'shop': 'Shop',
+    'takeout': 'Takeout',
+    'wallet': 'Bank',
+    'browser': 'HotNews',
+    'map': 'Social',
+};
+
+const STEP_LABEL: Record<StepApp, string> = {
+    home: '桌面',
+    'chat-list': '聊天列表',
+    'chat-thread': '聊天记录',
+    moments: '此刻',
+    schedule: '日程',
+    gallery: '相册',
+    music: '音乐',
+    phone: '电话',
+    shop: '心意铺',
+    takeout: '饭票',
+    wallet: '钱包',
+    browser: '浏览',
+    map: '地区',
 };
 
 // 与 Launcher 同源的桌面布局持久化 key：角色看到的就是用户真实排列的桌面
@@ -118,6 +161,31 @@ const wallpaperBackground = (wallpaper?: string): React.CSSProperties => {
         : { background: wallpaper };
 };
 
+const shortTime = (ts?: number): string => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const uniqCompact = (items: string[], limit = 8): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of items) {
+        const value = raw.replace(/\s+/g, ' ').trim();
+        if (!value || seen.has(value)) continue;
+        seen.add(value);
+        out.push(value);
+        if (out.length >= limit) break;
+    }
+    return out;
+};
+
+const callDirectionText: Record<PhoneCallLog['direction'], string> = {
+    outgoing: '呼出',
+    incoming: '接听',
+    missed: '未接',
+};
+
 const safeParseScript = (raw: string): CheckScript | null => {
     const clean = (raw || '').replace(/```json/gi, '').replace(/```/g, '').trim();
     const tryParse = (s: string) => { try { return JSON.parse(s); } catch { return null; } };
@@ -131,7 +199,21 @@ const safeParseScript = (raw: string): CheckScript | null => {
     const steps: ScriptStep[] = obj.steps
         .filter((s: any) => s && typeof s.thought === 'string')
         .map((s: any) => ({
-            app: (['home', 'chat-list', 'chat-thread', 'moments', 'schedule', 'gallery', 'music'].includes(s.app) ? s.app : 'home') as StepApp,
+            app: ([
+                'home',
+                'chat-list',
+                'chat-thread',
+                'moments',
+                'schedule',
+                'gallery',
+                'music',
+                'phone',
+                'shop',
+                'takeout',
+                'wallet',
+                'browser',
+                'map',
+            ].includes(s.app) ? s.app : 'home') as StepApp,
             targetName: typeof s.targetName === 'string' ? s.targetName : undefined,
             thought: String(s.thought).slice(0, 300),
             action: s.action && typeof s.action === 'object'
@@ -152,7 +234,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     char, userProfile, characters, apiConfig, updateCharacter, updateUserProfile, addToast, onEnd,
 }) => {
     // 角色看到的是用户**实时真实**的桌面：真壁纸 + 真实安装的全部 App + 真实 dock
-    const { theme } = useOS();
+    const { theme, realtimeConfig } = useOS();
     const deskApps = useMemo(loadUserDeskApps, []);
     const dockApps = useMemo(
         () => DOCK_APPS.map(id => INSTALLED_APPS.find(a => a.id === id)).filter((a): a is typeof INSTALLED_APPS[number] => !!a),
@@ -168,6 +250,11 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     const [moments, setMoments] = useState<SocialPost[]>([]);
     const [galleryImgs, setGalleryImgs] = useState<GalleryImage[]>([]);
     const [annivs, setAnnivs] = useState<Anniversary[]>([]);
+    const [tasks, setTasks] = useState<Task[]>([]);
+    const [callLogs, setCallLogs] = useState<PhoneCallLog[]>([]);
+    const [takeoutOrders, setTakeoutOrders] = useState<TakeoutOrder[]>([]);
+    const [locations, setLocations] = useState<LocationSnap[]>([]);
+    const [regionHints, setRegionHints] = useState<string[]>([]);
     // 「点开 App」动画：非 null 时画面回到桌面、高亮目标图标（仿真人逐个点开）
     const [opening, setOpening] = useState<StepApp | null>(null);
     // 退出闸门
@@ -231,9 +318,19 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 // 最近活跃的几个对话给角色"翻记录"的素材
                 const excerptTargets = snaps.filter(s => s.lastAt > 0).slice(0, 4);
                 const excerpts: string[] = [];
+                const locationSnaps: LocationSnap[] = [];
                 for (const t of excerptTargets) {
                     try {
                         const msgs = await DB.getRecentMessagesByCharId(t.char.id, 12);
+                        msgs
+                            .filter(m => m.type === 'location')
+                            .slice(-2)
+                            .forEach(m => locationSnaps.push({
+                                source: t.char.name,
+                                title: String(m.content || '位置分享').slice(0, 50),
+                                detail: typeof m.metadata?.address === 'string' ? m.metadata.address.slice(0, 80) : undefined,
+                                at: m.timestamp || 0,
+                            }));
                         const lines = msgs
                             .filter(m => m.role !== 'system' && typeof m.content === 'string')
                             .map(m => `${m.role === 'user' ? userProfile.name : t.char.name}: ${String(m.content).slice(0, 80)}`)
@@ -247,6 +344,9 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 let momentsSnap: SocialPost[] = [];
                 let gallerySnap: GalleryImage[] = [];
                 let annivSnap: Anniversary[] = [];
+                let taskSnap: Task[] = [];
+                let callSnap: PhoneCallLog[] = [];
+                let takeoutSnap: TakeoutOrder[] = [];
                 try {
                     momentsSnap = (await DB.getSocialPosts())
                         .filter(p => p.visibility !== 'private')
@@ -261,17 +361,68 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 try {
                     annivSnap = (await DB.getAllAnniversaries()).slice(0, 8);
                 } catch { /* ignore */ }
+                try {
+                    taskSnap = (await DB.getAllTasks())
+                        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                        .slice(0, 8);
+                } catch { /* ignore */ }
+                try {
+                    callSnap = (await DB.getAllPhoneCallLogs()).slice(0, 8);
+                } catch { /* ignore */ }
+                try {
+                    takeoutSnap = (await DB.getTakeoutOrders())
+                        .sort((a, b) => b.placedAt - a.placedAt)
+                        .slice(0, 8);
+                } catch { /* ignore */ }
                 if (cancelled) return;
                 setMoments(momentsSnap);
                 setGalleryImgs(gallerySnap);
                 setAnnivs(annivSnap);
+                setTasks(taskSnap);
+                setCallLogs(callSnap);
+                setTakeoutOrders(takeoutSnap);
+                const nextRegionHints = uniqCompact([
+                    realtimeConfig.weatherEnabled
+                        ? (realtimeConfig.weatherMode === 'manual' && realtimeConfig.weatherCity
+                            ? `天气城市：${realtimeConfig.weatherCity}`
+                            : '天气使用浏览器定位')
+                        : '',
+                    ...locationSnaps.map(l => `${l.title}${l.detail ? ` ${l.detail}` : ''}`),
+                    ...momentsSnap.map(p => p.location ? `朋友圈位置：${p.location}` : ''),
+                    ...takeoutSnap.map(o => o.address ? `外卖地址：${o.address}` : ''),
+                ], 10);
+                setLocations(locationSnaps.sort((a, b) => b.at - a.at).slice(0, 8));
+                setRegionHints(nextRegionHints);
 
                 const momentsBrief = momentsSnap
-                    .map(p => `- ${p.authorName}：「${String(p.content || p.title || '').slice(0, 60)}」${p.images?.length ? `（配图${p.images.length}张）` : ''}`)
+                    .map(p => `- ${p.authorName}：「${String(p.content || p.title || '').slice(0, 60)}」${p.location ? ` @${p.location}` : ''}${p.images?.length ? `（配图${p.images.length}张）` : ''}`)
                     .join('\n');
                 const annivBrief = annivSnap
                     .map(a => `- ${a.date} ${a.title}`)
                     .join('\n');
+                const taskBrief = taskSnap
+                    .map(t => `- ${t.isCompleted ? '已完成' : '待办'}：${t.title}${t.deadline ? `（截止 ${t.deadline}）` : ''}`)
+                    .join('\n');
+                const callBrief = callSnap
+                    .map(l => `- ${shortTime(l.timestamp)} ${callDirectionText[l.direction]} ${l.name} ${l.durationSec ? `${Math.round(l.durationSec / 60)}分钟` : ''}`)
+                    .join('\n');
+                const takeoutBrief = takeoutSnap
+                    .map(o => `- ${o.storeName} ¥${fmtPrice(o.total)} ${STATUS_LABEL[liveTakeoutStatus(o)]}，地址：${o.address || '未写'}`)
+                    .join('\n');
+                const shopBrief = [
+                    resolveCart(userProfile.shopCart).length > 0
+                        ? `购物车：${resolveCart(userProfile.shopCart).map(({ item, qty }) => `${item.emoji}${item.name}×${qty}`).join('、')}，合计 ¥${fmtPrice(cartTotal(userProfile.shopCart))}`
+                        : '购物车是空的',
+                    (userProfile.shopOrders || []).length > 0
+                        ? `最近订单：${(userProfile.shopOrders || []).slice(0, 3).map(o => `${o.items.map(it => `${it.emoji}${it.name}`).join('、')} ¥${fmtPrice(o.total)}`).join('；')}`
+                        : '最近没有心意铺订单',
+                    (userProfile.shopFootprints || []).length > 0
+                        ? `最近浏览过 ${Math.min(userProfile.shopFootprints?.length || 0, 8)} 件商品`
+                        : '',
+                ].filter(Boolean).join('\n');
+                const regionBrief = nextRegionHints.length
+                    ? nextRegionHints.map(h => `- ${h}`).join('\n')
+                    : '（没有明确地区线索，只能从聊天语境判断）';
 
                 const prompt = `### 任务
 你在扮演角色「${char.name}」。此刻 TA 拿到了 ${userProfile.name}（TA 的聊天对象/亲密的人）的手机，正在翻看。请按 TA 的人设生成一份"查手机浏览脚本"。
@@ -291,8 +442,23 @@ ${momentsBrief || '（朋友圈没什么动态）'}
 ### 日程里记着的纪念日
 ${annivBrief || '（日程是空的）'}
 
+### 待办 / 日程事项
+${taskBrief || '（没有待办事项）'}
+
 ### 相册
 ${gallerySnap.length > 0 ? `最近存了 ${gallerySnap.length} 张照片/聊天图` : '（相册几乎是空的）'}
+
+### 电话记录
+${callBrief || '（没有通话记录）'}
+
+### 饭票外卖订单
+${takeoutBrief || '（没有外卖订单）'}
+
+### 心意铺 / 钱包
+${shopBrief}
+
+### 地区 / 位置线索
+${regionBrief}
 
 ### ${userProfile.name} 的心意铺购物车（还没结算）
 ${resolveCart(userProfile.shopCart).length > 0
@@ -301,9 +467,12 @@ ${resolveCart(userProfile.shopCart).length > 0
 
 ### 要求
 生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
-- "home" 桌面 / "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）/ "moments" 朋友圈 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
+- "home" 桌面
+- "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）
+- "moments" 朋友圈 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
+- "phone" 电话记录 / "shop" 心意铺购物与购物车 / "takeout" 饭票外卖 / "wallet" 钱包收支 / "browser" 热点与浏览痕迹 / "map" 地区与位置线索
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
-翻到 moments / schedule / gallery 时，想法要针对上面给出的真实朋友圈动态、纪念日、相册情况来写，不要凭空编造内容。
+翻到 moments / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
 - {"type":"block"} 把这个联系人拉黑
@@ -458,12 +627,9 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
         try {
             const browsed = (script?.steps || []).slice(0, Math.min(stepIdx + 1, script?.steps.length || 0))
                 .map((s, i) => {
-                    const where = s.app === 'chat-thread' && s.targetName ? `点开了与「${s.targetName}」的对话` :
-                        s.app === 'chat-list' ? '看了聊天列表' :
-                        s.app === 'moments' ? '翻了此刻' :
-                        s.app === 'schedule' ? '看了日程' :
-                        s.app === 'gallery' ? '翻了相册' :
-                        s.app === 'music' ? '看了在听的歌' : '看了桌面';
+                    const where = s.app === 'chat-thread' && s.targetName
+                        ? `点开了与「${s.targetName}」的对话`
+                        : `看了${STEP_LABEL[s.app]}`;
                     return `${i + 1}. ${where}，心想：${s.thought}`;
                 }).join('\n');
             const exitDesc = exitMode === 'finished' ? `${char.name} 自己翻完了，把手机还了回去。`
@@ -551,6 +717,136 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         }
     };
 
+    const screenHeader = (title: string, sub?: string) => (
+        <div className="px-5 pt-12 pb-3 text-slate-800 border-b border-slate-100 bg-white/90 backdrop-blur">
+            <div className="text-[15px] font-bold">{title}</div>
+            {sub && <div className="text-[10px] text-slate-400 mt-0.5 truncate">{sub}</div>}
+        </div>
+    );
+
+    const dataCard = (key: React.Key, title: string, detail: React.ReactNode, meta?: React.ReactNode) => (
+        <div key={key} className="bg-white rounded-2xl px-3.5 py-3 border border-slate-100 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="text-[13px] font-bold text-slate-700 truncate">{title}</div>
+                    <div className="text-[11px] text-slate-500 leading-relaxed mt-1">{detail}</div>
+                </div>
+                {meta && <div className="shrink-0 text-[10px] text-slate-400 font-mono">{meta}</div>}
+            </div>
+        </div>
+    );
+
+    const renderPhoneApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-slate-50">
+            {screenHeader('回声亭', '最近通话')}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {callLogs.length === 0 && <div className="text-center text-xs text-slate-400 pt-14">（没有通话记录）</div>}
+                {callLogs.map(log => dataCard(
+                    log.id,
+                    log.name,
+                    <span>{callDirectionText[log.direction]} {log.number}{log.durationSec ? ` · ${Math.round(log.durationSec / 60)} 分钟` : ''}</span>,
+                    shortTime(log.timestamp)
+                ))}
+            </div>
+        </div>
+    );
+
+    const renderShopApp = () => {
+        const cart = resolveCart(userProfile.shopCart);
+        const orders = (userProfile.shopOrders || []).slice(0, 5);
+        const inventory = (userProfile.shopInventory || []).slice(0, 6);
+        return (
+            <div className="flex-1 overflow-hidden flex flex-col bg-[#fff7fb]">
+                {screenHeader('心意铺', cart.length ? `购物车 ¥${fmtPrice(cartTotal(userProfile.shopCart))}` : '购物车空空')}
+                <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-3 pb-20">
+                    <div className="text-[10px] font-bold text-slate-400 px-1">购物车</div>
+                    {cart.length === 0 && dataCard('empty-cart', '购物车', '暂时没有加购的礼物')}
+                    {cart.map(({ item, qty }) => dataCard(`cart-${item.id}`, `${item.emoji} ${item.name}`, item.blurb, `×${qty}`))}
+                    <div className="text-[10px] font-bold text-slate-400 px-1 pt-2">最近订单</div>
+                    {orders.length === 0 && dataCard('empty-orders', '订单', '没有近期订单')}
+                    {orders.map(order => dataCard(
+                        order.id,
+                        order.items.map(it => `${it.emoji}${it.name}`).join('、'),
+                        `${order.receivedAt ? '已收货' : order.refundedAt ? '已退款' : '配送中'} · ${order.payerName || (order.paidBy === 'self' ? userProfile.name : '角色代付')}`,
+                        `¥${fmtPrice(order.total)}`
+                    ))}
+                    {inventory.length > 0 && <div className="text-[10px] font-bold text-slate-400 px-1 pt-2">背包</div>}
+                    {inventory.map(item => dataCard(item.uid, `${item.emoji} ${item.name}`, `买于 ${shortTime(item.boughtAt)}`, `¥${fmtPrice(item.price)}`))}
+                </div>
+            </div>
+        );
+    };
+
+    const renderTakeoutApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-[#fffaf0]">
+            {screenHeader('饭票', '外卖与跑腿订单')}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {takeoutOrders.length === 0 && <div className="text-center text-xs text-slate-400 pt-14">（没有外卖订单）</div>}
+                {takeoutOrders.map(order => {
+                    const status = liveTakeoutStatus(order);
+                    return dataCard(
+                        order.id,
+                        `${order.storeEmoji || '🍱'} ${order.storeName}`,
+                        <>
+                            <span className="font-bold text-amber-600">{STATUS_LABEL[status]}</span>
+                            <span> · {order.items.map(it => `${it.emoji || ''}${it.name}×${it.qty}`).join('、')}</span>
+                            {order.address && <span className="block mt-1">地址：{order.address}</span>}
+                        </>,
+                        `¥${fmtPrice(order.total)}`
+                    );
+                })}
+            </div>
+        </div>
+    );
+
+    const renderWalletApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-[#f7fff8]">
+            {screenHeader('钱包', `余额 ¥${fmtPrice(userProfile.balance || 0)}`)}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {dataCard('balance', '账户余额', '角色能看到你现在钱包里还有多少钱', `¥${fmtPrice(userProfile.balance || 0)}`)}
+                {(userProfile.shopReceipts || []).slice(0, 8).map(r => dataCard(
+                    r.id,
+                    `${r.emoji} ${r.name}`,
+                    `${r.action === 'buy' ? '购买' : r.action === 'gift' ? '送出' : '收到'} · ${r.counterpartName}${r.note ? ` · ${r.note}` : ''}`,
+                    shortTime(r.at)
+                ))}
+                {(userProfile.shopReceipts || []).length === 0 && dataCard('empty-receipts', '小票', '还没有购物小票')}
+            </div>
+        </div>
+    );
+
+    const renderBrowserApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-[#f6fbff]">
+            {screenHeader('浏览', '热点、搜索与公开痕迹')}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {dataCard('host', '当前设备网页', typeof window !== 'undefined' ? window.location.hostname || '本地页面' : '本地页面')}
+                {dataCard('news', '热点来源', (realtimeConfig.newsPlatforms || []).length ? realtimeConfig.newsPlatforms!.join('、') : '未配置热点平台')}
+                {moments.slice(0, 4).map(p => dataCard(
+                    `m-${p.id}`,
+                    `${p.authorName} 的公开动态`,
+                    `${String(p.content || p.title || '').slice(0, 80)}${p.location ? ` · ${p.location}` : ''}`,
+                    shortTime(p.timestamp)
+                ))}
+            </div>
+        </div>
+    );
+
+    const renderMapApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-[#f8fafc]">
+            {screenHeader('地区', '位置线索')}
+            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2.5 pb-20">
+                {regionHints.length === 0 && locations.length === 0 && <div className="text-center text-xs text-slate-400 pt-14">（没有明显位置线索）</div>}
+                {regionHints.map((hint, i) => dataCard(`hint-${i}`, '地区线索', hint))}
+                {locations.map(loc => dataCard(
+                    `${loc.source}-${loc.at}-${loc.title}`,
+                    loc.title,
+                    `${loc.source}${loc.detail ? ` · ${loc.detail}` : ''}`,
+                    shortTime(loc.at)
+                ))}
+            </div>
+        </div>
+    );
+
     // ── 各页面渲染 ──
     const renderScreen = () => {
         // 点开动画期间强制回到桌面（高亮目标图标）
@@ -558,7 +854,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'chat-list') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">絮语</div>
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">絮语</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80">
                         {contacts.map(({ char: c, preview }) => (
                             <div key={c.id} className={`px-4 py-3 flex items-center gap-3 border-b border-slate-50 ${targetChar?.id === c.id ? 'bg-amber-50' : ''}`}>
@@ -576,7 +872,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'chat-thread' && targetChar) {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90 flex items-center gap-2">
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90 flex items-center gap-2">
                         <img src={targetChar.avatar} className="w-6 h-6 rounded-md object-cover" alt="" />
                         {targetChar.name}
                     </div>
@@ -596,7 +892,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'moments') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">此刻</div>
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">此刻</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 px-4 py-3 space-y-4">
                         {moments.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（此刻空空如也）</div>}
                         {moments.map(p => (
@@ -624,13 +920,22 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'schedule') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">日程</div>
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">日程</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 px-4 py-3 space-y-2">
-                        {annivs.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（日程上什么都没记）</div>}
+                        {annivs.length === 0 && tasks.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（日程上什么都没记）</div>}
                         {annivs.map(a => (
                             <div key={a.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5">
                                 <div className="text-[11px] font-mono text-cyan-600 shrink-0">{a.date}</div>
                                 <div className="text-[13px] text-slate-700 truncate">{a.title}</div>
+                            </div>
+                        ))}
+                        {tasks.map(t => (
+                            <div key={t.id} className="flex items-center gap-3 bg-white rounded-xl px-3 py-2.5 border border-slate-100">
+                                <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${t.isCompleted ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[13px] text-slate-700 truncate">{t.title}</div>
+                                    {t.deadline && <div className="text-[10px] text-slate-400 mt-0.5">截止 {t.deadline}</div>}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -640,7 +945,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'gallery') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">相册</div>
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">相册</div>
                     <div className="flex-1 overflow-y-auto no-scrollbar bg-white/80 p-2">
                         {galleryImgs.length === 0 && <div className="text-center text-xs text-slate-400 pt-10">（相册里没有照片）</div>}
                         <div className="grid grid-cols-3 gap-1.5">
@@ -655,7 +960,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         if (app === 'music') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-5 py-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">音乐</div>
+                    <div className="px-5 pt-12 pb-3 text-[15px] font-bold text-slate-800 border-b border-slate-100 bg-white/90">音乐</div>
                     <div className="flex-1 bg-white/80 flex flex-col items-center justify-center gap-3 text-slate-400">
                         <div className="text-5xl">🎧</div>
                         <div className="text-xs">TA 在看你最近在听什么…</div>
@@ -663,12 +968,18 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
+        if (app === 'phone') return renderPhoneApp();
+        if (app === 'shop') return renderShopApp();
+        if (app === 'takeout') return renderTakeoutApp();
+        if (app === 'wallet') return renderWalletApp();
+        if (app === 'browser') return renderBrowserApp();
+        if (app === 'map') return renderMapApp();
         // home / finished / opening：用户实时真实的桌面（真壁纸 + 全部 App + dock；
         // opening 时高亮即将点开的图标）
         const openingIcon = opening && opening !== 'home' ? STEP_ICON[opening as Exclude<StepApp, 'home'>] : null;
         return (
             <div className="flex-1 overflow-hidden flex flex-col relative" style={wallpaperBackground(theme.wallpaper)}>
-                <div className="text-white text-sm font-bold pt-5 pb-3 text-center" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
+                <div className="text-white text-sm font-bold pt-16 pb-3 text-center" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
                     {userProfile.name} 的手机
                 </div>
                 <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-2">
@@ -709,41 +1020,59 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
     };
 
     return (
-        <div className="absolute inset-0 z-[430] flex flex-col overflow-hidden animate-fade-in"
-            style={{ background: 'linear-gradient(165deg, #f4f2ed 0%, #eae7e0 55%, #efe7dd 100%)', paddingTop: 'max(8px, var(--safe-top))' }}>
-            {/* 顶栏：状态 + 退出申请（奶白手帐风：墨色文字 + 白描边头像） */}
-            <div className="shrink-0 px-4 py-2.5 flex items-center justify-between">
+        <div className="absolute inset-0 z-[430] overflow-hidden animate-fade-in bg-black text-slate-900">
+            <style>{`
+                @keyframes phoneCheckScan { 0% { transform: translateY(-28%); opacity: 0; } 18% { opacity: .32; } 100% { transform: translateY(118%); opacity: 0; } }
+                @keyframes phoneCheckTap { 0% { transform: translate(-50%, -50%) scale(.4); opacity: .85; } 100% { transform: translate(-50%, -50%) scale(2.25); opacity: 0; } }
+                @keyframes phoneCheckGrip { 0%,100% { transform: translateY(0) rotate(var(--r)); } 50% { transform: translateY(-3px) rotate(var(--r)); } }
+            `}</style>
+
+            {/* 主屏：直接铺满用户当前手机画面。 */}
+            {phase === 'loading' ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white" style={wallpaperBackground(theme.wallpaper)}>
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+                    <div className="relative w-10 h-10 border-4 border-white/25 border-t-white rounded-full animate-spin" />
+                    <div className="relative text-xs font-bold drop-shadow">{char.name} 拿起了你的手机，正在解锁…</div>
+                </div>
+            ) : (
+                <div className="absolute inset-0 flex flex-col bg-slate-950">
+                    {renderScreen()}
+                </div>
+            )}
+
+            {/* 拿手机的手感：边缘暗角、手指遮挡、扫光和点按波纹。 */}
+            <div className="pointer-events-none absolute inset-0 z-10">
+                <div className="absolute inset-0" style={{ boxShadow: 'inset 0 0 46px rgba(0,0,0,0.34)' }} />
+                <div className="absolute left-8 right-8 h-20 rounded-full bg-white/20 blur-2xl" style={{ top: '18%', animation: 'phoneCheckScan 3.2s ease-in-out infinite' }} />
+                <div className="absolute -bottom-20 -left-10 w-40 h-44 rounded-[48%] bg-black/40 blur-xl" style={{ '--r': '-9deg', animation: 'phoneCheckGrip 4s ease-in-out infinite' } as React.CSSProperties} />
+                <div className="absolute -bottom-20 -right-10 w-40 h-44 rounded-[48%] bg-black/40 blur-xl" style={{ '--r': '8deg', animation: 'phoneCheckGrip 4.4s ease-in-out infinite' } as React.CSSProperties} />
+                {opening && (
+                    <div className="absolute left-1/2 top-[58%] w-16 h-16 rounded-full border-2 border-white/80 bg-white/10" style={{ animation: 'phoneCheckTap 780ms ease-out both' }} />
+                )}
+            </div>
+
+            {/* 顶部悬浮状态 + 退出申请。 */}
+            <div className="absolute left-3 right-3 z-30 flex items-center justify-between pointer-events-none"
+                style={{ top: 'max(10px, var(--safe-top))' }}>
                 <div className="flex items-center gap-2 min-w-0">
                     <img src={char.avatar} className="w-7 h-7 rounded-full object-cover ring-2 ring-white shadow-sm shrink-0" alt="" />
-                    <span className="text-xs font-bold text-slate-600 truncate">
+                    <span className="text-xs font-bold text-white truncate px-3 py-2 rounded-full bg-black/40 backdrop-blur-xl shadow-lg">
                         {phase === 'loading' ? `${char.name} 拿走了你的手机…` : `${char.name} 正在看你的手机`}
                     </span>
                 </div>
                 {phase !== 'loading' && !endedRef.current && (
                     <button
                         onClick={() => { setExitOpen(true); setExitTab('menu'); setConsentReply(''); setJudgeComment(''); }}
-                        className="shrink-0 px-3 py-1.5 rounded-full bg-white text-slate-600 text-[11px] font-bold border border-slate-200 shadow-[0_8px_16px_-10px_rgba(50,48,60,0.4)] active:scale-95 transition-all"
+                        className="pointer-events-auto shrink-0 px-3 py-2 rounded-full bg-white/90 text-slate-700 text-[11px] font-bold border border-white/70 shadow-[0_12px_24px_-14px_rgba(0,0,0,0.8)] active:scale-95 transition-all backdrop-blur-xl"
                     >
                         我想拿回手机
                     </button>
                 )}
             </div>
 
-            {/* 主屏 */}
-            {phase === 'loading' ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500">
-                    <div className="w-9 h-9 border-4 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
-                    <div className="text-xs">{char.name} 拿起了你的手机，解锁了屏幕…</div>
-                </div>
-            ) : (
-                <div className="flex-1 min-h-0 mx-3 mb-3 rounded-3xl overflow-hidden flex flex-col border border-white/70 bg-slate-100/70 backdrop-blur shadow-[0_24px_48px_-20px_rgba(50,48,60,0.4)]">
-                    {renderScreen()}
-                </div>
-            )}
-
             {/* 左下角想法框 */}
             {phase === 'browsing' && currentStep && (
-                <div key={stepIdx} className="absolute left-3 bottom-5 max-w-[78%] z-10 animate-fade-in">
+                <div key={stepIdx} className="absolute left-3 bottom-6 max-w-[78%] z-30 animate-fade-in">
                     <div className="bg-[#0b0b12]/90 backdrop-blur text-white rounded-2xl rounded-bl-md px-4 py-3 shadow-xl border border-white/10">
                         <div className="flex items-center gap-1.5 mb-1">
                             <img src={char.avatar} className="w-4 h-4 rounded-full object-cover" alt="" />
@@ -756,7 +1085,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
 
             {/* 退出闸门弹窗 */}
             {exitOpen && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center animate-fade-in p-6" style={{ background: 'rgba(20,20,28,0.4)', backdropFilter: 'blur(4px)' }}>
+                <div className="absolute inset-0 z-40 flex items-center justify-center animate-fade-in p-6" style={{ background: 'rgba(20,20,28,0.4)', backdropFilter: 'blur(4px)' }}>
                     <div className="w-full max-w-[320px] bg-white rounded-[1.6rem] overflow-hidden shadow-2xl relative">
                         {/* 右上角书签缎带 */}
                         <div className="absolute top-0 right-6 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />

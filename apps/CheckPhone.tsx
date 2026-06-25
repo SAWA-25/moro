@@ -41,6 +41,7 @@ const APP_CATALOG: CatalogApp[] = [
     { key: 'album',   type: 'album',    name: '相册',   Icon: ImageSquare,         tint: '#22d3ee', logPrefix: '相册',     instruction: '生成 3~4 条该角色相册里照片的文字描述（拍了什么、当时的场景与心情，贴人设）。\n格式JSON数组: [{ "title": "照片主题", "detail": "画面与心情描述" }]' },
     { key: 'music',   type: 'music',    name: '音乐',   Icon: MusicNotes,          tint: '#a78bfa', logPrefix: '音乐',     instruction: '生成该角色最近在听的 3~4 首歌（歌名+歌手+为什么循环它，贴人设与近期心境）。\n格式JSON数组: [{ "title": "歌名 - 歌手", "detail": "为什么在听/循环了多少次" }]' },
     { key: 'browser', type: 'browser',  name: '浏览',   Icon: GlobeHemisphereWest, tint: '#38bdf8', logPrefix: '浏览记录', instruction: '生成 3~4 条该角色最近的浏览器搜索/浏览记录（搜了什么，能侧面透出 TA 的关心或小秘密，贴人设）。\n格式JSON数组: [{ "title": "搜索词/网页标题", "detail": "备注" }]' },
+    { key: 'map',     type: 'map',      name: '地图',   Icon: Compass,             tint: '#14b8a6', logPrefix: '地图足迹', cityHint: true, instruction: '生成 3~4 条该角色最近在地图/定位/打车软件里的地点记录（去过哪里、收藏了什么地点、搜过哪条路线）。地点要贴合角色城市与人设，不要都写景点。\n格式JSON数组: [{ "title": "地点/路线", "detail": "为什么出现这条记录/时间/备注" }]' },
     { key: 'health',  type: 'health',   name: '健康',   Icon: Heartbeat,           tint: '#f87171', logPrefix: '健康',     instruction: '生成该角色今天的健康数据（步数、睡眠、心率等 3~4 项，数值贴人设作息）。\n格式JSON数组: [{ "title": "指标(如 今日步数)", "detail": "说明", "value": "数值" }]' },
     { key: 'calendar',type: 'calendar', name: '日历',   Icon: CalendarBlank,       tint: '#fb7185', logPrefix: '日历',     instruction: '生成 3~4 条该角色日历上的日程/待办（贴人设的工作、约会、提醒）。\n格式JSON数组: [{ "title": "事项", "detail": "时间/地点/备注" }]' },
 ];

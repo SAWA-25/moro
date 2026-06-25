@@ -21,6 +21,7 @@ const cleanPreview = (content: string, type?: string): string => {
 
 // 实时消息横幅：新消息到达时灵动岛展开展示「头像 + 角色名 + 消息内容」
 interface LiveNotice {
+    id: string;
     charId: string;
     charName: string;
     body: string;
@@ -39,8 +40,9 @@ const DynamicIsland: React.FC = () => {
     const [expanded, setExpanded] = useState(false);
     const [previews, setPreviews] = useState<Record<string, string>>({});
     const [notice, setNotice] = useState<LiveNotice | null>(null);
+    const [noticeStack, setNoticeStack] = useState<LiveNotice[]>([]);
     const noticeRef = useRef<LiveNotice | null>(null);
-    const noticeTimer = useRef<number | null>(null);
+    const noticeTimers = useRef<number[]>([]);
     const prevUnreadRef = useRef<Record<string, number>>({});
     const touchStartY = useRef<number | null>(null);
 
@@ -53,45 +55,39 @@ const DynamicIsland: React.FC = () => {
 
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
 
-    // 横幅队列：多条消息逐条弹出（每条短驻留）。解锁后的所有界面（桌面 / App 内）
-    // 弹窗位置统一在灵动岛胶囊处，后一条覆盖前一条 —— 竖向堆叠只属于锁屏（LockScreen）。
-    const noticeQueueRef = useRef<LiveNotice[]>([]);
-    const drainingRef = useRef(false);
     // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
     const lastShownRef = useRef<Record<string, number>>({});
 
-    const displayNext = React.useCallback(() => {
-        if (noticeTimer.current !== null) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
-        const next = noticeQueueRef.current.shift() || null;
-        if (!next) {
-            drainingRef.current = false;
-            noticeRef.current = null;
-            setNotice(null);
-            return;
-        }
-        drainingRef.current = true;
-        lastShownRef.current[next.charId] = Date.now();
-        // 每条消息弹出时各响一次提示音（而不是一批消息只响一次）
-        playRingtone(next.ringtone);
-        noticeRef.current = next;
-        setNotice(next);
-        // 队列里还有等着的就缩短驻留时间，让后续消息尽快逐条覆盖弹出
-        const dwell = noticeQueueRef.current.length > 0 ? 2600 : 5000;
-        noticeTimer.current = window.setTimeout(() => {
-            noticeTimer.current = null;
-            displayNext();
-        }, dwell);
-    }, []);
-
     const showNotice = React.useCallback((n: LiveNotice) => {
-        noticeQueueRef.current.push(n);
-        // 没有横幅在展示/排队时立即弹出；有则等当前驻留结束后由 displayNext 接力
-        if (!drainingRef.current) displayNext();
-    }, [displayNext]);
+        lastShownRef.current[n.charId] = Date.now();
+        // 每条消息弹出时各响一次提示音；多条消息会在岛下按时间叠成 iOS 式通知栈。
+        playRingtone(n.ringtone);
+        noticeRef.current = n;
+        setNotice(n);
+        setNoticeStack(prev => [n, ...prev.filter(item => item.id !== n.id)].slice(0, 5));
+        const timer = window.setTimeout(() => {
+            setNoticeStack(prev => {
+                const next = prev.filter(item => item.id !== n.id);
+                const latest = next[0] || null;
+                noticeRef.current = latest;
+                setNotice(latest);
+                return next;
+            });
+        }, 6200);
+        noticeTimers.current.push(timer);
+    }, []);
 
     useEffect(() => () => {
-        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        noticeTimers.current.forEach(t => window.clearTimeout(t));
+        noticeTimers.current = [];
     }, []);
+
+    const scheduleNotice = React.useCallback((n: Omit<LiveNotice, 'id'>, delay = 0) => {
+        const timer = window.setTimeout(() => {
+            showNotice({ ...n, id: `${n.charId}-${n.at}-${Math.random().toString(36).slice(2, 7)}` });
+        }, delay);
+        noticeTimers.current.push(timer);
+    }, [showNotice]);
 
     // 实时联动：主动消息 / instant push 落库事件自带消息正文，第一时间弹横幅
     useEffect(() => {
@@ -112,9 +108,9 @@ const DynamicIsland: React.FC = () => {
                 .filter((b: string) => !!b.trim())
                 .slice(0, 8);
             const charName = d.charName || srcChar?.name || '';
-            for (const body of bodies) {
-                showNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now(), ringtone });
-            }
+            bodies.forEach((body, i) => {
+                scheduleNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now() + i, ringtone }, i * 260);
+            });
         };
         window.addEventListener('proactive-message-sent', onIncoming);
         window.addEventListener('active-msg-received', onIncoming);
@@ -122,7 +118,7 @@ const DynamicIsland: React.FC = () => {
             window.removeEventListener('proactive-message-sent', onIncoming);
             window.removeEventListener('active-msg-received', onIncoming);
         };
-    }, [characters, showNotice]);
+    }, [characters, scheduleNotice]);
 
     // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 按本次新增条数
     // 取尾部消息，逐条入队弹横幅（一条覆盖一条），而不是只弹最新一条
@@ -152,13 +148,13 @@ const DynamicIsland: React.FC = () => {
                 } catch { /* 预览失败不阻塞横幅 */ }
                 if (!bodies.length) bodies = ['发来了新消息'];
                 if (cancelled) return;
-                for (const body of bodies) {
-                    showNotice({ charId: char.id, charName: char.name, body, at: Date.now(), ringtone: char.convoSettings?.ringtone });
-                }
+                bodies.forEach((body, i) => {
+                    scheduleNotice({ charId: char.id, charName: char.name, body, at: Date.now() + i, ringtone: char.convoSettings?.ringtone }, i * 260);
+                });
             }
         })();
         return () => { cancelled = true; };
-    }, [unreadMessages, characters, showNotice]);
+    }, [unreadMessages, characters, scheduleNotice]);
 
     // 展开面板时为每个未读角色取最后一条消息作预览
     useEffect(() => {
@@ -230,15 +226,17 @@ const DynamicIsland: React.FC = () => {
                 <button
                     onClick={() => {
                         // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）。
-                        // 同角色排队中的横幅一并丢弃（进聊天页即视为已读），其余角色的
-                        // 横幅由 displayNext 接力继续逐条弹 —— 不能只清当前横幅就返回，
-                        // 否则 drainingRef 卡在 true，队列永久停摆，后续消息只剩兜底的最新一条
+                        // 同角色已经堆出的横幅一并丢弃（进聊天页即视为已读），其余角色保留。
                         if (notice) {
                             const target = notice.charId;
-                            if (noticeTimer.current !== null) { window.clearTimeout(noticeTimer.current); noticeTimer.current = null; }
-                            noticeQueueRef.current = noticeQueueRef.current.filter(q => q.charId !== target);
+                            setNoticeStack(prev => {
+                                const next = prev.filter(q => q.charId !== target);
+                                const latest = next[0] || null;
+                                noticeRef.current = latest;
+                                setNotice(latest);
+                                return next;
+                            });
                             jumpToChat(target);
-                            displayNext();
                             return;
                         }
                         // 灵动岛此刻正作为外卖 Live Activity 展示 → 点击进外卖 App（仍可下滑展开通知）
@@ -308,6 +306,53 @@ const DynamicIsland: React.FC = () => {
                     )}
                 </button>
             </div>
+
+            {/* iOS 式通知栈：消息一条条从灵动岛下方落下，短暂停驻后自动消散。 */}
+            {!expanded && noticeStack.length > 0 && (
+                <div
+                    className="absolute left-3 right-3 z-[57] pointer-events-none"
+                    style={{ top: 'calc(max(6px, var(--safe-top)) + 2.45rem)' }}
+                >
+                    <div className="relative h-[150px]">
+                        {noticeStack.map((n, i) => {
+                            const char = characters.find(c => c.id === n.charId);
+                            const avatar = char?.avatar || n.avatarUrl;
+                            return (
+                                <button
+                                    key={n.id}
+                                    onClick={() => jumpToChat(n.charId)}
+                                    className="absolute left-0 right-0 pointer-events-auto rounded-[1.35rem] px-3.5 py-3 flex items-center gap-3 text-left active:scale-[0.985] transition-[transform,opacity] duration-300"
+                                    style={{
+                                        top: i * 18,
+                                        transform: `translateY(${i * 2}px) scale(${1 - i * 0.035})`,
+                                        opacity: Math.max(0.36, 1 - i * 0.16),
+                                        zIndex: 20 - i,
+                                        background: 'rgba(245,245,247,0.88)',
+                                        color: '#15151d',
+                                        backdropFilter: 'blur(18px) saturate(1.4)',
+                                        boxShadow: '0 18px 38px -20px rgba(0,0,0,0.65)',
+                                        border: '1px solid rgba(255,255,255,0.72)',
+                                        animation: `islandDrop 320ms cubic-bezier(0.18,0.9,0.22,1.12) both`,
+                                    }}
+                                >
+                                    {avatar ? (
+                                        <img src={avatar} className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-sm" alt="" />
+                                    ) : (
+                                        <span className="w-10 h-10 rounded-2xl bg-slate-200 shrink-0" />
+                                    )}
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex items-baseline gap-2">
+                                            <span className="text-[12px] font-black truncate">{n.charName || char?.name || '新消息'}</span>
+                                            <span className="text-[10px] text-slate-400 shrink-0">现在</span>
+                                        </span>
+                                        <span className="block text-[11px] text-slate-600 truncate mt-0.5">{n.body}</span>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* 外卖 Live Activity 已并入灵动岛本体（见上方胶囊的 showTakeoutLive 分支），
                 不再单独悬浮在岛外，避免「通知出现在灵动岛外」。 */}
