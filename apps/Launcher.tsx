@@ -189,7 +189,20 @@ const CALENDAR_WEEKDAYS = [
 // (Calendar + Upcoming Events 小组件页已移除)
 
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
-let _lastPageIndex = 0;
+const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v1';
+const loadLastPageIndex = (): number => {
+    try {
+        if (typeof sessionStorage === 'undefined') return 0;
+        const raw = Number(sessionStorage.getItem(DESK_ACTIVE_PAGE_KEY) || 0);
+        return Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0;
+    } catch { return 0; }
+};
+const persistLastPageIndex = (index: number) => {
+    try {
+        if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(DESK_ACTIVE_PAGE_KEY, String(Math.max(0, index)));
+    } catch {}
+};
+let _lastPageIndex = loadLastPageIndex();
 
 // --- 旧版桌面图标顺序（仅作首次迁移的默认 app 排序来源） ---
 const APP_ORDER_KEY = 'moro_launcher_app_order';
@@ -841,6 +854,7 @@ const Launcher: React.FC = () => {
           const index = Math.max(0, Math.min(totalPages - 1, Math.round(scrollLeft / Math.max(1, width))));
           setActivePageIndex(index);
           _lastPageIndex = index; // Persist across remounts
+          persistLastPageIndex(index);
       }
   };
 

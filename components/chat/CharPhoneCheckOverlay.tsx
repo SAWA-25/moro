@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder } from '../../types';
+import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
@@ -9,6 +9,7 @@ import { INSTALLED_APPS, DOCK_APPS } from '../../constants';
 import { useOS } from '../../context/OSContext';
 import AppIcon from '../os/AppIcon';
 import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
+import { isDevDebugAvailable } from '../../utils/devDebug';
 
 /**
  * 角色查用户手机（反向查手机）。
@@ -121,28 +122,82 @@ const STEP_LABEL: Record<StepApp, string> = {
 
 // 与 Launcher 同源的桌面布局持久化 key：角色看到的就是用户真实排列的桌面
 const DESK_ORDER_KEY = 'moro_desktop_items_v1';
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v2';
+const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v1';
 const LEGACY_APP_ORDER_KEY = 'moro_launcher_app_order';
+const PAGE_COLS = 4;
+const PAGE_ROWS = 12;
 
-/** 按用户真实桌面顺序排出全部非 dock App（与 Launcher 的 deskOrder/legacy 迁移一致） */
-const loadUserDeskApps = () => {
-    const base = INSTALLED_APPS.filter(a => !DOCK_APPS.includes(a.id) && a.id !== AppID.CharCreatorDev);
-    let orderedIds: string[] = [];
+interface DeskItem {
+    key: string;
+    kind: 'app' | 'widget';
+    id: string;
+    w: number;
+    h: number;
+}
+
+interface PlacedDeskItem {
+    item: DeskItem;
+    col: number;
+    row: number;
+}
+
+interface DeskLayoutCell {
+    page: number;
+    col: number;
+    row: number;
+}
+
+interface UserDesktopSnapshot {
+    pages: PlacedDeskItem[][];
+    activePage: number;
+}
+
+const readStoredStringArray = (key: string): string[] => {
     try {
-        const deskRaw = JSON.parse(localStorage.getItem(DESK_ORDER_KEY) || '[]');
-        if (Array.isArray(deskRaw)) {
-            orderedIds = deskRaw
-                .filter((k): k is string => typeof k === 'string' && k.startsWith('app:'))
-                .map(k => k.slice(4));
+        if (typeof localStorage === 'undefined') return [];
+        const raw = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+    } catch { return []; }
+};
+
+const loadStoredDeskOrder = () => readStoredStringArray(DESK_ORDER_KEY);
+const loadStoredAppOrder = () => readStoredStringArray(LEGACY_APP_ORDER_KEY);
+
+const loadStoredActiveDeskPage = (): number => {
+    try {
+        if (typeof sessionStorage === 'undefined') return 0;
+        const n = Number(sessionStorage.getItem(DESK_ACTIVE_PAGE_KEY) || 0);
+        return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+    } catch { return 0; }
+};
+
+const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
+    try {
+        if (typeof localStorage === 'undefined') return {};
+        const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const out: Record<string, DeskLayoutCell> = {};
+        for (const [key, value] of Object.entries(raw)) {
+            if (!value || typeof value !== 'object') continue;
+            out[key] = {
+                page: Math.max(0, Math.round(Number((value as any).page ?? 0))),
+                col: Math.max(0, Math.min(PAGE_COLS - 1, Math.round(Number((value as any).col ?? 0)))),
+                row: Math.max(0, Math.min(PAGE_ROWS - 1, Math.round(Number((value as any).row ?? 0)))),
+            };
         }
-    } catch { /* 布局读取失败时退回默认顺序 */ }
-    if (orderedIds.length === 0) {
-        try {
-            const legacyRaw = JSON.parse(localStorage.getItem(LEGACY_APP_ORDER_KEY) || '[]');
-            if (Array.isArray(legacyRaw)) orderedIds = legacyRaw.filter((k): k is string => typeof k === 'string');
-        } catch { /* ignore */ }
-    }
+        return out;
+    } catch { return {}; }
+};
+
+const loadUserDesktopApps = () => {
+    const base = INSTALLED_APPS.filter(a =>
+        !DOCK_APPS.includes(a.id) &&
+        (a.id !== AppID.CharCreatorDev || isDevDebugAvailable())
+    );
+    const legacyIds = loadStoredAppOrder();
     const ordered: typeof INSTALLED_APPS = [];
-    for (const id of orderedIds) {
+    for (const id of legacyIds) {
         const app = base.find(a => a.id === id);
         if (app && !ordered.includes(app)) ordered.push(app);
     }
@@ -150,6 +205,172 @@ const loadUserDeskApps = () => {
         if (!ordered.includes(app)) ordered.push(app);
     }
     return ordered;
+};
+
+const buildDefaultKeys = (appKeys: string[], widgetKeys: Set<string>): string[] => {
+    const mid = ['widget:schedule', 'widget:music', 'widget:image', 'widget:imgtl', 'widget:imgtr', 'widget:imgwide']
+        .filter(k => widgetKeys.has(k));
+    return ['widget:clock', 'widget:weather', 'widget:character', ...appKeys.slice(0, 8), ...mid, ...appKeys.slice(8)];
+};
+
+const buildDesktopItems = (theme: OSTheme): DeskItem[] => {
+    const desktopApps = loadUserDesktopApps();
+    const lw = theme.launcherWidgets || {};
+    const prefs = theme.desktopWidgetPrefs || {};
+    const clampW = (n: number) => Math.max(1, Math.min(PAGE_COLS, Math.round(n)));
+    const clampH = (n: number) => Math.max(1, Math.min(PAGE_ROWS, Math.round(n)));
+    const widgetItems: DeskItem[] = ([
+        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 2, h: 6 },
+        { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 3 },
+        { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
+        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
+        { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
+        { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 4 },
+        { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
+        ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
+        ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
+        ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
+    ] as DeskItem[])
+        .filter(it => !prefs[it.id]?.hidden)
+        .map(it => {
+            const p = prefs[it.id];
+            return p ? { ...it, w: p.w ? clampW(p.w) : it.w, h: p.h ? clampH(p.h) : it.h } : it;
+        });
+    const appItems: DeskItem[] = desktopApps.map(a => ({ key: `app:${a.id}`, kind: 'app', id: a.id, w: 1, h: 2 }));
+    const byKey = new Map<string, DeskItem>();
+    for (const it of [...widgetItems, ...appItems]) byKey.set(it.key, it);
+
+    const ordered: DeskItem[] = [];
+    for (const key of loadStoredDeskOrder()) {
+        const item = byKey.get(key);
+        if (item) {
+            ordered.push(item);
+            byKey.delete(key);
+        }
+    }
+    const defaults = buildDefaultKeys(appItems.map(i => i.key), new Set(widgetItems.map(i => i.key)));
+    for (const key of defaults) {
+        const item = byKey.get(key);
+        if (item) {
+            ordered.push(item);
+            byKey.delete(key);
+        }
+    }
+    for (const item of byKey.values()) ordered.push(item);
+    return ordered;
+};
+
+const cellsOverlap = (a: DeskLayoutCell, aw: number, ah: number, b: DeskLayoutCell, bw: number, bh: number) => (
+    a.page === b.page &&
+    a.col < b.col + bw &&
+    a.col + aw > b.col &&
+    a.row < b.row + bh &&
+    a.row + ah > b.row
+);
+
+const clampPlacement = (item: DeskItem, page: number, col: number, row: number): DeskLayoutCell => ({
+    page: Math.max(0, Math.round(page)),
+    col: Math.max(0, Math.min(PAGE_COLS - item.w, Math.round(col))),
+    row: Math.max(0, Math.min(PAGE_ROWS - item.h, Math.round(row))),
+});
+
+const findFirstFreeSpot = (
+    item: DeskItem,
+    itemsByKey: Map<string, DeskItem>,
+    layout: Record<string, DeskLayoutCell>,
+    excludedKey: string,
+    pageStart = 0,
+): DeskLayoutCell => {
+    for (let page = Math.max(0, pageStart); page < Math.max(pageStart + 8, 24); page++) {
+        for (let row = 0; row <= PAGE_ROWS - item.h; row++) {
+            for (let col = 0; col <= PAGE_COLS - item.w; col++) {
+                const candidate: DeskLayoutCell = { page, col, row };
+                let blocked = false;
+                for (const [otherKey, otherItem] of itemsByKey.entries()) {
+                    if (otherKey === excludedKey) continue;
+                    const otherPos = layout[otherKey];
+                    if (!otherPos) continue;
+                    if (cellsOverlap(candidate, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (!blocked) return candidate;
+            }
+        }
+    }
+    return { page: Math.max(0, pageStart), col: 0, row: 0 };
+};
+
+const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Record<string, DeskLayoutCell> => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const layout: Record<string, DeskLayoutCell> = {};
+    for (const key of orderedKeys) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, 0);
+    }
+    return layout;
+};
+
+const normalizeDeskLayout = (items: DeskItem[], stored: Record<string, DeskLayoutCell>, orderedKeys: string[]): Record<string, DeskLayoutCell> => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const next: Record<string, DeskLayoutCell> = {};
+    for (const key of orderedKeys) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        const raw = stored[key];
+        const desired = raw ? clampPlacement(item, raw.page, raw.col, raw.row) : null;
+        if (desired) {
+            let blocked = false;
+            for (const [otherKey, otherPos] of Object.entries(next)) {
+                const otherItem = itemsByKey.get(otherKey);
+                if (otherItem && cellsOverlap(desired, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (!blocked) {
+                next[key] = desired;
+                continue;
+            }
+        }
+        next[key] = findFirstFreeSpot(item, itemsByKey, next, key, desired?.page ?? 0);
+    }
+    return next;
+};
+
+const layoutToPages = (items: DeskItem[], layout: Record<string, DeskLayoutCell>, orderedKeys: string[]): PlacedDeskItem[][] => {
+    const itemsByKey = new Map(items.map(item => [item.key, item]));
+    const orderIndex = new Map(orderedKeys.map((key, index) => [key, index]));
+    const maxPage = Math.max(0, ...Object.values(layout).map(cell => cell.page));
+    const pages: PlacedDeskItem[][] = Array.from({ length: maxPage + 1 }, () => []);
+    for (const [key, cell] of Object.entries(layout)) {
+        const item = itemsByKey.get(key);
+        if (!item) continue;
+        if (!pages[cell.page]) pages[cell.page] = [];
+        pages[cell.page].push({ item, col: cell.col, row: cell.row });
+    }
+    return pages.map(page =>
+        page.sort((a, b) =>
+            a.row - b.row ||
+            a.col - b.col ||
+            ((orderIndex.get(a.item.key) ?? 0) - (orderIndex.get(b.item.key) ?? 0))
+        )
+    );
+};
+
+const buildUserDesktopSnapshot = (theme: OSTheme): UserDesktopSnapshot => {
+    const items = buildDesktopItems(theme);
+    const keys = items.map(item => item.key);
+    const storedLayout = loadStoredDeskLayout();
+    const layout = Object.keys(storedLayout).length > 0
+        ? normalizeDeskLayout(items, storedLayout, keys)
+        : buildDefaultDeskLayout(items, keys);
+    const pages = layoutToPages(items, layout, keys);
+    const safePages = pages.length > 0 ? pages : [[]];
+    const activePage = Math.max(0, Math.min(safePages.length - 1, loadStoredActiveDeskPage()));
+    return { pages: safePages, activePage };
 };
 
 /** 壁纸值 → CSS background（与 PhoneShell 的处理一致：链接/dataURL 包 url()，渐变原样用） */
@@ -235,11 +456,16 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 }) => {
     // 角色看到的是用户**实时真实**的桌面：真壁纸 + 真实安装的全部 App + 真实 dock
     const { theme, realtimeConfig } = useOS();
-    const deskApps = useMemo(loadUserDeskApps, []);
+    const desktopSnapshot = useMemo(() => buildUserDesktopSnapshot(theme), [theme]);
+    const widgetCustomCss = useMemo(() => {
+        const prefs = theme.desktopWidgetPrefs || {};
+        return Object.values(prefs).map(p => p?.customCss || '').filter(Boolean).join('\n');
+    }, [theme.desktopWidgetPrefs]);
     const dockApps = useMemo(
         () => DOCK_APPS.map(id => INSTALLED_APPS.find(a => a.id === id)).filter((a): a is typeof INSTALLED_APPS[number] => !!a),
         []
     );
+    const contentColor = theme.contentColor || '#2b2933';
     const [phase, setPhase] = useState<'loading' | 'browsing' | 'finished'>('loading');
     const [script, setScript] = useState<CheckScript | null>(null);
     const [stepIdx, setStepIdx] = useState(0);
@@ -847,6 +1073,125 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         </div>
     );
 
+    const renderDesktopItem = (item: DeskItem, openingIcon: string | null) => {
+        if (item.kind === 'app') {
+            const app = INSTALLED_APPS.find(a => a.id === item.id);
+            if (!app) return null;
+            const isTapped = openingIcon === app.icon;
+            return (
+                <div className={`w-full h-full flex items-center justify-center transition-all duration-300 rounded-2xl ${isTapped ? 'scale-90 ring-4 ring-white/70 bg-white/30' : ''}`}>
+                    <AppIcon app={app} onClick={() => { /* checking preview only */ }} size="md" />
+                </div>
+            );
+        }
+
+        const now = new Date();
+        const dateText = `${now.getMonth() + 1}/${now.getDate()}`;
+        const timeText = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const widgetBase = 'w-full h-full rounded-[1.4rem] overflow-hidden border border-white/45 shadow-[0_16px_34px_-24px_rgba(15,23,42,0.65)] backdrop-blur-xl';
+        const translucent: React.CSSProperties = {
+            color: contentColor,
+            background: 'linear-gradient(145deg, rgba(255,255,255,0.72), rgba(255,255,255,0.34))',
+        };
+
+        if (item.id === 'clock') {
+            return (
+                <div className={`${widgetBase} px-4 py-4 flex flex-col justify-between`} style={{
+                    color: '#ffffff',
+                    background: 'linear-gradient(160deg, rgba(55,83,129,0.94), rgba(111,137,180,0.84))',
+                    textShadow: '0 1px 10px rgba(15,23,42,0.35)',
+                }}>
+                    <div className="text-[12px] label-mono font-bold opacity-80">TODAY</div>
+                    <div>
+                        <div className="text-[3.2rem] leading-none font-bold">{now.getDate()}</div>
+                        <div className="text-[18px] font-semibold tabular-nums">{timeText}</div>
+                    </div>
+                    <div className="text-[11px] opacity-80">{dateText}</div>
+                </div>
+            );
+        }
+        if (item.id === 'weather') {
+            const place = regionHints[0] || (realtimeConfig.weatherEnabled
+                ? (realtimeConfig.weatherMode === 'manual' ? realtimeConfig.weatherCity || '天气城市' : '浏览器定位')
+                : '天气未开启');
+            return (
+                <div className={`${widgetBase} px-3 py-3 flex flex-col justify-between`} style={translucent}>
+                    <div className="text-[11px] font-bold opacity-55">天气</div>
+                    <div className="text-[22px] font-semibold leading-none">--°</div>
+                    <div className="text-[10px] leading-snug opacity-70 line-clamp-2">{place}</div>
+                </div>
+            );
+        }
+        if (item.id === 'character') {
+            const last = contacts[0]?.preview || '最近没有新消息';
+            return (
+                <div className={`${widgetBase} px-4 py-3 flex items-center gap-3`} style={translucent}>
+                    <img src={char.avatar} className="w-12 h-12 rounded-2xl object-cover shrink-0" alt="" />
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-bold truncate">{char.name}</div>
+                        <div className="text-[11px] opacity-60 truncate">{last}</div>
+                    </div>
+                </div>
+            );
+        }
+        if (item.id === 'schedule') {
+            const firstAnniv = annivs[0];
+            const firstTask = tasks.find(t => !t.isCompleted) || tasks[0];
+            return (
+                <div className={`${widgetBase} px-4 py-3 flex flex-col gap-2`} style={translucent}>
+                    <div className="text-[13px] font-bold">日程</div>
+                    {firstAnniv ? (
+                        <div className="rounded-2xl bg-white/48 px-3 py-2">
+                            <div className="text-[10px] label-mono opacity-55">{firstAnniv.date}</div>
+                            <div className="text-[12px] font-semibold truncate">{firstAnniv.title}</div>
+                        </div>
+                    ) : null}
+                    {firstTask ? (
+                        <div className="rounded-2xl bg-white/40 px-3 py-2">
+                            <div className="text-[10px] opacity-55">{firstTask.isCompleted ? '已完成' : '待办'}</div>
+                            <div className="text-[12px] font-semibold truncate">{firstTask.title}</div>
+                        </div>
+                    ) : null}
+                    {!firstAnniv && !firstTask && <div className="text-[11px] opacity-55 mt-auto">今天暂时空着</div>}
+                </div>
+            );
+        }
+        if (item.id === 'music') {
+            return (
+                <div className={`${widgetBase} px-4 py-4 flex flex-col justify-between`} style={translucent}>
+                    <div className="text-[11px] font-bold opacity-55">音乐</div>
+                    <div className="w-12 h-12 rounded-2xl bg-slate-900/85 text-white flex items-center justify-center text-2xl">♪</div>
+                    <div className="text-[10px] opacity-65 line-clamp-2">最近播放</div>
+                </div>
+            );
+        }
+        if (item.id === 'text') {
+            return (
+                <div className={`${widgetBase} px-4 py-3`} style={{
+                    color: contentColor,
+                    background: 'linear-gradient(145deg, rgba(255,250,221,0.92), rgba(255,255,255,0.56))',
+                }}>
+                    <div className="text-[12px] font-bold truncate">{theme.textWidget?.title || '便签'}</div>
+                    <div className="text-[11px] leading-snug opacity-70 line-clamp-4 mt-1 whitespace-pre-wrap">
+                        {theme.textWidget?.body || '没有写东西'}
+                    </div>
+                </div>
+            );
+        }
+        if (item.id === 'image' || item.id === 'imgtl' || item.id === 'imgtr' || item.id === 'imgwide') {
+            const slot = item.id === 'image' ? 'dsq' : item.id === 'imgtl' ? 'tl' : item.id === 'imgtr' ? 'tr' : 'wide';
+            const src = theme.launcherWidgets?.[slot];
+            return src ? (
+                <div className="w-full h-full rounded-[1.4rem] overflow-hidden border border-white/35 shadow-[0_16px_34px_-24px_rgba(15,23,42,0.65)]">
+                    <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" />
+                </div>
+            ) : (
+                <div className={`${widgetBase} flex items-center justify-center text-[11px] opacity-55`} style={translucent}>图片</div>
+            );
+        }
+        return null;
+    };
+
     // ── 各页面渲染 ──
     const renderScreen = () => {
         // 点开动画期间强制回到桌面（高亮目标图标）
@@ -977,29 +1322,68 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         // home / finished / opening：用户实时真实的桌面（真壁纸 + 全部 App + dock；
         // opening 时高亮即将点开的图标）
         const openingIcon = opening && opening !== 'home' ? STEP_ICON[opening as Exclude<StepApp, 'home'>] : null;
+        const currentDesktopPage = desktopSnapshot.pages[desktopSnapshot.activePage] || desktopSnapshot.pages[0] || [];
+        const tappedApp = openingIcon ? INSTALLED_APPS.find(a => a.icon === openingIcon) : null;
         return (
             <div className="flex-1 overflow-hidden flex flex-col relative" style={wallpaperBackground(theme.wallpaper)}>
-                <div className="text-white text-sm font-bold pt-16 pb-3 text-center" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
+                {widgetCustomCss && <style>{widgetCustomCss}</style>}
+                <div className="text-white text-sm font-bold pt-16 pb-3 text-center shrink-0" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
                     {userProfile.name} 的手机
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-3 pb-2">
-                    <div className="grid grid-cols-4 gap-x-1 gap-y-3">
-                        {deskApps.map(a => {
-                            const isTapped = openingIcon === a.icon;
-                            return (
-                                <div
-                                    key={a.id}
-                                    className={`flex justify-center transition-all duration-300 rounded-2xl ${isTapped ? 'scale-90 ring-4 ring-white/70 bg-white/30' : ''}`}
-                                >
-                                    <AppIcon app={a} onClick={() => { /* 角色在翻手机：禁点 */ }} size="sm" />
-                                </div>
-                            );
-                        })}
+                <div className="relative flex-1 min-h-0 px-5 pb-2 pointer-events-none">
+                    {desktopSnapshot.activePage === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (
+                        <div className="absolute inset-0 overflow-hidden z-20">
+                            {theme.desktopDecorations.map(deco => (
+                                <img
+                                    key={deco.id}
+                                    src={deco.content}
+                                    alt=""
+                                    loading="lazy"
+                                    className="absolute w-16 h-16 object-contain select-none"
+                                    style={{
+                                        left: `${deco.x}%`,
+                                        top: `${deco.y}%`,
+                                        transform: `translate(-50%, -50%) scale(${deco.scale}) rotate(${deco.rotation}deg)${deco.flip ? ' scaleX(-1)' : ''}`,
+                                        opacity: deco.opacity,
+                                        zIndex: deco.zIndex,
+                                        filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.18))',
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    )}
+                    <div
+                        className="relative z-10 h-full grid grid-cols-4 gap-x-2 gap-y-2"
+                        style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
+                    >
+                        {currentDesktopPage.map(({ item, col, row }) => (
+                            <div
+                                key={item.key}
+                                className={`relative min-w-0 min-h-0 transition-[transform,opacity,filter] duration-300 ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''}`}
+                                style={{
+                                    gridColumn: `${col + 1} / span ${item.w}`,
+                                    gridRow: `${row + 1} / span ${item.h}`,
+                                }}
+                            >
+                                {renderDesktopItem(item, openingIcon)}
+                            </div>
+                        ))}
                     </div>
                 </div>
+                {desktopSnapshot.pages.length > 1 && (
+                    <div className="shrink-0 flex justify-center gap-1.5 py-1">
+                        {desktopSnapshot.pages.map((_, idx) => (
+                            <span
+                                key={idx}
+                                className={`h-1.5 rounded-full transition-all ${idx === desktopSnapshot.activePage ? 'w-5 bg-white/85' : 'w-1.5 bg-white/45'}`}
+                                style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.28)' }}
+                            />
+                        ))}
+                    </div>
+                )}
                 {openingIcon && (
                     <div className="text-center text-white text-xs animate-fade-in pb-1" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.45)' }}>
-                        {char.name} 点开了「{INSTALLED_APPS.find(a => a.icon === openingIcon)?.name}」…
+                        {char.name} 点开了「{tappedApp?.name || STEP_LABEL[opening || 'home']}」…
                     </div>
                 )}
                 {phase === 'finished' && (
