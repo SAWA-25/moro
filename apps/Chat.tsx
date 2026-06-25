@@ -4746,6 +4746,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onSetTranslateLang={(lang: string) => { setTranslateTargetLang(lang); localStorage.setItem(`chat_translate_lang_${activeCharacterId}`, lang); setShowingTargetIds(new Set()); }}
                     onOpenHistoryManager={() => setModalType('history-manager')}
                     onClearHistory={handleClearHistory}
+                    onClearChatContextOnly={handleClearChatContextOnly}
                     preserveContext={preserveContext}
                     onTogglePreserveContext={() => setPreserveContext(!preserveContext)}
                     isVectorizing={isVectorizing}

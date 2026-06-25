@@ -40,6 +40,7 @@ interface ConvoSettingsPanelProps {
     // 历史 / 数据
     onOpenHistoryManager: () => void;
     onClearHistory: () => void;
+    onClearChatContextOnly: () => void;
     preserveContext: boolean;
     onTogglePreserveContext: () => void;
     isVectorizing?: boolean;
@@ -213,7 +214,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         contextLimit, onContextLimitChange, hideSysLogs, onToggleHideSysLogs,
         translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang,
         onSetTranslateSourceLang, onSetTranslateLang,
-        onOpenHistoryManager, onClearHistory, preserveContext, onTogglePreserveContext,
+        onOpenHistoryManager, onClearHistory, onClearChatContextOnly, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
         onOpenChromeCss, categories, emojiCounts, onSaveCategoryVisibility,
         onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
@@ -1171,6 +1172,11 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                                 </div>
                                 <span className="text-[11px]" style={{ color: PAPER_TONES.inkSoft }}>留下最近 10 条垫底，免得 TA 彻底失忆</span>
                             </div>
+                            <button
+                                onClick={onClearChatContextOnly}
+                                className="w-full py-2.5 mb-2 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
+                                style={{ background: '#fffdfa', border: '1.5px dashed #cfa9b8', color: '#9b6478', boxShadow: '2px 2px 0 #efd2dc', ...CUTE_STACK }}
+                            >只清空絮语上下文</button>
                             <button
                                 onClick={onClearHistory}
                                 className="w-full py-2.5 text-[12px] font-bold rounded-[10px] active:scale-95 transition-transform"
