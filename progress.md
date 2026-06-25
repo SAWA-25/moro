@@ -313,3 +313,15 @@ pm run build passes after the time-gap grouping fix.
   - **自习室** `apps/StudyApp.tsx`：书架 / 练习册 / 答题页改米白纸卡 + 缝线 + 胶带；课堂 / 批改页保留「黑板」但改墨色炭黑底 + 粉笔白字（去翠绿）；课本封面改牛皮/炭灰布面；5 个 `Modal` 全部换成 `PaperDialog`/`PaperSheet`；图标墨色化。收课本 / 备课 / 随堂测 / 续讲 等文案重写。
   - **音乐** `apps/music/MusicUI.tsx` 色板 `C` 整体改黑白灰（键名沿用以兼容全部调用方），玻璃类 `.shizuku-glass(-strong)` 改米白纸面 + 缝线虚线边，发光阴影去色；连带 `MusicApp` / `CharVisitPage` / `NeteaseProfilePage` 整片换肤；抹掉残留的蓝/紫/金硬编码色（VIP 章、活跃歌词、活跃行）；唱片封面 / 头像保留彩色。
   - `pnpm tsc --noEmit` clean（0 error），`vite build` 通过。
+- 椒房记·新增「文游模式」(AI 后宫恋爱文字互动游戏)，旧翻牌玩法保留为「经营模式」，戏单择玩法（两套各自存档、互不干扰）：
+  - **入口重构** `apps/HaremApp.tsx`：改成戏单 shell，进 App 先择「文游 / 经营」；旧 414 行翻牌逻辑整体抽到 `apps/harem/CardMode.tsx`（零逻辑改动，仅 onBack 回戏单 + import 深度），新玩法在 `apps/harem/StoryMode.tsx`。
+  - **纯引擎** `utils/haremStory.ts`（全可序列化、可单测）：把需求里 12 模块落成纯函数——`StoryState`（player/day/time/location/turnType/activeCharacters/characters/relationships/memories/flags/history/route/endingProgress/carry…）、`StoryChar`（好感 affection / 信任 trust / 嫉妒 jealousy / 心情 mood / 态度 attitude / 阶段 stage / 角色独立记忆 / presentStreak）。
+  - **AI 请求模块** `buildScenePrompt`：把 14 条铁律 + 稳定 JSON schema 烧进 prompt；**节奏由引擎掌控、AI 只管文笔**——`determineTurnType`（10 种回合：日常/单人约会/多人同场/嫉妒爆发/冷战/夜谈/关系突破/事件危机/路线锁定/结局判定，按变量阈值 + 加权随机避免重复）+ `scheduleCast`（按剧情需要与「久未登场公平」排在场角色，治「都围着玩家转」）+ `advanceTime`（晨午晚夜）+ `pickLocation` 都在外部定好才喂 AI，从结构上杜绝 AI 跳场/跳结局。
+  - **AI 输出解析** `parseScene`：稳定 JSON → `StoryScene`（sceneTitle/narration/dialogues/choices/effectsPreview/memoryUpdates/flagUpdates/nextSceneHint），**恒 3 个选项**（不足补齐、每选项至少作用一位在场角色）、数值钳制（好感/信任 ±12、嫉妒/心情 ±15）、speaker→charId 映射、空白/坏 JSON 回退 `fallbackScene`（离线也能玩）。
+  - **落地选择** `applyChoice`：套 effects + 偏宠一人时在场被冷落者**自动生醋意**（落实「不能都围着玩家转/不能越界」）、写长期记忆 + 角色独立记忆（`consolidateMemories` 超上限按权重×近期固化裁剪）、写 flag、推进时辰、更新 `route`（路线锁定回合选偏宠才落锁）/`endingProgress`、定下一回合类型与登场。
+  - **结局判定** `ENDING_DEFS` + `checkEndings` + `computeEndingProgress`：一生一世一双人(true)/齐人之福(harem)/红颜祸水(bad)/孤家寡人(bad)/未完待续(open)，硬条件命中即强制 ending 回合；`buildStoryEndingPrompt`/`parseStoryEnding`/`fallbackStoryEnding` 出尾声文 + 每人定语。
+  - **多周目(New Game+)**：结局后「下一周目」→ `startNewGamePlus`/`buildCarry` 抽高权重长期记忆 + 锁定路线打成「前尘旧梦」注入下一盘（角色仍从真实好感重起），`playthrough` 逐周目 +1。
+  - **存档读档** `reviveStory`（宽松迁移、坏档返 null）+ `saveMetaOf`；live 档 `moro_harem_story`，多档 `moro_harem_story_saves`（上限 12，誊抄/读取/写覆/删除）。
+  - **UI**（黑白拼贴手账皮肤、头像保留彩色）：① 顶部状态栏（日/时辰/地点 + 回合徽章 + 在场关系小条）② 时辰底色背景 ③ 角色立绘区（说话者上浮高亮）④ 大对话框（点击推进 · 双击全文）⑤ 墨底名框 ⑥ 3 个大选项卡（语气/风险/变量影响预览）⑦ 菜单 ⑧ 存档读档抽屉 ⑨ 后宫状态（四维进度条 + 独立记忆）⑩ 记忆回顾（长期/各角色分页）。
+  - 设计文档 `docs/harem-story.md`（12 模块/state/14 规则/输出格式/10 回合/UI/三增强版逐一说明），已登记进 `CLAUDE.md` 文档地图；`AppID.Harem` 注释更新。
+  - 新增 `utils/haremStory.test.ts`（26 测：状态推导/时辰/回合判定/调度/解析钳制兜底/选择落地/记忆固化/结局/多周目/存档往返）。`pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过，全量 696 tests green。
