@@ -302,3 +302,9 @@ pm run build passes after the time-gap grouping fix.
   - **图标黑白化**：phosphor 图标统一墨色（INK/INK_SOFT），原蓝色主色 `#2b6fe0` 全部抹掉；等级章 / 帖子标签（顶·精·投票·热）/ 身份小旗（楼主·亭主·角色·我）改灰阶填充区分；底栏 / 角标 / FAB 走墨块；热议榜名次用邮票框 `Stamp`。
   - **原创文案**：换一壶 / 支个话头 / 接话盖楼 / 续茶 / 常来 / 叩门 / 我的座位 / 火候攒升级 / 各空状态（便签）/ 欢迎语 / toast 全部重写为茶馆茶客口吻，不再用贴吧词。功能与数据结构（`utils/forum.ts`）零改动。
   - `pnpm tsc --noEmit` clean（0 error）。
+- 椒房记·全面换肤「黑白拼贴手账」+ 原创文案（对齐折子戏 / 心意铺 / 茶话亭统一皮肤）：把 `apps/HaremApp.tsx` 整套界面从暖金/酒红宫廷风改成米白报纸 + 墨黑 + 缝线/胶带/拍立得的黑白拼贴手账，复用 `apps/theater/scrapbook.tsx` 积木（PaperBackdrop / ScrapHeader / PaperCard / WashiTape / Polaroid / ScrapButton / StickyNote / SectionTag / DashedRule / PaperDialog / PaperSheet）。
+  - **头像保留彩色**：选秀拍立得头像、后宫名册头像、起居注台词头像不去色，只有 UI 外壳、图标、装饰走黑白灰（无商品图）。
+  - **统一弹窗**：夜间事件 / 选秀采选改用 `PaperSheet`（底部纸抽屉 + 胶带），史官评（结局）改用 `PaperDialog`（居中纸卡 + 弹入 + 内部滚动），不再用自写的半透明覆层。
+  - **图标黑白化**：phosphor 图标统一墨色（INK/INK_SOFT），原暖金 `#e9c46a` 主色全部抹掉；位分章 / 头衔标签改墨块与灰阶填充区分；手牌牌面、行动点雷电图标走墨色。
+  - **原创文案**：错误提示（精力不够 / 未选秀 / 通讯录为空 / 选秀无新人 / 椒房已满）全部重写为宫廷口吻，不再用直白提示语；卡牌叙述、夜间事件、史官评原创文案沿用既有古风文案不变。功能与数据结构（`utils/haremGame.ts`）零改动。
+  - `pnpm tsc --noEmit` clean，`vite build` 通过。
