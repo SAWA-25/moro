@@ -13,6 +13,7 @@
 import {
     TakeoutStore, TakeoutDish, TakeoutOrder, TakeoutStatus, TakeoutOrderItem,
     TakeoutIncident, TakeoutIncidentKind, TakeoutChatMsg,
+    TakeoutDishSpec, TakeoutDishAddon,
 } from '../types';
 import type { ResolvedApi } from './auxApi';
 import { DB } from './db';
@@ -119,7 +120,7 @@ export function generateStores(count = 12): TakeoutStore[] {
             promo: sig.promo,
             warning: sig.warning,
             integrity,
-            dishes,
+            dishes: decorateDishes(dishes, sig.monthlySales),
         });
     }
     return stores;
@@ -208,6 +209,161 @@ export function groupDishes(dishes: TakeoutDish[]): { group: string; dishes: Tak
     for (const d of rest) { const b = bucket(d); (map.get(b) || map.set(b, []).get(b)!).push(d); }
     for (const g of order) { const ds = map.get(g); if (ds && ds.length) groups.push({ group: g, dishes: ds }); }
     return groups.length ? groups : [{ group: '全部', dishes }];
+}
+
+// ── 菜品「选规格 / 加料」（对标美团点菜弹层 SKU）────────────────────
+const SUGAR_SPEC: TakeoutDishSpec = { name: '甜度', options: [{ label: '正常糖', priceDelta: 0 }, { label: '少糖', priceDelta: 0 }, { label: '半糖', priceDelta: 0 }, { label: '无糖', priceDelta: 0 }] };
+const ICE_SPEC: TakeoutDishSpec = { name: '冰量', options: [{ label: '正常冰', priceDelta: 0 }, { label: '少冰', priceDelta: 0 }, { label: '去冰', priceDelta: 0 }, { label: '常温/热', priceDelta: 0 }] };
+const SPICE_SPEC: TakeoutDishSpec = { name: '辣度', options: [{ label: '不辣', priceDelta: 0 }, { label: '微辣', priceDelta: 0 }, { label: '中辣', priceDelta: 0 }, { label: '特辣', priceDelta: 0 }] };
+const PORTION_SPEC: TakeoutDishSpec = { name: '份量', options: [{ label: '标准份', priceDelta: 0 }, { label: '大份', priceDelta: 5 }] };
+const RICE_ADDONS: TakeoutDishAddon[] = [{ label: '加饭', price: 2 }, { label: '加煎蛋', price: 2 }, { label: '加香肠', price: 3 }];
+const NOODLE_ADDONS: TakeoutDishAddon[] = [{ label: '加面', price: 3 }, { label: '加宽粉', price: 3 }, { label: '加蛋', price: 2 }];
+const HOTPOT_ADDONS: TakeoutDishAddon[] = [{ label: '加午餐肉', price: 6 }, { label: '加宽粉', price: 5 }, { label: '加鹌鹑蛋', price: 5 }];
+const MILKTEA_ADDONS: TakeoutDishAddon[] = [{ label: '加珍珠', price: 2 }, { label: '加椰果', price: 2 }, { label: '加奶盖', price: 4 }];
+
+const isDrink = (n: string) => /(奶茶|奶绿|奶昔|茶|咖啡|拿铁|美式|可乐|雪碧|汽水|气泡|饮|汁|波波|甘露|柠檬|椰|豆浆|酸梅)/.test(n);
+const isMilkTea = (n: string) => /(奶茶|奶绿|奶盖|波波|烤奶|阿华田|奶昔)/.test(n);
+const isNoodle = (n: string) => /(面|粉|米线|河粉|拉面|馄饨|刀削)/.test(n);
+const isRice = (n: string) => /(饭|盖|煲|便当|套餐|盖浇)/.test(n);
+const isHotpotItem = (n: string) => /(麻辣烫|串|烫|火锅|关东煮)/.test(n);
+const isSpicy = (n: string) => /(辣|麻|川|椒|魔鬼|火爆|香辣|泡椒)/.test(n);
+
+/**
+ * 按菜名推断「选规格 / 加料」（纯函数，确定性）。对标美团：饮品给甜度/冰量+小料，
+ * 饭/面给份量(+辣度/加料)，麻辣烫/串给辣度+加料，普通辣菜给辣度；汤/小食一般无规格。
+ */
+export function deriveDishOptions(name: string): { specs?: TakeoutDishSpec[]; addons?: TakeoutDishAddon[] } {
+    const n = name || '';
+    if (isDrink(n)) {
+        const specs = [SUGAR_SPEC, ICE_SPEC];
+        return isMilkTea(n) ? { specs, addons: MILKTEA_ADDONS } : { specs };
+    }
+    if (isHotpotItem(n)) return { specs: [SPICE_SPEC], addons: HOTPOT_ADDONS };
+    if (isNoodle(n)) {
+        const specs = isSpicy(n) ? [PORTION_SPEC, SPICE_SPEC] : [PORTION_SPEC];
+        return { specs, addons: NOODLE_ADDONS };
+    }
+    if (isRice(n)) {
+        const specs = isSpicy(n) ? [PORTION_SPEC, SPICE_SPEC] : [PORTION_SPEC];
+        return { specs, addons: RICE_ADDONS };
+    }
+    if (isSpicy(n)) return { specs: [SPICE_SPEC] };
+    return {};
+}
+
+/** 给一批菜挂上规格/加料 + 菜品月售（用于本地种子与 AI 现搓的统一加工）。 */
+export function decorateDishes(dishes: TakeoutDish[], storeMonthlySales = 600): TakeoutDish[] {
+    return dishes.map((d, i) => {
+        const opt = deriveDishOptions(d.name);
+        const base = d.popular ? rand(0.18, 0.42) : rand(0.04, 0.2);
+        return {
+            ...d,
+            monthlySales: d.monthlySales ?? Math.max(1, Math.floor(storeMonthlySales * base) + Math.floor(rand(0, 40)) - i),
+            specs: d.specs ?? opt.specs,
+            addons: d.addons ?? opt.addons,
+        };
+    });
+}
+
+/** 这道菜是否需要弹「选规格 / 加料」。 */
+export function dishHasOptions(d: Pick<TakeoutDish, 'specs' | 'addons'>): boolean {
+    return !!((d.specs && d.specs.length) || (d.addons && d.addons.length));
+}
+
+/** 一份菜（含所选规格 + 加料）的单价。 */
+export function dishUnitPrice(
+    basePrice: number,
+    specs: TakeoutDishSpec[] | undefined,
+    specChoice: Record<string, string>,
+    addons: TakeoutDishAddon[] | undefined,
+    addonLabels: string[],
+): number {
+    let p = basePrice;
+    for (const g of specs || []) {
+        const opt = g.options.find(o => o.label === specChoice[g.name]);
+        if (opt) p += opt.priceDelta;
+    }
+    for (const a of addons || []) if (addonLabels.includes(a.label)) p += a.price;
+    return Math.max(1, Math.round(p));
+}
+
+/** 规格 + 加料合并成一句人话（「大份·微辣 / 加蛋·加肠」），存进订单项的 spec 字段。 */
+export function formatSpecAddon(
+    specs: TakeoutDishSpec[] | undefined,
+    specChoice: Record<string, string>,
+    addonLabels: string[],
+): { spec?: string; addons?: string[] } {
+    const specParts = (specs || [])
+        .map(g => specChoice[g.name])
+        .filter((x): x is string => !!x && x !== '标准份' && x !== '正常糖' && x !== '正常冰' && x !== '不辣');
+    const addons = addonLabels.slice();
+    return {
+        spec: specParts.length ? specParts.join('·') : undefined,
+        addons: addons.length ? addons : undefined,
+    };
+}
+
+/** 购物车行 key：同一道菜不同规格/加料各占一行。 */
+export function cartLineKey(dishId: string, spec?: string, addons?: string[]): string {
+    return [dishId, spec || '', (addons || []).slice().sort().join(',')].join('|');
+}
+
+// ── 搜索：热门搜索 + 搜索历史（对标美团搜索页）──────────────────────
+export const TAKEOUT_HOT_SEARCHES = ['炸鸡', '麻辣烫', '奶茶', '螺蛳粉', '汉堡', '寿司', '黄焖鸡', '小龙虾', '轻食沙拉', '感冒药'];
+const SEARCH_HISTORY_KEY = 'moro_takeout_search_history_v1';
+export function getSearchHistory(): string[] {
+    try { const a = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || '[]'); return Array.isArray(a) ? a.filter((x): x is string => typeof x === 'string') : []; }
+    catch { return []; }
+}
+export function pushSearchHistory(q: string): string[] {
+    const v = q.trim();
+    if (!v) return getSearchHistory();
+    const next = [v, ...getSearchHistory().filter(x => x !== v)].slice(0, 10);
+    try { localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+}
+export function clearSearchHistory(): void { try { localStorage.removeItem(SEARCH_HISTORY_KEY); } catch { /* ignore */ } }
+
+// ── 收货地址簿（多地址管理，对标美团地址管理）─────────────────────
+const ADDRESS_BOOK_KEY = 'moro_takeout_addresses_v1';
+const DEFAULT_ADDRESS = '城南花园 3 栋 502';
+export function getAddresses(): string[] {
+    try {
+        const a = JSON.parse(localStorage.getItem(ADDRESS_BOOK_KEY) || 'null');
+        if (Array.isArray(a) && a.length) return a.filter((x): x is string => typeof x === 'string');
+    } catch { /* ignore */ }
+    // 兼容旧的单地址 key
+    try { const old = localStorage.getItem('moro_takeout_address'); if (old) return [old]; } catch { /* ignore */ }
+    return [DEFAULT_ADDRESS];
+}
+export function addAddress(addr: string): string[] {
+    const v = addr.trim();
+    if (!v) return getAddresses();
+    const next = [v, ...getAddresses().filter(x => x !== v)].slice(0, 12);
+    try { localStorage.setItem(ADDRESS_BOOK_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+    return next;
+}
+export function removeAddress(addr: string): string[] {
+    const next = getAddresses().filter(x => x !== addr);
+    const safe = next.length ? next : [DEFAULT_ADDRESS];
+    try { localStorage.setItem(ADDRESS_BOOK_KEY, JSON.stringify(safe)); } catch { /* ignore */ }
+    return safe;
+}
+
+// ── 预约送达：时段（对标美团「立即送出 / 预约」）──────────────────
+export interface DeliverySlot { label: string; at: number | null; } // at===null 即「尽快送达」
+export function deliveryTimeSlots(deliveryMinutes: number, now = Date.now()): DeliverySlot[] {
+    const slots: DeliverySlot[] = [{ label: '尽快送达', at: null }];
+    const soonest = now + Math.max(15, deliveryMinutes) * 60000;
+    const d = new Date(soonest);
+    d.setSeconds(0, 0);
+    d.setMinutes(d.getMinutes() <= 30 ? 30 : 60); // 向上取到下一个半点
+    for (let i = 0; i < 6; i++) {
+        const t = d.getTime() + i * 30 * 60000;
+        const dt = new Date(t);
+        slots.push({ label: `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`, at: t });
+    }
+    return slots;
 }
 
 // ── AI 现搓店铺（含菜品） ──────────────────────────────────────────
@@ -326,7 +482,7 @@ function mapAiStore(raw: AiStoreRaw): TakeoutStore | null {
         warning,
         integrity,
         aiGenerated: true,
-        dishes,
+        dishes: decorateDishes(dishes, sig.monthlySales),
     };
 }
 

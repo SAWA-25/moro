@@ -44,6 +44,18 @@
 - **给跑腿塞小费**：结算页可选小费（`TakeoutOrder.tip`，计入 `total`，被强制砍单时随 `total` 原路退回）；靠谱跑腿收到小费后回话更暖（`buildDeliveryReply` 注入 tip 提示，含本地兜底 `CANNED_RIDER_TIPPED`）。
 - **Prompt 加料**：`generateStoresAI`（店名更有烟火气/菜品写卖点/黑心店伪装更真）、`buildDeliveryReply`（跑腿/铺子/平台人设更鲜活 + 小费感知）、`laiwangPrompts.ts` 的 `proactiveTakeoutOrder`/`takeoutReceivedHint`（按天气时辰挑吃食、收到投喂的反应更具体）。
 
+## 2d. 对标美团外卖的功能/界面补全（不改原功能，纯增量；统一黑白拼贴手账皮肤）
+
+> 设计哲学不变：**保留美团的「功能」，把「外观」换成手账皮肤**。这一批把美团点餐里仍缺的环节补齐，新增逻辑全在 `utils/takeout.ts`（纯函数，带 `takeoutSku.test.ts`），界面落在 `apps/TakeoutApp.tsx`，视觉积木继续复用 `theater/scrapbook.tsx`。
+
+- **首页金刚区（品类宫格）**：`KINGKONG`（App 内常量）一格直达一类铺子（美食/早餐/汉堡快餐/奶茶/甜品/麻辣烫/烧烤夜宵/火锅/轻食/买药），用 `Stamp` 邮票格呈现，点一下 `setCat`。`CATS` 顶部 chip 补上「药品」。
+- **搜索历史 + 热门搜索**：搜索框聚焦且为空时弹一张纸卡——`getSearchHistory`/`pushSearchHistory`(去重置顶,上限10,`localStorage moro_takeout_search_history_v1`)/`clearSearchHistory` + `TAKEOUT_HOT_SEARCHES`。点词即现搜全城。
+- **菜品选规格 / 加料（SKU 弹层）**：`TakeoutDish` 新增 `specs?`(单选组,选项带 `priceDelta`)、`addons?`(多选,按份加价)、`monthlySales?`。`deriveDishOptions(name)` 按菜名确定性推断（饮品→甜度/冰量+小料；饭/面→份量[+辣度]+加料；麻辣烫/串→辣度+加料；普通辣菜→辣度）；`decorateDishes` 在本地种子与 AI 现搓店两条管线统一挂载。点「选规格」开 `PaperSheet`，`dishUnitPrice`/`formatSpecAddon`/`cartLineKey` 算单价、落人话描述、按「菜+规格+加料」分行 key。`TakeoutOrderItem` 新增 `spec?`/`addons?`（`price` 已含差价，聊天小票/详情向后兼容）。
+- **购物车浮层**：菜篮袋点开 `PaperSheet`，逐行 +/-、清空饭篮、去结算。购物车状态由 `Record<dishId,number>` 升级为 `Record<lineKey,CartLine>`（同菜不同规格各占一行）。
+- **店铺分页（点餐 / 评价 / 商家）**：`storeTab` 切换；评价页＝原食客留言墙，商家页＝品类/评分/月售/送达/起送/距离/营业/优惠 + 街坊提醒。菜篮搁板上方显示**满减凑单进度**（`parseStorePromo`：「再买 ¥X 享…」/「已享…省 ¥X」）。
+- **结算补全**：**预约送达**（`deliveryTimeSlots` 生成「尽快 + 今日半点时段」，落 `TakeoutOrder.scheduledAt` 并据此定 `etaAt`，详情显示「预约 HH:MM 送达」）；**餐具份数**（`TakeoutOrder.tableware`，0＝无需餐具🌱）；**多收货地址**（`getAddresses`/`addAddress`/`removeAddress`，`localStorage moro_takeout_addresses_v1`，结算页 `PaperSheet` 选/增/删，下过单的地址自动入簿）。
+- **订单骑手实时轨迹小地图**：`RiderTrackMap`（铺子🏪→你家🏠 虚线路线 + 跑腿按时间进度跑动），配在详情进度条上方；送达后隐藏。
+
 ## 3. 聊天设置「角色主动为用户点外卖」开关
 
 `ConvoSettings.proactiveTakeoutOrder`（`types.ts`），开关在 `components/chat/ConvoSettingsPanel.tsx`。开启后：

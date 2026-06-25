@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useOS } from '../context/OSContext';
 import {
     MagnifyingGlass, Star, Minus, Plus, Receipt, MapPin, ArrowClockwise, CheckCircle, Bicycle,
     Warning, Sparkle, ShieldWarning, SealCheck, HandCoins, Coins, PushPin, Shuffle, CookingPot,
     PaperPlaneRight, Storefront, Repeat, NotePencil, Package, ChatCircleDots,
+    Clock, House, Trash, CaretRight, ShoppingBag, Timer, CalendarCheck,
 } from '@phosphor-icons/react';
-import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview } from '../types';
+import { useOS } from '../context/OSContext';
+import { TakeoutStore, TakeoutOrder, TakeoutOrderItem, TakeoutChatMsg, TakeoutReview, TakeoutDish } from '../types';
 import { DB } from '../utils/db';
 import { resolveAuxApi } from '../utils/auxApi';
 import {
@@ -15,8 +16,12 @@ import {
     consumeTakeoutIntent, notifyTakeoutUpdated,
     generateStoreReviews, generateStoreReviewsAI, reviewQuickTags, generateReviewReplies,
     getPinnedStores, togglePinnedStore, type StoreNpcReview,
-    sortStores, filterStores, storePromoDiscount, bestRedpacket, TAKEOUT_REDPACKETS,
+    sortStores, filterStores, storePromoDiscount, parseStorePromo, bestRedpacket, TAKEOUT_REDPACKETS,
     recommendStores, groupDishes, type StoreSort, type StoreFilter,
+    dishHasOptions, dishUnitPrice, formatSpecAddon, cartLineKey,
+    TAKEOUT_HOT_SEARCHES, getSearchHistory, pushSearchHistory, clearSearchHistory,
+    getAddresses, addAddress, removeAddress,
+    deliveryTimeSlots, type DeliverySlot,
 } from '../utils/takeout';
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
@@ -24,25 +29,50 @@ import {
 } from './theater/scrapbook';
 
 /**
- * 「饭票」（原「外卖」）—— 黑白拼贴手账皮肤的吃食铺子。
+ * 「饭票」（原「外卖」）—— 黑白拼贴手账皮肤的吃食铺子，功能对标美团外卖。
  * ──────────────────────────────────────────────────────────────
  * 一整本米白报纸做的「饭票簿」：撕一张饭票点吃的，跑腿把热乎送到门口，盖个签收章收下。
  * 完全重写界面与文案（店名/按键/位置/口吻全部原创为手账口吻），但不改、不减任何原功能：
  *   现搓店铺(AI/本地) · 进铺点菜 · 撕票下单 · 配送进度 · 跟跑腿/铺子/平台对话 ·
  *   自付/代付(钱包实扣) · 黑心铺子&坏跑腿事故 · 一键申诉退款 · 食评 + NPC 留言。
- * 新增：抽张饭票(随机) · 钉常去的铺子 · 照着再撕一张(再来一单) · 备注快捷条 · 给跑腿塞小费。
+ * 美团式增量：首页金刚区(品类宫格) · 搜索历史/热门搜索 · 菜品选规格&加料(SKU 弹层) ·
+ *   购物车浮层(逐行增减/清空) · 店铺分页(点餐/评价/商家) · 满减凑单进度 ·
+ *   结算预约送达 + 餐具份数 + 多收货地址管理 · 订单骑手实时轨迹地图。
+ * 早先增量保留：抽张饭票 · 钉常去铺子 · 再来一单 · 备注快捷条 · 给跑腿塞小费。
  * 视觉积木复用 theater/scrapbook（黑白拼贴手账统一套件）；食物 emoji 一律去色成灰阶。
  */
 
 const genId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 const ADDR_KEY = 'moro_takeout_address';
-const CATS = ['全部', '中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉'];
+const CATS = ['全部', '中餐', '快餐', '早餐', '西餐', '麻辣烫', '奶茶饮品', '甜品烘焙', '日韩料理', '火锅烧烤', '夜宵', '轻食沙拉', '药品'];
 const NOTE_CHIPS = ['少辣', '多放饭', '多给餐具', '不要香菜', '放门口别敲门', '微辣多醋', '打包结实点', '调料另放'];
 const TIP_CHOICES = [0, 2, 5, 8];
+const TABLEWARE_CHOICES = [0, 1, 2, 3, 4, 5];
 const STAR_WORDS = ['', '难吃', '一般', '还行', '满意', '绝了'];
+
+// 首页金刚区（美团式品类宫格）：一格直达一类铺子
+const KINGKONG: { label: string; emoji: string; cat: string }[] = [
+    { label: '美食', emoji: '🍜', cat: '全部' },
+    { label: '早餐', emoji: '🥟', cat: '早餐' },
+    { label: '汉堡快餐', emoji: '🍔', cat: '快餐' },
+    { label: '奶茶果汁', emoji: '🧋', cat: '奶茶饮品' },
+    { label: '甜品烘焙', emoji: '🍰', cat: '甜品烘焙' },
+    { label: '麻辣烫', emoji: '🥘', cat: '麻辣烫' },
+    { label: '烧烤夜宵', emoji: '🍢', cat: '夜宵' },
+    { label: '火锅', emoji: '🍲', cat: '火锅烧烤' },
+    { label: '轻食', emoji: '🥗', cat: '轻食沙拉' },
+    { label: '买药', emoji: '💊', cat: '药品' },
+];
 
 type View = 'home' | 'store' | 'checkout' | 'orders' | 'detail';
 type ChatTarget = 'rider' | 'store' | 'support';
+type StoreTab = 'menu' | 'reviews' | 'info';
+
+/** 购物车一行：同一道菜不同规格/加料各占一行。 */
+interface CartLine {
+    key: string; dishId: string; name: string; emoji?: string;
+    basePrice: number; unitPrice: number; qty: number; spec?: string; addons?: string[];
+}
 
 const paperInput: React.CSSProperties = {
     background: 'rgba(255,253,247,0.9)', color: '#36322b',
@@ -104,6 +134,34 @@ const TakeoutBanner: React.FC = () => {
     );
 };
 
+// ── 订单·骑手实时轨迹小地图（铺子→你家，跑腿按进度跑动）──
+const RiderTrackMap: React.FC<{ frac: number; riderEmoji: string; storeEmoji: string }> = ({ frac, riderEmoji, storeEmoji }) => {
+    const f = Math.max(0, Math.min(1, frac));
+    return (
+        <div className="relative rounded-[12px] overflow-hidden mb-3" style={{ height: 84, background: 'linear-gradient(180deg,#f1ede3,#e8e3d7)', border: '1px solid rgba(176,170,158,0.6)' }}>
+            <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.10]" style={{ backgroundImage: HALFTONE, backgroundSize: '8px 8px' }} />
+            {/* 路网底纹 */}
+            <div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'repeating-linear-gradient(0deg, rgba(31,29,26,0.05) 0 1px, transparent 1px 22px), repeating-linear-gradient(90deg, rgba(31,29,26,0.05) 0 1px, transparent 1px 26px)' }} />
+            {/* 配送路线（虚线） */}
+            <div className="absolute left-9 right-9" style={{ top: '50%', height: 2, transform: 'translateY(-50%)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(31,29,26,0.55) 0 6px, transparent 6px 12px)' }} />
+            <div className="absolute left-9" style={{ top: '50%', height: 2, transform: 'translateY(-50%)', width: `calc((100% - 72px) * ${f})`, background: INK }} />
+            {/* 铺子 / 家 */}
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: PAPER, border: `1.5px solid ${INK}` }}><Emo e={storeEmoji} size={15} /></div>
+                <span className="text-[8px] font-bold" style={{ color: INK_SOFT }}>铺子</span>
+            </div>
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: INK, color: PAPER }}><House size={15} weight="fill" /></div>
+                <span className="text-[8px] font-bold" style={{ color: INK_SOFT }}>你家</span>
+            </div>
+            {/* 跑腿 */}
+            <div className="absolute" style={{ left: `calc(36px + (100% - 72px) * ${f})`, top: '50%', transform: 'translate(-50%,-50%)', transition: 'left 0.8s ease' }}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: PAPER, border: `1.5px dashed ${INK}`, boxShadow: '0 4px 10px -4px rgba(31,29,26,0.5)' }}><Emo e={riderEmoji} size={17} /></div>
+            </div>
+        </div>
+    );
+};
+
 const TakeoutApp: React.FC = () => {
     const { closeApp, characters, userProfile, updateUserProfile, apiConfig, auxApiConfig, addToast, adjustUserBalance } = useOS();
     const api = resolveAuxApi(auxApiConfig, apiConfig);
@@ -125,19 +183,36 @@ const TakeoutApp: React.FC = () => {
     const [cat, setCat] = useState('全部');
     const [query, setQuery] = useState('');
     const [activeStore, setActiveStore] = useState<TakeoutStore | null>(null);
-    const [cart, setCart] = useState<Record<string, number>>({});
+    const [storeTab, setStoreTab] = useState<StoreTab>('menu');
+    const [cart, setCart] = useState<Record<string, CartLine>>({});
+    const [cartOpen, setCartOpen] = useState(false);
     const [orders, setOrders] = useState<TakeoutOrder[]>([]);
     const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
     const [pinned, setPinned] = useState<string[]>(() => getPinnedStores());
 
+    // 搜索：聚焦时弹历史 + 热门搜索
+    const [searchFocused, setSearchFocused] = useState(false);
+    const [searchHistory, setSearchHistory] = useState<string[]>(() => getSearchHistory());
+
+    // 选规格 / 加料弹层（SKU）
+    const [skuDish, setSkuDish] = useState<TakeoutDish | null>(null);
+    const [skuSpec, setSkuSpec] = useState<Record<string, string>>({});
+    const [skuAddons, setSkuAddons] = useState<string[]>([]);
+    const [skuQty, setSkuQty] = useState(1);
+
     // 结算配置
     const [recipient, setRecipient] = useState('me');
     const [payer, setPayer] = useState('me');
     const [intentCharId, setIntentCharId] = useState<string | null>(null);
-    const [address, setAddress] = useState(() => { try { return localStorage.getItem(ADDR_KEY) || '城南花园 3 栋 502'; } catch { return '城南花园 3 栋 502'; } });
+    const [addresses, setAddresses] = useState<string[]>(() => getAddresses());
+    const [address, setAddress] = useState(() => getAddresses()[0] || '城南花园 3 栋 502');
+    const [addrSheetOpen, setAddrSheetOpen] = useState(false);
+    const [newAddr, setNewAddr] = useState('');
     const [note, setNote] = useState('');
     const [tip, setTip] = useState(0);
+    const [slot, setSlot] = useState<DeliverySlot>({ label: '尽快送达', at: null });
+    const [tableware, setTableware] = useState(1);
 
     // 跟跑腿 / 铺子 / 平台对话
     const [chatTarget, setChatTarget] = useState<ChatTarget>('rider');
@@ -193,9 +268,12 @@ const TakeoutApp: React.FC = () => {
     };
 
     // 搜索栏实时生成：按搜索词现搜一批相关店铺（生成后清掉文字过滤，直接展示这批结果）
-    const searchGen = async () => {
-        const q = query.trim();
+    const searchGen = async (qArg?: string) => {
+        const q = (qArg ?? query).trim();
         if (!q) return;
+        setQuery(q);
+        setSearchHistory(pushSearchHistory(q));
+        setSearchFocused(false);
         if (!aiReady) { addToast('配好副 API 才能现搜哦', 'info'); return; }
         addToast(`正在为「${q}」现搜全城…`, 'info');
         await loadStoresAI(q);
@@ -229,23 +307,52 @@ const TakeoutApp: React.FC = () => {
     }, [stores, cat, query, filter, sort]);
     const recommended = useMemo(() => recommendStores(stores, 6), [stores]);
 
-    const cartItems = useMemo((): TakeoutOrderItem[] => {
-        if (!activeStore) return [];
-        return Object.entries(cart).filter(([, q]) => q > 0).map(([dishId, qty]) => {
-            const d = activeStore.dishes.find(x => x.id === dishId)!;
-            return { dishId, name: d.name, price: d.price, qty, emoji: d.emoji };
-        });
-    }, [cart, activeStore]);
-    const cartSubtotal = cartItems.reduce((s, i) => s + i.price * i.qty, 0);
-    const cartCount = cartItems.reduce((s, i) => s + i.qty, 0);
+    const cartItems = useMemo((): TakeoutOrderItem[] =>
+        Object.values(cart).filter(l => l.qty > 0).map(l => ({ dishId: l.dishId, name: l.name, price: l.unitPrice, qty: l.qty, emoji: l.emoji, spec: l.spec, addons: l.addons })),
+        [cart]);
+    const cartSubtotal = useMemo(() => Object.values(cart).reduce((s, l) => s + l.unitPrice * l.qty, 0), [cart]);
+    const cartCount = useMemo(() => Object.values(cart).reduce((s, l) => s + l.qty, 0), [cart]);
+    const dishQty = (dishId: string) => Object.values(cart).reduce((s, l) => s + (l.dishId === dishId ? l.qty : 0), 0);
 
     // ── 操作 ──
     const refresh = () => {
         if (aiReady) { void loadStoresAI(); addToast('正在现写一条街…', 'info'); }
         else { const s = generateStores(20); setStores(s); try { localStorage.setItem(STORES_CACHE_KEY, JSON.stringify(s)); } catch { /* ignore */ } addToast('翻到另一条街啦～', 'info'); }
     };
-    const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setView('store'); };
-    const setQty = (dishId: string, delta: number) => setCart(prev => ({ ...prev, [dishId]: Math.max(0, (prev[dishId] || 0) + delta) }));
+    const openStore = (s: TakeoutStore) => { setActiveStore(s); setCart({}); setStoreTab('menu'); setView('store'); };
+
+    // 购物车：增 / 减一行
+    const addLine = (line: Omit<CartLine, 'qty'>, delta = 1) => setCart(prev => {
+        const qty = Math.max(0, (prev[line.key]?.qty || 0) + delta);
+        const next = { ...prev };
+        if (qty <= 0) delete next[line.key]; else next[line.key] = { ...line, qty };
+        return next;
+    });
+    const setLineQty = (key: string, delta: number) => setCart(prev => {
+        const cur = prev[key]; if (!cur) return prev;
+        const qty = Math.max(0, cur.qty + delta);
+        const next = { ...prev };
+        if (qty <= 0) delete next[key]; else next[key] = { ...cur, qty };
+        return next;
+    });
+    const clearCart = () => { setCart({}); setCartOpen(false); };
+    // 无规格菜：行内直接 +/-
+    const addSimple = (d: TakeoutDish, delta: number) =>
+        addLine({ key: cartLineKey(d.id), dishId: d.id, name: d.name, emoji: d.emoji, basePrice: d.price, unitPrice: d.price }, delta);
+
+    // 选规格 / 加料弹层
+    const openSku = (d: TakeoutDish) => {
+        const init: Record<string, string> = {};
+        (d.specs || []).forEach(g => { if (g.options[0]) init[g.name] = g.options[0].label; });
+        setSkuDish(d); setSkuSpec(init); setSkuAddons([]); setSkuQty(1);
+    };
+    const skuUnitPrice = skuDish ? dishUnitPrice(skuDish.price, skuDish.specs, skuSpec, skuDish.addons, skuAddons) : 0;
+    const confirmSku = () => {
+        if (!skuDish) return;
+        const { spec, addons } = formatSpecAddon(skuDish.specs, skuSpec, skuAddons);
+        addLine({ key: cartLineKey(skuDish.id, spec, addons), dishId: skuDish.id, name: skuDish.name, emoji: skuDish.emoji, basePrice: skuDish.price, unitPrice: skuUnitPrice, spec, addons }, skuQty);
+        setSkuDish(null);
+    };
 
     // 抽张饭票：命运替你翻一家进去
     const randomPick = () => {
@@ -254,6 +361,12 @@ const TakeoutApp: React.FC = () => {
         const s = pool[Math.floor(Math.random() * pool.length)];
         addToast(`命运替你翻到了「${s.name}」`, 'info');
         openStore(s);
+    };
+
+    // 金刚区：一格直达一类
+    const onKingKong = (k: { label: string; cat: string }) => {
+        setCat(k.cat); setQuery(''); setFilter({}); setSearchFocused(false);
+        addToast(`翻到「${k.label}」这一摊`, 'info');
     };
 
     // 钉 / 取常去的铺子
@@ -270,10 +383,27 @@ const TakeoutApp: React.FC = () => {
 
     const addNoteChip = (t: string) => setNote(prev => prev.includes(t) ? prev : (prev ? `${prev}；${t}` : t));
 
+    // 收货地址簿
+    const chooseAddress = (a: string) => { setAddress(a); setAddrSheetOpen(false); };
+    const saveNewAddress = () => {
+        const v = newAddr.trim();
+        if (!v) return;
+        const next = addAddress(v);
+        setAddresses(next); setAddress(v); setNewAddr(''); setAddrSheetOpen(false);
+        addToast('新地址记好啦', 'success');
+    };
+    const deleteAddress = (a: string) => {
+        const next = removeAddress(a);
+        setAddresses(next);
+        if (!next.includes(address)) setAddress(next[0]);
+    };
+
     const goCheckout = () => {
         if (!activeStore) return;
         if (cartSubtotal < activeStore.minOrder) { addToast(`再凑 ¥${activeStore.minOrder - cartSubtotal} 就能起送`, 'info'); return; }
         setRecipient(intentCharId || 'me'); setPayer('me'); setNote(''); setTip(0);
+        setSlot({ label: '尽快送达', at: null }); setTableware(1);
+        setCartOpen(false);
         setView('checkout');
     };
 
@@ -287,9 +417,16 @@ const TakeoutApp: React.FC = () => {
             dishes: o.items.map(i => ({ id: i.dishId, name: i.name, price: i.price, emoji: i.emoji, popular: false })),
         };
         setActiveStore(pseudo);
-        setCart(Object.fromEntries(o.items.map(i => [i.dishId, i.qty])));
+        // 旧票逐项重建购物车行（含规格/加料）
+        const lines: Record<string, CartLine> = {};
+        o.items.forEach(i => {
+            const key = cartLineKey(i.dishId, i.spec, i.addons);
+            lines[key] = { key, dishId: i.dishId, name: i.name, emoji: i.emoji, basePrice: i.price, unitPrice: i.price, qty: (lines[key]?.qty || 0) + i.qty, spec: i.spec, addons: i.addons };
+        });
+        setCart(lines);
         const keepRecipient = o.recipient === 'me' || characters.some(c => c.id === o.recipient) ? o.recipient : 'me';
         setRecipient(keepRecipient); setPayer('me'); setNote(o.note || ''); setTip(0);
+        setSlot({ label: '尽快送达', at: null }); setTableware(o.tableware ?? 1);
         addToast('照着又撕了一张，核对下就能下单～', 'info');
         setView('checkout');
     };
@@ -305,9 +442,11 @@ const TakeoutApp: React.FC = () => {
         const payByMe = payer === 'me';
         if (payByMe && wallet < total) { addToast(`饭钱不够：钱包 ¥${wallet} / 这张票要 ¥${total}`, 'error'); return; }
         try { localStorage.setItem(ADDR_KEY, address); } catch { /* ignore */ }
+        if (recipient === 'me') setAddresses(addAddress(address)); // 下过单的地址进地址簿
 
         const rider = newRider();
         const placedAt = Date.now();
+        const etaAt = slot.at ?? (placedAt + activeStore.deliveryMinutes * 60000);
         const charId = recipient !== 'me' ? recipient : (payer !== 'me' ? payer : undefined);
         const roll = rollOrderIssues(activeStore, cartItems, cartSubtotal, activeStore.deliveryFee);
 
@@ -327,7 +466,9 @@ const TakeoutApp: React.FC = () => {
             riderReliability: roll.riderReliability,
             address: recipient !== 'me' ? `送给 ${nameOf(recipient)}` : address,
             note: note.trim() || undefined,
-            placedAt, etaAt: placedAt + activeStore.deliveryMinutes * 60000,
+            placedAt, etaAt,
+            scheduledAt: slot.at ?? undefined,
+            tableware,
             chat: [], chatTarget: 'rider',
             initiatedBy: 'user',
             cardPosted: !!charId,
@@ -455,6 +596,12 @@ const TakeoutApp: React.FC = () => {
         />
     );
 
+    // 一道菜的「起步价」展示（有加价规格则显示「¥X 起」）
+    const dishPriceLabel = (d: TakeoutDish) => {
+        const hasPriced = (d.specs || []).some(g => g.options.some(o => o.priceDelta > 0)) || (d.addons || []).length > 0;
+        return hasPriced ? `¥${d.price} 起` : `¥${d.price}`;
+    };
+
     // ════════════════════════ 首页·饭票簿 ════════════════════════
     if (view === 'home') {
         return (
@@ -481,11 +628,37 @@ const TakeoutApp: React.FC = () => {
                 <div className="relative z-10 px-5 pt-2.5">
                     <div className="flex items-center gap-2 px-3 py-2 rounded-[10px]" style={paperInput}>
                         <MagnifyingGlass size={15} color={INK_SOFT} />
-                        <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && query.trim()) void searchGen(); }} placeholder="搜店名/菜品/药品…回车现搜全城" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
+                        <input value={query} onChange={e => setQuery(e.target.value)} onFocus={() => setSearchFocused(true)}
+                            onBlur={() => setTimeout(() => setSearchFocused(false), 140)}
+                            onKeyDown={e => { if (e.key === 'Enter' && query.trim()) void searchGen(); }} placeholder="搜店名/菜品/药品…回车现搜全城" className="flex-1 min-w-0 bg-transparent text-[12.5px] outline-none" style={{ color: '#36322b' }} />
                         <button onClick={refresh} disabled={aiLoading} className="text-[11px] font-black flex items-center gap-1 disabled:opacity-50" style={{ color: INK }}>
                             {aiLoading ? <><Sparkle size={13} weight="fill" className="animate-pulse" />现写中…</> : <><ArrowClockwise size={13} weight="bold" />{aiReady ? '现写一条街' : '另逛一条街'}</>}
                         </button>
                     </div>
+                    {/* 搜索历史 + 热门搜索（聚焦且没在打字时弹出） */}
+                    {searchFocused && !query.trim() && (
+                        <PaperCard tilt={-0.3} className="mt-2 px-3.5 py-3">
+                            {searchHistory.length > 0 && (
+                                <div className="mb-2.5">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-[8.5px] tracking-[0.3em] flex items-center gap-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}><Clock size={11} weight="bold" />搜过的</span>
+                                        <button onClick={() => { clearSearchHistory(); setSearchHistory([]); }} className="text-[10px] inline-flex items-center gap-0.5" style={{ color: INK_SOFT }}><Trash size={11} />清空</button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {searchHistory.map(h => (
+                                            <button key={h} onClick={() => void searchGen(h)} className="text-[11px] px-2.5 py-1 rounded-full font-bold active:scale-95 transition-transform" style={{ background: '#efeae0', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{h}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="text-[8.5px] tracking-[0.3em] mb-1.5 flex items-center gap-1" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>🔥 大家都在搜</div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {TAKEOUT_HOT_SEARCHES.map(h => (
+                                    <button key={h} onClick={() => void searchGen(h)} className="text-[11px] px-2.5 py-1 rounded-full font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px dashed rgba(150,144,132,0.7)' }}>{h}</button>
+                                ))}
+                            </div>
+                        </PaperCard>
+                    )}
                     {/* 搜索栏实时生成：按搜索词现搜一批相关店铺 */}
                     {query.trim() && aiReady && (
                         <button onClick={() => void searchGen()} disabled={aiLoading} className="mt-2 w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-[10px] text-[12px] font-black active:scale-[0.98] transition-transform disabled:opacity-50" style={{ background: '#d2452f', color: '#fff', boxShadow: '0 10px 18px -12px rgba(210,69,47,0.7)' }}>
@@ -495,6 +668,20 @@ const TakeoutApp: React.FC = () => {
                     <button onClick={randomPick} className="mt-2.5 w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-[10px] text-[13px] font-black active:scale-[0.98] transition-transform" style={{ background: INK, color: PAPER, outline: '1px dashed rgba(255,255,255,0.32)', outlineOffset: -4, boxShadow: '0 12px 22px -14px rgba(31,29,26,0.6)' }}>
                         <Shuffle size={16} weight="bold" />抽张饭票 · 替我拿主意
                     </button>
+                </div>
+
+                {/* 金刚区·品类宫格（美团式） */}
+                <div className="relative z-10 px-5 pt-3">
+                    <PaperCard tilt={-0.2} className="px-2 py-3">
+                        <div className="grid grid-cols-5 gap-y-3">
+                            {KINGKONG.map(k => (
+                                <button key={k.label} onClick={() => onKingKong(k)} className="flex flex-col items-center gap-1 active:scale-90 transition-transform">
+                                    <Stamp size={42} color={cat === k.cat && cat !== '全部' ? 'ink' : 'butter'}><Emo e={k.emoji} size={22} /></Stamp>
+                                    <span className="text-[10px] font-bold leading-none" style={{ color: cat === k.cat && cat !== '全部' ? INK : '#5a554c' }}>{k.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </PaperCard>
                 </div>
 
                 {/* banner 轮播 + 平台红包·领券 */}
@@ -619,6 +806,11 @@ const TakeoutApp: React.FC = () => {
     // ════════════════════════ 铺子·点菜 ════════════════════════
     if (view === 'store' && activeStore) {
         const isPinned = pinned.includes(activeStore.name);
+        const promoParsed = parseStorePromo(activeStore.promo);
+        const promoGap = promoParsed && cartSubtotal > 0 && cartSubtotal < promoParsed.threshold ? promoParsed.threshold - cartSubtotal : 0;
+        const storeTabs: { id: StoreTab; label: string }[] = [
+            { id: 'menu', label: '点餐' }, { id: 'reviews', label: `评价 ${storeReviews.length || ''}`.trim() }, { id: 'info', label: '商家' },
+        ];
         return (
             <PaperShell key="store">
                 <ScrapHeader
@@ -647,80 +839,139 @@ const TakeoutApp: React.FC = () => {
                             </div>
                         </div>
                     </PaperCard>
+                    {/* 店铺分页：点餐 / 评价 / 商家 */}
+                    <div className="flex items-center gap-1.5 mt-3">
+                        {storeTabs.map(t => (
+                            <button key={t.id} onClick={() => setStoreTab(t.id)} className="px-3.5 py-1.5 rounded-[8px] text-[12.5px] font-black active:scale-95 transition-transform"
+                                style={storeTab === t.id ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.92)', color: '#5a554c', border: '1px solid rgba(176,170,158,0.6)' }}>{t.label}</button>
+                        ))}
+                    </div>
                 </div>
 
                 <ScrapScroll className="px-5 pt-3 pb-28">
-                    <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
-                    {/* 美团式菜单分组（招牌/主食/饮品/小食…） */}
-                    <div className="space-y-3.5">
-                        {groupDishes(activeStore.dishes).map(({ group, dishes }) => (
-                            <div key={group}>
-                                <div className="text-[10px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: INK_SOFT, letterSpacing: '0.08em' }}>
-                                    <span className="w-3 h-px" style={{ background: 'rgba(176,170,158,0.7)' }} />{group}<span className="opacity-50">· {dishes.length}</span>
+                    {storeTab === 'menu' && (
+                        <>
+                            <SectionTag en="THE MENU" className="mb-3">菜牌</SectionTag>
+                            {/* 美团式菜单分组（招牌/主食/饮品/小食…） */}
+                            <div className="space-y-3.5">
+                                {groupDishes(activeStore.dishes).map(({ group, dishes }) => (
+                                    <div key={group}>
+                                        <div className="text-[10px] font-black mb-1.5 flex items-center gap-1.5" style={{ color: INK_SOFT, letterSpacing: '0.08em' }}>
+                                            <span className="w-3 h-px" style={{ background: 'rgba(176,170,158,0.7)' }} />{group}<span className="opacity-50">· {dishes.length}</span>
+                                        </div>
+                                        <div className="space-y-2.5">
+                                            {dishes.map(d => {
+                                                const qty = dishQty(d.id);
+                                                const hasOpts = dishHasOptions(d);
+                                                return (
+                                                    <div key={d.id} className="flex gap-3 items-center px-3 py-2.5 rounded-[12px]" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                                        <Shopfront e={d.emoji} size={24} box={46} />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
+                                                                {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
+                                                            </div>
+                                                            {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
+                                                            <div className="text-[9.5px] mt-0.5" style={{ color: INK_SOFT }}>{d.monthlySales ? `月售 ${d.monthlySales}` : ''}{hasOpts ? ' · 可选规格' : ''}</div>
+                                                            <div className="text-[14px] font-black mt-1" style={{ color: INK }}>{dishPriceLabel(d)}</div>
+                                                        </div>
+                                                        <div className="flex flex-col items-end gap-1 shrink-0">
+                                                            <div className="flex items-center gap-2">
+                                                                {!hasOpts && qty > 0 && <>
+                                                                    <button onClick={() => addSimple(d, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
+                                                                    <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{qty}</span>
+                                                                </>}
+                                                                {hasOpts && qty > 0 && <span className="text-[13px] font-black min-w-4 text-center" style={{ color: INK }}>×{qty}</span>}
+                                                                {hasOpts
+                                                                    ? <button onClick={() => openSku(d)} className="px-2.5 h-6 rounded-full flex items-center justify-center text-[11px] font-black active:scale-90" style={{ background: INK, color: PAPER }}>选规格</button>
+                                                                    : <button onClick={() => addSimple(d, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    {storeTab === 'reviews' && (
+                        <>
+                            <SectionTag en="DINERS' WALL" className="mb-3">食客留言墙</SectionTag>
+                            <PaperCard tilt={0.3} className="px-4 py-3.5">
+                                <div className="flex items-center justify-between mb-2.5">
+                                    <span className="text-[12px] font-black flex items-center gap-1.5" style={{ color: INK }}>
+                                        大伙儿吃过都说
+                                        {reviewsLoading && <span className="text-[9px] font-bold opacity-50">· 现写食评中…</span>}
+                                    </span>
+                                    <span className="flex items-center gap-1 text-[12px] font-black" style={{ color: INK }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
                                 </div>
-                                <div className="space-y-2.5">
-                                    {dishes.map(d => (
-                                        <div key={d.id} className="flex gap-3 items-center px-3 py-2.5 rounded-[12px]" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: '1px solid rgba(176,170,158,0.55)' }}>
-                                            <Shopfront e={d.emoji} size={24} box={46} />
+                                <DashedRule className="mb-3" />
+                                <div className="space-y-3">
+                                    {storeReviews.map(r => (
+                                        <div key={r.id} className="flex gap-2.5">
+                                            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.6)' }}><Emo e={r.emoji} size={16} /></div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-[13.5px] font-bold truncate flex items-center gap-1" style={{ color: INK }}>
-                                                    {d.name}{d.popular && <span className="text-[9px] px-1 py-px rounded-[3px]" style={{ background: INK, color: PAPER }}>镇店</span>}
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[12px] font-bold truncate" style={{ color: '#46423a' }}>{r.name}</span>
+                                                    <span className="text-[10px]" style={{ color: INK_SOFT }}>{r.date}</span>
                                                 </div>
-                                                {d.desc && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{d.desc}</div>}
-                                                <div className="text-[14px] font-black mt-1" style={{ color: INK }}>¥{d.price}</div>
-                                            </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                {(cart[d.id] || 0) > 0 && <>
-                                                    <button onClick={() => setQty(d.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
-                                                    <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{cart[d.id]}</span>
-                                                </>}
-                                                <button onClick={() => setQty(d.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>
+                                                <Stars n={r.rating} size={10} />
+                                                <div className="text-[12px] mt-0.5 leading-snug" style={{ color: '#54504a' }}>{r.text}</div>
+                                                {r.reply && <div className="mt-1 text-[11px] px-2 py-1.5 rounded-[8px]" style={{ background: '#efeae0', color: '#5a554c' }}>铺子回话：{r.reply}</div>}
+                                                <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>👍 {r.likes} 人点头</div>
                                             </div>
                                         </div>
                                     ))}
+                                    {storeReviews.length === 0 && <div className="text-center text-[12px] py-6" style={{ color: INK_SOFT }}>还没人留言，等你做第一个～</div>}
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            </PaperCard>
+                        </>
+                    )}
 
-                    {/* 食客留言墙 */}
-                    <SectionTag en="DINERS' WALL" className="mt-6 mb-3">食客留言墙</SectionTag>
-                    <PaperCard tilt={0.4} className="px-4 py-3.5">
-                        <div className="flex items-center justify-between mb-2.5">
-                            <span className="text-[12px] font-black flex items-center gap-1.5" style={{ color: INK }}>
-                                大伙儿吃过都说
-                                {reviewsLoading && <span className="text-[9px] font-bold opacity-50">· 现写食评中…</span>}
-                            </span>
-                            <span className="flex items-center gap-1 text-[12px] font-black" style={{ color: INK }}><Stars n={activeStore.rating} />{activeStore.rating}</span>
-                        </div>
-                        <DashedRule className="mb-3" />
-                        <div className="space-y-3">
-                            {storeReviews.slice(0, 6).map(r => (
-                                <div key={r.id} className="flex gap-2.5">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#efeae0', border: '1px solid rgba(176,170,158,0.6)' }}><Emo e={r.emoji} size={16} /></div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[12px] font-bold truncate" style={{ color: '#46423a' }}>{r.name}</span>
-                                            <span className="text-[10px]" style={{ color: INK_SOFT }}>{r.date}</span>
+                    {storeTab === 'info' && (
+                        <>
+                            <SectionTag en="THE SHOP" className="mb-3">商家信息</SectionTag>
+                            <PaperCard tilt={-0.3} className="px-4 py-4">
+                                {activeStore.blurb && <div className="text-[12.5px] italic leading-relaxed mb-3" style={{ color: '#54504a' }}>店主有话：「{activeStore.blurb}」</div>}
+                                <div className="space-y-2 text-[12.5px]" style={{ color: '#54504a' }}>
+                                    {([
+                                        ['品类', activeStore.category],
+                                        ['综合评分', `${activeStore.rating} 分`],
+                                        ['月售', `${activeStore.monthlySales} 单`],
+                                        ['送达约', `${activeStore.deliveryMinutes} 分钟`],
+                                        ['跑腿费', activeStore.deliveryFee === 0 ? '免跑腿费' : `¥${activeStore.deliveryFee}`],
+                                        ['起送', activeStore.minOrder ? `¥${activeStore.minOrder}` : '无门槛'],
+                                        ['距你', `${activeStore.distanceKm} km`],
+                                        ['营业', '10:00 – 23:30'],
+                                        ['票面优惠', activeStore.promo || '暂无'],
+                                    ] as [string, string][]).map(([k, v]) => (
+                                        <div key={k} className="flex items-center justify-between">
+                                            <span style={{ color: INK_SOFT }}>{k}</span>
+                                            <span className="font-bold" style={{ color: INK }}>{v}</span>
                                         </div>
-                                        <Stars n={r.rating} size={10} />
-                                        <div className="text-[12px] mt-0.5 leading-snug" style={{ color: '#54504a' }}>{r.text}</div>
-                                        {r.reply && <div className="mt-1 text-[11px] px-2 py-1.5 rounded-[8px]" style={{ background: '#efeae0', color: '#5a554c' }}>铺子回话：{r.reply}</div>}
-                                        <div className="text-[10px] mt-1" style={{ color: INK_SOFT }}>👍 {r.likes} 人点头</div>
-                                    </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </div>
-                    </PaperCard>
+                                {activeStore.warning && (
+                                    <div className="mt-3 text-[11.5px] font-bold flex items-start gap-1.5 p-2.5 rounded-[10px]" style={{ background: INK, color: PAPER }}>
+                                        <Warning size={14} weight="fill" className="mt-0.5 shrink-0" />街坊提醒：{activeStore.warning}
+                                    </div>
+                                )}
+                            </PaperCard>
+                        </>
+                    )}
                 </ScrapScroll>
 
                 {/* 菜篮搁板 */}
                 <div className="relative z-20 shrink-0 px-5 pt-3" style={{ background: 'linear-gradient(180deg, rgba(246,243,236,0), #efece3 40%)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+                    {promoGap > 0 && <div className="text-[10.5px] font-bold mb-1.5 text-center" style={{ color: '#d2452f' }}>再买 ¥{promoGap} 享「{activeStore.promo}」</div>}
+                    {promoGap === 0 && promoDisc > 0 && <div className="text-[10.5px] font-bold mb-1.5 text-center" style={{ color: '#d2452f' }}>已享「{activeStore.promo}」，省 ¥{promoDisc}</div>}
                     <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-[14px]" style={{ background: PAPER, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 -10px 22px -16px rgba(31,29,26,0.5)' }}>
-                        <div className="relative">
-                            <Stamp size={44} color="ink"><Package size={22} weight="duotone" /></Stamp>
+                        <button onClick={() => cartCount > 0 && setCartOpen(true)} className="relative active:scale-90 transition-transform" title="看看饭篮">
+                            <Stamp size={44} color="ink"><ShoppingBag size={22} weight="duotone" /></Stamp>
                             {cartCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center" style={{ background: INK, color: PAPER, border: `2px solid ${PAPER}` }}>{cartCount}</span>}
-                        </div>
+                        </button>
                         <div className="flex-1 min-w-0">
                             <div className="text-[17px] font-black" style={{ color: INK }}>¥{cartSubtotal}</div>
                             <div className="text-[10px]" style={{ color: INK_SOFT }}>另付 跑腿¥{activeStore.deliveryFee} · 打包¥{PACK_FEE}</div>
@@ -730,6 +981,80 @@ const TakeoutApp: React.FC = () => {
                         </ScrapButton>
                     </div>
                 </div>
+
+                {/* 选规格 / 加料弹层 */}
+                <PaperSheet open={!!skuDish} onClose={() => setSkuDish(null)} title={skuDish ? `${skuDish.emoji || '🍽️'} ${skuDish.name}` : ''} tape="ink">
+                    {skuDish && (
+                        <div>
+                            {(skuDish.specs || []).map(g => (
+                                <div key={g.name} className="mb-3">
+                                    <div className="text-[11px] font-black mb-1.5" style={{ color: INK_SOFT }}>{g.name}</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {g.options.map(o => (
+                                            <ChoiceChip key={o.label} on={skuSpec[g.name] === o.label} onClick={() => setSkuSpec(prev => ({ ...prev, [g.name]: o.label }))}>
+                                                {o.label}{o.priceDelta > 0 ? ` +¥${o.priceDelta}` : ''}
+                                            </ChoiceChip>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                            {(skuDish.addons || []).length > 0 && (
+                                <div className="mb-3">
+                                    <div className="text-[11px] font-black mb-1.5" style={{ color: INK_SOFT }}>加料（可多选）</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {(skuDish.addons || []).map(a => (
+                                            <ChoiceChip key={a.label} on={skuAddons.includes(a.label)} onClick={() => setSkuAddons(prev => prev.includes(a.label) ? prev.filter(x => x !== a.label) : [...prev, a.label])}>
+                                                {a.label} +¥{a.price}
+                                            </ChoiceChip>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <DashedRule className="my-3" />
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => setSkuQty(q => Math.max(1, q - 1))} className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={13} weight="bold" /></button>
+                                    <span className="text-[15px] font-black w-5 text-center" style={{ color: INK }}>{skuQty}</span>
+                                    <button onClick={() => setSkuQty(q => q + 1)} className="w-7 h-7 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={13} weight="bold" /></button>
+                                </div>
+                                <ScrapButton variant="ink" onClick={confirmSku} className="px-5 py-2.5 text-[13.5px]" icon={<Plus size={15} weight="bold" />}>
+                                    加入饭篮 ¥{skuUnitPrice * skuQty}
+                                </ScrapButton>
+                            </div>
+                        </div>
+                    )}
+                </PaperSheet>
+
+                {/* 购物车浮层（逐行增减 / 清空） */}
+                <PaperSheet open={cartOpen} onClose={() => setCartOpen(false)} title={`饭篮 · ${cartCount} 件`} tape="amber">
+                    <div className="flex justify-end mb-1">
+                        <button onClick={clearCart} className="text-[11px] inline-flex items-center gap-1 active:scale-95" style={{ color: INK_SOFT }}><Trash size={12} />清空饭篮</button>
+                    </div>
+                    <div className="max-h-[46vh] overflow-y-auto no-scrollbar space-y-2.5">
+                        {Object.values(cart).map(l => (
+                            <div key={l.key} className="flex gap-2.5 items-center px-2.5 py-2 rounded-[10px]" style={{ background: 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                <Emo e={l.emoji} size={20} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-[12.5px] font-bold truncate" style={{ color: INK }}>{l.name}</div>
+                                    {(l.spec || (l.addons && l.addons.length)) ? <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>{[l.spec, ...(l.addons || [])].filter(Boolean).join(' · ')}</div> : null}
+                                    <div className="text-[12px] font-black mt-0.5" style={{ color: INK }}>¥{l.unitPrice}</div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button onClick={() => setLineQty(l.key, -1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ border: `1.5px solid ${INK}`, color: INK }}><Minus size={12} weight="bold" /></button>
+                                    <span className="text-[13px] font-black w-4 text-center" style={{ color: INK }}>{l.qty}</span>
+                                    <button onClick={() => setLineQty(l.key, 1)} className="w-6 h-6 rounded-full flex items-center justify-center active:scale-90" style={{ background: INK, color: PAPER }}><Plus size={12} weight="bold" /></button>
+                                </div>
+                            </div>
+                        ))}
+                        {cartCount === 0 && <div className="text-center text-[12px] py-6" style={{ color: INK_SOFT }}>饭篮空空，去菜牌上挑两样～</div>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-3">
+                        <div className="flex-1"><span className="text-[11px]" style={{ color: INK_SOFT }}>小计 </span><span className="text-[18px] font-black" style={{ color: INK }}>¥{cartSubtotal}</span></div>
+                        <ScrapButton variant="ink" onClick={goCheckout} disabled={cartCount === 0} className="px-5 py-2.5 text-[13.5px]" icon={<Receipt size={15} weight="bold" />}>
+                            {cartSubtotal < activeStore.minOrder ? `再凑¥${Math.max(0, activeStore.minOrder - cartSubtotal)}` : '去结算'}
+                        </ScrapButton>
+                    </div>
+                </PaperSheet>
             </PaperShell>
         );
     }
@@ -739,6 +1064,7 @@ const TakeoutApp: React.FC = () => {
         const total = Math.max(0, cartSubtotal + activeStore.deliveryFee + PACK_FEE + tip - orderDiscount);
         const payByMe = payer === 'me';
         const notEnough = payByMe && wallet < total;
+        const slots = deliveryTimeSlots(activeStore.deliveryMinutes, now);
         return (
             <PaperShell key="checkout">
                 <ScrapHeader title="写一张饭票" en="FILL THE TICKET" onBack={() => setView('store')} backLabel="回铺子" right={walletChip} />
@@ -752,9 +1078,25 @@ const TakeoutApp: React.FC = () => {
                         <div className="mt-2.5 flex items-center gap-2">
                             <MapPin size={15} color={INK} weight="fill" />
                             {recipient === 'me'
-                                ? <input value={address} onChange={e => setAddress(e.target.value)} className="flex-1 rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} placeholder="送到哪儿…" />
+                                ? <button onClick={() => setAddrSheetOpen(true)} className="flex-1 flex items-center justify-between rounded-[8px] px-2.5 py-2 text-[12.5px] active:scale-[0.99] transition-transform" style={paperInput}>
+                                    <span className="truncate text-left" style={{ color: '#36322b' }}>{address}</span>
+                                    <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-bold" style={{ color: INK_SOFT }}>更换<CaretRight size={12} weight="bold" /></span>
+                                </button>
                                 : <span className="text-[12.5px]" style={{ color: '#5a554c' }}>径直送到 {nameOf(recipient)} 那儿</span>}
                         </div>
+                    </PaperCard>
+
+                    {/* 送达时间（立即 / 预约） */}
+                    <PaperCard tilt={0.35} className="px-4 py-3.5">
+                        <SectionTag en="WHEN" className="mb-2.5">啥时候送到</SectionTag>
+                        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                            {slots.map(s => (
+                                <ChoiceChip key={s.label} on={slot.at === s.at} onClick={() => setSlot(s)} icon={s.at === null ? <Timer size={12} weight="fill" /> : <CalendarCheck size={12} weight="fill" />}>
+                                    {s.at === null ? '尽快送达' : `${s.label} 送达`}
+                                </ChoiceChip>
+                            ))}
+                        </div>
+                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>{slot.at === null ? `跑腿现在就去，约 ${activeStore.deliveryMinutes} 分钟到手` : `预约 ${slot.label} 送到，跑腿掐着点来`}</div>
                     </PaperCard>
 
                     {/* 谁来掏这顿饭钱 */}
@@ -774,25 +1116,35 @@ const TakeoutApp: React.FC = () => {
                         {!payByMe && <div className="text-[11px] mt-2" style={{ color: INK_SOFT }}>会在来往里给 {nameOf(payer)} 捎一条代付的话，不动你的饭钱袋。</div>}
                     </PaperCard>
 
-                    {/* 给跑腿塞瓶水（小费） */}
+                    {/* 餐具份数 + 给跑腿塞小费 */}
                     <PaperCard tilt={-0.3} className="px-4 py-3.5">
-                        <SectionTag en="TIP THE RUNNER" className="mb-2.5">给跑腿塞瓶水？</SectionTag>
+                        <SectionTag en="TABLEWARE & TIP" className="mb-2.5">餐具 · 给跑腿塞瓶水</SectionTag>
+                        <div className="text-[10.5px] font-bold mb-1" style={{ color: INK_SOFT }}>要几副餐具</div>
+                        <div className="flex gap-2 flex-wrap mb-3">
+                            {TABLEWARE_CHOICES.map(t => (
+                                <ChoiceChip key={t} on={tableware === t} onClick={() => setTableware(t)}>{t === 0 ? '无需餐具' : `${t} 份`}</ChoiceChip>
+                            ))}
+                        </div>
+                        <div className="text-[10.5px] font-bold mb-1" style={{ color: INK_SOFT }}>给跑腿塞瓶水？</div>
                         <div className="flex gap-2 flex-wrap">
                             {TIP_CHOICES.map(t => (
                                 <ChoiceChip key={t} on={tip === t} onClick={() => setTip(t)} icon={t > 0 ? <HandCoins size={12} weight="fill" /> : undefined}>{t === 0 ? '先不塞' : `¥${t}`}</ChoiceChip>
                             ))}
                         </div>
-                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>风里来雨里去，塞点小费，跑腿心里暖、回话也更上心。</div>
+                        <div className="text-[10.5px] mt-2" style={{ color: INK_SOFT }}>{tableware === 0 ? '环保不要餐具，给你点个赞🌱。' : '风里来雨里去，塞点小费，跑腿心里暖、回话也更上心。'}</div>
                     </PaperCard>
 
                     {/* 饭票清单 + 留言 */}
                     <PaperCard tilt={0.3} tape="butter" className="px-4 py-4">
                         <div className="flex items-center gap-2 mb-1"><Emo e={activeStore.emoji} size={18} /><span className="text-[13px] font-black" style={{ color: INK }}>{activeStore.name}</span></div>
                         <DashedRule className="my-2" />
-                        {cartItems.map(i => (
-                            <div key={i.dishId} className="flex items-center justify-between py-1 text-[12.5px]">
-                                <span style={{ color: '#54504a' }}><Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}</span>
-                                <span className="font-bold" style={{ color: INK }}>¥{i.price * i.qty}</span>
+                        {cartItems.map((i, idx) => (
+                            <div key={idx} className="flex items-start justify-between py-1 text-[12.5px]">
+                                <span className="min-w-0" style={{ color: '#54504a' }}>
+                                    <Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}
+                                    {(i.spec || (i.addons && i.addons.length)) ? <span className="block text-[10px] pl-4" style={{ color: INK_SOFT }}>{[i.spec, ...(i.addons || [])].filter(Boolean).join(' · ')}</span> : null}
+                                </span>
+                                <span className="font-bold shrink-0 ml-2" style={{ color: INK }}>¥{i.price * i.qty}</span>
                             </div>
                         ))}
                         <DashedRule className="my-2" />
@@ -822,6 +1174,26 @@ const TakeoutApp: React.FC = () => {
                         </ScrapButton>
                     </div>
                 </div>
+
+                {/* 收货地址簿 */}
+                <PaperSheet open={addrSheetOpen} onClose={() => setAddrSheetOpen(false)} title="送到哪儿" tape="sage">
+                    <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar mb-3">
+                        {addresses.map(a => (
+                            <div key={a} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px]" style={{ background: a === address ? INK : 'rgba(255,253,247,0.9)', border: '1px solid rgba(176,170,158,0.55)' }}>
+                                <button onClick={() => chooseAddress(a)} className="flex-1 flex items-center gap-2 min-w-0 text-left">
+                                    <MapPin size={15} weight="fill" color={a === address ? PAPER : INK} />
+                                    <span className="text-[12.5px] font-bold truncate" style={{ color: a === address ? PAPER : '#36322b' }}>{a}</span>
+                                    {a === address && <SealCheck size={14} weight="fill" color={PAPER} />}
+                                </button>
+                                {addresses.length > 1 && <button onClick={() => deleteAddress(a)} className="shrink-0 active:scale-90" title="删掉"><Trash size={14} color={a === address ? PAPER : INK_SOFT} /></button>}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <input value={newAddr} onChange={e => setNewAddr(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') saveNewAddress(); }} placeholder="写个新地址，回车存下…" className="flex-1 rounded-[8px] px-2.5 py-2 text-[12.5px] outline-none" style={paperInput} />
+                        <ScrapButton variant="ink" onClick={saveNewAddress} disabled={!newAddr.trim()} className="px-4 py-2 text-[12.5px]" icon={<Plus size={14} weight="bold" />}>存下</ScrapButton>
+                    </div>
+                </PaperSheet>
             </PaperShell>
         );
     }
@@ -880,6 +1252,9 @@ const TakeoutApp: React.FC = () => {
         const stepIdx = (st === 'delivered' || st === 'arrived') ? 2 : st === 'delivering' ? 1 : 0;
         const arrived = st === 'arrived';
         const showIssues = (st === 'delivered' || st === 'arrived' || st === 'cancelled') && (o.incidents || []).length > 0;
+        const span = o.etaAt - o.placedAt;
+        const trackFrac = st === 'delivered' || st === 'arrived' ? 1 : st === 'preparing' ? 0.06 : Math.max(0.12, Math.min(0.92, span > 0 ? (now - o.placedAt) / span : 0.5));
+        const schedText = o.scheduledAt ? `预约 ${new Date(o.scheduledAt).getHours().toString().padStart(2, '0')}:${new Date(o.scheduledAt).getMinutes().toString().padStart(2, '0')} 送达` : '';
         const targets: { id: ChatTarget; label: string; icon: React.ReactNode }[] = [
             { id: 'rider', label: '捎话·跑腿', icon: <Bicycle size={13} weight="bold" /> },
             { id: 'store', label: '问问·铺子', icon: <Storefront size={13} weight="bold" /> },
@@ -901,9 +1276,11 @@ const TakeoutApp: React.FC = () => {
                         <PaperCard tilt={0.4} className="px-4 py-4 overflow-hidden">
                             <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.08]" style={{ backgroundImage: HALFTONE, backgroundSize: '7px 7px' }} />
                             <div className="relative">
-                                <div className="text-[17px] font-black" style={{ color: INK }}>{etaText(o, now)}</div>
-                                <div className="text-[11.5px] mt-0.5" style={{ color: INK_SOFT }}>{st === 'delivered' ? '希望你/TA 吃得开心～' : arrived ? '到门口啦，盖个章签收吧' : `${o.riderEmoji} ${o.riderName} 正替你跑这一趟`}</div>
-                                <div className="flex items-center gap-1 mt-3.5">
+                                <div className="text-[17px] font-black" style={{ color: INK }}>{st === 'delivered' ? '已签收' : (schedText || etaText(o, now))}</div>
+                                <div className="text-[11.5px] mt-0.5 mb-3" style={{ color: INK_SOFT }}>{st === 'delivered' ? '希望你/TA 吃得开心～' : arrived ? '到门口啦，盖个章签收吧' : `${o.riderEmoji} ${o.riderName} 正替你跑这一趟`}</div>
+                                {/* 骑手实时轨迹小地图 */}
+                                {st !== 'delivered' && <RiderTrackMap frac={trackFrac} riderEmoji={o.riderEmoji} storeEmoji={o.storeEmoji} />}
+                                <div className="flex items-center gap-1">
                                     {steps.map((s, i) => {
                                         const done = i < stepIdx || st === 'delivered';
                                         const cur = i === stepIdx && st !== 'delivered';
@@ -971,10 +1348,13 @@ const TakeoutApp: React.FC = () => {
                     <PaperCard tilt={-0.3} tape="amber" className="px-4 py-4">
                         <div className="flex items-center gap-2 mb-1"><Emo e={o.storeEmoji} size={17} /><span className="text-[13px] font-black" style={{ color: INK }}>{o.storeName}</span></div>
                         <DashedRule className="my-2" />
-                        {o.items.map(i => (
-                            <div key={i.dishId} className="flex items-center justify-between py-0.5 text-[12.5px]">
-                                <span style={{ color: '#54504a' }}><Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}</span>
-                                <span className="font-bold" style={{ color: INK }}>¥{i.price * i.qty}</span>
+                        {o.items.map((i, idx) => (
+                            <div key={idx} className="flex items-start justify-between py-0.5 text-[12.5px]">
+                                <span className="min-w-0" style={{ color: '#54504a' }}>
+                                    <Emo e={i.emoji} size={13} /> {i.name} ×{i.qty}
+                                    {(i.spec || (i.addons && i.addons.length)) ? <span className="block text-[10px] pl-4" style={{ color: INK_SOFT }}>{[i.spec, ...(i.addons || [])].filter(Boolean).join(' · ')}</span> : null}
+                                </span>
+                                <span className="font-bold shrink-0 ml-2" style={{ color: INK }}>¥{i.price * i.qty}</span>
                             </div>
                         ))}
                         <DashedRule className="my-2" />
@@ -984,6 +1364,8 @@ const TakeoutApp: React.FC = () => {
                             <div className="flex justify-between text-[13px] font-black" style={{ color: INK }}><span>实付</span><span>¥{o.total}</span></div>
                             {!!o.complaint?.refunded && <div className="flex justify-between font-bold" style={{ color: INK }}><span>已退回</span><span>-¥{o.complaint.refunded}</span></div>}
                             <div className="flex justify-between"><span>收货</span><span>{o.recipient !== 'me' ? nameOf(o.recipient) : o.address}</span></div>
+                            {schedText && <div className="flex justify-between"><span>送达</span><span>{schedText}</span></div>}
+                            <div className="flex justify-between"><span>餐具</span><span>{o.tableware === 0 ? '无需餐具🌱' : `${o.tableware ?? 1} 份`}</span></div>
                             <div className="flex justify-between"><span>付款</span><span>{o.payer !== 'me' ? `${nameOf(o.payer)}请客` : '我自己掏'} · {o.cancelledByStore ? '已退款' : '已付'}</span></div>
                             {o.note && <div className="flex justify-between"><span>留言</span><span className="text-right max-w-[60%] truncate">{o.note}</span></div>}
                         </div>
