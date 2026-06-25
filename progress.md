@@ -282,3 +282,9 @@ pm run build passes after the time-gap grouping fix.
   - **帖子增强**: 收藏(`toggleCollect`)、分享、点踩(帖+楼)、楼层倒序/正序、精「精」/置顶「顶」/🔥 角标(`materializeThreads` 按热度标记)、吧主标、回帖颜文字快捷面板、投票帖(发帖可发起投票，OP 卡渲染结果进度条 + 可改投 `votePoll`)、首页「全部」视图热议榜(`hotRank`)。
   - 纯逻辑全部进 `utils/forum.ts`，`utils/forum.test.ts` +18 测试(等级/签到连签/关注收藏/吧头稳定/通知/热议榜/获赞/投票)。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 658 tests green(+18)。Playwright 冒烟确认 ForumApp 挂载无运行时错误、首页/消息/我的/详情(含投票/楼层)关键元素均渲染(本沙箱屏蔽 Tailwind CDN，样式无法可视化验证)。
+
+- 修复情侣空间「只调本地、无 AI 回复」（提问箱/悄悄话/动态评论/请TA冒泡发动态/心声/互动/默契大考验 全失效，只剩模板套话）:
+  - **根因＝ `utils/coupleSpace.ts` 的 `callCoupleLLM` 自己内联 `fetch + res.json() + choices[0].message.content`**，在两类很常见的响应形态下静默拿到空串 → 组件全程退回模板兜底（表现为「无 AI」）：① 代理无视 `stream:false` 强行返回 SSE（`data:{...}` 流），裸 `res.json()` 直接抛错；② 思考型模型（DeepSeek-R1/GLM-4.5/Qwen3/Gemini 兼容代理）正文在 `reasoning_content`、或为分片数组、或被 `<think>` 包裹，`message.content` 为空/为数组。
+  - **改走统一入口 `llmComplete`**（主聊天/折子戏/解牌/茶话亭同一条路）：内部 `safeResponseJson`（SSE 拼接 / HTML 错误页 / 空响应识别）+ `extractContent`（回退 reasoning_content / 拍平数组 / 去 think）。正好契合 `llmComplete` 头注释「别再各自内联 fetch+stripThink」。7 个角色侧生成函数全部经由 `callCoupleLLM`，一处修复全覆盖（含「请 TA 冒个泡」`generateCharMoment`）。仍保「失败全吞返回空串」契约，组件按空串走模板兜底、不阻塞 UI。
+  - 新增 `utils/coupleSpace.test.ts`（6 测试：普通响应 / SSE 流式 / reasoning_content 回退 / `<think>` 剥离 / 空配置不发请求 / 异常全吞）。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 664 tests green（+6）。
