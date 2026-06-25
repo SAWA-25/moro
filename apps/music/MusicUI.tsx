@@ -8,24 +8,27 @@ import {
   Play, Pause, SkipBack, SkipForward,
 } from '@phosphor-icons/react';
 
-/* ══════════ 色板 — 水滴 × 星空 ══════════ */
+/* ══════════ 色板 — 黑白拼贴手账（米白纸 × 墨黑）══════════
+ * 键名沿用旧「雫」主题以兼容全部调用方，颜色一律黑白灰；
+ * 注意：多处用 `${C.x}+两位 alpha` 拼接，故除 surface/glass 外都保持 6 位 hex。
+ * 唱片封面 / 头像是 <img>，不受色板影响，依旧彩色。 */
 export const C = {
-  bg:       '#fbfbff',       // 几乎纯白 (一抹紫灰)
-  bgDeep:   '#f3f1fa',       // 轻雾紫
-  bgTint:   '#ebe9f5',       // 最深层也只是浅紫雾
-  primary:  '#807c9d',       // 淡紫调灰 — 比深紫更柔，饱和度更低
-  accent:   '#b3a8ce',       // 淡紫
-  soft:     '#e0d9f0',       // secondary container — 紫雾
-  glow:     '#cdc6e9',       // 发光淡紫
-  sakura:   '#f4c2cf',       // 樱花粉 (装饰)
-  lavender: '#cfc3e8',       // 薰衣草 (装饰)
-  surface:  'rgba(255,255,255,0.65)',
-  glass:    'rgba(255,255,255,0.35)',
-  text:     '#22232a',       // 正文
-  muted:    '#7c779a',       // 弱文字 (紫调)
-  faint:    '#bcb8cc',       // 超弱
-  vip:      '#d4a06a',       // VIP
-  danger:   '#ba1a1a',
+  bg:       '#f5f2ea',       // 米白报纸
+  bgDeep:   '#efece3',       // 略深米白
+  bgTint:   '#e9e5da',       // 最深也只是牛皮米
+  primary:  '#26241f',       // 墨黑（主色：标题/按钮）
+  accent:   '#6b6459',       // 炭灰（按钮渐变尾 / 次强调）
+  soft:     '#e2ddd0',       // 浅牛皮（唱片中心等）
+  glow:     '#cfc8b8',       // 暖浅灰（柔光/阴影，去饱和）
+  sakura:   '#aaa498',       // 中灰（原樱花粉 → 灰，装饰）
+  lavender: '#bdb7a9',       // 浅灰（原薰衣草 → 灰，装饰）
+  surface:  'rgba(251,249,242,0.7)',
+  glass:    'rgba(251,249,242,0.4)',
+  text:     '#1f1d1a',       // 墨黑正文
+  muted:    '#857f74',       // 弱文字（暖灰）
+  faint:    '#b3ada1',       // 超弱
+  vip:      '#5e584e',       // VIP（墨灰章，不再描金）
+  danger:   '#3a352f',
 } as const;
 
 /* ══════════ 全局 CSS 动画 (注入一次) ══════════ */
@@ -39,14 +42,14 @@ const injectStyles = () => {
 @keyframes shizuku-drift{0%{transform:translateX(0) translateY(0) rotate(0deg)}25%{transform:translateX(12px) translateY(-10px) rotate(5deg)}50%{transform:translateX(-6px) translateY(-20px) rotate(-3deg)}75%{transform:translateX(8px) translateY(-8px) rotate(4deg)}100%{transform:translateX(0) translateY(0) rotate(0deg)}}
 @keyframes shizuku-twinkle{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:.9;transform:scale(1.2)}}
 @keyframes shizuku-ripple{0%{transform:scale(0);opacity:.6}100%{transform:scale(4);opacity:0}}
-@keyframes shizuku-glow{0%,100%{box-shadow:0 0 15px ${C.glow}30,0 0 40px ${C.glow}10}50%{box-shadow:0 0 25px ${C.glow}50,0 0 60px ${C.glow}20}}
+@keyframes shizuku-glow{0%,100%{box-shadow:0 8px 22px -14px rgba(31,29,26,0.45)}50%{box-shadow:0 12px 28px -14px rgba(31,29,26,0.6)}}
 @keyframes shizuku-vinyl{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes shizuku-shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes shizuku-drop{0%{transform:translateY(-30px) scale(0);opacity:0}40%{opacity:.7}100%{transform:translateY(100vh) scale(1);opacity:0}}
-.shizuku-glass{background:rgba(255,255,255,0.22);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);border:1px solid rgba(255,255,255,0.35)}
-.shizuku-glass-strong{background:rgba(255,255,255,0.45);backdrop-filter:blur(24px) saturate(1.6);-webkit-backdrop-filter:blur(24px) saturate(1.6);border:1px solid rgba(255,255,255,0.5)}
+.shizuku-glass{background:rgba(251,249,242,0.55);backdrop-filter:blur(10px) saturate(1.05);-webkit-backdrop-filter:blur(10px) saturate(1.05);border:1px dashed rgba(150,144,132,0.55)}
+.shizuku-glass-strong{background:linear-gradient(180deg,rgba(251,249,242,0.96),rgba(241,238,228,0.94));backdrop-filter:blur(14px) saturate(1.05);-webkit-backdrop-filter:blur(14px) saturate(1.05);border:1px solid rgba(176,170,158,0.75)}
 .shizuku-scrollbar::-webkit-scrollbar{width:3px}
-.shizuku-scrollbar::-webkit-scrollbar-thumb{background:${C.faint}60;border-radius:3px}
+.shizuku-scrollbar::-webkit-scrollbar-thumb{background:${C.faint}80;border-radius:3px}
 .shizuku-scrollbar::-webkit-scrollbar-track{background:transparent}
 `;
   document.head.appendChild(style);
@@ -92,7 +95,7 @@ export const MizuHeader: React.FC<{
   right?: React.ReactNode;
 }> = ({ title, onBack, onClose, right }) => (
   <div className="flex items-center justify-between px-4 h-12 shrink-0 shizuku-glass-strong relative z-20"
-    style={{ borderBottom: `1px solid rgba(255,255,255,0.3)` }}>
+    style={{ borderBottom: `1px dashed rgba(150,144,132,0.55)` }}>
     <button
       className="w-8 h-8 flex items-center justify-center rounded-full transition-all"
       style={{ color: C.primary }}
@@ -170,7 +173,7 @@ export const SongRow: React.FC<{
     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all mb-1.5 mx-1"
     style={{
       background: isActive
-        ? `linear-gradient(135deg, ${C.glass}, rgba(137,212,255,0.15))`
+        ? `linear-gradient(135deg, rgba(251,249,242,0.9), rgba(226,221,208,0.7))`
         : 'rgba(255,255,255,0.08)',
       backdropFilter: isActive ? 'blur(12px)' : 'none',
       border: isActive ? `1px solid rgba(255,255,255,0.4)` : '1px solid transparent',
@@ -187,7 +190,7 @@ export const SongRow: React.FC<{
       <div className="flex items-center gap-1.5 text-sm truncate" style={{ color: C.text }}>
         {isVip && (
           <span className="text-[8px] px-1.5 py-[1px] rounded-full text-white font-medium shrink-0"
-            style={{ background: `linear-gradient(135deg, ${C.vip}, #e0b88a)`, letterSpacing: '0.05em' }}>VIP</span>
+            style={{ background: `linear-gradient(135deg, ${C.vip}, #8c8578)`, letterSpacing: '0.05em' }}>VIP</span>
         )}
         <span className="truncate font-normal">{name}</span>
       </div>

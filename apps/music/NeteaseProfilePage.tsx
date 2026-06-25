@@ -448,7 +448,7 @@ const NeteaseProfilePage: React.FC<Props> = ({ onBack, onOpenPlayer, onOpenSearc
               </div>
               <div className="flex items-center gap-1.5 mt-1.5">
                 <span className="text-[9px] px-2 py-0.5 rounded-full text-white font-medium"
-                  style={{ background: `linear-gradient(135deg, ${C.vip}, #e0b88a)`, letterSpacing: '0.05em' }}>
+                  style={{ background: `linear-gradient(135deg, ${C.vip}, #8c8578)`, letterSpacing: '0.05em' }}>
                   {vipLabel}
                 </span>
                 <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ color: C.muted, border: `1px solid ${C.faint}40` }}>

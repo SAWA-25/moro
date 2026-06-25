@@ -547,7 +547,7 @@ const MusicApp: React.FC = () => {
                             color: active ? undefined : C.faint,
                             ...(active
                               ? {
-                                  background: `linear-gradient(135deg, ${C.primary} 0%, ${C.accent} 50%, #9a6bc5 100%)`,
+                                  background: `linear-gradient(135deg, ${C.primary} 0%, ${C.accent} 50%, #8c8578 100%)`,
                                   WebkitBackgroundClip: 'text',
                                   WebkitTextFillColor: 'transparent',
                                   backgroundClip: 'text',
