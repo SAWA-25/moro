@@ -421,6 +421,12 @@ const PhoneShell: React.FC = () => {
   const useIOSStandaloneLayout = isIOSStandaloneWebApp();
   // 冷启动「世界入场」是否已结束。结束前由 BootSequence 接管整屏（同时取代旧的黑屏 spinner）。
   const [bootDone, setBootDone] = useState(false);
+  // 已打开 App 保活栈：回桌面时只隐藏、不卸载，让正在生成的回复/番外/评论继续跑完。
+  const [mountedApps, setMountedApps] = useState<AppID[]>(() => [AppID.Launcher]);
+
+  useEffect(() => {
+    setMountedApps(prev => prev.includes(activeApp) ? prev : [...prev, activeApp]);
+  }, [activeApp]);
 
   // 从根本上消除「每次进 App 都要加载」：数据一就绪就在后台按优先级逐个预热各 App 的代码块。
   // 关键：不等开机动画（bootDone）结束就开始 —— 否则用户在开机那 ~2 秒内点开 Chat 时 chunk 还没热，
@@ -587,8 +593,8 @@ const PhoneShell: React.FC = () => {
     return <><LockScreen /><IncomingCallOverlay /></>;
   }
 
-  const renderApp = () => {
-    switch (activeApp) {
+  const renderApp = (appId: AppID) => {
+    switch (appId) {
       case AppID.Settings: return <Settings />;
       case AppID.Character: return <Character />;
       case AppID.Chat: return <Chat />;
@@ -684,11 +690,30 @@ const PhoneShell: React.FC = () => {
       >
           {/* App Container */}
           <div className="flex-1 relative overflow-hidden" style={{ contain: useIOSStandaloneLayout ? undefined : 'layout style paint' }}>
-            <AppErrorBoundary onCloseApp={closeApp} resetKey={`${activeApp}:${activeCharacterId || 'none'}`}>
-              <Suspense fallback={<AppLoadingFallback />}>
-                {renderApp()}
-              </Suspense>
-            </AppErrorBoundary>
+            {mountedApps.map(appId => {
+              const isActive = appId === activeApp;
+              return (
+                <div
+                  key={appId}
+                  aria-hidden={!isActive}
+                  className={`absolute inset-0 w-full h-full transition-[opacity,transform,filter] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    isActive
+                      ? 'z-10 opacity-100 pointer-events-auto translate-y-0 scale-100 blur-0'
+                      : 'z-0 opacity-0 pointer-events-none translate-y-1 scale-[0.992] blur-[1px]'
+                  }`}
+                  style={{
+                    contain: useIOSStandaloneLayout ? undefined : 'layout style paint',
+                    transformOrigin: '50% 54%',
+                  }}
+                >
+                  <AppErrorBoundary onCloseApp={closeApp} resetKey={`${appId}:${activeCharacterId || 'none'}`}>
+                    <Suspense fallback={isActive ? <AppLoadingFallback /> : null}>
+                      {renderApp(appId)}
+                    </Suspense>
+                  </AppErrorBoundary>
+                </div>
+              );
+            })}
           </div>
 
           {/* Overlays: Status Bar (Top) */}

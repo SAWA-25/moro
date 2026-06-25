@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useOS } from '../context/OSContext';
+import { AppID } from '../types';
 import {
     ArrowLeft, Plus, Trash, BookOpen, Planet, Clock, Play, CaretRight, X,
     UploadSimple, PencilSimple, FlipHorizontal, CaretLeft, Sparkle,
@@ -316,7 +317,7 @@ const VRWorldApp: React.FC = () => {
         if (readerNovel) { setReaderNovel(null); return true; }
         if (enterRoom) { setEnterRoom(null); return true; }
         return false; // 无弹层 → 交回默认（关闭 App）
-    }), [registerBackHandler, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
+    }, AppID.VRWorld), [registerBackHandler, chibiEditChar, chibiEditUser, showUpload, readerJump, readerNovel, enterRoom]);
 
     // 从动态/批注点回原文：peek 模式打开阅读器跳到该段，不动用户书签
     const jumpToAnnotation = useCallback((novelId: string | undefined, segIdx: number) => {

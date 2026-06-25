@@ -354,7 +354,7 @@ interface OSContextType {
   clearLogs: () => void;
 
   // Navigation Logic
-  registerBackHandler: (handler: () => boolean) => () => void; // Returns unregister function
+  registerBackHandler: (handler: () => boolean, appId?: AppID) => () => void; // Returns unregister function
   handleBack: () => void;
 
   // Call Suspend
@@ -703,8 +703,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // 解除拉黑申诉：每个角色同一时刻只生成一条，避免 5s 调度循环里重复触发 API
   const appealInFlightRef = useRef<Set<string>>(new Set());
   
-  // Back Handler Ref
-  const backHandlerRef = useRef<(() => boolean) | null>(null);
+  // Back handlers are scoped per app so kept-alive background apps cannot steal Back.
+  const backHandlersRef = useRef<Partial<Record<AppID, () => boolean>>>({});
 
   // Call Suspend
   const [suspendedCall, setSuspendedCall] = useState<{ charId: string; charName: string; charAvatar?: string; startedAt: number; bubbles?: any[]; sessionId?: string; elapsedSeconds?: number; voiceLang?: string } | null>(null);
@@ -4018,18 +4018,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   };
 
   // --- Back Handler Logic ---
-  const registerBackHandler = useCallback((handler: () => boolean) => {
-      backHandlerRef.current = handler;
+  const registerBackHandler = useCallback((handler: () => boolean, appId?: AppID) => {
+      const ownerAppId = appId ?? activeAppRef.current;
+      backHandlersRef.current[ownerAppId] = handler;
       return () => {
-          if (backHandlerRef.current === handler) {
-              backHandlerRef.current = null;
+          if (backHandlersRef.current[ownerAppId] === handler) {
+              delete backHandlersRef.current[ownerAppId];
           }
       };
   }, []);
 
   const handleBack = useCallback(() => {
-      if (backHandlerRef.current) {
-          const handled = backHandlerRef.current();
+      const handler = backHandlersRef.current[activeAppRef.current];
+      if (handler) {
+          const handled = handler();
           if (handled) return;
       }
       // Default: Close App

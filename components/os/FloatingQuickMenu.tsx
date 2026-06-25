@@ -26,50 +26,94 @@ const FloatingQuickMenu: React.FC = () => {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState<Pos | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
-    const drag = useRef<{ startX: number; startY: number; baseX: number; baseY: number; moved: boolean; longTimer: number | null }>({ startX: 0, startY: 0, baseX: 0, baseY: 0, moved: false, longTimer: null });
+    const posRef = useRef<Pos | null>(null);
+    const frameRef = useRef<number | null>(null);
+    const drag = useRef<{ active: boolean; startX: number; startY: number; baseX: number; baseY: number; moved: boolean; longTimer: number | null }>({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0, moved: false, longTimer: null });
 
     const parentRect = () => wrapRef.current?.offsetParent?.getBoundingClientRect() || { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 } as DOMRect;
 
+    const applyVisualPos = (next: Pos) => {
+        const el = wrapRef.current;
+        if (!el) return;
+        el.style.transform = `translate3d(${next.x}px, ${next.y}px, 0)`;
+    };
+
+    const setVisualPos = (next: Pos) => {
+        posRef.current = next;
+        if (frameRef.current !== null) return;
+        frameRef.current = window.requestAnimationFrame(() => {
+            frameRef.current = null;
+            if (posRef.current) applyVisualPos(posRef.current);
+        });
+    };
+
     // 初始位置：读存档，否则默认右下角（避开底部 dock 区）
     useLayoutEffect(() => {
+        let initial: Pos | null = null;
         try {
             const raw = localStorage.getItem(POS_KEY);
-            if (raw) { setPos(JSON.parse(raw)); return; }
+            if (raw) initial = clamp(JSON.parse(raw));
         } catch { /* ignore */ }
-        const r = parentRect();
-        setPos({ x: r.width - BUBBLE - 14, y: r.height - BUBBLE - 120 });
+        if (!initial) {
+            const r = parentRect();
+            initial = clamp({ x: r.width - BUBBLE - 14, y: r.height - BUBBLE - 120 });
+        }
+        posRef.current = initial;
+        setPos(initial);
+        applyVisualPos(initial);
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+        };
     }, []);
 
     const clamp = (p: Pos): Pos => {
         const r = parentRect();
-        return { x: Math.max(6, Math.min(r.width - BUBBLE - 6, p.x)), y: Math.max(40, Math.min(r.height - BUBBLE - 6, p.y)) };
+        const x = Number.isFinite(Number(p.x)) ? Number(p.x) : r.width - BUBBLE - 14;
+        const y = Number.isFinite(Number(p.y)) ? Number(p.y) : r.height - BUBBLE - 120;
+        return { x: Math.max(6, Math.min(r.width - BUBBLE - 6, x)), y: Math.max(40, Math.min(r.height - BUBBLE - 6, y)) };
     };
 
     const onPointerDown = (e: React.PointerEvent) => {
-        (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
         const d = drag.current;
-        d.startX = e.clientX; d.startY = e.clientY; d.baseX = pos?.x ?? 0; d.baseY = pos?.y ?? 0; d.moved = false;
+        const current = posRef.current || pos || { x: 0, y: 0 };
+        d.active = true;
+        d.startX = e.clientX; d.startY = e.clientY; d.baseX = current.x; d.baseY = current.y; d.moved = false;
+        if (wrapRef.current) wrapRef.current.style.transition = 'none';
         d.longTimer = window.setTimeout(() => { if (!d.moved) hideSelf(); }, 600);
     };
+
     const onPointerMove = (e: React.PointerEvent) => {
         const d = drag.current;
-        if (!d.startX && !d.startY) return;
+        if (!d.active) return;
         const dx = e.clientX - d.startX, dy = e.clientY - d.startY;
         if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
         d.moved = true;
         if (d.longTimer) { clearTimeout(d.longTimer); d.longTimer = null; }
         if (open) setOpen(false);
-        setPos(clamp({ x: d.baseX + dx, y: d.baseY + dy }));
+        setVisualPos(clamp({ x: d.baseX + dx, y: d.baseY + dy }));
     };
-    const onPointerUp = (e: React.PointerEvent) => {
+
+    const finishPointer = (e: React.PointerEvent, commitTap = true) => {
         const d = drag.current;
         if (d.longTimer) { clearTimeout(d.longTimer); d.longTimer = null; }
-        if (!d.moved) {
+        if (!d.active) return;
+        d.active = false;
+        if (wrapRef.current) wrapRef.current.style.transition = 'transform 220ms cubic-bezier(0.22,1,0.36,1)';
+        try { (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId); } catch { /* ignore */ }
+        if (!d.moved && commitTap) {
             setOpen(o => !o);
-        } else if (pos) {
-            try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
+        } else {
+            const settled = posRef.current || pos;
+            if (settled) {
+                setPos(settled);
+                try { localStorage.setItem(POS_KEY, JSON.stringify(settled)); } catch { /* ignore */ }
+            }
         }
-        d.startX = 0; d.startY = 0;
+        d.startX = 0; d.startY = 0; d.moved = false;
     };
 
     const hideSelf = () => {
@@ -107,15 +151,19 @@ const FloatingQuickMenu: React.FC = () => {
     return (
         <div
             ref={wrapRef}
-            className="absolute z-[55] select-none"
-            style={{ left: pos.x, top: pos.y, touchAction: 'none' }}
+            className="absolute left-0 top-0 z-[55] select-none will-change-transform transform-gpu"
+            style={{
+                touchAction: 'none',
+                transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+                transition: 'transform 220ms cubic-bezier(0.22,1,0.36,1)',
+            }}
         >
             {/* 菜单 */}
             {open && (
                 <div
-                    className="absolute flex flex-col gap-2"
+                    className="absolute flex flex-col gap-1.5 rounded-[1.35rem] bg-white/88 p-2 shadow-[0_18px_46px_-22px_rgba(24,22,32,0.55)] ring-1 ring-white/70 backdrop-blur-xl"
                     style={{
-                        [openUp ? 'bottom' : 'top']: BUBBLE + 10,
+                        [openUp ? 'bottom' : 'top']: BUBBLE + 12,
                         [alignRight ? 'right' : 'left']: 0,
                         flexDirection: openUp ? 'column-reverse' : 'column',
                     } as React.CSSProperties}
@@ -124,13 +172,13 @@ const FloatingQuickMenu: React.FC = () => {
                         <button
                             key={it.key}
                             onClick={it.onClick}
-                            className={`flex items-center gap-2 ${alignRight ? 'flex-row-reverse' : ''} animate-slide-up`}
+                            className={`group flex items-center gap-2 rounded-full p-0.5 ${alignRight ? 'flex-row-reverse' : ''} animate-slide-up`}
                             style={{ animationDelay: `${i * 28}ms` }}
                         >
-                            <span className="w-10 h-10 rounded-full bg-[#2b2933] text-white flex items-center justify-center shadow-lg shadow-black/20 active:scale-90 transition-transform">
+                            <span className="w-10 h-10 rounded-full bg-[#2b2933] text-white flex items-center justify-center shadow-lg shadow-black/20 transition-transform duration-200 group-active:scale-90 group-hover:scale-105">
                                 {it.render()}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full bg-black/70 text-white text-[11px] font-bold whitespace-nowrap shadow">{it.label}</span>
+                            <span className="px-2.5 py-1 rounded-full bg-[#2b2933]/88 text-white text-[11px] font-bold whitespace-nowrap shadow">{it.label}</span>
                         </button>
                     ))}
                 </div>
@@ -140,15 +188,22 @@ const FloatingQuickMenu: React.FC = () => {
             <button
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                className="rounded-full flex items-center justify-center shadow-xl shadow-black/30 transition-transform active:scale-95"
+                onPointerUp={finishPointer}
+                onPointerCancel={(e) => finishPointer(e, false)}
+                className="relative rounded-full flex items-center justify-center shadow-xl shadow-black/30 transition-transform duration-200 active:scale-95"
                 style={{
                     width: BUBBLE, height: BUBBLE,
-                    background: open ? 'linear-gradient(135deg,#3a3744,#23212b)' : 'linear-gradient(135deg,#6d6a7a,#2b2933)',
+                    background: open
+                        ? 'linear-gradient(135deg,#3a3744 0%,#23212b 100%)'
+                        : 'radial-gradient(circle at 32% 24%, rgba(255,255,255,0.42), transparent 26%), linear-gradient(135deg,#6d6a7a 0%,#2b2933 100%)',
                     color: '#fff',
+                    boxShadow: open
+                        ? '0 18px 38px -18px rgba(26,24,34,0.72), 0 0 0 1px rgba(255,255,255,0.18)'
+                        : '0 18px 38px -18px rgba(26,24,34,0.68), 0 0 0 1px rgba(255,255,255,0.20)',
                 }}
                 title="快捷菜单（长按收起）"
             >
+                <span className="absolute inset-1 rounded-full border border-white/18 pointer-events-none" />
                 {open ? <X size={22} weight="bold" /> : <Lightning size={22} weight="fill" />}
             </button>
         </div>

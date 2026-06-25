@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { CharacterProfile, Message, DateState, DialogueItem, UserProfile } from '../../types';
+import { AppID, CharacterProfile, Message, DateState, DialogueItem, UserProfile } from '../../types';
 import Modal from '../../components/os/Modal';
 import { useOS } from '../../context/OSContext';
 import { DB } from '../../utils/db';
@@ -289,7 +289,7 @@ const DateSession: React.FC<DateSessionProps> = ({
             }
             setShowExitModal(true);
             return true;
-        });
+        }, AppID.Date);
         return unregister;
     }, [showSettings, showExitModal, registerBackHandler]);
 
