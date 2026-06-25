@@ -4,11 +4,38 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { StudyCourse, StudyChapter, CharacterProfile, Message, UserProfile, APIConfig, StudyTutorPreset, QuizQuestion, QuizSession, QuizQuestionNote } from '../types';
 import { ContextBuilder } from '../utils/context';
-import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
-import { Notepad, Check, X, CheckCircle, XCircle, Hand } from '@phosphor-icons/react';
+import {
+    PaperBackdrop, ScrapButton, WashiTape, PaperDialog, PaperSheet, SectionTag, DashedRule,
+    INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
+} from './theater/scrapbook';
+import {
+    Notepad, Check, X, CheckCircle, XCircle, Hand, CaretLeft, CaretDown, ArrowRight,
+    ArrowsClockwise, Trash, GearSix, BookOpen, Plus, PencilSimpleLine, ChatCircleText,
+    Eye, Spinner, Sparkle, PencilSimple,
+} from '@phosphor-icons/react';
+
+// ── 黑白拼贴手账·通用样式片（呼应折子戏 / 心意铺 / 茶话亭）────────────────
+/** 米白纸卡 */
+const PANEL: React.CSSProperties = {
+    background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)',
+    border: '1px solid rgba(176,170,158,0.7)',
+    outline: '1px dashed rgba(150,144,132,0.5)',
+    outlineOffset: '-5px',
+    borderRadius: 16,
+    boxShadow: '0 12px 24px -16px rgba(31,29,26,0.5)',
+};
+const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.92)', color: INK, border: '1px solid rgba(176,170,158,0.7)' };
+const chip = (active: boolean): React.CSSProperties =>
+    active
+        ? { background: INK, color: PAPER, boxShadow: '0 6px 14px -8px rgba(31,29,26,0.6)' }
+        : { background: 'rgba(255,253,247,0.72)', color: '#6b655a', border: '1px dashed rgba(150,144,132,0.6)' };
+/** 墨色黑板（课堂/批改）：炭黑底 + 粉笔白字（黑白拼贴的「黑板报」） */
+const BOARD_BG = 'linear-gradient(180deg,#26241f,#16140f)';
+const CHALK = '#f2efe4';
+const CHALK_SOFT = 'rgba(242,239,228,0.62)';
 
 type PdfJsLike = {
     getDocument: (src: { data: ArrayBuffer }) => { promise: Promise<any> };
@@ -72,13 +99,14 @@ const loadKatex = async (): Promise<KatexLike> => {
 };
 
 // --- Styles ---
+// 书脊封面：牛皮/米白/炭灰布面（黑白拼贴里旧书的质感，不再用糖果色）
 const GRADIENTS = [
-    'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-    'linear-gradient(120deg, #f093fb 0%, #f5576c 100%)',
-    'linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%)',
-    'linear-gradient(135deg, #f6d365 0%, #fda085 100%)',
-    'linear-gradient(to top, #5ee7df 0%, #b490ca 100%)',
-    'linear-gradient(to right, #43e97b 0%, #38f9d7 100%)'
+    'linear-gradient(135deg, #4a463f 0%, #2a2824 100%)',
+    'linear-gradient(135deg, #8a8478 0%, #5e584e 100%)',
+    'linear-gradient(135deg, #d8d2c4 0%, #b3ac9e 100%)',
+    'linear-gradient(135deg, #6b6459 0%, #3c3832 100%)',
+    'linear-gradient(135deg, #b9b2a3 0%, #8c8578 100%)',
+    'linear-gradient(135deg, #33302a 0%, #1c1a16 100%)'
 ];
 
 // --- Renderer Component ---
@@ -99,12 +127,12 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
                 output: 'html',
             });
             if (!html) {
-                return <span className="font-mono text-emerald-200">{latex}</span>;
+                return <span className="font-mono text-slate-200">{latex}</span>;
             }
             // Force white color for KaTeX elements specifically
             return <span dangerouslySetInnerHTML={{ __html: html }} className={displayMode ? "block my-2 w-full overflow-x-auto" : "inline-block mx-1"} />;
         } catch (e) {
-            return <span className="text-red-400 text-xs font-mono bg-black/20 p-1 rounded">{latex}</span>;
+            return <span className="text-slate-300 text-xs font-mono bg-black/20 p-1 rounded italic">{latex}</span>;
         }
     };
 
@@ -122,13 +150,13 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
                 return <span key={i}>{renderMath(part.slice(1, -1), false)}</span>;
             }
             if (part.startsWith('**') && part.endsWith('**')) {
-                return <strong key={i} className="text-emerald-300 font-bold mx-0.5">{part.slice(2, -2)}</strong>;
+                return <strong key={i} className="text-white font-bold mx-0.5" style={{ textShadow: '0 0 8px rgba(242,239,228,0.25)' }}>{part.slice(2, -2)}</strong>;
             }
             if (part.startsWith('*') && part.endsWith('*')) {
-                return <em key={i} className="text-emerald-200/80 italic">{part.slice(1, -1)}</em>;
+                return <em key={i} className="text-slate-300 italic">{part.slice(1, -1)}</em>;
             }
             if (part.startsWith('`') && part.endsWith('`')) {
-                return <code key={i} className="bg-black/40 text-orange-200 px-1.5 py-0.5 rounded font-mono text-xs mx-0.5 border border-white/10">{part.slice(1, -1)}</code>;
+                return <code key={i} className="bg-black/40 text-slate-100 px-1.5 py-0.5 rounded font-mono text-xs mx-0.5 border border-white/10">{part.slice(1, -1)}</code>;
             }
             return <span key={i}>{part}</span>;
         });
@@ -155,7 +183,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         if (codeMatch) {
             const id = parseInt(codeMatch[1]);
             return (
-                <pre key={index} className="bg-black/60 p-4 rounded-xl font-mono text-xs text-emerald-100 my-4 overflow-x-auto border border-white/10 shadow-inner whitespace-pre-wrap leading-relaxed">
+                <pre key={index} className="bg-black/60 p-4 rounded-xl font-mono text-xs text-slate-100 my-4 overflow-x-auto border border-white/10 shadow-inner whitespace-pre-wrap leading-relaxed">
                     {storedCode[id]}
                 </pre>
             );
@@ -163,13 +191,13 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
 
         // Headers
         if (trimmed.startsWith('# ')) return <h1 key={index} className="text-3xl font-bold text-white mt-8 mb-6 pb-2 border-b-2 border-white/20 font-serif">{trimmed.slice(2)}</h1>;
-        if (trimmed.startsWith('## ')) return <h2 key={index} className="text-2xl font-bold text-emerald-200 mt-6 mb-4 font-serif">{trimmed.slice(3)}</h2>;
-        if (trimmed.startsWith('### ')) return <h3 key={index} className="text-xl font-bold text-emerald-300 mt-5 mb-2 font-serif">{trimmed.slice(4)}</h3>;
+        if (trimmed.startsWith('## ')) return <h2 key={index} className="text-2xl font-bold text-white mt-6 mb-4 font-serif">{trimmed.slice(3)}</h2>;
+        if (trimmed.startsWith('### ')) return <h3 key={index} className="text-xl font-bold text-slate-200 mt-5 mb-2 font-serif">{trimmed.slice(4)}</h3>;
 
         // Blockquotes
         if (trimmed.startsWith('> ')) {
             return (
-                <div key={index} className="border-l-4 border-emerald-500/50 bg-white/5 p-4 my-3 rounded-r-xl text-emerald-100 italic">
+                <div key={index} className="border-l-4 border-white/40 bg-white/5 p-4 my-3 rounded-r-xl text-slate-100 italic">
                     {parseInline(trimmed.slice(2))}
                 </div>
             );
@@ -179,7 +207,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         if (trimmed.match(/^[-•]\s/)) {
             return (
                 <div key={index} className="flex gap-3 my-2 pl-2">
-                    <span className="text-emerald-400 font-bold mt-1">•</span>
+                    <span className="text-slate-300 font-bold mt-1">•</span>
                     <span className="text-white/90 leading-relaxed">{parseInline(trimmed.slice(2))}</span>
                 </div>
             );
@@ -190,7 +218,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
         if (numMatch) {
              return (
                 <div key={index} className="flex gap-3 my-2 pl-2">
-                    <span className="text-emerald-400 font-bold font-mono mt-1">{numMatch[1]}.</span>
+                    <span className="text-slate-300 font-bold font-mono mt-1">{numMatch[1]}.</span>
                     <span className="text-white/90 leading-relaxed">{parseInline(numMatch[2])}</span>
                 </div>
             );
@@ -238,7 +266,7 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
                     <thead className="bg-white/10">
                         <tr>
                             {header.map((cell, i) => (
-                                <th key={i} className="px-3 py-2 text-emerald-200 font-bold border-b border-white/10">
+                                <th key={i} className="px-3 py-2 text-white font-bold border-b border-white/10">
                                     {parseInline(cell)}
                                 </th>
                             ))}
@@ -312,8 +340,8 @@ const BlackboardRenderer: React.FC<{ text: string, isTyping?: boolean, katexRend
             
             {renderedBlocks}
             {isTyping && (
-                <div className="mt-4 animate-pulse flex items-center gap-2 text-emerald-500">
-                    <span className="w-2 h-5 bg-emerald-500"></span>
+                <div className="mt-4 animate-pulse flex items-center gap-2 text-slate-300">
+                    <span className="w-2 h-5 bg-slate-200"></span>
                     <span className="text-xs font-mono tracking-widest">WRITING...</span>
                 </div>
             )}
@@ -471,7 +499,7 @@ const StudyApp: React.FC = () => {
         if (localStudyModel.trim()) cfg.model = localStudyModel.trim();
         setStudyApi(cfg);
         localStorage.setItem('study_api_config', JSON.stringify(cfg));
-        addToast('自习室 API 已保存', 'success');
+        addToast('自习室专用 API 记下了', 'success');
     };
 
     const clearStudyApi = () => {
@@ -480,7 +508,7 @@ const StudyApp: React.FC = () => {
         setLocalStudyKey('');
         setLocalStudyModel('');
         localStorage.removeItem('study_api_config');
-        addToast('已恢复使用全局 API', 'info');
+        addToast('改回用全局 API 了', 'info');
     };
 
     const savePresets = (list: StudyTutorPreset[]) => {
@@ -498,7 +526,7 @@ const StudyApp: React.FC = () => {
         setEditingPreset(null);
         setPresetName('');
         setPresetPrompt('');
-        addToast('预设已保存', 'success');
+        addToast('讲法预设存好了', 'success');
     };
 
     const deletePreset = (id: string) => {
@@ -511,12 +539,12 @@ const StudyApp: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
         if (file.type !== 'application/pdf') {
-            addToast('请上传 PDF 文件', 'error');
+            addToast('请挑一个 PDF 课本', 'error');
             return;
         }
 
         setIsProcessing(true);
-        setProcessStatus('正在预处理 PDF...');
+        setProcessStatus('正在翻开课本…');
 
         try {
             const arrayBuffer = await file.arrayBuffer();
@@ -528,7 +556,7 @@ const StudyApp: React.FC = () => {
             const maxPages = Math.min(pdf.numPages, 50);
 
             for (let i = 1; i <= maxPages; i++) {
-                setProcessStatus(`提取文本中 (${i}/${maxPages})...`);
+                setProcessStatus(`誊抄第 ${i}/${maxPages} 页…`);
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map((item: any) => item.str).join(' ');
@@ -559,13 +587,13 @@ const StudyApp: React.FC = () => {
         if (!tempPdfData) return;
         setShowImportModal(false);
         setIsProcessing(true);
-        setProcessStatus('AI 正在生成课程大纲...');
+        setProcessStatus('助教正在备课、列大纲…');
 
         try {
             const newCourse = await generateCurriculum(tempPdfData.name, tempPdfData.text, importPreference);
             await DB.saveCourse(newCourse);
             await loadCourses();
-            addToast('课程创建成功', 'success');
+            addToast('新课本上架了', 'success');
         } catch (e: any) {
             addToast(`生成失败: ${e.message}`, 'error');
         } finally {
@@ -928,7 +956,7 @@ Note: Use "我" (I) to refer to yourself.
         await DB.deleteCourse(deleteTarget.id);
         setCourses(prev => prev.filter(c => c.id !== deleteTarget.id));
         setDeleteTarget(null);
-        addToast('课程已删除', 'success');
+        addToast('课本撤下书架了', 'success');
     };
 
     // --- Quiz Logic ---
@@ -947,7 +975,7 @@ Note: Use "我" (I) to refer to yourself.
         if (!activeCourse || !selectedChar || !effectiveApi.apiKey) return;
         setQuizShowSetup(false);
         setMode('quiz');
-        setQuizLoading('正在生成试题...');
+        setQuizLoading('助教正在出题…');
         setQuizUserAnswers({});
 
         const chapter = activeCourse.chapters[activeCourse.currentChapterIndex];
@@ -1062,7 +1090,7 @@ ${chunkText.substring(0, 10000)}
 
     const submitQuiz = async () => {
         if (!quizSession || !selectedChar || !effectiveApi.apiKey) return;
-        setQuizLoading('正在批改试卷...');
+        setQuizLoading('助教正在批改…');
 
         // Grade locally first
         const gradedQuestions = quizSession.questions.map(q => {
@@ -1170,7 +1198,7 @@ ${resultsText}
         await DB.deleteQuiz(deleteQuizTarget.id);
         setAllQuizzes(prev => prev.filter(q => q.id !== deleteQuizTarget.id));
         setDeleteQuizTarget(null);
-        addToast('试卷已删除', 'success');
+        addToast('这张卷子撕掉了', 'success');
     };
 
     const resumeQuiz = (quiz: QuizSession) => {
@@ -1281,65 +1309,60 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     // PRACTICE BOOK VIEW
     if (mode === 'practice_book') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                <div className="h-20 bg-[#fdfbf7]/90 backdrop-blur-md flex items-end pb-3 px-6 border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={() => setMode('bookshelf')} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <span className="font-bold text-slate-800 text-lg tracking-wide">练习册</span>
-                        <div className="w-10" />
-                    </div>
-                </div>
+            <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ color: INK, background: PAGE_BG }}>
+                <PaperBackdrop corners={false} />
+                <StudyHeader title="练习册" en="WORKBOOK" onBack={() => setMode('bookshelf')} />
 
-                <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
+                <div className="relative z-10 p-5 flex-1 overflow-y-auto no-scrollbar">
                     {allQuizzes.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                            <Notepad size={48} className="mb-4 text-slate-400" />
-                            <span className="text-sm">还没有做过题哦</span>
-                            <span className="text-xs mt-1">在自习室的课堂中点击「刷题」开始吧</span>
+                        <div className="flex flex-col items-center justify-center h-full" style={{ color: INK_SOFT }}>
+                            <Notepad size={48} className="mb-4" />
+                            <span className="text-sm font-bold">这本练习册还空着</span>
+                            <span className="text-xs mt-1">在课堂里点「随堂测」做几道题就有了</span>
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {allQuizzes.map(quiz => (
-                                <div key={quiz.id} onClick={() => resumeQuiz(quiz)} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 active:scale-[0.98] transition-transform cursor-pointer">
+                            {allQuizzes.map((quiz, i) => {
+                                const full = quiz.score === quiz.totalQuestions;
+                                const pass = quiz.score >= quiz.totalQuestions * 0.6;
+                                const tone: React.CSSProperties = quiz.status !== 'graded'
+                                    ? { background: 'rgba(255,253,247,0.9)', color: INK, border: '1px dashed rgba(150,144,132,0.7)' }
+                                    : full ? { background: INK, color: PAPER }
+                                        : pass ? { background: 'rgba(120,116,108,0.5)', color: '#2a2824' }
+                                            : { background: 'rgba(255,253,247,0.9)', color: INK, border: '1px solid rgba(120,116,108,0.6)' };
+                                return (
+                                <div key={quiz.id} onClick={() => resumeQuiz(quiz)} className="relative p-4 active:scale-[0.98] transition-transform cursor-pointer" style={PANEL}>
+                                    {i % 2 === 0 && <WashiTape color="butter" rotate={-4} className="absolute -top-2 left-5 w-12 h-4 rounded-[2px]" />}
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-bold text-slate-800 truncate">{quiz.courseTitle}</div>
-                                            <div className="text-xs text-slate-500 mt-0.5 truncate">{quiz.chapterTitle}</div>
+                                            <div className="text-sm font-black truncate" style={{ color: INK }}>{quiz.courseTitle}</div>
+                                            <div className="text-xs mt-0.5 truncate" style={{ color: INK_SOFT }}>{quiz.chapterTitle}</div>
                                             <div className="flex items-center gap-3 mt-2">
-                                                {quiz.status === 'graded' ? (
-                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${quiz.score === quiz.totalQuestions ? 'bg-emerald-100 text-emerald-600' : quiz.score >= quiz.totalQuestions * 0.6 ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
-                                                        {quiz.score}/{quiz.totalQuestions}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">答题中</span>
-                                                )}
-                                                <span className="text-[10px] text-slate-400">{new Date(quiz.createdAt).toLocaleDateString()}</span>
+                                                <span className="text-xs font-black px-2 py-0.5 rounded-full" style={tone}>
+                                                    {quiz.status === 'graded' ? `${quiz.score}/${quiz.totalQuestions}` : '答题中'}
+                                                </span>
+                                                <span className="text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>{new Date(quiz.createdAt).toLocaleDateString()}</span>
                                             </div>
                                         </div>
-                                        <button onClick={(e) => { e.stopPropagation(); setDeleteQuizTarget(quiz); }} className="p-2 text-slate-300 hover:text-red-400 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                                        <button onClick={(e) => { e.stopPropagation(); setDeleteQuizTarget(quiz); }} className="p-2 active:scale-90 transition-transform" style={{ color: INK_SOFT }}>
+                                            <Trash size={18} weight="bold" />
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>
 
                 {/* Delete Quiz Confirmation */}
-                <Modal isOpen={!!deleteQuizTarget} title="删除试卷" onClose={() => setDeleteQuizTarget(null)} footer={
-                    <div className="flex gap-2 w-full">
-                        <button onClick={() => setDeleteQuizTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                        <button onClick={confirmDeleteQuiz} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
-                    </div>
-                }>
-                    <div className="py-4 text-center">
-                        <p className="text-sm text-slate-600 mb-2">确定要删除这份试卷吗？</p>
-                        <p className="text-xs text-red-400">试卷和锐评内容将被永久删除。</p>
-                    </div>
-                </Modal>
+                <PaperDialog open={!!deleteQuizTarget} title="撕掉这张卷子？" en="TEAR OUT" tape="ink" onClose={() => setDeleteQuizTarget(null)}
+                    actions={<>
+                        <ScrapButton variant="paper" onClick={() => setDeleteQuizTarget(null)} className="flex-1 py-2.5 text-[13px]">留着</ScrapButton>
+                        <ScrapButton variant="ink" onClick={confirmDeleteQuiz} className="flex-1 py-2.5 text-[13px]">撕掉</ScrapButton>
+                    </>}>
+                    卷子和助教写的锐评会一起撕掉，没法再翻回来。
+                </PaperDialog>
             </div>
         );
     }
@@ -1348,17 +1371,17 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     if (mode === 'quiz_review' && quizSession) {
         const viewQuiz = reviewingQuiz || quizSession;
         return (
-            <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
+            <div className="h-full w-full flex flex-col relative overflow-hidden font-sans" style={{ background: BOARD_BG }}>
                 <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
                 {/* Header */}
-                <div className="bg-[#1a1a1a]/80 backdrop-blur-md p-4 flex items-center justify-between z-30 border-b border-white/10">
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="bg-black/30 text-white/80 p-2 rounded-full hover:bg-black/50 transition-colors border border-white/10">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                <div className="backdrop-blur-md p-4 flex items-center justify-between z-30 border-b border-white/10" style={{ background: 'rgba(0,0,0,0.35)', paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="p-2 rounded-full transition-colors border border-white/10" style={{ background: 'rgba(0,0,0,0.3)', color: CHALK_SOFT }}>
+                        <CaretLeft size={18} weight="bold" />
                     </button>
                     <div className="text-center">
-                        <div className="text-white font-bold text-sm">批改结果</div>
-                        <div className={`text-xs font-bold mt-0.5 ${viewQuiz.score === viewQuiz.totalQuestions ? 'text-emerald-400' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'text-amber-400' : 'text-red-400'}`}>
+                        <div className="font-bold text-sm" style={{ color: CHALK }}>批改结果</div>
+                        <div className="text-xs font-bold mt-0.5" style={{ color: viewQuiz.score === viewQuiz.totalQuestions ? CHALK : CHALK_SOFT }}>
                             {viewQuiz.score}/{viewQuiz.totalQuestions} ({Math.round((viewQuiz.score / viewQuiz.totalQuestions) * 100)}%)
                         </div>
                     </div>
@@ -1368,18 +1391,18 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-24 relative z-10">
                     {/* Score Card */}
-                    <div className={`rounded-2xl p-6 mb-6 text-center ${viewQuiz.score === viewQuiz.totalQuestions ? 'bg-emerald-900/30 border border-emerald-500/30' : viewQuiz.score >= viewQuiz.totalQuestions * 0.6 ? 'bg-amber-900/30 border border-amber-500/30' : 'bg-red-900/30 border border-red-500/30'}`}>
-                        <div className="text-5xl font-bold text-white mb-2">{viewQuiz.score}<span className="text-2xl text-white/50">/{viewQuiz.totalQuestions}</span></div>
-                        <div className="text-sm text-white/60">{viewQuiz.chapterTitle}</div>
+                    <div className="rounded-2xl p-6 mb-6 text-center" style={{ background: 'rgba(255,255,255,0.06)', border: `1px ${viewQuiz.score === viewQuiz.totalQuestions ? 'solid' : 'dashed'} rgba(242,239,228,0.3)` }}>
+                        <div className="text-5xl font-bold mb-2" style={{ color: CHALK }}>{viewQuiz.score}<span className="text-2xl" style={{ color: CHALK_SOFT }}>/{viewQuiz.totalQuestions}</span></div>
+                        <div className="text-sm" style={{ color: CHALK_SOFT }}>{viewQuiz.chapterTitle}</div>
                     </div>
 
                     {/* Questions Review */}
                     <div className="space-y-4 mb-6">
                         {viewQuiz.questions.map((q, i) => (
-                            <div key={q.id} className={`rounded-2xl p-4 border ${q.isCorrect ? 'bg-emerald-900/10 border-emerald-500/20' : 'bg-red-900/10 border-red-500/20'}`}>
+                            <div key={q.id} className="rounded-2xl p-4" style={{ background: q.isCorrect ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.22)', border: `1px ${q.isCorrect ? 'solid' : 'dashed'} rgba(242,239,228,0.18)` }}>
                                 <div className="flex items-start gap-2 mb-2">
-                                    <span className={`text-sm font-bold shrink-0 ${q.isCorrect ? 'text-emerald-400' : 'text-red-400'}`}>{q.isCorrect ? <Check size={16} weight="bold" /> : <X size={16} weight="bold" />}</span>
-                                    <span className="text-white/90 text-sm">{i + 1}. {q.stem}</span>
+                                    <span className="text-sm font-bold shrink-0" style={{ color: q.isCorrect ? CHALK : CHALK_SOFT }}>{q.isCorrect ? <Check size={16} weight="bold" /> : <X size={16} weight="bold" />}</span>
+                                    <span className="text-sm" style={{ color: 'rgba(242,239,228,0.92)' }}>{i + 1}. {q.stem}</span>
                                 </div>
                                 {q.options && (
                                     <div className="ml-6 space-y-1 mb-2">
@@ -1388,7 +1411,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                             const isUserPick = q.userAnswer?.toUpperCase() === optLetter.toUpperCase();
                                             const isCorrectOpt = q.answer.toUpperCase() === optLetter.toUpperCase();
                                             return (
-                                                <div key={oi} className={`text-xs px-2 py-1 rounded ${isCorrectOpt ? 'text-emerald-300 bg-emerald-500/10' : isUserPick && !q.isCorrect ? 'text-red-300 bg-red-500/10' : 'text-white/50'}`}>
+                                                <div key={oi} className="text-xs px-2 py-1 rounded" style={isCorrectOpt ? { color: CHALK, background: 'rgba(242,239,228,0.12)', fontWeight: 700 } : isUserPick && !q.isCorrect ? { color: CHALK_SOFT, background: 'rgba(0,0,0,0.25)', textDecoration: 'line-through' } : { color: 'rgba(242,239,228,0.5)' }}>
                                                     {opt} {isCorrectOpt && !q.isCorrect && '← 正确答案'} {isUserPick && !q.isCorrect && '← 你的选择'}
                                                 </div>
                                             );
@@ -1397,19 +1420,19 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                 )}
                                 {q.type !== 'choice' && (
                                     <div className="ml-6 text-xs space-y-1 mb-2">
-                                        <div className={`${q.isCorrect ? 'text-emerald-300' : 'text-red-300'}`}>你的答案: {q.userAnswer || '(未作答)'}</div>
-                                        {!q.isCorrect && <div className="text-emerald-300">正确答案: {q.answer}</div>}
+                                        <div style={{ color: q.isCorrect ? CHALK : CHALK_SOFT, textDecoration: q.isCorrect ? 'none' : 'line-through' }}>你的答案: {q.userAnswer || '(未作答)'}</div>
+                                        {!q.isCorrect && <div style={{ color: CHALK }}>正确答案: {q.answer}</div>}
                                     </div>
                                 )}
-                                {q.explanation && <div className="ml-6 text-[10px] text-white/40 mt-1">解析: {q.explanation}</div>}
+                                {q.explanation && <div className="ml-6 text-[10px] mt-1" style={{ color: 'rgba(242,239,228,0.42)' }}>解析: {q.explanation}</div>}
 
                                 {/* Existing Notes */}
                                 {q.notes && q.notes.length > 0 && (
                                     <div className="ml-6 mt-3 space-y-2">
                                         {q.notes.map((note, ni) => (
-                                            <div key={ni} className="bg-white/5 rounded-xl p-3 border border-white/5">
-                                                <div className="text-[10px] text-amber-400 font-bold mb-1">Q: {note.question}</div>
-                                                <div className="text-xs text-white/70 leading-relaxed">
+                                            <div key={ni} className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(242,239,228,0.08)' }}>
+                                                <div className="text-[10px] font-bold mb-1" style={{ color: CHALK }}>Q: {note.question}</div>
+                                                <div className="text-xs leading-relaxed" style={{ color: 'rgba(242,239,228,0.7)' }}>
                                                     <BlackboardRenderer text={note.answer} katexRenderer={katexRenderer} />
                                                 </div>
                                             </div>
@@ -1426,23 +1449,24 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 onChange={e => setFollowUpInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleFollowUp(q.id)}
                                                 placeholder="哪里不明白？"
-                                                className="flex-1 bg-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/30 outline-none border border-white/10 focus:border-amber-500/50"
+                                                className="flex-1 rounded-lg px-3 py-1.5 text-xs outline-none"
+                                                style={{ background: 'rgba(255,255,255,0.1)', color: CHALK, border: '1px solid rgba(242,239,228,0.15)' }}
                                                 autoFocus
                                                 disabled={followUpLoading}
                                             />
                                             {followUpLoading ? (
-                                                <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                                                <Spinner size={18} className="animate-spin shrink-0" style={{ color: CHALK }} />
                                             ) : (
                                                 <>
-                                                    <button onClick={() => handleFollowUp(q.id)} disabled={!followUpInput.trim()} className="text-amber-400 text-xs font-bold px-2 py-1 hover:bg-white/5 rounded disabled:opacity-30">发送</button>
-                                                    <button onClick={() => { setAskingQuestionId(''); setFollowUpInput(''); }} className="text-white/30 text-xs px-1">取消</button>
+                                                    <button onClick={() => handleFollowUp(q.id)} disabled={!followUpInput.trim()} className="text-xs font-bold px-2 py-1 rounded disabled:opacity-30" style={{ color: CHALK }}>问</button>
+                                                    <button onClick={() => { setAskingQuestionId(''); setFollowUpInput(''); }} className="text-xs px-1" style={{ color: CHALK_SOFT }}>取消</button>
                                                 </>
                                             )}
                                         </div>
                                     ) : (
-                                        <button onClick={() => setAskingQuestionId(q.id)} className="text-[10px] text-amber-400/70 hover:text-amber-400 transition-colors flex items-center gap-1">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
-                                            追问
+                                        <button onClick={() => setAskingQuestionId(q.id)} className="text-[10px] transition-colors flex items-center gap-1" style={{ color: CHALK_SOFT }}>
+                                            <ChatCircleText size={12} weight="bold" />
+                                            还想问问
                                         </button>
                                     )}
                                 </div>
@@ -1454,10 +1478,10 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     {viewQuiz.aiReview && (
                         <div className="mb-6">
                             <div className="flex items-center gap-2 mb-3">
-                                {selectedChar && <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover border-2 border-emerald-500/30" />}
-                                <span className="text-emerald-400 text-sm font-bold">{selectedChar?.name || '助教'} 的锐评</span>
+                                {selectedChar && <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" style={{ border: '2px solid rgba(242,239,228,0.3)' }} />}
+                                <span className="text-sm font-bold" style={{ color: CHALK }}>{selectedChar?.name || '助教'} 的锐评</span>
                             </div>
-                            <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
+                            <div className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(242,239,228,0.1)' }}>
                                 <BlackboardRenderer text={viewQuiz.aiReview} katexRenderer={katexRenderer} />
                             </div>
                         </div>
@@ -1465,9 +1489,9 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                 </div>
 
                 {/* Bottom Bar */}
-                <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
-                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/30 active:scale-95 transition-all">
-                        返回课堂
+                <div className="absolute bottom-0 w-full backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe" style={{ background: 'rgba(0,0,0,0.55)' }}>
+                    <button onClick={() => { setMode('classroom'); setReviewingQuiz(null); }} className="w-full h-12 rounded-2xl font-black active:scale-95 transition-all" style={{ background: CHALK, color: INK, boxShadow: '0 12px 22px -12px rgba(0,0,0,0.7)' }}>
+                        回到课堂
                     </button>
                 </div>
             </div>
@@ -1477,52 +1501,44 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
     // QUIZ ANSWERING VIEW
     if (mode === 'quiz') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                {/* Header */}
-                <div className="h-20 bg-[#fdfbf7]/90 backdrop-blur-md flex items-end pb-3 px-6 border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={() => {
-                            // Save progress before leaving
-                            if (quizSession && quizSession.status === 'in_progress') {
-                                const updated = { ...quizSession, questions: quizSession.questions.map(q => ({ ...q, userAnswer: quizUserAnswers[q.id] || q.userAnswer })) };
-                                DB.saveQuiz(updated);
-                            }
-                            setMode('classroom');
-                        }} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                        </button>
-                        <span className="font-bold text-slate-800 text-sm tracking-wide">{quizSession?.chapterTitle || '做题中'}</span>
-                        <div className="text-xs text-slate-400 font-bold">
-                            {Object.keys(quizUserAnswers).length}/{quizSession?.questions.length || 0}
-                        </div>
-                    </div>
-                </div>
+            <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ color: INK, background: PAGE_BG }}>
+                <PaperBackdrop corners={false} />
+                <StudyHeader title={quizSession?.chapterTitle || '做题中'} en="QUIZ"
+                    onBack={() => {
+                        // Save progress before leaving
+                        if (quizSession && quizSession.status === 'in_progress') {
+                            const updated = { ...quizSession, questions: quizSession.questions.map(q => ({ ...q, userAnswer: quizUserAnswers[q.id] || q.userAnswer })) };
+                            DB.saveQuiz(updated);
+                        }
+                        setMode('classroom');
+                    }}
+                    right={<span className="text-xs font-black tabular-nums" style={{ color: INK_SOFT }}>{Object.keys(quizUserAnswers).length}/{quizSession?.questions.length || 0}</span>} />
 
                 {/* Loading State */}
                 {quizLoading ? (
-                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                        <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-sm text-slate-500 font-bold">{quizLoading}</span>
+                    <div className="relative z-10 flex-1 flex flex-col items-center justify-center gap-4">
+                        <Spinner size={36} className="animate-spin" style={{ color: INK }} />
+                        <span className="text-sm font-bold" style={{ color: INK_SOFT }}>{quizLoading}</span>
                         {selectedChar && (
                             <div className="flex items-center gap-2 mt-2">
-                                <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" />
-                                <span className="text-xs text-slate-400">{selectedChar.name} 正在出题...</span>
+                                <img src={selectedChar.avatar} className="w-8 h-8 rounded-full object-cover" style={{ border: '1px solid rgba(176,170,158,0.7)' }} />
+                                <span className="text-xs" style={{ color: INK_SOFT }}>{selectedChar.name} 正在出题…</span>
                             </div>
                         )}
                     </div>
                 ) : quizSession ? (
                     <>
                         {/* Questions */}
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-6 pb-32">
-                            <div className="space-y-6">
+                        <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar p-5 pb-32">
+                            <div className="space-y-5">
                                 {quizSession.questions.map((q, i) => (
-                                    <div key={q.id} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+                                    <div key={q.id} className="p-5" style={PANEL}>
                                         {/* Question Header */}
                                         <div className="flex items-start gap-2 mb-4">
-                                            <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                                            <span className="text-xs font-black px-2 py-0.5 rounded-full shrink-0" style={{ background: INK, color: PAPER }}>
                                                 {q.type === 'choice' ? '选择' : q.type === 'true_false' ? '判断' : '填空'}
                                             </span>
-                                            <span className="text-sm text-slate-800 font-medium leading-relaxed">{i + 1}. {q.stem}</span>
+                                            <span className="text-sm font-medium leading-relaxed" style={{ color: INK }}>{i + 1}. {q.stem}</span>
                                         </div>
 
                                         {/* Answer Area */}
@@ -1532,7 +1548,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                     const optLetter = opt.charAt(0);
                                                     const isSelected = (quizUserAnswers[q.id] || '').toUpperCase() === optLetter.toUpperCase();
                                                     return (
-                                                        <button key={oi} onClick={() => handleQuizAnswer(q.id, optLetter)} className={`w-full text-left px-4 py-3 rounded-xl text-sm transition-all ${isSelected ? 'bg-emerald-500 text-white font-bold shadow-sm' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 active:scale-[0.98]'}`}>
+                                                        <button key={oi} onClick={() => handleQuizAnswer(q.id, optLetter)} className="w-full text-left px-4 py-3 rounded-xl text-sm transition-all active:scale-[0.98]" style={isSelected ? { background: INK, color: PAPER, fontWeight: 700 } : { background: 'rgba(255,253,247,0.8)', color: '#48443c', border: '1px dashed rgba(150,144,132,0.55)' }}>
                                                             {opt}
                                                         </button>
                                                     );
@@ -1545,7 +1561,7 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                                 {[{ val: 'true', label: '正确' }, { val: 'false', label: '错误' }].map(opt => {
                                                     const isSelected = quizUserAnswers[q.id] === opt.val;
                                                     return (
-                                                        <button key={opt.val} onClick={() => handleQuizAnswer(q.id, opt.val)} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${isSelected ? (opt.val === 'true' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white') : 'bg-slate-50 text-slate-600 hover:bg-slate-100 active:scale-[0.98]'}`}>
+                                                        <button key={opt.val} onClick={() => handleQuizAnswer(q.id, opt.val)} className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-[0.98]" style={isSelected ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: '#6b655a', border: '1px dashed rgba(150,144,132,0.55)' }}>
                                                             {opt.val === 'true' ? <CheckCircle size={16} weight="bold" className="inline" /> : <XCircle size={16} weight="bold" className="inline" />} {opt.label}
                                                         </button>
                                                     );
@@ -1557,8 +1573,9 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                                             <input
                                                 value={quizUserAnswers[q.id] || ''}
                                                 onChange={e => handleQuizAnswer(q.id, e.target.value)}
-                                                placeholder="输入你的答案..."
-                                                className="w-full bg-slate-50 rounded-xl px-4 py-3 text-sm focus:outline-emerald-500 border border-slate-200 ml-1"
+                                                placeholder="写下你的答案…"
+                                                className="w-full rounded-xl px-4 py-3 text-sm outline-none ml-1"
+                                                style={paperInput}
                                             />
                                         )}
                                     </div>
@@ -1567,14 +1584,10 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                         </div>
 
                         {/* Submit Bar */}
-                        <div className="absolute bottom-0 w-full bg-[#fdfbf7]/95 backdrop-blur-xl border-t border-slate-200 p-4 z-30 pb-safe">
-                            <button
-                                onClick={submitQuiz}
-                                disabled={!!quizLoading}
-                                className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 active:scale-95 transition-all disabled:opacity-50"
-                            >
+                        <div className="absolute bottom-0 w-full backdrop-blur-xl p-4 z-30 pb-safe" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)', background: 'rgba(246,243,236,0.92)' }}>
+                            <ScrapButton variant="ink" onClick={submitQuiz} disabled={!!quizLoading} className="w-full h-12 text-[14px]">
                                 {quizLoading ? quizLoading : `交卷 (${Object.keys(quizUserAnswers).length}/${quizSession.questions.length})`}
-                            </button>
+                            </ScrapButton>
                         </div>
                     </>
                 ) : null}
@@ -1584,92 +1597,91 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
     if (mode === 'bookshelf') {
         return (
-            <div className="h-full w-full bg-[#fdfbf7] flex flex-col font-sans relative">
-                <div className="h-20 bg-[#fdfbf7]/90 backdrop-blur-md flex items-end pb-3 px-6 border-b border-[#e5e5e5] shrink-0 sticky top-0 z-20">
-                    <div className="flex justify-between items-center w-full">
-                        <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ color: INK, background: PAGE_BG }}>
+                <PaperBackdrop corners={false} />
+                <StudyHeader title="自习室" en="THE STUDY ROOM" onBack={closeApp} right={
+                    <div className="flex gap-1">
+                        <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="练习册">
+                            <Notepad size={20} weight="bold" />
                         </button>
-                        <span className="font-bold text-slate-800 text-lg tracking-wide">自习室</span>
-                        <div className="flex gap-1">
-                            <button onClick={() => { loadQuizzes(); setMode('practice_book'); }} className="p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform" title="练习册">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" /></svg>
-                            </button>
-                            <button onClick={() => setShowStudySettings(true)} className="p-2 -mr-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-slate-500"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
-                            </button>
-                        </div>
+                        <button onClick={() => setShowStudySettings(true)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: INK_SOFT }} title="设置">
+                            <GearSix size={20} weight="bold" />
+                        </button>
                     </div>
-                </div>
+                } />
 
-                <div className="p-6 flex-1 overflow-y-auto no-scrollbar">
+                <div className="relative z-10 p-5 flex-1 overflow-y-auto no-scrollbar">
                     {/* Character Selector */}
-                    <div className="mb-8">
-                        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">当前助教</h3>
+                    <div className="mb-7">
+                        <SectionTag en="YOUR TUTOR" className="mb-3">当前助教</SectionTag>
                         <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
-                            {characters.map(c => (
-                                <div key={c.id} onClick={() => setSelectedChar(c)} className={`flex flex-col items-center gap-2 cursor-pointer transition-opacity ${selectedChar?.id === c.id ? 'opacity-100' : 'opacity-50'}`}>
-                                    <div className={`w-14 h-14 rounded-full p-[2px] ${selectedChar?.id === c.id ? 'border-2 border-emerald-500' : 'border border-slate-200'}`}>
+                            {characters.map(c => {
+                                const on = selectedChar?.id === c.id;
+                                return (
+                                <div key={c.id} onClick={() => setSelectedChar(c)} className={`flex flex-col items-center gap-2 cursor-pointer transition-opacity ${on ? 'opacity-100' : 'opacity-55'}`}>
+                                    <div className="w-14 h-14 rounded-full p-[2px]" style={{ border: on ? `2px solid ${INK}` : '1px solid rgba(176,170,158,0.7)' }}>
                                         <img src={c.avatar} className="w-full h-full rounded-full object-cover" />
                                     </div>
-                                    <span className="text-[10px] font-bold text-slate-600">{c.name}</span>
+                                    <span className="text-[10px] font-bold" style={{ color: on ? INK : INK_SOFT }}>{c.name}</span>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">我的课程</h3>
-                    
+                    <SectionTag en="MY COURSES" className="mb-3">我的课本</SectionTag>
+
                     <div className="grid grid-cols-2 gap-4">
-                        <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-emerald-400 hover:text-emerald-500 transition-colors bg-white">
+                        <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] rounded-r-xl rounded-l-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform" style={{ border: '2px dashed rgba(150,144,132,0.7)', color: INK_SOFT, background: 'rgba(255,253,247,0.6)' }}>
                             {isProcessing ? (
                                 <div className="text-center px-2">
-                                    <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                                    <Spinner size={22} className="animate-spin mx-auto mb-2" style={{ color: INK }} />
                                     <span className="text-[10px]">{processStatus}</span>
                                 </div>
                             ) : (
                                 <>
-                                    <span className="text-3xl">+</span>
-                                    <span className="text-xs font-bold">导入 PDF</span>
+                                    <Plus size={26} weight="bold" />
+                                    <span className="text-xs font-bold">收一本 PDF</span>
                                 </>
                             )}
                         </button>
                         <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileSelect} disabled={isProcessing} />
 
                         {courses.map(course => (
-                            <div key={course.id} onClick={() => startSession(course)} className="aspect-[3/4] rounded-r-xl rounded-l-sm shadow-md relative group cursor-pointer overflow-hidden transition-transform active:scale-95" style={{ background: course.coverStyle }}>
-                                <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/10"></div> {/* Spine */}
+                            <div key={course.id} onClick={() => startSession(course)} className="aspect-[3/4] rounded-r-xl rounded-l-sm relative group cursor-pointer overflow-hidden transition-transform active:scale-95" style={{ background: course.coverStyle, boxShadow: '0 14px 26px -14px rgba(31,29,26,0.6)' }}>
+                                <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/20"></div> {/* Spine */}
+                                <div className="absolute inset-0 opacity-[0.10] pointer-events-none" style={{ backgroundImage: HALFTONE, backgroundSize: '6px 6px' }} />
                                 <div className="p-4 flex flex-col h-full text-white relative z-10">
                                     <div className="flex-1 font-serif font-bold text-lg leading-tight line-clamp-3 drop-shadow-md">{course.title}</div>
                                     <div className="mt-2">
-                                        <div className="text-[10px] font-bold opacity-80 mb-1">进度 {course.totalProgress}%</div>
+                                        <div className="text-[10px] font-bold opacity-85 mb-1">读到 {course.totalProgress}%</div>
                                         <div className="h-1 bg-white/30 rounded-full overflow-hidden">
                                             <div className="h-full bg-white transition-all duration-500" style={{ width: `${course.totalProgress}%` }}></div>
                                         </div>
                                     </div>
                                 </div>
-                                <button 
-                                    onClick={(e) => requestDeleteCourse(e, course)} 
-                                    className="absolute top-2 right-2 bg-black/20 hover:bg-red-500 text-white w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all z-20"
+                                <button
+                                    onClick={(e) => requestDeleteCourse(e, course)}
+                                    className="absolute top-2 right-2 bg-black/30 hover:bg-black/60 text-white w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all z-20"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                    <X size={14} weight="bold" />
                                 </button>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                <Modal isOpen={showImportModal} title="课程设置" onClose={() => setShowImportModal(false)} footer={<button onClick={confirmImport} className="w-full py-3 bg-emerald-500 text-white font-bold rounded-2xl">开始生成</button>}>
+                <PaperSheet open={showImportModal} title="新课本 · 备课偏好" tape="ink" onClose={() => setShowImportModal(false)}>
                     <div className="space-y-4">
-                        <div className="text-xs text-slate-500">
-                            已加载: <span className="font-bold text-slate-700">{tempPdfData?.name}</span>
+                        <div className="text-xs" style={{ color: INK_SOFT }}>
+                            已收到: <span className="font-bold" style={{ color: INK }}>{tempPdfData?.name}</span>
                         </div>
                         {tutorPresets.length > 0 && (
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">选择预设提示词</label>
+                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>挑一个讲法预设</label>
                                 <div className="flex flex-wrap gap-2">
                                     {tutorPresets.map(p => (
-                                        <button key={p.id} onClick={() => setImportPreference(p.prompt)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${importPreference === p.prompt ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <button key={p.id} onClick={() => setImportPreference(p.prompt)} className="px-3 py-1.5 rounded-full text-xs font-bold transition-colors" style={chip(importPreference === p.prompt)}>
                                             {p.name}
                                         </button>
                                     ))}
@@ -1677,34 +1689,36 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                             </div>
                         )}
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">AI 助教偏好 (Preferences)</label>
+                            <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>想让助教怎么讲</label>
                             <textarea
                                 value={importPreference}
                                 onChange={e => setImportPreference(e.target.value)}
-                                placeholder="例如：请用中文讲解，多用简单的比喻，针对数学公式详细推导..."
-                                className="w-full h-32 bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500 resize-none"
+                                placeholder="例如：请用中文讲解，多打比方，数学公式逐步推导…"
+                                className="w-full h-28 rounded-xl p-3 text-sm outline-none resize-none"
+                                style={paperInput}
                             />
                         </div>
+                        <ScrapButton variant="ink" onClick={confirmImport} className="w-full py-3 text-[14px]">开始备课</ScrapButton>
                     </div>
-                </Modal>
+                </PaperSheet>
 
-                {/* Study Room Settings Modal */}
-                <Modal isOpen={showStudySettings} title="自习室设置" onClose={() => setShowStudySettings(false)}>
-                    <div className="space-y-6">
+                {/* Study Room Settings Sheet */}
+                <PaperSheet open={showStudySettings} title="自习室设置" tape="amber" onClose={() => setShowStudySettings(false)}>
+                    <div className="space-y-6 max-h-[68vh] overflow-y-auto no-scrollbar">
                         {/* Dedicated API Config */}
                         <div>
-                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">专用 API（留空则使用全局设置）</h4>
+                            <SectionTag en="DEDICATED API" className="mb-3">专用 API（留空＝用全局）</SectionTag>
                             <div className="space-y-2">
-                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
-                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称 (e.g. gpt-4o)" className="w-full bg-slate-100 rounded-xl p-3 text-sm focus:outline-emerald-500" />
+                                <input value={localStudyUrl} onChange={e => setLocalStudyUrl(e.target.value)} placeholder="API Base URL" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
+                                <input value={localStudyKey} onChange={e => setLocalStudyKey(e.target.value)} placeholder="API Key" type="password" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
+                                <input value={localStudyModel} onChange={e => setLocalStudyModel(e.target.value)} placeholder="模型名称 (e.g. gpt-4o)" className="w-full rounded-xl p-3 text-sm outline-none" style={paperInput} />
                                 <div className="flex gap-2">
-                                    <button onClick={saveStudyApi} className="flex-1 py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs">保存</button>
-                                    <button onClick={clearStudyApi} className="py-2.5 px-4 bg-slate-200 text-slate-500 font-bold rounded-xl text-xs">清除</button>
+                                    <ScrapButton variant="ink" onClick={saveStudyApi} className="flex-1 py-2.5 text-xs">记下</ScrapButton>
+                                    <ScrapButton variant="paper" onClick={clearStudyApi} className="py-2.5 px-4 text-xs">清空</ScrapButton>
                                 </div>
                                 {(studyApi.baseUrl || studyApi.model) && (
-                                    <div className="text-[10px] text-emerald-600 bg-emerald-50 rounded-lg p-2">
-                                        当前使用专用 API: {studyApi.model || effectiveApi.model}
+                                    <div className="text-[10px] rounded-lg p-2" style={{ color: INK, background: 'rgba(232,228,217,0.6)' }}>
+                                        正在用专用 API: {studyApi.model || effectiveApi.model}
                                     </div>
                                 )}
                             </div>
@@ -1712,80 +1726,71 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
 
                         {/* Tutor Prompt Presets */}
                         <div>
-                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">提示词预设</h4>
+                            <SectionTag en="TEACHING NOTES" className="mb-3">讲法预设</SectionTag>
                             {tutorPresets.length > 0 && (
                                 <div className="space-y-2 mb-3">
                                     {tutorPresets.map(p => (
-                                        <div key={p.id} className="bg-slate-50 rounded-xl p-3 flex items-start gap-2">
+                                        <div key={p.id} className="rounded-xl p-3 flex items-start gap-2" style={{ background: 'rgba(255,253,247,0.7)', border: '1px dashed rgba(150,144,132,0.55)' }}>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-bold text-slate-700">{p.name}</div>
-                                                <div className="text-xs text-slate-400 truncate">{p.prompt}</div>
+                                                <div className="text-sm font-bold" style={{ color: INK }}>{p.name}</div>
+                                                <div className="text-xs truncate" style={{ color: INK_SOFT }}>{p.prompt}</div>
                                             </div>
-                                            <button onClick={() => { setEditingPreset(p); setPresetName(p.name); setPresetPrompt(p.prompt); }} className="text-slate-400 hover:text-emerald-500 shrink-0 p-1">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Z" /></svg>
+                                            <button onClick={() => { setEditingPreset(p); setPresetName(p.name); setPresetPrompt(p.prompt); }} className="shrink-0 p-1" style={{ color: INK_SOFT }}>
+                                                <PencilSimpleLine size={16} weight="bold" />
                                             </button>
-                                            <button onClick={() => deletePreset(p.id)} className="text-slate-400 hover:text-red-500 shrink-0 p-1">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                                            <button onClick={() => deletePreset(p.id)} className="shrink-0 p-1" style={{ color: INK_SOFT }}>
+                                                <Trash size={16} weight="bold" />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
                             )}
-                            <div className="space-y-2 bg-slate-100 rounded-xl p-3">
-                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名称（如：数学辅导）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500" />
-                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="提示词内容（如：请用中文讲解，多用简单的比喻...）" className="w-full bg-white rounded-lg p-2.5 text-sm focus:outline-emerald-500 resize-none h-24" />
-                                <button onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 bg-emerald-500 text-white font-bold rounded-xl text-xs disabled:opacity-40">
+                            <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(232,228,217,0.45)', border: '1px dashed rgba(150,144,132,0.55)' }}>
+                                <input value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="预设名（如：数学辅导）" className="w-full rounded-lg p-2.5 text-sm outline-none" style={paperInput} />
+                                <textarea value={presetPrompt} onChange={e => setPresetPrompt(e.target.value)} placeholder="讲法（如：请用中文讲解，多打比方…）" className="w-full rounded-lg p-2.5 text-sm outline-none resize-none h-24" style={paperInput} />
+                                <ScrapButton variant="ink" onClick={handleSavePreset} disabled={!presetName.trim() || !presetPrompt.trim()} className="w-full py-2.5 text-xs">
                                     {editingPreset ? '更新预设' : '添加预设'}
-                                </button>
+                                </ScrapButton>
                                 {editingPreset && (
-                                    <button onClick={() => { setEditingPreset(null); setPresetName(''); setPresetPrompt(''); }} className="w-full py-2 text-slate-400 text-xs">取消编辑</button>
+                                    <button onClick={() => { setEditingPreset(null); setPresetName(''); setPresetPrompt(''); }} className="w-full py-2 text-xs" style={{ color: INK_SOFT }}>取消编辑</button>
                                 )}
                             </div>
                         </div>
                     </div>
-                </Modal>
+                </PaperSheet>
 
-                {/* Delete Confirmation Modal */}
-                <Modal 
-                    isOpen={!!deleteTarget} 
-                    title="删除课程" 
-                    onClose={() => setDeleteTarget(null)} 
-                    footer={
-                        <div className="flex gap-2 w-full">
-                            <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl">取消</button>
-                            <button onClick={confirmDeleteCourse} className="flex-1 py-3 bg-red-500 text-white font-bold rounded-2xl shadow-lg shadow-red-200">确认删除</button>
-                        </div>
-                    }
-                >
-                    <div className="py-4 text-center">
-                        <p className="text-sm text-slate-600 mb-2">确定要删除课程 <br/><span className="font-bold text-slate-800">"{deleteTarget?.title}"</span> 吗？</p>
-                        <p className="text-xs text-red-400">删除后无法恢复，学习进度将丢失。</p>
-                    </div>
-                </Modal>
+                {/* Delete Confirmation */}
+                <PaperDialog open={!!deleteTarget} title="撤下这本课本？" en="REMOVE BOOK" tape="ink" onClose={() => setDeleteTarget(null)}
+                    actions={<>
+                        <ScrapButton variant="paper" onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 text-[13px]">留着</ScrapButton>
+                        <ScrapButton variant="ink" onClick={confirmDeleteCourse} className="flex-1 py-2.5 text-[13px]">撤下</ScrapButton>
+                    </>}>
+                    <span style={{ color: INK }}>「{deleteTarget?.title}」</span> 撤下后没法找回，读到的进度也会跟着没掉。
+                </PaperDialog>
             </div>
         );
     }
 
-    // CLASSROOM VIEW
+    // CLASSROOM VIEW（墨色黑板报）
     return (
-        <div className="h-full w-full bg-[#2b2b2b] flex flex-col relative overflow-hidden font-sans">
-            
+        <div className="h-full w-full flex flex-col relative overflow-hidden font-sans" style={{ background: BOARD_BG }}>
+
             {/* Background Texture - Board */}
             <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
             {/* Header Overlay */}
-            <div className="absolute top-0 w-full p-4 flex justify-between z-30 pointer-events-none">
-                <button onClick={() => setMode('bookshelf')} className="bg-black/30 text-white/80 p-2 rounded-full backdrop-blur-md hover:bg-black/50 transition-colors pointer-events-auto border border-white/10">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="absolute top-0 w-full p-4 flex justify-between z-30 pointer-events-none" style={{ paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+                <button onClick={() => setMode('bookshelf')} className="p-2 rounded-full backdrop-blur-md transition-colors pointer-events-auto border border-white/10" style={{ background: 'rgba(0,0,0,0.3)', color: CHALK_SOFT }}>
+                    <CaretLeft size={18} weight="bold" />
                 </button>
                 <div className="flex gap-2">
-                    <div onClick={() => setShowChapterMenu(true)} className="bg-black/30 text-white/90 px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-white/10 shadow-sm pointer-events-auto cursor-pointer flex items-center gap-2 hover:bg-black/50">
+                    <div onClick={() => setShowChapterMenu(true)} className="px-4 py-1.5 rounded-full backdrop-blur-md text-xs font-bold border border-white/10 pointer-events-auto cursor-pointer flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.3)', color: CHALK }}>
                         <span className="truncate max-w-[150px]">{activeCourse?.chapters[activeCourse.currentChapterIndex]?.title}</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                        <CaretDown size={12} weight="bold" />
                     </div>
                     {/* Character Visibility Toggle */}
-                    <button onClick={() => setShowAssistant(!showAssistant)} className={`bg-black/30 p-2 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto transition-colors ${showAssistant ? 'text-emerald-400' : 'text-white/40'}`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M10 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3.465 14.493a1.23 1.23 0 0 0 .41 1.412A9.957 9.957 0 0 0 10 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 0 0-13.074.003Z" /></svg>
+                    <button onClick={() => setShowAssistant(!showAssistant)} className="p-2 rounded-full backdrop-blur-md border border-white/10 pointer-events-auto transition-colors" style={{ background: 'rgba(0,0,0,0.3)', color: showAssistant ? CHALK : 'rgba(242,239,228,0.4)' }}>
+                        <Eye size={18} weight={showAssistant ? 'fill' : 'regular'} />
                     </button>
                 </div>
             </div>
@@ -1794,21 +1799,25 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             {showChapterMenu && (
                 <div className="absolute inset-0 z-50 flex">
                     <div className="flex-1 bg-black/50 backdrop-blur-sm" onClick={() => setShowChapterMenu(false)}></div>
-                    <div className="w-64 bg-slate-900 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right">
-                        <h3 className="text-white font-bold text-sm mb-4 uppercase tracking-widest">课程目录</h3>
+                    <div className="w-64 border-l border-white/10 h-full flex flex-col p-4 animate-slide-in-right" style={{ background: '#16140f', paddingTop: 'calc(var(--safe-top) + 12px)' }}>
+                        <h3 className="font-bold text-sm mb-4 uppercase tracking-widest" style={{ color: CHALK, fontFamily: 'var(--font-label)' }}>课程目录</h3>
                         <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-                            {activeCourse?.chapters.map((ch, idx) => (
-                                <button 
-                                    key={ch.id} 
+                            {activeCourse?.chapters.map((ch, idx) => {
+                                const cur = idx === activeCourse.currentChapterIndex;
+                                return (
+                                <button
+                                    key={ch.id}
                                     onClick={() => jumpToChapter(idx)}
-                                    className={`w-full text-left p-3 rounded-xl text-xs transition-all ${idx === activeCourse.currentChapterIndex ? 'bg-emerald-600 text-white font-bold' : 'text-slate-400 hover:bg-white/5'}`}
+                                    className="w-full text-left p-3 rounded-xl text-xs transition-all"
+                                    style={cur ? { background: CHALK, color: INK, fontWeight: 800 } : { color: CHALK_SOFT }}
                                 >
                                     <div className="flex items-center gap-2">
-                                        {ch.isCompleted ? <Check size={14} weight="bold" className="text-emerald-400" /> : <span className="w-2 h-2 rounded-full bg-slate-600"></span>}
+                                        {ch.isCompleted ? <Check size={14} weight="bold" /> : <span className="w-2 h-2 rounded-full" style={{ background: 'rgba(242,239,228,0.3)' }}></span>}
                                         {ch.title}
                                     </div>
                                 </button>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -1832,64 +1841,61 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
             )}
 
             {/* Controls Bar */}
-            <div className="absolute bottom-0 w-full bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe">
+            <div className="absolute bottom-0 w-full backdrop-blur-xl border-t border-white/10 p-4 z-30 pb-safe" style={{ background: 'rgba(0,0,0,0.55)' }}>
                 <div className="flex gap-3">
                     {classroomState === 'teaching' || isTyping ? (
-                        <div className="w-full h-12 flex items-center justify-center text-white/50 text-sm animate-pulse font-mono tracking-widest">
-                            LECTURING...
+                        <div className="w-full h-12 flex items-center justify-center text-sm animate-pulse font-mono tracking-widest" style={{ color: CHALK_SOFT }}>
+                            板书中…
                         </div>
                     ) : classroomState === 'finished' ? (
-                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/20 active:scale-95 transition-all">
-                            完成课程
+                        <button onClick={() => setMode('bookshelf')} className="flex-1 h-12 rounded-2xl font-black active:scale-95 transition-all" style={{ background: CHALK, color: INK, boxShadow: '0 12px 22px -12px rgba(0,0,0,0.7)' }}>
+                            下课，回书架
                         </button>
                     ) : classroomState === 'q_and_a' ? (
-                        <div className="w-full bg-white/10 rounded-2xl p-1 flex items-center border border-white/10">
-                            <input 
+                        <div className="w-full rounded-2xl p-1 flex items-center border border-white/10" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                            <input
                                 value={userQuestion}
                                 onChange={e => setUserQuestion(e.target.value)}
-                                placeholder="输入你的问题..."
-                                className="flex-1 bg-transparent px-4 py-2 text-white text-sm outline-none placeholder:text-white/30"
+                                placeholder="举手，问点什么…"
+                                className="flex-1 bg-transparent px-4 py-2 text-sm outline-none"
+                                style={{ color: CHALK }}
                                 autoFocus
                             />
-                            <button onClick={handleAskQuestion} className="bg-emerald-500 text-white px-5 py-2 rounded-xl text-xs font-bold ml-2 shadow-sm">发送</button>
+                            <button onClick={handleAskQuestion} className="px-5 py-2 rounded-xl text-xs font-bold ml-2" style={{ background: CHALK, color: INK }}>问</button>
                         </div>
                     ) : (
                         <>
-                            <button onClick={handleRegenerateChapter} className="w-12 h-12 bg-white/5 hover:bg-white/10 text-slate-400 rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center" title="重新生成本章">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                            <button onClick={handleRegenerateChapter} className="w-12 h-12 rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)', color: CHALK_SOFT }} title="重讲本章">
+                                <ArrowsClockwise size={20} weight="bold" />
                             </button>
-                            <button onClick={() => setClassroomState('q_and_a')} className="w-12 h-12 bg-white/10 hover:bg-white/20 text-white rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center">
-                                <Hand size={24} />
+                            <button onClick={() => setClassroomState('q_and_a')} className="w-12 h-12 rounded-2xl font-bold border border-white/10 active:scale-95 transition-all flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)', color: CHALK }} title="举手提问">
+                                <Hand size={22} />
                             </button>
-                            <button onClick={openQuizSetup} className="w-12 h-12 bg-amber-600/80 hover:bg-amber-500 text-white rounded-2xl font-bold border border-amber-400/30 active:scale-95 transition-all flex items-center justify-center" title="刷题">
-                                <Notepad size={24} />
+                            <button onClick={openQuizSetup} className="w-12 h-12 rounded-2xl font-bold border active:scale-95 transition-all flex items-center justify-center" style={{ background: 'rgba(242,239,228,0.16)', borderColor: 'rgba(242,239,228,0.3)', color: CHALK }} title="随堂测">
+                                <Notepad size={22} />
                             </button>
-                            <button onClick={handleFinishChapter} className="flex-1 h-12 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold shadow-lg shadow-emerald-900/30 active:scale-95 transition-all flex items-center justify-center gap-2">
-                                下一章 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+                            <button onClick={handleFinishChapter} className="flex-1 h-12 rounded-2xl font-black active:scale-95 transition-all flex items-center justify-center gap-2" style={{ background: CHALK, color: INK, boxShadow: '0 12px 22px -12px rgba(0,0,0,0.7)' }}>
+                                下一章 <ArrowRight size={16} weight="bold" />
                             </button>
                         </>
                     )}
                 </div>
             </div>
 
-            {/* Quiz Setup Modal */}
-            <Modal isOpen={quizShowSetup} title="刷题设置" onClose={() => setQuizShowSetup(false)} footer={
-                <button onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 bg-amber-500 text-white font-bold rounded-2xl disabled:opacity-40">
-                    开始出题
-                </button>
-            }>
+            {/* Quiz Setup Sheet */}
+            <PaperSheet open={quizShowSetup} title="随堂测 · 出几道题" tape="ink" onClose={() => setQuizShowSetup(false)}>
                 <div className="space-y-5">
-                    <div className="text-xs text-slate-500">
-                        当前章节: <span className="font-bold text-slate-700">{activeCourse?.chapters[activeCourse?.currentChapterIndex || 0]?.title}</span>
+                    <div className="text-xs" style={{ color: INK_SOFT }}>
+                        本章: <span className="font-bold" style={{ color: INK }}>{activeCourse?.chapters[activeCourse?.currentChapterIndex || 0]?.title}</span>
                     </div>
 
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题型选择</label>
+                        <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>题型</label>
                         <div className="flex flex-wrap gap-2">
                             {([['choice', '选择题'], ['true_false', '判断题'], ['fill_blank', '填空题']] as const).map(([val, label]) => {
                                 const isOn = quizTypes.includes(val);
                                 return (
-                                    <button key={val} onClick={() => setQuizTypes(prev => isOn ? prev.filter(t => t !== val) : [...prev, val])} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${isOn ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    <button key={val} onClick={() => setQuizTypes(prev => isOn ? prev.filter(t => t !== val) : [...prev, val])} className="px-4 py-2 rounded-xl text-sm font-bold transition-all" style={chip(isOn)}>
                                         {label}
                                     </button>
                                 );
@@ -1898,16 +1904,37 @@ Answer in character. Be helpful and clear. If they're confused about a concept, 
                     </div>
 
                     <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-2 block">题目数量: {quizCount}</label>
-                        <input type="range" min={3} max={15} value={quizCount} onChange={e => setQuizCount(Number(e.target.value))} className="w-full accent-amber-500" />
-                        <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                        <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>题量: {quizCount}</label>
+                        <input type="range" min={3} max={15} value={quizCount} onChange={e => setQuizCount(Number(e.target.value))} className="w-full" style={{ accentColor: INK }} />
+                        <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}>
                             <span>3题</span><span>15题</span>
                         </div>
                     </div>
+
+                    <ScrapButton variant="ink" onClick={generateQuiz} disabled={quizTypes.length === 0} className="w-full py-3 text-[14px]">开始出题</ScrapButton>
                 </div>
-            </Modal>
+            </PaperSheet>
         </div>
     );
 };
+
+// ── 顶栏：胶带返回钮 + 招牌（中文 + 英文小标）+ 右槽 ──
+const StudyHeader: React.FC<{ title: string; en?: string; onBack: () => void; right?: React.ReactNode }> = ({ title, en, onBack, right }) => (
+    <div className="relative z-20 shrink-0">
+        <div style={{ height: 'var(--safe-top)' }} />
+        <div className="flex items-center px-3 pt-2 pb-2.5 gap-2">
+            <button onClick={onBack} className="relative inline-flex items-center gap-1 px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }}>
+                <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-2deg)', boxShadow: '0 3px 7px -3px rgba(31,29,26,0.5)' }} />
+                <span className="relative z-10 flex items-center gap-1"><CaretLeft size={13} weight="bold" />返回</span>
+            </button>
+            <div className="leading-none">
+                <div className="text-[16px] font-black tracking-[0.04em]" style={{ color: INK }}>{title}</div>
+                {en && <div className="text-[7px] tracking-[0.36em] uppercase mt-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{en}</div>}
+            </div>
+            <div className="flex-1" />
+            {right}
+        </div>
+    </div>
+);
 
 export default StudyApp;
