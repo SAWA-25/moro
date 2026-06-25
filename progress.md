@@ -337,3 +337,9 @@ pm run build passes after the time-gap grouping fix.
   - **离心/回心**：嫉妒爆表+心死（妒≥95/心≤18/信<25）→ `estranged` 淡出调度，重获信任好心情（信≥42/心≥46）→ 回心；状态页打「离心」标。新增结局 `estranged_collapse`「人心尽失」（过半离心 bad end）。
   - UI：开局身份/性别选择 + 入选名单逐位性别；选项区下方自由行动输入框 + 主动去见钮 + 择幸抽屉；状态页加性别/离心徽章 + 「她/他们之间」羁绊栏。`reviveStory` 迁移新字段（gender/estranged/focusHint + 旧档补 pairwise 羁绊）。
   - 引擎纯逻辑，`utils/haremStory.test.ts` +10（性别开放/自由行动/择幸焦点/离心回心/羁绊/新结局）。`pnpm tsc --noEmit` clean，`vite build` 通过，684 tests green。
+- 椒房记·增玩家自由度 + 丰富 AI 生成界面/剧情 + 丰富界面互动：
+  - **叙事设定（自由度）**：新增 `StorySettings{style/heat0-3/pace/premise}`——开局可选**风格**（含蓄古风/直白热烈/轻松甜宠/暗黑虐心/江湖侠气）、**尺度**滑杆（清淡→浓烈，亲密上限仍受铁律⑥好感阶段约束）、**节奏**（慢热/适中/迅疾）、**开场设定/世界观**自由文本；全注入 `buildScenePrompt`，同批角色能演出截然不同的故事。`reviveStory` 迁移、多周目沿用。
+  - **富 AI 输出 → 富界面**：`StoryScene` 加 `mood`（氛围词→状态栏氛围徽章 + 背景微染）、`dialogues[].inner`（角色没说出口的**心声**，对白读完后以「👁心声」浮现，呼应偷看心声主题）；`emotion` 渲染成说话者立绘下情绪小标。SCHEMA/`parseScene`/`fallbackScene` 同步，全部可选、向后兼容。
+  - **富界面互动**：① **打字机逐字显示**（当前一拍逐字浮现，轻点先打完·再点推进·双击全文；菜单一键开关，偏好持久化 `moro_harem_tw`）；② **点立绘速览**（点在场角色→弹四维速览 + 详看全部/去见 ta）；③ **「换种写法」**（对当前场不满意→相同状态重抽，只换文笔不推进剧情）；④ 立绘加情绪标 + 离心碎心标。
+  - 开局界面加「叙事设定」区（风格 chips + 尺度滑杆 + 节奏 chips + 开场设定 textarea）。
+  - `utils/haremStory.test.ts` +5（settings 注入 prompt/mood+inner 解析/reviveStory 迁移/fallback mood）。`pnpm tsc --noEmit` clean，`vite build` 通过，689 tests green。

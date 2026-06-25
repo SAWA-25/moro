@@ -53,6 +53,26 @@ export const RULER_PRESETS: { key: string; label: string; gender: Gender; title:
     { key: 'neutral', label: '不限', gender: 'unknown', title: '君上', hint: '中性 · 全交给剧情' },
 ];
 
+// ── 玩家可自定义的「叙事设定」（增加自由度：风格 / 尺度 / 节奏 / 开场设定）──────
+export interface StorySettings { style: string; heat: number; pace: string; premise?: string; }
+export const STORY_STYLES: { key: string; label: string; hint: string }[] = [
+    { key: 'classic', label: '含蓄古风', hint: '含蓄克制、以景写情、留白悠长' },
+    { key: 'passion', label: '直白热烈', hint: '情感外放、张力十足、爱恨分明' },
+    { key: 'sweet', label: '轻松甜宠', hint: '轻快暖甜、日常调情、冲突点到为止' },
+    { key: 'dark', label: '暗黑虐心', hint: '权谋猜忌、爱恨交缠、虐感与危险并存' },
+    { key: 'wuxia', label: '江湖侠气', hint: '快意恩仇、儿女情长、剑胆琴心' },
+];
+export const HEAT_LABELS = ['清淡', '微醺', '旖旎', '浓烈']; // 尺度 0..3
+export const PACE_OPTIONS: { key: string; label: string; hint: string }[] = [
+    { key: 'slow', label: '慢热', hint: '细水长流，情感缓缓升温' },
+    { key: 'mid', label: '适中', hint: '张弛有度' },
+    { key: 'fast', label: '迅疾', hint: '剧情推进快、爱恨来得猛' },
+];
+export const DEFAULT_SETTINGS: StorySettings = { style: 'classic', heat: 1, pace: 'mid' };
+const styleHint = (k: string): string => STORY_STYLES.find(s => s.key === k)?.hint || STORY_STYLES[0].hint;
+const styleLabel = (k: string): string => STORY_STYLES.find(s => s.key === k)?.label || STORY_STYLES[0].label;
+const paceHint = (k: string): string => PACE_OPTIONS.find(p => p.key === k)?.hint || PACE_OPTIONS[1].hint;
+
 // ════════════════════════════════════════════════════════════════════════════
 //  ③ 角色状态模块
 // ════════════════════════════════════════════════════════════════════════════
@@ -259,7 +279,7 @@ export interface StoryChoice {
     nextIntent: string;     // 选此项后剧情走向（喂下一轮 AI）
 }
 
-export interface StoryDialogue { speaker: string; charId?: string; text: string; emotion?: string; }
+export interface StoryDialogue { speaker: string; charId?: string; text: string; emotion?: string; inner?: string; }
 
 /** ⑩ AI 单回合输出（稳定 JSON）。 */
 export interface StoryScene {
@@ -271,6 +291,7 @@ export interface StoryScene {
     memoryUpdates: { charId?: string; text: string; kind?: MemoryKind; weight?: number }[];
     flagUpdates: Record<string, string | number | boolean>;
     nextSceneHint: string;
+    mood?: string;                   // 本场氛围词（驱动 UI 氛围条 / 背景微染）
     turnType?: TurnType;             // 本回合的节奏类型（由引擎注入，便于存档回看）
 }
 
@@ -284,6 +305,7 @@ export interface StoryState {
     version: number;
     playthrough: number;            // 周目（多周目版，1 起）
     player: { name: string; title: string; gender: Gender; persona?: string };
+    settings: StorySettings;        // 玩家自定义叙事设定（风格/尺度/节奏/开场设定）
     day: number;
     time: TimeSlot;
     location: string;
@@ -325,6 +347,7 @@ export function initStory(
     seeds: StorySeed[],
     player: { name: string; title?: string; gender?: Gender; persona?: string },
     carry: { fromPlaythrough: number; notes: string[] } | null = null,
+    settings?: Partial<StorySettings>,
 ): StoryState {
     const characters: Record<string, StoryChar> = {};
     seeds.forEach(s => { characters[s.charId] = makeChar(s, { affection: 30, trust: 35, jealousy: 10, mood: 60 }); });
@@ -336,6 +359,7 @@ export function initStory(
         version: STORY_VERSION,
         playthrough: carry ? carry.fromPlaythrough + 1 : 1,
         player: { name: player.name || '君', title: player.title || '君上', gender: player.gender || 'unknown', persona: player.persona },
+        settings: { ...DEFAULT_SETTINGS, ...(settings || {}) },
         day: 1, time: '晨', location: '椒房殿',
         turnType: 'daily', turnCount: 0,
         currentScene: null,
@@ -548,8 +572,9 @@ const RULES = [
 
 const SCHEMA = `{
   "sceneTitle": "本场标题(简短)",
+  "mood": "本场氛围词(如 缠绵/静谧/剑拔弩张/暗潮汹涌)",
   "narration": "旁白叙事(可多句，描述场景/动作/心理，不替玩家说话)",
-  "dialogues": [{"speaker":"角色名","text":"台词","emotion":"情绪(可选)"}],
+  "dialogues": [{"speaker":"角色名","text":"台词","emotion":"情绪(可选)","inner":"该角色此刻没说出口的心声(可选，玩家能偷看到)"}],
   "choices": [
     {"text":"选项文案","tone":"语气","effects":[{"charId":"角色id","affection":整数,"trust":整数,"jealousy":整数,"mood":整数}],"risk":"low|mid|high","nextIntent":"选此项后剧情走向"}
   ],
@@ -592,9 +617,16 @@ export function buildScenePrompt(s: StoryState, opts: { opening?: boolean } = {}
 
     const rels = relationshipSummary(s);
     const lastWasCustom = s.lastTurn?.custom;
+    const cfg = s.settings || DEFAULT_SETTINGS;
+    const heat = HEAT_LABELS[Math.max(0, Math.min(3, cfg.heat))] || HEAT_LABELS[1];
+    const styleBlock = `【叙事风格】${styleLabel(cfg.style)}——${styleHint(cfg.style)}\n`
+        + `【节奏】${paceHint(cfg.pace)}\n`
+        + `【尺度】${heat}：在**不违反「不得超出当前好感/信任阶段」**（铁律 ⑥）的前提下，亲密与情欲描写最多到「${heat}」的程度为止；越亲密越要以好感为前提。\n`
+        + (cfg.premise ? `【玩家设定的开场/世界观】${cfg.premise.slice(0, 300)}（请贯穿全程、尊重此设定）\n` : '');
 
     const system = `你是一款古风宫廷恋爱文字互动游戏（galgame 式）的「实时编剧」。玩家扮演一位宫廷之主「${s.player.title}」，身边有多位可攻略的恋慕对象（即「后宫」）。`
-        + `你的职责：依据下方**当前游戏状态**，写好「这一回合」的一小段剧情，并给玩家 3 个选择。文风古雅、含蓄、有张力，重人物与情感。\n\n`
+        + `你的职责：依据下方**当前游戏状态**，写好「这一回合」的一小段剧情，并给玩家 3 个选择。重人物与情感、有张力。\n\n`
+        + styleBlock + '\n'
         + `【身份与性别 · 极重要】玩家与每位角色的性别都已在下方标明，可为男可为女（支持女帝男妃、同性、混合后宫等任意组合）。`
         + `务必按各自性别选用相称的称谓与自称（如男性侍君者可自称「臣」「微臣」、女性可自称「臣妾」「妾身」，按其人设而定），`
         + `**绝不要默认所有角色都是女性，也不要默认玩家是男性**；性别标为「依人设」的，按其人设/名字气质自行判断并保持前后一致。\n\n`
@@ -673,7 +705,7 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
             const speaker = String(d?.speaker || d?.name || '').trim();
             const text = String(d?.text || d?.line || '').trim();
             if (!text) return null;
-            return { speaker, charId: byName.get(speaker), text, emotion: d?.emotion ? String(d.emotion).slice(0, 8) : undefined };
+            return { speaker, charId: byName.get(speaker), text, emotion: d?.emotion ? String(d.emotion).slice(0, 8) : undefined, inner: d?.inner ? String(d.inner).trim().slice(0, 60) : undefined };
         })
         .filter(Boolean) as StoryDialogue[];
 
@@ -720,6 +752,7 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
         memoryUpdates,
         flagUpdates,
         nextSceneHint: String(o.nextSceneHint || '').trim().slice(0, 100),
+        mood: o.mood ? String(o.mood).trim().slice(0, 12) || undefined : undefined,
         turnType: s.turnType,
     };
 }
@@ -739,6 +772,10 @@ export function fallbackScene(s: StoryState): StoryScene {
         : `${s.location}独坐，${s.time}风穿廊。无人相伴，思绪却没停下。`;
     const me = who ? selfRef(who.gender) : '我';
     const dialogues: StoryDialogue[] = who ? [{ speaker: who.name, charId: who.charId, text: pick([`…${title}今日，可还安好？`, `${me}候着${title}呢。`, `${title}若得空，能否多留片刻？`], Math.random) }] : [];
+    const MOOD_BY_TURN: Record<TurnType, string> = {
+        daily: '闲适', date: '缱绻', group: '暗流涌动', jealousy: '剑拔弩张', cold_war: '冷寂',
+        night_talk: '静谧', breakthrough: '心动', crisis: '风雨欲来', route_lock: '郑重', ending: '余韵',
+    };
     return {
         sceneTitle: `${tm.label}·${s.location}`,
         narration,
@@ -748,6 +785,7 @@ export function fallbackScene(s: StoryState): StoryScene {
         memoryUpdates: [],
         flagUpdates: {},
         nextSceneHint: '',
+        mood: MOOD_BY_TURN[s.turnType],
         turnType: s.turnType,
     };
 }
@@ -1049,9 +1087,9 @@ export function buildCarry(s: StoryState): { fromPlaythrough: number; notes: str
     return { fromPlaythrough: s.playthrough, notes };
 }
 
-/** 用继承包开下一周目（角色种子由 app 层重新提供，可与上盘相同或不同）。 */
+/** 用继承包开下一周目（角色种子由 app 层重新提供，可与上盘相同或不同）。沿用上盘的叙事设定。 */
 export function startNewGamePlus(prev: StoryState, seeds: StorySeed[], player?: { name: string; title?: string; gender?: Gender; persona?: string }): StoryState {
-    return initStory(seeds, player || prev.player, buildCarry(prev));
+    return initStory(seeds, player || prev.player, buildCarry(prev), prev.settings);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1094,6 +1132,9 @@ export function reviveStory(raw: any): StoryState | null {
             version: STORY_VERSION,
             playthrough: num(raw.playthrough, 1),
             player: { name: String(raw.player?.name || '君'), title: String(raw.player?.title || '君上'), gender: (raw.player?.gender === 'male' || raw.player?.gender === 'female') ? raw.player.gender : 'unknown', persona: raw.player?.persona },
+            settings: raw.settings && typeof raw.settings === 'object'
+                ? { style: String(raw.settings.style || DEFAULT_SETTINGS.style), heat: clampN(num(raw.settings.heat, 1), 0, 3), pace: String(raw.settings.pace || DEFAULT_SETTINGS.pace), premise: raw.settings.premise ? String(raw.settings.premise).slice(0, 400) : undefined }
+                : { ...DEFAULT_SETTINGS },
             day: num(raw.day, 1), time: (TIME_SLOTS.includes(raw.time) ? raw.time : '晨'),
             location: String(raw.location || '椒房殿'),
             turnType: (TURN_META[raw.turnType as TurnType] ? raw.turnType : 'daily'),

@@ -7,7 +7,8 @@ import {
     initStory, buildScenePrompt, parseScene, fallbackScene, applyChoice, applyCustomAction, visitCharacter,
     stageOf, TURN_LABEL, TURN_META, checkEndings, ENDING_DEFS, relationshipSummary,
     buildStoryEndingPrompt, parseStoryEnding, fallbackStoryEnding,
-    startNewGamePlus, reviveStory, saveMetaOf, RULER_PRESETS, GENDER_WORD, type StorySaveMeta,
+    startNewGamePlus, reviveStory, saveMetaOf, RULER_PRESETS, GENDER_WORD,
+    STORY_STYLES, HEAT_LABELS, PACE_OPTIONS, type StorySaveMeta,
     type TimeSlot, type TurnType, type Gender,
 } from '../../utils/haremStory';
 import {
@@ -18,7 +19,7 @@ import {
 import {
     Crown, Scroll, BookOpen, FloppyDisk, UsersThree, Sparkle, CaretRight, X,
     ArrowClockwise, Heart, ShieldCheck, Drop, Smiley, Brain, MapPin, Trash,
-    List, PlusCircle, PaperPlaneRight, PersonSimpleWalk, HeartBreak,
+    List, PlusCircle, PaperPlaneRight, PersonSimpleWalk, HeartBreak, ArrowsClockwise, Eye, TextAa,
 } from '@phosphor-icons/react';
 
 const LIVE_KEY = 'moro_harem_story';
@@ -63,11 +64,19 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [pTitle, setPTitle] = useState('陛下');
     const [pGender, setPGender] = useState<Gender>('male');
     const [charGenders, setCharGenders] = useState<Record<string, Gender>>({});
+    // 叙事设定（自由度）
+    const [pStyle, setPStyle] = useState('classic');
+    const [pHeat, setPHeat] = useState(1);
+    const [pPace, setPPace] = useState('mid');
+    const [premise, setPremise] = useState('');
     const carryRef = useRef<CarryPack>(null);
 
-    // 进行中：自由行动 / 主动择幸
+    // 进行中：自由行动 / 主动择幸 / 立绘菜单 / 打字机
     const [customText, setCustomText] = useState('');
     const [visitOpen, setVisitOpen] = useState(false);
+    const [spriteMenu, setSpriteMenu] = useState<string | null>(null);
+    const [typewriter, setTypewriter] = useState(true);
+    const [typed, setTyped] = useState(0);
 
     // 浮层
     const [menu, setMenu] = useState(false);
@@ -81,10 +90,12 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     // ── 装载 / 持久化 ──────────────────────────────────────────────
     useEffect(() => {
         try { const raw = localStorage.getItem(LIVE_KEY); if (raw) { const s = reviveStory(JSON.parse(raw)); if (s) setGame(s); } } catch { /* ignore */ }
+        try { setTypewriter(localStorage.getItem('moro_harem_tw') !== '0'); } catch { /* ignore */ }
         setPName((userProfile?.name || '君').slice(0, 12));
         setLoaded(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+    useEffect(() => { try { localStorage.setItem('moro_harem_tw', typewriter ? '1' : '0'); } catch { /* ignore */ } }, [typewriter]);
     useEffect(() => {
         if (!loaded) return;
         try { if (game) localStorage.setItem(LIVE_KEY, JSON.stringify(game)); else localStorage.removeItem(LIVE_KEY); } catch { /* ignore */ }
@@ -92,25 +103,39 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
     const scene = game?.currentScene || null;
 
-    // 把一场戏拆成「拍」：旁白 + 各句对白
-    const beats = useMemo(() => {
-        if (!scene) return [] as { kind: 'narration' | 'dialogue'; speaker?: string; charId?: string; text: string; emotion?: string }[];
-        const arr: { kind: 'narration' | 'dialogue'; speaker?: string; charId?: string; text: string; emotion?: string }[] = [];
+    // 把一场戏拆成「拍」：旁白 + 各句对白（带情绪 / 心声）
+    type Beat = { kind: 'narration' | 'dialogue'; speaker?: string; charId?: string; text: string; emotion?: string; inner?: string };
+    const beats = useMemo<Beat[]>(() => {
+        if (!scene) return [];
+        const arr: Beat[] = [];
         if (scene.narration) arr.push({ kind: 'narration', text: scene.narration });
-        for (const d of scene.dialogues) arr.push({ kind: 'dialogue', speaker: d.speaker, charId: d.charId, text: d.text, emotion: d.emotion });
+        for (const d of scene.dialogues) arr.push({ kind: 'dialogue', speaker: d.speaker, charId: d.charId, text: d.text, emotion: d.emotion, inner: d.inner });
         if (arr.length === 0) arr.push({ kind: 'narration', text: '……' });
         return arr;
     }, [scene]);
     useEffect(() => { setBeatIdx(0); }, [scene]);
     const allRead = beatIdx >= beats.length - 1;
+    const latestText = beats[beatIdx]?.text || '';
+    // 打字机：逐字显示当前一拍（可关）
+    useEffect(() => {
+        if (!typewriter) { setTyped(latestText.length); return; }
+        setTyped(0);
+        if (!latestText) return;
+        let i = 0;
+        const id = setInterval(() => { i += 2; setTyped(i); if (i >= latestText.length) clearInterval(id); }, 18);
+        return () => clearInterval(id);
+    }, [beatIdx, scene, typewriter, latestText]);
+    const typingDone = !typewriter || typed >= latestText.length;
+    const ready = allRead && typingDone && !busy; // 读完且当前一拍打完、未在请求 → 可做选择
 
     const lastTap = useRef(0);
     const onBoxTap = () => {
         if (!beats.length) return;
         const now = Date.now();
-        if (now - lastTap.current < 300) { setBeatIdx(beats.length - 1); lastTap.current = 0; return; } // 双击：全文
+        if (now - lastTap.current < 300) { setBeatIdx(beats.length - 1); setTyped(99999); lastTap.current = 0; return; } // 双击：全文
         lastTap.current = now;
-        setBeatIdx(i => Math.min(beats.length - 1, i + 1)); // 单击：推进
+        if (typewriter && typed < latestText.length) { setTyped(latestText.length); return; } // 首次轻点：先把这拍打完
+        setBeatIdx(i => Math.min(beats.length - 1, i + 1)); // 再轻点：推进
     };
 
     // ── AI 请求 ───────────────────────────────────────────────────
@@ -137,11 +162,23 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const start = () => {
         const chosen = characters.filter(c => picked.has(c.id)).slice(0, MAX_CAST);
         if (chosen.length === 0) { addToast('总得先择一位入宫，故事才好开篇', 'error'); return; }
-        const st = initStory(chosen.map(seedOf), { name: pName.trim() || '君', title: pTitle.trim() || '君上', gender: pGender, persona: userProfile?.bio }, carryRef.current);
+        const st = initStory(
+            chosen.map(seedOf),
+            { name: pName.trim() || '君', title: pTitle.trim() || '君上', gender: pGender, persona: userProfile?.bio },
+            carryRef.current,
+            { style: pStyle, heat: pHeat, pace: pPace, premise: premise.trim() || undefined },
+        );
         carryRef.current = null;
         setEnding(null);
         setGame(st);
         requestScene(st, true);
+    };
+
+    // 换一种写法：用相同状态重抽这一场（自由度 + 互动）
+    const regenerate = () => {
+        if (!game || busy) return;
+        setSpriteMenu(null);
+        requestScene(game, game.history.length === 0);
     };
 
     // ── 推进：选择 / 自由行动 / 主动择幸 共用 ────────────────────────
@@ -257,6 +294,41 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                     <p className="text-[10.5px] mb-4" style={{ color: INK_SOFT }}>你与每位的性别都可自由设定——男帝女妃、女帝男妃、同性、混合，皆可。</p>
 
+                    {/* 叙事设定（自由度：风格 / 尺度 / 节奏 / 开场设定） */}
+                    <SectionTag en="HOW IT'S TOLD" className="mb-2">叙事设定</SectionTag>
+                    <div className="mb-2">
+                        <div className="text-[11px] mb-1" style={{ color: INK_SOFT }}>风格</div>
+                        <div className="flex gap-1.5 flex-wrap">
+                            {STORY_STYLES.map(st => (
+                                <button key={st.key} onClick={() => setPStyle(st.key)} title={st.hint}
+                                    className="px-2.5 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-transform"
+                                    style={pStyle === st.key ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                    {st.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="mb-2 flex items-center gap-3">
+                        <div className="flex-1">
+                            <div className="text-[11px] mb-1 flex items-center justify-between" style={{ color: INK_SOFT }}><span>尺度</span><span className="font-bold" style={{ color: INK }}>{HEAT_LABELS[pHeat]}</span></div>
+                            <input type="range" min={0} max={3} step={1} value={pHeat} onChange={e => setPHeat(+e.target.value)} className="w-full accent-black" style={{ accentColor: INK }} />
+                        </div>
+                        <div>
+                            <div className="text-[11px] mb-1" style={{ color: INK_SOFT }}>节奏</div>
+                            <div className="flex gap-1">
+                                {PACE_OPTIONS.map(p => (
+                                    <button key={p.key} onClick={() => setPPace(p.key)} title={p.hint}
+                                        className="px-2 py-1.5 rounded-lg text-[11px] font-bold active:scale-95 transition-transform"
+                                        style={pPace === p.key ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                        {p.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <textarea value={premise} onChange={e => setPremise(e.target.value.slice(0, 300))} placeholder="开场设定 / 世界观（选填）：例「架空王朝，你是新登基的女帝，后宫尚需收服人心…」"
+                        rows={2} className="w-full px-3 py-2 text-[12.5px] rounded-lg outline-none resize-none mb-4" style={inputStyle} />
+
                     {characters.length === 0 ? (
                         <StickyNote color="butter" rotate={-1.5} className="px-5 py-8 text-center">
                             <span className="text-[13px] font-bold" style={{ color: '#5b554b' }}>通讯录空空，尚无良人可供采选</span>
@@ -324,9 +396,10 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </div>
                 <button onClick={() => setMenu(true)} className="p-2 -mr-1 active:scale-90 transition-transform" style={{ color: INK }} title="菜单"><List size={20} weight="bold" /></button>
             </div>
-            {/* 在场角色关系小条 */}
+            {/* 在场角色关系小条 + 氛围 + 换写 */}
             <div className="relative z-20 shrink-0 px-3 pb-1 flex items-center gap-1.5 flex-wrap">
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-black" style={{ background: 'rgba(31,29,26,0.08)', border: '1px dashed rgba(150,144,132,0.6)', color: INK }}>{tm.label}回合</span>
+                {scene?.mood && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: INK, color: PAPER }}>{scene.mood}</span>}
                 {activeChars.map(c => (
                     <span key={c.charId} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(176,170,158,0.6)' }}>
                         {game.route.charId === c.charId && <Crown size={10} weight="fill" style={{ color: INK }} />}
@@ -334,6 +407,11 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <span style={{ color: INK_SOFT }}>{stageOf(c.affection).label}</span>
                     </span>
                 ))}
+                {scene && !busy && (
+                    <button onClick={regenerate} className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.7)', border: '1px solid rgba(176,170,158,0.6)', color: INK }} title="对这一场不满意？换一种写法">
+                        <ArrowsClockwise size={11} weight="bold" />换种写法
+                    </button>
+                )}
             </div>
 
             {/* ②③ 背景 + 立绘区 */}
@@ -344,16 +422,19 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     {activeChars.length === 0 && <span className="text-[13px] mb-6" style={{ color: INK_SOFT }}>{game.location}，此刻无人相伴。</span>}
                     {activeChars.map((c, i) => {
                         const speaking = speakingId === c.charId;
+                        const emo = speaking ? curBeat?.emotion : undefined;
                         return (
-                            <div key={c.charId} className="flex flex-col items-center transition-all" style={{ opacity: speakingId && !speaking ? 0.5 : 1, transform: speaking ? 'translateY(-4px)' : 'none' }}>
+                            <button key={c.charId} onClick={() => setSpriteMenu(c.charId)} className="flex flex-col items-center transition-all active:scale-95" style={{ opacity: speakingId && !speaking ? 0.5 : 1, transform: speaking ? 'translateY(-4px)' : 'none' }} title="点查看状态 / 主动去见">
                                 <div className="relative">
                                     {c.avatar
                                         ? <img src={c.avatar} className="object-cover rounded-2xl" style={{ width: activeChars.length >= 3 ? 76 : 96, height: activeChars.length >= 3 ? 100 : 128, border: `2px solid ${speaking ? INK : 'rgba(176,170,158,0.7)'}`, boxShadow: speaking ? '0 10px 22px -10px rgba(31,29,26,0.55)' : '0 8px 18px -12px rgba(31,29,26,0.4)' }} />
                                         : <div className="rounded-2xl flex items-center justify-center text-[28px]" style={{ width: 86, height: 116, background: 'rgba(176,170,158,0.25)', border: '2px solid rgba(176,170,158,0.7)' }}>🎐</div>}
                                     {speaking && <WashiTape color="butter" rotate={-6} className="absolute -top-2 -left-2 w-9 h-3.5 rounded-[2px]" />}
+                                    {emo && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[9px] font-bold whitespace-nowrap" style={{ background: INK, color: PAPER }}>{emo}</span>}
+                                    {c.estranged && <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ background: '#6b655a', color: PAPER }}><HeartBreak size={11} weight="fill" /></span>}
                                 </div>
                                 <span className="mt-1 text-[11px] font-bold" style={{ color: speaking ? INK : INK_SOFT }}>{c.name}</span>
-                            </div>
+                            </button>
                         );
                     })}
                 </div>
@@ -380,27 +461,36 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="space-y-2">
                                 {beats.slice(0, beatIdx + 1).map((b, i) => {
                                     const latest = i === beatIdx;
+                                    const shown = latest && typewriter ? b.text.slice(0, typed) : b.text;
+                                    const revealed = !latest || typingDone; // 心声在该拍读完后才浮现
                                     return b.kind === 'narration' ? (
-                                        <p key={i} className={`text-[13.5px] leading-relaxed ${latest ? 'animate-fade-in' : ''}`} style={{ color: latest ? '#3a362f' : 'rgba(58,54,47,0.5)', fontStyle: 'italic' }}>{b.text}</p>
+                                        <p key={i} className={`text-[13.5px] leading-relaxed ${latest ? 'animate-fade-in' : ''}`} style={{ color: latest ? '#3a362f' : 'rgba(58,54,47,0.5)', fontStyle: 'italic' }}>{shown}</p>
                                     ) : (
-                                        <p key={i} className={`text-[14.5px] leading-relaxed ${latest ? 'animate-fade-in' : ''}`} style={{ color: latest ? INK : 'rgba(31,29,26,0.45)' }}>
-                                            {!latest && <span className="text-[11px] font-bold mr-1" style={{ color: INK_SOFT }}>{b.speaker}：</span>}{b.text}
-                                        </p>
+                                        <div key={i}>
+                                            <p className={`text-[14.5px] leading-relaxed ${latest ? 'animate-fade-in' : ''}`} style={{ color: latest ? INK : 'rgba(31,29,26,0.45)' }}>
+                                                {!latest && <span className="text-[11px] font-bold mr-1" style={{ color: INK_SOFT }}>{b.speaker}：</span>}{shown}
+                                            </p>
+                                            {b.inner && revealed && (
+                                                <p className="text-[11.5px] leading-snug mt-0.5 pl-2 flex items-start gap-1" style={{ color: 'rgba(108,101,90,0.85)', borderLeft: '2px dashed rgba(150,144,132,0.5)', fontStyle: 'italic' }}>
+                                                    <Eye size={11} weight="fill" className="mt-0.5 shrink-0" /><span>心声：{b.inner}</span>
+                                                </p>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
                         )}
                     </div>
-                    {!busy && !allRead && (
+                    {!busy && (!allRead || !typingDone) && (
                         <div className="absolute bottom-1.5 right-3 flex items-center gap-1 text-[10px] animate-pulse" style={{ color: INK_SOFT }}>
-                            轻点继续 · 双击全文 <CaretRight size={11} weight="bold" />
+                            轻点{typingDone ? '继续' : '加速'} · 双击全文 <CaretRight size={11} weight="bold" />
                         </div>
                     )}
                 </div>
 
                 {/* ⑥ 选项按钮（读完才出现） */}
                 <div className="mt-2 space-y-2" style={{ minHeight: 4 }}>
-                    {scene && allRead && !busy && scene.choices.map((ch, i) => {
+                    {scene && ready && scene.choices.map((ch, i) => {
                         const summary = ch.effects.map(e => {
                             const nm = game.characters[e.charId]?.name || '?';
                             const tags: string[] = [];
@@ -432,7 +522,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         );
                     })}
                     {/* 自由行动 + 主动择幸（丰富玩法：不止 3 选项，可自陈心意 / 指定去见谁） */}
-                    {scene && allRead && !busy && (
+                    {scene && ready && (
                         <div className="pt-0.5">
                             <div className="flex items-center gap-1.5">
                                 <input value={customText} onChange={e => setCustomText(e.target.value.slice(0, 120))} onKeyDown={e => { if (e.key === 'Enter') submitCustom(); }}
@@ -482,6 +572,11 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <MenuBtn icon={<ArrowClockwise size={18} weight="fill" />} label="另起新局" onClick={abandon} />
                     <MenuBtn icon={<CaretRight size={18} weight="bold" className="rotate-180" />} label="退出椒房记" onClick={onBack} />
                 </div>
+                <button onClick={() => setTypewriter(t => !t)} className="w-full mt-2 flex items-center gap-2 px-3 py-2.5 rounded-xl active:scale-[0.98] transition-transform" style={{ background: 'rgba(255,253,247,0.85)', border: '1px solid rgba(176,170,158,0.7)', color: INK }}>
+                    <TextAa size={18} weight="fill" />
+                    <span className="text-[13px] font-bold">逐字显示（打字机）</span>
+                    <span className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold" style={typewriter ? { background: INK, color: PAPER } : { background: 'rgba(31,29,26,0.08)', color: INK_SOFT }}>{typewriter ? '开' : '关'}</span>
+                </button>
                 {champion && <p className="text-center text-[11px] mt-3" style={{ color: INK_SOFT }}>当前最得君心：<span className="font-bold" style={{ color: INK }}>{champion.name}</span>（好感 {champion.affection}）{game.route.locked ? ' · 已定情' : ''}</p>}
             </PaperSheet>
 
@@ -529,6 +624,35 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     ) : null; })()}
                 </div>
             </PaperSheet>
+
+            {/* 点立绘 · 角色速览 + 快捷行动 */}
+            <PaperDialog open={!!spriteMenu} onClose={() => setSpriteMenu(null)} en="AT A GLANCE" maxWidth={300}>
+                {spriteMenu && game.characters[spriteMenu] && (() => { const c = game.characters[spriteMenu]; return (
+                    <div>
+                        <div className="flex items-center gap-2.5 mb-3">
+                            <img src={c.avatar} className="w-12 h-12 rounded-full object-cover shrink-0" style={{ border: '1px solid rgba(176,170,158,0.7)' }} />
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[15px] font-black truncate" style={{ color: INK }}>{c.name}</span>
+                                    {c.gender !== 'unknown' && <span className="text-[11px]" style={{ color: INK_SOFT }}>{GENDER_GLYPH[c.gender].g}</span>}
+                                    {game.route.charId === c.charId && <Crown size={12} weight="fill" style={{ color: INK }} />}
+                                </div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>{stageOf(c.affection).label} · 态度「{c.attitude}」{c.estranged ? ' · 离心' : ''}</div>
+                            </div>
+                        </div>
+                        <div className="space-y-1 mb-3">
+                            <VarBar icon={<Heart size={10} weight="fill" />} label="好感" value={c.affection} />
+                            <VarBar icon={<ShieldCheck size={10} weight="fill" />} label="信任" value={c.trust} />
+                            <VarBar icon={<Drop size={10} weight="fill" />} label="嫉妒" value={c.jealousy} danger />
+                            <VarBar icon={<Smiley size={10} weight="fill" />} label="心情" value={c.mood} />
+                        </div>
+                        <div className="flex gap-2">
+                            <ScrapButton variant="paper" onClick={() => { setSpriteMenu(null); setStatusOpen(true); }} className="flex-1 py-2 text-[12px]" icon={<UsersThree size={13} weight="fill" />}>详看全部</ScrapButton>
+                            <ScrapButton variant="ink" onClick={() => { const id = c.charId; setSpriteMenu(null); visit(id); }} className="flex-1 py-2 text-[12px]" icon={<PersonSimpleWalk size={13} weight="bold" />}>去见 ta</ScrapButton>
+                        </div>
+                    </div>
+                ); })()}
+            </PaperDialog>
 
             {/* ⑩ 记忆回顾 */}
             <MemoryReview open={memoryOpen} onClose={() => setMemoryOpen(false)} game={game} />

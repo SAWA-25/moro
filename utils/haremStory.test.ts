@@ -4,7 +4,7 @@ import {
     parseScene, applyChoice, applyCustomAction, visitCharacter, fallbackScene,
     consolidateMemories, checkEndings, computeEndingProgress, buildScenePrompt,
     startNewGamePlus, reviveStory, saveMetaOf, updateRelationships, relationshipSummary,
-    bondLabel, GENDER_WORD, RULER_PRESETS,
+    bondLabel, GENDER_WORD, RULER_PRESETS, DEFAULT_SETTINGS, HEAT_LABELS,
     GLOBAL_MEMORY_CAP, type StoryState, type StoryScene, type StorySeed, type StoryMemory,
 } from './haremStory';
 
@@ -319,6 +319,43 @@ describe('haremStory · 离心 / 回心 / 羁绊', () => {
         s.relationships = [{ a: 'a', b: 'b', bond: -50 }];
         expect(relationshipSummary(s)[0]).toContain('势同水火');
         expect(bondLabel(50)).toContain('知己');
+    });
+});
+
+describe('haremStory · 叙事设定 + 富输出', () => {
+    it('initStory 接受 settings；缺省补默认', () => {
+        const s = initStory(seeds, { name: 'x', title: '陛下' }, null, { style: 'dark', heat: 3, premise: '架空王朝，女帝篡位' });
+        expect(s.settings.style).toBe('dark');
+        expect(s.settings.heat).toBe(3);
+        expect(s.settings.premise).toContain('架空王朝');
+        expect(newGame().settings).toEqual(DEFAULT_SETTINGS);
+    });
+    it('settings 注入 prompt：风格 / 尺度 / 开场设定', () => {
+        const s = initStory(seeds, { name: 'x', title: '陛下' }, null, { style: 'dark', heat: 3, premise: '架空王朝，女帝篡位' });
+        const { system } = buildScenePrompt(s);
+        expect(system).toContain('暗黑虐心');
+        expect(system).toContain(HEAT_LABELS[3]); // 浓烈
+        expect(system).toContain('架空王朝');
+        expect(system).toContain('不得超出当前好感'); // 尺度仍受好感阶段铁律约束
+    });
+    it('parseScene 读取 mood 与角色心声 inner', () => {
+        const s = newGame();
+        const raw = JSON.stringify({
+            mood: '缠绵', narration: '夜雨缠绵。',
+            dialogues: [{ speaker: '阿杏', text: '嗯…', inner: '其实我欢喜得很' }],
+            choices: [{ text: 'A', effects: [{ charId: 'a', affection: 3 }] }, { text: 'B', effects: [{ charId: 'a', trust: 2 }] }, { text: 'C', effects: [{ charId: 'a', mood: 2 }] }],
+        });
+        const sc = parseScene(raw, s)!;
+        expect(sc.mood).toBe('缠绵');
+        expect(sc.dialogues[0].inner).toBe('其实我欢喜得很');
+    });
+    it('reviveStory 迁移 settings；旧档缺省补默认', () => {
+        const s = initStory(seeds, { name: 'x' }, null, { style: 'sweet', heat: 2 });
+        expect(reviveStory(JSON.parse(JSON.stringify(s)))!.settings.style).toBe('sweet');
+        expect(reviveStory({ characters: { a: { name: '甲' } } })!.settings).toEqual(DEFAULT_SETTINGS);
+    });
+    it('fallbackScene 带 mood', () => {
+        expect(fallbackScene(newGame()).mood).toBeTruthy();
     });
 });
 
