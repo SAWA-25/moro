@@ -429,10 +429,11 @@ const Chat: React.FC = () => {
         }
     };
 
-    const clearCharacterContextLocalState = (charId: string) => {
+    const clearCharacterContextLocalState = (charId: string, opts?: { keepCouplePartner?: boolean }) => {
         try {
             const exact = new Set([
                 `moro_last_autonomous_catchup_${charId}`,
+                `instant_tool_status_${charId}`,
             ]);
             const jsonByCharIdKeys = [
                 'moro_takeout_intent_v1',
@@ -465,7 +466,7 @@ const Chat: React.FC = () => {
                     }
                 } catch { /* ignore malformed local state */ }
             }
-            if (localStorage.getItem('moro_couple_partner_id') === charId) {
+            if (!opts?.keepCouplePartner && localStorage.getItem('moro_couple_partner_id') === charId) {
                 localStorage.removeItem('moro_couple_partner_id');
             }
         } catch { /* ignore */ }
@@ -2526,6 +2527,58 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         setModalType('none');
     };
 
+    const handleClearChatContextOnly = async () => {
+        if (!char) return;
+
+        const allIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
+        await DB.clearMessages(char.id);
+        discardVoiceForMessages(allIds);
+        setMessages([]);
+        setAllHistoryMessages([]);
+        setTotalMsgCount(0);
+        setHistoryLoaded(true);
+        setVisibleCount(LOAD_BATCH_SIZE);
+        visibleCountRef.current = LOAD_BATCH_SIZE;
+        setReplyTarget(null);
+        setSelectionMode(false);
+        setSelectedMsgIds(new Set());
+        setSelectedThinkingMsgIds(new Set());
+        setSelectedMessage(null);
+        setSelectedEmoji(null);
+        setSelectedCategory(null);
+        setShowPanel('none');
+        setShowActionSelector(false);
+        setWindowedFocusMsgId(null);
+        setFlashMsgId(null);
+        setScheduleData(null);
+        setInnerVoiceHistory([]);
+        setInnerVoiceCurrent(null);
+        setTakeoutCardTarget(null);
+        setTakeoutCardOrder(null);
+        setClaimTarget(null);
+        setClaimRevealed(false);
+        setClaimPwInput('');
+        setProposalTarget(null);
+        setShowProposeCompose(false);
+        setProposeVow('');
+        setProposalBusy(false);
+        setInstantToolStatus(null);
+        setLastTokenUsage(null);
+        if (chatAudioRef.current) {
+            try { chatAudioRef.current.pause(); } catch { /* ignore */ }
+        }
+        await updateCharacter(char.id, {
+            memoryPalaceInjection: undefined,
+            hideBeforeMessageId: undefined,
+            recenterCalibration: undefined,
+            activeBuffs: [],
+            buffInjection: '',
+        });
+        clearCharacterContextLocalState(char.id, { keepCouplePartner: true });
+        setModalType('none');
+        addToast('已清空絮语 app 内上下文，仅保留角色设定', 'success');
+    };
+
     const handleForceVectorize = async () => {
         if (!char || !char.memoryPalaceEnabled || isVectorizing) return;
         const mpEmb = memoryPalaceConfig?.embedding;
@@ -3805,7 +3858,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 }}
                 onImportEmoji={handleImportEmoji}
                 onSaveSettings={saveSettings} onBgUpload={handleBgUpload} onRemoveBg={() => updateCharacter(char.id, { chatBackground: undefined })}
-                onClearHistory={handleClearHistory} onArchive={handleFullArchive}
+                onClearHistory={handleClearHistory} onClearChatContextOnly={handleClearChatContextOnly} onArchive={handleFullArchive}
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}

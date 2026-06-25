@@ -65,6 +65,7 @@ interface ChatModalsProps {
     onBgUpload: (file: File) => void;
     onRemoveBg: () => void;
     onClearHistory: () => void;
+    onClearChatContextOnly: () => void;
     onArchive: () => void;
     onCreatePrompt: () => void;
     onEditPrompt: () => void;
@@ -151,6 +152,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     allHistoryMessages = [],
     onTransfer, onImportEmoji, onSaveSettings,
     onBgUpload, onRemoveBg, onClearHistory,
+    onClearChatContextOnly,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
     onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
     allCharacters = [], onSaveCategoryVisibility,
@@ -585,15 +587,18 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
                      <div className="pt-2 border-t border-slate-100">
                          <label className="text-xs font-bold text-red-400 uppercase mb-3 block">危险区域 (Danger Zone)</label>
-                         <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => setPreserveContext(!preserveContext)}>
-                             <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-primary border-primary' : 'bg-slate-100 border-slate-300'}`}>
-                                 {preserveContext && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
-                             </div>
-                             <span className="text-sm text-slate-600">清空时保留最后10条记录 (维持语境)</span>
-                         </div>
-                         <button onClick={onClearHistory} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 active:scale-95 transition-transform flex items-center justify-center gap-2">
-                             执行清空
-                         </button>
+                        <div className="flex items-center gap-2 mb-3 cursor-pointer" onClick={() => setPreserveContext(!preserveContext)}>
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${preserveContext ? 'bg-primary border-primary' : 'bg-slate-100 border-slate-300'}`}>
+                                {preserveContext && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                            </div>
+                            <span className="text-sm text-slate-600">清空时保留最后10条记录 (维持语境)</span>
+                        </div>
+                        <button onClick={onClearChatContextOnly} className="w-full py-3 mb-2 bg-slate-50 text-slate-700 font-bold rounded-2xl border border-slate-200 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                            仅清空絮语上下文
+                        </button>
+                        <button onClick={onClearHistory} className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-2xl border border-red-100 active:scale-95 transition-transform flex items-center justify-center gap-2">
+                            执行清空
+                        </button>
                      </div>
                 </div>
             </Modal>
