@@ -288,3 +288,11 @@ pm run build passes after the time-gap grouping fix.
   - **改走统一入口 `llmComplete`**（主聊天/折子戏/解牌/茶话亭同一条路）：内部 `safeResponseJson`（SSE 拼接 / HTML 错误页 / 空响应识别）+ `extractContent`（回退 reasoning_content / 拍平数组 / 去 think）。正好契合 `llmComplete` 头注释「别再各自内联 fetch+stripThink」。7 个角色侧生成函数全部经由 `callCoupleLLM`，一处修复全覆盖（含「请 TA 冒个泡」`generateCharMoment`）。仍保「失败全吞返回空串」契约，组件按空串走模板兜底、不阻塞 UI。
   - 新增 `utils/coupleSpace.test.ts`（6 测试：普通响应 / SSE 流式 / reasoning_content 回退 / `<think>` 剥离 / 空配置不发请求 / 异常全吞）。
   - `pnpm tsc --noEmit` clean, `vite build` passes, 664 tests green（+6）。
+
+2026-06-25
+- 心意铺·全面换肤「黑白拼贴手账」+ 原创文案（对齐折子戏统一皮肤）：把 `apps/ShopApp.tsx` 整套界面从暖玫瑰淘宝风改成米白报纸 + 墨黑 + 缝线/胶带/邮票/拍立得的黑白拼贴手账，复用 `apps/theater/scrapbook.tsx` 积木（PaperBackdrop / ScrapButton / WashiTape / Stamp / Polaroid / PaperDialog / PaperSheet / SectionTag / DashedRule）。
+  - **头像和商品保留彩色**：商品图 / emoji 缩略图 / 用户·角色头像不去色，只有 UI 外壳、图标、装饰走黑白灰。
+  - **统一弹窗**：送礼选人 / 求代付 / 写留言改用 `PaperDialog`（胶带 + 纸条 + 弹入），选规格 sheet / 物流详情改用 `PaperSheet`（底部纸抽屉）；不再用旧 `components/os/Modal`。
+  - **图标黑白化**：phosphor 图标统一墨色（INK/INK_SOFT），星级改墨色 `InkStars`、角标改墨块 `InkBadge`、空状态用邮票框 `Stamp` 包图标。
+  - **原创文案**：招牌轮播 / 撕券处 / 一刻钟限抢 / 照你眼缘挑的 / 各空状态 / toast 全部重写为铺子口吻（货架·篮子·寄件·心意币·盖章·撕券·心意速递…），不再用淘宝词。功能与数据结构零改动。
+  - `pnpm tsc --noEmit` clean，`vite build` 通过。
