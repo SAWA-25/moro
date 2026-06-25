@@ -313,3 +313,33 @@ pm run build passes after the time-gap grouping fix.
   - **自习室** `apps/StudyApp.tsx`：书架 / 练习册 / 答题页改米白纸卡 + 缝线 + 胶带；课堂 / 批改页保留「黑板」但改墨色炭黑底 + 粉笔白字（去翠绿）；课本封面改牛皮/炭灰布面；5 个 `Modal` 全部换成 `PaperDialog`/`PaperSheet`；图标墨色化。收课本 / 备课 / 随堂测 / 续讲 等文案重写。
   - **音乐** `apps/music/MusicUI.tsx` 色板 `C` 整体改黑白灰（键名沿用以兼容全部调用方），玻璃类 `.shizuku-glass(-strong)` 改米白纸面 + 缝线虚线边，发光阴影去色；连带 `MusicApp` / `CharVisitPage` / `NeteaseProfilePage` 整片换肤；抹掉残留的蓝/紫/金硬编码色（VIP 章、活跃歌词、活跃行）；唱片封面 / 头像保留彩色。
   - `pnpm tsc --noEmit` clean（0 error），`vite build` 通过。
+- 椒房记·新增「文游模式」(AI 后宫恋爱文字互动游戏)，旧翻牌玩法保留为「经营模式」，戏单择玩法（两套各自存档、互不干扰）：
+  - **入口重构** `apps/HaremApp.tsx`：改成戏单 shell，进 App 先择「文游 / 经营」；旧 414 行翻牌逻辑整体抽到 `apps/harem/CardMode.tsx`（零逻辑改动，仅 onBack 回戏单 + import 深度），新玩法在 `apps/harem/StoryMode.tsx`。
+  - **纯引擎** `utils/haremStory.ts`（全可序列化、可单测）：把需求里 12 模块落成纯函数——`StoryState`（player/day/time/location/turnType/activeCharacters/characters/relationships/memories/flags/history/route/endingProgress/carry…）、`StoryChar`（好感 affection / 信任 trust / 嫉妒 jealousy / 心情 mood / 态度 attitude / 阶段 stage / 角色独立记忆 / presentStreak）。
+  - **AI 请求模块** `buildScenePrompt`：把 14 条铁律 + 稳定 JSON schema 烧进 prompt；**节奏由引擎掌控、AI 只管文笔**——`determineTurnType`（10 种回合：日常/单人约会/多人同场/嫉妒爆发/冷战/夜谈/关系突破/事件危机/路线锁定/结局判定，按变量阈值 + 加权随机避免重复）+ `scheduleCast`（按剧情需要与「久未登场公平」排在场角色，治「都围着玩家转」）+ `advanceTime`（晨午晚夜）+ `pickLocation` 都在外部定好才喂 AI，从结构上杜绝 AI 跳场/跳结局。
+  - **AI 输出解析** `parseScene`：稳定 JSON → `StoryScene`（sceneTitle/narration/dialogues/choices/effectsPreview/memoryUpdates/flagUpdates/nextSceneHint），**恒 3 个选项**（不足补齐、每选项至少作用一位在场角色）、数值钳制（好感/信任 ±12、嫉妒/心情 ±15）、speaker→charId 映射、空白/坏 JSON 回退 `fallbackScene`（离线也能玩）。
+  - **落地选择** `applyChoice`：套 effects + 偏宠一人时在场被冷落者**自动生醋意**（落实「不能都围着玩家转/不能越界」）、写长期记忆 + 角色独立记忆（`consolidateMemories` 超上限按权重×近期固化裁剪）、写 flag、推进时辰、更新 `route`（路线锁定回合选偏宠才落锁）/`endingProgress`、定下一回合类型与登场。
+  - **结局判定** `ENDING_DEFS` + `checkEndings` + `computeEndingProgress`：一生一世一双人(true)/齐人之福(harem)/红颜祸水(bad)/孤家寡人(bad)/未完待续(open)，硬条件命中即强制 ending 回合；`buildStoryEndingPrompt`/`parseStoryEnding`/`fallbackStoryEnding` 出尾声文 + 每人定语。
+  - **多周目(New Game+)**：结局后「下一周目」→ `startNewGamePlus`/`buildCarry` 抽高权重长期记忆 + 锁定路线打成「前尘旧梦」注入下一盘（角色仍从真实好感重起），`playthrough` 逐周目 +1。
+  - **存档读档** `reviveStory`（宽松迁移、坏档返 null）+ `saveMetaOf`；live 档 `moro_harem_story`，多档 `moro_harem_story_saves`（上限 12，誊抄/读取/写覆/删除）。
+  - **UI**（黑白拼贴手账皮肤、头像保留彩色）：① 顶部状态栏（日/时辰/地点 + 回合徽章 + 在场关系小条）② 时辰底色背景 ③ 角色立绘区（说话者上浮高亮）④ 大对话框（点击推进 · 双击全文）⑤ 墨底名框 ⑥ 3 个大选项卡（语气/风险/变量影响预览）⑦ 菜单 ⑧ 存档读档抽屉 ⑨ 后宫状态（四维进度条 + 独立记忆）⑩ 记忆回顾（长期/各角色分页）。
+  - 设计文档 `docs/harem-story.md`（12 模块/state/14 规则/输出格式/10 回合/UI/三增强版逐一说明），已登记进 `CLAUDE.md` 文档地图；`AppID.Harem` 注释更新。
+  - 新增 `utils/haremStory.test.ts`（26 测：状态推导/时辰/回合判定/调度/解析钳制兜底/选择落地/记忆固化/结局/多周目/存档往返）。`pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过，全量 696 tests green。
+- 椒房记·两模式合并为「只留文游」：按需求去掉「经营模式」（翻牌养成），椒房记进 App 直接进入文游。
+  - `apps/HaremApp.tsx` 从戏单 shell 收成薄壳——直接 `<StoryMode onBack={closeApp} />`；删 `apps/harem/CardMode.tsx` + 旧引擎 `utils/haremGame.ts` + `utils/haremGame.test.ts`（已无任何引用，纯死代码清除）。
+  - `StoryMode` 菜单「换游玩模式」改「退出椒房记」；`haremStory.ts` 头注释、`docs/harem-story.md`、`CLAUDE.md` 文档地图、`AppID.Harem` 注释同步去掉双模式表述。旧卡牌存档 `moro_harem_game` / `moro_harem_mode` 自然弃用（残留 localStorage 无害）。
+  - `pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过（HaremApp 包内已无 CardMode 残留），674 tests green（696 − 22 张已删卡牌引擎测试）。
+- 椒房记·不限定性别（女帝男妃等任意组合）+ 丰富玩法：
+  - **性别完全开放**：`Gender = male/female/unknown`，玩家与每位角色各自独立设定。开局 `RULER_PRESETS`（帝王/女帝/主君/女君/不限）一键选身份 + `GenderCycle` 微调，入选诸位逐位设性别。Prompt 专设【身份与性别】段、明令「绝不默认所有角色为女性、不默认玩家为男性」、按性别给相称称谓自称；`rosterBlock`/`playerIdentity`/结局/兜底文案全去性别化（删「臣妾/陛下」硬编码，按 `selfRef(gender)` + `player.title` 动态生成）。结局标签去性别化：红颜祸水→醋海覆舟、齐人之福→众芳同辉。
+  - **自由行动（自陈心意）**：3 选项之外可直接输入想做的事 → `applyCustomAction`（温和落地 + 标 `lastTurn.custom` + 动作文本作 nextIntent 喂下轮，prompt 标注「自由行动」让 AI 顺势展开但仍不替玩家决策）。
+  - **主动择幸**：「主动去见…」选人 → `visitCharacter`（或自由行动里点名角色自动识别）→ 设一次性 `focusHint`，下一回合优先与 ta 独处（夜则夜谈），用后即清。
+  - **角色羁绊**：`relationships` 从预留转实用，`updateRelationships` 每回合按同场+嫉妒演化 pairwise bond（都善妒→结怨、心情都好→生情谊），`relationshipSummary`（知己/交好/暗中较劲/势同水火）注入 prompt + 状态页。
+  - **离心/回心**：嫉妒爆表+心死（妒≥95/心≤18/信<25）→ `estranged` 淡出调度，重获信任好心情（信≥42/心≥46）→ 回心；状态页打「离心」标。新增结局 `estranged_collapse`「人心尽失」（过半离心 bad end）。
+  - UI：开局身份/性别选择 + 入选名单逐位性别；选项区下方自由行动输入框 + 主动去见钮 + 择幸抽屉；状态页加性别/离心徽章 + 「她/他们之间」羁绊栏。`reviveStory` 迁移新字段（gender/estranged/focusHint + 旧档补 pairwise 羁绊）。
+  - 引擎纯逻辑，`utils/haremStory.test.ts` +10（性别开放/自由行动/择幸焦点/离心回心/羁绊/新结局）。`pnpm tsc --noEmit` clean，`vite build` 通过，684 tests green。
+- 椒房记·增玩家自由度 + 丰富 AI 生成界面/剧情 + 丰富界面互动：
+  - **叙事设定（自由度）**：新增 `StorySettings{style/heat0-3/pace/premise}`——开局可选**风格**（含蓄古风/直白热烈/轻松甜宠/暗黑虐心/江湖侠气）、**尺度**滑杆（清淡→浓烈，亲密上限仍受铁律⑥好感阶段约束）、**节奏**（慢热/适中/迅疾）、**开场设定/世界观**自由文本；全注入 `buildScenePrompt`，同批角色能演出截然不同的故事。`reviveStory` 迁移、多周目沿用。
+  - **富 AI 输出 → 富界面**：`StoryScene` 加 `mood`（氛围词→状态栏氛围徽章 + 背景微染）、`dialogues[].inner`（角色没说出口的**心声**，对白读完后以「👁心声」浮现，呼应偷看心声主题）；`emotion` 渲染成说话者立绘下情绪小标。SCHEMA/`parseScene`/`fallbackScene` 同步，全部可选、向后兼容。
+  - **富界面互动**：① **打字机逐字显示**（当前一拍逐字浮现，轻点先打完·再点推进·双击全文；菜单一键开关，偏好持久化 `moro_harem_tw`）；② **点立绘速览**（点在场角色→弹四维速览 + 详看全部/去见 ta）；③ **「换种写法」**（对当前场不满意→相同状态重抽，只换文笔不推进剧情）；④ 立绘加情绪标 + 离心碎心标。
+  - 开局界面加「叙事设定」区（风格 chips + 尺度滑杆 + 节奏 chips + 开场设定 textarea）。
+  - `utils/haremStory.test.ts` +5（settings 注入 prompt/mood+inner 解析/reviveStory 迁移/fallback mood）。`pnpm tsc --noEmit` clean，`vite build` 通过，689 tests green。
