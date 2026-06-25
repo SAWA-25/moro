@@ -271,3 +271,14 @@ pm run build passes after the time-gap grouping fix.
   - **接入两条管线**：单聊 `utils/applyAssistantPostProcessing.ts` 与群聊 `apps/ChatHub.tsx` 导演动作循环都在 `[[WITHDRAW]]` 之外再跑一遍兜底，命中就广播/执行真撤回（撤掉该角色上一条、原文留 metadata 供偷看）。
   - **提示词加固**：单聊 `utils/chatPrompts.ts` 与群聊导演 prompt 的撤回条目都补上「⚠️撤回提示由系统渲染，绝不要自己打字模仿『【系统消息】/X条新消息/撤回了一条消息』，只输出 `[[WITHDRAW]]` 指令本身」。
   - 新增 6 条回归测试（`messageWithdraw.test.ts`）。`pnpm tsc --noEmit` clean, `vite build` passes, 629 tests green（+6）。
+
+- 茶话亭(论坛)·对标百度贴吧补全功能与界面(底部导航 + 等级 + 签到 + 关注吧 + 消息中心 + 我的 + 投票/收藏/点踩/分享/倒序/热议榜):
+  - **底部三 Tab 导航(贴吧式)**: 首页 / 消息 / 我的，`House/BellSimple/User` 图标，消息有未读红点角标；帖子详情/发帖为全屏覆盖层，不带底栏。
+  - **等级 + 经验体系**: `utils/forum.ts` 新增 `levelOf/levelInfo/levelTitle`(Lv1~18 阈值表 + 18 个茶话亭风味头衔)；发帖 +5、回帖 +2、签到给经验、用户帖被盖楼被动 +2；每个作者(含角色/网友按名 hash 派生伪等级)都显示 `Lv.X` 标(灰蓝/蓝/紫/金分档)。「我的」页有经验进度条。
+  - **签到(每吧每日 + 连签累进)**: `checkIn`/`isCheckedIn`/`maxStreak`，吧头「签到/已签」按钮，连签加成封顶 +10，成功弹彩蛋卡(经验/连续天数/本吧今日第 N 位)。
+  - **关注吧 + 吧头 banner**: `toggleFollowBoard`，吧头显示吧名/简介/吧主/关注数/帖数(`boardStat` 按 boardId 稳定派生)、关注/已关注 + 签到 按钮；板块 chip 关注后带 ⭐。
+  - **消息中心**: 用户帖被盖楼/楼中楼回复/被赞、关注吧来新帖 → 落 `ForumNotif`(回复我的/赞我的/关注更新/系统)，过滤 chip + 全部已读 + 未读红点，点击跳帖。
+  - **我的**: 资料卡(头像/昵称/等级/头衔/经验条) + 数据条(发帖/获赞/关注吧/连续签到) + 子页(我的帖子/我的收藏/关注的吧)。
+  - **帖子增强**: 收藏(`toggleCollect`)、分享、点踩(帖+楼)、楼层倒序/正序、精「精」/置顶「顶」/🔥 角标(`materializeThreads` 按热度标记)、吧主标、回帖颜文字快捷面板、投票帖(发帖可发起投票，OP 卡渲染结果进度条 + 可改投 `votePoll`)、首页「全部」视图热议榜(`hotRank`)。
+  - 纯逻辑全部进 `utils/forum.ts`，`utils/forum.test.ts` +18 测试(等级/签到连签/关注收藏/吧头稳定/通知/热议榜/获赞/投票)。
+  - `pnpm tsc --noEmit` clean, `vite build` passes, 658 tests green(+18)。Playwright 冒烟确认 ForumApp 挂载无运行时错误、首页/消息/我的/详情(含投票/楼层)关键元素均渲染(本沙箱屏蔽 Tailwind CDN，样式无法可视化验证)。

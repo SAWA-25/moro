@@ -42,6 +42,7 @@ export interface ForumReply {
     body: string;
     createdAt: number;
     likes: number;
+    dislikes?: number;        // 点踩（贴吧式）
     isOp?: boolean;           // 是否楼主（与帖子作者同名）
     subReplies?: ForumSubReply[]; // 楼中楼
 }
@@ -58,10 +59,21 @@ export interface ForumPost {
     createdAt: number;
     lastActiveAt: number;
     likes: number;
+    dislikes?: number;     // 点踩（贴吧式）
     replies: ForumReply[];
     replyCount?: number;   // 帖子「声称」的总楼层（30~几百），楼层懒加载到此数
     hot?: boolean;         // 热帖标记（贴吧式）
+    essence?: boolean;     // 精华帖（绿色「精」标）
+    pinned?: boolean;      // 置顶帖（红色「顶」标）
     generated?: boolean;   // 是否 AI 实时生成（区别于种子/用户帖）
+    poll?: ForumPoll;      // 投票帖
+}
+
+/** 投票帖（贴吧式）：一个问题 + 若干选项，记票数，记用户选了哪项。 */
+export interface ForumPoll {
+    question: string;
+    options: { text: string; votes: number }[];
+    voted?: number;   // 用户已投的选项 index（undefined＝未投）
 }
 
 export interface ForumState { posts: ForumPost[]; }
@@ -420,6 +432,7 @@ export function materializeThreads(
         if (ch) usedChar.add(ch.id);
         const ago = Math.floor(Math.random() * 3600_000 * 24 * 3); // 近 3 天内
         const created = now - ago;
+        const hot = t.floors >= 200 || t.likes >= 300;
         return {
             id: fid(),
             boardId,
@@ -434,8 +447,176 @@ export function materializeThreads(
             likes: t.likes,
             replies: [],
             replyCount: t.floors,
-            hot: t.floors >= 200 || t.likes >= 300,
+            hot,
+            essence: t.likes >= 400 || t.floors >= 240,        // 精华帖
+            pinned: i === 0 && (t.floors >= 150 || t.likes >= 200), // 每批至多一条置顶
             generated: true,
         } as ForumPost;
-    }).sort((a, b) => b.lastActiveAt - a.lastActiveAt);
+    }).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.lastActiveAt - a.lastActiveAt);
 }
+
+// ── 用户个人体系：等级 / 经验 / 签到 / 关注吧 / 收藏（对标百度贴吧「我的」）──────
+
+/** 经验阈值表：index i = 升到 Lv(i+1) 的累计经验。Lv1~Lv18（贴吧式）。 */
+const LEVEL_EXP = [0, 8, 20, 40, 70, 120, 200, 320, 500, 800, 1200, 1800, 2600, 3800, 5400, 7600, 10600, 15000];
+
+/** 头衔（按等级递增，茶话亭风味）。 */
+const LEVEL_TITLES = [
+    '初来乍到', '萍水相逢', '常来常往', '茶亭散客', '亭中熟脸', '把盏言欢',
+    '清谈茶客', '亭台常驻', '坐看风云', '谈笑鸿儒', '亭中砥柱', '一亭之望',
+    '风骚领袖', '亭长候补', '镇亭元老', '亭中泰斗', '一代亭主', '茶话亭之光',
+];
+
+export const MAX_LEVEL = LEVEL_EXP.length;
+
+/** 经验值 → 等级。 */
+export function levelOf(exp: number): number {
+    let lv = 1;
+    for (let i = 0; i < LEVEL_EXP.length; i++) if (exp >= LEVEL_EXP[i]) lv = i + 1;
+    return Math.min(MAX_LEVEL, lv);
+}
+export function levelTitle(level: number): string {
+    return LEVEL_TITLES[Math.min(LEVEL_TITLES.length - 1, Math.max(0, level - 1))];
+}
+export interface LevelInfo { level: number; title: string; cur: number; need: number; pct: number; max: boolean; }
+/** 经验 → 等级 + 当前段进度（给「我的」页画进度条）。 */
+export function levelInfo(exp: number): LevelInfo {
+    const e = Math.max(0, Math.floor(exp || 0));
+    const level = levelOf(e);
+    const max = level >= MAX_LEVEL;
+    const base = LEVEL_EXP[level - 1] ?? 0;
+    const next = max ? base : LEVEL_EXP[level];
+    const span = Math.max(1, next - base);
+    const cur = Math.max(0, e - base);
+    const pct = max ? 100 : Math.max(0, Math.min(100, Math.round((cur / span) * 100)));
+    return { level, title: levelTitle(level), cur, need: span, pct, max };
+}
+
+/** 论坛侧的用户状态（与角色/聊天无关，单独持久化）。 */
+export interface ForumUserMeta {
+    exp: number;
+    followedBoards: string[];                                 // 关注的吧 id
+    collectedPostIds: string[];                               // 收藏的帖子 id
+    checkIn: Record<string, { date: string; streak: number }>; // boardId → 最近签到
+}
+export const defaultForumMeta = (): ForumUserMeta => ({ exp: 0, followedBoards: [], collectedPostIds: [], checkIn: {} });
+
+/** 本地日期 YYYY-MM-DD（用于「今天是否签过」）。 */
+export function dayStr(d: Date = new Date()): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function prevDay(s: string): string {
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    dt.setDate(dt.getDate() - 1);
+    return dayStr(dt);
+}
+export function isCheckedIn(meta: ForumUserMeta, boardId: string, today = dayStr()): boolean {
+    return meta.checkIn[boardId]?.date === today;
+}
+/** 当前「最长连续签到」（任意吧里的最大连签）。 */
+export function maxStreak(meta: ForumUserMeta): number {
+    return Object.values(meta.checkIn).reduce((m, c) => Math.max(m, c.streak || 0), 0);
+}
+export interface CheckInResult { meta: ForumUserMeta; gained: number; streak: number; already: boolean; rank: number; }
+/** 某个吧签到：连续天数累进、给经验、彩蛋排名。已签到则 already=true 不变。 */
+export function checkIn(meta: ForumUserMeta, boardId: string, today = dayStr()): CheckInResult {
+    const prev = meta.checkIn[boardId];
+    if (prev?.date === today) return { meta, gained: 0, streak: prev.streak, already: true, rank: 0 };
+    const streak = prev && prev.date === prevDay(today) ? prev.streak + 1 : 1;
+    const gained = 5 + Math.min(streak - 1, 10);   // 连签加成，封顶 +10
+    const rank = 1 + Math.floor(Math.random() * 120); // 「本吧今日第 N 位签到」彩蛋
+    return {
+        meta: { ...meta, exp: meta.exp + gained, checkIn: { ...meta.checkIn, [boardId]: { date: today, streak } } },
+        gained, streak, already: false, rank,
+    };
+}
+
+export function toggleFollowBoard(meta: ForumUserMeta, boardId: string): ForumUserMeta {
+    const has = meta.followedBoards.includes(boardId);
+    return { ...meta, followedBoards: has ? meta.followedBoards.filter(b => b !== boardId) : [boardId, ...meta.followedBoards] };
+}
+export function toggleCollect(meta: ForumUserMeta, postId: string): ForumUserMeta {
+    const has = meta.collectedPostIds.includes(postId);
+    return { ...meta, collectedPostIds: has ? meta.collectedPostIds.filter(p => p !== postId) : [postId, ...meta.collectedPostIds] };
+}
+export function addExp(meta: ForumUserMeta, n: number): ForumUserMeta {
+    return { ...meta, exp: Math.max(0, meta.exp + n) };
+}
+
+// ── 吧头（吧名/关注数/帖子数/吧主）：由 boardId 稳定派生，刷新不跳数 ──────────
+function hashStr(s: string): number {
+    let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+}
+const OWNER_NAMES = ['亭长大人', '看亭的猫', '老茶客', '管事的', '阿茶', '亭子精', '泡面会长', '夜话亭主'];
+export interface BoardStat { members: number; posts: number; owner: string; }
+export function boardStat(boardId: string): BoardStat {
+    const h = hashStr(boardId);
+    return {
+        members: 1200 + (h % 98000),
+        posts: 8000 + ((h >> 3) % 900000),
+        owner: OWNER_NAMES[h % OWNER_NAMES.length],
+    };
+}
+
+// ── 消息中心（通知）：回复我的 / 赞我的 / 关注吧新帖 ─────────────────────────
+export type ForumNotifKind = 'reply' | 'like' | 'newpost' | 'system';
+export interface ForumNotif {
+    id: string;
+    kind: ForumNotifKind;
+    postId: string;
+    postTitle: string;
+    actorName: string;
+    actorType: AuthorType;
+    avatar?: string;
+    snippet?: string;     // 回复内容/上下文摘要
+    createdAt: number;
+    read: boolean;
+}
+export function makeNotif(
+    kind: ForumNotifKind,
+    post: { id: string; title: string },
+    actor: { name: string; type: AuthorType; avatar?: string },
+    snippet?: string,
+): ForumNotif {
+    return {
+        id: fid(), kind, postId: post.id, postTitle: post.title,
+        actorName: actor.name, actorType: actor.type, avatar: actor.avatar,
+        snippet: snippet?.slice(0, 60), createdAt: Date.now(), read: false,
+    };
+}
+export const unreadCount = (notifs: ForumNotif[]): number => notifs.reduce((n, x) => n + (x.read ? 0 : 1), 0);
+
+// ── 热议榜：综合「赞 + 楼层热度 + 新鲜度 + 加权标记」排序 ─────────────────────
+export function hotRank(posts: ForumPost[], n = 10): ForumPost[] {
+    const now = Date.now();
+    const score = (p: ForumPost) => {
+        const floors = p.replyCount || p.replies.length;
+        const fresh = Math.max(0, 1 - (now - p.lastActiveAt) / (86_400_000 * 3)); // 3 天内才算新鲜
+        return p.likes + floors * 3 + fresh * 220 + (p.hot ? 150 : 0) + (p.essence ? 120 : 0);
+    };
+    return [...posts].sort((a, b) => score(b) - score(a)).slice(0, n);
+}
+
+/** 统计用户「获赞」总数（帖子 + 楼层里 authorType==='user' 的赞）。 */
+export function userLikesReceived(posts: ForumPost[], userName: string): number {
+    let n = 0;
+    for (const p of posts) {
+        if (p.authorType === 'user' || p.authorName === userName) n += p.likes;
+        for (const r of p.replies) if (r.authorType === 'user' || r.authorName === userName) n += r.likes;
+    }
+    return n;
+}
+
+/** 投票帖：投某一项（已投则改投），返回更新后的 poll。 */
+export function votePoll(poll: ForumPoll, idx: number): ForumPoll {
+    if (idx < 0 || idx >= poll.options.length) return poll;
+    const options = poll.options.map((o, i) => {
+        if (i === poll.voted && i !== idx) return { ...o, votes: Math.max(0, o.votes - 1) }; // 撤回旧票
+        if (i === idx && i !== poll.voted) return { ...o, votes: o.votes + 1 };
+        return o;
+    });
+    return { ...poll, options, voted: idx };
+}
+export const pollTotal = (poll: ForumPoll): number => poll.options.reduce((s, o) => s + o.votes, 0);

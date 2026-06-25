@@ -2,8 +2,17 @@ import { describe, it, expect } from 'vitest';
 import {
     targetFloorCount, parseThreads, materializeThreads, fallbackThreads,
     parseForumReplies, materializeReplies, buildThreadsPrompt, FORUM_BOARDS,
-    type RawReply, type ForumReply,
+    levelOf, levelInfo, levelTitle, MAX_LEVEL, defaultForumMeta, dayStr, isCheckedIn,
+    checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp, boardStat,
+    makeNotif, unreadCount, hotRank, userLikesReceived, votePoll, pollTotal,
+    type RawReply, type ForumReply, type ForumPost, type ForumPoll,
 } from './forum';
+
+const mkPost = (over: Partial<ForumPost> = {}): ForumPost => ({
+    id: over.id || Math.random().toString(36).slice(2), boardId: 'chat', authorType: 'npc',
+    authorName: '网友', title: 't', body: '', createdAt: Date.now(), lastActiveAt: Date.now(),
+    likes: 0, replies: [], ...over,
+});
 
 describe('targetFloorCount', () => {
     it('恒在 30~588 之间（最低 30，最高几百）', () => {
@@ -155,5 +164,165 @@ describe('buildThreadsPrompt', () => {
         expect(system).toContain(FORUM_BOARDS[0].name);
         expect(user).toContain('12');
         expect(user).toContain('floors');
+    });
+});
+
+// ── 个人体系：等级 / 经验 ──────────────────────────────────────────────
+describe('levelOf / levelInfo', () => {
+    it('0 经验＝Lv1，经验越高等级越高，封顶 MAX_LEVEL', () => {
+        expect(levelOf(0)).toBe(1);
+        expect(levelOf(-50)).toBe(1);
+        expect(levelOf(20)).toBe(3);
+        expect(levelOf(999999)).toBe(MAX_LEVEL);
+        expect(levelOf(8)).toBe(2);
+    });
+    it('levelInfo 段内进度 0~100，满级 pct=100、max=true', () => {
+        const a = levelInfo(0);
+        expect(a.level).toBe(1);
+        expect(a.pct).toBeGreaterThanOrEqual(0);
+        expect(a.pct).toBeLessThanOrEqual(100);
+        expect(a.max).toBe(false);
+        const max = levelInfo(999999);
+        expect(max.max).toBe(true);
+        expect(max.pct).toBe(100);
+    });
+    it('levelTitle 给每级一个头衔', () => {
+        expect(levelTitle(1)).toBeTruthy();
+        expect(levelTitle(MAX_LEVEL)).toBeTruthy();
+        expect(levelTitle(1)).not.toBe(levelTitle(MAX_LEVEL));
+    });
+    it('addExp 累加且不为负', () => {
+        const m = defaultForumMeta();
+        expect(addExp(m, 10).exp).toBe(10);
+        expect(addExp(addExp(m, 10), -100).exp).toBe(0);
+    });
+});
+
+// ── 签到（连续天数 / 经验 / 已签判断）─────────────────────────────────────
+describe('checkIn', () => {
+    it('首签 streak=1、给经验；当天重复签 already=true 不变', () => {
+        const m = defaultForumMeta();
+        const r1 = checkIn(m, 'chat', '2026-06-25');
+        expect(r1.already).toBe(false);
+        expect(r1.streak).toBe(1);
+        expect(r1.gained).toBeGreaterThan(0);
+        expect(r1.meta.exp).toBe(r1.gained);
+        expect(isCheckedIn(r1.meta, 'chat', '2026-06-25')).toBe(true);
+        const r2 = checkIn(r1.meta, 'chat', '2026-06-25');
+        expect(r2.already).toBe(true);
+        expect(r2.meta.exp).toBe(r1.meta.exp); // 不再加经验
+    });
+    it('连续两天 streak 累进；断签后重置为 1', () => {
+        let m = defaultForumMeta();
+        m = checkIn(m, 'chat', '2026-06-24').meta;
+        const cont = checkIn(m, 'chat', '2026-06-25');
+        expect(cont.streak).toBe(2);
+        const broke = checkIn(cont.meta, 'chat', '2026-06-28'); // 隔了好几天
+        expect(broke.streak).toBe(1);
+    });
+    it('maxStreak 取所有吧里的最长连签', () => {
+        let m = defaultForumMeta();
+        m = checkIn(m, 'chat', '2026-06-24').meta;
+        m = checkIn(m, 'chat', '2026-06-25').meta; // chat 连签 2
+        m = checkIn(m, 'emo', '2026-06-25').meta;  // emo 连签 1
+        expect(maxStreak(m)).toBe(2);
+    });
+});
+
+// ── 关注吧 / 收藏帖 ──────────────────────────────────────────────────────
+describe('toggleFollowBoard / toggleCollect', () => {
+    it('关注/取关来回切', () => {
+        let m = defaultForumMeta();
+        m = toggleFollowBoard(m, 'emo');
+        expect(m.followedBoards).toContain('emo');
+        m = toggleFollowBoard(m, 'emo');
+        expect(m.followedBoards).not.toContain('emo');
+    });
+    it('收藏/取消收藏来回切', () => {
+        let m = defaultForumMeta();
+        m = toggleCollect(m, 'p1');
+        expect(m.collectedPostIds).toContain('p1');
+        m = toggleCollect(m, 'p1');
+        expect(m.collectedPostIds).not.toContain('p1');
+    });
+});
+
+// ── 吧头：稳定派生 ───────────────────────────────────────────────────────
+describe('boardStat', () => {
+    it('同一吧多次取值稳定一致（不随机跳数）', () => {
+        const a = boardStat('chat');
+        const b = boardStat('chat');
+        expect(a).toEqual(b);
+        expect(a.members).toBeGreaterThan(0);
+        expect(a.posts).toBeGreaterThan(0);
+        expect(a.owner).toBeTruthy();
+    });
+    it('不同吧通常不同', () => {
+        expect(boardStat('chat').members).not.toBe(boardStat('gossip').members);
+    });
+});
+
+// ── 通知中心 ─────────────────────────────────────────────────────────────
+describe('makeNotif / unreadCount', () => {
+    it('makeNotif 默认未读、截断 snippet', () => {
+        const n = makeNotif('reply', { id: 'p1', title: '帖子' }, { name: '甲', type: 'npc' }, 'x'.repeat(200));
+        expect(n.read).toBe(false);
+        expect(n.kind).toBe('reply');
+        expect(n.snippet!.length).toBeLessThanOrEqual(60);
+    });
+    it('unreadCount 只数未读', () => {
+        const a = makeNotif('like', { id: 'p1', title: 't' }, { name: 'a', type: 'npc' });
+        const b = { ...makeNotif('reply', { id: 'p2', title: 't' }, { name: 'b', type: 'npc' }), read: true };
+        expect(unreadCount([a, b])).toBe(1);
+    });
+});
+
+// ── 热议榜 ───────────────────────────────────────────────────────────────
+describe('hotRank', () => {
+    it('按热度排序、取前 n、爆楼/精华更靠前', () => {
+        const now = Date.now();
+        const cold = mkPost({ id: 'cold', likes: 1, replyCount: 30, lastActiveAt: now - 86_400_000 * 5 });
+        const hot = mkPost({ id: 'hot', likes: 500, replyCount: 400, hot: true, essence: true, lastActiveAt: now });
+        const mid = mkPost({ id: 'mid', likes: 50, replyCount: 120, lastActiveAt: now });
+        const top = hotRank([cold, mid, hot], 2);
+        expect(top.length).toBe(2);
+        expect(top[0].id).toBe('hot');
+    });
+});
+
+// ── 获赞统计 ─────────────────────────────────────────────────────────────
+describe('userLikesReceived', () => {
+    it('累计用户帖子与楼层的赞', () => {
+        const posts: ForumPost[] = [
+            mkPost({ authorType: 'user', authorName: '我', likes: 10, replies: [
+                { id: 'r1', floor: 2, authorType: 'user', authorName: '我', body: 'x', createdAt: 0, likes: 3 },
+                { id: 'r2', floor: 3, authorType: 'npc', authorName: '别人', body: 'y', createdAt: 0, likes: 99 },
+            ] }),
+            mkPost({ authorType: 'npc', authorName: '别人', likes: 999 }),
+        ];
+        expect(userLikesReceived(posts, '我')).toBe(13); // 10 + 3，别人的不算
+    });
+});
+
+// ── 投票帖 ───────────────────────────────────────────────────────────────
+describe('votePoll / pollTotal', () => {
+    const base = (): ForumPoll => ({ question: 'q', options: [{ text: 'A', votes: 0 }, { text: 'B', votes: 0 }] });
+    it('投票 +1、记录 voted、total 增加', () => {
+        const p = votePoll(base(), 0);
+        expect(p.options[0].votes).toBe(1);
+        expect(p.voted).toBe(0);
+        expect(pollTotal(p)).toBe(1);
+    });
+    it('改投：撤回旧票、新票 +1，总数不变', () => {
+        let p = votePoll(base(), 0);
+        p = votePoll(p, 1);
+        expect(p.options[0].votes).toBe(0);
+        expect(p.options[1].votes).toBe(1);
+        expect(p.voted).toBe(1);
+        expect(pollTotal(p)).toBe(1);
+    });
+    it('非法 index 原样返回', () => {
+        const p0 = base();
+        expect(votePoll(p0, 9)).toBe(p0);
     });
 });
