@@ -302,3 +302,8 @@ pm run build passes after the time-gap grouping fix.
   - **图标黑白化**：phosphor 图标统一墨色（INK/INK_SOFT），原蓝色主色 `#2b6fe0` 全部抹掉；等级章 / 帖子标签（顶·精·投票·热）/ 身份小旗（楼主·亭主·角色·我）改灰阶填充区分；底栏 / 角标 / FAB 走墨块；热议榜名次用邮票框 `Stamp`。
   - **原创文案**：换一壶 / 支个话头 / 接话盖楼 / 续茶 / 常来 / 叩门 / 我的座位 / 火候攒升级 / 各空状态（便签）/ 欢迎语 / toast 全部重写为茶馆茶客口吻，不再用贴吧词。功能与数据结构（`utils/forum.ts`）零改动。
   - `pnpm tsc --noEmit` clean（0 error）。
+- 相册 / 自习室 / 音乐·三个 App 同款换肤「黑白拼贴手账」+ 原创文案（头像 / 照片 / 唱片封面保留彩色）：
+  - **相册** `apps/Gallery.tsx`：相册封面改拍立得相框 + 牛皮胶带，照片墙改纸边小照片，详情页改暗台贴照片 + 「写在背面」手写题字纸卡（手写体），删除确认改 `PaperDialog`，图标墨色化。撕照片 / 题字 / 翻到那天的对话 等文案重写。
+  - **自习室** `apps/StudyApp.tsx`：书架 / 练习册 / 答题页改米白纸卡 + 缝线 + 胶带；课堂 / 批改页保留「黑板」但改墨色炭黑底 + 粉笔白字（去翠绿）；课本封面改牛皮/炭灰布面；5 个 `Modal` 全部换成 `PaperDialog`/`PaperSheet`；图标墨色化。收课本 / 备课 / 随堂测 / 续讲 等文案重写。
+  - **音乐** `apps/music/MusicUI.tsx` 色板 `C` 整体改黑白灰（键名沿用以兼容全部调用方），玻璃类 `.shizuku-glass(-strong)` 改米白纸面 + 缝线虚线边，发光阴影去色；连带 `MusicApp` / `CharVisitPage` / `NeteaseProfilePage` 整片换肤；抹掉残留的蓝/紫/金硬编码色（VIP 章、活跃歌词、活跃行）；唱片封面 / 头像保留彩色。
+  - `pnpm tsc --noEmit` clean（0 error），`vite build` 通过。
