@@ -68,4 +68,18 @@ describe('情侣空间 LLM 调用（callCoupleLLM via llmComplete）', () => {
         const ans = await generateCharQuestionAnswer({ char, userName: '小明', api: API, question: 'q' });
         expect(ans).toBe('');
     });
+
+    // 回归：推理模型（gemini-3.1-pro / DeepSeek-R1 …）先吃一大截 token 做思维链，再吐正文。
+    // 之前 max_tokens 只按答案长度给（100~240），思维链没想完就撞顶被截断、正文为空 → 整个
+    // 情侣空间退回模板（用户报「后台调用成功、扣了 token，界面却没有 AI 回复」）。修复是给答案
+    // 预算叠加思维链 headroom；这里钉死「发出去的 max_tokens 必须远大于答案长度」，防回归。
+    it('请求带足够 max_tokens：给推理模型思维链留 headroom（防回归到 100~240）', async () => {
+        const fn = mockFetch(jsonRes({ content: '嗯～' }));
+        await generateCharQuestionAnswer({ char, userName: '小明', api: API, question: '在吗' });
+        // mockFetch 的签名是无参的，calls 类型推断成空元组 → 取 fetch(url, init) 的第 2 个实参要绕过类型
+        const [, init] = (fn.mock.calls[0] as unknown as [string, RequestInit]);
+        const body = JSON.parse(init.body as string);
+        // 思维链 headroom 远超答案长度：至少要 1000 才够推理模型想完
+        expect(body.max_tokens).toBeGreaterThanOrEqual(1000);
+    });
 });

@@ -313,15 +313,30 @@ function compactPersona(char: CharacterProfile, userName: string): string {
 }
 
 /**
+ * 思维链 headroom：推理模型先吃 token 做思维链、再吐可见正文，留给正文的预算要叠在
+ * 思维链之上。下面各 `generate*` 传进来的 `maxTokens` 是「答案本身」该有的长度（一两句话 /
+ * 一个小 JSON，很短）；真正发给模型的 `max_tokens` 还要加这块 headroom，否则思维链会把
+ * 预算吃光、正文为空。详见 {@link callCoupleLLM}。
+ */
+const REASONING_HEADROOM_TOKENS = 2000;
+
+/**
  * 情侣空间一次性 LLM 调用 —— 统一走 `llmComplete`（与主聊天 / 折子戏 / 茶话亭同一条路）。
  *
- * 之前这里自己内联 `fetch + res.json() + choices[0].message.content`，会在两类**很常见**的情况下
+ * 之前这里自己内联 `fetch + res.json() + choices[0].message.content`，会在几类**很常见**的情况下
  * 静默拿到空串 → 组件退回模板兜底，表现为「情侣空间所有 AI 功能都没反应、只剩本地套话」：
  *   1) 代理无视 `stream:false` 强行返回 SSE（`data: {...}` 流）→ 裸 `res.json()` 直接抛错；
  *   2) 思考型模型（DeepSeek-R1 / GLM-4.5 / Qwen3 / Gemini 兼容代理…）正文在 `reasoning_content`
- *      或分片数组里、或被 `<think>` 包裹 → `message.content` 为空/为数组。
- * `llmComplete` 内部用 `safeResponseJson`（含 SSE 拼接 / HTML 错误页识别）+ `extractContent`
- * （回退 reasoning_content / 拍平数组 / 去 think）把这些都处理掉，所以主聊天能用的地方这里就能用。
+ *      或分片数组里、或被 `<think>` 包裹 → `message.content` 为空/为数组；
+ *   3) **推理模型把 max_tokens 全吃在思维链上**：gemini-3.1-pro / DeepSeek-R1 这类会先想一大段，
+ *      情侣空间过去把 `max_tokens` 只按答案长度给（100~240），思维链没想完就撞顶被截断
+ *      （`finish_reason='length'`），可见正文一个字都没产出、`reasoning_content` 也没暴露 →
+ *      extractContent 拿到空串 → 整个情侣空间退回模板（用户现象：后台扣了 token、调用记录
+ *      显示成功，界面却没有任何 AI 回复）。
+ * 前两类由 `llmComplete` 内部的 `safeResponseJson`（SSE 拼接 / HTML 错误页识别）+ `extractContent`
+ * （回退 reasoning_content / 拍平数组 / 去 think）兜住；第三类在这里给答案预算叠加
+ * {@link REASONING_HEADROOM_TOKENS} 思维链 headroom 解决（与解牌 interpret.ts / 折子戏 theaterExtra.ts
+ * 把推理模型 max_tokens 调高是同一套办法）。
  *
  * 仍保持「失败全吞返回空串」契约：调用方拿到空串后用模板兜底，绝不阻塞 UI。
  */
@@ -331,7 +346,8 @@ async function callCoupleLLM(api: CoupleApi, messages: ChatMsg[], maxTokens: num
     return await llmComplete(
       { baseUrl: api.baseUrl, apiKey: api.apiKey || '', model: api.model },
       messages,
-      { maxTokens, temperature: 0.95 },
+      // 答案很短，但要给推理模型的思维链留足 headroom，否则正文被思维链挤没（见上）。
+      { maxTokens: maxTokens + REASONING_HEADROOM_TOKENS, temperature: 0.95 },
     );
   } catch (e) {
     console.warn('[CoupleSpace] LLM call error', e);
