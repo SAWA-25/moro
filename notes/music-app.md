@@ -84,3 +84,20 @@ Vercel 的 Hobby 免费计划:
 | `/netease/login/status` | `{}` | 当前 cookie 登录状态 |
 | `/netease/user/playlist` | `{ uid }` | 用户歌单 |
 | `/netease/playlist/detail` | `{ id }` | 歌单详情 |
+| `/netease/comment/music` | `{ id, limit?, offset? }` | 歌曲评论（热评 + 最新） |
+
+## 评论区 · 乐评（陪伴感核心）
+
+对标网易云最有陪伴感的「评论区」，但把它和角色绑在一起 —— 听歌时不再一个人。
+入口：播放页底部「评论」按钮；播放页还会让最新一条角色乐评「探头」出来，点开即进。
+
+三层声音（`apps/music/SongCommentsPage.tsx`）：
+1. **TA 的乐评** —— 点角色头像，让 TA 给这首歌写一条第一人称乐评（副 API）。落到
+   `char.musicProfile.reviews`（`targetType:'song'`），拜访页「写过的话」也能回看。
+2. **网易云热评 / 最新** —— 真实社区评论，走 `/netease/comment/music`（本地「一起写的歌」自动跳过）。
+3. **我说的话** —— 你写一句，正在「一起听」的角色自动盖楼回你；也可手动点头像让某个角色接话。
+   你的留言 + 角色回复落 localStorage（`moro_music_user_comments_v1`，按 songId 分桶）。
+
+逻辑都在 `utils/musicComments.ts`：`fetchSongComments` / `generateCharComment` /
+`generateCharReply` + 本地留言/点赞存储。评论的 prompt 文案就放在该文件里（和
+`utils/listenTogether.ts` 一样，属音乐 App 局部 prompt，不进 `laiwangPrompts.ts`）。

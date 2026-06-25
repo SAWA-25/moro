@@ -13,6 +13,8 @@ import {
 } from './music/MusicUI';
 import NeteaseProfilePage from './music/NeteaseProfilePage';
 import CharVisitPage from './music/CharVisitPage';
+import SongCommentsPage from './music/SongCommentsPage';
+import { ChatCircleText } from '@phosphor-icons/react';
 
 // ------------------------- 工具 -------------------------
 const fmtTime = (s: number) => {
@@ -22,7 +24,7 @@ const fmtTime = (s: number) => {
   return `${m}:${ss.toString().padStart(2, '0')}`;
 };
 
-type View = 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'listen_together';
+type View = 'search' | 'settings' | 'player' | 'profile' | 'visit_char' | 'listen_together' | 'comments';
 
 // ========================= 主组件 =========================
 const MusicApp: React.FC = () => {
@@ -92,6 +94,21 @@ const MusicApp: React.FC = () => {
         return pl ? { id: c.id, name: c.name, playlistTitle: pl.title } : null;
       })
       .filter((x): x is { id: string; name: string; playlistTitle: string } => !!x);
+  }, [current, characters]);
+
+  // 当前歌最新的一条角色乐评 — 在播放页"探头"出来（点开进评论区）
+  const latestCharReview = useMemo(() => {
+    if (!current) return null;
+    const sid = String(current.id);
+    let best: { content: string; name: string; avatar?: string; at: number } | null = null;
+    for (const c of characters) {
+      for (const rv of (c.musicProfile?.reviews || [])) {
+        if (rv.targetType === 'song' && rv.targetId === sid && (!best || rv.createdAt > best.at)) {
+          best = { content: rv.content, name: c.name, avatar: c.avatar, at: rv.createdAt };
+        }
+      }
+    }
+    return best;
   }, [current, characters]);
 
   // 把 OS toast 注入到 Music Context（这样全局播放报错也能弹 toast）
@@ -617,8 +634,35 @@ const MusicApp: React.FC = () => {
             />
           </div>
 
-          {/* 分享给角色 · 一起听 入口 */}
-          <div className="shrink-0 mt-3 mb-1 w-full flex justify-center">
+          {/* 角色乐评探头 — 有 char 给这首歌留过言就让它在播放页冒个泡 */}
+          {latestCharReview && (
+            <button
+              onClick={() => setView('comments')}
+              className="shrink-0 mt-3 w-full max-w-sm flex items-center gap-2 px-3 py-2 rounded-2xl text-left transition-all active:scale-[0.98] shizuku-glass"
+              style={{ boxShadow: `0 2px 12px ${C.glow}15` }}
+            >
+              {latestCharReview.avatar && (latestCharReview.avatar.startsWith('http') || latestCharReview.avatar.startsWith('data:'))
+                ? <img src={latestCharReview.avatar} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" style={{ border: `1.5px solid ${C.sakura}66` }} />
+                : <span className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] shrink-0" style={{ background: `linear-gradient(135deg, ${C.sakura}, ${C.lavender})` }}>{latestCharReview.name.slice(0, 1)}</span>}
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] truncate leading-snug" style={{ color: C.text, fontFamily: `'Noto Serif', serif` }}>
+                  {latestCharReview.content}
+                </div>
+                <div className="text-[9px] mt-0.5" style={{ color: C.faint }}>—— {latestCharReview.name} 的乐评 · 点开看评论区</div>
+              </div>
+            </button>
+          )}
+
+          {/* 评论区 · 一起听 入口 */}
+          <div className="shrink-0 mt-3 mb-1 w-full flex justify-center items-center gap-2">
+            <button
+              onClick={() => setView('comments')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[11px] tracking-wider transition-all active:scale-95 shizuku-glass-strong"
+              style={{ color: C.primary, boxShadow: `0 3px 16px ${C.glow}25` }}
+            >
+              <ChatCircleText size={15} weight="fill" color={C.primary} />
+              <span>评论</span>
+            </button>
             <button
               onClick={openListenTogether}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] tracking-wider transition-all active:scale-95 shizuku-glass-strong"
@@ -870,6 +914,7 @@ const MusicApp: React.FC = () => {
       {view === 'search' && renderSearch()}
       {view === 'player' && renderPlayer()}
       {view === 'listen_together' && renderListenTogether()}
+      {view === 'comments' && <SongCommentsPage onBack={() => setView('player')} />}
       {view === 'settings' && renderSettings()}
       {view === 'profile' && (
         <NeteaseProfilePage
