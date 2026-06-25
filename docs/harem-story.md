@@ -1,11 +1,8 @@
-# 椒房记 · 文游模式（AI 后宫恋爱文字游戏）设计与实现
+# 椒房记（AI 后宫恋爱文字游戏）设计与实现
 
-椒房记现有两套玩法，入口在 `apps/HaremApp.tsx`（戏单择玩法）：
+椒房记是一套由 **AI 实时生成剧情**的后宫恋爱互动小说。入口 `apps/HaremApp.tsx` 直接进入游戏，引擎 `utils/haremStory.ts`，UI `apps/harem/StoryMode.tsx`。
 
-- **经营模式**（旧）：翻牌养成。引擎 `utils/haremGame.ts`，UI `apps/harem/CardMode.tsx`。
-- **文游模式**（本文）：AI 实时生成后宫恋爱剧情的互动小说。引擎 `utils/haremStory.ts`，UI `apps/harem/StoryMode.tsx`。
-
-> **改文游模式前必读本文。** 纯逻辑全部在 `utils/haremStory.ts`（可单测，见 `utils/haremStory.test.ts`）；表现层在 `apps/harem/StoryMode.tsx`。两套玩法各自独立存档（`moro_harem_game` / `moro_harem_story`），互不回写、互不干扰，也都不回写真实角色档案（只在开局拿真实 `affection` 当起点）。
+> **改椒房记前必读本文。** 纯逻辑全部在 `utils/haremStory.ts`（可单测，见 `utils/haremStory.test.ts`）；表现层在 `apps/harem/StoryMode.tsx`。游戏存档在 `moro_harem_story`（live 档）+ `moro_harem_story_saves`（多档），不回写真实角色档案（只在开局拿真实 `affection` 当起点）。
 
 游戏目标：后宫恋爱文字互动；多角色可攻略；玩家用选择影响剧情；AI 依据**当前 state** 实时生成下一段剧情；游戏记录好感度 / 信任值 / 嫉妒值 / 记忆 / 事件 flag。
 

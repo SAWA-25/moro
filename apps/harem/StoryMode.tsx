@@ -400,7 +400,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <MenuBtn icon={<Brain size={18} weight="fill" />} label="记忆回顾" onClick={() => { setMenu(false); setMemoryOpen(true); }} />
                     <MenuBtn icon={<Scroll size={18} weight="fill" />} label="收束 · 判结局" onClick={() => { setMenu(false); if (game) resolveEnding(game); }} />
                     <MenuBtn icon={<ArrowClockwise size={18} weight="fill" />} label="另起新局" onClick={abandon} />
-                    <MenuBtn icon={<CaretRight size={18} weight="bold" className="rotate-180" />} label="换游玩模式" onClick={onBack} />
+                    <MenuBtn icon={<CaretRight size={18} weight="bold" className="rotate-180" />} label="退出椒房记" onClick={onBack} />
                 </div>
                 {champion && <p className="text-center text-[11px] mt-3" style={{ color: INK_SOFT }}>当前最得君心：<span className="font-bold" style={{ color: INK }}>{champion.name}</span>（好感 {champion.affection}）{game.route.locked ? ' · 已定情' : ''}</p>}
             </PaperSheet>

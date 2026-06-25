@@ -325,3 +325,7 @@ pm run build passes after the time-gap grouping fix.
   - **UI**（黑白拼贴手账皮肤、头像保留彩色）：① 顶部状态栏（日/时辰/地点 + 回合徽章 + 在场关系小条）② 时辰底色背景 ③ 角色立绘区（说话者上浮高亮）④ 大对话框（点击推进 · 双击全文）⑤ 墨底名框 ⑥ 3 个大选项卡（语气/风险/变量影响预览）⑦ 菜单 ⑧ 存档读档抽屉 ⑨ 后宫状态（四维进度条 + 独立记忆）⑩ 记忆回顾（长期/各角色分页）。
   - 设计文档 `docs/harem-story.md`（12 模块/state/14 规则/输出格式/10 回合/UI/三增强版逐一说明），已登记进 `CLAUDE.md` 文档地图；`AppID.Harem` 注释更新。
   - 新增 `utils/haremStory.test.ts`（26 测：状态推导/时辰/回合判定/调度/解析钳制兜底/选择落地/记忆固化/结局/多周目/存档往返）。`pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过，全量 696 tests green。
+- 椒房记·两模式合并为「只留文游」：按需求去掉「经营模式」（翻牌养成），椒房记进 App 直接进入文游。
+  - `apps/HaremApp.tsx` 从戏单 shell 收成薄壳——直接 `<StoryMode onBack={closeApp} />`；删 `apps/harem/CardMode.tsx` + 旧引擎 `utils/haremGame.ts` + `utils/haremGame.test.ts`（已无任何引用，纯死代码清除）。
+  - `StoryMode` 菜单「换游玩模式」改「退出椒房记」；`haremStory.ts` 头注释、`docs/harem-story.md`、`CLAUDE.md` 文档地图、`AppID.Harem` 注释同步去掉双模式表述。旧卡牌存档 `moro_harem_game` / `moro_harem_mode` 自然弃用（残留 localStorage 无害）。
+  - `pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过（HaremApp 包内已无 CardMode 残留），674 tests green（696 − 22 张已删卡牌引擎测试）。
