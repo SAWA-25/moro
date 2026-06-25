@@ -4,11 +4,11 @@ import { resolveAuxApi } from '../../utils/auxApi';
 import { llmComplete } from '../../utils/llmComplete';
 import {
     StoryState, StoryScene, StoryChar, StorySeed, StoryEnding, EndingDef,
-    initStory, buildScenePrompt, parseScene, fallbackScene, applyChoice,
-    stageOf, TURN_LABEL, TURN_META, checkEndings, ENDING_DEFS,
+    initStory, buildScenePrompt, parseScene, fallbackScene, applyChoice, applyCustomAction, visitCharacter,
+    stageOf, TURN_LABEL, TURN_META, checkEndings, ENDING_DEFS, relationshipSummary,
     buildStoryEndingPrompt, parseStoryEnding, fallbackStoryEnding,
-    startNewGamePlus, reviveStory, saveMetaOf, type StorySaveMeta,
-    type TimeSlot, type TurnType,
+    startNewGamePlus, reviveStory, saveMetaOf, RULER_PRESETS, GENDER_WORD, type StorySaveMeta,
+    type TimeSlot, type TurnType, type Gender,
 } from '../../utils/haremStory';
 import {
     PaperBackdrop, ScrapHeader, PaperCard, WashiTape, Polaroid, ScrapButton, StickyNote,
@@ -18,7 +18,7 @@ import {
 import {
     Crown, Scroll, BookOpen, FloppyDisk, UsersThree, Sparkle, CaretRight, X,
     ArrowClockwise, Heart, ShieldCheck, Drop, Smiley, Brain, MapPin, Trash,
-    List, PlusCircle,
+    List, PlusCircle, PaperPlaneRight, PersonSimpleWalk, HeartBreak,
 } from '@phosphor-icons/react';
 
 const LIVE_KEY = 'moro_harem_story';
@@ -61,7 +61,13 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [picked, setPicked] = useState<Set<string>>(new Set());
     const [pName, setPName] = useState('');
     const [pTitle, setPTitle] = useState('陛下');
+    const [pGender, setPGender] = useState<Gender>('male');
+    const [charGenders, setCharGenders] = useState<Record<string, Gender>>({});
     const carryRef = useRef<CarryPack>(null);
+
+    // 进行中：自由行动 / 主动择幸
+    const [customText, setCustomText] = useState('');
+    const [visitOpen, setVisitOpen] = useState(false);
 
     // 浮层
     const [menu, setMenu] = useState(false);
@@ -125,26 +131,39 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         charId: c.id, name: c.convoSettings?.remarkName?.trim() || c.name,
         avatar: c.convoSettings?.charAvatarOverride || c.avatar, affection: c.affection,
         persona: c.description as string | undefined,
+        gender: charGenders[c.id] || 'unknown',
     });
 
     const start = () => {
         const chosen = characters.filter(c => picked.has(c.id)).slice(0, MAX_CAST);
-        if (chosen.length === 0) { addToast('总得先择一位佳人入宫，故事才好开篇', 'error'); return; }
-        const st = initStory(chosen.map(seedOf), { name: pName.trim() || '君', title: pTitle.trim() || '君上', persona: userProfile?.bio }, carryRef.current);
+        if (chosen.length === 0) { addToast('总得先择一位入宫，故事才好开篇', 'error'); return; }
+        const st = initStory(chosen.map(seedOf), { name: pName.trim() || '君', title: pTitle.trim() || '君上', gender: pGender, persona: userProfile?.bio }, carryRef.current);
         carryRef.current = null;
         setEnding(null);
         setGame(st);
         requestScene(st, true);
     };
 
-    // ── 选择落地 ───────────────────────────────────────────────────
-    const choose = async (i: number) => {
-        if (!game || !scene || busy) return;
-        const wasEnding = scene.turnType === 'ending';
-        const next = applyChoice(game, scene, i);
+    // ── 推进：选择 / 自由行动 / 主动择幸 共用 ────────────────────────
+    const advance = async (next: StoryState, wasEnding: boolean) => {
         setGame(next);
         if (wasEnding) await resolveEnding(next);
         else requestScene(next, false);
+    };
+    const choose = (i: number) => {
+        if (!game || !scene || busy) return;
+        advance(applyChoice(game, scene, i), scene.turnType === 'ending');
+    };
+    const submitCustom = () => {
+        const t = customText.trim();
+        if (!game || !scene || busy || !t) return;
+        setCustomText('');
+        advance(applyCustomAction(game, scene, t), scene.turnType === 'ending');
+    };
+    const visit = (cid: string) => {
+        if (!game || !scene || busy) return;
+        setVisitOpen(false);
+        advance(visitCharacter(game, scene, cid), scene.turnType === 'ending');
     };
 
     const resolveEnding = useCallback(async (st: StoryState) => {
@@ -217,12 +236,26 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         )}
                     </div>
 
-                    {/* 玩家身份 */}
-                    <SectionTag en="WHO ARE YOU" className="mb-2">君之名号</SectionTag>
-                    <div className="flex gap-2 mb-4">
-                        <input value={pName} onChange={e => setPName(e.target.value.slice(0, 12))} placeholder="名讳" className="flex-1 min-w-0 px-3 py-2 text-[14px] rounded-lg outline-none" style={inputStyle} />
-                        <input value={pTitle} onChange={e => setPTitle(e.target.value.slice(0, 6))} placeholder="称谓" className="w-24 px-3 py-2 text-[14px] rounded-lg outline-none" style={inputStyle} />
+                    {/* 玩家身份 + 性别（支持女帝男妃等任意组合） */}
+                    <SectionTag en="WHO ARE YOU" className="mb-2">君之身份</SectionTag>
+                    <div className="flex gap-1.5 mb-2 flex-wrap">
+                        {RULER_PRESETS.map(p => {
+                            const on = pGender === p.gender && pTitle === p.title;
+                            return (
+                                <button key={p.key} onClick={() => { setPGender(p.gender); setPTitle(p.title); }} title={p.hint}
+                                    className="px-2.5 py-1.5 rounded-full text-[12px] font-bold active:scale-95 transition-transform"
+                                    style={on ? { background: INK, color: PAPER } : { background: 'rgba(255,253,247,0.8)', color: INK, border: '1px solid rgba(176,170,158,0.7)' }}>
+                                    {p.label}
+                                </button>
+                            );
+                        })}
                     </div>
+                    <div className="flex gap-2 mb-1.5">
+                        <input value={pName} onChange={e => setPName(e.target.value.slice(0, 12))} placeholder="名讳" className="flex-1 min-w-0 px-3 py-2 text-[14px] rounded-lg outline-none" style={inputStyle} />
+                        <input value={pTitle} onChange={e => setPTitle(e.target.value.slice(0, 6))} placeholder="称谓" className="w-20 px-3 py-2 text-[14px] rounded-lg outline-none" style={inputStyle} />
+                        <GenderCycle value={pGender} onChange={setPGender} />
+                    </div>
+                    <p className="text-[10.5px] mb-4" style={{ color: INK_SOFT }}>你与每位的性别都可自由设定——男帝女妃、女帝男妃、同性、混合，皆可。</p>
 
                     {characters.length === 0 ? (
                         <StickyNote color="butter" rotate={-1.5} className="px-5 py-8 text-center">
@@ -243,6 +276,21 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                     );
                                 })}
                             </div>
+                            {/* 入选名单 · 逐位设定性别 */}
+                            {picked.size > 0 && (
+                                <div className="mt-4">
+                                    <SectionTag en="THEIR GENDER" className="mb-2">入选诸位 · 各自性别</SectionTag>
+                                    <div className="space-y-1.5">
+                                        {characters.filter(c => picked.has(c.id)).map(c => (
+                                            <div key={c.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl" style={{ background: 'rgba(255,253,247,0.75)', border: '1px solid rgba(176,170,158,0.6)' }}>
+                                                <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                                                <span className="text-[13px] font-bold flex-1 min-w-0 truncate" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                                                <GenderCycle value={charGenders[c.id] || 'unknown'} onChange={g => setCharGenders(m => ({ ...m, [c.id]: g }))} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
                     <div className="h-3" />
@@ -383,14 +431,46 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             </button>
                         );
                     })}
-                    {scene && allRead && !busy && scene.effectsPreview && (
-                        <p className="text-center text-[10px] pt-0.5" style={{ color: INK_SOFT }}>{scene.effectsPreview}</p>
+                    {/* 自由行动 + 主动择幸（丰富玩法：不止 3 选项，可自陈心意 / 指定去见谁） */}
+                    {scene && allRead && !busy && (
+                        <div className="pt-0.5">
+                            <div className="flex items-center gap-1.5">
+                                <input value={customText} onChange={e => setCustomText(e.target.value.slice(0, 120))} onKeyDown={e => { if (e.key === 'Enter') submitCustom(); }}
+                                    placeholder="或…自陈心意（自由行动）" className="flex-1 min-w-0 px-3 py-2 text-[12.5px] rounded-full outline-none" style={inputStyle} />
+                                <button onClick={submitCustom} disabled={!customText.trim()} className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40" style={{ background: INK, color: PAPER }} title="付诸行动">
+                                    <PaperPlaneRight size={16} weight="fill" />
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5 px-1">
+                                <button onClick={() => setVisitOpen(true)} className="flex items-center gap-1 text-[11px] font-bold active:scale-95 transition-transform" style={{ color: INK }}>
+                                    <PersonSimpleWalk size={13} weight="bold" />主动去见…
+                                </button>
+                                {scene.effectsPreview && <span className="ml-auto text-[10px] truncate" style={{ color: INK_SOFT }}>{scene.effectsPreview}</span>}
+                            </div>
+                        </div>
                     )}
                     {busy && scene && (
-                        <div className="flex items-center gap-2 text-[12px] py-2 justify-center" style={{ color: INK_SOFT }}><Sparkle size={14} weight="fill" className="animate-pulse" />剧情顺着你的选择往下走…</div>
+                        <div className="flex items-center gap-2 text-[12px] py-2 justify-center" style={{ color: INK_SOFT }}><Sparkle size={14} weight="fill" className="animate-pulse" />剧情顺着你的心意往下走…</div>
                     )}
                 </div>
             </div>
+
+            {/* 主动择幸 · 选要见谁 */}
+            <PaperSheet open={visitOpen} onClose={() => setVisitOpen(false)} tape="butter" title="主动去见 · 择幸">
+                <p className="text-[11px] mb-2" style={{ color: INK_SOFT }}>挑一位，下一场便去与 ta 独处。</p>
+                <div className="max-h-[46vh] overflow-y-auto no-scrollbar space-y-1.5">
+                    {Object.values(game.characters).sort((a, b) => b.affection - a.affection).map(c => (
+                        <button key={c.charId} onClick={() => visit(c.charId)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl active:scale-[0.98] transition-transform" style={{ background: 'rgba(255,253,247,0.85)', border: '1px solid rgba(176,170,158,0.6)' }}>
+                            <img src={c.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                            <div className="flex-1 min-w-0 text-left">
+                                <div className="text-[13px] font-bold truncate" style={{ color: INK }}>{c.name}{c.estranged && <span className="ml-1 text-[10px]" style={{ color: INK_SOFT }}>· 离心</span>}</div>
+                                <div className="text-[10px]" style={{ color: INK_SOFT }}>{stageOf(c.affection).label} · 好感 {c.affection} · {c.attitude}</div>
+                            </div>
+                            <PersonSimpleWalk size={16} weight="bold" style={{ color: INK_SOFT }} />
+                        </button>
+                    ))}
+                </div>
+            </PaperSheet>
 
             {/* ⑦ 菜单 */}
             <PaperSheet open={menu} onClose={() => setMenu(false)} tape="ink" title="掌事菜单">
@@ -439,6 +519,14 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     {Object.values(game.characters).sort((a, b) => b.affection - a.affection).map(c => (
                         <CharStatusCard key={c.charId} c={c} routed={game.route.charId === c.charId} />
                     ))}
+                    {(() => { const rels = relationshipSummary(game); return rels.length ? (
+                        <div className="pt-1">
+                            <SectionTag en="AMONG THEM" className="mb-1.5">她/他们之间</SectionTag>
+                            <div className="space-y-1">
+                                {rels.map((r, i) => <div key={i} className="text-[11.5px] px-2.5 py-1 rounded-lg" style={{ background: 'rgba(232,228,217,0.5)', color: '#4a463f' }}>{r}</div>)}
+                            </div>
+                        </div>
+                    ) : null; })()}
                 </div>
             </PaperSheet>
 
@@ -479,6 +567,20 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
 // ── 小组件 ───────────────────────────────────────────────────────────────────
 
+const GENDER_GLYPH: Record<Gender, { g: string; label: string }> = { male: { g: '♂', label: '男' }, female: { g: '♀', label: '女' }, unknown: { g: '?', label: '未定' } };
+const GENDER_ORDER: Gender[] = ['unknown', 'male', 'female'];
+const GenderCycle: React.FC<{ value: Gender; onChange: (g: Gender) => void }> = ({ value, onChange }) => {
+    const m = GENDER_GLYPH[value];
+    return (
+        <button onClick={() => onChange(GENDER_ORDER[(GENDER_ORDER.indexOf(value) + 1) % GENDER_ORDER.length])}
+            className="shrink-0 px-2.5 py-2 rounded-lg text-[12.5px] font-black active:scale-95 transition-transform"
+            style={value === 'unknown' ? { background: 'rgba(31,29,26,0.06)', color: INK_SOFT, border: '1px solid rgba(176,170,158,0.6)' } : { background: INK, color: PAPER }}
+            title="点按切换性别">
+            {m.g} {m.label}
+        </button>
+    );
+};
+
 const MenuBtn: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void }> = ({ icon, label, onClick }) => (
     <button onClick={onClick} className="flex items-center gap-2 px-3 py-3 rounded-xl active:scale-[0.97] transition-transform" style={{ background: 'rgba(255,253,247,0.85)', border: '1px solid rgba(176,170,158,0.7)', color: INK }}>
         <span style={{ color: INK }}>{icon}</span>
@@ -503,9 +605,11 @@ const CharStatusCard: React.FC<{ c: StoryChar; routed: boolean }> = ({ c, routed
             <div className="flex items-center gap-2.5">
                 {c.avatar ? <img src={c.avatar} className="w-11 h-11 rounded-full object-cover shrink-0" style={{ border: '1px solid rgba(176,170,158,0.7)' }} /> : <span className="w-11 h-11 rounded-full shrink-0 flex items-center justify-center text-[18px]" style={{ background: 'rgba(176,170,158,0.25)' }}>🎐</span>}
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[14px] font-bold truncate" style={{ color: INK }}>{c.name}</span>
+                        {c.gender !== 'unknown' && <span className="text-[11px]" style={{ color: INK_SOFT }} title={GENDER_GLYPH[c.gender].label}>{GENDER_GLYPH[c.gender].g}</span>}
                         {routed && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5" style={{ background: INK, color: PAPER }}><Crown size={9} weight="fill" />定情</span>}
+                        {c.estranged && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5" style={{ background: '#6b655a', color: PAPER }}><HeartBreak size={9} weight="fill" />离心</span>}
                         <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: 'rgba(31,29,26,0.08)', color: INK }}>{stageOf(c.affection).label}</span>
                     </div>
                     <div className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>态度「{c.attitude}」{c.presentStreak >= 3 ? ` · 已${c.presentStreak}幕未见` : ''}</div>

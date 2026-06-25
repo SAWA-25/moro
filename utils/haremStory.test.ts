@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
     initStory, stageOf, deriveAttitude, advanceTime, scheduleCast, determineTurnType,
-    parseScene, applyChoice, fallbackScene, consolidateMemories, checkEndings,
-    computeEndingProgress, buildScenePrompt, startNewGamePlus, reviveStory, saveMetaOf,
+    parseScene, applyChoice, applyCustomAction, visitCharacter, fallbackScene,
+    consolidateMemories, checkEndings, computeEndingProgress, buildScenePrompt,
+    startNewGamePlus, reviveStory, saveMetaOf, updateRelationships, relationshipSummary,
+    bondLabel, GENDER_WORD, RULER_PRESETS,
     GLOBAL_MEMORY_CAP, type StoryState, type StoryScene, type StorySeed, type StoryMemory,
 } from './haremStory';
 
@@ -12,6 +14,12 @@ const seeds: StorySeed[] = [
     { charId: 'c', name: '沈鸢', avatar: '', affection: 60, persona: '泼辣' },
 ];
 const newGame = (): StoryState => initStory(seeds, { name: '萧珩', title: '陛下' });
+
+/** 造一个最小可用的场景（applyChoice 用 choices；自由行动/择幸不读 choices）。 */
+const miniScene = (choices: StoryScene['choices'] = []): StoryScene => ({
+    sceneTitle: '小景', narration: 'n', dialogues: [], choices,
+    effectsPreview: '', memoryUpdates: [], flagUpdates: {}, nextSceneHint: '', turnType: 'daily',
+});
 
 describe('haremStory · 角色状态', () => {
     it('initStory：好感取真实值、信任/嫉妒/心情有默认、阶段/态度被推导', () => {
@@ -239,6 +247,87 @@ describe('haremStory · prompt 与多周目', () => {
         expect(ng.playthrough).toBe(2);
         expect(ng.carry?.notes.length).toBeGreaterThan(0);
         expect(ng.characters.c.affection).toBe(60); // 角色重新从真实好感起步
+    });
+});
+
+describe('haremStory · 性别开放（女帝男妃等任意组合）', () => {
+    it('玩家与角色性别可独立设定，缺省 unknown', () => {
+        const s = initStory(
+            [{ charId: 'm', name: '裴砚', avatar: '', gender: 'male', affection: 40 }, { charId: 'f', name: '苏窈', avatar: '', gender: 'female' }],
+            { name: '昭', title: '陛下', gender: 'female' },
+        );
+        expect(s.player.gender).toBe('female');
+        expect(s.characters.m.gender).toBe('male');
+        expect(s.characters.f.gender).toBe('female');
+        expect(newGame().characters.a.gender).toBe('unknown'); // 未指定 → unknown
+    });
+    it('RULER_PRESETS 含女帝男妃预设；GENDER_WORD 映射', () => {
+        expect(RULER_PRESETS.some(p => p.label === '女帝' && p.gender === 'female')).toBe(true);
+        expect(GENDER_WORD.male).toBe('男');
+    });
+    it('prompt 注明性别 + 反默认女性指令；玩家身份带性别', () => {
+        const s = initStory(seeds.map(x => ({ ...x, gender: 'male' as const })), { name: '昭', title: '陛下', gender: 'female' });
+        const { system, user } = buildScenePrompt(s);
+        expect(system).toContain('性别');
+        expect(system).toContain('绝不要默认所有角色都是女性');
+        expect(user).toContain('女'); // playerIdentity 的「女性」
+    });
+});
+
+describe('haremStory · 自由行动 / 主动择幸', () => {
+    it('applyCustomAction：标记 custom、点名角色成为下一场焦点', () => {
+        const s0 = newGame(); s0.activeCharacters = ['a'];
+        const s1 = applyCustomAction(s0, miniScene(), '我夜里去藏书阁找青禾说话', () => 0.5);
+        expect(s1.lastTurn?.custom).toBe(true);
+        expect(s1.lastTurn?.choiceText).toContain('青禾');
+        expect(s1.activeCharacters).toEqual(['b']); // 点名青禾 → 下一场只排青禾
+        expect(s1.focusHint).toBeNull();             // 焦点用后即清
+        expect(s1.turnCount).toBe(1);
+    });
+    it('visitCharacter：指定下一场要见的人', () => {
+        const s0 = newGame(); s0.activeCharacters = ['a'];
+        const s1 = visitCharacter(s0, miniScene(), 'c', () => 0.5);
+        expect(s1.activeCharacters).toEqual(['c']);
+        expect(s1.lastTurn?.custom).toBe(true);
+    });
+    it('空文本不动', () => {
+        const s0 = newGame();
+        expect(applyCustomAction(s0, miniScene(), '   ')).toBe(s0);
+    });
+});
+
+describe('haremStory · 离心 / 回心 / 羁绊', () => {
+    it('嫉妒爆表 + 心死 → 离心淡出，并落一条记忆', () => {
+        const s0 = newGame(); s0.activeCharacters = ['a'];
+        s0.characters.a.jealousy = 95; s0.characters.a.mood = 10; s0.characters.a.trust = 20;
+        const s1 = applyChoice(s0, miniScene([{ text: '不理会', tone: '冷', effects: [{ charId: 'a' }], risk: 'mid', nextIntent: '' }]), 0, () => 0.5);
+        expect(s1.characters.a.estranged).toBe(true);
+        expect(s1.memories.some(m => m.text.includes('心灰意冷'))).toBe(true);
+    });
+    it('离心者重获信任与好心情 → 回心转意', () => {
+        const s0 = newGame(); s0.activeCharacters = ['a'];
+        s0.characters.a.estranged = true; s0.characters.a.trust = 50; s0.characters.a.mood = 50;
+        const s1 = applyChoice(s0, miniScene([{ text: '温言', tone: '柔', effects: [{ charId: 'a' }], risk: 'low', nextIntent: '' }]), 0, () => 0.5);
+        expect(s1.characters.a.estranged).toBe(false);
+    });
+    it('updateRelationships：同场且都善妒 → 结怨；relationshipSummary 列出显著关系', () => {
+        const s = newGame();
+        s.characters.a.jealousy = 60; s.characters.b.jealousy = 60;
+        const rels = updateRelationships(s.relationships, s.characters, ['a', 'b']);
+        const ab = rels.find(r => (r.a === 'a' && r.b === 'b') || (r.a === 'b' && r.b === 'a'))!;
+        expect(ab.bond).toBeLessThan(0);
+        s.relationships = [{ a: 'a', b: 'b', bond: -50 }];
+        expect(relationshipSummary(s)[0]).toContain('势同水火');
+        expect(bondLabel(50)).toContain('知己');
+    });
+});
+
+describe('haremStory · 新增结局', () => {
+    it('过半角色离心 → 人心尽失 bad end', () => {
+        const s = newGame(); s.day = 7;
+        s.characters.a.estranged = true; s.characters.b.estranged = true;
+        const e = checkEndings(s, true)!;
+        expect(e.key).toBe('estranged_collapse');
     });
 });
 

@@ -38,6 +38,21 @@ let _seq = 0;
 const sid = (): string => `${Date.now().toString(36)}${(_seq++).toString(36)}`;
 const pick = <T,>(arr: T[], rng: () => number = Math.random): T => arr[Math.floor(rng() * arr.length)];
 
+/**
+ * 性别完全开放：玩家与每位可攻略对象都可独立设定性别，支持女帝男妃 / 同性 / 混合后宫等任意组合。
+ * 'unknown' = 未指定，由 AI 依人设自行判断（绝不默认为女性）。
+ */
+export type Gender = 'male' | 'female' | 'unknown';
+export const GENDER_WORD: Record<Gender, string> = { male: '男', female: '女', unknown: '未定' };
+/** 一组「君主身份」预设，方便开局一键选（女帝男妃也在内）。称谓可再自定义。 */
+export const RULER_PRESETS: { key: string; label: string; gender: Gender; title: string; hint: string }[] = [
+    { key: 'emperor', label: '帝王', gender: 'male', title: '陛下', hint: '男帝 · 后宫佳丽' },
+    { key: 'empress', label: '女帝', gender: 'female', title: '陛下', hint: '女帝 · 三千面首' },
+    { key: 'lord', label: '主君', gender: 'male', title: '主君', hint: '男主 · 不拘性别' },
+    { key: 'lady', label: '女君', gender: 'female', title: '殿下', hint: '女主 · 不拘性别' },
+    { key: 'neutral', label: '不限', gender: 'unknown', title: '君上', hint: '中性 · 全交给剧情' },
+];
+
 // ════════════════════════════════════════════════════════════════════════════
 //  ③ 角色状态模块
 // ════════════════════════════════════════════════════════════════════════════
@@ -76,6 +91,7 @@ export interface StoryChar {
     charId: string;
     name: string;
     avatar: string;
+    gender: Gender;         // 性别（开放设定，男妃/女妃/未定皆可）
     persona?: string;       // 人设摘要（喂 AI，规则 ②「不能忽略角色设定」）
     affection: number;      // 好感度 0-100
     trust: number;          // 信任值 0-100
@@ -85,7 +101,9 @@ export interface StoryChar {
     stage: string;          // 关系阶段 key（stageOf 推导）
     memories: StoryMemory[]; // 角色独立记忆（规则：加入角色独立记忆版）
     presentStreak: number;  // 连续未登场回合数（调度公平，规则 ⑤「不能都围着玩家转」）
-    flags: Record<string, boolean>; // 角色级 flag（如 confessed / promised）
+    estranged?: boolean;    // 离心：嫉妒爆表 + 久遭冷落 → 心灰意冷，淡出后宫（玩法张力）
+    secret?: string;        // 隐藏心事（信任够高时由 AI 揭开，揭开后置空）
+    flags: Record<string, boolean>; // 角色级 flag（如 confessed / promised / secretRevealed）
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -265,7 +283,7 @@ export interface StoryHistoryEntry {
 export interface StoryState {
     version: number;
     playthrough: number;            // 周目（多周目版，1 起）
-    player: { name: string; title: string; persona?: string };
+    player: { name: string; title: string; gender: Gender; persona?: string };
     day: number;
     time: TimeSlot;
     location: string;
@@ -280,21 +298,22 @@ export interface StoryState {
     history: StoryHistoryEntry[];   // 近期回合（滚动）
     route: { locked: boolean; charId: string | null; progress: number };
     endingProgress: Record<string, number>;
-    lastTurn: { choiceText: string; tone: string; nextIntent: string } | null;
+    lastTurn: { choiceText: string; tone: string; nextIntent: string; custom?: boolean } | null;
+    focusHint: string | null;       // 玩家主动「择幸」指定的下一场焦点角色（一次性，用后即清）
     carry: { fromPlaythrough: number; notes: string[] } | null; // 多周目继承
     createdAt: number;
 }
 
-export interface StorySeed { charId: string; name: string; avatar: string; affection?: number; persona?: string; }
+export interface StorySeed { charId: string; name: string; avatar: string; affection?: number; persona?: string; gender?: Gender; }
 
 const HISTORY_CAP = 18;
 
 function makeChar(s: StorySeed, base: { affection: number; trust: number; jealousy: number; mood: number }): StoryChar {
     const c: StoryChar = {
-        charId: s.charId, name: s.name, avatar: s.avatar, persona: s.persona,
+        charId: s.charId, name: s.name, avatar: s.avatar, gender: s.gender || 'unknown', persona: s.persona,
         affection: clamp100(typeof s.affection === 'number' ? s.affection : base.affection),
         trust: base.trust, jealousy: base.jealousy, mood: base.mood,
-        attitude: '', stage: '', memories: [], presentStreak: 0, flags: {},
+        attitude: '', stage: '', memories: [], presentStreak: 0, estranged: false, flags: {},
     };
     c.stage = stageOf(c.affection).key;
     c.attitude = deriveAttitude(c);
@@ -304,33 +323,67 @@ function makeChar(s: StorySeed, base: { affection: number; trust: number; jealou
 /** 开一盘新文游：好感从真实 affection 起步（缺省 30），信任 35 / 嫉妒 10 / 心情 60。 */
 export function initStory(
     seeds: StorySeed[],
-    player: { name: string; title?: string; persona?: string },
+    player: { name: string; title?: string; gender?: Gender; persona?: string },
     carry: { fromPlaythrough: number; notes: string[] } | null = null,
 ): StoryState {
     const characters: Record<string, StoryChar> = {};
     seeds.forEach(s => { characters[s.charId] = makeChar(s, { affection: 30, trust: 35, jealousy: 10, mood: 60 }); });
     const ids = Object.keys(characters);
+    // 角色之间初始化为「点头之交」(bond 0)，随同场/嫉妒演化成盟友或宿敌
+    const relationships: StoryState['relationships'] = [];
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) relationships.push({ a: ids[i], b: ids[j], bond: 0 });
     const state: StoryState = {
         version: STORY_VERSION,
         playthrough: carry ? carry.fromPlaythrough + 1 : 1,
-        player: { name: player.name || '君', title: player.title || '君上', persona: player.persona },
+        player: { name: player.name || '君', title: player.title || '君上', gender: player.gender || 'unknown', persona: player.persona },
         day: 1, time: '晨', location: '椒房殿',
         turnType: 'daily', turnCount: 0,
         currentScene: null,
         activeCharacters: ids.slice(0, 1),
         characters,
-        relationships: [],
+        relationships,
         memories: [],
         flags: {},
         history: [],
         route: { locked: false, charId: null, progress: 0 },
         endingProgress: {},
         lastTurn: null,
+        focusHint: null,
         carry,
         createdAt: Date.now(),
     };
     state.endingProgress = computeEndingProgress(state);
     return state;
+}
+
+// ── 角色羁绊：盟友 / 宿敌（让后宫有自己的暗流，呼应规则 ⑤）──────────────────
+export const bondKey = (a: string, b: string): string => [a, b].sort().join('|');
+const bondMap = (rels: StoryState['relationships']): Map<string, number> => new Map(rels.map(r => [bondKey(r.a, r.b), r.bond]));
+
+/** 依本回合同场与嫉妒格局，微调在场角色之间的羁绊（同场且都平和→更亲；都善妒→结怨）。 */
+export function updateRelationships(rels: StoryState['relationships'], chars: Record<string, StoryChar>, present: string[]): StoryState['relationships'] {
+    if (present.length < 2) return rels;
+    const m = bondMap(rels);
+    for (let i = 0; i < present.length; i++) for (let j = i + 1; j < present.length; j++) {
+        const ca = chars[present[i]], cb = chars[present[j]]; if (!ca || !cb) continue;
+        const k = bondKey(present[i], present[j]);
+        let d = 0;
+        if (ca.jealousy >= 55 && cb.jealousy >= 55) d -= 3;          // 同处一室、各自善妒 → 结怨
+        else if (ca.mood >= 60 && cb.mood >= 60) d += 2;             // 心情都好 → 渐生情谊
+        if (ca.estranged || cb.estranged) d -= 1;
+        m.set(k, clampN((m.get(k) || 0) + d, -100, 100));
+    }
+    return rels.map(r => ({ ...r, bond: m.get(bondKey(r.a, r.b)) ?? r.bond }));
+}
+
+/** 取一对角色的羁绊标签（给 UI / prompt）。 */
+export const bondLabel = (bond: number): string => bond >= 45 ? '情同姐妹/知己' : bond >= 18 ? '交好' : bond <= -45 ? '势同水火' : bond <= -18 ? '暗中较劲' : '点头之交';
+
+/** 后宫角色之间的显著关系摘要（喂 prompt / UI；只列非中立的）。 */
+export function relationshipSummary(s: StoryState): string[] {
+    return s.relationships
+        .filter(r => Math.abs(r.bond) >= 18 && s.characters[r.a] && s.characters[r.b])
+        .map(r => `${s.characters[r.a].name} 与 ${s.characters[r.b].name}：${bondLabel(r.bond)}`);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -345,8 +398,14 @@ const allChars = (s: StoryState): StoryChar[] => Object.values(s.characters);
  * 落实规则 ⑤「不能让所有角色都围着玩家转」。
  */
 export function scheduleCast(s: StoryState, turnType: TurnType, rng: () => number = Math.random): string[] {
-    const chars = allChars(s);
-    if (chars.length === 0) return [];
+    const all = allChars(s);
+    if (all.length === 0) return [];
+    // 玩家主动择幸：剧情未被硬事件接管时，优先安排指定角色独处
+    if (s.focusHint && s.characters[s.focusHint] && ['date', 'night_talk', 'daily', 'breakthrough'].includes(turnType)) {
+        return [s.focusHint];
+    }
+    // 日常类场景回避「离心」者（他们淡出后宫）；危机/嫉妒仍可能把他们卷回来
+    const chars = (turnType === 'crisis' || turnType === 'jealousy') ? all : (all.filter(c => !c.estranged).length ? all.filter(c => !c.estranged) : all);
     const byAff = sortByAff(chars);
     const byNeglect = [...chars].sort((a, b) => b.presentStreak - a.presentStreak);
     const routeChar = s.route.charId && s.characters[s.route.charId] ? s.characters[s.route.charId] : null;
@@ -421,12 +480,17 @@ export function determineTurnType(s: StoryState, rng: () => number = Math.random
     // 0) 硬结局条件满足 → 结局判定回合
     if (endingReady(s)) return 'ending';
 
-    // 1) 嫉妒爆发：有人嫉妒≥70 且非刚发作
-    const jealous = chars.find(c => c.jealousy >= 70);
+    // 0.5) 玩家主动择幸：优先安排与指定角色独处（夜则夜谈）
+    if (s.focusHint && s.characters[s.focusHint] && !s.characters[s.focusHint].estranged) {
+        return s.time === '夜' ? 'night_talk' : 'date';
+    }
+
+    // 1) 嫉妒爆发：有人嫉妒≥70 且非刚发作（离心者已心死，不再争宠）
+    const jealous = chars.find(c => !c.estranged && c.jealousy >= 70);
     if (jealous && !usedRecently('jealousy')) return 'jealousy';
 
     // 2) 冷战：有人好感尚可但信任很低 / 心情谷底
-    const frosty = chars.find(c => c.affection >= 32 && (c.trust < 22 || c.mood < 22));
+    const frosty = chars.find(c => !c.estranged && c.affection >= 32 && (c.trust < 22 || c.mood < 22));
     if (frosty && !usedRecently('cold_war') && rng() < 0.8) return 'cold_war';
 
     // 3) 危机：到中期、隔一阵来一次大事件
@@ -443,7 +507,7 @@ export function determineTurnType(s: StoryState, rng: () => number = Math.random
     // 5) 关系突破：在场某人好感跨到「心动」且尚未突破过
     const breakable = s.activeCharacters
         .map(id => s.characters[id])
-        .find(c => c && c.affection >= 66 && c.trust >= 50 && !c.flags.broke);
+        .find(c => c && !c.estranged && c.affection >= 66 && c.trust >= 50 && !c.flags.broke);
     if (breakable && !usedRecently('breakthrough') && rng() < 0.7) return 'breakthrough';
 
     // 6) 夜谈：夜晚 + 在场有好感中等以上者
@@ -499,10 +563,16 @@ function rosterBlock(s: StoryState): string {
     return allChars(s).map(c => {
         const here = s.activeCharacters.includes(c.charId) ? '【在场】' : '【未登场】';
         const recall = c.memories.slice(0, 3).map(m => m.text).join('；');
-        return `- ${here}${c.name}(id=${c.charId})：好感${c.affection}/信任${c.trust}/嫉妒${c.jealousy}/心情${c.mood}｜阶段「${stageOf(c.affection).label}」｜态度「${c.attitude}」`
+        const g = c.gender === 'unknown' ? '性别依人设' : `${GENDER_WORD[c.gender]}`;
+        return `- ${here}${c.name}(id=${c.charId}，${g})：好感${c.affection}/信任${c.trust}/嫉妒${c.jealousy}/心情${c.mood}｜阶段「${stageOf(c.affection).label}」｜态度「${c.attitude}」${c.estranged ? '｜已离心(淡出后宫)' : ''}`
             + (c.persona ? `\n    人设：${c.persona.slice(0, 160)}` : '')
             + (recall ? `\n    ta记得：${recall}` : '');
     }).join('\n');
+}
+
+function playerIdentity(s: StoryState): string {
+    const g = s.player.gender === 'unknown' ? '性别不限' : `${GENDER_WORD[s.player.gender]}性`;
+    return `${s.player.name}（${s.player.title}，${g}）`;
 }
 
 function historyBlock(s: StoryState): string {
@@ -520,20 +590,27 @@ export function buildScenePrompt(s: StoryState, opts: { opening?: boolean } = {}
     const present = s.activeCharacters.map(id => s.characters[id]?.name).filter(Boolean).join('、') || '（无人在场，写一段独景）';
     const carryNote = s.carry?.notes?.length ? `\n【前尘旧梦·第${s.carry.fromPlaythrough}周目残留】${s.carry.notes.slice(0, 3).join('；')}` : '';
 
-    const system = `你是一款古风后宫恋爱文字互动游戏（galgame 式）的「实时编剧」。玩家扮演君主「${s.player.title}」，在后宫与多位可攻略角色周旋。`
+    const rels = relationshipSummary(s);
+    const lastWasCustom = s.lastTurn?.custom;
+
+    const system = `你是一款古风宫廷恋爱文字互动游戏（galgame 式）的「实时编剧」。玩家扮演一位宫廷之主「${s.player.title}」，身边有多位可攻略的恋慕对象（即「后宫」）。`
         + `你的职责：依据下方**当前游戏状态**，写好「这一回合」的一小段剧情，并给玩家 3 个选择。文风古雅、含蓄、有张力，重人物与情感。\n\n`
+        + `【身份与性别 · 极重要】玩家与每位角色的性别都已在下方标明，可为男可为女（支持女帝男妃、同性、混合后宫等任意组合）。`
+        + `务必按各自性别选用相称的称谓与自称（如男性侍君者可自称「臣」「微臣」、女性可自称「臣妾」「妾身」，按其人设而定），`
+        + `**绝不要默认所有角色都是女性，也不要默认玩家是男性**；性别标为「依人设」的，按其人设/名字气质自行判断并保持前后一致。\n\n`
         + `【铁律 · 必须全部遵守】\n${RULES.map((r, i) => `${i + 1}. ${r}`).join('\n')}\n\n`
         + `【本回合节奏：${tm.label}】\n应当：${tm.guide}\n避免：${tm.avoid}\n变量取向：宜升「${tm.raise}」、宜降「${tm.lower}」。\n\n`
         + `【输出格式】只输出一个 JSON（不要任何解释、不要 Markdown、不要代码块标记），结构如下：\n${SCHEMA}\n`
         + `约束：choices 必须恰好 3 个；每个选项 effects 至少含一位在场角色、数值为整数（好感/信任建议 -12~12、嫉妒/心情 -15~15）；speaker 用上面出现过的角色名；id 用上面的 id。`;
 
-    const user = `【玩家】${s.player.name}（${s.player.title}）${s.player.persona ? `｜${s.player.persona.slice(0, 120)}` : ''}\n`
+    const user = `【玩家】${playerIdentity(s)}${s.player.persona ? `｜${s.player.persona.slice(0, 120)}` : ''}\n`
         + `【时空】第 ${s.day} 日 · ${s.time} · ${s.location}\n`
         + `【在场】${present}\n`
         + `【后宫诸位】\n${rosterBlock(s)}\n`
+        + (rels.length ? `【她/他们之间】${rels.join('；')}\n` : '')
         + `【事件标记 flags】${Object.keys(s.flags).length ? JSON.stringify(s.flags) : '（无）'}\n`
         + `【近期历史】\n${historyBlock(s)}`
-        + (s.lastTurn ? `\n【上一回合你的选择】「${s.lastTurn.choiceText}」（${s.lastTurn.tone}）→ 意图：${s.lastTurn.nextIntent || '—'}` : '')
+        + (s.lastTurn ? `\n【上一回合你${lastWasCustom ? '（自由行动）' : '的选择'}】「${s.lastTurn.choiceText}」（${s.lastTurn.tone}）→ 意图：${s.lastTurn.nextIntent || '—'}${lastWasCustom ? '（请顺着玩家这个自主行动自然展开后果，但仍不得替玩家做新的决定）' : ''}` : '')
         + carryNote
         + `\n\n请据此写「${opts.opening ? '开场' : '这一回合'}」的剧情 JSON。`;
 
@@ -647,16 +724,21 @@ export function parseScene(raw: string, s: StoryState): StoryScene | null {
     };
 }
 
+/** 按性别给一个自称（兜底文案用；AI 在线时由 prompt 指引，不走这里）。 */
+const selfRef = (g: Gender): string => g === 'female' ? '臣妾' : g === 'male' ? '微臣' : '我';
+
 /** AI 关闭/失败时的兜底剧情（保证游戏可玩，永远 3 个选项）。 */
 export function fallbackScene(s: StoryState): StoryScene {
     const tm = TURN_META[s.turnType];
     const present = s.activeCharacters.map(id => s.characters[id]).filter(Boolean) as StoryChar[];
     const who = present[0];
-    const name = who?.name || '一位佳人';
+    const name = who?.name || '那个人';
+    const title = s.player.title || '君上';
     const narration = present.length
         ? `${s.location}，${s.time}色微茫。${name}立于近前，${who.attitude}，似有话要说，又咽了回去。这是一场${tm.label}的照面，气氛说不清的微妙。`
         : `${s.location}独坐，${s.time}风穿廊。无人相伴，思绪却没停下。`;
-    const dialogues: StoryDialogue[] = who ? [{ speaker: who.name, charId: who.charId, text: pick(['…陛下今日，可还安好？', '臣妾候着陛下呢。', '陛下若得空，能否多留片刻？'], Math.random) }] : [];
+    const me = who ? selfRef(who.gender) : '我';
+    const dialogues: StoryDialogue[] = who ? [{ speaker: who.name, charId: who.charId, text: pick([`…${title}今日，可还安好？`, `${me}候着${title}呢。`, `${title}若得空，能否多留片刻？`], Math.random) }] : [];
     return {
         sceneTitle: `${tm.label}·${s.location}`,
         narration,
@@ -686,7 +768,37 @@ function recomputeChar(c: StoryChar): void {
 export function applyChoice(s: StoryState, scene: StoryScene, choiceIndex: number, rng: () => number = Math.random): StoryState {
     const choice = scene.choices[choiceIndex] || scene.choices[0];
     if (!choice) return s;
+    return resolveTurn(s, scene, choice, rng, {});
+}
 
+/**
+ * 自由行动（自陈心意）：玩家不选既定选项，直接输入一段想做的事。
+ * 侦测其中点名的角色 → 作为下一场焦点（主动择幸）；动作本身以温和效果落地，
+ * 真正的后果由下一回合 AI 顺着你的意图铺陈。
+ */
+export function applyCustomAction(s: StoryState, scene: StoryScene, actionText: string, rng: () => number = Math.random): StoryState {
+    const text = (actionText || '').trim().slice(0, 120);
+    if (!text) return s;
+    let focus: string | null = null;
+    for (const c of allChars(s)) if (c.name && text.includes(c.name)) { focus = c.charId; break; }
+    const target = (focus && s.characters[focus]) ? focus : (s.activeCharacters[0] || Object.keys(s.characters)[0]);
+    const choice: StoryChoice = {
+        text, tone: '自陈',
+        effects: target ? [{ charId: target, affection: 2, trust: 1 }] : [],
+        risk: 'mid', nextIntent: text,
+    };
+    return resolveTurn(s, scene, choice, rng, { custom: true, focus });
+}
+
+/** 玩家主动择幸：指定下一场要独处的角色（synthetic 自由行动）。 */
+export function visitCharacter(s: StoryState, scene: StoryScene, charId: string, rng: () => number = Math.random): StoryState {
+    const c = s.characters[charId];
+    if (!c) return s;
+    const choice: StoryChoice = { text: `主动去见${c.name}`, tone: '主动', effects: [{ charId, affection: 1 }], risk: 'low', nextIntent: `主动前去与${c.name}独处` };
+    return resolveTurn(s, scene, choice, rng, { custom: true, focus: charId });
+}
+
+function resolveTurn(s: StoryState, scene: StoryScene, choice: StoryChoice, rng: () => number = Math.random, meta: { custom?: boolean; focus?: string | null } = {}): StoryState {
     // 深拷贝角色
     const characters: Record<string, StoryChar> = {};
     for (const [id, c] of Object.entries(s.characters)) characters[id] = { ...c, memories: [...c.memories], flags: { ...c.flags } };
@@ -742,11 +854,25 @@ export function applyChoice(s: StoryState, scene: StoryScene, choiceIndex: numbe
         if (t) t.flags.broke = true;
     }
 
-    // 7) 态度/阶段重算
+    // 7) 离心 / 回心：嫉妒爆表又久遭冷落 → 心灰意冷淡出；若重获信任与好心情 → 回心转意
+    for (const c of Object.values(characters)) {
+        if (!c.estranged && c.jealousy >= 95 && c.mood <= 18 && c.trust < 25) {
+            c.estranged = true;
+            memories.unshift({ id: sid(), day: s.day, text: `${c.name} 心灰意冷，渐渐疏远了你。`, weight: 4, kind: 'conflict', charId: c.charId });
+        } else if (c.estranged && c.trust >= 42 && c.mood >= 46) {
+            c.estranged = false;
+            memories.unshift({ id: sid(), day: s.day, text: `${c.name} 心结渐解，又愿意亲近你了。`, weight: 4, kind: 'event', charId: c.charId });
+        }
+    }
+
+    // 8) 态度/阶段重算
     for (const c of Object.values(characters)) recomputeChar(c);
 
-    // 8) 登场公平：在场者 streak 清零，未登场者 +1
+    // 9) 登场公平：在场者 streak 清零，未登场者 +1
     for (const c of Object.values(characters)) c.presentStreak = s.activeCharacters.includes(c.charId) ? 0 : c.presentStreak + 1;
+
+    // 10) 角色之间的羁绊随同场/嫉妒演化
+    const relationships = updateRelationships(s.relationships, characters, s.activeCharacters);
 
     // 9) 历史（⑧延续）
     const history: StoryHistoryEntry[] = [
@@ -759,20 +885,23 @@ export function applyChoice(s: StoryState, scene: StoryScene, choiceIndex: numbe
 
     // 组装中间态
     const mid: StoryState = {
-        ...s, characters, memories, flags, route, history, time, day,
+        ...s, characters, memories, flags, route, relationships, history, time, day,
         currentScene: null,
-        lastTurn: { choiceText: choice.text, tone: choice.tone, nextIntent: choice.nextIntent },
+        lastTurn: { choiceText: choice.text, tone: choice.tone, nextIntent: choice.nextIntent, custom: meta.custom },
+        // 主动择幸：把焦点临时放进 state，供下一回合判定/调度读取（用后即清）
+        focusHint: meta.focus ?? s.focusHint ?? null,
         turnCount: s.turnCount + 1,
     };
 
     // 11) 结局进度
     mid.endingProgress = computeEndingProgress(mid);
 
-    // 12) 下一回合：类型 → 登场 → 地点
+    // 12) 下一回合：类型 → 登场 → 地点（读取 focusHint 后清空，保证只生效一次）
     const nextType = determineTurnType(mid, rng);
     mid.turnType = nextType;
     mid.activeCharacters = scheduleCast(mid, nextType, rng);
     mid.location = pickLocation(nextType, rng);
+    mid.focusHint = null;
 
     return mid;
 }
@@ -795,16 +924,24 @@ export interface EndingDef {
 
 const topChar = (s: StoryState): StoryChar | null => { const a = sortByAff(allChars(s)); return a[0] || null; };
 
+const estrangedCount = (s: StoryState): number => allChars(s).filter(c => c.estranged).length;
+
 export const ENDING_DEFS: EndingDef[] = [
     {
-        key: 'jealousy_ruin', label: '红颜祸水', tone: 'bad', priority: 90,
+        key: 'jealousy_ruin', label: '醋海覆舟', tone: 'bad', priority: 90,
         blurb: '善妒成灾，后宫倾覆。爱到极处反成刀，一段孽缘以玉石俱焚收场。',
         test: s => allChars(s).some(c => c.jealousy >= 96 && c.trust < 40) && s.day >= 5,
         score: s => { const m = Math.max(0, ...allChars(s).map(c => c.jealousy >= 96 ? 100 : c.jealousy)); return clamp100(m); },
     },
     {
+        key: 'estranged_collapse', label: '人心尽失', tone: 'bad', priority: 85,
+        blurb: '众叛亲离，宫阙空余冷月。你冷落了太多人，到头来身边一个不剩。',
+        test: s => { const n = allChars(s).length; return n >= 2 && estrangedCount(s) >= Math.max(2, Math.ceil(n / 2)) && s.day >= 6; },
+        score: s => { const n = allChars(s).length; return n ? clamp100((estrangedCount(s) / n) * 130) : 0; },
+    },
+    {
         key: 'cold_lonely', label: '孤家寡人', tone: 'bad', priority: 80,
-        blurb: '人心渐离，宫阙生寒。坐拥三千却无一人交心，终是孤家寡人。',
+        blurb: '人心渐离，宫阙生寒。坐拥满宫却无一人交心，终是孤家寡人。',
         test: s => s.day >= 8 && allChars(s).length > 0 && allChars(s).every(c => c.affection <= 32),
         score: s => { const chars = allChars(s); if (!chars.length) return 0; const avg = chars.reduce((a, c) => a + c.affection, 0) / chars.length; return clamp100((40 - avg) * 2.5); },
     },
@@ -815,8 +952,8 @@ export const ENDING_DEFS: EndingDef[] = [
         score: s => { const t = s.route.locked && s.route.charId ? s.characters[s.route.charId] : topChar(s); if (!t) return 0; return clamp100((t.affection * 0.6 + t.trust * 0.4) * (s.route.locked ? 1 : 0.7)); },
     },
     {
-        key: 'harem', label: '齐人之福', tone: 'harem', priority: 60,
-        blurb: '雨露均沾，六宫粉黛皆得其所。一段众星拱月、各得圆满的后宫佳话。',
+        key: 'harem', label: '众芳同辉', tone: 'harem', priority: 60,
+        blurb: '雨露均沾，满宫佳人皆得其所。一段众星拱月、各得圆满的后宫佳话。',
         test: s => { const hi = allChars(s).filter(c => c.affection >= 70); return hi.length >= 3 && allChars(s).every(c => c.jealousy <= 50) && s.day >= 8 && !s.route.locked; },
         score: s => { const chars = allChars(s); if (chars.length < 3) return 0; const hi = chars.filter(c => c.affection >= 70).length; const calm = chars.every(c => c.jealousy <= 50) ? 1 : 0.6; return clamp100((hi / chars.length) * 100 * calm); },
     },
@@ -853,13 +990,13 @@ export function checkEndings(s: StoryState, hardOnly = false): EndingDef | null 
 export interface StoryEnding { key: string; label: string; tone: EndingDef['tone']; title: string; epilogue: string; fates: { name: string; line: string }[]; }
 
 export function buildStoryEndingPrompt(s: StoryState, def: EndingDef): { system: string; user: string } {
-    const roster = sortByAff(allChars(s)).map(c => `- ${c.name}（${stageOf(c.affection).label}，好感${c.affection}/信任${c.trust}/嫉妒${c.jealousy}）`).join('\n');
+    const roster = sortByAff(allChars(s)).map(c => `- ${c.name}（${c.gender === 'unknown' ? '性别依人设' : GENDER_WORD[c.gender]}，${stageOf(c.affection).label}，好感${c.affection}/信任${c.trust}/嫉妒${c.jealousy}${c.estranged ? '，已离心' : ''}）`).join('\n');
     const keyMems = s.memories.slice(0, 6).map(m => m.text).join('；');
-    const system = '你为一段古风后宫恋爱故事写「结局尾声」。文笔古雅含蓄、有余韵，扣住给定的结局基调与人物数据，不要新增冲突。';
-    const user = `这段后宫历经 ${s.day} 日。结局基调：「${def.label}」——${def.blurb}\n`
+    const system = '你为一段古风宫廷恋爱故事写「结局尾声」。文笔古雅含蓄、有余韵，扣住给定的结局基调与人物数据，不要新增冲突。注意各角色与主君的性别已标明，称谓须相称，不要默认性别。';
+    const user = `主君是「${playerIdentity(s)}」。这段宫闱情缘历经 ${s.day} 日。结局基调：「${def.label}」——${def.blurb}\n`
         + `诸位现状：\n${roster}\n`
         + (keyMems ? `一路记得的事：${keyMems}\n` : '')
-        + `\n请只输出一个 JSON（不要解释、不要代码块）：\n{"title":"结局标题(≤12字)","epilogue":"尾声正文(120~200字，第二人称称呼君主)","fates":[{"name":"角色名","line":"她的结局定语(≤24字)"}]}`;
+        + `\n请只输出一个 JSON（不要解释、不要代码块）：\n{"title":"结局标题(≤12字)","epilogue":"尾声正文(120~200字，第二人称称呼主君)","fates":[{"name":"角色名","line":"ta的结局定语(≤24字)"}]}`;
     return { system, user };
 }
 
@@ -885,12 +1022,14 @@ export function fallbackStoryEnding(s: StoryState, def: EndingDef): StoryEnding 
     const epilogue = def.key === 'true_love' && s.route.charId && s.characters[s.route.charId]
         ? `历 ${s.day} 日宫阙春秋，你独许${s.characters[s.route.charId].name}一人。从此弱水三千只取一瓢，朝朝暮暮，再不负卿。`
         : def.key === 'harem'
-            ? `历 ${s.day} 日，六宫安和，粉黛各得其所。你坐拥盈盈春色，亦守得一宫人心，传为佳话。`
+            ? `历 ${s.day} 日，六宫安和，满宫佳人各得其所。你坐拥盈盈春色，亦守得一宫人心，传为佳话。`
             : def.key === 'jealousy_ruin'
                 ? `历 ${s.day} 日，醋海翻波，终成大祸。爱到极处反成刀，繁华一夜倾覆，徒留满地狼藉。`
-                : def.key === 'cold_lonely'
-                    ? `历 ${s.day} 日，人心渐离。坐拥三千粉黛，却无一人愿与你交心，到头来不过孤家寡人。`
-                    : `历 ${s.day} 日，宫墙内外，故事仍在续写。${top ? `${top.name}与你的缘分，尚未到尽头。` : ''}`;
+                : def.key === 'estranged_collapse'
+                    ? `历 ${s.day} 日，你冷落了太多人，一个个心灰意冷地离你而去。到头来众叛亲离，空荡宫阙只剩冷月相照。`
+                    : def.key === 'cold_lonely'
+                        ? `历 ${s.day} 日，人心渐离。坐拥满宫佳丽，却无一人愿与你交心，到头来不过孤家寡人。`
+                        : `历 ${s.day} 日，宫墙内外，故事仍在续写。${top ? `${top.name}与你的缘分，尚未到尽头。` : ''}`;
     return { key: def.key, label: def.label, tone: def.tone, title: def.label, epilogue, fates };
 }
 
@@ -911,7 +1050,7 @@ export function buildCarry(s: StoryState): { fromPlaythrough: number; notes: str
 }
 
 /** 用继承包开下一周目（角色种子由 app 层重新提供，可与上盘相同或不同）。 */
-export function startNewGamePlus(prev: StoryState, seeds: StorySeed[], player?: { name: string; title?: string; persona?: string }): StoryState {
+export function startNewGamePlus(prev: StoryState, seeds: StorySeed[], player?: { name: string; title?: string; gender?: Gender; persona?: string }): StoryState {
     return initStory(seeds, player || prev.player, buildCarry(prev));
 }
 
@@ -938,12 +1077,15 @@ export function reviveStory(raw: any): StoryState | null {
         const characters: Record<string, StoryChar> = {};
         for (const [id, c0] of Object.entries<any>(raw.characters)) {
             characters[id] = {
-                charId: id, name: String(c0.name || id), avatar: String(c0.avatar || ''), persona: c0.persona,
+                charId: id, name: String(c0.name || id), avatar: String(c0.avatar || ''),
+                gender: (c0.gender === 'male' || c0.gender === 'female') ? c0.gender : 'unknown',
+                persona: c0.persona,
                 affection: clamp100(num(c0.affection, 30)), trust: clamp100(num(c0.trust, 35)),
                 jealousy: clamp100(num(c0.jealousy, 10)), mood: clamp100(num(c0.mood, 60)),
                 attitude: String(c0.attitude || ''), stage: String(c0.stage || ''),
                 memories: Array.isArray(c0.memories) ? c0.memories : [],
                 presentStreak: num(c0.presentStreak, 0),
+                estranged: !!c0.estranged, secret: c0.secret,
                 flags: c0.flags && typeof c0.flags === 'object' ? c0.flags : {},
             };
             recomputeChar(characters[id]);
@@ -951,7 +1093,7 @@ export function reviveStory(raw: any): StoryState | null {
         const s: StoryState = {
             version: STORY_VERSION,
             playthrough: num(raw.playthrough, 1),
-            player: { name: String(raw.player?.name || '君'), title: String(raw.player?.title || '君上'), persona: raw.player?.persona },
+            player: { name: String(raw.player?.name || '君'), title: String(raw.player?.title || '君上'), gender: (raw.player?.gender === 'male' || raw.player?.gender === 'female') ? raw.player.gender : 'unknown', persona: raw.player?.persona },
             day: num(raw.day, 1), time: (TIME_SLOTS.includes(raw.time) ? raw.time : '晨'),
             location: String(raw.location || '椒房殿'),
             turnType: (TURN_META[raw.turnType as TurnType] ? raw.turnType : 'daily'),
@@ -966,9 +1108,15 @@ export function reviveStory(raw: any): StoryState | null {
             route: raw.route && typeof raw.route === 'object' ? { locked: !!raw.route.locked, charId: raw.route.charId || null, progress: num(raw.route.progress, 0) } : { locked: false, charId: null, progress: 0 },
             endingProgress: raw.endingProgress && typeof raw.endingProgress === 'object' ? raw.endingProgress : {},
             lastTurn: raw.lastTurn && typeof raw.lastTurn === 'object' ? raw.lastTurn : null,
+            focusHint: raw.focusHint && characters[raw.focusHint] ? raw.focusHint : null,
             carry: raw.carry && typeof raw.carry === 'object' ? raw.carry : null,
             createdAt: num(raw.createdAt, Date.now()),
         };
+        // 旧档无角色间羁绊 → 补全 pairwise（bond 0）
+        if (!s.relationships.length && Object.keys(characters).length >= 2) {
+            const ids = Object.keys(characters);
+            for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) s.relationships.push({ a: ids[i], b: ids[j], bond: 0 });
+        }
         if (!s.activeCharacters.length) s.activeCharacters = Object.keys(characters).slice(0, 1);
         s.endingProgress = computeEndingProgress(s);
         return s;

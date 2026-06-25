@@ -329,3 +329,11 @@ pm run build passes after the time-gap grouping fix.
   - `apps/HaremApp.tsx` 从戏单 shell 收成薄壳——直接 `<StoryMode onBack={closeApp} />`；删 `apps/harem/CardMode.tsx` + 旧引擎 `utils/haremGame.ts` + `utils/haremGame.test.ts`（已无任何引用，纯死代码清除）。
   - `StoryMode` 菜单「换游玩模式」改「退出椒房记」；`haremStory.ts` 头注释、`docs/harem-story.md`、`CLAUDE.md` 文档地图、`AppID.Harem` 注释同步去掉双模式表述。旧卡牌存档 `moro_harem_game` / `moro_harem_mode` 自然弃用（残留 localStorage 无害）。
   - `pnpm tsc --noEmit` clean（0 非 api 错误），`vite build` 通过（HaremApp 包内已无 CardMode 残留），674 tests green（696 − 22 张已删卡牌引擎测试）。
+- 椒房记·不限定性别（女帝男妃等任意组合）+ 丰富玩法：
+  - **性别完全开放**：`Gender = male/female/unknown`，玩家与每位角色各自独立设定。开局 `RULER_PRESETS`（帝王/女帝/主君/女君/不限）一键选身份 + `GenderCycle` 微调，入选诸位逐位设性别。Prompt 专设【身份与性别】段、明令「绝不默认所有角色为女性、不默认玩家为男性」、按性别给相称称谓自称；`rosterBlock`/`playerIdentity`/结局/兜底文案全去性别化（删「臣妾/陛下」硬编码，按 `selfRef(gender)` + `player.title` 动态生成）。结局标签去性别化：红颜祸水→醋海覆舟、齐人之福→众芳同辉。
+  - **自由行动（自陈心意）**：3 选项之外可直接输入想做的事 → `applyCustomAction`（温和落地 + 标 `lastTurn.custom` + 动作文本作 nextIntent 喂下轮，prompt 标注「自由行动」让 AI 顺势展开但仍不替玩家决策）。
+  - **主动择幸**：「主动去见…」选人 → `visitCharacter`（或自由行动里点名角色自动识别）→ 设一次性 `focusHint`，下一回合优先与 ta 独处（夜则夜谈），用后即清。
+  - **角色羁绊**：`relationships` 从预留转实用，`updateRelationships` 每回合按同场+嫉妒演化 pairwise bond（都善妒→结怨、心情都好→生情谊），`relationshipSummary`（知己/交好/暗中较劲/势同水火）注入 prompt + 状态页。
+  - **离心/回心**：嫉妒爆表+心死（妒≥95/心≤18/信<25）→ `estranged` 淡出调度，重获信任好心情（信≥42/心≥46）→ 回心；状态页打「离心」标。新增结局 `estranged_collapse`「人心尽失」（过半离心 bad end）。
+  - UI：开局身份/性别选择 + 入选名单逐位性别；选项区下方自由行动输入框 + 主动去见钮 + 择幸抽屉；状态页加性别/离心徽章 + 「她/他们之间」羁绊栏。`reviveStory` 迁移新字段（gender/estranged/focusHint + 旧档补 pairwise 羁绊）。
+  - 引擎纯逻辑，`utils/haremStory.test.ts` +10（性别开放/自由行动/择幸焦点/离心回心/羁绊/新结局）。`pnpm tsc --noEmit` clean，`vite build` 通过，684 tests green。
