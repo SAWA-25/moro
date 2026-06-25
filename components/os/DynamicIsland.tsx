@@ -209,6 +209,7 @@ const DynamicIsland: React.FC = () => {
             <style>{`
                 @keyframes islandDrop { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 @keyframes islandPop { 0% { transform: scale(0.9); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+                @keyframes islandNoticeIn { from { opacity: 0; transform: translateY(7px) scale(0.98); filter: blur(2px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
             `}</style>
             {islandStyle?.customCss && <style>{islandStyle.customCss}</style>}
 
@@ -254,34 +255,45 @@ const DynamicIsland: React.FC = () => {
                     style={{
                         background: islandStyle?.background || '#0b0b12',
                         color: islandStyle?.textColor || '#ffffff',
-                        height: (notice || showTakeoutLive) ? '38px' : '26px',
-                        minWidth: (notice || showTakeoutLive) ? undefined : '92px',
-                        maxWidth: '78vw',
-                        padding: (notice || showTakeoutLive) ? '0 14px 0 8px' : '0 12px',
+                        height: notice ? '46px' : showTakeoutLive ? '38px' : '26px',
+                        minWidth: notice ? 'min(86vw, 248px)' : showTakeoutLive ? undefined : '92px',
+                        maxWidth: notice ? '86vw' : '78vw',
+                        padding: notice ? '5px 14px 5px 7px' : showTakeoutLive ? '0 14px 0 8px' : '0 12px',
+                        overflow: 'hidden',
                         ...(typeof islandStyle?.radius === 'number' ? { borderRadius: `${islandStyle.radius}px` } : {}),
                         animation: notice ? 'islandPop 320ms ease-out' : showTakeoutLive ? 'islandDrop 240ms ease-out both' : undefined,
-                        transition: 'min-width 300ms ease, height 240ms ease',
+                        transition: 'min-width 300ms ease, max-width 300ms ease, height 240ms ease, padding 240ms ease',
                         WebkitTapHighlightColor: 'transparent',
                         boxShadow: '0 8px 20px -8px rgba(0,0,0,0.55)',
                     }}
                     aria-label="通知中心"
                 >
                     {notice ? (
-                        <>
+                        <span
+                            key={notice.id}
+                            className="flex items-center gap-2 min-w-0"
+                            style={{ animation: 'islandNoticeIn 260ms cubic-bezier(0.18,0.9,0.22,1) both' }}
+                        >
                             {noticeAvatar ? (
                                 <img src={noticeAvatar} className="w-[26px] h-[26px] rounded-full object-cover border border-white/30 shrink-0" alt="" />
                             ) : (
                                 <span className="w-[26px] h-[26px] rounded-full bg-white/15 shrink-0" />
                             )}
                             <span className="flex flex-col items-start min-w-0 text-left leading-tight">
-                                <span className="text-[10px] font-bold whitespace-nowrap max-w-[200px] truncate">
-                                    {notice.charName}{noticeCount > 1 ? ` · ${noticeCount > 99 ? '99+' : noticeCount} 条新消息` : ''}
+                                <span className="flex items-center gap-1 min-w-0 max-w-[230px]">
+                                    <span className="text-[10px] font-bold whitespace-nowrap truncate">{notice.charName}</span>
+                                    {noticeCount > 1 && (
+                                        <span className="text-[9px] font-bold opacity-80 shrink-0">{noticeCount > 99 ? '99+' : noticeCount} 条</span>
+                                    )}
+                                    {noticeStack.length > 1 && (
+                                        <span className="px-1 py-px rounded-full bg-white/15 text-[8px] font-black shrink-0">+{noticeStack.length - 1}</span>
+                                    )}
                                 </span>
                                 <span className="text-[10px] opacity-70 whitespace-nowrap max-w-[200px] truncate">
                                     {notice.body}
                                 </span>
                             </span>
-                        </>
+                        </span>
                     ) : showTakeoutLive && liveOrder ? (
                         <>
                             <span className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-[15px] shrink-0" style={{ background: 'rgba(255,209,97,0.18)' }}>{liveOrder.riderEmoji || '🛵'}</span>
@@ -306,53 +318,6 @@ const DynamicIsland: React.FC = () => {
                     )}
                 </button>
             </div>
-
-            {/* iOS 式通知栈：消息一条条从灵动岛下方落下，短暂停驻后自动消散。 */}
-            {!expanded && noticeStack.length > 0 && (
-                <div
-                    className="absolute left-3 right-3 z-[57] pointer-events-none"
-                    style={{ top: 'calc(max(6px, var(--safe-top)) + 2.45rem)' }}
-                >
-                    <div className="relative h-[150px]">
-                        {noticeStack.map((n, i) => {
-                            const char = characters.find(c => c.id === n.charId);
-                            const avatar = char?.avatar || n.avatarUrl;
-                            return (
-                                <button
-                                    key={n.id}
-                                    onClick={() => jumpToChat(n.charId)}
-                                    className="absolute left-0 right-0 pointer-events-auto rounded-[1.35rem] px-3.5 py-3 flex items-center gap-3 text-left active:scale-[0.985] transition-[transform,opacity] duration-300"
-                                    style={{
-                                        top: i * 18,
-                                        transform: `translateY(${i * 2}px) scale(${1 - i * 0.035})`,
-                                        opacity: Math.max(0.36, 1 - i * 0.16),
-                                        zIndex: 20 - i,
-                                        background: 'rgba(245,245,247,0.88)',
-                                        color: '#15151d',
-                                        backdropFilter: 'blur(18px) saturate(1.4)',
-                                        boxShadow: '0 18px 38px -20px rgba(0,0,0,0.65)',
-                                        border: '1px solid rgba(255,255,255,0.72)',
-                                        animation: `islandDrop 320ms cubic-bezier(0.18,0.9,0.22,1.12) both`,
-                                    }}
-                                >
-                                    {avatar ? (
-                                        <img src={avatar} className="w-10 h-10 rounded-2xl object-cover shrink-0 shadow-sm" alt="" />
-                                    ) : (
-                                        <span className="w-10 h-10 rounded-2xl bg-slate-200 shrink-0" />
-                                    )}
-                                    <span className="min-w-0 flex-1">
-                                        <span className="flex items-baseline gap-2">
-                                            <span className="text-[12px] font-black truncate">{n.charName || char?.name || '新消息'}</span>
-                                            <span className="text-[10px] text-slate-400 shrink-0">现在</span>
-                                        </span>
-                                        <span className="block text-[11px] text-slate-600 truncate mt-0.5">{n.body}</span>
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
 
             {/* 外卖 Live Activity 已并入灵动岛本体（见上方胶囊的 showTakeoutLive 分支），
                 不再单独悬浮在岛外，避免「通知出现在灵动岛外」。 */}

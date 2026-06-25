@@ -75,6 +75,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
             sub={`${char.name} 自己的生活轨迹`}
             tape="mint" pattern="dot" paper="sage"
             onClose={onClose}
+            tall
             footer={<SealBtn kind="rose" onClick={onClose}>看完啦</SealBtn>}
         >
             {loading ? (
@@ -89,7 +90,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                     </p>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 pb-1">
                     {groups.map(group => (
                         <div key={group.day}>
                             {/* 日期标签 */}
@@ -101,7 +102,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                             {/* 时间线 */}
                             <div className="pl-1 space-y-2.5">
                                 {group.items.map(ev => (
-                                    <div key={ev.id} className="flex gap-2.5">
+                                    <div key={ev.id} className="flex items-start gap-2.5">
                                         {/* 时间轴节点 + 竖线 */}
                                         <div className="flex flex-col items-center pt-1 shrink-0" style={{ width: 38 }}>
                                             <span className="text-[9px]" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{timeLabel(ev.timestamp)}</span>
@@ -110,13 +111,13 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                         {/* 内容卡 */}
                                         <div className="flex-1 min-w-0 rounded-[9px] px-3 py-2"
                                             style={{ background: 'rgba(255,255,255,0.62)', border: '1px dashed rgba(122,90,114,0.18)' }}>
-                                            <p className="text-[12px] leading-relaxed" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
+                                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...CUTE_STACK, color: PAPER_TONES.ink, overflowWrap: 'anywhere' }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                                 {ev.mood && (
                                                     <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#7a3845', background: 'rgba(251,184,200,0.32)' }}>{ev.mood}</span>
                                                 )}
                                                 {ev.location && (
-                                                    <span className="text-[9.5px]" style={{ color: PAPER_TONES.inkFaint }}>📍{ev.location}</span>
+                                                    <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>📍{ev.location}</span>
                                                 )}
                                                 {ev.surfacedAsMsg && (
                                                     <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#5a7d9a', background: 'rgba(157,193,213,0.28)' }}>已跟你说过</span>

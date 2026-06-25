@@ -80,6 +80,8 @@ const Chat: React.FC = () => {
         } catch { return 0; }
     }, []);
     const [messages, setMessages] = useState<Message[]>([]);
+    const [revealedAssistantIds, setRevealedAssistantIds] = useState<Set<number>>(() => new Set());
+    const [poppingMessageIds, setPoppingMessageIds] = useState<Set<number>>(() => new Set());
     // 行动选择器：点最后一轮 user 头像后弹出（生成可编辑的「接下来说点啥」选项）。纯手动，无开关。
     const [showActionSelector, setShowActionSelector] = useState(false);
     // Instant Push 路径："准备中"三个点 = 消息正在拼接+发送; 消失 = SSE POST 已排进
@@ -110,6 +112,9 @@ const Chat: React.FC = () => {
     const visibleCountRef = useRef(30);
     const activeCharIdRef = useRef(activeCharacterId);
     const charRef = useRef<typeof char>(null as any);
+    const revealTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+    const revealKnownIdsRef = useRef<Set<number>>(new Set());
+    const revealHydratedRef = useRef(false);
 
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -292,6 +297,101 @@ const Chat: React.FC = () => {
     // handleSendText 经 useCallback 持有旧闭包，用 ref 取实时值
     const greetingPickerRef = useRef({ active: false, idx: 0 });
     greetingPickerRef.current = { active: greetingPickerActive, idx: greetingIdx };
+
+    const clearMessageRevealTimers = useCallback(() => {
+        revealTimersRef.current.forEach(timer => clearTimeout(timer));
+        revealTimersRef.current = [];
+    }, []);
+
+    const markMessagePop = useCallback((msgId: number) => {
+        setPoppingMessageIds(prev => {
+            const next = new Set(prev);
+            next.add(msgId);
+            return next;
+        });
+        const timer = setTimeout(() => {
+            setPoppingMessageIds(prev => {
+                if (!prev.has(msgId)) return prev;
+                const next = new Set(prev);
+                next.delete(msgId);
+                return next;
+            });
+        }, 900);
+        revealTimersRef.current.push(timer);
+    }, []);
+
+    useEffect(() => () => clearMessageRevealTimers(), [clearMessageRevealTimers]);
+
+    useEffect(() => {
+        clearMessageRevealTimers();
+        revealKnownIdsRef.current = new Set();
+        revealHydratedRef.current = false;
+        setRevealedAssistantIds(new Set());
+        setPoppingMessageIds(new Set());
+    }, [activeCharacterId, clearMessageRevealTimers]);
+
+    useEffect(() => {
+        const currentIds = new Set(messages.map(m => m.id));
+        const currentAssistantIds = messages.filter(m => m.role === 'assistant').map(m => m.id);
+
+        if (!historyLoaded || windowedFocusMsgId !== null || selectionMode) {
+            clearMessageRevealTimers();
+            revealKnownIdsRef.current = currentIds;
+            revealHydratedRef.current = historyLoaded;
+            setPoppingMessageIds(new Set());
+            setRevealedAssistantIds(new Set(currentAssistantIds));
+            return;
+        }
+
+        if (!revealHydratedRef.current) {
+            revealKnownIdsRef.current = currentIds;
+            revealHydratedRef.current = true;
+            setPoppingMessageIds(new Set());
+            setRevealedAssistantIds(new Set(currentAssistantIds));
+            return;
+        }
+
+        const knownIds = revealKnownIdsRef.current;
+        const maxKnownId = knownIds.size ? Math.max(...Array.from(knownIds)) : 0;
+        const historyAssistantIds = new Set(
+            messages
+                .filter(m => m.role === 'assistant' && !knownIds.has(m.id) && m.id <= maxKnownId)
+                .map(m => m.id)
+        );
+        const freshAssistantMessages = messages.filter(m => m.role === 'assistant' && !knownIds.has(m.id) && m.id > maxKnownId);
+        revealKnownIdsRef.current = currentIds;
+
+        setRevealedAssistantIds(prev => {
+            const next = new Set<number>();
+            currentAssistantIds.forEach(id => {
+                if (prev.has(id) || historyAssistantIds.has(id)) next.add(id);
+            });
+            return next;
+        });
+
+        if (!freshAssistantMessages.length) return;
+
+        let delay = 140;
+        freshAssistantMessages.forEach(msg => {
+            const timer = setTimeout(() => {
+                setRevealedAssistantIds(prev => {
+                    if (prev.has(msg.id)) return prev;
+                    const next = new Set(prev);
+                    next.add(msg.id);
+                    return next;
+                });
+                markMessagePop(msg.id);
+                if (!selectionMode && windowedFocusMsgId === null) {
+                    requestAnimationFrame(() => {
+                        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+                    });
+                }
+            }, delay);
+            revealTimersRef.current.push(timer);
+            const textLength = typeof msg.content === 'string' ? msg.content.length : 0;
+            delay += Math.min(1250, 520 + Math.min(620, textLength * 7));
+        });
+    }, [messages, historyLoaded, windowedFocusMsgId, selectionMode, clearMessageRevealTimers, markMessagePop]);
 
     const greetingMacroCtx = { charName: char?.name || '角色', userName: (userProfile?.name || '').trim() || '用户' };
 
@@ -3166,15 +3266,20 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [messages, char?.id, char?.hideSystemLogs, char?.regexScripts, visibleCount, windowedFocusMsgId, regexVersion]);
 
+    const renderMessages = useMemo(() => {
+        if (windowedFocusMsgId !== null || selectionMode) return displayMessages;
+        return displayMessages.filter(m => m.role !== 'assistant' || revealedAssistantIds.has(m.id));
+    }, [displayMessages, revealedAssistantIds, windowedFocusMsgId, selectionMode]);
+
     const collapsedCount = Math.max(0, totalMsgCount - displayMessages.length);
 
     // 行动选择器入口：最后一条 user 消息的 id（点它的头像可生成「接下来说点啥」选项）。
     const lastUserMsgId = useMemo(() => {
-        for (let i = displayMessages.length - 1; i >= 0; i--) {
-            if (displayMessages[i].role === 'user') return displayMessages[i].id;
+        for (let i = renderMessages.length - 1; i >= 0; i--) {
+            if (renderMessages[i].role === 'user') return renderMessages[i].id;
         }
         return null;
-    }, [displayMessages]);
+    }, [renderMessages]);
 
     // 稳定的思维链配置对象：只在角色/样式变化时重建，避免每次渲染新建对象击穿 MessageItem.memo。
     const thinkingChainOptions = useMemo(() => ({
@@ -4289,9 +4394,22 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     </div>
                 )}
 
-                {displayMessages.map((m, i) => {
-                    const prevMessage = i > 0 ? displayMessages[i - 1] : null;
-                    const nextMessage = i < displayMessages.length - 1 ? displayMessages[i + 1] : null;
+                <style>{`
+                    @keyframes chatAssistantPopIn {
+                        0% { opacity: 0; transform: translateY(14px) scale(0.965); filter: blur(3px); }
+                        58% { opacity: 1; transform: translateY(-1px) scale(1.01); filter: blur(0); }
+                        100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+                    }
+                    .chat-assistant-row-pop {
+                        animation: chatAssistantPopIn 440ms cubic-bezier(0.18, 0.9, 0.22, 1) both;
+                        transform-origin: left bottom;
+                        will-change: transform, opacity;
+                    }
+                `}</style>
+
+                {renderMessages.map((m, i) => {
+                    const prevMessage = i > 0 ? renderMessages[i - 1] : null;
+                    const nextMessage = i < renderMessages.length - 1 ? renderMessages[i + 1] : null;
                     const messageGroupGapMs = 30 * 60 * 1000;
                     const breaksWithPrevious =
                         !prevMessage ||
@@ -4322,6 +4440,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             id={`chat-msg-${m.id}`}
                             className={[
                                 flashMsgId === m.id ? 'ring-2 ring-yellow-300 bg-yellow-50/40 rounded-2xl mx-2' : '',
+                                poppingMessageIds.has(m.id) ? 'chat-assistant-row-pop' : '',
                                 'transition-all duration-300',
                             ].filter(Boolean).join(' ')}
                         >

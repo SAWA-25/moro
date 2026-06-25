@@ -52,7 +52,7 @@ export const JournalSheet: React.FC<{
                 className="relative w-full sm:max-w-[26rem] flex flex-col animate-slide-up rounded-t-[22px] sm:rounded-[22px] overflow-hidden"
                 style={{
                     background: PAPER_FILL,
-                    maxHeight: tall ? '88vh' : '80vh',
+                    maxHeight: tall ? 'min(88vh, calc(100dvh - 18px))' : 'min(80vh, calc(100dvh - 18px))',
                     paddingBottom: 'var(--safe-bottom)',
                     border: `1px solid ${EDGE}`,
                     boxShadow: '0 -22px 60px -24px rgba(20,18,14,0.55), 0 24px 60px -24px rgba(20,18,14,0.5)',
@@ -79,7 +79,7 @@ export const JournalSheet: React.FC<{
                         <span className="text-[13px] leading-none" aria-hidden>✕</span>
                     </button>
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 py-4 relative z-[1]">
+                <div className="flex-1 min-h-[120px] overflow-y-auto overscroll-contain no-scrollbar px-4 pt-4 pb-5 relative z-[1]">
                     {children}
                 </div>
                 {footer && (
