@@ -4,7 +4,13 @@ import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { GalleryImage, CharacterProfile } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
-import ConfirmDialog from '../components/os/ConfirmDialog';
+import {
+    PaperBackdrop, ScrapButton, WashiTape, PaperDialog, SectionTag,
+    INK, INK_SOFT, PAPER, PAGE_BG, TAPE_STRIPES, WASHI,
+} from './theater/scrapbook';
+import {
+    CaretLeft, Trash, ArrowsClockwise, ChatCircleText, Images, Sparkle, Spinner, PencilSimpleLine,
+} from '@phosphor-icons/react';
 
 const Gallery: React.FC = () => {
     const { closeApp, characters, apiConfig, addToast } = useOS();
@@ -17,7 +23,7 @@ const Gallery: React.FC = () => {
 
     // Long-press delete state
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [confirmDialog, setConfirmDialog] = useState<{ isOpen: boolean; title: string; message: string; variant: 'danger' | 'warning' | 'info'; onConfirm: () => void; } | null>(null);
+    const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; confirmText: string; onConfirm: () => void; } | null>(null);
 
     // Album image counts
     const [albumCounts, setAlbumCounts] = useState<Record<string, number>>({});
@@ -64,17 +70,16 @@ const Gallery: React.FC = () => {
         longPressTimer.current = setTimeout(() => {
             const char = characters.find(c => c.id === charId);
             setConfirmDialog({
-                isOpen: true,
-                title: '删除相册',
-                message: `确定要删除「${char?.name || ''}」的所有照片吗？此操作无法撤销。`,
-                variant: 'danger',
+                title: '撕掉整本相册？',
+                message: `「${char?.name || ''}」的照片会全部撕下来，没法再贴回去了。`,
+                confirmText: '撕掉',
                 onConfirm: async () => {
                     const imgs = await DB.getGalleryImages(charId);
                     for (const img of imgs) {
                         await DB.deleteGalleryImage(img.id);
                     }
                     setAlbumCounts(prev => ({ ...prev, [charId]: 0 }));
-                    addToast('相册已清空', 'success');
+                    addToast('整本相册撕干净了', 'success');
                     setConfirmDialog(null);
                 }
             });
@@ -92,16 +97,15 @@ const Gallery: React.FC = () => {
     const handleDeleteImage = async () => {
         if (!selectedImage) return;
         setConfirmDialog({
-            isOpen: true,
-            title: '删除照片',
-            message: '确定要删除这张照片吗？',
-            variant: 'danger',
+            title: '撕掉这张照片？',
+            message: '撕下来就贴不回去了，确定吗？',
+            confirmText: '撕掉',
             onConfirm: async () => {
                 await DB.deleteGalleryImage(selectedImage.id);
                 setImages(prev => prev.filter(img => img.id !== selectedImage.id));
                 setView('grid');
                 setSelectedImage(null);
-                addToast('照片已删除', 'success');
+                addToast('撕掉了这张', 'success');
                 setConfirmDialog(null);
             }
         });
@@ -109,7 +113,7 @@ const Gallery: React.FC = () => {
 
     const handleReview = async () => {
         if (!selectedImage || !activeCharId || !apiConfig.apiKey) {
-            addToast('缺少配置或图片信息', 'error');
+            addToast('还没配好 API 或缺图片信息', 'error');
             return;
         }
 
@@ -204,11 +208,11 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
             setSelectedImage(updatedImage);
             setImages(prev => prev.map(img => img.id === selectedImage.id ? updatedImage : img));
 
-            addToast('点评生成成功', 'success');
+            addToast('TA 在背面题了字', 'success');
 
         } catch (e: any) {
             console.error('Review Error:', e);
-            addToast(`点评失败: ${e.message}`, 'error');
+            addToast(`题字失败: ${e.message}`, 'error');
         } finally {
             setIsReviewing(false);
         }
@@ -217,28 +221,14 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
     // --- Sub-Components ---
 
     const [imgStatus, setImgStatus] = useState<Record<string, 'loading' | 'loaded' | 'error'>>({});
-
-    const getCharGradient = (name: string): string => {
-        const gradients = [
-            'linear-gradient(to bottom right, #fb7185, #ec4899)',
-            'linear-gradient(to bottom right, #a78bfa, #8b5cf6)',
-            'linear-gradient(to bottom right, #60a5fa, #6366f1)',
-            'linear-gradient(to bottom right, #22d3ee, #14b8a6)',
-            'linear-gradient(to bottom right, #34d399, #22c55e)',
-            'linear-gradient(to bottom right, #fbbf24, #f97316)',
-            'linear-gradient(to bottom right, #f87171, #f43f5e)',
-            'linear-gradient(to bottom right, #e879f9, #ec4899)',
-        ];
-        let hash = 0;
-        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-        return gradients[Math.abs(hash) % gradients.length];
-    };
+    const activeChar = characters.find(c => c.id === activeCharId);
 
     const renderAlbums = () => (
-        <div className="grid grid-cols-2 gap-5 p-5 animate-fade-in">
-            {characters.map(char => {
+        <div className="relative z-10 grid grid-cols-2 gap-x-4 gap-y-6 p-5 animate-fade-in">
+            {characters.map((char, i) => {
                 const count = albumCounts[char.id] || 0;
                 const status = imgStatus[char.id] || 'loading';
+                const tilt = i % 3 === 0 ? -2 : i % 3 === 1 ? 1.5 : -1;
                 return (
                     <button
                         key={char.id}
@@ -249,54 +239,56 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
                         onMouseDown={() => handleAlbumPressStart(char.id)}
                         onMouseUp={handleAlbumPressEnd}
                         onMouseLeave={handleAlbumPressEnd}
-                        className="flex flex-col gap-2.5 group active:scale-95 transition-all"
+                        className="relative group active:scale-95 transition-transform"
+                        style={{ transform: `rotate(${tilt}deg)` }}
                     >
-                        {/* Use w-full + padding-bottom hack for aspect ratio (better mobile compat than aspect-square) */}
-                        <div className="w-full relative rounded-3xl shadow-md overflow-hidden border border-white/60" style={{ paddingBottom: '100%', backgroundImage: getCharGradient(char.name), backgroundColor: '#94a3b8' }}>
-                            {/* Always-visible fallback: character initial + name color bg */}
-                            <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-                                <span className="text-white/60 text-5xl font-bold select-none drop-shadow-md">{char.name.charAt(0)}</span>
+                        <WashiTape color={i % 2 ? 'ink' : 'butter'} rotate={i % 2 ? -5 : 4} className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-14 h-5 rounded-[2px] z-20" />
+                        {/* 拍立得相框（照片保留彩色） */}
+                        <div className="p-2 pb-8" style={{ background: '#fffdf8', border: '1px solid rgba(176,170,158,0.8)', borderRadius: 6, boxShadow: '0 12px 22px -12px rgba(31,29,26,0.5)' }}>
+                            <div className="w-full relative overflow-hidden" style={{ paddingBottom: '100%', borderRadius: 3, background: 'linear-gradient(135deg,#d9d4c8,#b9b4a8)' }}>
+                                <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
+                                    <span className="text-5xl font-black select-none" style={{ color: 'rgba(255,255,255,0.65)' }}>{char.name.charAt(0)}</span>
+                                </div>
+                                {status !== 'error' && (
+                                    <img
+                                        src={char.avatar}
+                                        alt={char.name}
+                                        className={`absolute inset-0 w-full h-full object-cover z-10 transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+                                        loading="lazy"
+                                        decoding="async"
+                                        onLoad={() => setImgStatus(prev => ({ ...prev, [char.id]: 'loaded' }))}
+                                        onError={() => setImgStatus(prev => ({ ...prev, [char.id]: 'error' }))}
+                                    />
+                                )}
                             </div>
-                            {/* Image layer - hidden until loaded to prevent blank rectangles on mobile */}
-                            {status !== 'error' && (
-                                <img
-                                    src={char.avatar}
-                                    alt={char.name}
-                                    className={`absolute inset-0 w-full h-full object-cover z-10 transition-opacity duration-300 group-hover:scale-105 ${status === 'loaded' ? 'opacity-90 group-hover:opacity-100' : 'opacity-0'}`}
-                                    loading="lazy"
-                                    decoding="async"
-                                    onLoad={() => setImgStatus(prev => ({ ...prev, [char.id]: 'loaded' }))}
-                                    onError={() => setImgStatus(prev => ({ ...prev, [char.id]: 'error' }))}
-                                />
-                            )}
-                            <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/60 via-black/10 to-transparent"></div>
-                            <div className="absolute bottom-0 left-0 right-0 z-30 px-3 pb-2.5 pt-6 bg-gradient-to-t from-black/50 to-transparent flex items-end justify-between">
-                                <span className="text-white text-sm font-bold drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">{char.name}</span>
-                                {count > 0 && <span className="text-white/90 text-[10px] font-mono bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded-full">{count}</span>}
+                            {/* 相框题字条 */}
+                            <div className="absolute left-0 right-0 bottom-1.5 px-3 flex items-center justify-between gap-1">
+                                <span className="text-[12px] font-black truncate" style={{ color: '#36322b' }}>{char.name}</span>
+                                {count > 0 && <span className="text-[9px] font-black tabular-nums px-1.5 py-0.5 rounded-full shrink-0" style={{ background: INK, color: PAPER }}>{count}</span>}
                             </div>
                         </div>
                     </button>
                 );
             })}
-            {characters.length === 0 && <div className="col-span-2 text-center text-slate-400 py-16 text-xs">暂无角色相册</div>}
+            {characters.length === 0 && <div className="col-span-2 text-center py-16 text-xs" style={{ color: INK_SOFT }}>还没有谁的相册</div>}
         </div>
     );
 
     const renderGrid = () => (
-        <div className="flex-1 overflow-y-auto p-1.5 animate-fade-in">
+        <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar p-3 animate-fade-in">
             {images.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-3 py-20">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-14 h-14 opacity-40"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
-                    <span className="text-sm">还没有照片</span>
+                <div className="h-full flex flex-col items-center justify-center gap-3 py-20" style={{ color: INK_SOFT }}>
+                    <Images size={52} weight="thin" style={{ opacity: 0.5 }} />
+                    <span className="text-sm">这本相册还空着</span>
                 </div>
             ) : (
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-3 gap-1.5">
                     {images.map(img => (
-                        <div key={img.id} onClick={() => handleImageClick(img)} className="aspect-square bg-slate-100 relative cursor-pointer overflow-hidden rounded-sm">
-                            <img src={img.url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" loading="lazy" />
-                            {img.review && <div className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full ring-2 ring-white shadow-sm"></div>}
-                            {img.savedDate && <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent px-1.5 pb-1 pt-3"><span className="text-[8px] text-white/80 font-mono">{img.savedDate}</span></div>}
-                        </div>
+                        <button key={img.id} onClick={() => handleImageClick(img)} className="aspect-square relative overflow-hidden active:scale-95 transition-transform" style={{ background: '#fffdf8', padding: 3, borderRadius: 4, border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 6px 12px -8px rgba(31,29,26,0.4)' }}>
+                            <img src={img.url} className="w-full h-full object-cover" style={{ borderRadius: 2 }} loading="lazy" />
+                            {img.review && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full" style={{ background: INK, boxShadow: '0 0 0 2px #fffdf8' }} />}
+                            {img.savedDate && <div className="absolute bottom-1 left-1 right-1"><span className="text-[8px] px-1 rounded font-black" style={{ background: 'rgba(31,29,26,0.6)', color: PAPER, fontFamily: 'var(--font-label)' }}>{img.savedDate}</span></div>}
+                        </button>
                     ))}
                 </div>
             )}
@@ -304,89 +296,83 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
     );
 
     const renderDetail = () => selectedImage && (
-        <div className="flex flex-col h-full bg-black relative animate-fade-in">
+        <div className="flex flex-col h-full relative animate-fade-in" style={{ background: 'linear-gradient(180deg,#211f1b,#13120f)' }}>
             {/* Header */}
-            <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-50 pointer-events-none">
-                <button onClick={() => setView('grid')} className="text-white bg-black/40 backdrop-blur-md p-2 rounded-full pointer-events-auto active:scale-95 transition-transform hover:bg-black/60 border border-white/10">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+            <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-start z-50 pointer-events-none" style={{ paddingTop: 'calc(var(--safe-top) + 8px)' }}>
+                <button onClick={() => setView('grid')} className="pointer-events-auto active:scale-95 transition-transform p-2.5 rounded-full" style={{ background: 'rgba(246,243,236,0.92)', color: INK, boxShadow: '0 4px 10px -4px rgba(0,0,0,0.6)' }}>
+                    <CaretLeft size={20} weight="bold" />
                 </button>
-                <button onClick={handleDeleteImage} className="text-white bg-black/40 backdrop-blur-md p-2 rounded-full pointer-events-auto active:scale-95 transition-transform hover:bg-red-600/60 border border-white/10">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                <button onClick={handleDeleteImage} className="pointer-events-auto active:scale-95 transition-transform p-2.5 rounded-full" style={{ background: 'rgba(246,243,236,0.92)', color: INK, boxShadow: '0 4px 10px -4px rgba(0,0,0,0.6)' }}>
+                    <Trash size={18} weight="bold" />
                 </button>
             </div>
 
             {/* Date badge */}
             {selectedImage.savedDate && (
-                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50">
-                    <span className="text-[10px] text-white/60 bg-black/40 backdrop-blur-sm px-3 py-1 rounded-full font-mono">{selectedImage.savedDate}</span>
+                <div className="absolute z-50 left-1/2 -translate-x-1/2" style={{ top: 'calc(var(--safe-top) + 16px)' }}>
+                    <span className="text-[10px] px-3 py-1 rounded-full font-black" style={{ background: 'rgba(246,243,236,0.9)', color: INK_SOFT, fontFamily: 'var(--font-label)' }}>{selectedImage.savedDate}</span>
                 </div>
             )}
 
-            {/* Main Image */}
-            <div className="flex-1 min-h-0 w-full flex items-center justify-center bg-black relative overflow-hidden">
+            {/* Main Image（贴在暗台上的照片） */}
+            <div className="flex-1 min-h-0 w-full flex items-center justify-center relative overflow-hidden p-3">
                 <img
                     src={selectedImage.url}
                     className="max-w-full max-h-full object-contain"
+                    style={{ background: '#fffdf8', padding: 8, borderRadius: 4, boxShadow: '0 24px 48px -18px rgba(0,0,0,0.8)' }}
                     alt="Detail"
                 />
             </div>
 
-            {/* Review & Context Section */}
-            <div className="shrink-0 w-full bg-[#161616] border-t border-white/10 z-40 pb-safe">
+            {/* Review & Context Section（照片背面的题字，米白纸卡） */}
+            <div className="shrink-0 w-full z-40" style={{ background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)', borderTop: '1px solid rgba(176,170,158,0.7)', paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
                 {selectedImage.review ? (
                     <div className="p-5 animate-slide-up">
                         <div className="flex items-start gap-3 mb-3">
-                            <img src={characters.find(c => c.id === activeCharId)?.avatar} className="w-9 h-9 rounded-full border border-white/20 object-cover shadow-sm" />
-                            <div className="flex-1">
-                                <div className="text-xs font-bold text-white/50 mb-1.5 uppercase tracking-wide">{characters.find(c => c.id === activeCharId)?.name} 的点评</div>
-                                <p className="text-[15px] text-white/90 leading-relaxed font-light select-text">"{selectedImage.review}"</p>
+                            <img src={activeChar?.avatar} className="w-9 h-9 rounded-full object-cover shrink-0" style={{ border: '1px solid rgba(176,170,158,0.8)' }} />
+                            <div className="flex-1 min-w-0">
+                                <div className="text-[10px] font-black mb-1.5 tracking-[0.2em] uppercase flex items-center gap-1" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}><PencilSimpleLine size={11} weight="bold" />{activeChar?.name} 写在背面</div>
+                                <p className="text-[15px] leading-relaxed select-text" style={{ color: INK, fontFamily: 'var(--font-hand)', fontSize: 18 }}>“{selectedImage.review}”</p>
                             </div>
                         </div>
-                        <div className="flex justify-between items-center border-t border-white/5 pt-2 mt-2">
+                        <div className="flex justify-between items-center pt-2 mt-2" style={{ borderTop: '1px dashed rgba(150,144,132,0.5)' }}>
                             {selectedImage.chatContext && selectedImage.chatContext.length > 0 && (
-                                <button onClick={() => setShowChatContext(!showChatContext)} className="text-[10px] text-white/30 hover:text-white/60 transition-colors flex items-center gap-1 px-2 py-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>
-                                    {showChatContext ? '收起对话' : '当时的对话'}
+                                <button onClick={() => setShowChatContext(!showChatContext)} className="text-[10px] transition-colors flex items-center gap-1 px-2 py-1 font-bold" style={{ color: INK_SOFT }}>
+                                    <ChatCircleText size={12} weight="bold" />
+                                    {showChatContext ? '收起对话' : '翻到那天的对话'}
                                 </button>
                             )}
-                            <button onClick={handleReview} disabled={isReviewing} className="text-[10px] text-white/40 hover:text-primary transition-colors flex items-center gap-1 px-2 py-1 ml-auto">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                                {isReviewing ? 'Thinking...' : '重新生成'}
+                            <button onClick={handleReview} disabled={isReviewing} className="text-[10px] transition-colors flex items-center gap-1 px-2 py-1 ml-auto font-bold disabled:opacity-50" style={{ color: INK }}>
+                                <ArrowsClockwise size={12} weight="bold" className={isReviewing ? 'animate-spin' : ''} />
+                                {isReviewing ? '提笔中…' : '换句题字'}
                             </button>
                         </div>
                         {/* Chat context expandable */}
                         {showChatContext && selectedImage.chatContext && (
-                            <div className="mt-3 bg-white/5 rounded-xl p-3 space-y-1.5 max-h-40 overflow-y-auto">
-                                <div className="text-[9px] text-white/30 uppercase tracking-wider mb-2 font-bold">拍照时的对话记录</div>
+                            <div className="mt-3 rounded-xl p-3 space-y-1.5 max-h-40 overflow-y-auto no-scrollbar" style={{ background: 'rgba(232,228,217,0.5)', border: '1px dashed rgba(150,144,132,0.5)' }}>
+                                <div className="text-[9px] uppercase tracking-wider mb-2 font-black" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>拍下这张时的对话</div>
                                 {selectedImage.chatContext.map((line, i) => (
-                                    <div key={i} className="text-[11px] text-white/50 leading-relaxed">{line}</div>
+                                    <div key={i} className="text-[11px] leading-relaxed" style={{ color: '#48443c' }}>{line}</div>
                                 ))}
                             </div>
                         )}
                     </div>
                 ) : (
                     <div className="p-5 flex flex-col items-center gap-3">
-                        <button
-                            onClick={handleReview}
-                            disabled={isReviewing}
-                            className="bg-white text-black px-6 py-3 rounded-full text-sm font-bold shadow-[0_0_20px_rgba(255,255,255,0.15)] active:scale-95 transition-transform flex items-center gap-2 hover:bg-slate-200"
-                        >
-                            {isReviewing ? (
-                                <><div className="w-4 h-4 border-2 border-slate-300 border-t-black rounded-full animate-spin"></div> 正在思考...</>
-                            ) : (
-                                <>让 TA 点评照片</>
-                            )}
-                        </button>
+                        <ScrapButton variant="ink" onClick={handleReview} disabled={isReviewing} className="px-6 py-3 text-sm"
+                            icon={isReviewing ? <Spinner size={16} className="animate-spin" /> : <PencilSimpleLine size={16} weight="bold" />}>
+                            {isReviewing ? '提笔中…' : '请 TA 在背面写句话'}
+                        </ScrapButton>
                         {selectedImage.chatContext && selectedImage.chatContext.length > 0 && (
-                            <button onClick={() => setShowChatContext(!showChatContext)} className="text-[10px] text-white/30 hover:text-white/50 transition-colors">
-                                {showChatContext ? '收起对话记录' : '查看当时的对话'}
+                            <button onClick={() => setShowChatContext(!showChatContext)} className="text-[10px] transition-colors font-bold" style={{ color: INK_SOFT }}>
+                                {showChatContext ? '收起对话记录' : '翻到那天的对话'}
                             </button>
                         )}
                         {showChatContext && selectedImage.chatContext && (
-                            <div className="w-full bg-white/5 rounded-xl p-3 space-y-1.5 max-h-40 overflow-y-auto">
-                                <div className="text-[9px] text-white/30 uppercase tracking-wider mb-2 font-bold">拍照时的对话记录</div>
+                            <div className="w-full rounded-xl p-3 space-y-1.5 max-h-40 overflow-y-auto no-scrollbar" style={{ background: 'rgba(232,228,217,0.5)', border: '1px dashed rgba(150,144,132,0.5)' }}>
+                                <div className="text-[9px] uppercase tracking-wider mb-2 font-black" style={{ color: INK_SOFT, fontFamily: 'var(--font-label)' }}>拍下这张时的对话</div>
                                 {selectedImage.chatContext.map((line, i) => (
-                                    <div key={i} className="text-[11px] text-white/50 leading-relaxed">{line}</div>
+                                    <div key={i} className="text-[11px] leading-relaxed" style={{ color: '#48443c' }}>{line}</div>
                                 ))}
                             </div>
                         )}
@@ -397,23 +383,37 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
     );
 
     return (
-        <div className="h-full w-full bg-slate-50 flex flex-col font-light relative">
-            <ConfirmDialog isOpen={!!confirmDialog} title={confirmDialog?.title || ''} message={confirmDialog?.message || ''} variant={confirmDialog?.variant} confirmText="确认" onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))} onCancel={() => setConfirmDialog(null)} />
+        <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ color: INK, background: PAGE_BG }}>
+            {view !== 'detail' && <PaperBackdrop corners={false} />}
+
+            {/* 撕照片 / 撕相册确认弹窗（统一纸面弹窗） */}
+            <PaperDialog open={!!confirmDialog} title={confirmDialog?.title} en="TEAR IT OFF" tape="ink" onClose={() => setConfirmDialog(null)}
+                actions={confirmDialog ? <>
+                    <ScrapButton variant="paper" onClick={() => setConfirmDialog(null)} className="flex-1 py-2.5 text-[13px]">留着</ScrapButton>
+                    <ScrapButton variant="ink" onClick={confirmDialog.onConfirm} className="flex-1 py-2.5 text-[13px]">{confirmDialog.confirmText}</ScrapButton>
+                </> : null}>
+                {confirmDialog?.message}
+            </PaperDialog>
 
             {/* Header */}
             {view !== 'detail' && (
-                <div className="h-16 bg-white/80 backdrop-blur-xl flex items-center px-4 border-b border-slate-100/60 shrink-0 z-10 sticky top-0">
-                    <button onClick={handleBack} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
-                    </button>
-                    <h1 className="text-lg font-semibold text-slate-800 ml-2 tracking-tight">
-                        {view === 'albums' ? '相册' : characters.find(c => c.id === activeCharId)?.name || '相册'}
-                    </h1>
-                    {view === 'grid' && <span className="text-xs text-slate-400 ml-2 font-mono">{images.length}</span>}
+                <div className="relative z-20 shrink-0">
+                    <div style={{ height: 'var(--safe-top)' }} />
+                    <div className="flex items-center px-3 pt-2 pb-2.5 gap-2">
+                        <button onClick={handleBack} className="relative inline-flex items-center gap-1 px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }}>
+                            <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-2deg)', boxShadow: '0 3px 7px -3px rgba(31,29,26,0.5)' }} />
+                            <span className="relative z-10 flex items-center gap-1"><CaretLeft size={13} weight="bold" />{view === 'albums' ? '收起' : '相册'}</span>
+                        </button>
+                        <div className="leading-none">
+                            <div className="text-[16px] font-black tracking-[0.04em]" style={{ color: INK }}>{view === 'albums' ? '相册' : activeChar?.name || '相册'}</div>
+                            <div className="text-[7px] tracking-[0.36em] uppercase mt-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{view === 'albums' ? 'THE PHOTO ALBUM' : `${images.length} PHOTOS`}</div>
+                        </div>
+                        <div className="flex-1" />
+                    </div>
                 </div>
             )}
 
-            {view === 'albums' && <div className="flex-1 overflow-y-auto min-h-0">{renderAlbums()}</div>}
+            {view === 'albums' && <div className="flex-1 overflow-y-auto no-scrollbar min-h-0">{renderAlbums()}</div>}
             {view === 'grid' && renderGrid()}
             {view === 'detail' && renderDetail()}
         </div>
