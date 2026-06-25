@@ -25,6 +25,7 @@ import {
   coupleWhisperUserPrompt, coupleInteractionUserPrompt, coupleMomentUserPrompt,
   coupleInnerVoiceUserPrompt, coupleQuestionUserPrompt, coupleCompatPrompt,
 } from './laiwangPrompts';
+import { llmComplete, type ChatMsg } from './llmComplete';
 
 export interface CoupleApi {
   baseUrl: string;
@@ -311,30 +312,27 @@ function compactPersona(char: CharacterProfile, userName: string): string {
   return parts.join('\n');
 }
 
-async function callCoupleLLM(api: CoupleApi, messages: any[], maxTokens: number): Promise<string> {
-  const baseUrl = (api.baseUrl || '').replace(/\/+$/, '');
-  if (!baseUrl || !api.model) return '';
+/**
+ * 情侣空间一次性 LLM 调用 —— 统一走 `llmComplete`（与主聊天 / 折子戏 / 茶话亭同一条路）。
+ *
+ * 之前这里自己内联 `fetch + res.json() + choices[0].message.content`，会在两类**很常见**的情况下
+ * 静默拿到空串 → 组件退回模板兜底，表现为「情侣空间所有 AI 功能都没反应、只剩本地套话」：
+ *   1) 代理无视 `stream:false` 强行返回 SSE（`data: {...}` 流）→ 裸 `res.json()` 直接抛错；
+ *   2) 思考型模型（DeepSeek-R1 / GLM-4.5 / Qwen3 / Gemini 兼容代理…）正文在 `reasoning_content`
+ *      或分片数组里、或被 `<think>` 包裹 → `message.content` 为空/为数组。
+ * `llmComplete` 内部用 `safeResponseJson`（含 SSE 拼接 / HTML 错误页识别）+ `extractContent`
+ * （回退 reasoning_content / 拍平数组 / 去 think）把这些都处理掉，所以主聊天能用的地方这里就能用。
+ *
+ * 仍保持「失败全吞返回空串」契约：调用方拿到空串后用模板兜底，绝不阻塞 UI。
+ */
+async function callCoupleLLM(api: CoupleApi, messages: ChatMsg[], maxTokens: number): Promise<string> {
+  if (!(api.baseUrl || '').trim() || !api.model) return '';
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${api.apiKey || 'sk-none'}`,
-      },
-      body: JSON.stringify({
-        model: api.model,
-        messages,
-        temperature: 0.95,
-        max_tokens: maxTokens,
-        stream: false,
-      }),
-    });
-    if (!res.ok) {
-      console.warn('[CoupleSpace] LLM call failed', res.status);
-      return '';
-    }
-    const data: any = await res.json();
-    return (data?.choices?.[0]?.message?.content || '').trim();
+    return await llmComplete(
+      { baseUrl: api.baseUrl, apiKey: api.apiKey || '', model: api.model },
+      messages,
+      { maxTokens, temperature: 0.95 },
+    );
   } catch (e) {
     console.warn('[CoupleSpace] LLM call error', e);
     return '';
