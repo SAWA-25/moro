@@ -3962,6 +3962,11 @@ export interface CollectionItem {
 // 店铺为本地生成（每次刷新 10+ 家，可进店点菜），订单可看配送进度、和骑手/商家聊天，
 // 付款支持自己付与代付，并与来往 App 联动（给某角色点单/代付会在该角色聊天里留消息）。
 // ──────────────────────────────────────────────────────────────────
+/** 菜品规格组（单选）：如「份量：标准份/大份(+5)」「辣度：不辣/微辣/特辣」。对标美团「选规格」。 */
+export interface TakeoutDishSpecOption { label: string; priceDelta: number; }
+export interface TakeoutDishSpec { name: string; options: TakeoutDishSpecOption[]; }
+/** 菜品加料（多选，按份加价）：如「加蛋 +2」「加宽粉 +3」。对标美团「加料」。 */
+export interface TakeoutDishAddon { label: string; price: number; }
 export interface TakeoutDish {
   id: string;
   name: string;
@@ -3969,6 +3974,12 @@ export interface TakeoutDish {
   price: number;
   emoji?: string;
   popular?: boolean;       // 招牌/热销
+  /** 菜品月售（展示「月售N」），可选。 */
+  monthlySales?: number;
+  /** 规格组（单选，可多组：份量/辣度/甜度/冰量…），选项带差价。对标美团「选规格」。 */
+  specs?: TakeoutDishSpec[];
+  /** 加料（多选，按份加价）。对标美团「加料」。 */
+  addons?: TakeoutDishAddon[];
 }
 export interface TakeoutStore {
   id: string;
@@ -3995,7 +4006,13 @@ export interface TakeoutStore {
   /** AI 生成标记（用于「AI 现搓的店」徽标）。 */
   aiGenerated?: boolean;
 }
-export interface TakeoutOrderItem { dishId: string; name: string; price: number; qty: number; emoji?: string; }
+export interface TakeoutOrderItem {
+  dishId: string; name: string; price: number; qty: number; emoji?: string;
+  /** 所选规格的合并描述（如「大份·微辣」），对标美团「选规格」。price 已含规格/加料差价。 */
+  spec?: string;
+  /** 所选加料（如「加蛋」「加肠」），对标美团「加料」。 */
+  addons?: string[];
+}
 /** 一条 NPC / 商家 对评价的回应（「其它 npc 评论」） */
 export interface TakeoutReviewReply { name: string; emoji: string; text: string; at: number; isMerchant?: boolean; }
 /** 用户对某单的评价 */
@@ -4075,6 +4092,10 @@ export interface TakeoutOrder {
   note?: string;
   placedAt: number;
   etaAt: number;           // 预计送达时间戳
+  /** 预约送达时间戳（选了「预约送达」时；为空＝尽快送达）。对标美团预约下单。 */
+  scheduledAt?: number;
+  /** 餐具份数（0＝无需餐具的环保选项）。对标美团餐具份数。 */
+  tableware?: number;
   deliveredAt?: number;
   chat: TakeoutChatMsg[];  // 和骑手/商家/平台客服的对话
   chatTarget?: 'rider' | 'store' | 'support';
