@@ -372,3 +372,10 @@ pm run build passes after the time-gap grouping fix.
   - 折子戏九折：七折(占卜/番外/对影/谈心/轨迹/真心话/狼人杀) scrapbook 导入重定向 insScrapKit + 去显式 grayscale 滤镜恢复彩色；折子戏壳已随 insScrapKit。
   - 各批 tsc 0 非 api 错误、vite build 通过、逐批提交推送。
   - **剩余（各自自定义配色，非 brutalist/glass，需逐个 bespoke）**：音乐/日记(Journal+ExchangeDiary)/街角(LifeSim)/栖居志(Room)/页外(VRWorld)/拼贴册(Appearance)/回忆标本馆(MemoryPalace)/岁时记封面(Almanac)/时光契约(Schedule)/攻略本(Guidebook) + 工具屏(查手机/通话/浏览器/游戏等)。
+- 桌面（启动器）重构为 Ins 风：
+  - 全局 CSS：去掉图标瓦片虚线缝线(.moro-app-tile outline)、拼贴微旋转(nth-child rotate)、小组件和纸胶带(.moro-widget-*::after)；新增桌面项错峰入场动画 `.desk-item-in`。絮语用的 .glass-card/.scrap-* 全程未碰。
+  - AppIcon：标签从 label-mono 大写等宽 → 干净 sans（中文 app 名更自然）。
+  - DesktopClock：从「拍立得天空白墙手账」→ 干净 ins 卡（柔和暮色渐变 + 大号 display 衬线日期 + 漂浮柔光 + 玻璃胶囊「装扮」按钮）。
+  - CharacterWidget：从 glass-card 手账 → 白卡 + 绿渐变聊天圆钮 + 头像/气泡预览（名字改干净 sans）。
+  - Dock：去掉 glass-pill 虚线缝线（dockShellStyle 内联底色保留）。
+  - App 图标逐个错峰淡入上浮回弹入场。tsc 0 非 api 错误，build 通过。

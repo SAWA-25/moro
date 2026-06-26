@@ -314,40 +314,23 @@
         outline: 1.5px dashed rgba(167, 162, 151, 0.38);
         outline-offset: -7px;
       }
-      /* App 图标贴纸缝线：每个图标瓦片内圈细虚线（贴纸车线感） */
+      /* ── Ins 风桌面：干净图标瓦片（去掉虚线缝线 / 拼贴微旋转 / 小组件和纸胶带）── */
+      /* 图标瓦片：去掉旧虚线缝线，hover 轻抬 + 柔和放大投影 */
       .moro-app-tile {
-        outline: 1px dashed rgba(167, 162, 151, 0.32);
-        outline-offset: -4px;
+        transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.32s ease;
       }
-      /* 拼贴微旋转：桌面图标隔几个轻微歪一点，像随手贴上去的贴纸 */
-      [data-desk-item]:nth-child(5n + 2) .moro-app-tile { rotate: -1.5deg; }
-      [data-desk-item]:nth-child(5n + 4) .moro-app-tile { rotate: 1.4deg; }
-      [data-desk-item]:nth-child(7n + 3) .moro-app-tile { rotate: 0.8deg; }
-      /* 和纸胶带：贴在桌面小组件卡片上缘的半透明胶带条（盖过圆角，拼贴感主角） */
-      .moro-widget-clock::after,
-      .moro-widget-character::after,
-      .moro-widget-schedule::after,
-      .moro-widget-weather::after,
-      .moro-widget-music::after {
-        content: '';
-        position: absolute;
-        top: -6px;
-        left: 50%;
-        width: 72px;
-        height: 20px;
-        transform: translateX(-50%) rotate(-2.5deg);
-        background: linear-gradient(100deg, rgba(255, 255, 255, 0.6), rgba(243, 240, 233, 0.45));
-        box-shadow: 0 2px 6px rgba(50, 48, 60, 0.14);
-        border-left: 1px dashed rgba(160, 156, 146, 0.45);
-        border-right: 1px dashed rgba(160, 156, 146, 0.45);
-        backdrop-filter: blur(1px);
-        -webkit-backdrop-filter: blur(1px);
-        z-index: 6;
-        pointer-events: none;
+      @media (hover: hover) {
+        [data-desk-item] .moro-app-tile:hover,
+        .moro-app-tile.group-hover\:scale-110:hover { }
       }
-      .moro-widget-music::after { transform: translateX(-50%) rotate(2.5deg); width: 58px; }
-      .moro-widget-weather::after { transform: translateX(-50%) rotate(2deg); width: 52px; }
-      .moro-widget-schedule::after { transform: translateX(-50%) rotate(1.8deg); }
+      /* 桌面项逐个入场：淡入 + 上浮 + 轻微回弹缩放（错峰由行内 animationDelay 控制） */
+      @keyframes deskItemIn {
+        0%   { opacity: 0; transform: translateY(14px) scale(0.86); }
+        70%  { opacity: 1; transform: translateY(0) scale(1.04); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .desk-item-in { animation: deskItemIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      /* 桌面小组件卡片：去掉旧和纸胶带，保持纯净圆角卡 */
       /* 蕾丝花边条：手帐页眉装饰（repeat-x 扇贝形），供桌面 / App 页眉使用 */
       .lace-edge {
         height: 10px;
