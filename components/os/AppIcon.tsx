@@ -12,23 +12,24 @@ interface AppIconProps {
   variant?: 'default' | 'minimal' | 'dock';
 }
 
+// Ins 风彩色瓦片：每个 app 自己的颜色，明快现代的 160° 渐变方块（白色图标）
 const APP_TILE_BG: Record<string, string> = {
-  green: 'linear-gradient(180deg, #9fd7b2 0%, #6fb88a 100%)',
-  orange: 'linear-gradient(180deg, #f6c38d 0%, #ee9d63 100%)',
-  rose: 'linear-gradient(180deg, #f4b0b9 0%, #dd7b91 100%)',
-  red: 'linear-gradient(180deg, #ee9b98 0%, #d56569 100%)',
-  violet: 'linear-gradient(180deg, #c8b6eb 0%, #9b83ca 100%)',
-  indigo: 'linear-gradient(180deg, #aeb9eb 0%, #7a89c7 100%)',
-  sky: 'linear-gradient(180deg, #b8d7ef 0%, #7fb7dc 100%)',
-  teal: 'linear-gradient(180deg, #a6d8d2 0%, #72b8b1 100%)',
-  slate: 'linear-gradient(180deg, #c8c7cf 0%, #92919d 100%)',
-  lime: 'linear-gradient(180deg, #dbe6a6 0%, #b3c766 100%)',
-  amber: 'linear-gradient(180deg, #f3d09a 0%, #d7a864 100%)',
-  emerald: 'linear-gradient(180deg, #a7dfc4 0%, #63b58b 100%)',
-  fuchsia: 'linear-gradient(180deg, #ecb6d9 0%, #cf7cb2 100%)',
-  pink: 'linear-gradient(180deg, #efbfd3 0%, #d988a9 100%)',
-  blue: 'linear-gradient(180deg, #b6cff4 0%, #759edd 100%)',
-  purple: 'linear-gradient(180deg, #cbb8f2 0%, #9377d5 100%)',
+  green: 'linear-gradient(160deg, #4ade80 0%, #16a34a 100%)',
+  orange: 'linear-gradient(160deg, #fdba74 0%, #f97316 100%)',
+  rose: 'linear-gradient(160deg, #fda4b8 0%, #f43f5e 100%)',
+  red: 'linear-gradient(160deg, #fca5a5 0%, #ef4444 100%)',
+  violet: 'linear-gradient(160deg, #c4b5fd 0%, #8b5cf6 100%)',
+  indigo: 'linear-gradient(160deg, #a5b4fc 0%, #6366f1 100%)',
+  sky: 'linear-gradient(160deg, #7dd3fc 0%, #0ea5e9 100%)',
+  teal: 'linear-gradient(160deg, #5eead4 0%, #14b8a6 100%)',
+  slate: 'linear-gradient(160deg, #cbd5e1 0%, #64748b 100%)',
+  lime: 'linear-gradient(160deg, #bef264 0%, #65a30d 100%)',
+  amber: 'linear-gradient(160deg, #fcd34d 0%, #f59e0b 100%)',
+  emerald: 'linear-gradient(160deg, #6ee7b7 0%, #10b981 100%)',
+  fuchsia: 'linear-gradient(160deg, #f0abfc 0%, #d946ef 100%)',
+  pink: 'linear-gradient(160deg, #f9a8d4 0%, #ec4899 100%)',
+  blue: 'linear-gradient(160deg, #93c5fd 0%, #3b82f6 100%)',
+  purple: 'linear-gradient(160deg, #d8b4fe 0%, #a855f7 100%)',
 };
 
 const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md', hideLabel = false, variant = 'default' }) => {
@@ -38,8 +39,8 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
   const contentColor = theme.contentColor || '#2b2933';
   const isInverseTile = app.id === 'settings';
 
-  const shape = theme.desktopIconShape || 'rounded';
-  const surface = theme.desktopIconSurface || 'paper';
+  const shape = theme.desktopIconShape || 'squircle';
+  const surface = theme.desktopIconSurface || 'solid';
   const dockStyle = theme.desktopDockStyle || 'glass';
   const iconScale = theme.desktopIconScale || 'md';
   const labelMode = theme.desktopIconLabelMode || 'fade';

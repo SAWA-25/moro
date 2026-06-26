@@ -934,6 +934,10 @@ const Launcher: React.FC = () => {
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;
 
+  // 桌面顶栏：跨页持续的「今日」标签（真实日期 + 星期）
+  const _td = new Date();
+  const headerDate = `${_td.getMonth() + 1}月${_td.getDate()}日 · ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][_td.getDay()]}`;
+
   const draggingItem = draggingKey ? deskItems.find(i => i.key === draggingKey) : null;
   const draggingApp = draggingItem?.kind === 'app' ? gridApps.find(a => a.id === draggingItem.id) : null;
 
@@ -1049,19 +1053,21 @@ const Launcher: React.FC = () => {
         </div>
       )}
 
-      {/* 手帐纸面氛围背景：点点网纹（仿手帐内页）+ 极淡的暖白光斑（纯渐变，无 blur，低开销） */}
-      <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 opacity-60" style={{
-              backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.16) 1.2px, transparent 0)',
-              backgroundSize: '17px 17px',
-          }}></div>
-          {/* 拼贴页眉：顶部蕾丝花边带（仿手帐贴纸边条） */}
-          <div className="absolute left-0 right-0 opacity-80" style={{ top: 'calc(var(--safe-top) + 1.85rem)' }}>
-              <div className="lace-edge w-full" />
-              <div className="lace-edge w-full" style={{ transform: 'scaleY(-1)', marginTop: '-2px', opacity: 0.5 }} />
-          </div>
-          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}></div>
-          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%)' }}></div>
+      {/* Ins 风桌面氛围：彩色柔光团缓缓漂浮（去手账点纹 + 蕾丝花边），低开销纯渐变 */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(250,126,30,0.20), transparent 68%)' }}></div>
+          <div className="absolute top-1/3 -left-24 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(214,41,118,0.16), transparent 68%)' }}></div>
+          <div className="absolute -bottom-24 right-1/4 w-96 h-96 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(79,91,213,0.15), transparent 68%)' }}></div>
+          <div className="absolute top-1/4 right-1/3 w-56 h-56 rounded-full animate-breathe" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.38), transparent 70%)' }}></div>
+      </div>
+
+      {/* Ins 桌面顶栏：MORO 字标 + 今日 frosted 胶囊（跨页持续，框定「设计过的主屏」） */}
+      <div className="absolute left-0 right-0 z-20 flex items-center justify-between px-6 pointer-events-none" style={{ top: 'calc(var(--safe-top) + 0.4rem)' }}>
+          <span className="text-[12px] font-black tracking-[0.34em]" style={{ color: contentColor, opacity: 0.55, fontFamily: 'var(--font-label)' }}>MORO</span>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)', color: contentColor }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }} />
+              <span className="text-[11px] font-bold">{headerDate}</span>
+          </span>
       </div>
 
       {/* Scrollable Content Layer */}
@@ -1091,7 +1097,7 @@ const Launcher: React.FC = () => {
                 key={idx}
                 data-desk-page={idx}
                 data-page-index={idx}
-                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-12 pb-8 h-full relative"
+                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-14 pb-8 h-full relative"
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
                   {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
@@ -1150,18 +1156,24 @@ const Launcher: React.FC = () => {
 
       </div>
 
-      {/* Page Indicators */}
+      {/* Page Indicators：frosted 轨道 + 渐变激活点 */}
       <div
-          className="absolute left-0 w-full flex justify-center gap-2 pointer-events-none z-20"
+          className="absolute left-0 w-full flex justify-center pointer-events-none z-20"
           style={{ bottom: `calc(${launcherBottomInset} + 5.5rem)` }}
       >
-          {Array.from({ length: totalPages }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-4 opacity-100' : 'w-1.5 opacity-40'}`}
-                style={{ backgroundColor: contentColor }}
-              ></div>
-          ))}
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)' }}>
+              {Array.from({ length: totalPages }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-5' : 'w-1.5'}`}
+                    style={activePageIndex === i
+                        ? { background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }
+                        : { background: contentColor, opacity: 0.35 }}
+                  ></div>
+              ))}
+            </div>
+          )}
       </div>
 
       {/* Floating Dock - Updated Margin and Safe Area handling */}
