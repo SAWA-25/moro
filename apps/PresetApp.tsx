@@ -42,29 +42,24 @@ import {
     List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X, Scissors,
 } from '@phosphor-icons/react';
 
-// ── 黑白手账设计 token（与扮相手账 / 剪报夹同一套语言） ────
-const INK = '#1c1b1a';
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
-const INK_BTN = 'bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+// ── ins 风设计 token（活字盘 = sky 强调） ────
+const INK = '#26242a';
+const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
+const INK_BTN = 'rounded-full bg-[#26242a] text-white press-soft shadow-[0_12px_24px_-12px_rgba(38,36,42,0.55)]';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = {
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
-    backgroundSize: '16px 16px',
-};
+const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(14,165,233,0.06), transparent 60%)' };
 const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(28,27,26,0.13) 23px, rgba(28,27,26,0.13) 24px)',
+    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(38,36,42,0.08) 23px, rgba(38,36,42,0.08) 24px)',
     lineHeight: '24px',
 };
 /** 斜纹（AI 口吻章的底纹） */
 const HATCH_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(45deg, rgba(28,27,26,0.22) 0 2px, transparent 2px 5px)',
+    backgroundImage: 'repeating-linear-gradient(45deg, rgba(14,165,233,0.18) 0 2px, transparent 2px 5px)',
 };
 
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div
-        aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
-    />
+    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
+        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
 );
 
 // ---------------------------------------------------------------------------
@@ -74,21 +69,22 @@ const Tape: React.FC<{ className?: string }> = ({ className }) => (
 const VoiceStamp: React.FC<{ role?: string }> = ({ role }) => {
     const r = role || 'system';
     if (r === 'assistant') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#1c1b1a] shrink-0" style={HATCH_BG}>TA</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#26242a] shrink-0" style={HATCH_BG}>TA</span>;
     }
     if (r === 'user') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#1c1b1a] bg-white shrink-0">你</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#26242a] bg-white shrink-0">你</span>;
     }
-    return <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-[#f7f5ef] shrink-0">旁白</span>;
+    return <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white shrink-0">旁白</span>;
 };
 
 /** 墨块开关 */
 const InkSwitch: React.FC<{ on: boolean; onChange: (v: boolean) => void; small?: boolean }> = ({ on, onChange, small }) => (
     <button
         onClick={() => onChange(!on)}
-        className={`relative ${small ? 'w-9 h-[18px]' : 'w-11 h-[22px]'} border-2 border-[#1c1b1a] shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'}`}
+        className={`relative ${small ? 'w-9 h-5' : 'w-11 h-6'} rounded-full shrink-0 transition-colors press-soft`}
+        style={{ background: on ? '#0ea5e9' : '#dcd9d3' }}
     >
-        <span className={`absolute top-0 bottom-0 ${small ? 'w-3.5' : 'w-4'} transition-all ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-[#1c1b1a]'}`} />
+        <span className={`absolute top-0.5 ${small ? 'w-4 h-4' : 'w-5 h-5'} rounded-full bg-white transition-all shadow`} style={{ left: on ? `calc(100% - ${small ? '1.125rem' : '1.375rem'})` : '0.125rem' }} />
     </button>
 );
 
@@ -115,7 +111,7 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                     max={max}
                     step={step}
                     onChange={e => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(n); }}
-                    className="w-20 text-right text-xs font-mono bg-white border-2 border-[#1c1b1a]/50 px-2 py-1 outline-none focus:border-[#1c1b1a]"
+                    className="w-20 text-right text-xs font-mono bg-white border border-black/10 rounded-xl/50 px-2 py-1 outline-none focus:border-[#1c1b1a]"
                 />
             </div>
             <input
@@ -164,13 +160,13 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-[#f2f0e9] text-[#1c1b1a] animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+        <div className="fixed inset-0 z-[100] flex flex-col bg-[#f7f5f2] text-[#26242a] animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
             <div className="relative flex items-center gap-3 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0">
                 <button onClick={onClose} className={`px-2.5 py-2 rotate-[-2deg] text-[10px] font-black ${STICKER}`}>
                     ✕ 退回
                 </button>
                 <div className="flex-1 min-w-0">
-                    <div className="label-mono text-[8px] text-[#1c1b1a]/45">{isMarker ? 'LEAD SLUG' : 'TYPE PIECE'}</div>
+                    <div className="label-mono text-[8px] text-[#26242a]/45">{isMarker ? 'LEAD SLUG' : 'TYPE PIECE'}</div>
                     <h2 className="text-lg font-black tracking-wide truncate">{isMarker ? '看看这枚占位铅块' : '修这枚字条'}</h2>
                 </div>
                 {!isMarker && (
@@ -180,33 +176,33 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
                 <div>
-                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">字条名 / LABEL</label>
+                    <label className="label-mono text-[8px] text-[#26242a]/45 block">字条名 / LABEL</label>
                     <input
                         value={name}
                         onChange={e => setName(e.target.value)}
                         disabled={isMarker}
-                        className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed disabled:border-[#1c1b1a]/30 disabled:text-[#1c1b1a]/45"
+                        className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed disabled:border-[#1c1b1a]/30 disabled:text-[#26242a]/45"
                     />
                 </div>
 
                 {isMarker ? (
-                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 text-xs leading-relaxed">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 text-xs leading-relaxed">
                         <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
                         <div className="flex items-center gap-1.5 font-black mb-1.5">
                             <Placeholder size={14} weight="bold" /> 占位铅块（marker）
                         </div>
-                        <p className="text-[#1c1b1a]/70">{markerHint || '这枚铅块在上机印刷（发送）时由系统自动填进内容，这里改不了。'}</p>
+                        <p className="text-[#26242a]/70">{markerHint || '这枚铅块在上机印刷（发送）时由系统自动填进内容，这里改不了。'}</p>
                     </div>
                 ) : (
                     <>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">口吻 / VOICE</label>
+                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">口吻 / VOICE</label>
                                 <div className="relative">
                                     <select
                                         value={role}
                                         onChange={e => setRole(e.target.value as 'system' | 'user' | 'assistant')}
-                                        className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
                                         <option value="system">旁白（system）</option>
                                         <option value="user">你（user）</option>
@@ -216,12 +212,12 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                 </div>
                             </div>
                             <div>
-                                <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">怎么排 / PLACEMENT</label>
+                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">怎么排 / PLACEMENT</label>
                                 <div className="relative">
                                     <select
                                         value={position}
                                         onChange={e => setPosition(parseInt(e.target.value, 10))}
-                                        className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
                                         <option value={INJECTION_POSITION.RELATIVE}>跟着架上的顺序（相对）</option>
                                         <option value={INJECTION_POSITION.ABSOLUTE}>插进对话 @深度（绝对）</option>
@@ -234,19 +230,19 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                         {position === INJECTION_POSITION.ABSOLUTE && (
                             <div className="grid grid-cols-2 gap-3 border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">离末尾几层（深度）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">离末尾几层（深度）</label>
                                     <input
                                         type="number" min={0} max={9999} value={depth}
                                         onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setDepth(Math.max(0, n)); }}
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
                                     />
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">同层先后（大的靠后）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">同层先后（大的靠后）</label>
                                     <input
                                         type="number" min={0} max={9999} value={order}
                                         onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setOrder(n); }}
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
                                     />
                                 </div>
                             </div>
@@ -254,14 +250,14 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 
                         <div>
                             <div className="flex items-end justify-between mb-1">
-                                <label className="label-mono text-[8px] text-[#1c1b1a]/45">字条内容 / TYPE</label>
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/35">墨量 ≈ {estimateTokens(content)} TK</span>
+                                <label className="label-mono text-[8px] text-[#26242a]/45">字条内容 / TYPE</label>
+                                <span className="label-mono text-[8px] text-[#26242a]/35">墨量 ≈ {estimateTokens(content)} TK</span>
                             </div>
                             <textarea
                                 value={content}
                                 onChange={e => setContent(e.target.value)}
                                 placeholder="支持 {{char}} / {{user}} / {{date}} / {{time}} 宏"
-                                className="w-full h-64 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                className="w-full h-64 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                 style={RULED_BG}
                             />
                         </div>
@@ -646,7 +642,7 @@ const PresetApp: React.FC = () => {
 
     // ── 渲染 ────────────────────────────────────────────
     return (
-        <div className="h-full w-full bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+        <div className="h-full w-full bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
             {/* 刊头：合上贴纸 + 标题 + 开印章 */}
             <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
                 <div className="flex items-center gap-3">
@@ -658,17 +654,17 @@ const PresetApp: React.FC = () => {
                     </button>
                     <div className="flex-1 min-w-0 relative">
                         <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">TYPESETTING TRAY — PROMPT PRESS</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">TYPESETTING TRAY — PROMPT PRESS</div>
                         <div className="flex items-baseline gap-2">
                             <h1 className="text-2xl font-black tracking-[0.08em]">活字盘</h1>
-                            <span className="text-sm text-[#1c1b1a]/55 truncate" style={HAND_CN}>提示词一块块排好再开印</span>
+                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>提示词一块块排好再开印</span>
                         </div>
                     </div>
                     {/* 开印章：预设总开关 */}
                     <button
                         onClick={() => toggleEnabled(!enabled)}
                         title={enabled ? '印坊开着工：激活的字版接管提示词与火候。点一下歇业' : '印坊歇业中：聊天走 Moro 原生组装。点一下开印'}
-                        className={`shrink-0 w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center rotate-[6deg] select-none transition-all active:scale-95 ${enabled ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'border-dashed border-[#1c1b1a]/60 bg-white text-[#1c1b1a]/60'}`}
+                        className={`shrink-0 w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center rotate-[6deg] select-none transition-all active:scale-95 ${enabled ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-dashed border-[#1c1b1a]/60 bg-white text-[#26242a]/60'}`}
                     >
                         <span className="text-sm font-black leading-none">{enabled ? '开印' : '歇业'}</span>
                         <span className="label-mono text-[6px] leading-none mt-1 opacity-70">{enabled ? 'ON' : 'OFF'}</span>
@@ -679,18 +675,18 @@ const PresetApp: React.FC = () => {
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5 pb-10">
                 {!enabled && (
                     <div className="relative border-2 border-dashed border-[#1c1b1a]/50 bg-white/55 px-4 py-3 rotate-[-0.3deg]">
-                        <p className="text-[13px] text-[#1c1b1a]/60 leading-relaxed" style={HAND_CN}>
+                        <p className="text-[13px] text-[#26242a]/60 leading-relaxed" style={HAND_CN}>
                             印坊歇业中：聊天走 Moro 原生的信件组装，下面排得再好也不会上机。按一下右上角的「开印」章，激活的字版才会接管提示词结构和火候。
                         </p>
                     </div>
                 )}
 
                 {/* 字版条 */}
-                <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
                     <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
                     <div className="flex items-end justify-between">
-                        <span className="label-mono text-[8px] text-[#1c1b1a]/45">ACTIVE PLATE / 在用的字版</span>
-                        <span className="text-[11px] text-[#1c1b1a]/45" style={HAND_CN}>改动随手就存，不用按保存</span>
+                        <span className="label-mono text-[8px] text-[#26242a]/45">ACTIVE PLATE / 在用的字版</span>
+                        <span className="text-[11px] text-[#26242a]/45" style={HAND_CN}>改动随手就存，不用按保存</span>
                     </div>
                     {loaded && presets.length === 0 ? (
                         <div className="text-center py-5 space-y-3">
@@ -706,7 +702,7 @@ const PresetApp: React.FC = () => {
                                 <select
                                     value={activeId ?? ''}
                                     onChange={e => selectPreset(e.target.value)}
-                                    className="w-full appearance-none bg-white border-2 border-[#1c1b1a] px-3 py-2.5 text-sm font-black outline-none focus:border-dashed"
+                                    className="w-full appearance-none bg-white border border-black/10 rounded-xl px-3 py-2.5 text-sm font-black outline-none focus:border-dashed"
                                 >
                                     {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>
@@ -740,12 +736,12 @@ const PresetApp: React.FC = () => {
                 {active && (
                     <>
                         {/* 接口联动 */}
-                        <div className="relative bg-white border-2 border-[#1c1b1a]/60 p-4 space-y-3 rotate-[0.3deg]">
-                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f2f0e9] label-mono text-[8px] text-[#1c1b1a]/50">WIRE-UP / 接口联动</span>
-                            <div className="border border-dashed border-[#1c1b1a]/40 px-3 py-2 text-xs text-[#1c1b1a]/60">
-                                现在接的线：<span className="font-mono font-black text-[#1c1b1a]">{apiConfig.model || '还没设置'}</span>
+                        <div className="relative bg-white border border-black/10 rounded-xl/60 p-4 space-y-3 rotate-[0.3deg]">
+                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">WIRE-UP / 接口联动</span>
+                            <div className="border border-dashed border-[#1c1b1a]/40 px-3 py-2 text-xs text-[#26242a]/60">
+                                现在接的线：<span className="font-mono font-black text-[#26242a]">{apiConfig.model || '还没设置'}</span>
                                 {apiConfig.baseUrl && (
-                                    <span className="font-mono text-[#1c1b1a]/40"> @ {(() => { try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; } })()}</span>
+                                    <span className="font-mono text-[#26242a]/40"> @ {(() => { try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; } })()}</span>
                                 )}
                             </div>
                             <div>
@@ -764,7 +760,7 @@ const PresetApp: React.FC = () => {
                                                 }
                                             }
                                         }}
-                                        className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
                                         <option value="">不绑（沿用文具盒里的全局 API）</option>
                                         {apiPresets.map(ap => (
@@ -773,15 +769,15 @@ const PresetApp: React.FC = () => {
                                     </select>
                                     <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                                 </div>
-                                <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>
+                                <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>
                                     ✎ API 方案在「文具盒 → 接线盒（API 配置）」里存。温度那些由下面的「火候」接管（可以关）。
                                 </p>
                             </div>
                         </div>
 
                         {/* 火候（生成参数） */}
-                        <div className="relative bg-white border-2 border-[#1c1b1a]/60 rotate-[-0.3deg]">
-                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f2f0e9] label-mono text-[8px] text-[#1c1b1a]/50">SAMPLING / 火候</span>
+                        <div className="relative bg-white border border-black/10 rounded-xl/60 rotate-[-0.3deg]">
+                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">SAMPLING / 火候</span>
                             <button
                                 onClick={() => setShowParams(v => !v)}
                                 className="w-full px-4 py-3.5 flex items-center justify-between"
@@ -794,7 +790,7 @@ const PresetApp: React.FC = () => {
                                     <div className="flex items-center justify-between border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2.5">
                                         <div>
                                             <p className="text-[11px] font-black">火候随请求下发</p>
-                                            <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>关掉的话字版只管排版，火候仍走「文具盒」里的全局 API 配置</p>
+                                            <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>关掉的话字版只管排版，火候仍走「文具盒」里的全局 API 配置</p>
                                         </div>
                                         <InkSwitch on={applySampling} onChange={toggleSampling} small />
                                     </div>
@@ -806,22 +802,22 @@ const PresetApp: React.FC = () => {
                                     <SliderRow label="重复惩罚 Repetition Penalty" value={active.repetition_penalty} fallback={1} min={0} max={3} step={0.01} onChange={v => mutateActive(d => { d.repetition_penalty = v; })} />
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
-                                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">上下文长度 (TOKENS)</label>
+                                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">上下文长度 (TOKENS)</label>
                                             <input
                                                 type="number"
                                                 value={active.openai_max_context ?? 4095}
                                                 onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_context = n; }); }}
-                                                className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
+                                                className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
                                             />
-                                            <p className="text-[12px] text-[#1c1b1a]/50 mt-1" style={HAND_CN}>只是存档（Moro 按消息条数截上下文）</p>
+                                            <p className="text-[12px] text-[#26242a]/50 mt-1" style={HAND_CN}>只是存档（Moro 按消息条数截上下文）</p>
                                         </div>
                                         <div>
-                                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">回复上限 (MAX_TOKENS)</label>
+                                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">回复上限 (MAX_TOKENS)</label>
                                             <input
                                                 type="number"
                                                 value={active.openai_max_tokens ?? 8000}
                                                 onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_tokens = n; }); }}
-                                                className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
+                                                className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
                                             />
                                         </div>
                                     </div>
@@ -830,11 +826,11 @@ const PresetApp: React.FC = () => {
                         </div>
 
                         {/* 排字架（提示词管理器） */}
-                        <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                        <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
                             <Tape className="-top-2.5 right-6 rotate-[5deg] w-12" />
                             <div className="flex items-end justify-between">
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/45">COMPOSING STICK / 排字架</span>
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/35">墨量 ≈ {totalTokens} TK</span>
+                                <span className="label-mono text-[8px] text-[#26242a]/45">COMPOSING STICK / 排字架</span>
+                                <span className="label-mono text-[8px] text-[#26242a]/35">墨量 ≈ {totalTokens} TK</span>
                             </div>
 
                             <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
@@ -849,31 +845,31 @@ const PresetApp: React.FC = () => {
                                         <div
                                             key={entry.identifier}
                                             ref={el => { rowRefs.current[idx] = el; }}
-                                            className={`flex items-center gap-2 border-2 px-2 py-2 bg-white transition-all ${dragIdx === idx ? 'border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] rotate-[-0.5deg]' : 'border-[#1c1b1a]/40'} ${entry.enabled ? '' : 'opacity-45'}`}
+                                            className={`flex items-center gap-2 border-2 px-2 py-2 bg-white transition-all ${dragIdx === idx ? 'border-[#1c1b1a] shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.5deg]' : 'border-[#1c1b1a]/40'} ${entry.enabled ? '' : 'opacity-45'}`}
                                         >
                                             <div
                                                 onPointerDown={onDragPointerDown(idx)}
-                                                className="p-1 cursor-grab touch-none text-[#1c1b1a]/35 shrink-0"
+                                                className="p-1 cursor-grab touch-none text-[#26242a]/35 shrink-0"
                                                 title="捏住拖动换位置"
                                             >
                                                 <List size={15} weight="bold" />
                                             </div>
                                             <button onClick={() => setEditingId(entry.identifier)} className="flex-1 min-w-0 text-left">
                                                 <div className="flex items-center gap-1.5">
-                                                    {isMarker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#1c1b1a]/60" />}
-                                                    {isAbsolute && <ArrowElbowDownRight size={12} weight="bold" className="shrink-0 text-[#1c1b1a]/60" />}
+                                                    {isMarker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
+                                                    {isAbsolute && <ArrowElbowDownRight size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
                                                     <span className={`text-sm font-black truncate ${entry.enabled ? '' : 'line-through decoration-2'}`}>{prompt.name}</span>
-                                                    {isAbsolute && <span className="label-mono text-[8px] text-[#1c1b1a]/50 shrink-0">@{prompt.injection_depth ?? 4}</span>}
+                                                    {isAbsolute && <span className="label-mono text-[8px] text-[#26242a]/50 shrink-0">@{prompt.injection_depth ?? 4}</span>}
                                                 </div>
                                                 <div className="flex items-center gap-1.5 mt-0.5">
                                                     <VoiceStamp role={prompt.role} />
                                                     {isCore
-                                                        ? <span className="text-[10px] text-[#1c1b1a]/45 truncate">{hint}</span>
-                                                        : <span className="label-mono text-[8px] text-[#1c1b1a]/40">≈{estimateTokens(prompt.content || '')} TK</span>}
+                                                        ? <span className="text-[10px] text-[#26242a]/45 truncate">{hint}</span>
+                                                        : <span className="label-mono text-[8px] text-[#26242a]/40">≈{estimateTokens(prompt.content || '')} TK</span>}
                                                 </div>
                                             </button>
                                             {!isCore && (
-                                                <button onClick={() => handleDetach(entry.identifier)} className="p-1.5 text-[#1c1b1a]/40 hover:text-[#1c1b1a] active:scale-90 transition-all shrink-0" title="从架上取下（字条留在字库）">
+                                                <button onClick={() => handleDetach(entry.identifier)} className="p-1.5 text-[#26242a]/40 hover:text-[#26242a] active:scale-90 transition-all shrink-0" title="从架上取下（字条留在字库）">
                                                     <Eject size={14} weight="bold" />
                                                 </button>
                                             )}
@@ -897,7 +893,7 @@ const PresetApp: React.FC = () => {
                             </div>
                         </div>
 
-                        <p className="text-[13px] text-[#1c1b1a]/50 leading-relaxed px-2" style={HAND_CN}>
+                        <p className="text-[13px] text-[#26242a]/50 leading-relaxed px-2" style={HAND_CN}>
                             带 <Placeholder size={12} weight="bold" className="inline" /> 的是占位铅块（marker）：Chat History 处填进聊天记录；角色相关的铅块共同对应
                             Moro 的角色核心上下文（人设+世界书+记忆+印象），填在架上第一枚启用的角色铅块处。带 <ArrowElbowDownRight size={12} weight="bold" className="inline" /> 的按
                             @深度插进聊天历史（和酒馆的 In-Chat 注入一致）。
@@ -905,15 +901,15 @@ const PresetApp: React.FC = () => {
 
                         {/* 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域）：
                             随字版走，可在这里直接增/删/改/启停（与补丁铺共用缝纫台）。 */}
-                        <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                        <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
                             <Tape className="-top-2.5 left-8 rotate-[3deg] w-12" />
                             <div className="flex items-end justify-between">
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/45 flex items-center gap-1">
+                                <span className="label-mono text-[8px] text-[#26242a]/45 flex items-center gap-1">
                                     <Scissors size={11} weight="bold" /> PRESET PATCHES / 随字版的补丁
                                 </span>
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/35">{presetRegex.length} 条</span>
+                                <span className="label-mono text-[8px] text-[#26242a]/35">{presetRegex.length} 条</span>
                             </div>
-                            <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>
                                 这些正则补丁跟着这副字版走（酒馆 extensions.regex_scripts）：只有选中本字版、且印坊开印时才生效，执行顺序排在补丁铺「满铺通用」之后、角色「只缝给 TA」之前。点一条即可拆开重缝。
                             </p>
                             {presetRegex.length > 0 && (
@@ -924,15 +920,15 @@ const PresetApp: React.FC = () => {
                                         return (
                                             <div
                                                 key={s.id}
-                                                className={`flex items-center gap-2 border-2 border-[#1c1b1a]/40 px-2 py-2 bg-white ${s.disabled ? 'opacity-45' : ''}`}
+                                                className={`flex items-center gap-2 border border-black/10 rounded-xl/40 px-2 py-2 bg-white ${s.disabled ? 'opacity-45' : ''}`}
                                             >
-                                                <Scissors size={14} weight="bold" className="shrink-0 text-[#1c1b1a]/55" />
+                                                <Scissors size={14} weight="bold" className="shrink-0 text-[#26242a]/55" />
                                                 <button onClick={() => openEditPresetRegex(s)} className="flex-1 min-w-0 text-left" title="拆开重缝这条补丁">
                                                     <div className={`text-sm font-black truncate ${s.disabled ? 'line-through decoration-2' : ''}`}>{s.scriptName}</div>
-                                                    <div className="label-mono text-[9px] text-[#1c1b1a]/40 truncate">{s.findRegex}</div>
+                                                    <div className="label-mono text-[9px] text-[#26242a]/40 truncate">{s.findRegex}</div>
                                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#1c1b1a]/70">{scope}</span>
-                                                        {places && <span className="label-mono text-[8px] text-[#1c1b1a]/40 truncate">{places}</span>}
+                                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#26242a]/70">{scope}</span>
+                                                        {places && <span className="label-mono text-[8px] text-[#26242a]/40 truncate">{places}</span>}
                                                         {looksLikeWrapMisconfig(s) && (
                                                             <span
                                                                 role="button"
@@ -940,14 +936,14 @@ const PresetApp: React.FC = () => {
                                                                 onClick={(e) => { e.stopPropagation(); fixPresetRegexWrap(s.id); }}
                                                                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); fixPresetRegexWrap(s.id); } }}
                                                                 title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
-                                                                className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#1c1b1a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+                                                                className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#26242a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
                                                             >
                                                                 ⚠ 像在改原文？一键改
                                                             </span>
                                                         )}
                                                     </div>
                                                 </button>
-                                                <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#1c1b1a]/40 hover:text-[#1c1b1a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
+                                                <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#26242a]/40 hover:text-[#26242a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
                                                     <Trash size={14} weight="bold" />
                                                 </button>
                                                 <InkSwitch small on={!s.disabled} onChange={v => togglePresetRegex(s.id, v)} />
@@ -994,9 +990,9 @@ const PresetApp: React.FC = () => {
             {/* 从字库里捡一枚 */}
             {showInsert && (
                 <div className="fixed inset-0 z-[100] flex items-end justify-center animate-fade-in" onClick={() => setShowInsert(false)}>
-                    <div className="absolute inset-0 bg-[#1c1b1a]/45" />
+                    <div className="absolute inset-0 bg-black/40" />
                     <div
-                        className="relative w-full max-h-[60vh] bg-[#f7f5ef] border-t-2 border-x-2 border-[#1c1b1a] p-5 overflow-y-auto no-scrollbar animate-slide-up"
+                        className="relative w-full max-h-[60vh] bg-white border-t-2 border-x-2 border-[#1c1b1a] p-5 overflow-y-auto no-scrollbar animate-slide-up"
                         style={DOT_BG}
                         onClick={e => e.stopPropagation()}
                     >
@@ -1008,7 +1004,7 @@ const PresetApp: React.FC = () => {
                         >
                             <X size={13} weight="bold" color={INK} />
                         </button>
-                        <div className="label-mono text-[9px] text-[#1c1b1a]/45">SPARE TYPES</div>
+                        <div className="label-mono text-[9px] text-[#26242a]/45">SPARE TYPES</div>
                         <h3 className="text-lg font-black tracking-wide mb-3">字库 —— 捡一枚回排字架</h3>
                         <div className="space-y-2">
                             {detachedPrompts.map((p, i) => (
@@ -1017,7 +1013,7 @@ const PresetApp: React.FC = () => {
                                     onClick={() => handleInsertExisting(p.identifier)}
                                     className={`w-full flex items-center gap-2 px-3 py-2.5 text-left ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'} ${STICKER}`}
                                 >
-                                    {p.marker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#1c1b1a]/60" />}
+                                    {p.marker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
                                     <span className="text-sm font-black truncate flex-1">{p.name}</span>
                                     <VoiceStamp role={p.role} />
                                 </button>
