@@ -81,8 +81,8 @@ const stripVoiceTag = (text: string): string => {
 
 /* ─────────────── 黑白拼贴手账 视觉零件 ─────────────── */
 
-const PAPER_BG = '#efece3';   // 牛皮/米纸底色
-const INK = '#1b1a17';        // 墨黑
+const PAPER_BG = '#f7f5f2';
+const INK = '#26242a';
 
 /** 一截斜贴的胶带 */
 const Tape: React.FC<{ className?: string; style?: React.CSSProperties }> = ({ className = '', style }) => (
@@ -94,7 +94,7 @@ const Tape: React.FC<{ className?: string; style?: React.CSSProperties }> = ({ c
 
 /** 邮戳式标题徽记 */
 const Postmark: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <span className={`inline-flex items-center justify-center border-2 border-dashed border-black px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] ${className}`}>
+    <span className={`inline-flex items-center justify-center border border-black/10 rounded-2xl px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] ${className}`}>
         {children}
     </span>
 );
@@ -103,8 +103,8 @@ const Postmark: React.FC<{ children: React.ReactNode; className?: string }> = ({
 const Avatar: React.FC<{ name: string; src?: string; sizeClass?: string; tilt?: string }> = ({ name, src, sizeClass = 'w-12 h-12 text-base', tilt = '-rotate-2' }) => (
     <div className={`relative shrink-0 ${tilt}`}>
         {src
-            ? <img src={src} alt={name} className={`${sizeClass} object-cover border-2 border-black`} style={{ boxShadow: '2px 2px 0 #000' }} />
-            : <div className={`${sizeClass} border-2 border-black bg-white flex items-center justify-center font-serif font-bold text-black`} style={{ boxShadow: '2px 2px 0 #000' }}>{name[0] || '某'}</div>}
+            ? <img src={src} alt={name} className={`${sizeClass} object-cover border border-black/10 rounded-xl`} style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }} />
+            : <div className={`${sizeClass} border border-black/10 rounded-xl bg-white flex items-center justify-center font-serif font-bold text-black`} style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }}>{name[0] || '某'}</div>}
         {/* 左上照片角 */}
         <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-black" />
         <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-black" />
@@ -396,7 +396,7 @@ const PhoneApp: React.FC = () => {
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!characters.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border-2 border-dashed border-black p-5 -rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
+                    <div className="border border-black/10 rounded-2xl p-5 -rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                         <AddressBook size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">名片夹空空如也</p>
@@ -405,10 +405,10 @@ const PhoneApp: React.FC = () => {
             )}
             <div className="space-y-3.5">
                 {characters.map((char, i) => (
-                    <div key={char.id} className={`relative bg-white border-2 border-black px-3.5 py-3 ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
+                    <div key={char.id} className={`relative bg-white border border-black/10 rounded-xl px-3.5 py-3 ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                         <Tape className="w-12 h-5 -top-2.5 left-6 rotate-[-4deg]" />
                         <div className="flex items-center gap-3.5">
-                            <button onClick={() => callCharacter(char)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left active:translate-x-px active:translate-y-px transition-transform">
+                            <button onClick={() => callCharacter(char)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left press-soft">
                                 <Avatar name={char.name} src={char.avatar} tilt={i % 2 ? 'rotate-2' : '-rotate-2'} />
                                 <div className="min-w-0">
                                     <div className="text-sm font-serif font-bold text-black truncate">{char.name}</div>
@@ -417,14 +417,14 @@ const PhoneApp: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => callCharacter(char)}
-                                className="w-9 h-9 border-2 border-black bg-black text-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform"
+                                className="w-9 h-9 border border-black/10 rounded-xl bg-[#26242a] text-white flex items-center justify-center press-soft"
                                 title={`拨给 ${char.name}`}
                             >
                                 <Phone size={16} weight="fill" />
                             </button>
                             <button
                                 onClick={() => triggerIncoming(char)}
-                                className="w-9 h-9 border-2 border-black bg-white text-black flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform"
+                                className="w-9 h-9 border border-black/10 rounded-xl bg-white text-black flex items-center justify-center press-soft"
                                 title="让 TA 摇一通电话给我"
                             >
                                 <PhoneIncoming size={16} weight="bold" />
@@ -445,7 +445,7 @@ const PhoneApp: React.FC = () => {
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!logs.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border-2 border-dashed border-black p-5 rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
+                    <div className="border border-black/10 rounded-2xl p-5 rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                         <Receipt size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">还没有存根</p>
@@ -457,12 +457,12 @@ const PhoneApp: React.FC = () => {
                     const { Icon, label, dashed } = directionMeta(log.direction);
                     const missed = log.direction === 'missed';
                     return (
-                        <div key={log.id} className={`relative bg-white px-3.5 py-3 ${dashed ? 'border-2 border-dashed' : 'border-2'} border-black ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
+                        <div key={log.id} className={`relative bg-white px-3.5 py-3 ${dashed ? 'border-2 border-dashed' : 'border-2'} border-black ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                             {/* 左侧票根锯齿缺口 */}
-                            <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#efece3] border-2 border-black rounded-full -ml-2" />
+                            <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#f7f5f2] border border-black/10 rounded-xl rounded-full -ml-2" />
                             <div className="flex items-center gap-3">
-                                <button onClick={() => redial(log)} className="flex items-center gap-3 flex-1 min-w-0 text-left active:translate-x-px active:translate-y-px transition-transform">
-                                    <div className="w-8 h-8 border-2 border-black flex items-center justify-center shrink-0 bg-white">
+                                <button onClick={() => redial(log)} className="flex items-center gap-3 flex-1 min-w-0 text-left press-soft">
+                                    <div className="w-8 h-8 border border-black/10 rounded-xl flex items-center justify-center shrink-0 bg-white">
                                         <Icon size={16} weight="bold" className="text-black" />
                                     </div>
                                     <div className="min-w-0 flex-1">
@@ -510,8 +510,8 @@ const PhoneApp: React.FC = () => {
                                 onPointerUp={handleZeroUp}
                                 onPointerLeave={handleZeroCancel}
                                 onContextMenu={e => e.preventDefault()}
-                                className="w-[64px] h-[64px] border-2 border-black bg-white flex flex-col items-center justify-center active:translate-x-px active:translate-y-px transition-transform select-none touch-none"
-                                style={{ boxShadow: '3px 3px 0 #000' }}
+                                className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-white flex flex-col items-center justify-center press-soft select-none touch-none"
+                                style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
                             >
                                 <span className="text-2xl font-serif text-black leading-none">0</span>
                                 <span className="text-[10px] text-neutral-500 mt-0.5 tracking-widest font-mono">+</span>
@@ -520,8 +520,8 @@ const PhoneApp: React.FC = () => {
                             <button
                                 key={key}
                                 onClick={() => appendKey(key)}
-                                className="w-[64px] h-[64px] border-2 border-black bg-white flex flex-col items-center justify-center active:translate-x-px active:translate-y-px transition-transform select-none"
-                                style={{ boxShadow: '3px 3px 0 #000' }}
+                                className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-white flex flex-col items-center justify-center press-soft select-none"
+                                style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
                             >
                                 <span className="text-2xl font-serif text-black leading-none">{key}</span>
                                 <span className="text-[10px] text-neutral-500 mt-0.5 tracking-widest h-[12px] font-mono">{sub}</span>
@@ -542,8 +542,8 @@ const PhoneApp: React.FC = () => {
                     </button>
                     <button
                         onClick={() => handleDial()}
-                        className="w-[64px] h-[64px] border-2 border-black bg-black text-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform"
-                        style={{ boxShadow: '3px 3px 0 #000' }}
+                        className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-[#26242a] text-white flex items-center justify-center press-soft"
+                        style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
                         title="拨号"
                     >
                         <Phone size={26} weight="fill" />
@@ -558,12 +558,12 @@ const PhoneApp: React.FC = () => {
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!recordingsLoaded && (
                 <div className="flex items-center justify-center py-20">
-                    <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border border-black/10 rounded-xl border-t-transparent rounded-full animate-spin" />
                 </div>
             )}
             {recordingsLoaded && !recordings.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border-2 border-dashed border-black p-5 -rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
+                    <div className="border border-black/10 rounded-2xl p-5 -rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                         <VinylRecord size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">还没有留声片</p>
@@ -574,10 +574,10 @@ const PhoneApp: React.FC = () => {
                 {recordings.map((rec, i) => {
                     const expanded = expandedSessionId === rec.sessionId;
                     return (
-                        <div key={`${rec.charId}-${rec.sessionId}`} className={`relative bg-white border-2 border-black ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
+                        <div key={`${rec.charId}-${rec.sessionId}`} className={`relative bg-white border border-black/10 rounded-xl ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
                             <button
                                 onClick={() => { setExpandedSessionId(expanded ? null : rec.sessionId); if (expanded) stopPlayback(); }}
-                                className="w-full flex items-center gap-3.5 px-3.5 py-3 text-left active:translate-x-px active:translate-y-px transition-transform"
+                                className="w-full flex items-center gap-3.5 px-3.5 py-3 text-left press-soft"
                             >
                                 <Avatar name={rec.charName} src={rec.charAvatar} sizeClass="w-11 h-11 text-sm" tilt={i % 2 ? 'rotate-2' : '-rotate-2'} />
                                 <div className="min-w-0 flex-1">
@@ -586,7 +586,7 @@ const PhoneApp: React.FC = () => {
                                         {new Date(rec.startTs).toLocaleString('zh-CN')} · {formatDuration(rec.durationSec)} · {rec.lines.length} 句
                                     </div>
                                 </div>
-                                <div className="w-7 h-7 border-2 border-black flex items-center justify-center shrink-0">
+                                <div className="w-7 h-7 border border-black/10 rounded-xl flex items-center justify-center shrink-0">
                                     {expanded ? <CaretUp size={14} weight="bold" className="text-black" /> : <CaretDown size={14} weight="bold" className="text-black" />}
                                 </div>
                             </button>
@@ -599,7 +599,7 @@ const PhoneApp: React.FC = () => {
                                             {!!line.audioUrl && (
                                                 <button
                                                     onClick={() => playLine(line.id, line.audioUrl)}
-                                                    className={`mt-2 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 border-2 border-black font-mono transition active:scale-95 ${playingLineId === line.id ? 'bg-black text-white' : 'bg-white text-black'}`}
+                                                    className={`mt-2 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 border border-black/10 rounded-xl font-mono transition active:scale-95 ${playingLineId === line.id ? 'bg-[#26242a] text-white' : 'bg-white text-black'}`}
                                                 >
                                                     {playingLineId === line.id ? <><Pause size={11} weight="fill" /> 停</> : <><Play size={11} weight="fill" /> 放</>}
                                                 </button>
@@ -626,9 +626,9 @@ const PhoneApp: React.FC = () => {
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAPER_BG, color: INK }}>
             {/* 顶部封面条 */}
-            <div className="shrink-0 px-4 pt-3 pb-2 border-b-2 border-black bg-[#efece3] z-10">
+            <div className="shrink-0 px-4 pt-3 pb-2 border-b-2 border-black bg-[#f7f5f2] z-10">
                 <div className="flex items-center gap-2">
-                    <button onClick={closeApp} className="w-9 h-9 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" style={{ boxShadow: '2px 2px 0 #000' }} title="收起">
+                    <button onClick={closeApp} className="w-9 h-9 border border-black/10 rounded-xl bg-white flex items-center justify-center press-soft" style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }} title="收起">
                         <span className="text-lg font-serif leading-none text-black">‹</span>
                     </button>
                     <div className="flex-1 flex items-center gap-2">
@@ -641,7 +641,7 @@ const PhoneApp: React.FC = () => {
                     {/* 语音通话已整合进回声亭：从这里进入实时语音通话（选角色 / 语音通话记录） */}
                     <button
                         onClick={() => openApp(AppID.Call)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-black bg-black text-white text-xs font-mono uppercase tracking-wider active:translate-x-px active:translate-y-px transition-transform"
+                        className="flex items-center gap-1.5 px-3 py-1.5 border border-black/10 rounded-xl bg-[#26242a] text-white text-xs font-mono uppercase tracking-wider press-soft"
                         style={{ boxShadow: '2px 2px 0 rgba(27,26,23,0.35)' }}
                     >
                         <Waveform size={14} weight="bold" />
@@ -657,12 +657,12 @@ const PhoneApp: React.FC = () => {
                             <button
                                 key={id}
                                 onClick={() => switchTab(id)}
-                                className={`relative flex items-center gap-1.5 px-3 pt-1.5 pb-2 border-2 border-black border-b-0 transition-transform ${active ? 'bg-black text-white -translate-y-0.5' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.5deg]' : '-rotate-[0.5deg]'}`}
+                                className={`relative flex items-center gap-1.5 px-3 pt-1.5 pb-2 border border-black/10 rounded-xl border-b-0 transition-transform ${active ? 'bg-[#26242a] text-white -translate-y-0.5' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.5deg]' : '-rotate-[0.5deg]'}`}
                             >
                                 <Icon size={15} weight={active ? 'fill' : 'bold'} />
                                 <span className="text-[11px] font-mono tracking-wide">{label}</span>
                                 {id === 'logs' && missedBadge > 0 && (
-                                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 border-2 border-black bg-white text-black text-[9px] font-bold flex items-center justify-center rotate-6">
+                                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 border border-black/10 rounded-xl bg-white text-black text-[9px] font-bold flex items-center justify-center rotate-6">
                                         {missedBadge > 9 ? '9+' : missedBadge}
                                     </span>
                                 )}
@@ -673,7 +673,7 @@ const PhoneApp: React.FC = () => {
             </div>
 
             {/* 内容区（顶在索引标签下，露出标签底边） */}
-            <div className="flex-1 min-h-0 flex flex-col border-t-2 border-black bg-[#efece3]">
+            <div className="flex-1 min-h-0 flex flex-col border-t-2 border-black bg-[#f7f5f2]">
                 {tab === 'contacts' && renderContacts()}
                 {tab === 'logs' && renderLogs()}
                 {tab === 'dial' && renderDialPad()}
@@ -686,7 +686,7 @@ const PhoneApp: React.FC = () => {
                     {/* 报纸网点纹理 */}
                     <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#efece3 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
                     <div className="flex flex-col items-center relative">
-                        <div className="w-24 h-24 border-2 border-[#efece3] flex items-center justify-center -rotate-3">
+                        <div className="w-24 h-24 border-2 border-white flex items-center justify-center -rotate-3">
                             <Phone size={38} className="text-[#efece3]" />
                         </div>
                         <div className="mt-6 text-2xl font-serif tracking-[0.2em] tabular-nums text-center px-6 break-all">{formatDialDisplay(outgoingNumber)}</div>
@@ -694,7 +694,7 @@ const PhoneApp: React.FC = () => {
                     </div>
                     <button
                         onClick={() => endFakeOutgoing(false)}
-                        className="w-16 h-16 border-2 border-[#efece3] bg-[#efece3] flex items-center justify-center active:scale-95 transition relative"
+                        className="w-16 h-16 border-2 border-white bg-[#f7f5f2] flex items-center justify-center active:scale-95 transition relative"
                         title="挂断"
                     >
                         <PhoneDisconnect size={28} weight="fill" className="text-black" />
@@ -720,7 +720,7 @@ const PhoneApp: React.FC = () => {
                         <div className="flex flex-col items-center gap-2">
                             <button
                                 onClick={() => declineIncoming(false)}
-                                className="w-16 h-16 border-2 border-[#efece3] bg-transparent flex items-center justify-center active:scale-95 transition"
+                                className="w-16 h-16 border-2 border-white bg-transparent flex items-center justify-center active:scale-95 transition"
                             >
                                 <PhoneDisconnect size={28} weight="fill" className="text-[#efece3]" />
                             </button>
@@ -729,7 +729,7 @@ const PhoneApp: React.FC = () => {
                         <div className="flex flex-col items-center gap-2">
                             <button
                                 onClick={acceptIncoming}
-                                className="w-16 h-16 border-2 border-[#efece3] bg-[#efece3] flex items-center justify-center active:scale-95 transition animate-bounce"
+                                className="w-16 h-16 border-2 border-white bg-[#f7f5f2] flex items-center justify-center active:scale-95 transition animate-bounce"
                             >
                                 <Phone size={28} weight="fill" className="text-black" />
                             </button>
