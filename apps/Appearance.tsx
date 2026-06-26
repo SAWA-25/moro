@@ -845,8 +845,8 @@ const DesktopLockEditor: React.FC<{
 
     const handleLockWallpaperUpload = async (file: File) => {
         try {
-            addToast('正在裁锁屏壁纸…', 'info');
-            const dataUrl = await processImage(file, { maxWidth: 1600, quality: 0.92 });
+            addToast('正在读取锁屏壁纸（原画质）…', 'info');
+            const dataUrl = await processImage(file, { skipCompression: true });
             setLock({ wallpaper: dataUrl });
             addToast('锁屏壁纸贴好了', 'success');
         } catch (e: any) {

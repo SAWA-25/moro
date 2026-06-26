@@ -239,7 +239,7 @@ const LockScreen: React.FC = () => {
             `}</style>
             {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
             {lockStyle?.customCss && <style>{lockStyle.customCss}</style>}
-            <div className="absolute inset-0 bg-black/5 backdrop-blur-sm" />
+            <div className="moro-lock-wallpaper-tint absolute inset-0 bg-black/5" />
 
             {/* 治愈系氛围光斑：缓慢漂移的暖紫/蜜桃光晕 */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
