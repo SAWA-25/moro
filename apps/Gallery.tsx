@@ -5,8 +5,8 @@ import { DB } from '../utils/db';
 import { GalleryImage } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import {
-    InsShell, InsHeader, InsScroll, Polaroid, PolaroidStack, StoryRing, InsCard, InsButton,
-    IconCircle, InsEmpty, InsDialog, SectionLabel, Sticker, accent, INK, INK_SOFT,
+    InsShell, InsHeader, InsScroll, Polaroid, StoryRing, InsCard, InsButton,
+    IconCircle, InsEmpty, InsDialog, SectionLabel, accent, INK, INK_SOFT,
 } from '../components/ui/insKit';
 import {
     Trash, ArrowsClockwise, ChatCircleText, Images, Sparkle, Spinner, PencilSimpleLine, CaretLeft,
@@ -225,33 +225,30 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
 
     const activeChar = characters.find(c => c.id === activeCharId);
 
-    // 相册墙：每位角色一摞拍立得（叠层堆 + 彩色胶带 + 张数角标），发牌式错落入场
-    const TAPE_CYCLE = ['rose', 'amber', 'sky', 'violet', 'teal', 'orange'] as const;
+    // 相册墙：每位角色一张拍立得（头像彩照 + 手写名 + 张数角标），错落微旋转
     const renderAlbums = () => (
-        <div className="relative z-10 grid grid-cols-2 gap-x-6 gap-y-10 px-5 pt-5 pb-10">
-            {/* 随手贴的装饰贴纸 */}
-            <Sticker rotate={-12} className="text-2xl" style={{ top: -2, right: 14 }}>📷</Sticker>
+        <div className="relative z-10 grid grid-cols-2 gap-x-5 gap-y-8 px-5 pt-3 pb-8">
             {characters.map((char, i) => {
                 const count = albumCounts[char.id] || 0;
                 const tilt = i % 4 === 0 ? -2.5 : i % 4 === 1 ? 1.8 : i % 4 === 2 ? -1.2 : 2.4;
                 return (
-                    <PolaroidStack
+                    <Polaroid
                         key={char.id}
                         src={char.avatar}
                         caption={char.name}
                         rotate={tilt}
                         accent={AC}
-                        tape={TAPE_CYCLE[i % TAPE_CYCLE.length]}
                         fallback={char.name.charAt(0)}
                         onClick={() => handleCharClick(char.id)}
                         onPointerDown={() => handleAlbumPressStart(char.id)}
                         onPointerUp={handleAlbumPressEnd}
                         onPointerLeave={handleAlbumPressEnd}
-                        style={{ animationDelay: `${i * 90}ms` }}
-                        badge={count > 0 ? (
-                            <span className="absolute top-1.5 left-1.5 text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full animate-sticker" style={{ background: 'rgba(255,255,255,0.94)', color: accent(AC).ink, boxShadow: '0 2px 6px rgba(0,0,0,0.15)', animationDelay: `${i * 90 + 300}ms` }}>{count} 张</span>
-                        ) : null}
-                    />
+                        style={{ animationDelay: `${i * 45}ms` }}
+                    >
+                        {count > 0 && (
+                            <span className="absolute top-1.5 left-1.5 text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', color: accent(AC).ink, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>{count} 张</span>
+                        )}
+                    </Polaroid>
                 );
             })}
             {characters.length === 0 && (
@@ -264,8 +261,8 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
     const renderGrid = () => (
         <InsScroll className="px-0">
             {/* IG 式资料条 */}
-            <div className="flex items-center gap-4 px-5 pt-2 pb-4 animate-slide-fade">
-                <StoryRing src={activeChar?.avatar} size={64} active={images.length > 0} spin={false} fallback={activeChar?.name?.charAt(0)} className={images.length > 0 ? 'ins-ring-pulse' : ''} />
+            <div className="flex items-center gap-4 px-5 pt-2 pb-4">
+                <StoryRing src={activeChar?.avatar} size={64} active={images.length > 0} spin={false} fallback={activeChar?.name?.charAt(0)} />
                 <div className="min-w-0">
                     <div className="text-[18px] font-extrabold truncate" style={{ color: INK }}>{activeChar?.name || '相册'}</div>
                     <div className="text-[12px] mt-0.5" style={{ color: INK_SOFT }}>
@@ -311,8 +308,7 @@ CRITICAL: Stay in character. If there's conversation context, your comment shoul
 
             {/* 拍立得照片（暗台上轻微旋转） */}
             <div className="flex-1 min-h-0 w-full flex items-center justify-center relative overflow-hidden p-6">
-                <div className="animate-develop-wiggle relative" style={{ ['--pl-rot' as any]: '-1.2deg', maxHeight: '100%', maxWidth: '100%' }}>
-                    <span aria-hidden className="absolute -top-3 left-1/2 -translate-x-1/2 w-20 h-6 rounded-[2px] z-10" style={{ background: accent(AC).solid, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 5px, transparent 5px 11px)', opacity: 0.8, transform: 'translateX(-50%) rotate(-4deg)', boxShadow: '0 3px 7px -3px rgba(0,0,0,0.4)' }} />
+                <div className="animate-develop" style={{ ['--pl-rot' as any]: '-1.2deg', maxHeight: '100%', maxWidth: '100%' }}>
                     <div className="p-2.5 pb-7" style={{ background: '#fff', borderRadius: 8, boxShadow: '0 30px 60px -20px rgba(0,0,0,0.75)' }}>
                         <img src={selectedImage.url} className="max-w-full object-contain" style={{ maxHeight: '52vh', borderRadius: 3, display: 'block' }} alt="Detail" />
                         {selectedImage.review && (

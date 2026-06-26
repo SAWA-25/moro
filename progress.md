@@ -348,8 +348,3 @@ pm run build passes after the time-gap grouping fix.
   - **共享积木库** `components/ui/insKit.tsx`（对标折子戏专属的 `apps/theater/scrapbook.tsx`，但本库全系统通用）：暖白画布 + 暖墨字 token、`ACCENTS` 16 色（取自 constants 各 App 的 color → 实色/浅底/浅底字色）+ `accent()`；积木 `InsShell`（暖白外壳 + 顶部强调色微光）/`InsHeader`（软圆返回 + 中文粗标 + 等宽英文小标）/`InsScroll`/`IconCircle`/`Polaroid`（**彩色**拍立得相框 + 显影动画 + 手写题字 + 日期戳）/`StoryRing`（IG 彩环头像）/`InsCard`/`InsButton`（实色/浅底/幽灵/IG 渐变）/`SectionLabel`/`Chip`/`InsEmpty`/`InsDialog`/`InsSheet`。各 App 换肤从此取用，「结构语言一致、各家用自己的强调色」。
   - **旗舰 App·相册（`apps/Gallery.tsx`）整体重做**（逻辑零改动，仅换渲染层）：① 相册墙＝每位角色一张**彩色拍立得**（头像 + 手写名 + 张数角标 + 错落微旋转 + 逐张显影）；② 网格＝**IG 个人主页式**（顶部彩色故事环头像 + 名字 + 张数，下方紧密三列彩照网格 + 留言/日期角标 + 逐张显影）；③ 详情＝**暖调灯箱 + 拍立得照片**（轻旋显影），底部「背面题字」白卡（故事环头像 + 手写留言 + 换句留言/翻看对话）。撕→删/清空文案去手账化。强调色＝orange。
   - `pnpm tsc --noEmit` 0 非 api 错误，`vite build` 通过。后续逐个 App 沿用 insKit 换肤（絮语/Chat 不动）。
-- 全局界面美化·「Ins 风 + 拍立得」加料（按反馈：更丰富、加进入动画/互动、别太简约）：
-  - **全局动画层扩充** `index.html`：`blobDrift`/`.ins-blob`（彩色柔光团漂浮）、`.ins-grain`（胶片颗粒）、`polaroidDeal`/`.animate-deal`（拍立得发牌甩入）、`developWiggle`/`.animate-develop-wiggle`（显影+轻颤）、`stickerPop`/`.animate-sticker`（贴纸蹦入）、`.animate-slide-fade`、`.tilt-hover`（桌面 hover 微倾）、`.ins-ring-pulse`（故事环呼吸光晕）、`.ins-sheen`（高光扫过）。
-  - **insKit 加料** `components/ui/insKit.tsx`：新增 `GradientMesh`（彩色漂浮光背景）、`Tape`（彩色和纸胶带）、`PolaroidStack`（相册封面叠层照片堆）、`Sticker`（emoji 贴纸蹦入）；`Polaroid` 加 `tape`/`anim`/`hover` 微倾；`InsShell` 默认带 `mesh` + `grain`。
-  - **相册旗舰加料** `apps/Gallery.tsx`：相册墙改叠层堆 + 彩色胶带 + 发牌入场 + 角标蹦入 + 贴纸；网格故事环呼吸光晕；详情显影+轻颤 + 顶缘胶带。
-  - 临时演示页 `demo-gallery.tsx` 同步加料。`tsc` 0 非 api 错误，`vite build` 通过。

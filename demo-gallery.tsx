@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import {
-  InsShell, InsHeader, InsScroll, Polaroid, PolaroidStack, StoryRing, IconCircle,
-  InsButton, SectionLabel, Chip, Sticker, accent, INK, INK_SOFT,
+  InsShell, InsHeader, InsScroll, Polaroid, StoryRing, IconCircle,
+  InsButton, SectionLabel, Chip, accent, INK, INK_SOFT,
 } from './components/ui/insKit';
 import { Trash, ArrowsClockwise, ChatCircleText, PencilSimpleLine, Sparkle, CaretLeft, Images } from '@phosphor-icons/react';
 
@@ -34,15 +34,13 @@ const Albums: React.FC = () => (
   <InsShell accent={AC}>
     <InsHeader accent={AC} title="相册" en="THE GALLERY" onBack={() => {}} />
     <div className="flex-1 overflow-y-auto no-scrollbar min-h-0">
-      <div className="relative z-10 grid grid-cols-2 gap-x-6 gap-y-10 px-5 pt-5 pb-10">
-        <Sticker rotate={-12} className="text-2xl" style={{ top: -2, right: 14 }}>📷</Sticker>
+      <div className="relative z-10 grid grid-cols-2 gap-x-5 gap-y-8 px-5 pt-3 pb-8">
         {chars.map((char, i) => {
           const tilt = i % 4 === 0 ? -2.5 : i % 4 === 1 ? 1.8 : i % 4 === 2 ? -1.2 : 2.4;
-          const TAPE = ['rose', 'amber', 'sky', 'violet'] as const;
           return (
-            <PolaroidStack key={char.name} src={char.avatar} caption={char.name} rotate={tilt} accent={AC} tape={TAPE[i % TAPE.length]} onClick={() => {}} style={{ animationDelay: `${i * 90}ms` }}
-              badge={<span className="absolute top-1.5 left-1.5 text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full animate-sticker" style={{ background: 'rgba(255,255,255,0.94)', color: accent(AC).ink, boxShadow: '0 2px 6px rgba(0,0,0,0.15)', animationDelay: `${i * 90 + 300}ms` }}>{char.count} 张</span>}
-            />
+            <Polaroid key={char.name} src={char.avatar} caption={char.name} rotate={tilt} accent={AC} onClick={() => {}} style={{ animationDelay: `${i * 70}ms` }}>
+              <span className="absolute top-1.5 left-1.5 text-[10px] font-black tabular-nums px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', color: accent(AC).ink, boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>{char.count} 张</span>
+            </Polaroid>
           );
         })}
       </div>
@@ -54,8 +52,8 @@ const Grid: React.FC = () => (
   <InsShell accent={AC}>
     <InsHeader accent={AC} title="江予安" en="23 PHOTOS" onBack={() => {}} />
     <InsScroll className="px-0">
-      <div className="flex items-center gap-4 px-5 pt-2 pb-4 animate-slide-fade">
-        <StoryRing src={chars[2].avatar} size={64} active spin={false} className="ins-ring-pulse" />
+      <div className="flex items-center gap-4 px-5 pt-2 pb-4">
+        <StoryRing src={chars[2].avatar} size={64} active spin={false} />
         <div className="min-w-0">
           <div className="text-[18px] font-extrabold truncate" style={{ color: INK }}>江予安</div>
           <div className="text-[12px] mt-0.5" style={{ color: INK_SOFT }}><span className="font-bold tabular-nums" style={{ color: INK }}>23</span> 张照片</div>
@@ -82,8 +80,7 @@ const Detail: React.FC = () => (
       <IconCircle tone="glass"><Trash size={17} weight="bold" /></IconCircle>
     </div>
     <div className="flex-1 min-h-0 w-full flex items-center justify-center relative overflow-hidden p-6">
-      <div className="animate-develop-wiggle relative" style={{ ['--pl-rot' as any]: '-1.2deg' }}>
-        <span aria-hidden className="absolute -top-3 left-1/2 w-20 h-6 rounded-[2px] z-10" style={{ background: accent(AC).solid, backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 5px, transparent 5px 11px)', opacity: 0.8, transform: 'translateX(-50%) rotate(-4deg)', boxShadow: '0 3px 7px -3px rgba(0,0,0,0.4)' }} />
+      <div className="animate-develop" style={{ ['--pl-rot' as any]: '-1.2deg' }}>
         <div className="p-2.5 pb-7" style={{ background: '#fff', borderRadius: 8, boxShadow: '0 30px 60px -20px rgba(0,0,0,0.75)' }}>
           <img src={photos[2]} className="max-w-full object-contain" style={{ maxHeight: '46vh', borderRadius: 3, display: 'block' }} />
           <div className="absolute left-0 right-0 bottom-1.5 px-4 text-center"><span className="text-[12px] font-bold truncate block" style={{ color: '#8a857c', fontFamily: 'var(--font-hand)' }}>江予安 · 留言已写在背面</span></div>

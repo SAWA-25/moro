@@ -56,45 +56,26 @@ export const ACCENTS: Record<AccentName, Accent> = {
 export const accent = (name?: AccentName | string): Accent =>
   (name && (ACCENTS as Record<string, Accent>)[name]) || ACCENTS.rose;
 
-// ── 彩色漂浮光背景：几团缓缓漂浮的彩雾（让暖白底有空气感、不死板）──────
-export const GradientMesh: React.FC<{ accent?: AccentName; className?: string }> = ({ accent: ac, className = '' }) => {
-  const a = accent(ac);
-  // 主色 + 两个互补色彩团，错位漂浮
-  return (
-    <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`} style={{ zIndex: 0 }}>
-      <div className="ins-blob" style={{ width: 280, height: 280, left: '-12%', top: '-8%', background: a.solid, opacity: 0.16, animationDelay: '0s' }} />
-      <div className="ins-blob" style={{ width: 240, height: 240, right: '-14%', top: '6%', background: '#fa7e1e', opacity: 0.12, animationDelay: '-6s' }} />
-      <div className="ins-blob" style={{ width: 300, height: 300, left: '10%', bottom: '-18%', background: '#4f5bd5', opacity: 0.1, animationDelay: '-11s' }} />
-      <div className="ins-blob" style={{ width: 200, height: 200, right: '4%', bottom: '-6%', background: '#d62976', opacity: 0.1, animationDelay: '-3s' }} />
-    </div>
-  );
-};
-
-// ── 满屏外壳：暖白画布 + 彩色漂浮光 + 胶片颗粒 + 安全区 ─────────
+// ── 满屏外壳：暖白画布 + 顶部彩色微光 + 安全区 ────────────────
 export const InsShell: React.FC<{
   children: React.ReactNode;
   accent?: AccentName;
   /** 顶部是否染一层强调色微光（默认开） */
   wash?: boolean;
-  /** 彩色漂浮光背景（默认开；想纯净可关） */
-  mesh?: boolean;
-  /** 胶片颗粒（默认开） */
-  grain?: boolean;
   className?: string;
   style?: React.CSSProperties;
-}> = ({ children, accent: ac, wash = true, mesh = true, grain = true, className = '', style }) => {
+}> = ({ children, accent: ac, wash = true, className = '', style }) => {
   const a = accent(ac);
   return (
     <div
-      className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${grain ? 'ins-grain' : ''} ${className}`}
+      className={`absolute inset-0 flex flex-col overflow-hidden animate-fade-in ${className}`}
       style={{ color: INK, background: CANVAS, ...style }}
     >
-      {mesh && <GradientMesh accent={ac} />}
       {wash && (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 top-0 h-56"
-          style={{ background: `radial-gradient(120% 90% at 50% -28%, ${a.soft}, transparent 70%)`, zIndex: 0 }}
+          style={{ background: `radial-gradient(120% 90% at 50% -28%, ${a.soft}, transparent 70%)` }}
         />
       )}
       {children}
@@ -160,25 +141,7 @@ export const InsHeader: React.FC<{
   );
 };
 
-/** 彩色和纸胶带（贴在拍立得上缘 / 卡片角落，斜条纹半透明） */
-export const Tape: React.FC<{ accent?: AccentName; rotate?: number; className?: string; style?: React.CSSProperties }> = ({ accent: ac, rotate = -4, className = '', style }) => {
-  const a = accent(ac);
-  return (
-    <span aria-hidden className={`absolute select-none ${className}`}
-      style={{
-        background: `${a.solid}`,
-        backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 5px, transparent 5px 11px)',
-        opacity: 0.82,
-        transform: `rotate(${rotate}deg)`,
-        boxShadow: '0 3px 7px -3px rgba(0,0,0,0.3)',
-        borderLeft: '1px solid rgba(255,255,255,0.4)',
-        borderRight: '1px solid rgba(255,255,255,0.4)',
-        ...style,
-      }} />
-  );
-};
-
-// ── 拍立得相框（照片保留彩色 + 显影/发牌动画 + 彩色胶带 + 悬浮微倾 + 手写题字）──
+// ── 拍立得相框（照片保留彩色 + 显影动画 + 手写题字）────────────
 export const Polaroid: React.FC<{
   src?: string;
   caption?: string;
@@ -194,38 +157,30 @@ export const Polaroid: React.FC<{
   ratio?: number;
   accent?: AccentName;
   fallback?: React.ReactNode;
-  /** 入场动画开关（默认开） */
+  /** 入场显影动画（默认开） */
   develop?: boolean;
-  /** 入场动画风格：显影颤动(默认) / 发牌甩入 / 纯显影 */
-  anim?: 'wiggle' | 'deal' | 'develop';
-  /** 上缘彩色胶带（传强调色名即出现） */
-  tape?: AccentName | null;
-  /** 桌面端 hover 微倾（默认开） */
-  hover?: boolean;
   className?: string;
   style?: React.CSSProperties;
   children?: React.ReactNode; // 照片层叠加内容（角标等）
-}> = ({ src, caption, date, selected = false, onClick, onPointerDown, onPointerUp, onPointerLeave, rotate = 0, ratio = 1, accent: ac, fallback, develop = true, anim = 'wiggle', tape = null, hover = true, className = '', style, children }) => {
+}> = ({ src, caption, date, selected = false, onClick, onPointerDown, onPointerUp, onPointerLeave, rotate = 0, ratio = 1, accent: ac, fallback, develop = true, className = '', style, children }) => {
   const a = accent(ac);
-  const animClass = !develop ? '' : anim === 'deal' ? 'animate-deal' : anim === 'develop' ? 'animate-develop' : 'animate-develop-wiggle';
   return (
     <button
       onClick={onClick}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerLeave}
-      className={`relative shrink-0 press-soft ${hover ? 'tilt-hover' : ''} ${animClass} ${className}`}
-      style={{ ['--pl-rot' as any]: `${rotate}deg`, transform: !develop ? `rotate(${rotate}deg)` : undefined, ...style }}
+      className={`relative shrink-0 press-soft ${develop ? 'animate-develop' : ''} ${className}`}
+      style={{ ['--pl-rot' as any]: `${rotate}deg`, transform: develop ? undefined : `rotate(${rotate}deg)`, ...style }}
     >
-      {tape && <Tape accent={tape} rotate={rotate > 0 ? -6 : 5} className="-top-2.5 left-1/2 -translate-x-1/2 w-14 h-5 rounded-[2px] z-10" />}
       <div
         className="p-2 pb-7"
         style={{
           background: '#ffffff',
           borderRadius: 10,
           boxShadow: selected
-            ? `0 16px 32px -12px ${a.solid}88, 0 0 0 2px ${a.solid}`
-            : '0 16px 32px -16px rgba(38,38,38,0.45), 0 1px 2px rgba(38,38,38,0.06)',
+            ? `0 14px 30px -12px ${a.solid}88, 0 0 0 2px ${a.solid}`
+            : '0 14px 30px -16px rgba(38,38,38,0.42), 0 1px 2px rgba(38,38,38,0.05)',
         }}
       >
         <div className="relative w-full overflow-hidden" style={{ paddingBottom: `${100 / ratio}%`, borderRadius: 4, background: `linear-gradient(135deg, ${a.soft}, #e9e6e1)` }}>
@@ -245,50 +200,11 @@ export const Polaroid: React.FC<{
         )}
       </div>
       {selected && (
-        <span aria-hidden className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[11px] text-white z-10 animate-sticker" style={{ background: a.solid, boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }}>✓</span>
+        <span aria-hidden className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[11px] text-white z-10" style={{ background: a.solid, boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }}>✓</span>
       )}
     </button>
   );
 };
-
-// ── 拍立得叠层堆（相册封面：主照前 + 两张空相纸在后错落露出，像一摞照片）────
-export const PolaroidStack: React.FC<{
-  src?: string;
-  caption?: string;
-  accent?: AccentName;
-  fallback?: React.ReactNode;
-  badge?: React.ReactNode;       // 主照上的角标（张数等）
-  tape?: AccentName | null;
-  rotate?: number;
-  onClick?: () => void;
-  onPointerDown?: (e: React.PointerEvent) => void;
-  onPointerUp?: (e: React.PointerEvent) => void;
-  onPointerLeave?: (e: React.PointerEvent) => void;
-  develop?: boolean;
-  className?: string;
-  style?: React.CSSProperties;
-}> = ({ src, caption, accent: ac, fallback, badge, tape, rotate = 0, onClick, onPointerDown, onPointerUp, onPointerLeave, develop = true, className = '', style }) => {
-  return (
-    <div className={`relative ${develop ? 'animate-deal' : ''} ${className}`} style={{ ['--pl-rot' as any]: `${rotate}deg`, transform: !develop ? `rotate(${rotate}deg)` : undefined, ...style }}>
-      {/* 后面两张空相纸（露出一角，营造一摞的厚度） */}
-      <div aria-hidden className="absolute inset-0 rounded-[10px]" style={{ background: '#fff', transform: 'rotate(6deg) translate(6px,4px)', boxShadow: '0 8px 18px -12px rgba(38,38,38,0.4)' }} />
-      <div aria-hidden className="absolute inset-0 rounded-[10px]" style={{ background: '#fff', transform: 'rotate(-5deg) translate(-5px,3px)', boxShadow: '0 8px 18px -12px rgba(38,38,38,0.4)' }} />
-      <Polaroid
-        src={src} caption={caption} accent={ac} fallback={fallback} tape={tape}
-        rotate={0} develop={false}
-        onClick={onClick} onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerLeave={onPointerLeave}
-        className="relative"
-      >
-        {badge}
-      </Polaroid>
-    </div>
-  );
-};
-
-// ── 贴纸（emoji / 小元素，蹦入动画，随手贴的装饰）──────────────
-export const Sticker: React.FC<{ children: React.ReactNode; rotate?: number; className?: string; style?: React.CSSProperties }> = ({ children, rotate = 0, className = '', style }) => (
-  <span aria-hidden className={`absolute select-none pointer-events-none animate-sticker ${className}`} style={{ ['--st-rot' as any]: `${rotate}deg`, ...style }}>{children}</span>
-);
 
 // ── IG 故事环头像（彩色旋转环；活跃态用）────────────────────────
 export const StoryRing: React.FC<{
