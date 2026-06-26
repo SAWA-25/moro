@@ -16,6 +16,10 @@ import { House, EyeSlash } from '@phosphor-icons/react';
 const POS_KEY = 'moro_fqm_pos';
 const TUCK_KEY = 'moro_fqm_tuck';
 const BUBBLE = 54;
+// 极简 ins 风配色：雾面白底 + 细描边 + 奶杏粉点缀
+const PAW = '#e0a191';          // 奶杏粉猫爪
+const INK = '#6f615a';          // 标签文字（暖灰）
+const HAIR = 'rgba(120,96,86,0.14)';  // 细描边
 const DRAG_THRESHOLD = 6;
 const EDGE_TUCK = 18;           // 拖拽落点离边缘多近就贴边
 const PEEK = 0.52;              // 贴边时露出多少（其余藏到屏幕外）
@@ -267,9 +271,9 @@ const FloatingQuickMenu: React.FC = () => {
         >
             {/* 猫爪悬浮窗局部样式与动画 */}
             <style>{`
-                @keyframes fqmBreathe { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-1.5px) rotate(-2.5deg); } }
-                @keyframes fqmBoop { 0% { transform: scale(1,1); } 28% { transform: scale(1.16,0.82); } 56% { transform: scale(0.92,1.08); } 100% { transform: scale(1,1); } }
-                @keyframes fqmRipple { 0% { transform: scale(0.4); opacity: 0.55; } 100% { transform: scale(2.5); opacity: 0; } }
+                @keyframes fqmBreathe { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
+                @keyframes fqmBoop { 0% { transform: scale(1,1); } 28% { transform: scale(1.14,0.86); } 56% { transform: scale(0.94,1.06); } 100% { transform: scale(1,1); } }
+                @keyframes fqmRipple { 0% { transform: scale(0.4); opacity: 0.5; } 100% { transform: scale(2.5); opacity: 0; } }
                 @keyframes fqmHeart { 0% { transform: translate(-50%,0) scale(0.3); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(-50%,-42px) scale(1); opacity: 0; } }
                 .fqm-paw-idle { animation: fqmBreathe 3.6s ease-in-out infinite; }
                 .fqm-paw-boop { animation: fqmBoop 0.42s cubic-bezier(0.34,1.56,0.64,1); }
@@ -278,27 +282,31 @@ const FloatingQuickMenu: React.FC = () => {
             {/* 菜单（贴边时不显示） */}
             {open && !isTucked && (
                 <div
-                    className="absolute flex flex-col gap-1.5 rounded-[1.4rem] bg-white/90 p-2 shadow-[0_18px_46px_-22px_rgba(40,24,32,0.5)] ring-1 ring-[#ffdcdc]/80 backdrop-blur-xl"
+                    className="absolute flex flex-col gap-2 rounded-[1.5rem] bg-white/80 p-2.5 shadow-[0_18px_44px_-22px_rgba(120,92,82,0.42)] backdrop-blur-xl"
                     style={{
                         [openUp ? 'bottom' : 'top']: BUBBLE + 12,
                         [alignRight ? 'right' : 'left']: 0,
                         flexDirection: openUp ? 'column-reverse' : 'column',
+                        border: `1px solid ${HAIR}`,
                     } as React.CSSProperties}
                 >
                     {items.map((it, i) => (
                         <button
                             key={it.key}
                             onClick={it.onClick}
-                            className={`group flex items-center gap-2 rounded-full p-0.5 ${alignRight ? 'flex-row-reverse' : ''} animate-slide-up`}
+                            className={`group flex items-center gap-2.5 rounded-full p-0.5 ${alignRight ? 'flex-row-reverse' : ''} animate-slide-up`}
                             style={{ animationDelay: `${i * 30}ms` }}
                         >
                             <span
-                                className="w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg shadow-[#ff9a9a]/30 transition-transform duration-200 group-active:scale-90 group-hover:scale-110 group-hover:-rotate-6"
-                                style={{ background: 'linear-gradient(135deg,#ffc6c6 0%,#ff9e9e 100%)' }}
+                                className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-[0_6px_16px_-10px_rgba(120,92,82,0.5)] transition-transform duration-200 group-active:scale-90 group-hover:scale-105"
+                                style={{ color: PAW, border: `1px solid ${HAIR}` }}
                             >
                                 {it.render()}
                             </span>
-                            <span className="px-2.5 py-1 rounded-full bg-white/92 text-[#7a5252] text-[11px] font-extrabold whitespace-nowrap shadow-sm ring-1 ring-[#ffe3e3]">{it.label}</span>
+                            <span
+                                className="px-2.5 py-1 rounded-full bg-white/90 text-[11px] font-semibold whitespace-nowrap shadow-sm"
+                                style={{ color: INK, border: `1px solid ${HAIR}` }}
+                            >{it.label}</span>
                         </button>
                     ))}
                 </div>
@@ -307,12 +315,12 @@ const FloatingQuickMenu: React.FC = () => {
             {/* 互动迸发：水波 + 小心心（每次 boop 重挂以重放动画） */}
             {boop > 0 && !isTucked && (
                 <div key={boop} className="absolute inset-0 pointer-events-none" style={{ width: BUBBLE, height: BUBBLE }}>
-                    <span className="absolute inset-0 rounded-full" style={{ border: '2px solid #ffc6c6', animation: 'fqmRipple 0.62s ease-out forwards' }} />
+                    <span className="absolute inset-0 rounded-full" style={{ border: `1.5px solid ${PAW}`, animation: 'fqmRipple 0.62s ease-out forwards' }} />
                     {[-1, 0, 1].map((dx, k) => (
                         <span
                             key={k}
-                            className="absolute text-[#ff8e8e]"
-                            style={{ left: `calc(50% + ${dx * 13}px)`, top: 4, fontSize: 12 + k, animation: `fqmHeart ${0.72 + k * 0.08}s ease-out ${k * 0.05}s forwards` }}
+                            className="absolute"
+                            style={{ color: PAW, left: `calc(50% + ${dx * 13}px)`, top: 4, fontSize: 12 + k, animation: `fqmHeart ${0.72 + k * 0.08}s ease-out ${k * 0.05}s forwards` }}
                         >♥</span>
                     ))}
                 </div>
@@ -328,22 +336,25 @@ const FloatingQuickMenu: React.FC = () => {
                 style={{
                     width: BUBBLE, height: BUBBLE,
                     background: open
-                        ? 'radial-gradient(circle at 34% 26%, rgba(255,255,255,0.62), transparent 40%), linear-gradient(140deg,#ffc6c6 0%,#ff9e9e 100%)'
-                        : 'radial-gradient(circle at 34% 26%, rgba(255,255,255,0.75), transparent 42%), linear-gradient(140deg,#ffd9d9 0%,#ffc6c6 55%,#ffb0b0 100%)',
-                    boxShadow: '0 16px 34px -16px rgba(255,142,142,0.7), 0 0 0 1px rgba(255,255,255,0.5), inset 0 1px 0 rgba(255,255,255,0.7)',
-                    opacity: isTucked ? 0.82 : 1,
+                        ? 'linear-gradient(160deg, rgba(255,255,255,0.96), rgba(249,237,233,0.92))'
+                        : 'rgba(255,255,255,0.86)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)',
+                    border: `1px solid ${HAIR}`,
+                    boxShadow: '0 12px 28px -16px rgba(150,112,100,0.45), inset 0 1px 0 rgba(255,255,255,0.85)',
+                    opacity: isTucked ? 0.9 : 1,
                 }}
                 title="猫爪快捷菜单（轻点展开 · 长按贴边）"
             >
-                {/* 猫爪印 */}
-                <span className={`relative ${boop > 0 ? 'fqm-paw-boop' : 'fqm-paw-idle'}`} style={{ color: '#fff7f4' }}>
-                    <CatPaw className="w-[60%] h-[60%]" />
+                {/* 猫爪印：固定尺寸、居中正立（不再随呼吸动画歪斜） */}
+                <span className={`flex items-center justify-center ${boop > 0 ? 'fqm-paw-boop' : 'fqm-paw-idle'}`} style={{ color: PAW }}>
+                    <CatPaw className="block w-[26px] h-[26px]" />
                 </span>
                 {/* 贴边时的小提手 */}
                 {isTucked && (
                     <span
-                        className="absolute top-1/2 -translate-y-1/2 w-1 h-5 rounded-full bg-white/70"
-                        style={{ [tuck === 'left' ? 'right' : 'left']: 5 } as React.CSSProperties}
+                        className="absolute top-1/2 -translate-y-1/2 w-1 h-5 rounded-full"
+                        style={{ [tuck === 'left' ? 'right' : 'left']: 5, background: 'rgba(150,116,104,0.4)' } as React.CSSProperties}
                     />
                 )}
             </button>
