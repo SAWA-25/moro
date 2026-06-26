@@ -357,3 +357,7 @@ pm run build passes after the time-gap grouping fix.
   - **弹窗补全单独设计**：拾光图库删除确认改 `InsDialog`（红主题，替原通用 ConfirmDialog）；热点转发选人改 `InsSheet` 底部抽屉（彩色故事环网格，替原通用 Modal）。
   - **见闻簿**（`apps/SocialApp.tsx`，rose）**完整 bespoke 重做**（逻辑零改动）：黑白手账 → 彩色小红书瀑布流——`Avatar` 彩色圆头像（无图用日落渐变首字）、`PostCard` 白色大圆角 + 彩色封面 + 瀑布显影、见闻/交友改胶囊滑块段控、`DatingCard` 彩照圆角软卡 + 三键互动、详情页彩色封面 + 评论 + 底部赞/藏/剪互动栏、`InsDialog`「剪下来」/「清空整簿（新增确认）」、`InsSheet`「我喜欢的」、`InsDialog`「打招呼回应」，话题/筛选改 `Chip`。
   - `tsc` 0 非 api 错误，`vite build` 通过。**进度 4/28**（相册·拾光图库·热点·见闻簿）。
+- 逐 App 换肤·连续作业（按指示一次性推进，频繁提交）：
+  - **自由活动**（`apps/XhsFreeRoamApp.tsx`，rose）：rose/白 → 完整 ins。返回/角色切换故事环、`InsCard` 实况与历史、运行态实况面板、`InsSheet` 角色选择 + 活动详情、`InsDialog` 确认，底部开始按钮 IG 渐变。逻辑零改。
+  - **茶话亭**（`apps/ForumApp.tsx`，amber 茶馆暖调）：851 行重度 scrapbook → ins。用「同名原语 ins 化」shim 法（PaperBackdrop/ScrapButton/WashiTape/Stamp/StickyNote/SectionTag/DashedRule/PaperDialog 就地换 ins 实现，保持 API 全文零改调用点）+ PANEL/paperInput/chip/Header/Empty 重定向 + 虚线描边统一为发丝线 + FAB 改 amber。逻辑零改。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 6/28**（+自由活动、茶话亭）。
