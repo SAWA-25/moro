@@ -12,7 +12,7 @@ import {
     instructionsForKind, pickInstruction, EXTRA_INSTRUCTIONS, type ExtraBankKind,
 } from '../../utils/theaterExtraBank';
 import { WeChatScreenshot, MomentsCard, XhsCard, ForumThread } from '../../components/theater/faux/FauxRenderers';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard, Stamp, SectionTag, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, PaperCard, Stamp, SectionTag, INK, INK_SOFT } from '../ui/insScrapKit';
 import type { CharacterProfile } from '../../types';
 
 /**

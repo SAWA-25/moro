@@ -8,7 +8,7 @@ import {
     refreshAfterNodes,
     nodeWhen,
 } from '../../utils/theaterTimeline';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, WashiTape, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
 import { resolveAuxApi } from '../../utils/auxApi';
 
 /**
