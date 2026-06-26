@@ -30,34 +30,35 @@ const DesktopClock = React.memo(() => {
     const hh = virtualTime.hours.toString().padStart(2, '0');
     const mm = virtualTime.minutes.toString().padStart(2, '0');
 
-    // Ins 风日期卡：柔和暮色渐变 + 大号衬线日期 + 玻璃胶囊按钮（去拍立得天空白墙拼贴）
+    // 手帐拼贴日期卡（参照黑白手帐桌面）：天空蓝照片质感 + 大号日期 + 星期 + FOCUS 胶囊
     return (
         <div className="moro-clock-card h-full w-full rounded-[2rem] px-5 py-5 relative overflow-hidden animate-rise-in select-none flex flex-col text-white"
             style={{
-                background: 'linear-gradient(150deg, #8170e0 0%, #6d80d8 48%, #5e93d4 100%)',
-                boxShadow: '0 24px 48px -20px rgba(96, 104, 200, 0.55)',
+                background: 'linear-gradient(168deg, #5d7eab 0%, #4a6a9b 42%, #3e5d8d 100%)',
+                boxShadow: '0 20px 44px -20px rgba(52, 74, 110, 0.55)',
             }}>
-            {/* 柔光氛围：两团缓慢漂浮的高光，干净不拼贴 */}
-            <div className="absolute -top-10 -right-6 w-40 h-40 rounded-full pointer-events-none animate-float-soft"
-                style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.32), transparent 70%)' }} />
-            <div className="absolute -bottom-12 -left-8 w-44 h-28 rounded-full pointer-events-none animate-breathe"
-                style={{ background: 'radial-gradient(ellipse, rgba(255,255,255,0.16), transparent 70%)' }} />
+            {/* 照片氛围：右侧"阳台白墙"色块 + 漂浮云影，模拟拍立得天空照 */}
+            <div className="absolute inset-y-0 right-0 w-[38%] pointer-events-none opacity-90"
+                style={{ background: 'linear-gradient(195deg, rgba(244,242,238,0.92) 0%, rgba(235,232,226,0.85) 55%, rgba(222,219,212,0.8) 100%)', clipPath: 'polygon(34% 0, 100% 0, 100% 100%, 12% 100%, 30% 52%)' }} />
+            <div className="absolute top-6 right-[30%] w-28 h-28 rounded-full pointer-events-none animate-drift-slow"
+                style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.28), transparent 70%)' }} />
+            <div className="absolute bottom-2 -left-8 w-40 h-24 rounded-full pointer-events-none animate-breathe"
+                style={{ background: 'radial-gradient(ellipse, rgba(255,255,255,0.18), transparent 70%)' }} />
 
             <div className="relative z-10 flex-1 flex flex-col">
-                <div className="flex items-end gap-2.5">
-                    <div className="moro-clock-time leading-none font-semibold tracking-tight"
-                        style={{ fontFamily: 'var(--font-display)', fontSize: '3.9rem', textShadow: '0 4px 18px rgba(40,40,90,0.35)' }}>
-                        {dateNum}
-                    </div>
-                    <div className="text-[11px] font-bold tracking-[0.26em] mb-2.5 opacity-90" style={{ fontFamily: 'var(--font-label)' }}>{dayName.slice(0, 3)}</div>
+                <div className="moro-clock-time text-[3.75rem] leading-none font-bold tracking-tight"
+                    style={{ fontFamily: 'var(--font-hand)', textShadow: '0 2px 14px rgba(30,48,80,0.35)' }}>
+                    {dateNum}
                 </div>
+                <div className="text-[13px] label-mono font-bold tracking-[0.3em] mt-1 opacity-95">{dayName}</div>
 
-                <div className="mt-auto flex flex-col gap-3 min-w-0">
+                {/* 半宽卡片：时间/问候与按钮纵向堆叠，避免挤压（参照设计稿 FOCUS 胶囊在卡片下部） */}
+                <div className="mt-auto flex flex-col gap-2.5 min-w-0">
                     <div className="min-w-0">
-                        <div className="text-[22px] font-bold leading-none tabular-nums" style={{ textShadow: '0 2px 12px rgba(40,40,90,0.3)' }}>
-                            {hh}<span className="opacity-55 animate-pulse mx-0.5">:</span>{mm}
+                        <div className="text-[20px] font-semibold leading-none tabular-nums" style={{ textShadow: '0 1px 10px rgba(30,48,80,0.3)' }}>
+                            {hh}<span className="opacity-60 animate-pulse mx-0.5">:</span>{mm}
                         </div>
-                        <div className="moro-clock-greeting text-[11px] mt-2 opacity-85 font-medium truncate">{greeting}</div>
+                        <div className="moro-clock-greeting text-[11px] mt-1.5 opacity-85 font-medium tracking-wide truncate">{greeting}</div>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -65,17 +66,17 @@ const DesktopClock = React.memo(() => {
                         <button
                             onClick={lock}
                             className="w-9 h-9 shrink-0 rounded-full press-soft inline-flex items-center justify-center"
-                            style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.34)' }}
+                            style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)' }}
                             aria-label="一键锁屏"
                         >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"/></svg>
                         </button>
                         <button
                             onClick={() => openApp(AppID.Appearance)}
-                            className="moro-palette-btn text-[11px] font-bold px-4 py-2.5 rounded-full press-soft min-w-0 truncate inline-flex items-center gap-1.5"
-                            style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)', color: '#ffffff' }}
+                            className="moro-palette-btn label-mono text-[10px] font-bold px-4 py-2.5 rounded-full press-soft min-w-0 truncate"
+                            style={{ background: 'rgba(255,255,255,0.24)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.45)', color: '#ffffff', textShadow: '0 1px 6px rgba(30,48,80,0.3)' }}
                         >
-                            ✦ 装扮
+                            Focus
                         </button>
                     </div>
                 </div>
@@ -98,19 +99,19 @@ const CharacterWidget = React.memo(({
     onClick: () => void,
     contentColor: string
 }) => {
-    // Ins 风聊天预览卡：白卡 + 绿渐变聊天圆钮 + 头像/气泡式消息预览（干净，去手账）
+    // 手帐聊天预览卡（参照黑白手帐桌面）：黑色聊天圆钮 + 红色未读角标 + 头像/气泡式消息预览
     return (
         <div className="h-full w-full group animate-rise-in" style={{ animationDelay: '60ms' }}>
              <div
-                className="moro-character-card relative w-full h-full overflow-hidden rounded-[2rem] cursor-pointer press-soft"
+                className="moro-character-card glass-card relative w-full h-full overflow-hidden rounded-[2rem] cursor-pointer press-soft"
                 onClick={onClick}
-                style={{ color: contentColor, background: '#ffffff', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 38px -26px rgba(38,38,38,0.3)' }}
+                style={{ color: contentColor }}
              >
                  <div className="relative h-full flex items-center px-5 py-3 gap-4">
-                     {/* 绿渐变聊天圆钮 + 未读角标 */}
+                     {/* 黑色聊天圆钮 + 未读红点（仿 WeChat 小组件入口） */}
                      <div className="relative shrink-0">
                          <div className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-transform duration-500 group-hover:-rotate-6"
-                             style={{ background: 'linear-gradient(150deg, #34d399, #10b981)', boxShadow: '0 12px 26px -12px rgba(16,185,129,0.6)' }}>
+                             style={{ background: '#1c1b22', boxShadow: '0 12px 26px -12px rgba(28,27,34,0.6)' }}>
                              <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 2C6.48 2 2 5.92 2 10.77c0 2.69 1.39 5.09 3.57 6.7-.1.86-.42 2.06-1.17 3.13-.14.2.02.48.26.44 1.78-.28 3.27-1.07 4.27-1.78.97.27 2 .42 3.07.42 5.52 0 10-3.92 10-8.91C22 5.92 17.52 2 12 2z"/></svg>
                          </div>
                          {unreadCount > 0 && (
@@ -120,22 +121,22 @@ const CharacterWidget = React.memo(({
                          )}
                      </div>
 
-                     {/* 消息预览：名字 + 灰底气泡里的最近一条 */}
+                     {/* 消息预览：手写体标签 + 灰底气泡里的最近一条 */}
                      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                          <div className="flex items-center gap-2 min-w-0">
-                             <span className="text-[14px] font-extrabold leading-none truncate" style={{ color: '#2b2933' }}>{char?.name || '絮语'}</span>
+                             <span className="font-hand text-[17px] leading-none opacity-55 truncate">{char?.name || 'Letters'}</span>
                              {unreadCount === 0 && (
                                  <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: '0 0 6px #4ade80' }} />
                              )}
                          </div>
                          <div className="flex items-center gap-2 min-w-0">
-                             <div className="w-7 h-7 shrink-0 rounded-full overflow-hidden" style={{ boxShadow: '0 0 0 2px #fff, 0 0 0 3px rgba(0,0,0,0.06)' }}>
+                             <div className="w-7 h-7 shrink-0 rounded-full overflow-hidden bg-black/5" style={{ border: '1.5px solid rgba(236,233,226,0.9)' }}>
                                  {char ? (
                                      <img src={char.avatar} className="w-full h-full object-cover" alt="char" loading="lazy" />
                                  ) : <div className="w-full h-full bg-black/5 animate-pulse" />}
                              </div>
                              <div className="flex-1 min-w-0 px-3.5 py-1.5 rounded-full text-[11px] leading-snug truncate"
-                                 style={{ background: '#f4f2ef', color: '#5a5660' }}>
+                                 style={{ background: 'rgba(43,41,51,0.05)', border: '1px solid rgba(43,41,51,0.04)' }}>
                                  {lastMessage}
                              </div>
                          </div>
@@ -934,10 +935,6 @@ const Launcher: React.FC = () => {
   const totalUnread = Object.values(unreadMessages).reduce((a, b) => a + b, 0);
   const widgetUnread = widgetChar && unreadMessages[widgetChar.id] ? unreadMessages[widgetChar.id] : 0;
 
-  // 桌面顶栏：跨页持续的「今日」标签（真实日期 + 星期）
-  const _td = new Date();
-  const headerDate = `${_td.getMonth() + 1}月${_td.getDate()}日 · ${['周日', '周一', '周二', '周三', '周四', '周五', '周六'][_td.getDay()]}`;
-
   const draggingItem = draggingKey ? deskItems.find(i => i.key === draggingKey) : null;
   const draggingApp = draggingItem?.kind === 'app' ? gridApps.find(a => a.id === draggingItem.id) : null;
 
@@ -1053,21 +1050,19 @@ const Launcher: React.FC = () => {
         </div>
       )}
 
-      {/* Ins 风桌面氛围：彩色柔光团缓缓漂浮（去手账点纹 + 蕾丝花边），低开销纯渐变 */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-24 -right-16 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(250,126,30,0.20), transparent 68%)' }}></div>
-          <div className="absolute top-1/3 -left-24 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(214,41,118,0.16), transparent 68%)' }}></div>
-          <div className="absolute -bottom-24 right-1/4 w-96 h-96 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(79,91,213,0.15), transparent 68%)' }}></div>
-          <div className="absolute top-1/4 right-1/3 w-56 h-56 rounded-full animate-breathe" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.38), transparent 70%)' }}></div>
-      </div>
-
-      {/* Ins 桌面顶栏：MORO 字标 + 今日 frosted 胶囊（跨页持续，框定「设计过的主屏」） */}
-      <div className="absolute left-0 right-0 z-20 flex items-center justify-between px-6 pointer-events-none" style={{ top: 'calc(var(--safe-top) + 0.4rem)' }}>
-          <span className="text-[12px] font-black tracking-[0.34em]" style={{ color: contentColor, opacity: 0.55, fontFamily: 'var(--font-label)' }}>MORO</span>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)', color: contentColor }}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }} />
-              <span className="text-[11px] font-bold">{headerDate}</span>
-          </span>
+      {/* 手帐纸面氛围背景：点点网纹（仿手帐内页）+ 极淡的暖白光斑（纯渐变，无 blur，低开销） */}
+      <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 opacity-60" style={{
+              backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.16) 1.2px, transparent 0)',
+              backgroundSize: '17px 17px',
+          }}></div>
+          {/* 拼贴页眉：顶部蕾丝花边带（仿手帐贴纸边条） */}
+          <div className="absolute left-0 right-0 opacity-80" style={{ top: 'calc(var(--safe-top) + 1.85rem)' }}>
+              <div className="lace-edge w-full" />
+              <div className="lace-edge w-full" style={{ transform: 'scaleY(-1)', marginTop: '-2px', opacity: 0.5 }} />
+          </div>
+          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}></div>
+          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%)' }}></div>
       </div>
 
       {/* Scrollable Content Layer */}
@@ -1097,7 +1092,7 @@ const Launcher: React.FC = () => {
                 key={idx}
                 data-desk-page={idx}
                 data-page-index={idx}
-                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-14 pb-8 h-full relative"
+                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-12 pb-8 h-full relative"
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
                   {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
@@ -1128,15 +1123,14 @@ const Launcher: React.FC = () => {
                       className="w-full h-full grid grid-cols-4 gap-x-2 gap-y-2"
                       style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
                   >
-                      {placed.map(({ item, col, row }, i) => (
+                      {placed.map(({ item, col, row }) => (
                           <div
                               key={item.key}
                               data-desk-item={item.key}
-                              className={`relative min-w-0 min-h-0 transition-[transform,opacity,filter,box-shadow] duration-200 will-change-transform ${!editMode && item.kind === 'app' ? 'desk-item-in' : ''} ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode && item.kind === 'app' && editEffect === 'wiggle' ? 'animate-icon-jiggle' : ''} ${editMode && item.kind === 'app' && editEffect === 'breathe' ? 'animate-icon-breathe' : ''} ${draggingKey === item.key ? 'opacity-25 scale-[0.97]' : ''} ${dropTargetKey === item.key ? 'scale-[1.02] z-10' : ''}`}
+                              className={`relative min-w-0 min-h-0 transition-[transform,opacity,filter,box-shadow] duration-200 will-change-transform ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode && item.kind === 'app' && editEffect === 'wiggle' ? 'animate-icon-jiggle' : ''} ${editMode && item.kind === 'app' && editEffect === 'breathe' ? 'animate-icon-breathe' : ''} ${draggingKey === item.key ? 'opacity-25 scale-[0.97]' : ''} ${dropTargetKey === item.key ? 'scale-[1.02] z-10' : ''}`}
                               style={{
                                   gridColumn: `${col + 1} / span ${item.w}`,
                                   gridRow: `${row + 1} / span ${item.h}`,
-                                  animationDelay: !editMode && item.kind === 'app' ? `${Math.min(i, 18) * 24}ms` : undefined,
                                   boxShadow: dropTargetKey === item.key ? '0 0 0 2px rgba(43,41,51,0.16), 0 12px 24px -18px rgba(43,41,51,0.35)' : undefined,
                                   filter: dropTargetKey === item.key ? 'saturate(1.04)' : undefined,
                                   ...(editMode ? { touchAction: 'none' as const } : {}),
@@ -1156,24 +1150,18 @@ const Launcher: React.FC = () => {
 
       </div>
 
-      {/* Page Indicators：frosted 轨道 + 渐变激活点 */}
+      {/* Page Indicators */}
       <div
-          className="absolute left-0 w-full flex justify-center pointer-events-none z-20"
+          className="absolute left-0 w-full flex justify-center gap-2 pointer-events-none z-20"
           style={{ bottom: `calc(${launcherBottomInset} + 5.5rem)` }}
       >
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.3)' }}>
-              {Array.from({ length: totalPages }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-5' : 'w-1.5'}`}
-                    style={activePageIndex === i
-                        ? { background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }
-                        : { background: contentColor, opacity: 0.35 }}
-                  ></div>
-              ))}
-            </div>
-          )}
+          {Array.from({ length: totalPages }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-1.5 rounded-full transition-all duration-300 ${activePageIndex === i ? 'w-4 opacity-100' : 'w-1.5 opacity-40'}`}
+                style={{ backgroundColor: contentColor }}
+              ></div>
+          ))}
       </div>
 
       {/* Floating Dock - Updated Margin and Safe Area handling */}
@@ -1182,7 +1170,7 @@ const Launcher: React.FC = () => {
            style={{ paddingBottom: launcherBottomInset }}
       >
            <div
-             className="moro-dock rounded-full px-8 py-3.5 flex gap-7 sm:gap-10 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu transition-[background,border-color,box-shadow] duration-300"
+             className="moro-dock glass-pill rounded-full px-8 py-3.5 flex gap-7 sm:gap-10 items-center mx-auto max-w-full justify-between overflow-x-auto no-scrollbar transform-gpu transition-[background,border-color,box-shadow] duration-300"
              style={dockShellStyle}
             >
                {dockAppsConfig.map(app => (
