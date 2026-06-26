@@ -1,12 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
-import { ArrowLeft, ArrowClockwise, Newspaper, WarningCircle, ArrowSquareOut, PaperPlaneTilt } from '@phosphor-icons/react';
+import { ArrowClockwise, WarningCircle, ArrowSquareOut, PaperPlaneTilt, TrendUp } from '@phosphor-icons/react';
 import { DB } from '../utils/db';
 import { RealtimeContextManager } from '../utils/realtimeContext';
-import Modal from '../components/os/Modal';
+import {
+    InsShell, InsHeader, InsCard, IconCircle, StoryRing, InsSheet, accent, INK, INK_SOFT,
+} from '../components/ui/insKit';
 import type { HotNewsSnapshot, HotNewsItem } from '../types';
 
 const SLOT_WINDOW = ['00:00–04:00', '04:00–08:00', '08:00–12:00', '12:00–16:00', '16:00–20:00', '20:00–24:00'];
+
+// 热点的强调色（取自 constants：HotNews = red）
+const AC = 'red' as const;
 
 const HotNewsApp: React.FC = () => {
     const { closeApp, realtimeConfig, addToast, characters } = useOS();
@@ -100,95 +105,86 @@ const HotNewsApp: React.FC = () => {
         : '';
 
     return (
-        <div className="h-full w-full bg-[#f4efe4] flex flex-col font-serif text-stone-900">
-            {/* 顶栏 */}
-            <div className="h-20 bg-[#f4efe4] flex items-end pb-3 px-4 border-b-2 border-stone-800 shrink-0 sticky top-0 z-10">
-                <div className="flex items-center gap-2 w-full">
-                    <button onClick={closeApp} className="p-2 -ml-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform">
-                        <ArrowLeft size={22} weight="bold" className="text-stone-700" />
-                    </button>
-                    <h1 className="text-xl font-bold tracking-wide text-stone-800 flex items-center gap-2">
-                        <Newspaper size={22} weight="fill" /> 热点日报
-                    </h1>
-                    <button
-                        onClick={forceRefresh}
-                        disabled={loading}
-                        className="ml-auto p-2 rounded-full hover:bg-black/5 active:scale-90 transition-transform disabled:opacity-40"
-                        title="真·刷新（强制重新拉取本时段）"
-                    >
-                        <ArrowClockwise size={20} weight="bold" className={`text-stone-700 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
-                </div>
-            </div>
+        <InsShell accent={AC}>
+            <InsHeader
+                accent={AC}
+                title="热点"
+                en="HOT NOW"
+                onBack={closeApp}
+                right={
+                    <IconCircle onClick={forceRefresh} title="真·刷新（强制重新拉取本时段）">
+                        <ArrowClockwise size={18} weight="bold" className={loading ? 'animate-spin' : ''} />
+                    </IconCircle>
+                }
+            />
 
-            <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-24">
-                {/* 报头 */}
-                <div className="text-center pt-4 pb-3 border-b border-stone-400">
-                    <p className="text-[10px] tracking-[0.4em] text-stone-500 uppercase">Moro Daily</p>
-                    <h2 className="text-3xl font-black tracking-tight mt-1">今 日 热 点</h2>
+            <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-20 relative z-10">
+                {/* 报头：Moro Daily 杂志刊头（渐变点睛） */}
+                <div className="text-center pt-3 pb-4 animate-slide-fade" style={{ animationDelay: '40ms' }}>
+                    <p className="text-[10px] tracking-[0.4em] uppercase font-bold" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>Moro Daily</p>
+                    <h2 className="ins-gradient-text text-[30px] font-black tracking-tight mt-1 inline-flex items-center gap-2">今日热点</h2>
                     {snapshot && (
-                        <p className="text-[11px] text-stone-500 mt-1.5">
+                        <p className="text-[11px] mt-1.5" style={{ color: INK_SOFT }}>
                             {snapshot.date} · {snapshot.slotLabel}版（{SLOT_WINDOW[snapshot.slot] || ''}） · 更新于 {fetchedTime}
                         </p>
                     )}
                 </div>
 
                 {/* 可视化声明 */}
-                <div className="my-3 bg-stone-800 text-stone-100 rounded-lg px-3 py-2.5 text-[11px] leading-relaxed flex gap-2">
-                    <WarningCircle size={16} weight="fill" className="shrink-0 mt-0.5 text-amber-300" />
-                    <span>
-                        这只是<b>热点可视化</b>。每次对话会从下面这些里<b>随机抽几条</b>注入给角色——它不一定会拎出来说，
-                        当作背景认知自然存在；偶尔也会主动<b>分享成新闻卡片</b>找你聊。
+                <InsCard accent={AC} edge className="px-3.5 py-3 mb-4 flex gap-2.5 items-start">
+                    <WarningCircle size={18} weight="fill" className="shrink-0 mt-0.5" style={{ color: accent(AC).solid }} />
+                    <span className="text-[11.5px] leading-relaxed" style={{ color: '#5a5660' }}>
+                        这只是<b style={{ color: INK }}>热点可视化</b>。每次对话会从下面随机抽几条注入给角色——当作背景认知自然存在，偶尔也会主动<b style={{ color: INK }}>分享成新闻卡片</b>找你聊。
                         {realtimeConfig.newsEnabled
                             ? '（已开启：角色会真的看到这些）'
-                            : '（未开启「实时感知 → 新闻热点」，角色暂时看不到，去「文具盒」打开后才会聊）'}
+                            : '（未开启「实时感知 → 新闻热点」，去「文具盒」打开后才会聊）'}
                     </span>
-                </div>
+                </InsCard>
 
                 {/* 内容 */}
                 {loading && !snapshot && (
-                    <div className="text-center text-stone-400 py-16 text-sm">正在召回热点…</div>
+                    <div className="text-center py-16 text-sm" style={{ color: INK_SOFT }}>正在召回热点…</div>
                 )}
 
                 {error && !snapshot && (
-                    <div className="text-center text-stone-500 py-12 px-6 text-sm leading-relaxed">
-                        <WarningCircle size={32} weight="thin" className="mx-auto mb-3 text-stone-400" />
+                    <div className="text-center py-12 px-6 text-sm leading-relaxed" style={{ color: INK_SOFT }}>
+                        <WarningCircle size={32} weight="thin" className="mx-auto mb-3" style={{ color: accent(AC).solid }} />
                         {error}
                     </div>
                 )}
 
+                {/* 每个平台一张干净白卡，榜单内排名 + 转发 */}
                 {snapshot && grouped.length > 0 && (
-                    <div className="mt-1 divide-y divide-stone-300">
-                        {grouped.map(({ source, items }) => (
-                            <section key={source} className="py-3">
-                                <h3 className="text-sm font-black text-stone-800 mb-2 flex items-center gap-2 before:content-[''] before:w-1 before:h-4 before:bg-red-700 before:rounded">
+                    <div className="space-y-3.5">
+                        {grouped.map(({ source, items }, gi) => (
+                            <InsCard key={source} accent={AC} className="px-4 py-3.5 animate-ins-card" style={{ animationDelay: `${gi * 60}ms` }}>
+                                <h3 className="text-[14px] font-extrabold mb-2.5 flex items-center gap-2" style={{ color: INK }}>
+                                    <span className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: accent(AC).soft, color: accent(AC).solid }}>
+                                        <TrendUp size={15} weight="bold" />
+                                    </span>
                                     {source}
                                 </h3>
-                                <ol className="space-y-2">
+                                <ol className="space-y-2.5">
                                     {items.map((it, i) => (
-                                        <li key={i} className="flex gap-2 text-[13px] leading-snug">
-                                            <span className="font-black text-red-700 w-5 shrink-0 text-right">{i + 1}</span>
+                                        <li key={i} className="flex gap-2.5 text-[13px] leading-snug">
+                                            <span className="font-black w-5 shrink-0 text-center tabular-nums" style={{ color: i < 3 ? accent(AC).solid : INK_SOFT }}>{i + 1}</span>
                                             <div className="flex-1 min-w-0">
                                                 {it.url ? (
-                                                    <a
-                                                        href={it.url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-stone-800 hover:text-red-700 hover:underline decoration-stone-400 inline-flex items-start gap-1"
-                                                    >
+                                                    <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex items-start gap-1" style={{ color: INK }}>
                                                         <span>{it.title}</span>
-                                                        <ArrowSquareOut size={11} weight="bold" className="shrink-0 mt-1 text-stone-400" />
+                                                        <ArrowSquareOut size={11} weight="bold" className="shrink-0 mt-1" style={{ color: INK_SOFT }} />
                                                     </a>
                                                 ) : (
-                                                    <span className="text-stone-800">{it.title}</span>
+                                                    <span style={{ color: INK }}>{it.title}</span>
                                                 )}
                                                 {it.desc && it.desc !== it.title && (
-                                                    <p className="text-[11px] text-stone-500/90 leading-snug mt-0.5">{it.desc}</p>
+                                                    <p className="text-[11px] leading-snug mt-0.5" style={{ color: INK_SOFT }}>{it.desc}</p>
                                                 )}
                                             </div>
                                             <button
                                                 onClick={() => setForwardItem(it)}
-                                                className="shrink-0 self-start mt-0.5 p-1 rounded-full text-stone-400 hover:text-red-700 hover:bg-black/5 active:scale-90 transition-transform"
+                                                className="shrink-0 self-start mt-0.5 p-1.5 rounded-full press-soft"
+                                                style={{ color: INK_SOFT }}
                                                 title="转发给角色"
                                                 aria-label="转发给角色"
                                             >
@@ -197,39 +193,40 @@ const HotNewsApp: React.FC = () => {
                                         </li>
                                     ))}
                                 </ol>
-                            </section>
+                            </InsCard>
                         ))}
                     </div>
                 )}
 
                 {snapshot && (
-                    <p className="text-center text-[10px] text-stone-400 mt-6 tracking-wide">
+                    <p className="text-center text-[10px] mt-6 tracking-wide" style={{ color: INK_SOFT }}>
                         — 数据来自 hot_news（orz.ai）多平台热榜 · 每天 6 个时段自动更新 · 点右上角可手动真·刷新 —
                     </p>
                 )}
             </div>
 
-            {/* 转发到聊天：挑一个角色，把这条热点当新闻卡片递过去 */}
-            <Modal isOpen={!!forwardItem} title="转发给角色" onClose={() => setForwardItem(null)}>
+            {/* 转发到聊天：底部抽屉里挑一个角色，把这条热点当新闻卡片递过去 */}
+            <InsSheet open={!!forwardItem} title="转发给角色" onClose={() => setForwardItem(null)}>
                 {forwardItem && (
-                    <p className="text-[12px] text-stone-500 mb-3 line-clamp-2 leading-snug">
-                        「{forwardItem.title}」
-                    </p>
+                    <div className="mb-3 px-3.5 py-2.5 rounded-2xl flex items-start gap-2" style={{ background: accent(AC).soft }}>
+                        <PaperPlaneTilt size={15} weight="fill" className="shrink-0 mt-0.5" style={{ color: accent(AC).solid }} />
+                        <p className="text-[12.5px] line-clamp-2 leading-snug font-medium" style={{ color: accent(AC).ink }}>{forwardItem.title}</p>
+                    </div>
                 )}
                 {characters.length === 0 ? (
-                    <div className="text-center text-xs text-stone-300 py-6">还没有可转发的角色</div>
+                    <div className="text-center text-xs py-8" style={{ color: INK_SOFT }}>还没有可转发的角色</div>
                 ) : (
-                    <div className="grid grid-cols-4 gap-4 p-2 max-h-[50vh] overflow-y-auto no-scrollbar">
+                    <div className="grid grid-cols-4 gap-x-3 gap-y-4 pt-1 pb-2 max-h-[46vh] overflow-y-auto no-scrollbar">
                         {characters.map(c => (
-                            <button key={c.id} onClick={() => handleForward(c.id)} className="flex flex-col items-center gap-2 group">
-                                <img src={c.avatar} className="w-12 h-12 rounded-full object-cover border border-stone-100 group-active:scale-90 transition-transform" />
-                                <span className="text-[10px] text-stone-600 truncate w-full text-center">{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                            <button key={c.id} onClick={() => handleForward(c.id)} className="flex flex-col items-center gap-1.5 press-soft">
+                                <StoryRing src={c.avatar} size={52} active fallback={(c.convoSettings?.remarkName?.trim() || c.name)?.charAt(0)} />
+                                <span className="text-[10.5px] truncate w-full text-center font-medium" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</span>
                             </button>
                         ))}
                     </div>
                 )}
-            </Modal>
-        </div>
+            </InsSheet>
+        </InsShell>
     );
 };
 

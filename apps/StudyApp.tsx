@@ -10,7 +10,7 @@ import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import {
     PaperBackdrop, ScrapButton, WashiTape, PaperDialog, PaperSheet, SectionTag, DashedRule,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
-} from './theater/scrapbook';
+} from './ui/insScrapKit';
 import {
     Notepad, Check, X, CheckCircle, XCircle, Hand, CaretLeft, CaretDown, ArrowRight,
     ArrowsClockwise, Trash, GearSix, BookOpen, Plus, PencilSimpleLine, ChatCircleText,

@@ -1,20 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, ArrowLeft, BookmarkSimple, PencilSimpleLine, Scissors, PushPin, Broom, X, HandWaving, MapPin, Spinner } from '@phosphor-icons/react';
+import { MagnifyingGlass, Shuffle, Binoculars, Stack, Heart, BookmarkSimple, Scissors, Broom, X, HandWaving, MapPin, Spinner, PaperPlaneTilt, ChatCircle } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
 import { AppID, XhsFeedPost } from '../types';
 import { DB } from '../utils/db';
 import { generateFeedBatch, generateAuthorReply, FEED_BATCH_SIZE } from '../utils/xhsFeed';
 import { generateDatingBatch, fallbackDatingProfiles, intentMeta, DatingProfile, DATING_INTENTS, DatingIntent, generateDatingReply, isMatch } from '../utils/socialDating';
 import { resolveAuxApi } from '../utils/auxApi';
+import {
+    InsShell, IconCircle, InsButton, Chip, InsDialog, InsSheet, accent, INK, INK_SOFT, SUNSET,
+} from '../components/ui/insKit';
+import { CaretLeft } from '@phosphor-icons/react';
 
 /**
- * 见闻簿 App —— 本地生成信息流版（黑白拼贴手账皮肤）。
+ * 见闻簿 App —— 本地生成信息流版（Ins 风 · 小红书瀑布流皮肤）。
  *
- * 把熟人和路人「见到的、听到的」剪成一张张纸片，贴进一本黑白手账：每次「翻新页」由 LLM
- * 生成一沓（≥10 张）剪贴，混合熟人剪贴（按角色人设发）与路人剪贴（虚构路人），持久化在 IndexedDB。
- * 用户可翻开一张看详情、戳一下（赞）、夹起来（收藏）、写批注（评论，作者会回批）、剪下来（转成自己的剪贴进入信息流）。
- * 「出门转转」（角色自主刷真实小红书，MCP）与「素材堆」（囤图）保留快捷入口。
+ * 把熟人和路人「见到的、听到的」剪成一张张卡片，贴进一本见闻簿：每次「翻新页」由 LLM
+ * 生成一沓（≥10 张），混合熟人卡片（按角色人设发）与路人卡片，持久化在 IndexedDB。
+ * 用户可看详情、点赞、收藏、评论（作者会回）、剪下来（转成自己的卡片）。
+ * 「出门转转」（角色自主刷真实小红书）与「素材堆」（囤图）保留快捷入口。
+ * 换肤：照片保留彩色、白色大圆角卡片 + 极柔投影；强调色 rose（小红书气质）。
  */
+
+// 见闻簿强调色（小红书 = 玫红，比 constants 的 red 更贴气质）
+const AC = 'rose' as const;
+const A = accent(AC);
 
 const fmtCount = (n: number): string => (n >= 10000 ? `${(n / 10000).toFixed(1)}w` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
@@ -28,87 +37,102 @@ const fmtTime = (ts: number): string => {
     return `${d.getMonth() + 1}-${d.getDate()}`;
 };
 
-/** 头像：有图用图；没图用昵称首字 + 按昵称稳定取一档墨灰（保持黑白拼贴质感） */
-const Avatar: React.FC<{ name: string; src?: string; size?: string }> = ({ name, src, size = 'w-8 h-8' }) => {
-    if (src) return <img src={src} className={`${size} object-cover shrink-0 border-2 border-[#2b2933]`} alt="" />;
-    const palette = ['bg-[#2b2933]', 'bg-[#46434f]', 'bg-[#605d68]', 'bg-[#7a7782]', 'bg-[#3a3742]', 'bg-[#52505b]', 'bg-[#6b6874]'];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+/** 头像：有图用彩色圆头像；没图用昵称首字 + IG 日落渐变底 */
+const Avatar: React.FC<{ name: string; src?: string; size?: number }> = ({ name, src, size = 32 }) => {
+    if (src) return <img src={src} style={{ width: size, height: size }} className="rounded-full object-cover shrink-0" alt="" />;
     return (
-        <div className={`${size} ${palette[Math.abs(hash) % palette.length]} text-[#fbfaf7] flex items-center justify-center text-[12px] font-bold shrink-0 select-none border-2 border-[#2b2933]`}>
+        <div style={{ width: size, height: size, background: SUNSET, fontSize: size * 0.42 }}
+            className="rounded-full text-white flex items-center justify-center font-bold shrink-0 select-none">
             {name.slice(0, 1)}
         </div>
     );
 };
 
-/** 瀑布流剪贴：纸片 + 墨边 + 硬投影 + 右上角一枚图钉 */
+/** 瀑布流卡片：白色大圆角 + 彩色封面 + 软投影（小红书式） */
 const PostCard: React.FC<{ post: XhsFeedPost; onClick: () => void }> = ({ post, onClick }) => (
-    <button onClick={onClick} className="relative w-full text-left overflow-visible bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.2)] active:translate-x-[1px] active:translate-y-[1px] transition-transform mb-4 break-inside-avoid">
-        <PushPin className="absolute -top-1.5 right-2 z-10 w-4 h-4 text-[#2b2933] rotate-12 drop-shadow-[1px_1px_0_rgba(43,41,51,0.25)] pointer-events-none" weight="fill" />
+    <button onClick={onClick}
+        className="relative w-full text-left overflow-hidden bg-white press-soft mb-3 break-inside-avoid"
+        style={{ borderRadius: 18, boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -22px rgba(38,38,38,0.28)' }}>
         {post.coverUrl ? (
-            <img src={post.coverUrl} className="w-full object-cover grayscale border-b-2 border-[#2b2933]" referrerPolicy="no-referrer" loading="lazy"
+            <img src={post.coverUrl} className="w-full object-cover animate-photo-develop" referrerPolicy="no-referrer" loading="lazy"
                 onError={(e: any) => { e.target.style.display = 'none'; }} />
         ) : (
-            <div className="w-full aspect-[3/4] bg-[#f4f2ed] border-b-2 border-dashed border-[#2b2933]/30 flex items-center justify-center p-3">
-                <span className="text-[13px] font-bold text-[#8b8996] leading-relaxed line-clamp-6 text-center font-hand">{post.repostOf ? `✄ ${post.title}` : post.body.slice(0, 60)}</span>
+            <div className="w-full aspect-[3/4] flex items-center justify-center p-3.5" style={{ background: `linear-gradient(150deg, ${A.soft}, #f1eee9)` }}>
+                <span className="text-[14px] font-bold leading-relaxed line-clamp-6 text-center" style={{ color: '#5a5660', fontFamily: 'var(--font-hand)' }}>{post.repostOf ? `✄ ${post.title}` : post.body.slice(0, 60)}</span>
             </div>
         )}
         <div className="px-2.5 pt-2 pb-2.5">
-            <div className="text-[12px] font-bold text-[#2b2933] leading-snug line-clamp-2">{post.title}</div>
-            <div className="flex items-center justify-between mt-1.5 gap-1 pt-1.5 border-t border-dashed border-[#2b2933]/20">
-                <span className="inline-flex items-center gap-1 min-w-0 flex-1">
-                    <Avatar name={post.author} src={post.authorAvatar} size="w-4 h-4" />
-                    <span className={`text-[10px] truncate ${post.authorType === 'character' ? 'text-[#2b2933] font-bold underline decoration-dotted underline-offset-2' : 'text-[#8b8996]'}`}>{post.author}</span>
+            <div className="text-[12.5px] font-bold leading-snug line-clamp-2" style={{ color: INK }}>{post.title}</div>
+            <div className="flex items-center justify-between mt-2 gap-1">
+                <span className="inline-flex items-center gap-1.5 min-w-0 flex-1">
+                    <Avatar name={post.author} src={post.authorAvatar} size={18} />
+                    <span className="text-[10.5px] truncate" style={{ color: post.authorType === 'character' ? A.solid : INK_SOFT, fontWeight: post.authorType === 'character' ? 700 : 400 }}>{post.author}</span>
                 </span>
-                <span className={`inline-flex items-center gap-0.5 text-[10px] shrink-0 ${post.liked ? 'text-[#2b2933] font-bold' : 'text-[#8b8996]'}`}>
-                    <Heart className="w-3 h-3" weight={post.liked ? 'fill' : 'regular'} />{fmtCount(post.likes)}
+                <span className="inline-flex items-center gap-0.5 text-[10.5px] shrink-0" style={{ color: post.liked ? A.solid : INK_SOFT, fontWeight: post.liked ? 700 : 400 }}>
+                    <Heart className="w-3.5 h-3.5" weight={post.liked ? 'fill' : 'regular'} />{fmtCount(post.likes)}
                 </span>
             </div>
         </div>
     </button>
 );
 
-/** 见闻 / 交友 切换条 */
+/** 见闻 / 交友 段控（清爽胶囊滑块） */
 const TabBar: React.FC<{ mode: 'feed' | 'meet'; setMode: (m: 'feed' | 'meet') => void }> = ({ mode, setMode }) => (
-    <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
-        {([['feed', '📓 见闻'], ['meet', '💘 交友']] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setMode(k)}
-                className={`px-3 py-1 text-[12px] font-bold border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${mode === k ? 'bg-[#2b2933] text-[#fbfaf7]' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
-                {label}
-            </button>
-        ))}
+    <div className="px-3 py-2 shrink-0">
+        <div className="relative flex p-1 rounded-full" style={{ background: '#efece7' }}>
+            <span className="absolute top-1 bottom-1 rounded-full transition-all duration-300" style={{ left: mode === 'feed' ? '4px' : '50%', right: mode === 'feed' ? '50%' : '4px', background: '#fff', boxShadow: '0 4px 12px -6px rgba(38,38,38,0.3)' }} />
+            {([['feed', '见闻'], ['meet', '交友']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setMode(k)} className="relative flex-1 py-1.5 text-[13px] font-bold transition-colors z-10" style={{ color: mode === k ? INK : INK_SOFT }}>
+                    {label}
+                </button>
+            ))}
+        </div>
     </div>
 );
 
-/** 交友卡片（探探/Soul 式，黑白手账皮肤）：头图 + 资料 + 简介 + 跳过/打招呼/喜欢 */
+/** 顶栏（本 App 通用）：返回 + 标题 + 副标 + 右槽 */
+const AppHeader: React.FC<{ title: string; sub?: string; onBack: () => void; right?: React.ReactNode }> = ({ title, sub, onBack, right }) => (
+    <div className="shrink-0 relative z-10" style={{ paddingTop: 'var(--safe-top)' }}>
+        <div className="flex items-center gap-2.5 px-3.5 pt-2.5 pb-2.5">
+            <IconCircle onClick={onBack} title="返回"><CaretLeft size={18} weight="bold" /></IconCircle>
+            <div className="min-w-0 flex-1 leading-tight">
+                <span className="text-[19px] font-extrabold tracking-tight" style={{ color: INK }}>{title}</span>
+                {sub && <div className="text-[10.5px] mt-0.5 truncate" style={{ color: INK_SOFT }}>{sub}</div>}
+            </div>
+            {right}
+        </div>
+    </div>
+);
+
+/** 交友卡片（彩色照片 + 资料 + 跳过/打招呼/喜欢） */
 const DatingCard: React.FC<{ p: DatingProfile; remaining: number; onAct: (a: 'skip' | 'like' | 'greet') => void }> = ({ p, remaining, onAct }) => {
     const im = intentMeta(p.intent);
     return (
-        <div className="w-full max-w-[360px] flex flex-col animate-fade-in">
-            <div className="relative bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.2)]">
-                <div className="relative w-full aspect-[4/5] border-b-2 border-[#2b2933] overflow-hidden flex items-center justify-center bg-[#f0eee8]">
-                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover grayscale" referrerPolicy="no-referrer" /> : <span className="text-[88px] select-none">{p.emoji}</span>}
-                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-[#2b2933] text-[#fbfaf7] text-[10px] font-bold px-2 py-0.5"><MapPin className="w-3 h-3" weight="fill" />{p.distanceKm}km</div>
-                    {p.online && <div className="absolute top-2 right-2 flex items-center gap-1 bg-[#fbfaf7] border border-[#2b2933] text-[#2b2933] text-[10px] font-bold px-2 py-0.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />在线</div>}
-                    <div className="absolute bottom-2 left-2 bg-[#fbfaf7] border-2 border-[#2b2933] text-[#2b2933] text-[11px] font-bold px-2 py-0.5">{im.emoji} {im.label}</div>
-                    {p.isChar && <div className="absolute bottom-2 right-2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5">熟人</div>}
+        <div className="w-full max-w-[360px] flex flex-col animate-ins-card">
+            <div className="relative bg-white overflow-hidden" style={{ borderRadius: 26, boxShadow: '0 1px 2px rgba(38,38,38,0.05), 0 28px 50px -26px rgba(38,38,38,0.4)' }}>
+                <div className="relative w-full aspect-[4/5] overflow-hidden flex items-center justify-center" style={{ background: `linear-gradient(150deg, ${A.soft}, #f0eee8)` }}>
+                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <span className="text-[88px] select-none">{p.emoji}</span>}
+                    <div className="absolute top-3 left-3 flex items-center gap-1 text-white text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}><MapPin className="w-3 h-3" weight="fill" />{p.distanceKm}km</div>
+                    {p.online && <div className="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.9)', color: INK, backdropFilter: 'blur(6px)' }}><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />在线</div>}
+                    <div className="absolute bottom-3 left-3 text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.92)', color: A.ink }}>{im.emoji} {im.label}</div>
+                    {p.isChar && <div className="absolute bottom-3 right-3 text-white text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background: A.solid }}>熟人</div>}
                 </div>
-                <div className="px-3 pt-2.5 pb-3">
+                <div className="px-4 pt-3 pb-3.5">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[16px] font-black text-[#2b2933]">{p.name}</span>
-                        {p.age != null && <span className="text-[12px] text-[#6b6b6b]">{p.age}</span>}
-                        {p.gender && <span className="text-[10px] text-[#fbfaf7] bg-[#2b2933] px-1.5 py-0.5">{p.gender}</span>}
+                        <span className="text-[17px] font-black" style={{ color: INK }}>{p.name}</span>
+                        {p.age != null && <span className="text-[12px]" style={{ color: INK_SOFT }}>{p.age}</span>}
+                        {p.gender && <span className="text-[10px] text-white px-1.5 py-0.5 rounded-full" style={{ background: A.solid }}>{p.gender}</span>}
                     </div>
-                    {p.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-1.5">{p.tags.map(t => <span key={t} className="text-[10px] text-[#2b2933] bg-[#f0eee8] border border-[#2b2933]/40 px-1.5 py-0.5">{t}</span>)}</div>}
-                    <div className="text-[13px] text-[#3a3842] leading-relaxed whitespace-pre-wrap mt-2">{p.bio}</div>
+                    {p.tags.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{p.tags.map(t => <span key={t} className="text-[10.5px] px-2 py-0.5 rounded-full" style={{ color: A.ink, background: A.soft }}>{t}</span>)}</div>}
+                    <div className="text-[13px] leading-relaxed whitespace-pre-wrap mt-2.5" style={{ color: '#4a4750' }}>{p.bio}</div>
                 </div>
             </div>
-            <div className="flex items-center justify-center gap-5 mt-4">
-                <button onClick={() => onAct('skip')} className="w-12 h-12 rounded-full bg-[#fbfaf7] border-2 border-[#2b2933] flex items-center justify-center active:scale-90 transition-transform" title="跳过"><X className="w-5 h-5 text-[#6b6b6b]" weight="bold" /></button>
-                <button onClick={() => onAct('greet')} className="w-14 h-14 rounded-full bg-[#2b2933] flex items-center justify-center active:scale-90 transition-transform shadow-[3px_3px_0_rgba(43,41,51,0.25)]" title="打招呼"><HandWaving className="w-6 h-6 text-[#fbfaf7]" weight="fill" /></button>
-                <button onClick={() => onAct('like')} className="w-12 h-12 rounded-full bg-rose-500 flex items-center justify-center active:scale-90 transition-transform" title="喜欢"><Heart className="w-5 h-5 text-white" weight="fill" /></button>
+            <div className="flex items-center justify-center gap-6 mt-5">
+                <button onClick={() => onAct('skip')} className="rounded-full bg-white flex items-center justify-center press-soft" style={{ width: 52, height: 52, boxShadow: '0 8px 20px -10px rgba(38,38,38,0.35)' }} title="跳过"><X className="w-5 h-5" weight="bold" style={{ color: INK_SOFT }} /></button>
+                <button onClick={() => onAct('greet')} className="rounded-full flex items-center justify-center press-soft text-white" style={{ width: 62, height: 62, background: INK, boxShadow: '0 12px 26px -10px rgba(38,38,38,0.6)' }} title="打招呼"><HandWaving className="w-7 h-7" weight="fill" /></button>
+                <button onClick={() => onAct('like')} className="rounded-full flex items-center justify-center press-soft text-white" style={{ width: 52, height: 52, background: A.solid, boxShadow: `0 12px 26px -10px ${A.solid}` }} title="喜欢"><Heart className="w-5 h-5" weight="fill" /></button>
             </div>
-            <div className="text-center text-[10px] text-[#8b8996] mt-2 font-hand">还有 {Math.max(0, remaining - 1)} 个待发现</div>
+            <div className="text-center text-[10.5px] mt-2.5" style={{ color: INK_SOFT }}>还有 {Math.max(0, remaining - 1)} 个待发现</div>
         </div>
     );
 };
@@ -129,6 +153,7 @@ const SocialApp: React.FC = () => {
     const [replying, setReplying] = useState(false);
     const [forwardingPost, setForwardingPost] = useState<XhsFeedPost | null>(null);
     const [forwardNote, setForwardNote] = useState('');
+    const [confirmClear, setConfirmClear] = useState(false);
 
     // ── 交友·发现身边的人 ──
     const [mode, setMode] = useState<'feed' | 'meet'>('feed');
@@ -243,7 +268,7 @@ const SocialApp: React.FC = () => {
         }
     };
 
-    /** 局部更新一条剪贴（state + 落库） */
+    /** 局部更新一条卡片（state + 落库） */
     const patchPost = (id: string, patch: Partial<XhsFeedPost> | ((p: XhsFeedPost) => Partial<XhsFeedPost>)) => {
         setPosts(prev => prev.map(p => {
             if (p.id !== id) return p;
@@ -271,14 +296,14 @@ const SocialApp: React.FC = () => {
             timestamp: Date.now(),
         };
         patchPost(detail.id, cur => ({ comments: [...cur.comments, userComment] }));
-        // 作者回批（角色按人设 / NPC 按帖子口吻），失败时静默
+        // 作者回复（角色按人设 / NPC 按帖子口吻），失败时静默
         if (apiReady && detail.authorType !== 'user') {
             setReplying(true);
             try {
                 const authorChar = detail.charId ? characters.find(c => c.id === detail.charId) : undefined;
                 const reply = await generateAuthorReply(feedApi, detail, text, userProfile, authorChar);
                 patchPost(detail.id, cur => ({ comments: [...cur.comments, reply] }));
-            } catch { /* 回批失败不打扰 */ } finally {
+            } catch { /* 回复失败不打扰 */ } finally {
                 setReplying(false);
             }
         }
@@ -314,6 +339,7 @@ const SocialApp: React.FC = () => {
     const clearFeed = async () => {
         await DB.clearXhsFeedPosts().catch(() => undefined);
         setPosts([]);
+        setConfirmClear(false);
         addToast('这一沓全撕掉了', 'info');
     };
 
@@ -345,120 +371,105 @@ const SocialApp: React.FC = () => {
         return [a, b];
     }, [visible]);
 
-    // ── 剪贴详情页 ──
+    // ── 卡片详情页 ──
     if (detail) {
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f4f2ed] animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
-                    <button onClick={() => setDetailId(null)} className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
-                        <ArrowLeft className="w-4 h-4 text-[#2b2933]" weight="bold" />
-                    </button>
-                    <span className="text-[10px] font-bold text-[#fbfaf7] bg-[#2b2933] px-2.5 py-1 shrink-0 label-mono rotate-2">见闻簿</span>
-                    <div className="flex-1" />
-                    <Avatar name={detail.author} src={detail.authorAvatar} />
-                    <div className="min-w-0 max-w-[55%]">
-                        <div className={`text-[13px] font-bold truncate text-right ${detail.authorType === 'character' ? 'text-[#2b2933] underline decoration-dotted underline-offset-2' : 'text-[#2b2933]'}`}>{detail.author}</div>
-                        <div className="text-[10px] text-[#8b8996] label-mono text-right">{fmtTime(detail.createdAt)}{detail.authorType === 'character' ? ' · 熟人' : detail.authorType === 'user' ? ' · 我剪的' : ' · 路人'}</div>
-                    </div>
-                </div>
+            <InsShell accent={AC}>
+                <AppHeader
+                    title={detail.author}
+                    sub={`${fmtTime(detail.createdAt)}${detail.authorType === 'character' ? ' · 熟人' : detail.authorType === 'user' ? ' · 我剪的' : ' · 路人'}`}
+                    onBack={() => setDetailId(null)}
+                    right={<Avatar name={detail.author} src={detail.authorAvatar} size={36} />}
+                />
 
-                <div className="flex-1 overflow-y-auto no-scrollbar pb-4">
+                <div className="flex-1 overflow-y-auto no-scrollbar pb-4 relative z-10">
                     {detail.coverUrl && (
-                        <img src={detail.coverUrl} className="w-full object-cover grayscale border-b-2 border-[#2b2933]" referrerPolicy="no-referrer"
+                        <img src={detail.coverUrl} className="w-full object-cover animate-photo-develop" referrerPolicy="no-referrer"
                             onError={(e: any) => { e.target.style.display = 'none'; }} />
                     )}
-                    <div className="px-4 pt-3">
-                        <div className="text-[16px] font-bold text-[#2b2933] leading-snug font-display-italic">{detail.title}</div>
-                        <div className="text-[13px] text-[#3a3842] leading-relaxed whitespace-pre-wrap mt-2">{detail.body}</div>
+                    <div className="px-4 pt-3.5">
+                        <div className="text-[18px] font-extrabold leading-snug" style={{ color: INK }}>{detail.title}</div>
+                        <div className="text-[14px] leading-relaxed whitespace-pre-wrap mt-2.5" style={{ color: '#3f3c45' }}>{detail.body}</div>
                         {detail.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-3">
+                            <div className="flex flex-wrap gap-1.5 mt-3.5">
                                 {detail.tags.map(t => (
-                                    <button key={t} onClick={() => { setDetailId(null); setSearchInput(t); setKeyword(t); }} className="text-[11px] text-[#2b2933] bg-[#fbfaf7] border border-[#2b2933] px-2 py-0.5">#{t}</button>
+                                    <button key={t} onClick={() => { setDetailId(null); setSearchInput(t); setKeyword(t); }} className="text-[12px] px-2.5 py-1 rounded-full font-medium press-soft" style={{ color: A.ink, background: A.soft }}>#{t}</button>
                                 ))}
                             </div>
                         )}
 
-                        {/* 批注区 */}
-                        <div className="text-[12px] font-bold text-[#6b6b6b] mt-5 mb-2 label-mono flex items-center gap-1.5 border-t-2 border-dashed border-[#2b2933]/25 pt-3"><PencilSimpleLine className="w-3.5 h-3.5" weight="bold" />批注 {detail.comments.length}</div>
-                        <div className="space-y-3">
+                        {/* 评论区 */}
+                        <div className="text-[12.5px] font-bold mt-6 mb-3 flex items-center gap-1.5 pt-4" style={{ color: INK, borderTop: '1px solid rgba(0,0,0,0.06)' }}><ChatCircle className="w-4 h-4" weight="bold" style={{ color: A.solid }} />评论 {detail.comments.length}</div>
+                        <div className="space-y-3.5">
                             {detail.comments.map(cm => (
-                                <div key={cm.id} className="flex gap-2">
-                                    <Avatar name={cm.author} size="w-7 h-7" />
+                                <div key={cm.id} className="flex gap-2.5">
+                                    <Avatar name={cm.author} src={(cm as any).avatar} size={30} />
                                     <div className="min-w-0 flex-1">
-                                        <div className="text-[11px] text-[#8b8996]">
-                                            {cm.author}
-                                            {cm.isUser && <span className="ml-1 text-[9px] text-[#fbfaf7] bg-[#2b2933] px-1">我</span>}
-                                            {!cm.isUser && cm.author === detail.author && <span className="ml-1 text-[9px] text-[#2b2933] border border-[#2b2933] px-1">笔者</span>}
+                                        <div className="text-[11px] flex items-center gap-1.5" style={{ color: INK_SOFT }}>
+                                            <span>{cm.author}</span>
+                                            {cm.isUser && <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full" style={{ background: A.solid }}>我</span>}
+                                            {!cm.isUser && cm.author === detail.author && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ color: A.ink, background: A.soft }}>作者</span>}
                                         </div>
-                                        <div className="text-[13px] text-[#2b2933] leading-relaxed whitespace-pre-wrap">{cm.content}</div>
-                                        <div className="text-[10px] text-[#c4c1b8] mt-0.5">{fmtTime(cm.timestamp)}{cm.likes > 0 ? ` · ${fmtCount(cm.likes)} 戳` : ''}</div>
+                                        <div className="text-[13.5px] leading-relaxed whitespace-pre-wrap mt-0.5" style={{ color: INK }}>{cm.content}</div>
+                                        <div className="text-[10px] mt-1" style={{ color: '#bcb9b2' }}>{fmtTime(cm.timestamp)}{cm.likes > 0 ? ` · ${fmtCount(cm.likes)} 赞` : ''}</div>
                                     </div>
                                 </div>
                             ))}
-                            {replying && <div className="text-[11px] text-[#8b8996] pl-9 font-hand">{detail.author} 正在落笔…</div>}
-                            {detail.comments.length === 0 && !replying && <div className="text-[11px] text-[#c4c1b8] font-hand">还没人批注，来写第一笔～</div>}
+                            {replying && <div className="text-[11.5px] pl-10" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}>{detail.author} 正在回复…</div>}
+                            {detail.comments.length === 0 && !replying && <div className="text-[11.5px]" style={{ color: '#bcb9b2', fontFamily: 'var(--font-hand)' }}>还没人评论，来写第一条～</div>}
                         </div>
                     </div>
                 </div>
 
-                {/* 底部互动栏：戳 / 夹 / 剪 + 批注输入 */}
-                <div className="shrink-0 border-t-2 border-[#2b2933] bg-[#fbfaf7] px-3 py-2 flex items-center gap-2" style={{ paddingBottom: 'calc(var(--safe-bottom, 0px) + 8px)' }}>
+                {/* 底部互动栏：赞 / 收藏 / 剪 + 评论输入 */}
+                <div className="shrink-0 bg-white px-3 py-2.5 flex items-center gap-2 relative z-10" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingBottom: 'calc(var(--safe-bottom, 0px) + 10px)' }}>
+                    <input
+                        value={commentInput}
+                        onChange={e => setCommentInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') void submitComment(); }}
+                        placeholder="写条评论…"
+                        className="flex-1 px-4 py-2.5 text-[13px] outline-none min-w-0 rounded-full"
+                        style={{ background: '#f2efeb' }}
+                    />
                     {commentInput.trim() ? (
-                        <>
-                            <input
-                                value={commentInput}
-                                onChange={e => setCommentInput(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') void submitComment(); }}
-                                placeholder="写句批注…"
-                                className="flex-1 bg-[#f4f2ed] border-2 border-[#2b2933] px-3.5 py-2 text-[13px] outline-none min-w-0 focus:shadow-[2px_2px_0_#2b2933] transition-shadow"
-                            />
-                            <button onClick={() => void submitComment()} disabled={replying} className="w-9 h-9 flex items-center justify-center bg-[#2b2933] text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0 disabled:opacity-50">
-                                <PushPin className="w-4 h-4" weight="fill" />
-                            </button>
-                        </>
+                        <button onClick={() => void submitComment()} disabled={replying} className="w-10 h-10 flex items-center justify-center rounded-full text-white press-soft shrink-0 disabled:opacity-50" style={{ background: A.solid }}>
+                            <PaperPlaneTilt className="w-5 h-5" weight="fill" />
+                        </button>
                     ) : (
                         <>
-                            <button onClick={() => toggleLike(detail)} className={`inline-flex items-center gap-1 text-[12px] shrink-0 px-1.5 ${detail.liked ? 'text-[#2b2933] font-bold' : 'text-[#6b6b6b]'}`}>
-                                <Heart className="w-5 h-5" weight={detail.liked ? 'fill' : 'regular'} />{fmtCount(detail.likes)}
+                            <button onClick={() => toggleLike(detail)} className="inline-flex flex-col items-center gap-0.5 shrink-0 px-1 press-soft" style={{ color: detail.liked ? A.solid : INK_SOFT }}>
+                                <Heart className="w-6 h-6" weight={detail.liked ? 'fill' : 'regular'} /><span className="text-[9px] font-bold">{fmtCount(detail.likes)}</span>
                             </button>
-                            <button onClick={() => toggleFav(detail)} className={`inline-flex items-center gap-1 text-[12px] shrink-0 px-1.5 ${detail.faved ? 'text-[#2b2933] font-bold' : 'text-[#6b6b6b]'}`}>
-                                <BookmarkSimple className="w-5 h-5" weight={detail.faved ? 'fill' : 'regular'} />{fmtCount(detail.favs)}
+                            <button onClick={() => toggleFav(detail)} className="inline-flex flex-col items-center gap-0.5 shrink-0 px-1 press-soft" style={{ color: detail.faved ? '#f59e0b' : INK_SOFT }}>
+                                <BookmarkSimple className="w-6 h-6" weight={detail.faved ? 'fill' : 'regular'} /><span className="text-[9px] font-bold">{fmtCount(detail.favs)}</span>
                             </button>
-                            <button onClick={() => { setForwardingPost(detail); setForwardNote(''); }} className="inline-flex items-center gap-1 text-[12px] text-[#6b6b6b] shrink-0 px-1.5">
-                                <Scissors className="w-5 h-5" weight="regular" />剪下来
+                            <button onClick={() => { setForwardingPost(detail); setForwardNote(''); }} className="inline-flex flex-col items-center gap-0.5 shrink-0 px-1 press-soft" style={{ color: INK_SOFT }}>
+                                <Scissors className="w-6 h-6" weight="regular" /><span className="text-[9px] font-bold">剪</span>
                             </button>
-                            <input
-                                value={commentInput}
-                                onChange={e => setCommentInput(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') void submitComment(); }}
-                                placeholder="写句批注…"
-                                className="flex-1 bg-[#f4f2ed] border-2 border-[#2b2933] px-3.5 py-2 text-[13px] outline-none min-w-0 focus:shadow-[2px_2px_0_#2b2933] transition-shadow"
-                            />
                         </>
                     )}
                 </div>
 
-                {/* 剪下来弹窗：居中胶带纸片 */}
-                {forwardingPost && (
-                    <div className="absolute inset-0 z-20 bg-[#2b2933]/40 flex items-center justify-center p-5" onClick={() => setForwardingPost(null)}>
-                        <div className="relative w-full max-w-[320px] bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.25)] p-4 -rotate-1" onClick={e => e.stopPropagation()}>
-                            <span className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-5 bg-[#2b2933]/12 border border-[#2b2933]/30 rotate-2 pointer-events-none" />
-                            <div className="text-[14px] font-bold text-[#2b2933] mb-2 font-display-italic flex items-center gap-1.5"><Scissors className="w-4 h-4" weight="bold" />剪下来，贴进我的簿子</div>
-                            <div className="bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/40 p-2.5 text-[11px] text-[#6b6b6b] line-clamp-2 mb-2">@{forwardingPost.author}：{forwardingPost.title}</div>
+                {/* 剪下来弹窗 */}
+                <InsDialog open={!!forwardingPost} title="剪下来" en="CLIP IT" accent={AC} onClose={() => setForwardingPost(null)}
+                    actions={<>
+                        <InsButton variant="soft" accent="slate" onClick={() => setForwardingPost(null)} className="flex-1 py-2.5 text-[13px]">放回去</InsButton>
+                        <InsButton variant="solid" accent={AC} onClick={submitForward} className="flex-1 py-2.5 text-[13px]">贴进簿子</InsButton>
+                    </>}>
+                    {forwardingPost && (
+                        <div className="text-left">
+                            <div className="px-3 py-2.5 rounded-2xl text-[12px] line-clamp-2 mb-3" style={{ background: A.soft, color: A.ink }}>@{forwardingPost.author}：{forwardingPost.title}</div>
                             <textarea
                                 value={forwardNote}
                                 onChange={e => setForwardNote(e.target.value)}
-                                placeholder="想加一句批注？（可留空）"
-                                className="w-full h-20 bg-[#f4f2ed] p-3 text-[13px] resize-none border-2 border-[#2b2933] outline-none focus:shadow-[2px_2px_0_#2b2933] transition-shadow mb-3"
+                                placeholder="想加一句评论？（可留空）"
+                                className="w-full h-20 p-3 text-[13px] resize-none outline-none rounded-2xl"
+                                style={{ background: '#f2efeb', color: INK }}
                             />
-                            <div className="flex items-center gap-2">
-                                <button onClick={() => setForwardingPost(null)} className="px-4 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] text-[13px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">放回去</button>
-                                <button onClick={submitForward} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[13px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">贴进簿子</button>
-                            </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+                </InsDialog>
+            </InsShell>
         );
     }
 
@@ -468,46 +479,39 @@ const SocialApp: React.FC = () => {
         const cur = deck[datingIdx];
         const remaining = deck.length - datingIdx;
         return (
-            <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
-                    <button onClick={closeApp} className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
-                        <ArrowLeft className="w-4 h-4 text-[#2b2933]" weight="bold" />
-                    </button>
-                    <div className="min-w-0 flex-1 leading-none">
-                        <span className="text-[20px] font-black text-[#2b2933] select-none font-display-italic">发现</span>
-                        <div className="text-[10px] text-[#8b8996] font-hand mt-0.5">附近正在交友的人，各有各的目的</div>
-                    </div>
-                    <button onClick={() => setShowLiked(true)} title="我喜欢的"
-                        className="relative w-9 h-9 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] text-rose-500 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
-                        <Heart className="w-4 h-4" weight="fill" />
-                        {liked.length > 0 && <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full">{liked.length}</span>}
-                    </button>
-                    <button onClick={() => void refreshDating()} disabled={datingBusy} title="换一批"
-                        className="inline-flex items-center gap-1 text-[12px] font-bold label-mono text-[#fbfaf7] bg-[#2b2933] px-2.5 py-2 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0 disabled:opacity-50">
-                        {datingBusy ? <Spinner className="w-4 h-4 animate-spin" weight="bold" /> : <Shuffle className="w-4 h-4" weight="bold" />}
-                        {datingBusy ? '搜寻中' : '换一批'}
-                    </button>
-                </div>
+            <InsShell accent={AC}>
+                <AppHeader
+                    title="发现"
+                    sub="附近正在交友的人，各有各的目的"
+                    onBack={closeApp}
+                    right={
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setShowLiked(true)} title="我喜欢的" className="relative w-9 h-9 flex items-center justify-center rounded-full bg-white press-soft" style={{ color: A.solid, boxShadow: '0 4px 14px -6px rgba(38,38,38,0.28)' }}>
+                                <Heart className="w-5 h-5" weight="fill" />
+                                {liked.length > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 text-white text-[9px] font-bold flex items-center justify-center rounded-full" style={{ background: A.solid }}>{liked.length}</span>}
+                            </button>
+                            <InsButton variant="solid" accent={AC} onClick={() => void refreshDating()} disabled={datingBusy} className="px-3 py-2 text-[12px]" icon={datingBusy ? <Spinner className="w-4 h-4 animate-spin" weight="bold" /> : <Shuffle className="w-4 h-4" weight="bold" />}>
+                                {datingBusy ? '搜寻中' : '换一批'}
+                            </InsButton>
+                        </div>
+                    }
+                />
                 <TabBar mode={mode} setMode={setMode} />
                 {/* 按目的筛选 */}
-                <div className="flex items-center gap-1.5 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0 overflow-x-auto no-scrollbar">
-                    <button onClick={() => { setMeetFilter('all'); setDatingIdx(0); }}
-                        className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${meetFilter === 'all' ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>全部</button>
+                <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
+                    <Chip active={meetFilter === 'all'} accent={AC} onClick={() => { setMeetFilter('all'); setDatingIdx(0); }}>全部</Chip>
                     {DATING_INTENTS.map(it => (
-                        <button key={it.key} onClick={() => { setMeetFilter(it.key); setDatingIdx(0); }}
-                            className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${meetFilter === it.key ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
-                            {it.emoji} {it.label}
-                        </button>
+                        <Chip key={it.key} active={meetFilter === it.key} accent={AC} onClick={() => { setMeetFilter(it.key); setDatingIdx(0); }}>{it.emoji} {it.label}</Chip>
                     ))}
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col items-center justify-center px-4 py-5">
+                <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col items-center justify-center px-4 py-5 relative z-10">
                     {datingBusy && dating.length === 0 ? (
-                        <div className="text-[12px] text-[#8b8996] font-hand flex items-center gap-2"><Spinner className="w-4 h-4 animate-spin" />正在发现身边的人…</div>
+                        <div className="text-[12.5px] flex items-center gap-2" style={{ color: INK_SOFT }}><Spinner className="w-4 h-4 animate-spin" />正在发现身边的人…</div>
                     ) : !cur ? (
                         <div className="text-center">
-                            <div className="text-3xl mb-3">👀</div>
-                            <div className="text-[14px] font-bold text-[#2b2933] mb-3 font-display-italic">{meetFilter === 'all' ? '附近的人都看完啦' : `这类目的的人看完了`}</div>
-                            <button onClick={() => meetFilter === 'all' ? void refreshDating() : (setMeetFilter('all'), setDatingIdx(0))} className="px-5 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">{meetFilter === 'all' ? '再发现一批' : '看看全部'}</button>
+                            <div className="text-4xl mb-3">👀</div>
+                            <div className="text-[15px] font-bold mb-4" style={{ color: INK }}>{meetFilter === 'all' ? '附近的人都看完啦' : '这类目的的人看完了'}</div>
+                            <InsButton variant="solid" accent={AC} onClick={() => meetFilter === 'all' ? void refreshDating() : (setMeetFilter('all'), setDatingIdx(0))} className="px-5 py-2.5 text-[13px]">{meetFilter === 'all' ? '再发现一批' : '看看全部'}</InsButton>
                         </div>
                     ) : (
                         <DatingCard key={cur.id} p={cur} remaining={remaining} onAct={(a) => datingAct(cur, a)} />
@@ -515,147 +519,114 @@ const SocialApp: React.FC = () => {
                 </div>
 
                 {/* 我喜欢的 / 匹配 列表 */}
-                {showLiked && (
-                    <div className="absolute inset-0 z-20 bg-[#2b2933]/40 flex items-end" onClick={() => setShowLiked(false)}>
-                        <div className="w-full max-h-[75%] bg-[#fbfaf7] border-t-2 border-[#2b2933] rounded-t-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ paddingBottom: 'calc(var(--safe-bottom,0px) + 8px)' }}>
-                            <div className="flex items-center gap-2 px-4 py-3 border-b-2 border-[#2b2933] shrink-0">
-                                <Heart className="w-4 h-4 text-rose-500" weight="fill" />
-                                <span className="text-[14px] font-bold text-[#2b2933] font-display-italic">我喜欢的 · {liked.length}</span>
-                                <div className="flex-1" />
-                                <button onClick={() => setShowLiked(false)} className="w-7 h-7 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7]"><X className="w-4 h-4" weight="bold" /></button>
+                <InsSheet open={showLiked} title={`我喜欢的 · ${liked.length}`} onClose={() => setShowLiked(false)}>
+                    <div className="max-h-[62vh] overflow-y-auto no-scrollbar space-y-2.5">
+                        {liked.length === 0 ? <div className="text-center text-[12.5px] py-10" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}>还没喜欢过谁，去发现几个吧～</div> : liked.map(l => (
+                            <div key={l.id} className="flex items-center gap-3 p-2.5 rounded-2xl" style={{ background: '#f7f5f2' }}>
+                                {l.avatar ? <img src={l.avatar} className="w-11 h-11 rounded-full object-cover shrink-0" /> : <span className="w-11 h-11 rounded-full flex items-center justify-center text-[22px] shrink-0" style={{ background: A.soft }}>{l.emoji}</span>}
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5"><span className="text-[13.5px] font-bold truncate" style={{ color: INK }}>{l.name}</span>{l.matched && <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: A.solid }}>已匹配</span>}<span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0" style={{ color: A.ink, background: A.soft }}>{intentMeta(l.intent).label}</span></div>
+                                    <div className="text-[11px] truncate mt-0.5" style={{ color: INK_SOFT }}>{l.bio}</div>
+                                </div>
+                                {l.matched && l.isChar && <InsButton variant="solid" accent={AC} onClick={() => openChatWith(l.charId)} className="shrink-0 px-3 py-1.5 text-[11px]">去聊</InsButton>}
                             </div>
-                            <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
-                                {liked.length === 0 ? <div className="text-center text-[12px] text-[#8b8996] font-hand py-10">还没喜欢过谁，去右滑几个吧～</div> : liked.map(l => (
-                                    <div key={l.id} className="flex items-center gap-3 bg-[#f4f2ed] border-2 border-[#2b2933] p-2.5">
-                                        {l.avatar ? <img src={l.avatar} className="w-10 h-10 object-cover grayscale border-2 border-[#2b2933] shrink-0" /> : <span className="w-10 h-10 flex items-center justify-center text-[22px] bg-[#fbfaf7] border-2 border-[#2b2933] shrink-0">{l.emoji}</span>}
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-1.5"><span className="text-[13px] font-bold text-[#2b2933] truncate">{l.name}</span>{l.matched && <span className="text-[9px] text-white bg-rose-500 px-1.5 py-0.5 shrink-0">已匹配</span>}<span className="text-[9px] text-[#2b2933] bg-[#fbfaf7] border border-[#2b2933] px-1 shrink-0">{intentMeta(l.intent).label}</span></div>
-                                            <div className="text-[11px] text-[#6b6b6b] truncate">{l.bio}</div>
-                                        </div>
-                                        {l.matched && l.isChar && <button onClick={() => openChatWith(l.charId)} className="shrink-0 text-[11px] font-bold text-[#fbfaf7] bg-[#2b2933] px-2.5 py-1.5 active:translate-x-[1px] active:translate-y-[1px] transition-transform">去聊</button>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        ))}
                     </div>
-                )}
+                </InsSheet>
 
                 {/* 打招呼·对方回应 */}
-                {greetCard && (
-                    <div className="absolute inset-0 z-30 bg-[#2b2933]/45 flex items-center justify-center p-5" onClick={() => setGreetCard(null)}>
-                        <div className="w-full max-w-[330px] bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[5px_5px_0_rgba(43,41,51,0.25)] p-4" onClick={e => e.stopPropagation()}>
+                <InsDialog open={!!greetCard} accent={AC} onClose={() => setGreetCard(null)}
+                    actions={greetCard ? <>
+                        <InsButton variant="soft" accent="slate" onClick={() => setGreetCard(null)} className="flex-1 py-2.5 text-[12px]">先这样</InsButton>
+                        {greetCard.p.isChar
+                            ? <InsButton variant="solid" accent={AC} onClick={() => openChatWith(greetCard.p.charId)} className="flex-1 py-2.5 text-[12px]">进「来往」聊</InsButton>
+                            : <div className="flex-1 text-center text-[10.5px] self-center" style={{ color: INK_SOFT }}>路人甲，缘分到了再说～</div>}
+                    </> : null}>
+                    {greetCard && (
+                        <div className="text-left">
                             <div className="flex items-center gap-2.5 mb-3">
-                                {greetCard.p.avatar ? <img src={greetCard.p.avatar} className="w-11 h-11 object-cover grayscale border-2 border-[#2b2933]" /> : <span className="w-11 h-11 flex items-center justify-center text-[24px] bg-[#f0eee8] border-2 border-[#2b2933]">{greetCard.p.emoji}</span>}
+                                {greetCard.p.avatar ? <img src={greetCard.p.avatar} className="w-11 h-11 rounded-full object-cover" /> : <span className="w-11 h-11 rounded-full flex items-center justify-center text-[24px]" style={{ background: A.soft }}>{greetCard.p.emoji}</span>}
                                 <div className="min-w-0">
-                                    <div className="text-[14px] font-bold text-[#2b2933] flex items-center gap-1.5">{greetCard.p.name}{greetCard.matched && <span className="text-[9px] text-white bg-rose-500 px-1.5 py-0.5">🎉 匹配成功</span>}</div>
-                                    <div className="text-[10px] text-[#8b8996]">{intentMeta(greetCard.p.intent).emoji} {intentMeta(greetCard.p.intent).label} · {greetCard.p.distanceKm}km</div>
+                                    <div className="text-[14px] font-bold flex items-center gap-1.5" style={{ color: INK }}>{greetCard.p.name}{greetCard.matched && <span className="text-[9px] text-white px-1.5 py-0.5 rounded-full" style={{ background: A.solid }}>🎉 匹配成功</span>}</div>
+                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{intentMeta(greetCard.p.intent).emoji} {intentMeta(greetCard.p.intent).label} · {greetCard.p.distanceKm}km</div>
                                 </div>
                             </div>
-                            <div className="bg-[#f4f2ed] border-2 border-[#2b2933] px-3 py-2.5 text-[13px] text-[#2b2933] leading-relaxed min-h-[52px] flex items-center">
-                                {greetCard.busy ? <span className="text-[#8b8996] font-hand flex items-center gap-1.5"><Spinner className="w-3.5 h-3.5 animate-spin" />{greetCard.p.name} 正在回复…</span> : greetCard.reply}
-                            </div>
-                            <div className="flex items-center gap-2 mt-3">
-                                <button onClick={() => setGreetCard(null)} className="px-4 py-2.5 border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">先这样</button>
-                                {greetCard.p.isChar
-                                    ? <button onClick={() => openChatWith(greetCard.p.charId)} className="flex-1 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">进「来往」聊</button>
-                                    : <div className="flex-1 text-center text-[10px] text-[#8b8996] font-hand self-center">路人甲，缘分到了再说～</div>}
+                            <div className="px-3.5 py-3 text-[13px] leading-relaxed min-h-[52px] flex items-center rounded-2xl" style={{ background: '#f7f5f2', color: INK }}>
+                                {greetCard.busy ? <span className="flex items-center gap-1.5" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}><Spinner className="w-3.5 h-3.5 animate-spin" />{greetCard.p.name} 正在回复…</span> : greetCard.reply}
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
+                </InsDialog>
+            </InsShell>
         );
     }
 
     // ── 信息流首页 ──
     return (
-        <div className="absolute inset-0 flex flex-col bg-[#f4f2ed]" style={{ paddingTop: 'var(--safe-top)' }}>
-            {/* 顶栏：返回 + 标题封面 + 素材堆 / 出门转转 */}
-            <div className="flex items-center gap-2 px-3 py-2.5 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
-                <button onClick={closeApp} className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
-                    <ArrowLeft className="w-4 h-4 text-[#2b2933]" weight="bold" />
-                </button>
-                <div className="min-w-0 flex-1 leading-none">
-                    <span className="text-[20px] font-black text-[#2b2933] select-none font-display-italic">见闻簿</span>
-                    <div className="text-[10px] text-[#8b8996] font-hand mt-0.5">{posts.length > 0 ? `已贴 ${posts.length} 张剪贴` : '一本贴满见闻的手账'}</div>
-                </div>
-                <button onClick={() => openApp(AppID.XhsStock)} title="素材堆（发帖备图）"
-                    className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform">
-                    <Stack className="w-4 h-4" weight="bold" />
-                </button>
-                <button onClick={() => openApp(AppID.XhsFreeRoam)} title="出门转转（让熟人自己去翻）"
-                    className="w-8 h-8 flex items-center justify-center border-2 border-[#2b2933] bg-[#fbfaf7] text-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform">
-                    <Binoculars className="w-4 h-4" weight="bold" />
-                </button>
-            </div>
+        <InsShell accent={AC}>
+            <AppHeader
+                title="见闻簿"
+                sub={posts.length > 0 ? `已贴 ${posts.length} 张卡片` : '一本贴满见闻的簿子'}
+                onBack={closeApp}
+                right={
+                    <div className="flex items-center gap-2">
+                        <IconCircle onClick={() => openApp(AppID.XhsStock)} title="素材堆（发帖备图）"><Stack className="w-4 h-4" weight="bold" /></IconCircle>
+                        <IconCircle onClick={() => openApp(AppID.XhsFreeRoam)} title="出门转转（让熟人自己去翻）"><Binoculars className="w-4 h-4" weight="bold" /></IconCircle>
+                    </div>
+                }
+            />
             <TabBar mode={mode} setMode={setMode} />
 
-            {/* 工具条：翻找 + 翻新页 + 撕掉整簿 */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0">
-                <div className="flex-1 flex items-center gap-2 bg-[#f4f2ed] border-2 border-[#2b2933] px-3.5 py-2 min-w-0">
-                    <MagnifyingGlass className="w-4 h-4 text-[#2b2933] shrink-0" weight="bold" />
+            {/* 工具条：搜索 + 翻新页 + 清空 */}
+            <div className="flex items-center gap-2 px-3 pb-2 shrink-0 relative z-10">
+                <div className="flex-1 flex items-center gap-2 px-3.5 py-2.5 min-w-0 rounded-full" style={{ background: '#fff', boxShadow: '0 1px 2px rgba(38,38,38,0.04)', border: '1px solid rgba(0,0,0,0.05)' }}>
+                    <MagnifyingGlass className="w-4 h-4 shrink-0" weight="bold" style={{ color: INK_SOFT }} />
                     <input
                         value={searchInput}
                         onChange={e => { setSearchInput(e.target.value); setKeyword(e.target.value); }}
-                        placeholder="翻翻看 / 找人 / 找标签…"
+                        placeholder="搜见闻 / 找人 / 找标签…"
                         className="flex-1 bg-transparent text-[13px] outline-none min-w-0"
+                        style={{ color: INK }}
                     />
                 </div>
-                <button
-                    onClick={() => void refreshFeed()}
-                    disabled={generating}
-                    className="inline-flex items-center gap-1 text-[12px] font-bold label-mono text-[#fbfaf7] bg-[#2b2933] px-2.5 py-2 active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0 disabled:opacity-50"
-                    title={`再剪 ${FEED_BATCH_SIZE} 张贴上`}
-                >
-                    <Shuffle className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} weight="bold" />
-                    {generating ? '剪贴中' : '翻新页'}
-                </button>
-                <button onClick={() => void clearFeed()} title="撕掉整簿"
-                    className="w-9 h-9 flex items-center justify-center border-2 border-dashed border-[#2b2933]/50 bg-[#fbfaf7] text-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform shrink-0">
-                    <Broom className="w-4 h-4" weight="bold" />
-                </button>
+                <InsButton variant="solid" accent={AC} onClick={() => void refreshFeed()} disabled={generating} className="px-3 py-2.5 text-[12px]" title={`再剪 ${FEED_BATCH_SIZE} 张贴上`}
+                    icon={<Shuffle className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} weight="bold" />}>
+                    {generating ? '生成中' : '翻新页'}
+                </InsButton>
+                <IconCircle onClick={() => setConfirmClear(true)} title="清空整簿"><Broom className="w-4 h-4" weight="bold" /></IconCircle>
             </div>
 
-            {/* 热门话题条：从簿子里的标签聚出话题，点一下按话题翻找 */}
+            {/* 热门话题条 */}
             {topicChips.length > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-2 bg-[#fbfaf7] border-b-2 border-[#2b2933] shrink-0 overflow-x-auto no-scrollbar">
-                    <span className="text-[10px] font-bold text-[#8b8996] label-mono shrink-0 mr-0.5">话题</span>
-                    {keyword && (
-                        <button onClick={() => { setKeyword(''); setSearchInput(''); }}
-                            className="shrink-0 text-[11px] font-bold px-2 py-1 border-2 border-[#2b2933] bg-[#2b2933] text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px] transition-transform">
-                            ✕ 全部
-                        </button>
-                    )}
+                <div className="flex items-center gap-2 px-3 pb-2 shrink-0 overflow-x-auto no-scrollbar relative z-10">
+                    <span className="text-[10px] font-bold shrink-0" style={{ color: INK_SOFT }}>话题</span>
+                    {keyword && <Chip active accent={AC} onClick={() => { setKeyword(''); setSearchInput(''); }}>✕ 全部</Chip>}
                     {topicChips.map(t => {
                         const active = keyword.trim().toLowerCase() === t.toLowerCase();
                         return (
-                            <button key={t}
-                                onClick={() => { const next = active ? '' : t; setKeyword(next); setSearchInput(next); }}
-                                className={`shrink-0 text-[11px] px-2 py-1 border-2 border-[#2b2933] active:translate-x-[1px] active:translate-y-[1px] transition-transform ${active ? 'bg-[#2b2933] text-[#fbfaf7] font-bold' : 'bg-[#fbfaf7] text-[#2b2933]'}`}>
-                                #{t}
-                            </button>
+                            <Chip key={t} active={active} accent={AC} onClick={() => { const next = active ? '' : t; setKeyword(next); setSearchInput(next); }}>#{t}</Chip>
                         );
                     })}
                 </div>
             )}
 
-            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-4 pb-10">
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-2 pb-10 relative z-10">
                 {!loaded ? (
-                    <div className="mt-16 text-center text-[12px] text-[#8b8996] font-hand">翻箱倒柜中…</div>
+                    <div className="mt-16 text-center text-[12.5px]" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}>翻箱倒柜中…</div>
                 ) : visible.length === 0 && generating ? (
-                    <div className="mt-16 text-center text-[12px] text-[#8b8996] font-hand">正在剪第一沓（熟人 + 路人）…</div>
+                    <div className="mt-16 text-center text-[12.5px]" style={{ color: INK_SOFT, fontFamily: 'var(--font-hand)' }}>正在剪第一沓（熟人 + 路人）…</div>
                 ) : visible.length === 0 ? (
-                    <div className="mt-10 mx-2 bg-[#fbfaf7] border-2 border-[#2b2933] shadow-[4px_4px_0_rgba(43,41,51,0.2)] p-6 text-center rotate-1">
-                        <div className="text-3xl mb-3">✄</div>
-                        <div className="text-[14px] font-bold text-[#2b2933] mb-2 font-display-italic">{keyword ? `翻遍也没找到「${keyword}」` : '簿子还是空白页'}</div>
+                    <div className="mt-10 mx-2 bg-white p-7 text-center" style={{ borderRadius: 24, boxShadow: '0 18px 40px -28px rgba(38,38,38,0.3)' }}>
+                        <div className="text-4xl mb-3">✄</div>
+                        <div className="text-[15px] font-extrabold mb-2" style={{ color: INK }}>{keyword ? `没找到「${keyword}」` : '簿子还是空白页'}</div>
                         {!keyword && (
                             <>
-                                <div className="text-[12px] text-[#6b6b6b] leading-relaxed mb-4">
+                                <div className="text-[12.5px] leading-relaxed mb-4" style={{ color: INK_SOFT }}>
                                     点「翻新页」剪一沓贴上：你认识的人会按性子发，还混着各路路人甲乙。{!apiReady && '记得先去「文具盒」把 API 补上。'}
                                 </div>
-                                <button onClick={() => apiReady ? void refreshFeed() : openApp(AppID.Settings)} className="px-5 py-2.5 bg-[#2b2933] text-[#fbfaf7] text-[12px] font-bold label-mono active:translate-x-[1px] active:translate-y-[1px] transition-transform">
+                                <InsButton variant="gradient" onClick={() => apiReady ? void refreshFeed() : openApp(AppID.Settings)} className="px-6 py-2.5 text-[13px]">
                                     {apiReady ? '剪一沓贴上' : '去文具盒'}
-                                </button>
+                                </InsButton>
                             </>
                         )}
                     </div>
@@ -666,7 +637,16 @@ const SocialApp: React.FC = () => {
                     </div>
                 )}
             </div>
-        </div>
+
+            {/* 清空整簿确认 */}
+            <InsDialog open={confirmClear} title="清空整簿？" en="CLEAR ALL" accent={AC} onClose={() => setConfirmClear(false)}
+                actions={<>
+                    <InsButton variant="soft" accent="slate" onClick={() => setConfirmClear(false)} className="flex-1 py-2.5 text-[13px]">留着</InsButton>
+                    <InsButton variant="solid" accent={AC} onClick={() => void clearFeed()} className="flex-1 py-2.5 text-[13px]">全部撕掉</InsButton>
+                </>}>
+                簿子里这一沓卡片会全部撕掉，没法再找回来。
+            </InsDialog>
+        </InsShell>
     );
 };
 

@@ -343,3 +343,27 @@ pm run build passes after the time-gap grouping fix.
   - **富界面互动**：① **打字机逐字显示**（当前一拍逐字浮现，轻点先打完·再点推进·双击全文；菜单一键开关，偏好持久化 `moro_harem_tw`）；② **点立绘速览**（点在场角色→弹四维速览 + 详看全部/去见 ta）；③ **「换种写法」**（对当前场不满意→相同状态重抽，只换文笔不推进剧情）；④ 立绘加情绪标 + 离心碎心标。
   - 开局界面加「叙事设定」区（风格 chips + 尺度滑杆 + 节奏 chips + 开场设定 textarea）。
   - `utils/haremStory.test.ts` +5（settings 注入 prompt/mood+inner 解析/reviveStory 迁移/fallback mood）。`pnpm tsc --noEmit` clean，`vite build` 通过，689 tests green。
+- 全局界面美化·告别黑白拼贴手账，转「Ins 风 + 拍立得」新基调（逐 App 换肤，絮语不动）：
+  - **新美学层（全局 CSS）** `index.html`：在旧手账 CSS 之后新增「Ins 风 + 拍立得 设计层」——拍立得显影动画 `@keyframes polaroidDevelop`/`.animate-develop`（照片从泛白欠曝缓缓显影 + 轻微上浮）、`.animate-photo-develop`（仅照片显影，网格用）、`.animate-float-soft`（轻柔漂浮）、`.animate-ins-card`（卡片放大淡入）、彩色 IG 故事环 `.ins-ring`（日落 conic 渐变 + 缓旋）/`.ins-ring-static`、`.ins-card`/`.ins-canvas`/`.ins-gradient-text`。**不删旧手账 CSS**——尚未换肤的 App 仍依赖它，迁移完再清。
+  - **共享积木库** `components/ui/insKit.tsx`（对标折子戏专属的 `apps/theater/scrapbook.tsx`，但本库全系统通用）：暖白画布 + 暖墨字 token、`ACCENTS` 16 色（取自 constants 各 App 的 color → 实色/浅底/浅底字色）+ `accent()`；积木 `InsShell`（暖白外壳 + 顶部强调色微光）/`InsHeader`（软圆返回 + 中文粗标 + 等宽英文小标）/`InsScroll`/`IconCircle`/`Polaroid`（**彩色**拍立得相框 + 显影动画 + 手写题字 + 日期戳）/`StoryRing`（IG 彩环头像）/`InsCard`/`InsButton`（实色/浅底/幽灵/IG 渐变）/`SectionLabel`/`Chip`/`InsEmpty`/`InsDialog`/`InsSheet`。各 App 换肤从此取用，「结构语言一致、各家用自己的强调色」。
+  - **旗舰 App·相册（`apps/Gallery.tsx`）整体重做**（逻辑零改动，仅换渲染层）：① 相册墙＝每位角色一张**彩色拍立得**（头像 + 手写名 + 张数角标 + 错落微旋转 + 逐张显影）；② 网格＝**IG 个人主页式**（顶部彩色故事环头像 + 名字 + 张数，下方紧密三列彩照网格 + 留言/日期角标 + 逐张显影）；③ 详情＝**暖调灯箱 + 拍立得照片**（轻旋显影），底部「背面题字」白卡（故事环头像 + 手写留言 + 换句留言/翻看对话）。撕→删/清空文案去手账化。强调色＝orange。
+  - `pnpm tsc --noEmit` 0 非 api 错误，`vite build` 通过。后续逐个 App 沿用 insKit 换肤（絮语/Chat 不动）。
+- 逐 App 换肤（简约版 Ins + 拍立得）·第二批：拾光图库 + 热点
+  - **拾光图库**（`apps/XhsStockApp.tsx`，red）：`InsShell`+`InsHeader`（标题 + 入库数 + 右上角红色 + 钮），标签筛选改 `Chip` 行，网格瀑布显影（`.animate-photo-develop`）+ 标签/使用次数浮层 + hover 删除，新增图预览改**拍立得式相框**，提交按钮 `InsButton` IG 渐变，空状态 `InsEmpty`。逻辑零改动。
+  - **热点**（`apps/HotNewsApp.tsx`，red）：从报纸 serif 风改清爽 ins 杂志信息流——`InsShell`+`InsHeader`（热点 / HOT NOW + 刷新），保留「Moro Daily / 今日热点」刊头但用 `.ins-gradient-text` 渐变点睛，每个平台一张 `InsCard` 白卡（前 3 名红色序号 + 外链 + 转发），声明条改 `InsCard` 左缘强调，转发选人改 `StoryRing`。逻辑零改动。
+  - 演示页 `demo-gallery.tsx` 升级为**多 App 预览**（相册 + 拾光图库 + 热点分区登场）。`tsc` 0 非 api 错误，`vite build` 通过。
+- 逐 App 换肤·收尾与第三个：拆演示脚手架 + 弹窗补全 + 见闻簿完整重做
+  - **拆演示页**：删 `demo-gallery.html`/`demo-gallery.tsx`，`vite.config.ts` 恢复单入口（按反馈不再做预览页）。
+  - **弹窗补全单独设计**：拾光图库删除确认改 `InsDialog`（红主题，替原通用 ConfirmDialog）；热点转发选人改 `InsSheet` 底部抽屉（彩色故事环网格，替原通用 Modal）。
+  - **见闻簿**（`apps/SocialApp.tsx`，rose）**完整 bespoke 重做**（逻辑零改动）：黑白手账 → 彩色小红书瀑布流——`Avatar` 彩色圆头像（无图用日落渐变首字）、`PostCard` 白色大圆角 + 彩色封面 + 瀑布显影、见闻/交友改胶囊滑块段控、`DatingCard` 彩照圆角软卡 + 三键互动、详情页彩色封面 + 评论 + 底部赞/藏/剪互动栏、`InsDialog`「剪下来」/「清空整簿（新增确认）」、`InsSheet`「我喜欢的」、`InsDialog`「打招呼回应」，话题/筛选改 `Chip`。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 4/28**（相册·拾光图库·热点·见闻簿）。
+- 逐 App 换肤·连续作业（按指示一次性推进，频繁提交）：
+  - **自由活动**（`apps/XhsFreeRoamApp.tsx`，rose）：rose/白 → 完整 ins。返回/角色切换故事环、`InsCard` 实况与历史、运行态实况面板、`InsSheet` 角色选择 + 活动详情、`InsDialog` 确认，底部开始按钮 IG 渐变。逻辑零改。
+  - **茶话亭**（`apps/ForumApp.tsx`，amber 茶馆暖调）：851 行重度 scrapbook → ins。用「同名原语 ins 化」shim 法（PaperBackdrop/ScrapButton/WashiTape/Stamp/StickyNote/SectionTag/DashedRule/PaperDialog 就地换 ins 实现，保持 API 全文零改调用点）+ PANEL/paperInput/chip/Header/Empty 重定向 + 虚线描边统一为发丝线 + FAB 改 amber。逻辑零改。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 6/28**（+自由活动、茶话亭）。
+- 逐 App 换肤·共享套件法转换 5 个 scrapbook 大 App：新建 `apps/ui/insScrapKit.tsx`（与 scrapbook 同名导出/签名，但渲染 ins 风：白卡 + 大圆角 + 极柔投影 + 彩色 + 彩色 WASHI），把 **心意铺/自习室/饭票/折子戏(壳)/椒房记(文游)** 的 import 路径从 `theater/scrapbook` 切到 `ui/insScrapKit`（调用点零改）。絮语(Chat) 的 ScrapModal/JournalSheet 仍用原 scrapbook，**不受影响**。`tsc` 0 非 api 错误，`vite build` 通过。**进度 11/28**（+心意铺/自习室/饭票/折子戏/椒房记）。
+- 逐 App 换肤·共享 kit 法（高杠杆）再转换两套：
+  - **creative/collage**（黑白拼贴 → ins）：保签名重写——白卡 + 暖墨字 + 极柔投影 + 大圆角，去黑描边/硬阴影/网点满铺，保留少量胶带/邮票作创作社性格。一举 ins 化 **创作社/笔友会(Novel)/写歌(Songwriting)/NovelWriter**。CreativeStudioApp 内联 brutalist 卡片也改 ins。
+  - **almanac/handbookKit**（暖牛皮纸手账 → ins）：保签名重写——干净暖白页 + PaperNote 白卡软投影 + 票签干净胶囊，保留少量胶带/邮戳。一举 ins 化 **岁时记/存钱罐(Bank)/时光契约(Schedule)/特别时光/ValentineEvent + bank 子组件**。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度约 18/28**（+创作社/笔友会/写歌/岁时记/存钱罐/日程 等）。
+- 逐 App 换肤·brutalist 工具 App：剪影集封面(PersonaHubApp, violet) + 补丁铺(RegexApp, teal) 内联黑白 brutalist（border-2/硬阴影/纸底/墨块开关）→ ins（白卡软投影 + 圆角 + press-soft + teal 圆开关）。tsc 0 非 api 错误，build 通过。

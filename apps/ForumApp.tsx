@@ -11,11 +11,47 @@ import {
     levelInfo, isCheckedIn, checkIn, maxStreak, toggleFollowBoard, toggleCollect, addExp,
     boardStat, hotRank, userLikesReceived, votePoll, pollTotal,
 } from '../utils/forum';
-import {
-    PaperBackdrop, ScrapButton, WashiTape, Stamp, StickyNote, SectionTag, DashedRule,
-    PaperDialog, PaperSheet,
-    INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
-} from './theater/scrapbook';
+import { InsButton, InsDialog, IconCircle, accent } from '../components/ui/insKit';
+
+// 茶话亭强调色（茶馆暖调）
+const AC = 'amber' as const;
+const A = accent(AC);
+// 原 scrapbook 常量的 ins 替身（保持名字，全文无需改）
+const INK = '#2b2933';
+const INK_SOFT = '#8b8996';
+const PAPER = '#ffffff';
+const PAGE_BG = '#f7f5f2';
+const HALFTONE = 'none';
+const TAPE_STRIPES = 'repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 5px, transparent 5px 11px)';
+const WASHI: Record<string, { base: string }> = { ink: { base: INK }, butter: { base: '#fbe6bf' }, amber: { base: A.solid }, sage: { base: '#cdd6c4' } };
+
+// ── ins 风 shim：保持 scrapbook 组件 API，渲染清爽 ins 外观（全文调用点不变）──
+const PaperBackdrop: React.FC<{ corners?: boolean }> = () => (
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56" style={{ background: `radial-gradient(120% 90% at 50% -28%, ${A.soft}, transparent 70%)`, zIndex: 0 }} />
+);
+const ScrapButton: React.FC<{ children: React.ReactNode; variant?: 'ink' | 'paper' | 'ghost'; onClick?: () => void; disabled?: boolean; className?: string; icon?: React.ReactNode; type?: 'button' | 'submit'; title?: string }> = ({ children, variant = 'ink', onClick, disabled, className = '', icon, type = 'button', title }) => (
+    <InsButton variant={variant === 'ink' ? 'solid' : variant === 'paper' ? 'soft' : 'ghost'} accent={variant === 'paper' ? 'slate' : AC} onClick={onClick} disabled={disabled} className={className} icon={icon} type={type} title={title}>{children}</InsButton>
+);
+const WashiTape: React.FC<{ color?: string; rotate?: number; className?: string; style?: React.CSSProperties; children?: React.ReactNode }> = ({ color = 'ink', rotate = -3, className = '', style, children }) => (
+    <span aria-hidden className={`select-none ${className}`} style={{ background: (WASHI[color] || WASHI.ink).base, backgroundImage: TAPE_STRIPES, opacity: 0.82, transform: `rotate(${rotate}deg)`, boxShadow: '0 3px 7px -3px rgba(0,0,0,0.25)', ...style }}>{children}</span>
+);
+const Stamp: React.FC<{ children: React.ReactNode; color?: string; size?: number; className?: string }> = ({ children, color = 'ink', size = 40, className = '' }) => (
+    <span className={`inline-flex items-center justify-center shrink-0 rounded-xl ${className}`} style={{ width: size, height: size, background: color === 'ink' ? INK : A.soft, color: color === 'ink' ? '#fff' : A.ink, boxShadow: '0 4px 10px -6px rgba(0,0,0,0.3)' }}>{children}</span>
+);
+const StickyNote: React.FC<{ children: React.ReactNode; color?: string; rotate?: number; className?: string; style?: React.CSSProperties }> = ({ children, rotate = 0, className = '', style }) => (
+    <div className={className} style={{ background: '#fff', borderRadius: 18, boxShadow: '0 14px 30px -22px rgba(38,38,38,0.3)', transform: rotate ? `rotate(${rotate}deg)` : undefined, ...style }}>{children}</div>
+);
+const SectionTag: React.FC<{ children: React.ReactNode; en?: string; color?: string; className?: string }> = ({ children, en, className = '' }) => (
+    <div className={`flex items-center gap-2 ${className}`}>
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: A.solid }} />
+        <span className="text-[13px] font-extrabold" style={{ color: INK }}>{children}</span>
+        {en && <span className="text-[8px] tracking-[0.3em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{en}</span>}
+    </div>
+);
+const DashedRule: React.FC<{ className?: string }> = ({ className = '' }) => <div className={`h-px ${className}`} style={{ background: 'rgba(0,0,0,0.07)' }} />;
+const PaperDialog: React.FC<{ open: boolean; onClose?: () => void; title?: string; en?: string; children: React.ReactNode; actions?: React.ReactNode; tape?: string; maxWidth?: number }> = ({ open, onClose, title, en, children, actions, maxWidth }) => (
+    <InsDialog open={open} onClose={onClose} title={title} en={en} accent={AC} actions={actions} maxWidth={maxWidth}>{children}</InsDialog>
+);
 import {
     CaretLeft, PencilSimple, ArrowFatUp, ArrowFatDown, ChatCircleText, X, Sparkle,
     ArrowsClockwise, MagnifyingGlass, Fire, CrownSimple, Spinner, House, BellSimple, User,
@@ -32,22 +68,19 @@ const THREAD_BATCH = 12;  // 每个板块一次生成帖子数（≥10）
 // 茶客们随手插的颜文字（回帖快捷插入）
 const KAOMOJI = ['[doge]', '(｡･ω･｡)', '( ´_ゝ`)', '(¦3[▓▓]', '(*•̀ᴗ•́*)', 'σ`∀´)σ', '(╯‵□′)╯', '꒰๑˃̶᷄ ⌑ ˂̶᷅๑꒱', '( ˘•ω•˘ )', '╮(╯▽╰)╭', '(๑•̀ㅂ•́)و✧', '哈哈哈哈哈'];
 
-// ── 黑白拼贴手账·通用样式片（呼应折子戏 / 心意铺）──────────────────────────
-/** 米白纸卡（缝线描边 + 纸面渐变） */
+// ── ins 风·通用样式片 ──────────────────────────
+/** 清爽白卡（大圆角 + 极柔投影） */
 const PANEL: React.CSSProperties = {
-    background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)',
-    border: '1px solid rgba(176,170,158,0.7)',
-    outline: '1px dashed rgba(150,144,132,0.5)',
-    outlineOffset: '-5px',
-    borderRadius: 16,
-    boxShadow: '0 12px 24px -16px rgba(31,29,26,0.5)',
+    background: '#ffffff',
+    borderRadius: 20,
+    boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -28px rgba(38,38,38,0.28)',
 };
-const paperInput: React.CSSProperties = { background: 'rgba(255,253,247,0.92)', color: INK, border: '1px solid rgba(176,170,158,0.7)' };
-/** 胶囊小标签 / 分段开关（选中＝墨块，未选＝纸面虚线） */
+const paperInput: React.CSSProperties = { background: '#ffffff', color: INK, border: '1px solid rgba(0,0,0,0.06)' };
+/** 胶囊小标签 / 分段开关（选中＝强调实色，未选＝白底发丝线） */
 const chip = (active: boolean): React.CSSProperties =>
     active
-        ? { background: INK, color: PAPER, boxShadow: '0 6px 14px -8px rgba(31,29,26,0.6)' }
-        : { background: 'rgba(255,253,247,0.72)', color: '#6b655a', border: '1px dashed rgba(150,144,132,0.6)' };
+        ? { background: A.solid, color: '#fff', boxShadow: `0 8px 18px -10px ${A.solid}cc` }
+        : { background: '#ffffff', color: INK_SOFT, border: '1px solid rgba(0,0,0,0.06)' };
 
 const timeAgo = (t: number): string => {
     const d = Date.now() - t;
@@ -85,7 +118,7 @@ const RoleTag: React.FC<{ type: string; isOp?: boolean; owner?: string; name?: s
         {isOp && <span className="px-1 py-px rounded text-[9px] font-bold flex items-center gap-0.5" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px solid rgba(120,116,108,0.55)' }}><CrownSimple size={9} weight="fill" />楼主</span>}
         {owner && name === owner && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: INK, color: PAPER }}>亭主</span>}
         {type === 'char' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(120,116,108,0.5)', color: '#2a2824' }}>角色</span>}
-        {type === 'user' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px dashed rgba(150,144,132,0.7)' }}>我</span>}
+        {type === 'user' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px solid rgba(0,0,0,0.06)' }}>我</span>}
     </>
 );
 
@@ -347,14 +380,14 @@ const ForumApp: React.FC = () => {
         const b = boardOf(p.boardId);
         return (
             <button onClick={() => setOpenId(p.id)} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform"
-                style={{ borderBottom: '1px dashed rgba(150,144,132,0.45)' }}>
+                style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                 <div className="flex items-center gap-2 mb-1">
                     <Avatar a={p.avatar} name={p.authorName} type={p.authorType} size={22} />
                     <span className="text-[11px] truncate max-w-[80px]" style={{ color: INK_SOFT }}>{p.authorName}</span>
                     <LevelBadge lv={lvOf(p.authorType, p.authorName)} />
                     {p.authorType === 'char' && <span className="text-[9px]" style={{ color: INK_SOFT }}>角色</span>}
                     <span className="text-[10px]" style={{ color: 'rgba(150,144,132,0.85)' }}>· {timeAgo(p.lastActiveAt)}</span>
-                    {showBoard && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(255,253,247,0.8)', color: INK_SOFT, border: '1px dashed rgba(150,144,132,0.6)' }}>{b?.emoji}{b?.name}</span>}
+                    {showBoard && <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(255,253,247,0.8)', color: INK_SOFT, border: '1px solid rgba(0,0,0,0.06)' }}>{b?.emoji}{b?.name}</span>}
                 </div>
                 <div className="text-[14px] font-bold leading-snug flex items-center gap-1.5" style={{ color: INK }}>
                     <PostTags p={p} />
@@ -398,7 +431,7 @@ const ForumApp: React.FC = () => {
                                     <LevelBadge lv={lvOf(open.authorType, open.authorName)} />
                                     <span className="px-1 py-px rounded text-[9px] font-bold flex items-center gap-0.5" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px solid rgba(120,116,108,0.55)' }}><CrownSimple size={9} weight="fill" />楼主</span>
                                     {open.authorType === 'char' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(120,116,108,0.5)', color: '#2a2824' }}>角色</span>}
-                                    {open.authorType === 'user' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px dashed rgba(150,144,132,0.7)' }}>我</span>}
+                                    {open.authorType === 'user' && <span className="px-1 py-px rounded text-[9px] font-bold" style={{ background: 'rgba(255,253,247,0.9)', color: INK, border: '1px solid rgba(0,0,0,0.06)' }}>我</span>}
                                 </div>
                                 <div className="text-[10px]" style={{ color: INK_SOFT }}>{timeAgo(open.createdAt)} · 共 {kFmt(target)} 楼</div>
                             </div>
@@ -441,7 +474,7 @@ const ForumApp: React.FC = () => {
                                     <p className="text-[13px] leading-relaxed mt-0.5 whitespace-pre-wrap" style={{ color: INK }}>{r.body}</p>
                                     {/* 楼中楼 */}
                                     {r.subReplies && r.subReplies.length > 0 && (
-                                        <div className="mt-1.5 rounded-lg px-2.5 py-1.5 space-y-1" style={{ background: 'rgba(232,228,217,0.55)', border: '1px dashed rgba(150,144,132,0.5)' }}>
+                                        <div className="mt-1.5 rounded-lg px-2.5 py-1.5 space-y-1" style={{ background: 'rgba(232,228,217,0.55)', border: '1px solid rgba(0,0,0,0.05)' }}>
                                             {r.subReplies.map(s => (
                                                 <p key={s.id} className="text-[12px] leading-relaxed">
                                                     <span className="font-bold" style={{ color: INK }}>{s.authorName}</span>
@@ -472,14 +505,14 @@ const ForumApp: React.FC = () => {
                 </div>
                 {/* 颜文字面板 */}
                 {kaoOpen && (
-                    <div className="relative z-10 shrink-0 px-3 py-2 grid grid-cols-4 gap-1.5" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)', background: 'rgba(251,249,242,0.95)' }}>
+                    <div className="relative z-10 shrink-0 px-3 py-2 grid grid-cols-4 gap-1.5" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)' }}>
                         {KAOMOJI.map(k => (
-                            <button key={k} onClick={() => setReply(r => r + k)} className="py-1.5 rounded-lg text-[12px] truncate active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.8)', color: '#48443c', border: '1px dashed rgba(150,144,132,0.5)' }}>{k}</button>
+                            <button key={k} onClick={() => setReply(r => r + k)} className="py-1.5 rounded-lg text-[12px] truncate active:scale-95 transition-transform" style={{ background: 'rgba(255,253,247,0.8)', color: '#48443c', border: '1px solid rgba(0,0,0,0.05)' }}>{k}</button>
                         ))}
                     </div>
                 )}
                 {/* 回帖框 + 收藏/分享 */}
-                <div className="relative z-10 shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
+                <div className="relative z-10 shrink-0 p-2.5 flex items-center gap-2" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
                     <button onClick={() => setKaoOpen(v => !v)} className="p-2 rounded-full active:scale-90 transition-transform" style={{ color: kaoOpen ? INK : INK_SOFT }}><Smiley size={22} weight={kaoOpen ? 'fill' : 'regular'} /></button>
                     <input value={reply} onChange={e => setReply(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addUserReply(); }} onFocus={() => setKaoOpen(false)}
                         placeholder="接句话，盖一层楼…" className="flex-1 px-3.5 py-2.5 rounded-full text-[13px] outline-none" style={paperInput} />
@@ -607,7 +640,7 @@ const ForumApp: React.FC = () => {
                 {shownNotifs.length === 0 ? (
                     <div className="text-center text-sm pt-24 flex flex-col items-center gap-2" style={{ color: INK_SOFT }}><BellSimple size={32} style={{ color: 'rgba(150,144,132,0.6)' }} />暂时没有人来叩门</div>
                 ) : shownNotifs.map(n => (
-                    <button key={n.id} onClick={() => openNotif(n)} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform flex gap-3" style={{ borderBottom: '1px dashed rgba(150,144,132,0.45)' }}>
+                    <button key={n.id} onClick={() => openNotif(n)} className="w-full text-left px-4 py-3 active:scale-[0.995] transition-transform flex gap-3" style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
                         <div className="relative shrink-0">
                             <Avatar a={n.avatar} name={n.actorName} type={n.actorType} size={38} />
                             {!n.read && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full" style={{ background: INK, border: '2px solid #f6f3ec' }} />}
@@ -620,7 +653,7 @@ const ForumApp: React.FC = () => {
                                 <span className="text-[10px] ml-auto shrink-0" style={{ color: 'rgba(150,144,132,0.85)' }}>{timeAgo(n.createdAt)}</span>
                             </div>
                             <div className="text-[12px] mt-0.5" style={{ color: INK_SOFT }}>{notifText(n)}{n.kind !== 'system' && n.postTitle && <span style={{ color: 'rgba(150,144,132,0.95)' }}> · {n.postTitle}</span>}</div>
-                            {n.snippet && <div className="text-[12px] mt-1 rounded-lg px-2.5 py-1.5 line-clamp-2" style={{ background: 'rgba(232,228,217,0.55)', color: '#48443c', border: '1px dashed rgba(150,144,132,0.5)' }}>{n.snippet}</div>}
+                            {n.snippet && <div className="text-[12px] mt-1 rounded-lg px-2.5 py-1.5 line-clamp-2" style={{ background: 'rgba(232,228,217,0.55)', color: '#48443c', border: '1px solid rgba(0,0,0,0.05)' }}>{n.snippet}</div>}
                         </div>
                     </button>
                 ))}
@@ -668,7 +701,7 @@ const ForumApp: React.FC = () => {
                     ))}
                 </div>
                 {/* 子页切换 */}
-                <div className="flex rounded-xl overflow-hidden mb-2" style={{ background: 'rgba(255,253,247,0.6)', border: '1px dashed rgba(150,144,132,0.6)' }}>
+                <div className="flex rounded-xl overflow-hidden mb-2" style={{ background: 'rgba(255,253,247,0.6)', border: '1px solid rgba(0,0,0,0.06)' }}>
                     {([['posts', '我支的话头'], ['collect', '夹起的帖'], ['follow', '常去的吧']] as const).map(([k, label]) => (
                         <button key={k} onClick={() => setMeSub(k)} className="flex-1 py-2.5 text-[13px] font-bold transition-colors" style={meSub === k ? { background: INK, color: PAPER } : { color: INK_SOFT }}>
                             {label}
@@ -712,7 +745,7 @@ const ForumApp: React.FC = () => {
                 {tab === 'home' ? renderHome() : tab === 'msg' ? renderMsg() : renderMe()}
             </div>
             {/* 底部导航（纸面贴纸条） */}
-            <div className="relative z-10 shrink-0 flex items-stretch" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>
+            <div className="relative z-10 shrink-0 flex items-stretch" style={{ borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(251,249,242,0.95)', paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>
                 {([['home', '亭子', House], ['msg', '叩门', BellSimple], ['me', '座位', User]] as const).map(([id, label, Icon]) => {
                     const active = tab === id;
                     return (
@@ -729,8 +762,8 @@ const ForumApp: React.FC = () => {
             {/* 支话头 FAB（仅首页） */}
             {tab === 'home' && (
                 <button onClick={() => setCompose({ board: board === 'all' ? 'chat' : board, title: '', body: '', pollOn: false, pollQ: '', pollOpts: ['', ''] })}
-                    className="absolute right-5 bottom-20 w-14 h-14 rounded-full flex items-center justify-center active:scale-90 transition-transform z-20"
-                    style={{ background: INK, color: PAPER, outline: '1px dashed rgba(255,255,255,0.32)', outlineOffset: -5, boxShadow: '0 16px 26px -12px rgba(31,29,26,0.7)' }}>
+                    className="absolute right-5 bottom-20 w-14 h-14 rounded-full flex items-center justify-center press-soft z-20"
+                    style={{ background: A.solid, color: '#fff', boxShadow: `0 16px 28px -12px ${A.solid}` }}>
                     <PencilSimple size={24} weight="bold" />
                 </button>
             )}
@@ -773,7 +806,7 @@ const ForumApp: React.FC = () => {
                             <ChartBar size={15} weight="bold" />{compose.pollOn ? '撤掉投票' : '＋ 摆个投票'}
                         </button>
                         {compose.pollOn && (
-                            <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(232,228,217,0.45)', border: '1px dashed rgba(150,144,132,0.55)' }}>
+                            <div className="space-y-2 rounded-xl p-3" style={{ background: 'rgba(232,228,217,0.45)', border: '1px solid rgba(0,0,0,0.06)' }}>
                                 <input value={compose.pollQ} onChange={e => setCompose(c => c && { ...c, pollQ: e.target.value })} placeholder="投票问题，如「你站哪边？」"
                                     className="w-full px-3 py-2 rounded-lg text-[13px] font-bold outline-none" style={paperInput} />
                                 {compose.pollOpts.map((o, i) => (
@@ -800,7 +833,7 @@ const PollView: React.FC<{ poll: ForumPoll; onVote: (i: number) => void }> = ({ 
     const total = pollTotal(poll);
     const voted = poll.voted !== undefined;
     return (
-        <div className="mt-3 rounded-xl p-3" style={{ background: 'rgba(232,228,217,0.4)', border: '1px dashed rgba(150,144,132,0.55)' }}>
+        <div className="mt-3 rounded-xl p-3" style={{ background: 'rgba(232,228,217,0.4)', border: '1px solid rgba(0,0,0,0.06)' }}>
             <div className="text-[13px] font-black mb-2 flex items-center gap-1.5" style={{ color: INK }}><ChartBar size={15} weight="fill" />{poll.question}</div>
             <div className="space-y-2">
                 {poll.options.map((o, i) => {
@@ -830,16 +863,12 @@ const Empty: React.FC<{ text: string }> = ({ text }) => (
 
 // ── 顶栏：胶带返回钮 + 招牌（中文 + 英文小标）+ 右槽 ──
 const Header: React.FC<{ title: string; en?: string; onBack: () => void; right?: React.ReactNode; backIcon?: React.ReactNode }> = ({ title, en, onBack, right, backIcon }) => (
-    <div className="relative z-20 shrink-0">
-        <div style={{ height: 'var(--safe-top)' }} />
-        <div className="flex items-center px-3 pt-2 pb-2.5 gap-2">
-            <button onClick={onBack} className="relative inline-flex items-center gap-1 px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={{ color: '#36322b' }}>
-                <span aria-hidden className="absolute inset-0 rounded-[6px]" style={{ backgroundColor: WASHI.butter.base, backgroundImage: TAPE_STRIPES, transform: 'rotate(-2deg)', boxShadow: '0 3px 7px -3px rgba(31,29,26,0.5)' }} />
-                <span className="relative z-10 flex items-center gap-1">{backIcon || <CaretLeft size={13} weight="bold" />}</span>
-            </button>
-            <div className="leading-none">
-                <div className="text-[16px] font-black tracking-[0.04em]" style={{ color: INK }}>{title}</div>
-                {en && <div className="text-[7px] tracking-[0.36em] uppercase mt-0.5" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{en}</div>}
+    <div className="relative z-20 shrink-0" style={{ paddingTop: 'var(--safe-top)' }}>
+        <div className="flex items-center px-3.5 pt-2.5 pb-2.5 gap-2.5">
+            <IconCircle onClick={onBack}>{backIcon || <CaretLeft size={18} weight="bold" />}</IconCircle>
+            <div className="leading-tight">
+                <div className="text-[17px] font-extrabold tracking-tight" style={{ color: INK }}>{title}</div>
+                {en && <div className="text-[8px] tracking-[0.34em] uppercase mt-0.5" style={{ fontFamily: 'var(--font-label)', color: A.solid }}>{en}</div>}
             </div>
             <div className="flex-1" />
             {right}

@@ -26,7 +26,7 @@ import {
 import {
     PaperShell, ScrapScroll, ScrapHeader, PaperCard, WashiTape, Stamp, ScrapButton, StickyNote,
     SectionTag, DashedRule, PaperSheet, Polaroid, HALFTONE, TAPE_STRIPES, WASHI, INK, INK_SOFT, PAPER,
-} from './theater/scrapbook';
+} from './ui/insScrapKit';
 
 /**
  * 「饭票」（原「外卖」）—— 黑白拼贴手账皮肤的吃食铺子，功能对标美团外卖。
