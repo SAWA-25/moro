@@ -972,7 +972,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                 if (assetMap['wallpaper']) {
                     loadedTheme.wallpaper = assetMap['wallpaper'];
                 }
-                
+
+                // Lock-screen wallpaper: restore from IndexedDB (mirrors desktop wallpaper).
+                if (assetMap['lock_wallpaper']) {
+                    loadedTheme.lockScreenStyle = {
+                        ...(loadedTheme.lockScreenStyle || {}),
+                        wallpaper: assetMap['lock_wallpaper'],
+                    };
+                } else if (loadedTheme.lockScreenStyle?.wallpaper?.startsWith('data:')) {
+                    // Legacy inline lock wallpaper (from before it was offloaded): migrate
+                    // it into IndexedDB so it stops bloating os_theme and survives future saves.
+                    void DB.saveAsset('lock_wallpaper', loadedTheme.lockScreenStyle.wallpaper);
+                }
+
                 // Deprecated legacy asset — purge silently so it can never be rendered again.
                 if (assetMap['launcherWidgetImage']) {
                     void DB.deleteAsset('launcherWidgetImage');
@@ -2418,6 +2430,19 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
         }
     }
 
+    // Lock-screen wallpaper is a large data URI too — keep it out of LocalStorage by
+    // mirroring the desktop wallpaper: store the blob in IndexedDB and strip the data
+    // URI from the persisted theme below. Otherwise a single photo can blow the
+    // os_theme quota, so localStorage.setItem throws and the change never persists.
+    if ('lockScreenStyle' in updates) {
+        const lockWp = newTheme.lockScreenStyle?.wallpaper;
+        if (lockWp && lockWp.startsWith('data:')) {
+            await DB.saveAsset('lock_wallpaper', lockWp);
+        } else {
+            await DB.deleteAsset('lock_wallpaper');
+        }
+    }
+
     // Legacy single-image asset is permanently banned — always delete, never save.
     await DB.deleteAsset('launcherWidgetImage');
 
@@ -2477,6 +2502,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     // Save lightweight settings to LocalStorage (strip data URIs)
     const lsTheme = { ...newTheme };
     if (lsTheme.wallpaper && lsTheme.wallpaper.startsWith('data:')) lsTheme.wallpaper = '';
+    // Lock-screen wallpaper data URI lives in IndexedDB (see above) — never let it
+    // into LocalStorage, or a big image blows the os_theme quota and the whole theme
+    // (incl. the desktop wallpaper pointer) silently fails to persist. Done
+    // unconditionally so a value carried over from an older session is stripped too.
+    if (lsTheme.lockScreenStyle?.wallpaper && lsTheme.lockScreenStyle.wallpaper.startsWith('data:')) {
+        lsTheme.lockScreenStyle = { ...lsTheme.lockScreenStyle, wallpaper: '' };
+    }
     // Banned legacy field — never persist.
     lsTheme.launcherWidgetImage = undefined;
     // Strip data URIs and deprecated slots from widgets for LS
@@ -2500,7 +2532,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     // Clear data URI font from LS, keep URL font
     if (lsTheme.customFont && lsTheme.customFont.startsWith('data:')) lsTheme.customFont = '';
 
-    localStorage.setItem('os_theme', JSON.stringify(lsTheme));
+    try {
+        localStorage.setItem('os_theme', JSON.stringify(lsTheme));
+    } catch (e) {
+        // Quota/serialization failure: large blobs (wallpapers, fonts) already live in
+        // IndexedDB, so the wallpapers still survive a reload even if these lightweight
+        // settings can't be written this time. Don't let it throw unhandled.
+        console.error('Failed to persist os_theme to LocalStorage', e);
+    }
   };
   const updateApiConfig = (updates: Partial<APIConfig>) => { const newConfig = { ...apiConfig, ...updates }; setApiConfig(newConfig); localStorage.setItem('os_api_config', JSON.stringify(newConfig)); };
   const updateAuxApiConfig = (updates: Partial<AuxApiConfig>) => { const newConfig = { ...auxApiConfig, ...updates }; setAuxApiConfig(newConfig); localStorage.setItem('os_aux_api_config', JSON.stringify(newConfig)); };
@@ -2970,6 +3009,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const id = asset.id;
               if (
                   id === 'wallpaper' ||
+                  id === 'lock_wallpaper' ||
                   id === 'launcherWidgetImage' ||
                   id === 'custom_font_data' ||
                   id.startsWith('widget_') ||
@@ -3126,6 +3166,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
           const isRedundantManagedAssetId = (id: string) => (
               id === 'wallpaper' ||
+              id === 'lock_wallpaper' ||
               id === 'launcherWidgetImage' ||
               id === 'custom_font_data' ||
               id === 'spark_social_profile' ||
