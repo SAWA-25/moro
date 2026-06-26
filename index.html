@@ -577,6 +577,18 @@
         background-size: 100% 100%;
         color: var(--moro-desk-ink);
       }
+      /* 用户设了自定义桌面壁纸时，桌面让出这层不透明底色 + 收掉网格/光晕，
+         让 PhoneShell 底下那张壁纸透出来（否则「设了壁纸却看不见」）。 */
+      .moro-desktop-root[data-has-wallpaper="true"] {
+        background: transparent;
+      }
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-mesh {
+        display: none;
+      }
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-atmosphere::before,
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-atmosphere::after {
+        opacity: 0.18;
+      }
       .moro-theme-statusbar {
         display: none !important;
         top: calc(var(--safe-top) + 0.65rem);

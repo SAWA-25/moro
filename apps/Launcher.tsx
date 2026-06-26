@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useLayoutEffect, useState, useRef } from 'react';
-import { useOS } from '../context/OSContext';
+import { useOS, DEFAULT_WALLPAPER } from '../context/OSContext';
 import { INSTALLED_APPS, DOCK_APPS } from '../constants';
 import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../utils/devDebug';
 import AppIcon from '../components/os/AppIcon';
@@ -1006,6 +1006,9 @@ const Launcher: React.FC = () => {
 
   const contentColor = theme.contentColor || '#2b2933';
   const themeHue = Number.isFinite(theme.hue) ? theme.hue : 248;
+  // 设了自定义壁纸时（图片或非默认底色），桌面让出自己那层不透明底色，
+  // 把 PhoneShell 渲染在底下的壁纸透出来 —— 否则桌面壁纸设了却被盖住，看不见。
+  const hasCustomWallpaper = !!theme.wallpaper && theme.wallpaper !== DEFAULT_WALLPAPER;
   const dockStyle = theme.desktopDockStyle || 'glass';
   const dockShellStyle: React.CSSProperties =
       dockStyle === 'minimal' ? {
@@ -1114,6 +1117,7 @@ const Launcher: React.FC = () => {
   return (
     <div
       className="moro-desktop-root h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none"
+      data-has-wallpaper={hasCustomWallpaper ? 'true' : undefined}
       style={{
         color: contentColor,
         '--moro-desktop-hue': themeHue,
