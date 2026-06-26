@@ -383,3 +383,9 @@ pm run build passes after the time-gap grouping fix.
   - **角色登场动画**（`components/chat/CharacterEntryTransition.tsx`）：全新「拍立得显影登场」——头像虚化暖底 ken-burns + 一张拍立得旋转甩入、白罩淡出「显影」到彩色、白框下沿手写名浮起、✦ 火花蹦出，停一拍再托起穿过揭开聊天。亮调暖底（区别旧暗调电影感）。性能仍只动 transform/opacity（显影用白罩淡出不动 filter），可轻触跳过，尊重 reduced-motion。props/onDone/时长接口不变。
   - **锁屏**（`components/os/LockScreen.tsx`）：编辑感版式重写——今日 frosted 胶囊（日期+星期）+ 大字 display 时钟 + 渐变细线 + 暖心问候；通知卡头像换 IG 彩色故事环；底部上跳雪佛龙手柄 + 中文「轻点解锁」+ 玻璃 home 条。解锁/4 位密码/试错/偷看提醒/通知数据/主题钩子(壁纸/时钟字体/卡片风格/解锁动画/customCss) 全部原样保留。
   - tsc 0 非 api 错误，build 通过。
+- 桌面（启动器）·整体构图重做（按反馈「把桌面当 app 设计」）：
+  - **背景层**：撕掉手账点点网纹 + 蕾丝花边（lace-edge）→ Ins 彩色柔光氛围（日落橙/玫红/蓝紫柔光团缓缓漂浮，低开销纯渐变）。
+  - **新增跨页顶栏**：MORO 字标 + 今日 frosted 胶囊（日期+星期），框定「设计过的主屏」，页面顶 padding pt-12→pt-14 留位。
+  - **App 图标显示样式**：默认从白纸面瓦片 → **彩色渐变 squircle 方块**（每个 app 自己的颜色 + 白色图标，明快现代 160° 渐变；默认 shape=squircle/surface=solid，仍可在主题里改回）。
+  - **分页指示器**：朴素短杠 → frosted 轨道 + 渐变激活长点。
+  - tsc 0 非 api 错误，build 通过。（叠加此前：去图标虚线缝线/微旋转/小组件胶带、时钟卡 ins 化、絮语卡 ins 化、dock 去缝线、图标错峰入场。）
