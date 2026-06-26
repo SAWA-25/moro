@@ -25,7 +25,7 @@ import {
     PaperBackdrop, ScrapButton, WashiTape, Stamp, Polaroid,
     PaperDialog, PaperSheet, SectionTag, DashedRule,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE, TAPE_STRIPES, WASHI,
-} from './theater/scrapbook';
+} from './ui/insScrapKit';
 import {
     CaretLeft, CaretRight, Handbag, Receipt as ReceiptIcon, Gift, Sparkle,
     ShoppingCart, Plus, Minus, Trash, MagnifyingGlass, Heart, Star, Truck, CheckCircle,

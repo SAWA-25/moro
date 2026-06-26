@@ -10,7 +10,7 @@ import ExtraApp from './theater/ExtraApp';
 import DivinationApp from './theater/DivinationApp';
 import WerewolfApp from './theater/WerewolfApp';
 import TruthDareApp from './theater/TruthDareApp';
-import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './theater/scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, PaperCard, Stamp, SectionTag, WashiTape, HALFTONE, INK, INK_SOFT } from './ui/insScrapKit';
 
 /**
  * 折子戏（原「小剧场」）：一个图标、一张戏单，先挑一折戏。

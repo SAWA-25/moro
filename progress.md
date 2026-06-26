@@ -361,3 +361,4 @@ pm run build passes after the time-gap grouping fix.
   - **自由活动**（`apps/XhsFreeRoamApp.tsx`，rose）：rose/白 → 完整 ins。返回/角色切换故事环、`InsCard` 实况与历史、运行态实况面板、`InsSheet` 角色选择 + 活动详情、`InsDialog` 确认，底部开始按钮 IG 渐变。逻辑零改。
   - **茶话亭**（`apps/ForumApp.tsx`，amber 茶馆暖调）：851 行重度 scrapbook → ins。用「同名原语 ins 化」shim 法（PaperBackdrop/ScrapButton/WashiTape/Stamp/StickyNote/SectionTag/DashedRule/PaperDialog 就地换 ins 实现，保持 API 全文零改调用点）+ PANEL/paperInput/chip/Header/Empty 重定向 + 虚线描边统一为发丝线 + FAB 改 amber。逻辑零改。
   - `tsc` 0 非 api 错误，`vite build` 通过。**进度 6/28**（+自由活动、茶话亭）。
+- 逐 App 换肤·共享套件法转换 5 个 scrapbook 大 App：新建 `apps/ui/insScrapKit.tsx`（与 scrapbook 同名导出/签名，但渲染 ins 风：白卡 + 大圆角 + 极柔投影 + 彩色 + 彩色 WASHI），把 **心意铺/自习室/饭票/折子戏(壳)/椒房记(文游)** 的 import 路径从 `theater/scrapbook` 切到 `ui/insScrapKit`（调用点零改）。絮语(Chat) 的 ScrapModal/JournalSheet 仍用原 scrapbook，**不受影响**。`tsc` 0 非 api 错误，`vite build` 通过。**进度 11/28**（+心意铺/自习室/饭票/折子戏/椒房记）。

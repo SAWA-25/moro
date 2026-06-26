@@ -15,7 +15,7 @@ import {
     PaperBackdrop, ScrapHeader, PaperCard, WashiTape, Polaroid, ScrapButton, StickyNote,
     SectionTag, DashedRule, PaperDialog, PaperSheet, Stamp,
     INK, INK_SOFT, PAPER, PAGE_BG, HALFTONE,
-} from '../theater/scrapbook';
+} from '../ui/insScrapKit';
 import {
     Crown, Scroll, BookOpen, FloppyDisk, UsersThree, Sparkle, CaretRight, X,
     ArrowClockwise, Heart, ShieldCheck, Drop, Smiley, Brain, MapPin, Trash,
