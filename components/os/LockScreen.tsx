@@ -63,6 +63,10 @@ const LockScreen: React.FC = () => {
     const contentColor = theme.contentColor || '#3f3d49';
     // 锁屏样式自定义（主题 → 锁屏）：专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS
     const lockStyle = theme.lockScreenStyle;
+    const clockTop = typeof lockStyle?.clockTop === 'number' ? Math.max(1, Math.min(42, lockStyle.clockTop)) : 14;
+    const clockScale = typeof lockStyle?.clockScale === 'number' ? Math.max(0.72, Math.min(1.35, lockStyle.clockScale)) : 1;
+    const showNotifications = lockStyle?.showNotifications !== false;
+    const passcodeStyle = lockStyle?.passcodeStyle || 'glass';
     const wallpaper = lockStyle?.wallpaper || theme.wallpaper;
     const bgImageValue = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:')
         ? `url(${wallpaper})` : wallpaper;
@@ -83,6 +87,29 @@ const LockScreen: React.FC = () => {
 
     const unlockAnim = lockStyle?.unlockAnimation || 'fade';
     const UNLOCK_ANIM_MS = unlockAnim === 'none' ? 0 : 360;
+    const passcodeTheme = passcodeStyle === 'paper'
+        ? {
+            overlay: { background: 'rgba(246,243,236,0.86)', backdropFilter: 'blur(10px)' },
+            text: { color: '#2b2933', textShadow: 'none' },
+            key: { background: 'rgba(255,253,250,0.86)', color: '#2b2933', border: '1px solid rgba(43,41,51,0.16)' },
+            dot: { borderColor: 'rgba(43,41,51,0.75)' },
+            dotFilled: { background: '#2b2933', borderColor: '#2b2933' },
+        }
+        : passcodeStyle === 'ink'
+            ? {
+                overlay: { background: 'rgba(9,9,14,0.78)', backdropFilter: 'blur(12px)' },
+                text: { color: '#f8f6ef', textShadow: '0 1px 8px rgba(0,0,0,0.35)' },
+                key: { background: 'rgba(255,255,255,0.09)', color: '#f8f6ef', border: '1px solid rgba(255,255,255,0.13)' },
+                dot: { borderColor: 'rgba(248,246,239,0.8)' },
+                dotFilled: { background: '#f8f6ef', borderColor: '#f8f6ef' },
+            }
+            : {
+                overlay: { background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(12px)' },
+                text: { color: '#ffffff', textShadow: '0 1px 8px rgba(0,0,0,0.35)' },
+                key: { background: 'rgba(255,255,255,0.2)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.12)' },
+                dot: { borderColor: 'rgba(255,255,255,0.8)' },
+                dotFilled: { background: '#ffffff', borderColor: '#ffffff' },
+            };
 
     // 未读变化（含锁屏期间新到的主动消息）→ 每条未读消息气泡一张通知卡
     // （角色一次回复拆成几个气泡就出几张卡，与未读数一致），新消息在最上面
@@ -181,6 +208,13 @@ const LockScreen: React.FC = () => {
         : virtualTime.hours < 18 ? '下午好呀'
         : '晚上好，今天辛苦了';
 
+    const renderedDateLabel = lockStyle?.dateText?.trim() || dateLabel;
+    const renderedGreeting = lockStyle?.greetingText?.trim() || greeting;
+    const unlockHint = lockStyle?.unlockHintText?.trim() || (isLockPasscodeEnabled() ? '轻点 · 输入密码' : '轻点解锁');
+    const passcodeTitle = lockStyle?.passcodeTitleText?.trim() || '输入锁屏密码';
+    const passcodeError = lockStyle?.passcodeErrorText?.trim() || '密码错误，请重试';
+    const passcodeCancel = lockStyle?.passcodeCancelText?.trim() || '取消';
+
     return (
         <div
             className="moro-lock-screen relative w-full h-full bg-cover bg-center overflow-hidden font-light select-none overscroll-none"
@@ -216,12 +250,19 @@ const LockScreen: React.FC = () => {
             </div>
 
             {/* 时钟（编辑感版式：今日胶囊 + 大字 display 时间 + 暖心问候） */}
-            <div className="moro-lock-clock absolute top-[5.5rem] w-full flex flex-col items-center pointer-events-none px-8">
+            <div
+                className="moro-lock-clock absolute top-[5.5rem] w-full flex flex-col items-center pointer-events-none px-8"
+                style={{
+                    top: `${clockTop}%`,
+                    transform: `scale(${clockScale})`,
+                    transformOrigin: 'top center',
+                }}
+            >
                 {/* 今日 frosted 胶囊 */}
                 <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full mb-3"
                      style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.3)' }}>
                     <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }} />
-                    <span className="text-[11px] font-bold tracking-wide">{dateLabel}</span>
+                    <span className="text-[11px] font-bold tracking-wide">{renderedDateLabel}</span>
                 </div>
                 {/* 大字时间 */}
                 <div className="text-[5.4rem] leading-[0.95] tracking-tight font-display-italic font-semibold" style={clockFontStyle}>
@@ -229,7 +270,7 @@ const LockScreen: React.FC = () => {
                 </div>
                 {/* 渐变细线 + 暖心问候 */}
                 <div className="h-px w-16 my-2.5" style={{ background: 'linear-gradient(90deg, transparent, currentColor, transparent)', opacity: 0.4 }} />
-                <div className="text-[12.5px] font-medium opacity-80 tracking-wide">{greeting}</div>
+                <div className="text-[12.5px] font-medium opacity-80 tracking-wide">{renderedGreeting}</div>
             </div>
 
             {/* 角色偷看手机试错解锁的提醒横幅（锁手机·双向试错的用户提醒侧） */}
@@ -252,7 +293,7 @@ const LockScreen: React.FC = () => {
 
             {/* 消息通知（仿 iPhone 锁屏）：每条消息气泡一张卡片竖向排列，新消息在上；
                 排不下（超过 MAX_FULL_CARDS）时其余通知折叠成覆盖在最新一批下方的堆叠 */}
-            {notifications.length > 0 && (
+            {showNotifications && notifications.length > 0 && (
                 <div className="absolute top-[34%] left-3 right-3 space-y-2 max-h-[44%] overflow-y-auto no-scrollbar pb-4">
                     {notifications.slice(0, MAX_FULL_CARDS).map((n, i) => (
                         <div
@@ -300,7 +341,7 @@ const LockScreen: React.FC = () => {
                         <svg width="22" height="13" viewBox="0 0 22 13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 10 L11 3 L20 10" /></svg>
                     </div>
                     <span className="text-[11px] tracking-[0.18em] font-bold opacity-85">
-                        {isLockPasscodeEnabled() ? '轻点 · 输入密码' : '轻点解锁'}
+                        {unlockHint}
                     </span>
                     <div className="w-32 h-1.5 rounded-full mt-1.5" style={{ background: 'rgba(255,255,255,0.5)', boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
                 </div>
@@ -309,12 +350,13 @@ const LockScreen: React.FC = () => {
             {/* 密码键盘 */}
             {showPad && (
                 <div
-                    className="absolute inset-0 z-20 flex flex-col items-center justify-end pb-10 bg-black/30 backdrop-blur-md animate-fade-in"
+                    className="moro-lock-passcode absolute inset-0 z-20 flex flex-col items-center justify-end pb-10 animate-fade-in"
+                    style={passcodeTheme.overlay}
                     onClick={(e) => { e.stopPropagation(); setShowPad(false); }}
                 >
                     <div className="w-full max-w-[300px] px-4" onClick={e => e.stopPropagation()}>
-                        <div className="text-center text-white text-sm font-medium mb-4 drop-shadow">
-                            {padError ? '密码错误，请重试' : '输入锁屏密码'}
+                        <div className="moro-lock-passcode-title text-center text-sm font-medium mb-4 drop-shadow" style={passcodeTheme.text}>
+                            {padError ? passcodeError : passcodeTitle}
                         </div>
                         {/* 四位密码圆点 */}
                         <div
@@ -324,7 +366,8 @@ const LockScreen: React.FC = () => {
                             {[0, 1, 2, 3].map(i => (
                                 <span
                                     key={i}
-                                    className={`w-3.5 h-3.5 rounded-full border border-white/80 transition-colors ${i < entered.length ? (padError ? 'bg-red-400 border-red-400' : 'bg-white') : 'bg-transparent'}`}
+                                    className="moro-lock-passcode-dot w-3.5 h-3.5 rounded-full border transition-colors"
+                                    style={i < entered.length ? (padError ? { background: '#f87171', borderColor: '#f87171' } : passcodeTheme.dotFilled) : { ...passcodeTheme.dot, background: 'transparent' }}
                                 />
                             ))}
                         </div>
@@ -334,7 +377,8 @@ const LockScreen: React.FC = () => {
                                 <button
                                     key={i}
                                     onClick={() => pressKey(key)}
-                                    className="h-[60px] rounded-full bg-white/20 backdrop-blur-md text-white text-2xl font-light flex items-center justify-center active:bg-white/40 transition-colors"
+                                    className="moro-lock-passcode-key h-[60px] rounded-full backdrop-blur-md text-2xl font-light flex items-center justify-center active:scale-95 transition-transform"
+                                    style={passcodeTheme.key}
                                 >
                                     {key === 'del' ? (
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-6 h-6">
@@ -346,9 +390,10 @@ const LockScreen: React.FC = () => {
                         </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); setShowPad(false); }}
-                            className="w-full mt-5 text-center text-white/80 text-xs font-medium"
+                            className="moro-lock-passcode-cancel w-full mt-5 text-center text-xs font-medium"
+                            style={passcodeTheme.text}
                         >
-                            取消
+                            {passcodeCancel}
                         </button>
                     </div>
                 </div>

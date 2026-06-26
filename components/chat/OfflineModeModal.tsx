@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CharacterProfile, UserProfile } from '../../types';
+import { useOS } from '../../context/OSContext';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK, PAPER_TONES } from '../handbook/paper';
 import {
     OfflineEntry,
@@ -37,6 +38,12 @@ interface OfflineModeModalProps {
 }
 
 const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, onEnd, addToast }) => {
+    const { theme } = useOS();
+    const modalStyle = theme.offlineModeStyle || {};
+    const modalBg = modalStyle.background || 'linear-gradient(180deg,#fbf9f2,#f2efe4)';
+    const modalInk = modalStyle.textColor || '#1f1d1a';
+    const modalAccent = modalStyle.accentColor || '#1f1d1a';
+    const modalRadius = typeof modalStyle.radius === 'number' ? Math.max(0, Math.min(32, modalStyle.radius)) : 22;
     const [entries, setEntries] = useState<OfflineEntry[]>(() => loadOfflineSession(char.id));
     const [input, setInput] = useState('');
     const [busy, setBusy] = useState(false);
@@ -129,24 +136,27 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
     };
 
     return (
-        <div className="absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }}>
+        <div className="moro-offline-modal-backdrop absolute inset-0 z-[420] flex items-center justify-center animate-fade-in p-4" style={{ background: 'rgba(20,18,16,0.5)', backdropFilter: 'blur(3px)' }}>
+            {modalStyle.customCss && <style>{modalStyle.customCss}</style>}
             <div
-                className="relative w-full max-w-[400px] h-[78%] flex flex-col rounded-[22px] overflow-hidden"
+                className="moro-offline-modal relative w-full max-w-[400px] h-[78%] flex flex-col overflow-hidden"
                 style={{
-                    background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)',
+                    background: modalBg,
+                    color: modalInk,
+                    borderRadius: modalRadius,
                     boxShadow: '0 24px 60px -24px rgba(20,18,16,0.4), 0 0 0 1px #ededed inset',
                 }}
             >
 
                 {/* 头部 */}
-                <div className="px-4 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
+                <div className="moro-offline-modal-header px-4 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
                     <div className="flex items-center gap-2.5 min-w-0">
                         {/* 别在页角的小照片 */}
                         <div className="shrink-0 bg-white p-0.5 rounded-[3px]" style={{ transform: 'rotate(-4deg)', boxShadow: '0 1px 4px rgba(31,29,26,0.3)' }}>
                             <img src={char.avatar} className="w-8 h-8 object-cover" alt="" />
                         </div>
                         <div className="min-w-0">
-                            <div className="text-[13px] font-bold truncate" style={{ ...SERIF_STACK, color: '#1f1d1a' }}>和 {char.name} 面对面</div>
+                            <div className="text-[13px] font-bold truncate" style={{ ...SERIF_STACK, color: modalInk }}>和 {char.name} 面对面</div>
                             <div className="text-[9.5px]" style={{ color: '#857f74' }}>这一页只写线下发生的事</div>
                         </div>
                     </div>
@@ -154,7 +164,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                         onClick={handleEnd}
                         disabled={ending}
                         className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
-                        style={{ background: '#fffdfa', border: '1px dashed #b0aa9e', color: '#1f1d1a', boxShadow: '0 1px 2px rgba(31,29,26,0.15)', ...CUTE_STACK }}
+                        style={{ background: '#fffdfa', border: '1px dashed #b0aa9e', color: modalInk, boxShadow: '0 1px 2px rgba(31,29,26,0.15)', ...CUTE_STACK }}
                     >
                         {ending ? '收尾中…' : '合上这一页'}
                     </button>
@@ -175,7 +185,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                         onClick={() => setPovFor(who, p)}
                                         className="px-2 py-0.5 rounded-full text-[10.5px] font-bold transition active:scale-95"
                                         style={active
-                                            ? { background: '#1f1d1a', color: '#f6f3ec', boxShadow: '0 1px 2px rgba(31,29,26,0.2)' }
+                                            ? { background: modalAccent, color: '#f6f3ec', boxShadow: '0 1px 2px rgba(31,29,26,0.2)' }
                                             : { background: 'rgba(255,255,255,0.55)', color: '#857f74', border: '1px dashed #b0aa9e' }}
                                     >
                                         {lbl}
@@ -250,7 +260,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     {entries.map((e, i) => (
                         e.role === 'scene' ? (
                             // 旁白：贴在页中央的便签
-                            <div key={i} className="text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#857f74', background: 'rgba(243,239,229,0.85)', border: '1px dashed #b0aa9e' }}>
+                            <div key={i} className="moro-offline-modal-entry moro-offline-modal-scene text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#857f74', background: 'rgba(243,239,229,0.85)', border: '1px dashed #b0aa9e' }}>
                                 {e.text}
                             </div>
                         ) : e.role === 'char' ? (
@@ -258,13 +268,13 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                 <div className="shrink-0 bg-white p-0.5 rounded-[3px] mt-0.5" style={{ transform: 'rotate(-3deg)', boxShadow: '0 1px 3px rgba(31,29,26,0.25)' }}>
                                     <img src={char.avatar} className="w-6 h-6 object-cover" alt="" />
                                 </div>
-                                <div className="text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#1f1d1a', background: '#fffdfa', border: '1px solid #efe2e9', borderRadius: '4px 14px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.15)' }}>
+                                <div className="moro-offline-modal-entry moro-offline-modal-char text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: modalInk, background: '#fffdfa', border: '1px solid #efe2e9', borderRadius: '4px 14px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.15)' }}>
                                     {e.text}
                                 </div>
                             </div>
                         ) : (
                             <div key={i} className="flex justify-end">
-                                <div className="text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#f6f3ec', background: '#1f1d1a', border: '1px solid rgba(93,36,52,0.15)', borderRadius: '14px 4px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.2)' }}>
+                                <div className="moro-offline-modal-entry moro-offline-modal-user text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#f6f3ec', background: modalAccent, border: '1px solid rgba(93,36,52,0.15)', borderRadius: '14px 4px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.2)' }}>
                                     {e.text}
                                 </div>
                             </div>
@@ -280,14 +290,14 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
 
                 {/* 输入区：发言/行动 + 让角色继续（选好开场白方式后才出现） */}
                 {openingChosen && (
-                <div className="shrink-0 px-4 py-3 flex items-center gap-2 border-t border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
+                <div className="moro-offline-modal-inputbar shrink-0 px-4 py-3 flex items-center gap-2 border-t border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
                     <input
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
                         placeholder="说句话，或写下你的动作…"
                         className="flex-1 px-2 py-2 bg-transparent text-[13px] outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#1f1d1a] placeholder:text-[#a9a195]"
-                        style={{ color: '#1f1d1a', caretColor: '#1f1d1a' }}
+                        style={{ color: modalInk, caretColor: modalAccent }}
                         disabled={busy || ending}
                     />
                     {input.trim() ? (
@@ -295,7 +305,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             onClick={handleSend}
                             disabled={busy || ending}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                            style={{ background: '#1f1d1a', border: '1.5px solid #000000', color: '#f6f3ec', boxShadow: '2px 2px 0 #b0aa9e', ...CUTE_STACK }}
+                            style={{ background: modalAccent, border: '1.5px solid #000000', color: '#f6f3ec', boxShadow: '2px 2px 0 #b0aa9e', ...CUTE_STACK }}
                         >
                             递过去
                         </button>

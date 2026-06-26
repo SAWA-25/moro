@@ -790,6 +790,8 @@ const DesktopLockEditor: React.FC<{
     const prefs = theme.desktopWidgetPrefs || {};
     const island = theme.dynamicIslandStyle || {};
     const lock = theme.lockScreenStyle || {};
+    const floating = theme.floatingQuickMenuStyle || {};
+    const offline = theme.offlineModeStyle || {};
     const lockWallpaperRef = useRef<HTMLInputElement>(null);
     const [cssOpenId, setCssOpenId] = useState<string | null>(null);
 
@@ -821,6 +823,24 @@ const DesktopLockEditor: React.FC<{
             if (v === undefined || v === '' || (k === 'customCss' && !String(v).trim())) delete next[k];
         });
         updateTheme({ lockScreenStyle: Object.keys(next).length ? next : undefined });
+    };
+
+    const setFloating = (patch: Partial<NonNullable<OSTheme['floatingQuickMenuStyle']>>) => {
+        const next = { ...floating, ...patch };
+        (Object.keys(next) as (keyof typeof next)[]).forEach(k => {
+            const v = next[k];
+            if (v === undefined || v === '' || (k === 'customCss' && !String(v).trim())) delete next[k];
+        });
+        updateTheme({ floatingQuickMenuStyle: Object.keys(next).length ? next : undefined });
+    };
+
+    const setOffline = (patch: Partial<NonNullable<OSTheme['offlineModeStyle']>>) => {
+        const next = { ...offline, ...patch };
+        (Object.keys(next) as (keyof typeof next)[]).forEach(k => {
+            const v = next[k];
+            if (v === undefined || v === '' || (k === 'customCss' && !String(v).trim())) delete next[k];
+        });
+        updateTheme({ offlineModeStyle: Object.keys(next).length ? next : undefined });
     };
 
     const handleLockWallpaperUpload = async (file: File) => {
@@ -915,12 +935,12 @@ const DesktopLockEditor: React.FC<{
                 </div>
             </section>
 
-            {/* 悬浮窗快捷菜单 开关 */}
+            {/* 悬浮窗快捷菜单 */}
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between gap-3 mb-4">
                     <div className="min-w-0">
                         <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">悬浮窗快捷菜单</h2>
-                        <p className="text-[10px] text-[#6b6b6b] leading-snug">可拖动的悬浮球，点开是常用 App 快捷入口；拖动挪位、长按收起。</p>
+                        <p className="text-[10px] text-[#6b6b6b] leading-snug">可拖动的悬浮球，点开是常用 App 快捷入口；支持 CSS 和实时预览。</p>
                     </div>
                     <button
                         onClick={() => updateTheme({ floatingQuickMenu: theme.floatingQuickMenu === false })}
@@ -931,12 +951,183 @@ const DesktopLockEditor: React.FC<{
                         <span className={`absolute top-[2px] w-6 h-6 rounded-full transition-all ${theme.floatingQuickMenu !== false ? 'left-[26px] bg-white' : 'left-[2px] bg-[#2b2933]'}`} />
                     </button>
                 </div>
+                <div className="relative h-28 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/35 mb-4 overflow-hidden">
+                    {floating.customCss && <style>{floating.customCss}</style>}
+                    <div
+                        className="moro-floating-quick-menu-panel absolute left-4 top-4 flex gap-2 p-2 rounded-[20px] shadow-sm"
+                        style={{ background: floating.menuBackground || 'rgba(255,255,255,0.8)', border: `1px solid ${floating.borderColor || 'rgba(120,96,86,0.14)'}` }}
+                    >
+                        {['聊', '店', '图'].map(x => (
+                            <span key={x} className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-[11px] font-bold" style={{ color: floating.pawColor || '#e0a191', border: `1px solid ${floating.borderColor || 'rgba(120,96,86,0.14)'}` }}>{x}</span>
+                        ))}
+                    </div>
+                    <div
+                        className="moro-floating-quick-menu-button absolute right-8 bottom-5 w-[54px] h-[54px] flex items-center justify-center rounded-full shadow-lg"
+                        style={{
+                            background: floating.bubbleBackground || 'rgba(255,255,255,0.86)',
+                            color: floating.pawColor || '#e0a191',
+                            border: `1px solid ${floating.borderColor || 'rgba(120,96,86,0.14)'}`,
+                            ...(typeof floating.radius === 'number' ? { borderRadius: `${floating.radius}px` } : {}),
+                        }}
+                    >
+                        <span className="text-[22px] leading-none">●</span>
+                    </div>
+                </div>
+                <div className="space-y-4">
+                    {([
+                        ['bubbleBackground', '悬浮球底色', 'rgba(255,255,255,0.86)'],
+                        ['menuBackground', '展开菜单底色', 'rgba(255,255,255,0.8)'],
+                        ['pawColor', '猫爪 / 图标色', '#e0a191'],
+                        ['textColor', '菜单文字色', '#6f615a'],
+                        ['borderColor', '细边框色', 'rgba(120,96,86,0.14)'],
+                    ] as const).map(([key, label, placeholder]) => (
+                        <div key={key}>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">{label}</div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="color"
+                                    value={/^#[0-9a-fA-F]{6}$/.test(String(floating[key] || '')) ? String(floating[key]) : (key === 'pawColor' ? '#e0a191' : key === 'textColor' ? '#6f615a' : '#ffffff')}
+                                    onChange={e => setFloating({ [key]: e.target.value } as any)}
+                                    className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] p-1 shrink-0"
+                                />
+                                <input
+                                    value={String(floating[key] || '')}
+                                    onChange={e => setFloating({ [key]: e.target.value || undefined } as any)}
+                                    placeholder={placeholder}
+                                    className="flex-1 px-3 py-2 bg-[#f4f2ed] border-2 border-[#2b2933] text-[12px] font-mono outline-none"
+                                />
+                            </div>
+                        </div>
+                    ))}
+                    <div>
+                        <div className="flex justify-between text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">
+                            <span>悬浮球圆角</span><span className="font-mono text-[#8b8996]">{typeof floating.radius === 'number' ? `${floating.radius}px` : '圆形'}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="range" min={0} max={28}
+                                value={typeof floating.radius === 'number' ? floating.radius : 28}
+                                onChange={e => setFloating({ radius: parseInt(e.target.value) >= 28 ? undefined : parseInt(e.target.value) })}
+                                className="flex-1 h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
+                            />
+                            <SmallChip active={typeof floating.radius !== 'number'} onClick={() => setFloating({ radius: undefined })}>圆形</SmallChip>
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（.moro-floating-quick-menu / .moro-floating-quick-menu-panel / .moro-floating-quick-menu-button）</div>
+                        <textarea
+                            value={floating.customCss || ''}
+                            onChange={e => setFloating({ customCss: e.target.value })}
+                            placeholder={`.moro-floating-quick-menu-button {\n  box-shadow: 0 0 0 3px rgba(224,161,145,.18);\n}`}
+                            rows={4}
+                            spellCheck={false}
+                            className="w-full px-3 py-2.5 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] outline-none leading-relaxed border-2 border-[#2b2933]"
+                        />
+                    </div>
+                    <button
+                        onClick={() => { updateTheme({ floatingQuickMenuStyle: undefined }); addToast('悬浮窗撕回默认了', 'success'); }}
+                        className="text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono"
+                    >撕回默认</button>
+                </div>
+            </section>
+
+            {/* 线下模式弹窗 */}
+            <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
+                <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">线下模式弹窗</h2>
+                <p className="text-[10px] text-[#6b6b6b] mb-4">角色开启线下模式时弹出的面对面小窗：改底色、文字、强调色、圆角，也能写 CSS。</p>
+                <div className="moro-offline-modal-backdrop bg-[#2b2933]/20 border-2 border-dashed border-[#2b2933]/35 p-4 mb-4">
+                    {offline.customCss && <style>{offline.customCss}</style>}
+                    <div
+                        className="moro-offline-modal overflow-hidden shadow-lg"
+                        style={{
+                            background: offline.background || 'linear-gradient(180deg,#fbf9f2,#f2efe4)',
+                            color: offline.textColor || '#1f1d1a',
+                            borderRadius: typeof offline.radius === 'number' ? offline.radius : 22,
+                        }}
+                    >
+                        <div className="moro-offline-modal-header px-4 py-3 border-b border-dashed border-black/20 text-[12px] font-bold">和 Ta 面对面</div>
+                        <div className="p-4 space-y-2">
+                            <div className="moro-offline-modal-entry moro-offline-modal-scene text-[11px] italic px-3 py-2 rounded-lg bg-black/5">雨声贴着窗沿，房间里只剩两个人的呼吸。</div>
+                            <div className="moro-offline-modal-entry moro-offline-modal-char text-[11px] px-3 py-2 rounded-[4px_14px_14px_14px] bg-white">“你刚刚是不是想说什么？”</div>
+                            <div className="moro-offline-modal-entry moro-offline-modal-user ml-auto w-fit text-[11px] px-3 py-2 rounded-[14px_4px_14px_14px] text-white" style={{ background: offline.accentColor || '#1f1d1a' }}>嗯，我想靠近一点。</div>
+                        </div>
+                        <div className="moro-offline-modal-inputbar px-4 py-3 border-t border-dashed border-black/20 text-[11px] opacity-70">说句话，或写下你的动作…</div>
+                    </div>
+                </div>
+                <div className="space-y-4">
+                    {([
+                        ['background', '弹窗底色', 'linear-gradient(180deg,#fbf9f2,#f2efe4)'],
+                        ['textColor', '文字颜色', '#1f1d1a'],
+                        ['accentColor', '强调色 / 用户气泡', '#1f1d1a'],
+                    ] as const).map(([key, label, placeholder]) => (
+                        <div key={key}>
+                            <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">{label}</div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="color"
+                                    value={/^#[0-9a-fA-F]{6}$/.test(String(offline[key] || '')) ? String(offline[key]) : '#1f1d1a'}
+                                    onChange={e => setOffline({ [key]: e.target.value } as any)}
+                                    className="w-9 h-9 border-2 border-[#2b2933] bg-[#fbfaf7] p-1 shrink-0"
+                                />
+                                <input
+                                    value={String(offline[key] || '')}
+                                    onChange={e => setOffline({ [key]: e.target.value || undefined } as any)}
+                                    placeholder={placeholder}
+                                    className="flex-1 px-3 py-2 bg-[#f4f2ed] border-2 border-[#2b2933] text-[12px] font-mono outline-none"
+                                />
+                            </div>
+                        </div>
+                    ))}
+                    <div>
+                        <div className="flex justify-between text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">
+                            <span>弹窗圆角</span><span className="font-mono text-[#8b8996]">{typeof offline.radius === 'number' ? `${offline.radius}px` : '22px'}</span>
+                        </div>
+                        <input
+                            type="range" min={0} max={32}
+                            value={typeof offline.radius === 'number' ? offline.radius : 22}
+                            onChange={e => setOffline({ radius: parseInt(e.target.value) === 22 ? undefined : parseInt(e.target.value) })}
+                            className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
+                        />
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">手写码（.moro-offline-modal-*）</div>
+                        <textarea
+                            value={offline.customCss || ''}
+                            onChange={e => setOffline({ customCss: e.target.value })}
+                            placeholder={`.moro-offline-modal-char {\n  border-radius: 14px;\n}\n.moro-offline-modal-inputbar { background: rgba(255,255,255,.45); }`}
+                            rows={4}
+                            spellCheck={false}
+                            className="w-full px-3 py-2.5 bg-[#2b2933] text-[#f4f2ed] font-mono text-[11px] outline-none leading-relaxed border-2 border-[#2b2933]"
+                        />
+                    </div>
+                    <button
+                        onClick={() => { updateTheme({ offlineModeStyle: undefined }); addToast('线下模式弹窗撕回默认了', 'success'); }}
+                        className="text-[11px] font-bold text-[#2b2933] underline decoration-dotted underline-offset-2 label-mono"
+                    >撕回默认</button>
+                </div>
             </section>
 
             {/* 02 灵动岛 */}
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">灵动岛</h2>
                 <p className="text-[10px] text-[#6b6b6b] mb-4">浮在状态栏中央那颗通知胶囊：换底色 / 字色 / 圆角，或直接写码。</p>
+                <div className="relative h-24 bg-[#f4f2ed] border-2 border-dashed border-[#2b2933]/35 mb-4 overflow-hidden">
+                    {island.customCss && <style>{island.customCss}</style>}
+                    <div
+                        className="moro-dynamic-island absolute left-1/2 top-4 -translate-x-1/2 flex items-center gap-2 px-4 h-9 rounded-full text-[10px] font-bold shadow-lg"
+                        style={{
+                            background: island.background || '#0b0b12',
+                            color: island.textColor || '#ffffff',
+                            ...(typeof island.radius === 'number' ? { borderRadius: `${island.radius}px` } : {}),
+                        }}
+                    >
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        2 条新消息
+                    </div>
+                    <div className="moro-dynamic-island-panel absolute left-5 right-5 bottom-3 rounded-2xl px-3 py-2 text-[10px] text-white bg-[#0d0d16]/90 border border-white/10">
+                        通知中心 · 预览面板
+                    </div>
+                </div>
                 <div className="space-y-4">
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">底色（认渐变，如 linear-gradient(...)）</div>
@@ -1008,6 +1199,32 @@ const DesktopLockEditor: React.FC<{
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">锁屏</h2>
                 <p className="text-[10px] text-[#6b6b6b] mb-4">专属壁纸 / 时钟字体 / 通知卡样式 / 解锁动画，落笔即生效。</p>
+                <div
+                    className="relative h-56 overflow-hidden border-2 border-dashed border-[#2b2933]/35 mb-4 bg-cover bg-center"
+                    style={previewWallpaperStyle(lock.wallpaper || theme.wallpaper)}
+                >
+                    {lock.customCss && <style>{lock.customCss}</style>}
+                    <div className="absolute inset-0 bg-black/10" />
+                    <div
+                        className="moro-lock-clock absolute left-0 right-0 flex flex-col items-center text-center"
+                        style={{
+                            top: `${typeof lock.clockTop === 'number' ? lock.clockTop : 14}%`,
+                            transform: `scale(${typeof lock.clockScale === 'number' ? lock.clockScale : 1})`,
+                            color: theme.contentColor || '#2b2933',
+                        }}
+                    >
+                        <div className="text-[9px] font-bold px-2 py-1 rounded-full bg-white/30 border border-white/40">{lock.dateText || '6月27日 · 周六'}</div>
+                        <div className="text-[42px] leading-none font-display-italic font-semibold mt-2">12:17</div>
+                        <div className="text-[10px] opacity-80 mt-1">{lock.greetingText || '晚上好，今天辛苦了'}</div>
+                    </div>
+                    {(lock.showNotifications !== false) && (
+                        <div className="moro-lock-notif absolute left-4 right-4 bottom-12 rounded-2xl px-3 py-2 text-[10px] bg-white/35 backdrop-blur-md border border-white/30">
+                            <div className="font-bold">Moro</div>
+                            <div className="opacity-75 truncate">发来了一条新消息</div>
+                        </div>
+                    )}
+                    <div className="absolute bottom-4 left-0 right-0 text-center text-[9px] font-bold tracking-[0.18em]">{lock.unlockHintText || '轻点 · 输入密码'}</div>
+                </div>
                 <div className="space-y-5">
                     <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">锁屏专属壁纸（不设就沿用桌面的）</div>
@@ -1038,11 +1255,62 @@ const DesktopLockEditor: React.FC<{
                         </div>
                     </div>
                     <div>
+                        <div className="flex justify-between text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">
+                            <span>时间组件位置</span><span className="font-mono text-[#8b8996]">{typeof lock.clockTop === 'number' ? `${lock.clockTop}%` : '14%'}</span>
+                        </div>
+                        <input
+                            type="range" min={6} max={34}
+                            value={typeof lock.clockTop === 'number' ? lock.clockTop : 14}
+                            onChange={e => setLock({ clockTop: parseInt(e.target.value) === 14 ? undefined : parseInt(e.target.value) })}
+                            className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
+                        />
+                    </div>
+                    <div>
+                        <div className="flex justify-between text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">
+                            <span>时间组件缩放</span><span className="font-mono text-[#8b8996]">{typeof lock.clockScale === 'number' ? `${lock.clockScale.toFixed(2)}x` : '1.00x'}</span>
+                        </div>
+                        <input
+                            type="range" min={0.72} max={1.35} step={0.01}
+                            value={typeof lock.clockScale === 'number' ? lock.clockScale : 1}
+                            onChange={e => {
+                                const v = parseFloat(e.target.value);
+                                setLock({ clockScale: Math.abs(v - 1) < 0.01 ? undefined : v });
+                            }}
+                            className="w-full h-1.5 bg-[#e3e0d6] rounded-full appearance-none cursor-pointer accent-[#2b2933]"
+                        />
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">各区域文字修改</div>
+                        <div className="space-y-2">
+                            {([
+                                ['dateText', '日期胶囊文案', '6月27日 · 周六'],
+                                ['greetingText', '时间下方文案', '晚上好，今天辛苦了'],
+                                ['unlockHintText', '底部解锁提示', '轻点 · 输入密码'],
+                                ['passcodeTitleText', '密码标题', '输入锁屏密码'],
+                                ['passcodeErrorText', '密码错误提示', '密码错误，请重试'],
+                                ['passcodeCancelText', '取消按钮', '取消'],
+                            ] as const).map(([key, label, placeholder]) => (
+                                <input
+                                    key={key}
+                                    value={String(lock[key] || '')}
+                                    onChange={e => setLock({ [key]: e.target.value || undefined } as any)}
+                                    placeholder={`${label}：${placeholder}`}
+                                    className="w-full px-3 py-2 bg-[#f4f2ed] border-2 border-[#2b2933] text-[12px] outline-none"
+                                />
+                            ))}
+                        </div>
+                    </div>
+                    <div>
                         <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">通知卡样式</div>
                         <div className="flex flex-wrap gap-1.5">
                             {([['glass', '玻璃拟态'], ['paper', '纸面手帐'], ['ink', '墨色']] as const).map(([v, label]) => (
                                 <SmallChip key={v} active={(lock.notifCardStyle || 'glass') === v} onClick={() => setLock({ notifCardStyle: v === 'glass' ? undefined : v })}>{label}</SmallChip>
                             ))}
+                        </div>
+                        <div className="mt-2">
+                            <SmallChip active={lock.showNotifications !== false} onClick={() => setLock({ showNotifications: lock.showNotifications === false ? undefined : false })}>
+                                {lock.showNotifications === false ? '通知已隐藏' : '显示消息通知'}
+                            </SmallChip>
                         </div>
                     </div>
                     <div>
@@ -1050,6 +1318,14 @@ const DesktopLockEditor: React.FC<{
                         <div className="flex flex-wrap gap-1.5">
                             {([['fade', '淡出'], ['slide', '上滑'], ['zoom', '放大'], ['none', '无']] as const).map(([v, label]) => (
                                 <SmallChip key={v} active={(lock.unlockAnimation || 'fade') === v} onClick={() => setLock({ unlockAnimation: v === 'fade' ? undefined : v })}>{label}</SmallChip>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] font-bold text-[#2b2933] mb-1.5 label-mono">密码输入界面样式</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {([['glass', '玻璃'], ['paper', '纸面'], ['ink', '墨色']] as const).map(([v, label]) => (
+                                <SmallChip key={v} active={(lock.passcodeStyle || 'glass') === v} onClick={() => setLock({ passcodeStyle: v === 'glass' ? undefined : v })}>{label}</SmallChip>
                             ))}
                         </div>
                     </div>

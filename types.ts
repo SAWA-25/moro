@@ -265,6 +265,7 @@ export interface OSTheme {
   desktopEditEffect?: 'wiggle' | 'breathe' | 'none';
   /** 悬浮窗快捷菜单：全局可拖动的悬浮球，点开是常用 App 快捷入口。undefined 视为开启；显式 false 关闭。 */
   floatingQuickMenu?: boolean;
+  floatingQuickMenuStyle?: FloatingQuickMenuStyle;
   // Chat UI customization (global)
   chatAvatarShape?: 'circle' | 'rounded' | 'square';
   chatAvatarSize?: 'small' | 'medium' | 'large';
@@ -308,6 +309,7 @@ export interface OSTheme {
   dynamicIslandStyle?: DynamicIslandStyle;
   /** 锁屏样式自定义（专属壁纸 / 时钟字体 / 通知卡风格 / 解锁动画 / 自定义 CSS），在「主题 → 锁屏」编辑。 */
   lockScreenStyle?: LockScreenStyle;
+  offlineModeStyle?: OfflineModeStyle;
   /** 占卜牌面美化（小剧场·占卜读这里渲染牌面）：牌背图 / 边框风格 / 渲染风格。 */
   tarotSkin?: {
     cardBack?: string;                                  // 牌背图 dataURL（牌面未翻开 / 占位时显示）
@@ -341,16 +343,44 @@ export interface DynamicIslandStyle {
 }
 
 /** 锁屏样式自定义 */
+export interface FloatingQuickMenuStyle {
+  bubbleBackground?: string;
+  menuBackground?: string;
+  pawColor?: string;
+  textColor?: string;
+  borderColor?: string;
+  radius?: number;
+  customCss?: string;
+}
+
 export interface LockScreenStyle {
   /** 锁屏专属壁纸（缺省沿用桌面壁纸） */
   wallpaper?: string;
   /** 时钟字体风格 */
   clockFont?: 'serif' | 'sans' | 'mono' | 'hand';
+  clockTop?: number;
+  clockScale?: number;
+  dateText?: string;
+  greetingText?: string;
+  unlockHintText?: string;
   /** 消息通知卡风格：玻璃拟态 / 纸面手帐 / 墨色 */
   notifCardStyle?: 'glass' | 'paper' | 'ink';
+  showNotifications?: boolean;
   /** 解锁进入桌面的过渡动画 */
   unlockAnimation?: 'slide' | 'fade' | 'zoom' | 'none';
+  passcodeStyle?: 'glass' | 'paper' | 'ink';
+  passcodeTitleText?: string;
+  passcodeErrorText?: string;
+  passcodeCancelText?: string;
   /** 注入的原生 CSS（配合 .moro-lock-screen / .moro-lock-clock / .moro-lock-notif 钩子类） */
+  customCss?: string;
+}
+
+export interface OfflineModeStyle {
+  background?: string;
+  textColor?: string;
+  accentColor?: string;
+  radius?: number;
   customCss?: string;
 }
 

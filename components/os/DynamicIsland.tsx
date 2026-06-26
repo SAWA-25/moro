@@ -325,7 +325,7 @@ const DynamicIsland: React.FC = () => {
             {/* 下滑通知面板 */}
             {expanded && (
                 <div
-                    className="absolute left-4 right-4 z-[59] rounded-[1.5rem] p-3 text-white border border-white/10"
+                    className="moro-dynamic-island-panel absolute left-4 right-4 z-[59] rounded-[1.5rem] p-3 text-white border border-white/10"
                     style={{
                         top: 'calc(max(6px, var(--safe-top)) + 2.3rem)',
                         background: 'rgba(13,13,22,0.94)',

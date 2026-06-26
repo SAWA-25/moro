@@ -42,7 +42,13 @@ const CatPaw: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 const FloatingQuickMenu: React.FC = () => {
-    const { openApp, updateTheme, addToast } = useOS();
+    const { openApp, updateTheme, addToast, theme } = useOS();
+    const floatingStyle = theme.floatingQuickMenuStyle || {};
+    const pawColor = floatingStyle.pawColor || PAW;
+    const textColor = floatingStyle.textColor || INK;
+    const borderColor = floatingStyle.borderColor || HAIR;
+    const menuBackground = floatingStyle.menuBackground || 'rgba(255,255,255,0.8)';
+    const bubbleBackground = floatingStyle.bubbleBackground;
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState<Pos | null>(null);
     const [tuck, setTuck] = useState<Tuck>(null);
@@ -262,7 +268,7 @@ const FloatingQuickMenu: React.FC = () => {
     return (
         <div
             ref={wrapRef}
-            className="absolute left-0 top-0 z-[55] select-none will-change-transform transform-gpu"
+            className="moro-floating-quick-menu absolute left-0 top-0 z-[55] select-none will-change-transform transform-gpu"
             style={{
                 touchAction: 'none',
                 transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
@@ -278,16 +284,18 @@ const FloatingQuickMenu: React.FC = () => {
                 .fqm-paw-idle { animation: fqmBreathe 3.6s ease-in-out infinite; }
                 .fqm-paw-boop { animation: fqmBoop 0.42s cubic-bezier(0.34,1.56,0.64,1); }
             `}</style>
+            {floatingStyle.customCss && <style>{floatingStyle.customCss}</style>}
 
             {/* 菜单（贴边时不显示） */}
             {open && !isTucked && (
                 <div
-                    className="absolute flex flex-col gap-2 rounded-[1.5rem] bg-white/80 p-2.5 shadow-[0_18px_44px_-22px_rgba(120,92,82,0.42)] backdrop-blur-xl"
+                    className="moro-floating-quick-menu-panel absolute flex flex-col gap-2 rounded-[1.5rem] p-2.5 shadow-[0_18px_44px_-22px_rgba(120,92,82,0.42)] backdrop-blur-xl"
                     style={{
                         [openUp ? 'bottom' : 'top']: BUBBLE + 12,
                         [alignRight ? 'right' : 'left']: 0,
                         flexDirection: openUp ? 'column-reverse' : 'column',
-                        border: `1px solid ${HAIR}`,
+                        background: menuBackground,
+                        border: `1px solid ${borderColor}`,
                     } as React.CSSProperties}
                 >
                     {items.map((it, i) => (
@@ -299,13 +307,13 @@ const FloatingQuickMenu: React.FC = () => {
                         >
                             <span
                                 className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-[0_6px_16px_-10px_rgba(120,92,82,0.5)] transition-transform duration-200 group-active:scale-90 group-hover:scale-105"
-                                style={{ color: PAW, border: `1px solid ${HAIR}` }}
+                                style={{ color: pawColor, border: `1px solid ${borderColor}` }}
                             >
                                 {it.render()}
                             </span>
                             <span
                                 className="px-2.5 py-1 rounded-full bg-white/90 text-[11px] font-semibold whitespace-nowrap shadow-sm"
-                                style={{ color: INK, border: `1px solid ${HAIR}` }}
+                                style={{ color: textColor, border: `1px solid ${borderColor}` }}
                             >{it.label}</span>
                         </button>
                     ))}
@@ -315,12 +323,12 @@ const FloatingQuickMenu: React.FC = () => {
             {/* 互动迸发：水波 + 小心心（每次 boop 重挂以重放动画） */}
             {boop > 0 && !isTucked && (
                 <div key={boop} className="absolute inset-0 pointer-events-none" style={{ width: BUBBLE, height: BUBBLE }}>
-                    <span className="absolute inset-0 rounded-full" style={{ border: `1.5px solid ${PAW}`, animation: 'fqmRipple 0.62s ease-out forwards' }} />
+                    <span className="absolute inset-0 rounded-full" style={{ border: `1.5px solid ${pawColor}`, animation: 'fqmRipple 0.62s ease-out forwards' }} />
                     {[-1, 0, 1].map((dx, k) => (
                         <span
                             key={k}
                             className="absolute"
-                            style={{ color: PAW, left: `calc(50% + ${dx * 13}px)`, top: 4, fontSize: 12 + k, animation: `fqmHeart ${0.72 + k * 0.08}s ease-out ${k * 0.05}s forwards` }}
+                            style={{ color: pawColor, left: `calc(50% + ${dx * 13}px)`, top: 4, fontSize: 12 + k, animation: `fqmHeart ${0.72 + k * 0.08}s ease-out ${k * 0.05}s forwards` }}
                         >♥</span>
                     ))}
                 </div>
@@ -332,29 +340,30 @@ const FloatingQuickMenu: React.FC = () => {
                 onPointerMove={onPointerMove}
                 onPointerUp={finishPointer}
                 onPointerCancel={(e) => finishPointer(e, false)}
-                className="relative rounded-full flex items-center justify-center active:scale-95 transition-transform duration-150"
+                className="moro-floating-quick-menu-button relative rounded-full flex items-center justify-center active:scale-95 transition-transform duration-150"
                 style={{
                     width: BUBBLE, height: BUBBLE,
-                    background: open
+                    background: bubbleBackground || (open
                         ? 'linear-gradient(160deg, rgba(255,255,255,0.96), rgba(249,237,233,0.92))'
-                        : 'rgba(255,255,255,0.86)',
+                        : 'rgba(255,255,255,0.86)'),
                     backdropFilter: 'blur(10px)',
                     WebkitBackdropFilter: 'blur(10px)',
-                    border: `1px solid ${HAIR}`,
+                    border: `1px solid ${borderColor}`,
+                    ...(typeof floatingStyle.radius === 'number' ? { borderRadius: `${floatingStyle.radius}px` } : {}),
                     boxShadow: '0 12px 28px -16px rgba(150,112,100,0.45), inset 0 1px 0 rgba(255,255,255,0.85)',
                     opacity: isTucked ? 0.9 : 1,
                 }}
                 title="猫爪快捷菜单（轻点展开 · 长按贴边）"
             >
                 {/* 猫爪印：固定尺寸、居中正立（不再随呼吸动画歪斜） */}
-                <span className={`flex items-center justify-center ${boop > 0 ? 'fqm-paw-boop' : 'fqm-paw-idle'}`} style={{ color: PAW }}>
+                <span className={`flex items-center justify-center ${boop > 0 ? 'fqm-paw-boop' : 'fqm-paw-idle'}`} style={{ color: pawColor }}>
                     <CatPaw className="block w-[26px] h-[26px]" />
                 </span>
                 {/* 贴边时的小提手 */}
                 {isTucked && (
                     <span
                         className="absolute top-1/2 -translate-y-1/2 w-1 h-5 rounded-full"
-                        style={{ [tuck === 'left' ? 'right' : 'left']: 5, background: 'rgba(150,116,104,0.4)' } as React.CSSProperties}
+                        style={{ [tuck === 'left' ? 'right' : 'left']: 5, background: borderColor } as React.CSSProperties}
                     />
                 )}
             </button>
