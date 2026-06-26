@@ -1386,15 +1386,19 @@
       @keyframes moroVinylSpin {
         to { transform: rotate(360deg); }
       }
+      /* 让黑胶尺寸能按卡片实际高度收缩（cqh），桌面格高随屏高/窗口变化时不再被裁掉 */
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-widget {
+        container-type: size;
+      }
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-body {
         flex-direction: column;
         align-items: center;
-        justify-content: flex-start;
-        gap: 0.4rem;
-        padding: 0.88rem 0.82rem 0.72rem;
+        justify-content: center;
+        gap: 0.3rem;
+        padding: 0.55rem 0.78rem 0.6rem;
       }
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-wrap {
-        width: min(5.35rem, 64%);
+        width: min(4.3rem, 56%, 44cqh);
         min-width: 0;
         max-width: none;
         flex: 0 0 auto;
@@ -1416,13 +1420,9 @@
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-tiny {
         display: none;
       }
+      /* 紧凑卡片里波形/进度条都收起，给标题+副标留足空间，避免「Tap to open」被裁 */
       .moro-desktop-root [data-desk-item="widget:music"] .moro-waveform {
-        justify-content: center;
-        height: 16px;
-        margin-top: 0.38rem !important;
-      }
-      .moro-desktop-root [data-desk-item="widget:music"] .moro-waveform span {
-        width: 2px;
+        display: none !important;
       }
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-chip {
         height: 1.28rem;
@@ -1433,9 +1433,6 @@
       }
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info .text-\[17px\] {
         font-size: 15px !important;
-      }
-      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info .mt-3 {
-        margin-top: 0.55rem !important;
       }
       .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-controls {
         display: none !important;
