@@ -39,7 +39,7 @@ const CreativeStudioApp: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-10 space-y-6 pt-2">
                 {/* 封面：撕边大卡 + 胶带 + 条形码 */}
-                <div className="relative border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] px-7 py-8 select-none rotate-[-0.5deg]" style={{ background: PAPER_CARD }}>
+                <div className="relative px-7 py-8 select-none rotate-[-0.5deg]" style={{ background: PAPER_CARD, borderRadius: 24, border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 1px 2px rgba(38,36,42,0.04), 0 22px 44px -26px rgba(38,36,42,0.35)' }}>
                     <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg] w-20" />
                     <div className="label-mono text-[9px] text-[#1c1b1a]/45 mb-2">CREATIVE GUILD · 黑白拼贴</div>
                     <div className="flex items-end gap-3">
@@ -53,7 +53,8 @@ const CreativeStudioApp: React.FC = () => {
                 {/* PROSE 笔友会（共创小说） */}
                 <button
                     onClick={() => setSection('novel')}
-                    className="relative w-full bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] px-7 py-10 text-left active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all select-none rotate-[0.6deg]"
+                    className="relative w-full bg-white px-7 py-10 text-left press-soft select-none rotate-[0.6deg]"
+                    style={{ borderRadius: 22, border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 1px 2px rgba(38,36,42,0.04), 0 18px 38px -24px rgba(38,36,42,0.32)' }}
                 >
                     <Tape className="-top-2.5 left-8 rotate-[4deg] w-14" />
                     <div className="label-mono text-[9px] text-[#1c1b1a]/45 mb-2">PROSE — 一起写本书</div>
@@ -66,7 +67,8 @@ const CreativeStudioApp: React.FC = () => {
                 {/* LYRIC 写歌（共创歌曲） */}
                 <button
                     onClick={() => setSection('song')}
-                    className="relative w-full bg-white border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] px-7 py-10 text-left active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all select-none rotate-[-0.6deg]"
+                    className="relative w-full bg-white px-7 py-10 text-left press-soft select-none rotate-[-0.6deg]"
+                    style={{ borderRadius: 22, border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 1px 2px rgba(38,36,42,0.04), 0 18px 38px -24px rgba(38,36,42,0.32)' }}
                 >
                     <Tape className="-top-2.5 right-8 rotate-[-4deg] w-14" />
                     <div className="label-mono text-[9px] text-[#1c1b1a]/45 mb-2">LYRIC — 一起凑首歌</div>

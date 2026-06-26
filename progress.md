@@ -362,3 +362,7 @@ pm run build passes after the time-gap grouping fix.
   - **茶话亭**（`apps/ForumApp.tsx`，amber 茶馆暖调）：851 行重度 scrapbook → ins。用「同名原语 ins 化」shim 法（PaperBackdrop/ScrapButton/WashiTape/Stamp/StickyNote/SectionTag/DashedRule/PaperDialog 就地换 ins 实现，保持 API 全文零改调用点）+ PANEL/paperInput/chip/Header/Empty 重定向 + 虚线描边统一为发丝线 + FAB 改 amber。逻辑零改。
   - `tsc` 0 非 api 错误，`vite build` 通过。**进度 6/28**（+自由活动、茶话亭）。
 - 逐 App 换肤·共享套件法转换 5 个 scrapbook 大 App：新建 `apps/ui/insScrapKit.tsx`（与 scrapbook 同名导出/签名，但渲染 ins 风：白卡 + 大圆角 + 极柔投影 + 彩色 + 彩色 WASHI），把 **心意铺/自习室/饭票/折子戏(壳)/椒房记(文游)** 的 import 路径从 `theater/scrapbook` 切到 `ui/insScrapKit`（调用点零改）。絮语(Chat) 的 ScrapModal/JournalSheet 仍用原 scrapbook，**不受影响**。`tsc` 0 非 api 错误，`vite build` 通过。**进度 11/28**（+心意铺/自习室/饭票/折子戏/椒房记）。
+- 逐 App 换肤·共享 kit 法（高杠杆）再转换两套：
+  - **creative/collage**（黑白拼贴 → ins）：保签名重写——白卡 + 暖墨字 + 极柔投影 + 大圆角，去黑描边/硬阴影/网点满铺，保留少量胶带/邮票作创作社性格。一举 ins 化 **创作社/笔友会(Novel)/写歌(Songwriting)/NovelWriter**。CreativeStudioApp 内联 brutalist 卡片也改 ins。
+  - **almanac/handbookKit**（暖牛皮纸手账 → ins）：保签名重写——干净暖白页 + PaperNote 白卡软投影 + 票签干净胶囊，保留少量胶带/邮戳。一举 ins 化 **岁时记/存钱罐(Bank)/时光契约(Schedule)/特别时光/ValentineEvent + bank 子组件**。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度约 18/28**（+创作社/笔友会/写歌/岁时记/存钱罐/日程 等）。
