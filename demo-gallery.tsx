@@ -1,13 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import {
-  InsShell, InsHeader, InsScroll, Polaroid, StoryRing, IconCircle,
+  InsShell, InsHeader, InsScroll, InsCard, Polaroid, StoryRing, IconCircle,
   InsButton, SectionLabel, Chip, accent, INK, INK_SOFT,
 } from './components/ui/insKit';
-import { Trash, ArrowsClockwise, ChatCircleText, PencilSimpleLine, Sparkle, CaretLeft, Images } from '@phosphor-icons/react';
+import { Trash, ArrowsClockwise, ChatCircleText, PencilSimpleLine, Sparkle, CaretLeft, Images, Plus, X, TrendUp, WarningCircle, PaperPlaneTilt, ArrowSquareOut } from '@phosphor-icons/react';
 
 /**
- * 临时演示页（非应用本体）：用真实 insKit 组件 + 仓库样片，渲染「相册」新设计的三个视图，
+ * 临时演示页（非应用本体）：用真实 insKit 组件 + 仓库样片，逐个展示已换肤 App 的新设计，
  * 供 Netlify 预览部署直接打开查看满屏效果。审定方向后删除（不进正式发布）。
  * 打开： https://deploy-preview-197--smoro.netlify.app/demo-gallery.html
  */
@@ -123,17 +123,107 @@ const KitRow: React.FC = () => (
   </div>
 );
 
-const App: React.FC = () => (
-  <div style={{ minHeight: '100vh', background: '#eceae6', padding: '44px 24px 64px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 36 }}>
+// ───────────────────────── 拾光图库（XhsStock · red） ─────────────────────────
+const STASH_TAGS = ['全部 · 18', '#穿搭 · 6', '#美食 · 5', '#风景 · 4', '#日常 · 3'];
+const Stash: React.FC = () => {
+  const C = 'red' as const;
+  return (
+    <InsShell accent={C}>
+      <InsHeader accent={C} title="拾光图库" en="18 IN STASH" onBack={() => {}}
+        right={<button className="w-9 h-9 rounded-full flex items-center justify-center text-white" style={{ background: accent(C).solid, boxShadow: `0 10px 20px -10px ${accent(C).solid}` }}><Plus size={19} weight="bold" /></button>} />
+      <div className="flex-1 overflow-y-auto no-scrollbar min-h-0 relative z-10">
+        <div className="flex gap-2 px-4 py-3 overflow-x-auto no-scrollbar">
+          {STASH_TAGS.map((t, i) => <Chip key={t} active={i === 0} accent={C}>{t}</Chip>)}
+        </div>
+        <div className="grid grid-cols-3 gap-[3px] px-[3px] pb-6">
+          {[...photos, ...photos].slice(0, 18).map((p, i) => (
+            <div key={i} className="aspect-square relative overflow-hidden" style={{ background: accent(C).soft, borderRadius: 6 }}>
+              <img src={p} className="w-full h-full object-cover animate-photo-develop" style={{ animationDelay: `${Math.min(i, 14) * 35}ms` }} />
+              {i % 4 === 0 && <div className="absolute top-1.5 left-1.5 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: accent(C).solid }}>×{i + 1}</div>}
+              <div className="absolute bottom-0 left-0 right-0 px-1.5 pb-1 pt-4" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)' }}>
+                <span className="text-[9px] font-medium text-white/90">#{['穿搭', '美食', '风景', '日常'][i % 4]}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </InsShell>
+  );
+};
+
+// ───────────────────────── 热点（HotNews · red） ─────────────────────────
+const NEWS = [
+  { source: '微博热搜', items: ['#这部电影票房破十亿#', '某顶流官宣新代言', '今晚有流星雨记得看', '城市夜骑成新风潮'] },
+  { source: '知乎热榜', items: ['如何看待最近的 AI 新进展？', '年轻人为什么爱上City Walk', '一个人住是什么体验'] },
+  { source: '抖音热点', items: ['这首歌又火回来了', '解压手工合集', '周末好去处盘点'] },
+];
+const News: React.FC = () => {
+  const C = 'red' as const;
+  return (
+    <InsShell accent={C}>
+      <InsHeader accent={C} title="热点" en="HOT NOW" onBack={() => {}}
+        right={<IconCircle><ArrowsClockwise size={18} weight="bold" /></IconCircle>} />
+      <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-20 relative z-10">
+        <div className="text-center pt-3 pb-4">
+          <p className="text-[10px] tracking-[0.4em] uppercase font-bold" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>Moro Daily</p>
+          <h2 className="ins-gradient-text text-[30px] font-black tracking-tight mt-1">今日热点</h2>
+          <p className="text-[11px] mt-1.5" style={{ color: INK_SOFT }}>03月12日 · 午间版（12:00–16:00） · 更新于 13:20</p>
+        </div>
+        <InsCard accent={C} edge className="px-3.5 py-3 mb-4 flex gap-2.5 items-start">
+          <WarningCircle size={18} weight="fill" className="shrink-0 mt-0.5" style={{ color: accent(C).solid }} />
+          <span className="text-[11.5px] leading-relaxed" style={{ color: '#5a5660' }}>这只是<b style={{ color: INK }}>热点可视化</b>。每次对话会随机抽几条注入给角色，偶尔主动<b style={{ color: INK }}>分享成新闻卡片</b>找你聊。</span>
+        </InsCard>
+        <div className="space-y-3.5">
+          {NEWS.map(({ source, items }, gi) => (
+            <InsCard key={source} accent={C} className="px-4 py-3.5 animate-ins-card" style={{ animationDelay: `${gi * 60}ms` }}>
+              <h3 className="text-[14px] font-extrabold mb-2.5 flex items-center gap-2" style={{ color: INK }}>
+                <span className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: accent(C).soft, color: accent(C).solid }}><TrendUp size={15} weight="bold" /></span>
+                {source}
+              </h3>
+              <ol className="space-y-2.5">
+                {items.map((t, i) => (
+                  <li key={i} className="flex gap-2.5 text-[13px] leading-snug">
+                    <span className="font-black w-5 shrink-0 text-center tabular-nums" style={{ color: i < 3 ? accent(C).solid : INK_SOFT }}>{i + 1}</span>
+                    <span className="flex-1 min-w-0 inline-flex items-start gap-1" style={{ color: INK }}>{t}<ArrowSquareOut size={11} weight="bold" className="shrink-0 mt-1" style={{ color: INK_SOFT }} /></span>
+                    <PaperPlaneTilt size={15} weight="bold" className="shrink-0 self-start mt-0.5" style={{ color: INK_SOFT }} />
+                  </li>
+                ))}
+              </ol>
+            </InsCard>
+          ))}
+        </div>
+      </div>
+    </InsShell>
+  );
+};
+
+const Section: React.FC<{ title: string; sub: string; children: React.ReactNode }> = ({ title, sub, children }) => (
+  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
     <div style={{ textAlign: 'center' }}>
-      <div className="ins-gradient-text" style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.01em' }}>相册 · Ins 风 + 拍立得 新设计</div>
-      <div style={{ fontSize: 13, color: '#8b8996', marginTop: 6 }}>演示数据 · 头像与照片为仓库样片 · 这是逐 App 换肤的第一个</div>
+      <div className="ins-gradient-text" style={{ fontSize: 26, fontWeight: 900, letterSpacing: '-0.01em' }}>{title}</div>
+      <div style={{ fontSize: 12.5, color: '#8b8996', marginTop: 5 }}>{sub}</div>
     </div>
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 44, justifyContent: 'center', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 44, justifyContent: 'center', alignItems: 'flex-start' }}>{children}</div>
+  </div>
+);
+
+const App: React.FC = () => (
+  <div style={{ minHeight: '100vh', background: '#eceae6', padding: '44px 24px 80px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 56 }}>
+    <div style={{ textAlign: 'center' }}>
+      <div className="ins-gradient-text" style={{ fontSize: 34, fontWeight: 900, letterSpacing: '-0.02em' }}>Moro · Ins 风改造预览</div>
+      <div style={{ fontSize: 13, color: '#8b8996', marginTop: 6 }}>已换肤 App 逐个登场 · 演示数据为仓库样片</div>
+    </div>
+    <Section title="① 相册" sub="彩色拍立得相册墙 / IG 主页式网格 / 灯箱题字">
       <Frame label="相册墙 · Polaroid"><Albums /></Frame>
       <Frame label="网格 · IG 主页"><Grid /></Frame>
       <Frame label="详情 · 灯箱题字"><Detail /></Frame>
-    </div>
+    </Section>
+    <Section title="② 拾光图库" sub="标签囤图库 · 瀑布显影网格 + 拍立得式入库预览">
+      <Frame label="图库 · 标签网格"><Stash /></Frame>
+    </Section>
+    <Section title="③ 热点" sub="Moro Daily 杂志刊头 + 平台白卡榜单 + 转发">
+      <Frame label="热点 · 杂志信息流"><News /></Frame>
+    </Section>
     <KitRow />
   </div>
 );
