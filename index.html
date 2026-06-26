@@ -639,6 +639,68 @@
         background: conic-gradient(from 30deg, #dcd7cd, #6b665d, #1f1d1a, #6b665d, #dcd7cd, #1f1d1a);
       }
       .ig-ring > img { border: 2px solid #fff; }
+
+      /* ════════════════ Moro · Ins 风 + 拍立得 设计层（全局换肤新基调）════════════════
+         告别「黑白拼贴手账」的网点纸纹 / 牛皮胶带 / 虚线缝线，转向「照片当主角」的清爽暖白：
+         纯白卡片 + 大圆角 + 极柔投影 + 彩色 IG 故事环 + 拍立得显影动画。
+         这一层只提供全局动画与少量工具类；具体积木在 components/ui/insKit.tsx，各 App 逐一换肤时取用。
+         注意：不删旧手账 CSS——尚未换肤的 App 仍依赖它，迁移完再清。 */
+
+      /* 拍立得「显影」：照片从泛白欠曝缓缓显影到正常，配合轻微上浮——像刚摇出来的拍立得 */
+      @keyframes polaroidDevelop {
+        0%   { filter: contrast(0.7) brightness(1.32) saturate(0.4); opacity: 0; transform: translateY(10px) scale(0.98) rotate(var(--pl-rot, 0deg)); }
+        45%  { opacity: 1; }
+        100% { filter: contrast(1.02) brightness(1) saturate(1); opacity: 1; transform: translateY(0) scale(1) rotate(var(--pl-rot, 0deg)); }
+      }
+      .animate-develop { animation: polaroidDevelop 1.1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      /* 仅照片显影（容器不动，用于网格图） */
+      @keyframes photoDevelop {
+        0%   { filter: contrast(0.7) brightness(1.3) saturate(0.45); opacity: 0; }
+        100% { filter: contrast(1.02) brightness(1) saturate(1); opacity: 1; }
+      }
+      .animate-photo-develop { animation: photoDevelop 0.9s ease-out both; }
+
+      /* 轻柔漂浮（贴纸 / 装饰元素用） */
+      @keyframes floatSoft {
+        0%, 100% { transform: translateY(0) rotate(var(--fl-rot, 0deg)); }
+        50%      { transform: translateY(-7px) rotate(var(--fl-rot, 0deg)); }
+      }
+      .animate-float-soft { animation: floatSoft 4.5s ease-in-out infinite; }
+
+      /* 卡片入场：放大淡入 + 轻微上浮（比 fade-in 更有「咔哒贴上」的质感） */
+      @keyframes insCardIn { from { opacity: 0; transform: translateY(16px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      .animate-ins-card { animation: insCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+      /* 彩色 IG 故事环（拍立得/ins 基调的活跃描边）：经典日落渐变，缓慢旋转 */
+      @keyframes insRingSpin { to { transform: rotate(360deg); } }
+      .ins-ring {
+        position: relative; display: inline-flex; padding: 2.5px; border-radius: 9999px; isolation: isolate;
+      }
+      .ins-ring::before {
+        content: ''; position: absolute; inset: 0; border-radius: inherit; z-index: -1;
+        background: conic-gradient(from 0deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5, #feda75);
+        animation: insRingSpin 6s linear infinite;
+      }
+      .ins-ring > img, .ins-ring > div { border: 2.5px solid #fff; }
+      /* 静态彩环（不旋转，列表里成片出现时更克制） */
+      .ins-ring-static::before { animation: none; }
+
+      /* 清爽白卡（工具类版，等价 insKit 的 InsCard；供散用） */
+      .ins-card {
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.05);
+        border-radius: 22px;
+        box-shadow: 0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -28px rgba(38,38,38,0.30);
+      }
+      /* 暖白画布底（App 外壳） */
+      .ins-canvas { background: #f7f5f2; }
+
+      /* 渐变文字（IG 日落色，用于点睛标题） */
+      .ins-gradient-text {
+        background: linear-gradient(120deg, #fa7e1e, #d62976 45%, #962fbf 80%);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent; color: transparent;
+      }
     </style>
   <script type="importmap">
 {

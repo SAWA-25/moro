@@ -343,3 +343,8 @@ pm run build passes after the time-gap grouping fix.
   - **富界面互动**：① **打字机逐字显示**（当前一拍逐字浮现，轻点先打完·再点推进·双击全文；菜单一键开关，偏好持久化 `moro_harem_tw`）；② **点立绘速览**（点在场角色→弹四维速览 + 详看全部/去见 ta）；③ **「换种写法」**（对当前场不满意→相同状态重抽，只换文笔不推进剧情）；④ 立绘加情绪标 + 离心碎心标。
   - 开局界面加「叙事设定」区（风格 chips + 尺度滑杆 + 节奏 chips + 开场设定 textarea）。
   - `utils/haremStory.test.ts` +5（settings 注入 prompt/mood+inner 解析/reviveStory 迁移/fallback mood）。`pnpm tsc --noEmit` clean，`vite build` 通过，689 tests green。
+- 全局界面美化·告别黑白拼贴手账，转「Ins 风 + 拍立得」新基调（逐 App 换肤，絮语不动）：
+  - **新美学层（全局 CSS）** `index.html`：在旧手账 CSS 之后新增「Ins 风 + 拍立得 设计层」——拍立得显影动画 `@keyframes polaroidDevelop`/`.animate-develop`（照片从泛白欠曝缓缓显影 + 轻微上浮）、`.animate-photo-develop`（仅照片显影，网格用）、`.animate-float-soft`（轻柔漂浮）、`.animate-ins-card`（卡片放大淡入）、彩色 IG 故事环 `.ins-ring`（日落 conic 渐变 + 缓旋）/`.ins-ring-static`、`.ins-card`/`.ins-canvas`/`.ins-gradient-text`。**不删旧手账 CSS**——尚未换肤的 App 仍依赖它，迁移完再清。
+  - **共享积木库** `components/ui/insKit.tsx`（对标折子戏专属的 `apps/theater/scrapbook.tsx`，但本库全系统通用）：暖白画布 + 暖墨字 token、`ACCENTS` 16 色（取自 constants 各 App 的 color → 实色/浅底/浅底字色）+ `accent()`；积木 `InsShell`（暖白外壳 + 顶部强调色微光）/`InsHeader`（软圆返回 + 中文粗标 + 等宽英文小标）/`InsScroll`/`IconCircle`/`Polaroid`（**彩色**拍立得相框 + 显影动画 + 手写题字 + 日期戳）/`StoryRing`（IG 彩环头像）/`InsCard`/`InsButton`（实色/浅底/幽灵/IG 渐变）/`SectionLabel`/`Chip`/`InsEmpty`/`InsDialog`/`InsSheet`。各 App 换肤从此取用，「结构语言一致、各家用自己的强调色」。
+  - **旗舰 App·相册（`apps/Gallery.tsx`）整体重做**（逻辑零改动，仅换渲染层）：① 相册墙＝每位角色一张**彩色拍立得**（头像 + 手写名 + 张数角标 + 错落微旋转 + 逐张显影）；② 网格＝**IG 个人主页式**（顶部彩色故事环头像 + 名字 + 张数，下方紧密三列彩照网格 + 留言/日期角标 + 逐张显影）；③ 详情＝**暖调灯箱 + 拍立得照片**（轻旋显影），底部「背面题字」白卡（故事环头像 + 手写留言 + 换句留言/翻看对话）。撕→删/清空文案去手账化。强调色＝orange。
+  - `pnpm tsc --noEmit` 0 非 api 错误，`vite build` 通过。后续逐个 App 沿用 insKit 换肤（絮语/Chat 不动）。
