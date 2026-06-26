@@ -366,3 +366,4 @@ pm run build passes after the time-gap grouping fix.
   - **creative/collage**（黑白拼贴 → ins）：保签名重写——白卡 + 暖墨字 + 极柔投影 + 大圆角，去黑描边/硬阴影/网点满铺，保留少量胶带/邮票作创作社性格。一举 ins 化 **创作社/笔友会(Novel)/写歌(Songwriting)/NovelWriter**。CreativeStudioApp 内联 brutalist 卡片也改 ins。
   - **almanac/handbookKit**（暖牛皮纸手账 → ins）：保签名重写——干净暖白页 + PaperNote 白卡软投影 + 票签干净胶囊，保留少量胶带/邮戳。一举 ins 化 **岁时记/存钱罐(Bank)/时光契约(Schedule)/特别时光/ValentineEvent + bank 子组件**。
   - `tsc` 0 非 api 错误，`vite build` 通过。**进度约 18/28**（+创作社/笔友会/写歌/岁时记/存钱罐/日程 等）。
+- 逐 App 换肤·brutalist 工具 App：剪影集封面(PersonaHubApp, violet) + 补丁铺(RegexApp, teal) 内联黑白 brutalist（border-2/硬阴影/纸底/墨块开关）→ ins（白卡软投影 + 圆角 + press-soft + teal 圆开关）。tsc 0 非 api 错误，build 通过。

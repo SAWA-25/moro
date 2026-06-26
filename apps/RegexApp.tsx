@@ -26,31 +26,24 @@ import { Bandaids, Needle, TrayArrowDown, TrayArrowUp, X } from '@phosphor-icons
  * 支持导入酒馆正则 JSON（单条 / 数组）、导出、启停、编辑、测试 —— 功能与旧版一致。
  */
 
-// ── 黑白手账设计 token（与剪影集全家同一套语言） ─────────────
-const INK = '#1c1b1a';
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
-const INK_BTN = 'bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+// ── ins 风设计 token（补丁铺 = teal 强调） ─────────────
+const INK = '#26242a';
+const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
+const INK_BTN = 'rounded-full bg-[#26242a] text-white press-soft shadow-[0_12px_24px_-12px_rgba(38,36,42,0.55)]';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = {
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
-    backgroundSize: '16px 16px',
-};
+const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(20,184,166,0.06), transparent 60%)' };
 
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div
-        aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
-    />
+    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
+        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
 );
 
-/** 墨块开关：黑 = 缝着（启用） */
+/** 开关：teal = 缝着（启用） */
 const InkSwitch: React.FC<{ on: boolean; onChange: () => void; title?: string }> = ({ on, onChange, title }) => (
-    <button
-        onClick={onChange}
-        title={title}
-        className={`relative w-10 h-5 border-2 border-[#1c1b1a] shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'}`}
-    >
-        <span className={`absolute top-0 bottom-0 w-4 transition-all ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-[#1c1b1a]'}`} />
+    <button onClick={onChange} title={title}
+        className="relative w-11 h-6 rounded-full shrink-0 transition-colors press-soft"
+        style={{ background: on ? '#14b8a6' : '#dcd9d3' }}>
+        <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow" style={{ left: on ? 'calc(100% - 1.375rem)' : '0.125rem' }} />
     </button>
 );
 
@@ -150,12 +143,12 @@ const RegexApp: React.FC = () => {
     };
 
     return (
-        <div className="h-full w-full relative overflow-hidden bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+        <div className="h-full w-full relative overflow-hidden bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
             {/* ── 拆补丁确认（撕边纸卡） ── */}
             {confirmDialog && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-                    <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={() => setConfirmDialog(null)} />
-                    <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmDialog(null)} />
+                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_24px_50px_-22px_rgba(38,36,42,0.5)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                         <button
                             onClick={() => setConfirmDialog(null)}
@@ -165,11 +158,11 @@ const RegexApp: React.FC = () => {
                             <X size={14} weight="bold" color={INK} />
                         </button>
                         <div className="px-5 pt-6 pb-2">
-                            <div className="label-mono text-[9px] text-[#1c1b1a]/45">UNPICK / 不可复原</div>
+                            <div className="label-mono text-[9px] text-[#26242a]/45">UNPICK / 不可复原</div>
                             <h3 className="text-lg font-black tracking-wide mt-0.5">{confirmDialog.title}</h3>
                             <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
                         </div>
-                        <div className="px-5 py-3 text-sm text-[#1c1b1a]/70 leading-relaxed">{confirmDialog.message}</div>
+                        <div className="px-5 py-3 text-sm text-[#26242a]/70 leading-relaxed">{confirmDialog.message}</div>
                         <div className="px-5 pb-5 pt-2 flex gap-3">
                             <button onClick={() => setConfirmDialog(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
                             <button onClick={confirmDialog.onConfirm} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>拆！</button>
@@ -189,15 +182,15 @@ const RegexApp: React.FC = () => {
                     </button>
                     <div className="flex-1 min-w-0 relative">
                         <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">PATCH SHOP — REGEX TAILORING</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">PATCH SHOP — REGEX TAILORING</div>
                         <div className="flex items-baseline gap-2">
                             <h1 className="text-2xl font-black tracking-[0.08em]">补丁铺</h1>
-                            <span className="text-sm text-[#1c1b1a]/55 truncate" style={HAND_CN}>哪句话不顺眼，剪下来缝块补丁</span>
+                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>哪句话不顺眼，剪下来缝块补丁</span>
                         </div>
                     </div>
                     <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
                         <span className="text-base font-black leading-none">{scripts.length}</span>
-                        <span className="label-mono text-[7px] text-[#1c1b1a]/55 leading-none mt-0.5">块</span>
+                        <span className="label-mono text-[7px] text-[#26242a]/55 leading-none mt-0.5">块</span>
                     </div>
                 </div>
             </div>
@@ -206,25 +199,25 @@ const RegexApp: React.FC = () => {
             <div className="px-4 pt-4 shrink-0 space-y-2">
                 <div className="flex gap-2">
                     <button onClick={() => setScope('global')}
-                        className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[-0.5deg] ${scope === 'global' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}>
+                        className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${scope === 'global' ? 'bg-[#1c1b1a] text-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]' : 'bg-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]'}`}>
                         满铺通用（全局）
                     </button>
                     <button onClick={() => setScope('scoped')}
-                        className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[0.5deg] ${scope === 'scoped' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}>
+                        className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] ${scope === 'scoped' ? 'bg-[#1c1b1a] text-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]' : 'bg-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]'}`}>
                         只缝给 TA（角色）
                     </button>
                 </div>
                 {scope === 'scoped' && (
                     <div className="relative">
                         <select value={scopedCharId} onChange={e => setScopedCharId(e.target.value)}
-                            className="w-full appearance-none px-3 py-2 bg-white border-2 border-[#1c1b1a]/60 text-xs font-bold outline-none focus:border-[#1c1b1a]">
+                            className="w-full appearance-none px-3 py-2 bg-white border border-black/10 rounded-xl/60 text-xs font-bold outline-none focus:border-[#1c1b1a]">
                             {characters.length === 0 && <option value="">（名册上还没有人）</option>}
                             {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                         <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                     </div>
                 )}
-                <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed px-1" style={HAND_CN}>
+                <p className="text-[12px] text-[#26242a]/55 leading-relaxed px-1" style={HAND_CN}>
                     {scope === 'global'
                         ? '✎ 满铺通用的补丁缝在所有角色的聊天上。酒馆（SillyTavern）的正则 JSON 可以直接收进来。'
                         : '✎ 这排货架上的补丁只缝给选中的这位。收 SillyTavern 角色卡时，卡里自带的正则（extensions.regex_scripts）会自动摆到这里。'}
@@ -234,11 +227,11 @@ const RegexApp: React.FC = () => {
             {/* ── 补丁货架 ── */}
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-3 pb-28">
                 {scripts.length === 0 && (
-                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-6 mt-4 rotate-[-0.6deg] text-center space-y-2">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 mt-4 rotate-[-0.6deg] text-center space-y-2">
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
-                        <Bandaids size={32} weight="bold" className="mx-auto text-[#1c1b1a]/40" />
+                        <Bandaids size={32} weight="bold" className="mx-auto text-[#26242a]/40" />
                         <p className="text-lg" style={HAND_CN}>这排货架还空着。</p>
-                        <p className="text-xs text-[#1c1b1a]/55 leading-relaxed">点右下角的缝针缝一块新的，或者把酒馆正则 JSON 收进来。</p>
+                        <p className="text-xs text-[#26242a]/55 leading-relaxed">点右下角的缝针缝一块新的，或者把酒馆正则 JSON 收进来。</p>
                     </div>
                 )}
                 {scripts.map((script, i) => (
@@ -251,23 +244,23 @@ const RegexApp: React.FC = () => {
                             <button onClick={() => { setEditing({ ...script, trimStrings: [...script.trimStrings], placement: [...script.placement] }); setEditingIsNew(false); }}
                                 className="flex-1 min-w-0 text-left">
                                 <div className={`text-sm font-black truncate ${script.disabled ? 'line-through decoration-2' : ''}`}>{script.scriptName || '没名字的补丁'}</div>
-                                <div className="label-mono text-[9px] text-[#1c1b1a]/45 truncate mt-0.5">{script.findRegex}</div>
+                                <div className="label-mono text-[9px] text-[#26242a]/45 truncate mt-0.5">{script.findRegex}</div>
                             </button>
                             <InkSwitch on={!script.disabled} onChange={() => handleToggle(script)} title={script.disabled ? '这块补丁先拆线放着（点击缝上）' : '缝着呢（点击拆线放着）'} />
                             <button onClick={() => handleDelete(script)}
-                                className="shrink-0 p-1.5 rotate-[2deg] border-2 border-[#1c1b1a]/30 bg-white text-[#1c1b1a]/40 hover:border-[#1c1b1a] hover:text-[#1c1b1a] active:scale-90 transition-all"
+                                className="shrink-0 p-1.5 rotate-[2deg] border border-black/10 rounded-xl/30 bg-white text-[#26242a]/40 hover:border-[#1c1b1a] hover:text-[#26242a] active:scale-90 transition-all"
                                 title="拆掉这块补丁">
                                 <X size={12} weight="bold" />
                             </button>
                         </div>
                         <div className="flex flex-wrap gap-1 mt-2">
                             {script.placement.map(p => PLACEMENT_LABELS[p] && (
-                                <span key={p} className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/60">{PLACEMENT_LABELS[p]}</span>
+                                <span key={p} className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/60">{PLACEMENT_LABELS[p]}</span>
                             ))}
-                            {script.markdownOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-[#f7f5ef] rotate-[-1deg]">只改表面</span>}
-                            {script.promptOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-[#f7f5ef] rotate-[1deg]">只改寄出的信</span>}
+                            {script.markdownOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[-1deg]">只改表面</span>}
+                            {script.promptOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[1deg]">只改寄出的信</span>}
                             {(typeof script.minDepth === 'number' || typeof script.maxDepth === 'number') && (
-                                <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/60">
+                                <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/60">
                                     深度 {script.minDepth ?? '∞'}~{script.maxDepth ?? '∞'}
                                 </span>
                             )}
@@ -275,7 +268,7 @@ const RegexApp: React.FC = () => {
                                 <button
                                     onClick={(e) => { e.stopPropagation(); handleFixWrapMisconfig(script); }}
                                     title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
-                                    className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#1c1b1a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+                                    className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#26242a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
                                 >
                                     ⚠ 像在改原文？一键改成只动寄出的信
                                 </button>
@@ -285,8 +278,8 @@ const RegexApp: React.FC = () => {
                 ))}
 
                 {/* 收进 / 装箱：移到列表底部的装订台（原右上角按钮） */}
-                <div className="relative border-2 border-[#1c1b1a]/45 bg-white/55 p-3 rotate-[0.3deg] mt-4">
-                    <span className="absolute -top-2 left-3 px-1.5 bg-[#f2f0e9] label-mono text-[8px] text-[#1c1b1a]/50">CRATE / 进出货</span>
+                <div className="relative border border-black/10 rounded-xl/45 bg-white/55 p-3 rotate-[0.3deg] mt-4">
+                    <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">CRATE / 进出货</span>
                     <div className="flex items-center gap-2">
                         <button onClick={() => importRef.current?.click()}
                             className={`flex-1 py-2 text-[10px] font-black flex items-center justify-center gap-1.5 ${STICKER}`}
@@ -310,7 +303,7 @@ const RegexApp: React.FC = () => {
                     setEditing(createEmptyRegexScript());
                     setEditingIsNew(true);
                 }}
-                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[3px_3px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
+                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[3px_3px_0_rgba(28,27,26,0.35)] press-soft">
                 <Needle size={16} weight="bold" />
                 <span className="text-xs font-black">缝一块</span>
             </button>
