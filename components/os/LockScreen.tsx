@@ -171,6 +171,16 @@ const LockScreen: React.FC = () => {
 
     const keypad = useMemo(() => ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'], []);
 
+    // 今日（真实日期）+ 暖心问候（虚拟时间）
+    const today = new Date();
+    const weekdayCN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()];
+    const dateLabel = `${today.getMonth() + 1}月${today.getDate()}日 · ${weekdayCN}`;
+    const greeting = virtualTime.hours < 5 ? '夜深了，早点休息'
+        : virtualTime.hours < 12 ? '早安，新的一天'
+        : virtualTime.hours < 14 ? '午后好，喝口水'
+        : virtualTime.hours < 18 ? '下午好呀'
+        : '晚上好，今天辛苦了';
+
     return (
         <div
             className="moro-lock-screen relative w-full h-full bg-cover bg-center overflow-hidden font-light select-none overscroll-none"
@@ -191,6 +201,7 @@ const LockScreen: React.FC = () => {
                 @keyframes lockExitFade{from{opacity:1}to{opacity:0}}
                 @keyframes lockExitSlide{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-12%)}}
                 @keyframes lockExitZoom{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.12)}}
+                @keyframes lockSwipeBob{0%,100%{transform:translateY(0);opacity:.55}50%{transform:translateY(-7px);opacity:1}}
             `}</style>
             {theme.globalCustomCss && <style>{theme.globalCustomCss}</style>}
             {lockStyle?.customCss && <style>{lockStyle.customCss}</style>}
@@ -204,13 +215,21 @@ const LockScreen: React.FC = () => {
                      style={{ background: 'radial-gradient(circle, rgba(253,213,184,0.25), transparent 70%)' }} />
             </div>
 
-            {/* 时钟（字体风格来自主题 → 锁屏 → 时钟字体） */}
-            <div className="moro-lock-clock absolute top-16 w-full text-center pointer-events-none">
-                <div className="text-[10px] label-mono font-bold opacity-50 mb-2">Moro · Lock</div>
-                <div className="text-7xl tracking-tight opacity-95 font-display-italic font-semibold" style={clockFontStyle}>
-                    {virtualTime.hours.toString().padStart(2, '0')}<span className="animate-pulse">:</span>{virtualTime.minutes.toString().padStart(2, '0')}
+            {/* 时钟（编辑感版式：今日胶囊 + 大字 display 时间 + 暖心问候） */}
+            <div className="moro-lock-clock absolute top-[5.5rem] w-full flex flex-col items-center pointer-events-none px-8">
+                {/* 今日 frosted 胶囊 */}
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full mb-3"
+                     style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.3)' }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'linear-gradient(120deg,#fa7e1e,#d62976)' }} />
+                    <span className="text-[11px] font-bold tracking-wide">{dateLabel}</span>
                 </div>
-                <div className="label-mono opacity-70 mt-2 text-[10px] font-bold">Moro Simulation</div>
+                {/* 大字时间 */}
+                <div className="text-[5.4rem] leading-[0.95] tracking-tight font-display-italic font-semibold" style={clockFontStyle}>
+                    {virtualTime.hours.toString().padStart(2, '0')}<span className="opacity-55 animate-pulse">:</span>{virtualTime.minutes.toString().padStart(2, '0')}
+                </div>
+                {/* 渐变细线 + 暖心问候 */}
+                <div className="h-px w-16 my-2.5" style={{ background: 'linear-gradient(90deg, transparent, currentColor, transparent)', opacity: 0.4 }} />
+                <div className="text-[12.5px] font-medium opacity-80 tracking-wide">{greeting}</div>
             </div>
 
             {/* 角色偷看手机试错解锁的提醒横幅（锁手机·双向试错的用户提醒侧） */}
@@ -242,7 +261,7 @@ const LockScreen: React.FC = () => {
                             className={`moro-lock-notif ${notifCardClass} p-3.5 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-transform`}
                             style={{ animation: `lockNotifIn 420ms cubic-bezier(0.2,0.9,0.3,1.2) both`, animationDelay: `${i * 70}ms` }}
                         >
-                            <img src={n.avatar} alt={n.name} className="w-10 h-10 rounded-xl object-cover shrink-0 shadow-sm" />
+                            <span className="ins-ring ins-ring-static shrink-0"><img src={n.avatar} alt={n.name} className="w-10 h-10 rounded-full object-cover" /></span>
                             <div className="flex-1 min-w-0 text-left">
                                 <div className="flex items-baseline justify-between gap-2">
                                     <span className="font-bold text-sm truncate">{n.name}</span>
@@ -274,13 +293,16 @@ const LockScreen: React.FC = () => {
                 </div>
             )}
 
-            {/* 底部解锁提示 */}
+            {/* 底部解锁手柄：上跳雪佛龙 + 中文提示 + 玻璃 home 条 */}
             {!showPad && (
-                <div className="absolute bottom-12 w-full flex flex-col items-center gap-3 animate-pulse opacity-80 drop-shadow-md pointer-events-none">
-                    <div className="w-1 h-8 rounded-full bg-gradient-to-b from-transparent to-current"></div>
-                    <span className="text-[10px] tracking-widest uppercase font-semibold">
-                        {isLockPasscodeEnabled() ? 'Tap to Enter Passcode' : 'Tap to Unlock'}
+                <div className="absolute bottom-11 w-full flex flex-col items-center gap-2.5 drop-shadow-md pointer-events-none">
+                    <div style={{ animation: 'lockSwipeBob 1.8s ease-in-out infinite' }}>
+                        <svg width="22" height="13" viewBox="0 0 22 13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 10 L11 3 L20 10" /></svg>
+                    </div>
+                    <span className="text-[11px] tracking-[0.18em] font-bold opacity-85">
+                        {isLockPasscodeEnabled() ? '轻点 · 输入密码' : '轻点解锁'}
                     </span>
+                    <div className="w-32 h-1.5 rounded-full mt-1.5" style={{ background: 'rgba(255,255,255,0.5)', boxShadow: '0 1px 4px rgba(0,0,0,0.15)' }} />
                 </div>
             )}
 
