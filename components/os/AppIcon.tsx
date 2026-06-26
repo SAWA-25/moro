@@ -190,8 +190,8 @@ const AppIcon: React.FC<AppIconProps> = React.memo(({ app, onClick, size = 'md',
 
       {!hideLabel && labelMode !== 'hide' && (
         <span
-          className={`moro-app-label ${size === 'sm' ? 'text-[8px]' : 'text-[9px]'} ${labelClass} label-mono font-bold max-w-full truncate block`}
-          style={{ color: contentColor }}
+          className={`moro-app-label ${size === 'sm' ? 'text-[9px]' : 'text-[10.5px]'} ${labelClass} font-semibold tracking-tight max-w-full truncate block`}
+          style={{ color: contentColor, letterSpacing: '-0.01em' }}
         >
           {app.name}
         </span>
