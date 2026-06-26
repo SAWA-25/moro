@@ -367,3 +367,8 @@ pm run build passes after the time-gap grouping fix.
   - **almanac/handbookKit**（暖牛皮纸手账 → ins）：保签名重写——干净暖白页 + PaperNote 白卡软投影 + 票签干净胶囊，保留少量胶带/邮戳。一举 ins 化 **岁时记/存钱罐(Bank)/时光契约(Schedule)/特别时光/ValentineEvent + bank 子组件**。
   - `tsc` 0 非 api 错误，`vite build` 通过。**进度约 18/28**（+创作社/笔友会/写歌/岁时记/存钱罐/日程 等）。
 - 逐 App 换肤·brutalist 工具 App：剪影集封面(PersonaHubApp, violet) + 补丁铺(RegexApp, teal) 内联黑白 brutalist（border-2/硬阴影/纸底/墨块开关）→ ins（白卡软投影 + 圆角 + press-soft + teal 圆开关）。tsc 0 非 api 错误，build 通过。
+- 逐 App 换肤·连续作业第二轮（brutalist + 折子戏）：
+  - brutalist 工具/系统 App 用「token retarget + 正文 sed」批量 ins 化：剪报夹(Worldbook,indigo)、活字盘(Preset,sky)、回声亭(Phone,green-炭)、文具盒(Settings)、登场人物(Character)、扮相手账(PersonaApp)、补丁铺(Regex,teal)、剪影集封面(PersonaHub,violet)。去掉角色头像 grayscale 恢复彩色。
+  - 折子戏九折：七折(占卜/番外/对影/谈心/轨迹/真心话/狼人杀) scrapbook 导入重定向 insScrapKit + 去显式 grayscale 滤镜恢复彩色；折子戏壳已随 insScrapKit。
+  - 各批 tsc 0 非 api 错误、vite build 通过、逐批提交推送。
+  - **剩余（各自自定义配色，非 brutalist/glass，需逐个 bespoke）**：音乐/日记(Journal+ExchangeDiary)/街角(LifeSim)/栖居志(Room)/页外(VRWorld)/拼贴册(Appearance)/回忆标本馆(MemoryPalace)/岁时记封面(Almanac)/时光契约(Schedule)/攻略本(Guidebook) + 工具屏(查手机/通话/浏览器/游戏等)。
