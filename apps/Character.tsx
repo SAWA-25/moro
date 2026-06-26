@@ -35,8 +35,8 @@ import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter,
 
 // ── 黑白手账设计 token（与剪影集全家同一套语言） ───────────
 const INK = '#1c1b1a';
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
-const INK_BTN = 'bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+const STICKER = 'border border-black/10 rounded-xl bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft';
+const INK_BTN = 'bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
 const DOT_BG: React.CSSProperties = {
     backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
@@ -66,8 +66,8 @@ const PaperSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-            <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={onClose} />
-            <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+            <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
                 <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                 <button
                     onClick={onClose}
@@ -77,8 +77,8 @@ const PaperSheet: React.FC<{
                     <X size={14} weight="bold" color={INK} />
                 </button>
                 <div className="px-5 pt-6 pb-2">
-                    <div className="label-mono text-[9px] text-[#1c1b1a]/45">{tag}</div>
-                    <h3 className="text-lg font-black text-[#1c1b1a] tracking-wide mt-0.5">{title}</h3>
+                    <div className="label-mono text-[9px] text-[#26242a]/45">{tag}</div>
+                    <h3 className="text-lg font-black text-[#26242a] tracking-wide mt-0.5">{title}</h3>
                     <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
                 </div>
                 <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
@@ -97,23 +97,23 @@ const CharacterCard: React.FC<{
 }> = ({ char, tilt, onClick, onDelete }) => (
     <div
         onClick={onClick}
-        className="relative bg-white border-2 border-[#1c1b1a]/45 shadow-sm pl-4 pr-3 py-3 flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99] hover:border-[#1c1b1a]"
+        className="relative bg-white border border-black/10 rounded-xl/45 shadow-sm pl-4 pr-3 py-3 flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99] hover:border-[#1c1b1a]"
         style={{ rotate: tilt }}
     >
         <div className="relative shrink-0">
-            <img src={char.avatar} className="w-12 h-12 object-cover border-2 border-[#1c1b1a]/70 grayscale-[35%] contrast-105" alt={char.name} />
+            <img src={char.avatar} className="w-12 h-12 object-cover border border-black/10 rounded-xl/70 contrast-105" alt={char.name} />
             <span aria-hidden className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#1c1b1a]" />
             <span aria-hidden className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#1c1b1a]" />
         </div>
         <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-black text-[#1c1b1a] truncate">{char.name}</h3>
-            <p className="text-[11px] text-[#1c1b1a]/50 truncate mt-0.5" style={HAND_CN}>
+            <h3 className="text-sm font-black text-[#26242a] truncate">{char.name}</h3>
+            <p className="text-[11px] text-[#26242a]/50 truncate mt-0.5" style={HAND_CN}>
                 {char.description || '还没写下印象'}
             </p>
         </div>
         <button
             onClick={onDelete}
-            className="shrink-0 p-1.5 rotate-[3deg] border-2 border-[#1c1b1a]/30 bg-white text-[#1c1b1a]/40 hover:border-[#1c1b1a] hover:text-[#1c1b1a] active:scale-90 transition-all"
+            className="shrink-0 p-1.5 rotate-[3deg] border border-black/10 rounded-xl/30 bg-white text-[#26242a]/40 hover:border-[#1c1b1a] hover:text-[#26242a] active:scale-90 transition-all"
             title="送 TA 离场"
         >
             <X size={12} weight="bold" />
@@ -946,11 +946,11 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
   // ── 渲染 ────────────────────────────────────────────────
   const fieldLabel = (cn: string, en: string) => (
-      <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">{cn} / {en}</label>
+      <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">{cn} / {en}</label>
   );
 
   return (
-    <div className="h-full w-full bg-[#f2f0e9] text-[#1c1b1a] relative" style={DOT_BG}>
+    <div className="h-full w-full bg-[#f7f5f2] text-[#26242a] relative" style={DOT_BG}>
        {view === 'list' ? (
            <div className="flex flex-col h-full animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
                {/* 刊头 */}
@@ -964,15 +964,15 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                        </button>
                        <div className="flex-1 min-w-0 relative">
                            <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                           <div className="label-mono text-[8px] text-[#1c1b1a]/45">CAST LIST — DRAMATIS PERSONAE</div>
+                           <div className="label-mono text-[8px] text-[#26242a]/45">CAST LIST — DRAMATIS PERSONAE</div>
                            <div className="flex items-baseline gap-2">
                                <h1 className="text-2xl font-black tracking-[0.08em]">登场人物</h1>
-                               <span className="text-sm text-[#1c1b1a]/55 truncate" style={HAND_CN}>对面的人，名帖都收在这本册子里</span>
+                               <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>对面的人，名帖都收在这本册子里</span>
                            </div>
                        </div>
                        <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
                            <span className="text-base font-black leading-none">{characters.length}</span>
-                           <span className="label-mono text-[7px] text-[#1c1b1a]/55 leading-none mt-0.5">位</span>
+                           <span className="label-mono text-[7px] text-[#26242a]/55 leading-none mt-0.5">位</span>
                        </div>
                    </div>
                </div>
@@ -995,14 +995,14 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    <div className="flex gap-3 shrink-0">
                        <button
                            onClick={addCharacter}
-                           className="flex-1 py-4 border-2 border-dashed border-[#1c1b1a]/50 text-[#1c1b1a]/60 hover:border-[#1c1b1a] hover:text-[#1c1b1a] bg-white/40 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rotate-[-0.3deg]"
+                           className="flex-1 py-4 border-2 border-dashed border-[#1c1b1a]/50 text-[#26242a]/60 hover:border-[#1c1b1a] hover:text-[#26242a] bg-white/40 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rotate-[-0.3deg]"
                        >
                            <UserPlus size={15} weight="bold" />
                            <span className="text-[11px] font-black">添一位入册</span>
                        </button>
                        <button
                            onClick={() => cardImportRef.current?.click()}
-                           className="flex-1 py-4 border-2 border-dashed border-[#1c1b1a]/50 text-[#1c1b1a]/60 hover:border-[#1c1b1a] hover:text-[#1c1b1a] bg-white/40 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rotate-[0.3deg]"
+                           className="flex-1 py-4 border-2 border-dashed border-[#1c1b1a]/50 text-[#26242a]/60 hover:border-[#1c1b1a] hover:text-[#26242a] bg-white/40 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rotate-[0.3deg]"
                            title="收一张角色卡（Moro JSON / SillyTavern PNG·JSON）"
                        >
                            <TrayArrowDown size={15} weight="bold" />
@@ -1011,7 +1011,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                        <input type="file" ref={cardImportRef} className="hidden" accept=".json,.png,image/png,application/json" onChange={handleImportCard} />
                    </div>
                    {characters.length === 0 && (
-                       <p className="text-center text-sm text-[#1c1b1a]/45 pt-2" style={HAND_CN}>
+                       <p className="text-center text-sm text-[#26242a]/45 pt-2" style={HAND_CN}>
                            册子还空着——添一位，或把酒馆 / Moro 的角色卡收进来。
                        </p>
                    )}
@@ -1020,7 +1020,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
        ) : formData && (
            <div className="flex flex-col h-full animate-fade-in relative" style={{ paddingTop: 'var(--safe-top)' }}>
                {/* 摊开名帖的页眉 */}
-               <div className="relative shrink-0 px-4 pt-3 pb-0 border-b-2 border-dashed border-[#1c1b1a]/30 bg-[#f2f0e9]/95 z-40 sticky top-0" style={DOT_BG}>
+               <div className="relative shrink-0 px-4 pt-3 pb-0 border-b-2 border-dashed border-[#1c1b1a]/30 bg-[#f7f5f2]/95 z-40 sticky top-0" style={DOT_BG}>
                    <div className="flex items-center gap-3 mb-3">
                        <button onClick={handleBack} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`}>
                            <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
@@ -1029,7 +1029,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            <span className="text-[10px] font-black">返回</span>
                        </button>
                        <div className="flex-1 min-w-0">
-                           <div className="label-mono text-[8px] text-[#1c1b1a]/45">NOW READING</div>
+                           <div className="label-mono text-[8px] text-[#26242a]/45">NOW READING</div>
                            <div className="text-sm font-black truncate">{formData.name || '（未署名的名帖）'}</div>
                        </div>
                        <button
@@ -1048,7 +1048,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            <button
                                key={tab}
                                onClick={() => setDetailTab(tab)}
-                               className={`px-4 pt-1.5 pb-2 border-2 border-b-0 border-[#1c1b1a] flex flex-col items-center transition-colors ${detailTab === tab ? 'bg-[#1c1b1a] text-[#f7f5ef]' : 'bg-white/70 text-[#1c1b1a]/55'}`}
+                               className={`px-4 pt-1.5 pb-2 border-2 border-b-0 border-[#1c1b1a] flex flex-col items-center transition-colors ${detailTab === tab ? 'bg-[#1c1b1a] text-white' : 'bg-white/70 text-[#26242a]/55'}`}
                            >
                                <span className="label-mono text-[7px] opacity-60">{en}</span>
                                <span className="text-[11px] font-black leading-tight">{cn}</span>
@@ -1063,22 +1063,22 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            {/* 拍立得 + 名字 / 印象 / 图片链接 */}
                            <div className="flex items-start gap-4">
                                <div
-                                   className="shrink-0 bg-white border-2 border-[#1c1b1a]/70 p-1.5 pb-4 rotate-[-2.5deg] shadow-[2px_2px_0_rgba(28,27,26,0.4)] cursor-pointer relative group"
+                                   className="shrink-0 bg-white border border-black/10 rounded-xl/70 p-1.5 pb-4 rotate-[-2.5deg] shadow-[2px_2px_0_rgba(28,27,26,0.4)] cursor-pointer relative group"
                                    onClick={() => fileInputRef.current?.click()}
                                    title="揭下旧照，换一张"
                                >
-                                   <img src={formData.avatar} className={`w-20 h-20 object-cover grayscale-[35%] contrast-105 group-hover:opacity-75 transition-opacity ${isCompressing ? 'opacity-50 blur-sm' : ''}`} alt="A" />
-                                   <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] text-[#1c1b1a]/55 whitespace-nowrap" style={HAND_CN}>换张照片</span>
+                                   <img src={formData.avatar} className={`w-20 h-20 object-cover contrast-105 group-hover:opacity-75 transition-opacity ${isCompressing ? 'opacity-50 blur-sm' : ''}`} alt="A" />
+                                   <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] text-[#26242a]/55 whitespace-nowrap" style={HAND_CN}>换张照片</span>
                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                                </div>
                                <div className="flex-1 min-w-0 space-y-3">
                                    <div>
-                                       <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">名字 / NAME</label>
+                                       <label className="label-mono text-[8px] text-[#26242a]/45 block">名字 / NAME</label>
                                        <input value={formData.name} onChange={(e) => handleChange('name', e.target.value)} className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1 text-lg font-black outline-none focus:border-dashed" placeholder="TA 叫什么" />
                                    </div>
                                    <div>
-                                       <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">一句话印象 / TAGLINE</label>
-                                       <input value={formData.description} onChange={(e) => handleChange('description', e.target.value)} className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1 text-xs text-[#1c1b1a]/70 outline-none focus:border-[#1c1b1a]" placeholder="名册里露出的那一行小字" />
+                                       <label className="label-mono text-[8px] text-[#26242a]/45 block">一句话印象 / TAGLINE</label>
+                                       <input value={formData.description} onChange={(e) => handleChange('description', e.target.value)} className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1 text-xs text-[#26242a]/70 outline-none focus:border-[#1c1b1a]" placeholder="名册里露出的那一行小字" />
                                    </div>
                                    {/* 头像 URL 入口: 与左侧上传文件平级. 走 draft -> 失焦/回车 commit,
                                        避免逐字 commit 导致所有引用 char.avatar 的 <img> 在打字时疯狂
@@ -1114,7 +1114,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        }}
                                        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                                        placeholder="或贴一个图片链接（回车贴上）"
-                                       className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/35 py-1 text-[11px] text-[#1c1b1a]/60 outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                       className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/35 py-1 text-[11px] text-[#26242a]/60 outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                    />
                                </div>
                            </div>
@@ -1134,18 +1134,18 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.appearanceTags || ''}
                                     onChange={(e) => handleChange('appearanceTags', e.target.value)}
-                                    className="w-full h-20 bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    className="w-full h-20 bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                     placeholder="点右上「一键生成」，从人设和 TA 绑定的世界书里提炼外貌标签（long_hair, silver eyes…），也可手改"
                                 />
-                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                    ✎ 从「性格底稿 / 世界观 / 绑定的剪报（世界书）」里提炼 booru 风格英文外貌标签，方便拿去生成立绘 / 头像 / 相册。用副 API 跑（没开就走主线）。
                                </p>
                            </div>
 
                            <div>
                                {fieldLabel('性格底稿（核心指令）', 'SCRIPT')}
-                               <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]" style={RULED_BG} placeholder="TA 是个什么样的人，从这里写起…" />
-                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                               <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className="w-full h-40 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]" style={RULED_BG} placeholder="TA 是个什么样的人，从这里写起…" />
+                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                    ✎ 支持酒馆宏：{'{{user}}'} / {'{{char}}'}（及 {'<user>'} / {'<char>'}）发送时自动替换为用户名 / 角色名。开着活字盘（预设）时，这份底稿对应字版里的 Char Description 占位。
                                </p>
                            </div>
@@ -1154,8 +1154,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            <div className={`p-3 ${STICKER}`} style={{ transform: 'rotate(-0.4deg)' }}>
                                <div className="flex items-start justify-between gap-3">
                                    <div className="min-w-0">
-                                       <div className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5">柔顺奉养 / SOFT DEVOTION CHAT</div>
-                                       <p className="text-[12px] text-[#1c1b1a]/70 leading-relaxed" style={HAND_CN}>
+                                       <div className="label-mono text-[8px] text-[#26242a]/45 mb-1.5">柔顺奉养 / SOFT DEVOTION CHAT</div>
+                                       <p className="text-[12px] text-[#26242a]/70 leading-relaxed" style={HAND_CN}>
                                            开启后，这个角色在聊天里会更偏爱、更耐心地接住你的敏感、撒娇和不安。
                                        </p>
                                    </div>
@@ -1163,12 +1163,12 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        role="switch"
                                        aria-checked={!!formData.softDevotionChatEnabled}
                                        onClick={() => handleChange('softDevotionChatEnabled', !formData.softDevotionChatEnabled)}
-                                       className="relative w-[46px] h-[26px] shrink-0 rounded-full border-2 border-[#1c1b1a] transition-all active:scale-95"
+                                       className="relative w-[46px] h-[26px] shrink-0 rounded-full border border-black/10 rounded-xl transition-all active:scale-95"
                                        style={{ background: formData.softDevotionChatEnabled ? INK : '#fff' }}
                                        title="柔顺奉养"
                                    >
                                        <span
-                                           className="absolute top-1/2 -translate-y-1/2 w-[16px] h-[16px] rounded-full border-2 border-[#1c1b1a] transition-all duration-300"
+                                           className="absolute top-1/2 -translate-y-1/2 w-[16px] h-[16px] rounded-full border border-black/10 rounded-xl transition-all duration-300"
                                            style={{ left: formData.softDevotionChatEnabled ? 24 : 3, background: formData.softDevotionChatEnabled ? '#fff' : INK }}
                                        />
                                    </button>
@@ -1180,7 +1180,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.worldview || ''}
                                     onChange={(e) => handleChange('worldview', e.target.value)}
-                                    className="w-full h-24 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    className="w-full h-24 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                     style={RULED_BG}
                                     placeholder="在这个世界里，魔法是存在的…"
                                 />
@@ -1201,11 +1201,11 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.lifeProfile?.content || ''}
                                     onChange={(e) => handleChange('lifeProfile', { content: e.target.value, generatedAt: formData.lifeProfile?.generatedAt || Date.now(), edited: true })}
-                                    className="w-full h-44 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    className="w-full h-44 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                     style={RULED_BG}
                                     placeholder="点右上「写一份侧写」，让 TA 照着人设和记忆把自己写下来——日常节奏、习惯癖好、在意的事、和你相处的样子…（也可以直接手写）"
                                 />
-                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                    ✎ 这份侧写会像「内在认知」一样垫进 TA 的设定里，帮 TA 更稳地"像自己"。用副 API 跑（没开就走主线），改完自动存。
                                </p>
                            </div>
@@ -1217,11 +1217,11 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.mesExample || ''}
                                     onChange={(e) => handleChange('mesExample', e.target.value || undefined)}
-                                    className="w-full h-32 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    className="w-full h-32 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                     style={RULED_BG}
                                     placeholder={'<START>\n{{user}}: 在画什么？\n{{char}}: 在画云。'}
                                 />
-                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                    ✎ TA 说话腔调的参考样张，不会和底稿混在一起。多段样张用 &lt;START&gt; 隔开（同酒馆惯例）；开着活字盘（预设）时对应 Chat Examples 占位。
                                </p>
                            </div>
@@ -1233,37 +1233,37 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.firstMes || ''}
                                     onChange={(e) => handleChange('firstMes', e.target.value)}
-                                    className="w-full h-24 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                    className="w-full h-24 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                     style={RULED_BG}
                                     placeholder="新聊天里 TA 先开口的那句话（{{user}} / {{char}} 宏照常可用）…"
                                 />
-                               <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                    ✎ 走进空聊天时，可以在这句和下面的备稿之间左右翻，挑一句开场（同酒馆的开场白 swipe）。留白就不出选择器。
                                </p>
                            </div>
 
                            <div>
                                <div className="flex items-center justify-between mb-1.5">
-                                   <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">备用开场 / SPARE OPENERS</label>
+                                   <label className="label-mono text-[8px] text-[#26242a]/45 block">备用开场 / SPARE OPENERS</label>
                                    <button
                                        onClick={() => handleChange('alternateGreetings', [...(formData.alternateGreetings || []), ''])}
                                        className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] ${STICKER}`}
                                    >＋ 再备一稿</button>
                                </div>
                                {(formData.alternateGreetings || []).length === 0 && (
-                                   <p className="text-[12px] text-[#1c1b1a]/45 pl-1" style={HAND_CN}>还没有备稿。点「＋ 再备一稿」，给同一位 TA 多备几种开局。</p>
+                                   <p className="text-[12px] text-[#26242a]/45 pl-1" style={HAND_CN}>还没有备稿。点「＋ 再备一稿」，给同一位 TA 多备几种开局。</p>
                                )}
                                <div className="space-y-3">
                                    {(formData.alternateGreetings || []).map((greeting, idx) => (
                                        <div key={idx} className="relative border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
                                            <div className="flex items-center justify-between mb-1">
-                                               <span className="label-mono text-[8px] text-[#1c1b1a]/45">第 {idx + 1} 稿</span>
+                                               <span className="label-mono text-[8px] text-[#26242a]/45">第 {idx + 1} 稿</span>
                                                <button
                                                    onClick={() => {
                                                        const next = (formData.alternateGreetings || []).filter((_, i) => i !== idx);
                                                        handleChange('alternateGreetings', next.length > 0 ? next : undefined);
                                                    }}
-                                                   className="text-[10px] font-black text-[#1c1b1a]/50 hover:text-[#1c1b1a] px-1.5 line-through decoration-2"
+                                                   className="text-[10px] font-black text-[#26242a]/50 hover:text-[#26242a] px-1.5 line-through decoration-2"
                                                    title="撕掉这一稿"
                                                >撕掉</button>
                                            </div>
@@ -1274,7 +1274,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                                    next[idx] = e.target.value;
                                                    handleChange('alternateGreetings', next);
                                                }}
-                                               className="w-full h-20 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                               className="w-full h-20 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                                style={RULED_BG}
                                                placeholder={`备用开场第 ${idx + 1} 稿…`}
                                            />
@@ -1284,10 +1284,10 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            </div>
 
                            {/* 嗓音唱片（MiniMax 音色） */}
-                           <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-3">
+                           <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
                                <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                   <label className="label-mono text-[8px] text-[#1c1b1a]/45 flex items-center gap-1"><VinylRecord size={12} weight="bold" /> 嗓音唱片（MINIMAX VOICE）</label>
+                                   <label className="label-mono text-[8px] text-[#26242a]/45 flex items-center gap-1"><VinylRecord size={12} weight="bold" /> 嗓音唱片（MINIMAX VOICE）</label>
                                    <div className="flex gap-2">
                                        <button
                                            onClick={() => { setActiveCharacterId(formData.id); openApp(AppID.VoiceDesigner); }}
@@ -1304,7 +1304,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        </button>
                                    </div>
                                </div>
-                               <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>✎ 手里有 voice_id 就直接填，不用翻柜。配好后聊天和 TTS 都直接读这张唱片。</p>
+                               <p className="text-[12px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>✎ 手里有 voice_id 就直接填，不用翻柜。配好后聊天和 TTS 都直接读这张唱片。</p>
 
                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                    <input
@@ -1317,7 +1317,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                            model: formData.voiceProfile?.model || 'speech-2.8-hd',
                                            notes: formData.voiceProfile?.notes || '',
                                        })}
-                                       className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                       className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                        placeholder="voice_id（可直接贴）"
                                    />
                                    <input
@@ -1330,7 +1330,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                            model: e.target.value,
                                            notes: formData.voiceProfile?.notes || '',
                                        })}
-                                       className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                       className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                        placeholder="TTS 模型（默认 speech-2.8-hd）"
                                    />
                                </div>
@@ -1346,7 +1346,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                            if (!list.length) return null;
                                            return (
                                                <div key={source}>
-                                                   <div className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1">{label}</div>
+                                                   <div className="label-mono text-[8px] text-[#26242a]/45 mb-1">{label}</div>
                                                    <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                                                        {list.slice(0, 50).map((v) => (
                                                            <button
@@ -1355,7 +1355,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                                                className="w-full text-left px-2 py-1 text-xs border border-[#1c1b1a]/35 bg-white hover:border-[#1c1b1a] transition-colors"
                                                            >
                                                                <div className="font-black truncate">{v.voice_name || '未命名音色'}</div>
-                                                               <div className="label-mono text-[8px] text-[#1c1b1a]/40 truncate">{v.voice_id}</div>
+                                                               <div className="label-mono text-[8px] text-[#26242a]/40 truncate">{v.voice_id}</div>
                                                            </button>
                                                        ))}
                                                    </div>
@@ -1375,7 +1375,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                    <TrayArrowUp size={15} weight="bold" />
                                    拓一份名帖带走（分享 / 导出）
                                </button>
-                               <p className="text-[12px] text-[#1c1b1a]/45 text-center mt-2" style={HAND_CN}>拓出去的名帖不带往事和聊天记录。</p>
+                               <p className="text-[12px] text-[#26242a]/45 text-center mt-2" style={HAND_CN}>拓出去的名帖不带往事和聊天记录。</p>
                            </div>
                        </div>
                    )}
@@ -1424,9 +1424,9 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
            </>}
        >
            <div className="space-y-3">
-               <p className="text-[13px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>把乱七八糟的旧文本贴进来，AI 会洗成一条条带日期的日账，自动归进往事栏。</p>
+               <p className="text-[13px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>把乱七八糟的旧文本贴进来，AI 会洗成一条条带日期的日账，自动归进往事栏。</p>
                {importStatus && <div className="text-xs font-black border-l-2 border-[#1c1b1a] pl-2">{importStatus}</div>}
-               <textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder="把原稿贴在这里…" className="w-full h-32 bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25" />
+               <textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder="把原稿贴在这里…" className="w-full h-32 bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25" />
            </div>
        </PaperSheet>
 
@@ -1439,7 +1439,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
            footer={
                isBatchProcessing ? (
                    <div className="w-full py-2.5 border-2 border-dashed border-[#1c1b1a]/60 text-xs font-black text-center flex items-center justify-center gap-2">
-                       <div className="w-3.5 h-3.5 border-2 border-[#1c1b1a] border-t-transparent rounded-full animate-spin"></div>
+                       <div className="w-3.5 h-3.5 border border-black/10 rounded-xl border-t-transparent rounded-full animate-spin"></div>
                        {batchProgress}
                    </div>
                ) : (
@@ -1448,13 +1448,13 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
            }
        >
            <div className="space-y-3">
-               <p className="text-[13px] text-[#1c1b1a]/55 leading-relaxed" style={HAND_CN}>翻遍全部聊天记录，按天用选好的口吻把往事誊进册子。</p>
+               <p className="text-[13px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>翻遍全部聊天记录，按天用选好的口吻把往事誊进册子。</p>
                {/* Prompt Selection */}
                <div className="border-2 border-dashed border-[#1c1b1a]/40 p-3">
-                   <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-2 block">挑一种誊写口吻</label>
+                   <label className="label-mono text-[8px] text-[#26242a]/45 mb-2 block">挑一种誊写口吻</label>
                    <div className="flex flex-col gap-2">
                        {archivePrompts.map(p => (
-                           <div key={p.id} onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('chat_active_archive_prompt_id', p.id); }} className={`px-3 py-2 border-2 cursor-pointer flex items-center justify-between transition-colors ${selectedPromptId === p.id ? 'border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a]' : 'border-[#1c1b1a]/30 bg-white/60'}`}>
+                           <div key={p.id} onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('chat_active_archive_prompt_id', p.id); }} className={`px-3 py-2 border-2 cursor-pointer flex items-center justify-between transition-colors ${selectedPromptId === p.id ? 'border-[#1c1b1a] bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/30 bg-white/60'}`}>
                                <span className="text-xs font-black">{selectedPromptId === p.id ? '◉ ' : '○ '}{p.name}</span>
                                <div className="flex gap-1.5">
                                    <button onClick={(e) => { e.stopPropagation(); setEditingPrompt(p); setShowPromptEditor(true); }} className="label-mono text-[8px] px-2 py-0.5 border border-[#1c1b1a]/40 hover:border-[#1c1b1a]">翻开</button>
@@ -1469,10 +1469,10 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                </div>
                {/* Date Range */}
                <div className="flex gap-2">
-                   <div className="flex-1"><label className="label-mono text-[8px] text-[#1c1b1a]/45 block mb-1">从哪天起（可选）</label><input type="date" value={batchRange.start} onChange={e => setBatchRange({...batchRange, start: e.target.value})} className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
-                   <div className="flex-1"><label className="label-mono text-[8px] text-[#1c1b1a]/45 block mb-1">到哪天止（可选）</label><input type="date" value={batchRange.end} onChange={e => setBatchRange({...batchRange, end: e.target.value})} className="w-full bg-white border-2 border-[#1c1b1a]/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
+                   <div className="flex-1"><label className="label-mono text-[8px] text-[#26242a]/45 block mb-1">从哪天起（可选）</label><input type="date" value={batchRange.start} onChange={e => setBatchRange({...batchRange, start: e.target.value})} className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
+                   <div className="flex-1"><label className="label-mono text-[8px] text-[#26242a]/45 block mb-1">到哪天止（可选）</label><input type="date" value={batchRange.end} onChange={e => setBatchRange({...batchRange, end: e.target.value})} className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
                </div>
-               <div className="text-[10px] text-[#1c1b1a]/55 border border-dashed border-[#1c1b1a]/40 p-2.5 leading-relaxed">
+               <div className="text-[10px] text-[#26242a]/55 border border-dashed border-[#1c1b1a]/40 p-2.5 leading-relaxed">
                    口吻里可用的变量: <code>{'${dateStr}'}</code>, <code>{'${char.name}'}</code>, <code>{'${userProfile.name}'}</code>, <code>{'${rawLog}'}</code>
                </div>
            </div>
@@ -1515,18 +1515,18 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    value={editingPrompt?.name || ''}
                    onChange={e => setEditingPrompt(prev => prev ? {...prev, name: e.target.value} : null)}
                    placeholder="口吻名字"
-                   className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-sm font-black outline-none focus:border-dashed read-only:border-[#1c1b1a]/30 read-only:text-[#1c1b1a]/55"
+                   className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-sm font-black outline-none focus:border-dashed read-only:border-[#1c1b1a]/30 read-only:text-[#26242a]/55"
                    readOnly={editingPrompt?.id.startsWith('preset_')}
                />
                <textarea
                    value={editingPrompt?.content || ''}
                    onChange={e => setEditingPrompt(prev => prev ? {...prev, content: e.target.value} : null)}
-                   className="w-full h-64 bg-white border-2 border-[#1c1b1a]/60 p-3 text-xs font-mono resize-none outline-none focus:border-[#1c1b1a] leading-relaxed read-only:border-[#1c1b1a]/30 read-only:text-[#1c1b1a]/55"
+                   className="w-full h-64 bg-white border border-black/10 rounded-xl/60 p-3 text-xs font-mono resize-none outline-none focus:border-[#1c1b1a] leading-relaxed read-only:border-[#1c1b1a]/30 read-only:text-[#26242a]/55"
                    placeholder="把誊写口吻写在这里…"
                    readOnly={editingPrompt?.id.startsWith('preset_')}
                />
                {editingPrompt?.id.startsWith('preset_') && (
-                   <p className="text-[12px] text-[#1c1b1a]/45 text-center" style={HAND_CN}>自带的口吻只能翻看，改不了。</p>
+                   <p className="text-[12px] text-[#26242a]/45 text-center" style={HAND_CN}>自带的口吻只能翻看，改不了。</p>
                )}
            </div>
        </PaperSheet>
@@ -1551,8 +1551,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
            </div>}
        >
            <div className="border-2 border-dashed border-[#1c1b1a]/40 p-3 space-y-2">
-               <div className="text-[12px] text-[#1c1b1a]/55" style={HAND_CN}>全文已自动抄进剪贴板；递不出去就直接手动抄。</div>
-               <textarea value={exportText} readOnly className="w-full h-40 bg-transparent border-none text-[10px] font-mono text-[#1c1b1a]/70 resize-none focus:ring-0 leading-relaxed select-all" onClick={(e) => e.currentTarget.select()} />
+               <div className="text-[12px] text-[#26242a]/55" style={HAND_CN}>全文已自动抄进剪贴板；递不出去就直接手动抄。</div>
+               <textarea value={exportText} readOnly className="w-full h-40 bg-transparent border-none text-[10px] font-mono text-[#26242a]/70 resize-none focus:ring-0 leading-relaxed select-all" onClick={(e) => e.currentTarget.select()} />
            </div>
        </PaperSheet>
 
@@ -1567,7 +1567,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                <button onClick={confirmDeleteCharacter} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>送离！</button>
            </div>}
        >
-           <p className="text-sm text-[#1c1b1a]/70 text-center leading-relaxed py-2">
+           <p className="text-sm text-[#26242a]/70 text-center leading-relaxed py-2">
                这一撕，TA 的名帖、往事和这段关系都没了。<br />
                <span className="text-xs font-black">撕下去就拼不回来了。</span>
            </p>

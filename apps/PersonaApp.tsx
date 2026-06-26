@@ -27,7 +27,7 @@ import {
 // ── 黑白手账设计 token ─────────────────────────────────────
 const INK = '#1c1b1a';
 /** 贴纸按钮：硬描边 + 错位实心投影，按下时整张贴纸"按扁" */
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+const STICKER = 'border border-black/10 rounded-xl bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft';
 /** 手写中文（手账旁注） */
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
 /** 信纸横线（自述区） */
@@ -79,8 +79,8 @@ const PaperSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-            <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={onClose} />
-            <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+            <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
                 <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                 <button
                     onClick={onClose}
@@ -90,8 +90,8 @@ const PaperSheet: React.FC<{
                     <X size={14} weight="bold" color={INK} />
                 </button>
                 <div className="px-5 pt-6 pb-2">
-                    <div className="label-mono text-[9px] text-[#1c1b1a]/45">{tag}</div>
-                    <h3 className="text-lg font-black text-[#1c1b1a] tracking-wide mt-0.5">{title}</h3>
+                    <div className="label-mono text-[9px] text-[#26242a]/45">{tag}</div>
+                    <h3 className="text-lg font-black text-[#26242a] tracking-wide mt-0.5">{title}</h3>
                     <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
                 </div>
                 <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
@@ -342,7 +342,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
     const renderMarks = (p: Persona) => (
         <div className="flex items-center gap-1 shrink-0">
             {activeId === p.id && (
-                <span className="label-mono text-[8px] bg-[#1c1b1a] text-[#f7f5ef] px-1.5 py-0.5 rotate-[-2deg]">佩戴中</span>
+                <span className="label-mono text-[8px] bg-[#1c1b1a] text-white px-1.5 py-0.5 rotate-[-2deg]">佩戴中</span>
             )}
             {defaultId === p.id && <PushPin size={13} weight="fill" color={INK} />}
             {(p.connections?.length || 0) > 0 && <Paperclip size={13} weight="bold" color={INK} className="opacity-60" />}
@@ -355,7 +355,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
     return (
         <div
-            className="h-full w-full bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in"
+            className="h-full w-full bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in"
             style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}
         >
             {/* ── 刊头：胶带 + 撕边横幅 ── */}
@@ -373,16 +373,16 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </button>
                     <div className="flex-1 min-w-0 relative">
                         <Tape className="-top-4 left-6 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">GUISE JOURNAL — WHO AM I TODAY</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">GUISE JOURNAL — WHO AM I TODAY</div>
                         <div className="flex items-baseline gap-2">
                             <h1 className="text-2xl font-black tracking-[0.08em]">扮相手账</h1>
-                            <span className="text-sm text-[#1c1b1a]/55" style={HAND_CN}>今天以谁的身份赴约？</span>
+                            <span className="text-sm text-[#26242a]/55" style={HAND_CN}>今天以谁的身份赴约？</span>
                         </div>
                     </div>
                     {/* 藏页数的邮戳 */}
                     <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
                         <span className="text-base font-black leading-none">{personas.length}</span>
-                        <span className="label-mono text-[7px] text-[#1c1b1a]/55 leading-none mt-0.5">页</span>
+                        <span className="label-mono text-[7px] text-[#26242a]/55 leading-none mt-0.5">页</span>
                     </div>
                 </div>
             </div>
@@ -390,13 +390,13 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
                 {/* ── 翻找条：纸条搜索 + 页序 + 摊开/叠起 ── */}
                 <div className="flex items-stretch gap-2">
-                    <div className="flex-1 flex items-center gap-2 bg-white border-2 border-[#1c1b1a] px-3 rotate-[-0.3deg]">
+                    <div className="flex-1 flex items-center gap-2 bg-white border border-black/10 rounded-xl px-3 rotate-[-0.3deg]">
                         <Binoculars size={15} color={INK} className="shrink-0 opacity-70" />
                         <input
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             placeholder="翻找某一页…（署名 / 注记 / 自述）"
-                            className="flex-1 bg-transparent py-2 text-xs outline-none placeholder:text-[#1c1b1a]/30"
+                            className="flex-1 bg-transparent py-2 text-xs outline-none placeholder:text-[#26242a]/30"
                         />
                     </div>
                     <button
@@ -418,15 +418,15 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                 {/* ── 空手账：建议把当前档案誊进来（同 ST 首次进入的人设迁移） ── */}
                 {loaded && personas.length === 0 && (
-                    <div className="relative bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-6 rotate-[-0.6deg] text-center space-y-3">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 rotate-[-0.6deg] text-center space-y-3">
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
                         <p className="text-lg" style={HAND_CN}>这本手账还空着。</p>
-                        <p className="text-xs text-[#1c1b1a]/60 leading-relaxed">
+                        <p className="text-xs text-[#26242a]/60 leading-relaxed">
                             每一页扮相都是一个「你是谁」：在不同的人面前，可以亮出不同的署名、照片和自述。
                         </p>
                         <button
                             onClick={() => handleCreate(true)}
-                            className="px-4 py-2.5 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] shadow-[3px_3px_0_rgba(28,27,26,0.35)] border-2 border-[#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all rotate-[0.5deg]"
+                            className="px-4 py-2.5 text-xs font-black bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] border border-black/10 rounded-xl press-soft rotate-[0.5deg]"
                         >
                             把现在的我，誊成第一页 →
                         </button>
@@ -440,10 +440,10 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         <button
                             key={p.id}
                             onClick={() => activatePersona(p)}
-                            className={`relative bg-white border-2 p-1.5 pb-2 flex flex-col gap-1.5 transition-all active:scale-95 ${i % 3 === 0 ? 'rotate-[-1.6deg]' : i % 3 === 1 ? 'rotate-[1.2deg]' : 'rotate-[-0.4deg]'} ${activeId === p.id ? 'border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a]' : 'border-[#1c1b1a]/35 shadow-sm'}`}
+                            className={`relative bg-white border-2 p-1.5 pb-2 flex flex-col gap-1.5 transition-all active:scale-95 ${i % 3 === 0 ? 'rotate-[-1.6deg]' : i % 3 === 1 ? 'rotate-[1.2deg]' : 'rotate-[-0.4deg]'} ${activeId === p.id ? 'border-[#1c1b1a] shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/35 shadow-sm'}`}
                         >
                             {activeId === p.id && <Tape className="-top-2 left-1/2 -translate-x-1/2 rotate-[-4deg] w-10" />}
-                            <img src={p.avatar || userProfile.avatar} className="w-full aspect-square object-cover grayscale-[35%] contrast-105" />
+                            <img src={p.avatar || userProfile.avatar} className="w-full aspect-square object-cover contrast-105" />
                             <span className="text-[10px] font-black truncate w-full text-center">{p.name}</span>
                             <div className="flex justify-center">{renderMarks(p)}</div>
                         </button>
@@ -452,7 +452,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         <div
                             key={p.id}
                             onClick={() => activatePersona(p)}
-                            className={`relative bg-white border-2 pl-5 pr-3 py-2.5 flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99] ${i % 2 === 0 ? 'rotate-[-0.35deg]' : 'rotate-[0.35deg]'} ${activeId === p.id ? 'border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a]' : 'border-[#1c1b1a]/35 shadow-sm'}`}
+                            className={`relative bg-white border-2 pl-5 pr-3 py-2.5 flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99] ${i % 2 === 0 ? 'rotate-[-0.35deg]' : 'rotate-[0.35deg]'} ${activeId === p.id ? 'border-[#1c1b1a] shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/35 shadow-sm'}`}
                         >
                             {/* 撕孔装订边 */}
                             <div
@@ -461,7 +461,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 style={{ backgroundImage: 'repeating-linear-gradient(180deg, #1c1b1a 0 3px, transparent 3px 8px)' }}
                             />
                             <div className="relative shrink-0">
-                                <img src={p.avatar || userProfile.avatar} className="w-11 h-11 object-cover border-2 border-[#1c1b1a]/70 grayscale-[35%] contrast-105" />
+                                <img src={p.avatar || userProfile.avatar} className="w-11 h-11 object-cover border border-black/10 rounded-xl/70 contrast-105" />
                                 {/* 相角贴 */}
                                 <span aria-hidden className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#1c1b1a]" />
                                 <span aria-hidden className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#1c1b1a]" />
@@ -469,9 +469,9 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-1.5">
                                     <span className="text-sm font-black truncate">{p.name}</span>
-                                    {p.title && <span className="text-[11px] text-[#1c1b1a]/50 truncate" style={HAND_CN}>{p.title}</span>}
+                                    {p.title && <span className="text-[11px] text-[#26242a]/50 truncate" style={HAND_CN}>{p.title}</span>}
                                 </div>
-                                <p className="text-[10px] text-[#1c1b1a]/45 truncate">{p.description || '（自述栏还空着）'}</p>
+                                <p className="text-[10px] text-[#26242a]/45 truncate">{p.description || '（自述栏还空着）'}</p>
                             </div>
                             {renderMarks(p)}
                         </div>
@@ -481,7 +481,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     {loaded && personas.length > 0 && (
                         <button
                             onClick={() => handleCreate(false)}
-                            className={`border-2 border-dashed border-[#1c1b1a]/50 text-[#1c1b1a]/60 hover:border-[#1c1b1a] hover:text-[#1c1b1a] active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 bg-white/40 ${gridView ? 'aspect-[3/4] flex-col rotate-[0.8deg]' : 'w-full py-3 rotate-[-0.3deg]'}`}
+                            className={`border-2 border-dashed border-[#1c1b1a]/50 text-[#26242a]/60 hover:border-[#1c1b1a] hover:text-[#26242a] active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 bg-white/40 ${gridView ? 'aspect-[3/4] flex-col rotate-[0.8deg]' : 'w-full py-3 rotate-[-0.3deg]'}`}
                             title="沿虚线裁下，贴一页新扮相"
                         >
                             <Scissors size={gridView ? 18 : 14} weight="bold" />
@@ -492,25 +492,25 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                 {/* ── 摊开的当前页：编辑区（撕边日记页） ── */}
                 {selected && (
-                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] p-5 space-y-5">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-5 space-y-5">
                         <Tape className="-top-2.5 left-5 rotate-[-4deg]" />
                         <Tape className="-top-2.5 right-5 rotate-[5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/40 -mb-3">NOW EDITING / 摊开的这一页</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/40 -mb-3">NOW EDITING / 摊开的这一页</div>
 
                         {/* 拍立得照片 + 署名/注记 */}
                         <div className="flex items-start gap-4 pt-1">
                             <div
                                 onClick={() => avatarInputRef.current?.click()}
-                                className="shrink-0 bg-white border-2 border-[#1c1b1a]/70 p-1.5 pb-4 rotate-[-2.5deg] shadow-[2px_2px_0_rgba(28,27,26,0.4)] cursor-pointer relative group"
+                                className="shrink-0 bg-white border border-black/10 rounded-xl/70 p-1.5 pb-4 rotate-[-2.5deg] shadow-[2px_2px_0_rgba(28,27,26,0.4)] cursor-pointer relative group"
                                 title="揭下旧照片，贴一张新的"
                             >
-                                <img src={selected.avatar || userProfile.avatar} className="w-16 h-16 object-cover grayscale-[35%] contrast-105 group-hover:opacity-75 transition-opacity" />
-                                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] text-[#1c1b1a]/55 whitespace-nowrap" style={HAND_CN}>换张照片</span>
+                                <img src={selected.avatar || userProfile.avatar} className="w-16 h-16 object-cover contrast-105 group-hover:opacity-75 transition-opacity" />
+                                <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] text-[#26242a]/55 whitespace-nowrap" style={HAND_CN}>换张照片</span>
                             </div>
                             <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
                             <div className="flex-1 min-w-0 space-y-3">
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">署名 / SIGNED AS</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 block">署名 / SIGNED AS</label>
                                     <input
                                         value={selected.name}
                                         onChange={e => updateSelected({ name: e.target.value })}
@@ -519,11 +519,11 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">页角注记 / MARGIN NOTE</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 block">页角注记 / MARGIN NOTE</label>
                                     <input
                                         value={selected.title || ''}
                                         onChange={e => updateSelected({ title: e.target.value || undefined })}
-                                        className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1 text-[11px] text-[#1c1b1a]/70 outline-none focus:border-[#1c1b1a]"
+                                        className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1 text-[11px] text-[#26242a]/70 outline-none focus:border-[#1c1b1a]"
                                         placeholder="写给自己看的小字，不会寄给 AI"
                                     />
                                 </div>
@@ -534,7 +534,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         <div className="flex items-center gap-2.5 flex-wrap">
                             <button
                                 onClick={() => toggleDefault(selected)}
-                                className={`px-3 py-1.5 text-[10px] font-black flex items-center gap-1.5 rotate-[-1deg] transition-all border-2 border-[#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${defaultId === selected.id ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                className={`px-3 py-1.5 text-[10px] font-black flex items-center gap-1.5 rotate-[-1deg] transition-all border border-black/10 rounded-xl active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${defaultId === selected.id ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 title="常驻扮相：没别在任何人身上的聊天，自动用这一页"
                             >
                                 <PushPin size={12} weight={defaultId === selected.id ? 'fill' : 'bold'} />
@@ -557,7 +557,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                             </button>
                             <button
                                 onClick={() => setConfirmDelete(selected)}
-                                className={`px-3 py-1.5 text-[10px] font-black flex items-center gap-1.5 rotate-[1.2deg] border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all line-through decoration-2`}
+                                className={`px-3 py-1.5 text-[10px] font-black flex items-center gap-1.5 rotate-[1.2deg] border border-black/10 rounded-xl bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft line-through decoration-2`}
                                 title="把这一页从手账里撕下来"
                             >
                                 <Trash size={12} weight="bold" /> 撕掉
@@ -567,13 +567,13 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         {/* 自述拼贴（信纸横线） */}
                         <div>
                             <div className="flex items-end justify-between mb-1">
-                                <label className="label-mono text-[8px] text-[#1c1b1a]/45">自述拼贴 / ABOUT ME</label>
-                                <span className="label-mono text-[8px] text-[#1c1b1a]/35">墨水 ≈ {estimateTokens(selected.description || '')} TK</span>
+                                <label className="label-mono text-[8px] text-[#26242a]/45">自述拼贴 / ABOUT ME</label>
+                                <span className="label-mono text-[8px] text-[#26242a]/35">墨水 ≈ {estimateTokens(selected.description || '')} TK</span>
                             </div>
                             <textarea
                                 value={selected.description}
                                 onChange={e => updateSelected({ description: e.target.value })}
-                                className="w-full h-32 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
+                                className="w-full h-32 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
                                 style={RULED_BG}
                                 placeholder="向 AI 介绍这一页身份下的你（{{char}} / {{user}} 宏照常可用）…"
                             />
@@ -581,11 +581,11 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                         {/* 拍一拍后缀（全局，不分扮相）：别人「拍了拍 你 的<后缀>」里的后缀 */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">拍一拍后缀 / PAT · 全局（别人拍你时显示）</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">拍一拍后缀 / PAT · 全局（别人拍你时显示）</label>
                             <input
                                 value={userProfile.patSuffix ?? ''}
                                 onChange={e => updateUserProfile({ patSuffix: e.target.value.slice(0, 20) })}
-                                className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]"
+                                className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]"
                                 placeholder="脑袋 / 肩膀 / 头发…（拍了拍 你 的___）"
                                 maxLength={20}
                             />
@@ -593,7 +593,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                         {/* 自述寄送方式（ST persona_description_position） */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">自述寄往何处 / DELIVERY</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">自述寄往何处 / DELIVERY</label>
                             <div className="flex gap-2">
                                 {SEND_MODES.map((m, i) => {
                                     const on = selectedSendMode === m.value;
@@ -601,7 +601,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                         <button
                                             key={m.value}
                                             onClick={() => updateSelected({ position: m.value })}
-                                            className={`flex-1 px-1 py-2 border-2 border-[#1c1b1a] flex flex-col items-center gap-0.5 transition-all active:translate-y-[1px] ${i === 0 ? 'rotate-[-0.8deg]' : i === 2 ? 'rotate-[0.8deg]' : ''} ${on ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                            className={`flex-1 px-1 py-2 border border-black/10 rounded-xl flex flex-col items-center gap-0.5 transition-all active:translate-y-[1px] ${i === 0 ? 'rotate-[-0.8deg]' : i === 2 ? 'rotate-[0.8deg]' : ''} ${on ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                         >
                                             <span className="label-mono text-[7px] opacity-60">{m.en}</span>
                                             <span className="text-[10px] font-black">{m.label}</span>
@@ -609,22 +609,22 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     );
                                 })}
                             </div>
-                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                 ✎ {SEND_MODES.find(m => m.value === selectedSendMode)?.hint}
                             </p>
                             {selectedSendMode === PERSONA_POSITION.AT_DEPTH && (
                                 <div className="grid grid-cols-2 gap-3 mt-2 border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
                                     <div>
-                                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">夹在第几层（0 = 紧贴最新一条）</label>
+                                        <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">夹在第几层（0 = 紧贴最新一条）</label>
                                         <input
                                             type="number" min={0} max={999}
                                             value={selected.depth ?? 2}
                                             onChange={e => updateSelected({ depth: Math.max(0, Number(e.target.value) || 0) })}
-                                            className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-1.5 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                            className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-1.5 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                         />
                                     </div>
                                     <div>
-                                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block">以谁的口吻夹进去</label>
+                                        <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">以谁的口吻夹进去</label>
                                         <div className="space-y-1">
                                             {VOICE_CHIPS.map(r => {
                                                 const on = (selected.role ?? 0) === r.value;
@@ -632,7 +632,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                                     <button
                                                         key={r.value}
                                                         onClick={() => updateSelected({ role: r.value })}
-                                                        className={`w-full px-2 py-1 text-[9px] font-bold border text-left transition-all ${on ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-[#1c1b1a]/40 bg-white text-[#1c1b1a]/70'}`}
+                                                        className={`w-full px-2 py-1 text-[9px] font-bold border text-left transition-all ${on ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-[#1c1b1a]/40 bg-white text-[#26242a]/70'}`}
                                                     >
                                                         {on ? '◉ ' : '○ '}{r.label}
                                                     </button>
@@ -646,19 +646,19 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                         {/* 随页夹带的世界书（ST persona lorebook → 世界书分组绑定） */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">随页夹带的卷册（世界书）/ ENCLOSED CLIPPINGS</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">随页夹带的卷册（世界书）/ ENCLOSED CLIPPINGS</label>
                             <div className="relative">
                                 <select
                                     value={selected.lorebookCategory || ''}
                                     onChange={e => updateSelected({ lorebookCategory: e.target.value || undefined })}
-                                    className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                    className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                 >
                                     <option value="">什么都不夹</option>
                                     {worldbookCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                                 <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                             </div>
-                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                 ✎ 戴着这一页聊天时，所选卷册里的剪报（世界书条目）就算没挂到角色身上，也会按各自的位置和开关一并寄出。
                             </p>
                         </div>
@@ -666,8 +666,8 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 )}
 
                 {/* ── 装订工具：整本装箱 / 拆箱回填 ── */}
-                <div className="relative border-2 border-[#1c1b1a]/45 bg-white/55 p-3 rotate-[0.3deg]">
-                    <span className="absolute -top-2 left-3 px-1.5 bg-[#f2f0e9] label-mono text-[8px] text-[#1c1b1a]/50">BINDERY / 装订台</span>
+                <div className="relative border border-black/10 rounded-xl/45 bg-white/55 p-3 rotate-[0.3deg]">
+                    <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">BINDERY / 装订台</span>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleBackup}
@@ -689,7 +689,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 </div>
 
                 {/* 页脚手写备忘 */}
-                <p className="text-center text-[13px] text-[#1c1b1a]/45 pb-5 leading-relaxed" style={HAND_CN}>
+                <p className="text-center text-[13px] text-[#26242a]/45 pb-5 leading-relaxed" style={HAND_CN}>
                     点哪一页就戴上哪一页：署名、照片、自述会写进「档案」，聊天和 prompt 立刻生效。<br />
                     开着活字盘（预设）时，自述落在 Persona Description 那个占位上。
                 </p>
@@ -711,7 +711,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                         </button>
                         <button
                             onClick={() => handleDelete(confirmDelete)}
-                            className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                            className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
                         >
                             撕！
                         </button>
@@ -719,7 +719,7 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                 ) : undefined}
             >
                 {confirmDelete && (
-                    <div className="text-sm text-[#1c1b1a]/70 leading-relaxed space-y-2">
+                    <div className="text-sm text-[#26242a]/70 leading-relaxed space-y-2">
                         <p>「{confirmDelete.name}」这一页撕下来就拼不回去了。</p>
                         {defaultId === confirmDelete.id && (
                             <p className="text-xs flex items-center gap-1"><PushPin size={12} weight="fill" /> 它现在还钉着常驻图钉。</p>
@@ -740,11 +740,11 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             >
                 {connectionsTarget && (
                     <div className="space-y-2">
-                        <p className="text-[12px] text-[#1c1b1a]/55 leading-relaxed mb-2" style={HAND_CN}>
+                        <p className="text-[12px] text-[#26242a]/55 leading-relaxed mb-2" style={HAND_CN}>
                             走进打勾角色的聊天时，手账会自动翻到这一页。一个角色身上只别得下一枚别针——在这里打勾，会顺手把 TA 从别的页上摘下来。
                         </p>
                         {characters.length === 0 && (
-                            <p className="text-xs text-[#1c1b1a]/50 text-center py-3 border border-dashed border-[#1c1b1a]/40">
+                            <p className="text-xs text-[#26242a]/50 text-center py-3 border border-dashed border-[#1c1b1a]/40">
                                 名册还是空的——先去「登场人物」那边请几位来。
                             </p>
                         )}
@@ -755,12 +755,12 @@ const PersonaApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                 <button
                                     key={c.id}
                                     onClick={() => toggleConnection(connectionsTarget, c.id)}
-                                    className={`w-full p-2.5 flex items-center gap-3 transition-all active:scale-[0.99] border-2 ${bound ? 'border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a]' : 'border-[#1c1b1a]/30 bg-white/70'}`}
+                                    className={`w-full p-2.5 flex items-center gap-3 transition-all active:scale-[0.99] border-2 ${bound ? 'border-[#1c1b1a] bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/30 bg-white/70'}`}
                                 >
-                                    <img src={c.avatar} className="w-8 h-8 object-cover border border-[#1c1b1a]/50 grayscale-[35%] shrink-0" />
+                                    <img src={c.avatar} className="w-8 h-8 object-cover border border-[#1c1b1a]/50 shrink-0" />
                                     <span className="flex-1 text-left text-xs font-black truncate">{c.name}</span>
-                                    {boundElsewhere && <span className="text-[9px] text-[#1c1b1a]/40 shrink-0" style={HAND_CN}>别在别页上</span>}
-                                    <span className={`w-4 h-4 border-2 border-[#1c1b1a] shrink-0 flex items-center justify-center ${bound ? 'bg-[#1c1b1a]' : 'bg-white'}`}>
+                                    {boundElsewhere && <span className="text-[9px] text-[#26242a]/40 shrink-0" style={HAND_CN}>别在别页上</span>}
+                                    <span className={`w-4 h-4 border border-black/10 rounded-xl shrink-0 flex items-center justify-center ${bound ? 'bg-[#1c1b1a]' : 'bg-white'}`}>
                                         {bound && <svg viewBox="0 0 24 24" fill="none" stroke="#f7f5ef" strokeWidth={4.5} className="w-2.5 h-2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                                     </span>
                                 </button>
