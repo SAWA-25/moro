@@ -36,6 +36,11 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
+import {
+  DEFAULT_DESKTOP_WALLPAPER,
+  DEFAULT_LOCK_SCREEN_WALLPAPER,
+  PAPER_DEFAULT_WALLPAPER,
+} from '../utils/defaultWallpapers';
 
 const normalizeProactiveAiContent = (raw: string): string => {
   let cleaned = raw;
@@ -365,7 +370,7 @@ interface OSContextType {
 }
 
 // 默认壁纸：奶白手帐纸面 —— 由上至下微微变暖的米白，承托白色拼贴卡片（黑白手帐风）。
-export const DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fbfaf7 0%, #f5f3ee 55%, #efede6 100%)';
+export const DEFAULT_WALLPAPER = DEFAULT_DESKTOP_WALLPAPER;
 // 上一代默认壁纸：检测到老用户还停留在旧默认时自动迁移到新默认（自定义壁纸不受影响）。
 export const LEGACY_DEFAULT_WALLPAPER = 'linear-gradient(180deg, #fdfdfd 0%, #f4f4f8 52%, #e7e9f4 100%)';
 
@@ -382,6 +387,9 @@ const defaultTheme: OSTheme = {
   desktopDockStyle: 'glass',
   desktopDragMode: 'balanced',
   desktopEditEffect: 'wiggle',
+  lockScreenStyle: {
+    wallpaper: DEFAULT_LOCK_SCREEN_WALLPAPER,
+  },
   contentColor: '#2b2933', // 默认墨色文字（浅色纸面背景）
 };
 
@@ -898,6 +906,14 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
              try {
                  const parsed = JSON.parse(savedThemeStr);
                  loadedTheme = { ...loadedTheme, ...parsed };
+                 if (!loadedTheme.lockScreenStyle) {
+                     loadedTheme.lockScreenStyle = defaultTheme.lockScreenStyle;
+                 } else if (!loadedTheme.lockScreenStyle.wallpaper) {
+                     loadedTheme.lockScreenStyle = {
+                         ...defaultTheme.lockScreenStyle,
+                         ...loadedTheme.lockScreenStyle,
+                     };
+                 }
                  // 动森皮肤已下线：把旧的 animalcrossing 主题整体迁回新默认（壁纸/配色/装饰叶子一并清理）。
                  if ((loadedTheme as any).skin === 'animalcrossing') {
                      loadedTheme.skin = 'default';
@@ -923,11 +939,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                      }
                  }
                  // 上一代默认壁纸/默认墨色 → 跟随新默认美化（用户自定义值不受影响）
-                 if (loadedTheme.wallpaper === LEGACY_DEFAULT_WALLPAPER) {
+                 if (loadedTheme.wallpaper === LEGACY_DEFAULT_WALLPAPER || loadedTheme.wallpaper === PAPER_DEFAULT_WALLPAPER) {
                      loadedTheme.wallpaper = DEFAULT_WALLPAPER;
                      if ((loadedTheme.contentColor || '#3f3d49') === '#3f3d49') {
                          loadedTheme.contentColor = defaultTheme.contentColor;
                      }
+                 }
+                 if (
+                     loadedTheme.lockScreenStyle?.wallpaper === LEGACY_DEFAULT_WALLPAPER ||
+                     loadedTheme.lockScreenStyle?.wallpaper === PAPER_DEFAULT_WALLPAPER ||
+                     loadedTheme.lockScreenStyle?.wallpaper === 'linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%)'
+                 ) {
+                     loadedTheme.lockScreenStyle = {
+                         ...(loadedTheme.lockScreenStyle || {}),
+                         wallpaper: DEFAULT_LOCK_SCREEN_WALLPAPER,
+                     };
                  }
                  // Strip the legacy Unsplash hard-coded wallpaper, keep user-imported http(s) URLs
                  if (

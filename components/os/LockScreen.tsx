@@ -4,6 +4,7 @@ import { DB } from '../../utils/db';
 import { AppID, Message } from '../../types';
 import { getLockPasscode, isLockPasscodeEnabled } from '../../utils/lockScreenSettings';
 import { recordUserUnlockFail, consumeCharUnlockReminders, CharUnlockReminder } from '../../utils/lockAttempts';
+import { toWallpaperBackground } from '../../utils/defaultWallpapers';
 
 /**
  * 锁屏：壁纸 + 大时钟 + 消息通知卡（仿 iPhone 锁屏：每条消息气泡一张卡片，
@@ -68,8 +69,7 @@ const LockScreen: React.FC = () => {
     const showNotifications = lockStyle?.showNotifications !== false;
     const passcodeStyle = lockStyle?.passcodeStyle || 'glass';
     const wallpaper = lockStyle?.wallpaper || theme.wallpaper;
-    const bgImageValue = wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:')
-        ? `url(${wallpaper})` : wallpaper;
+    const bgImageValue = toWallpaperBackground(wallpaper);
 
     const clockFontStyle: React.CSSProperties =
         lockStyle?.clockFont === 'sans' ? { fontFamily: 'var(--app-font)', fontStyle: 'normal' }

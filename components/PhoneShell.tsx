@@ -151,6 +151,7 @@ import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
 import { setAppPayloadWarmer } from './os/appPreload';
+import { toWallpaperBackground } from '../utils/defaultWallpapers';
 
 /*
 // Internal Error Boundary Component
@@ -553,12 +554,7 @@ const PhoneShell: React.FC = () => {
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
-    const wallpaper = theme.wallpaper;
-    const backgroundValue = !wallpaper
-      ? '#eef0f6'
-      : (wallpaper.startsWith('http') || wallpaper.startsWith('data:') || wallpaper.startsWith('blob:'))
-        ? `url(${wallpaper})`
-        : wallpaper;
+    const backgroundValue = toWallpaperBackground(theme.wallpaper);
 
     [document.documentElement, document.body].forEach((element) => {
       element.style.background = backgroundValue;
@@ -579,12 +575,7 @@ const PhoneShell: React.FC = () => {
     return <div className="w-full h-full" style={{ background: '#05060f' }} />;
   }
 
-  const getBgStyle = (wp: string) => {
-      const isUrl = wp.startsWith('http') || wp.startsWith('data:') || wp.startsWith('blob:');
-      return isUrl ? `url(${wp})` : wp;
-  };
-
-  const bgImageValue = getBgStyle(theme.wallpaper);
+  const bgImageValue = toWallpaperBackground(theme.wallpaper);
 
   if (isLocked) {
     // 锁屏抽成独立组件：角色最新消息通知卡（iOS 风格弹出）+ 密码解锁（默认 0103，

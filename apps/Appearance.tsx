@@ -5,6 +5,7 @@ import { OSTheme, DesktopDecoration, DesktopWidgetPref, AppearancePreset, Toast 
 import { INSTALLED_APPS, Icons } from '../constants';
 import { processImage } from '../utils/file';
 import { DB } from '../utils/db';
+import { toWallpaperBackground } from '../utils/defaultWallpapers';
 import { Sparkle } from '@phosphor-icons/react';
 import { ChatAppearanceEditor as ModularChatAppearanceEditor } from '../components/appearance/ChatAppearanceEditor';
 import ThemeMaker from './ThemeMaker';
@@ -564,10 +565,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
 // ===== 小部位实时预览（桌面零件 / 聊天白框）=====
 // 预览 mock 挂了与真实组件相同的 .moro-* 钩子类：主题色 / 壁纸 / 全局 CSS / 白框 CSS 改动即时反映。
 const previewWallpaperStyle = (wp: string): React.CSSProperties => {
-    const isUrl = wp.startsWith('http') || wp.startsWith('data:') || wp.startsWith('blob:');
-    return isUrl
-        ? { backgroundImage: `url(${wp})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-        : { background: wp || '#eef0f6' };
+    return { background: toWallpaperBackground(wp), backgroundSize: 'cover', backgroundPosition: 'center' };
 };
 
 const DesktopMiniPreview: React.FC<{ theme: OSTheme }> = ({ theme }) => {
@@ -1997,7 +1995,13 @@ const Appearance: React.FC = () => {
 
                     {/* Live Preview */}
                     <div className="relative w-full aspect-[9/16] bg-slate-100 overflow-hidden mb-4 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.25)]"
-                         style={{ background: theme.wallpaper ? `url(${theme.wallpaper}) center/cover` : `linear-gradient(135deg, hsl(${theme.hue}, ${theme.saturation}%, ${theme.lightness}%), hsl(${theme.hue + 30}, ${theme.saturation}%, ${Math.max(theme.lightness - 15, 10)}%))` }}>
+                         style={{
+                             background: theme.wallpaper
+                                 ? toWallpaperBackground(theme.wallpaper)
+                                 : `linear-gradient(135deg, hsl(${theme.hue}, ${theme.saturation}%, ${theme.lightness}%), hsl(${theme.hue + 30}, ${theme.saturation}%, ${Math.max(theme.lightness - 15, 10)}%))`,
+                             backgroundSize: 'cover',
+                             backgroundPosition: 'center',
+                         }}>
                         <div className="absolute inset-0 bg-black/10"></div>
                         {/* Render widget previews */}
                         <div className="absolute top-[12%] left-4 right-4 space-y-1.5 pointer-events-none">

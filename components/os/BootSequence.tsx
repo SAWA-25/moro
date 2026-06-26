@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isImageWallpaper } from '../../utils/defaultWallpapers';
 
 // Moro 冷启动「世界入场」电影化序列 —— 取代传统黑屏 spinner。
 // 目标：让人觉得「进入了一个小世界」，而不是「在等一个 App 加载完」。
@@ -30,7 +31,7 @@ const prefersReducedMotion = () =>
 const BootSequence: React.FC<Props> = ({ dataReady, wallpaper, onDone }) => {
   // 壁纸解析：url/data/blob 走 url() 并虚化压暗；渐变/颜色字符串直接当背景；空则回退深空渐变。
   const wp = wallpaper?.trim() || '';
-  const wpIsImage = /^(https?:|data:|blob:)/.test(wp);
+  const wpIsImage = isImageWallpaper(wp);
   const wpBackground = wp ? (wpIsImage ? `url(${wp})` : wp) : '';
   // 本会话是否首次看到开场：刷新页面仍属同 session → 走极短版。
   const firstThisSession = useMemo(() => {

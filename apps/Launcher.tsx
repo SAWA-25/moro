@@ -8,6 +8,7 @@ import { CharacterProfile, AppID, DailySchedule } from '../types';
 import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/schedule/ScheduleHomeWidget';
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
+import { isImageWallpaper } from '../utils/defaultWallpapers';
 
 // --- Isolated Components to prevent full re-renders ---
 
@@ -1008,7 +1009,7 @@ const Launcher: React.FC = () => {
   const themeHue = Number.isFinite(theme.hue) ? theme.hue : 248;
   // 设了自定义壁纸时（图片或非默认底色），桌面让出自己那层不透明底色，
   // 把 PhoneShell 渲染在底下的壁纸透出来 —— 否则桌面壁纸设了却被盖住，看不见。
-  const hasCustomWallpaper = !!theme.wallpaper && theme.wallpaper !== DEFAULT_WALLPAPER;
+  const hasCustomWallpaper = !!theme.wallpaper && (theme.wallpaper !== DEFAULT_WALLPAPER || isImageWallpaper(theme.wallpaper));
   const dockStyle = theme.desktopDockStyle || 'glass';
   const dockShellStyle: React.CSSProperties =
       dockStyle === 'minimal' ? {
