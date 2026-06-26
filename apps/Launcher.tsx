@@ -1182,13 +1182,15 @@ const Launcher: React.FC = () => {
               <span className="moro-star s6" />
               <span className="moro-star s7" />
           </div>
-          <div className="moro-theme-collage absolute inset-0">
-              <span className="moro-polaroid-deco deco-a"><i /></span>
-              <span className="moro-polaroid-deco deco-b"><i /></span>
-              <span className="moro-vinyl-deco" />
-              <span className="moro-soft-sticker sticker-a" />
-              <span className="moro-soft-sticker sticker-b" />
-          </div>
+          {!hasCustomWallpaper && (
+              <div className="moro-theme-collage absolute inset-0">
+                  <span className="moro-polaroid-deco deco-a"><i /></span>
+                  <span className="moro-polaroid-deco deco-b"><i /></span>
+                  <span className="moro-vinyl-deco" />
+                  <span className="moro-soft-sticker sticker-a" />
+                  <span className="moro-soft-sticker sticker-b" />
+              </div>
+          )}
       </div>
 
       {/* Scrollable Content Layer */}

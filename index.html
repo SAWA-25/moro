@@ -585,9 +585,14 @@
       .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-mesh {
         display: none;
       }
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-theme-collage,
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-theme-watermarks,
+      .moro-desktop-root[data-has-wallpaper="true"] .moro-theme-sparkles {
+        display: none;
+      }
       .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-atmosphere::before,
       .moro-desktop-root[data-has-wallpaper="true"] .moro-desktop-atmosphere::after {
-        opacity: 0.18;
+        opacity: 0;
       }
       .moro-theme-statusbar {
         display: none !important;
