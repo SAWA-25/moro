@@ -15,24 +15,19 @@ import { Worldbook, WorldbookPosition } from '../types';
 import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key, UploadSimple } from '@phosphor-icons/react';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
 
-// ── 黑白手账设计 token（与扮相手账同一套语言） ─────────────
-const INK = '#1c1b1a';
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
+// ── ins 风设计 token（剪报夹 = indigo 强调） ─────────────
+const INK = '#26242a';
+const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = {
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
-    backgroundSize: '16px 16px',
-};
+const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(99,102,241,0.06), transparent 60%)' };
 const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(28,27,26,0.13) 23px, rgba(28,27,26,0.13) 24px)',
+    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(38,36,42,0.08) 23px, rgba(38,36,42,0.08) 24px)',
     lineHeight: '24px',
 };
 
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div
-        aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
-    />
+    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
+        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
 );
 
 const POSITION_OPTIONS: { value: WorldbookPosition; label: string }[] = [
@@ -51,9 +46,10 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?
     <button
         onClick={(e) => { e.stopPropagation(); onChange(!on); }}
         title={title}
-        className={`relative w-10 h-5 border-2 border-[#1c1b1a] shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'}`}
+        className="relative w-11 h-6 rounded-full shrink-0 transition-colors press-soft"
+        style={{ background: on ? '#6366f1' : '#dcd9d3' }}
     >
-        <span className={`absolute top-0 bottom-0 w-4 transition-all ${on ? 'right-0 bg-[#f7f5ef]' : 'left-0 bg-[#1c1b1a]'}`} />
+        <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow" style={{ left: on ? 'calc(100% - 1.375rem)' : '0.125rem' }} />
     </button>
 );
 
@@ -275,18 +271,18 @@ const WorldbookApp: React.FC = () => {
     // ── 编辑页（全屏纸面） ────────────────────────────────
     if (isEditing) {
         return (
-            <div className="h-full w-full bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+            <div className="h-full w-full bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
                 <div className="relative flex items-center gap-3 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0">
                     <button onClick={() => setIsEditing(false)} className={`px-2.5 py-2 rotate-[-2deg] text-[10px] font-black ${STICKER}`}>
                         ✕ 不改了
                     </button>
                     <div className="flex-1 min-w-0">
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">{editingBook ? 'RE-CLIP' : 'NEW CLIP'}</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">{editingBook ? 'RE-CLIP' : 'NEW CLIP'}</div>
                         <h2 className="text-lg font-black tracking-wide truncate">{editingBook ? '修剪这条剪报' : '新剪一条'}</h2>
                     </div>
                     <button
                         onClick={handleSave}
-                        className="px-4 py-2 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all rotate-[1.5deg]"
+                        className="px-4 py-2 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft rotate-[1.5deg]"
                     >
                         贴牢
                     </button>
@@ -294,22 +290,22 @@ const WorldbookApp: React.FC = () => {
 
                 <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
                     <div>
-                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">剪报标题 / HEADLINE</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 block">剪报标题 / HEADLINE</label>
                         <input
                             value={tempTitle}
                             onChange={e => setTempTitle(e.target.value)}
                             placeholder="比如：魔法体系、公司背景…"
-                            className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed placeholder:text-[#1c1b1a]/25"
+                            className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed placeholder:text-[#26242a]/25"
                         />
                     </div>
 
                     <div>
-                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 block">归入哪一卷 / VOLUME</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 block">归入哪一卷 / VOLUME</label>
                         <input
                             value={tempCategory}
                             onChange={e => setTempCategory(e.target.value)}
                             placeholder="比如：世界观、人物、地理…"
-                            className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1.5 text-sm outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                            className="w-full bg-transparent border-b border-dashed border-[#1c1b1a]/50 py-1.5 text-sm outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                             list="category-suggestions"
                         />
                         <datalist id="category-suggestions">
@@ -317,49 +313,49 @@ const WorldbookApp: React.FC = () => {
                                 <option key={cat} value={cat} />
                             ))}
                         </datalist>
-                        <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>✎ 写同一个卷名就归进同一卷（同一卷 = 同一本世界书）。</p>
+                        <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>✎ 写同一个卷名就归进同一卷（同一卷 = 同一本世界书）。</p>
                     </div>
 
                     {/* 剪报级设置：开关 / 贴在哪里 / 位置 / 深度 / 顺序 */}
-                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-4 space-y-4">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-4">
                         <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
                         <div className="flex items-center justify-between">
                             <div>
                                 <label className="text-[11px] font-black block">这条剪报的开关</label>
-                                <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>关掉之后，任何场合都不会被寄出去</p>
+                                <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>关掉之后，任何场合都不会被寄出去</p>
                             </div>
                             <InkSwitch on={tempEnabled} onChange={setTempEnabled} />
                         </div>
 
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">贴在哪里 / SCOPE</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">贴在哪里 / SCOPE</label>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => setTempScope('local')}
-                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[-0.5deg] ${tempScope === 'local' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                    className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${tempScope === 'local' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
                                     随卷出场（要挂载）
                                 </button>
                                 <button
                                     onClick={() => setTempScope('global')}
-                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[0.5deg] ${tempScope === 'global' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                    className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] ${tempScope === 'global' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
                                     满世界跟着（全局）
                                 </button>
                             </div>
-                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                 ✎ 随卷出场：要在「聊天手帐 → 剪报夹页」里夹上这一卷才寄出。满世界跟着：任何聊天都自动带上，不用挂载。两边同时有货时，先写随卷的、再写全局的。
                             </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className={tempPosition.startsWith('depth_') ? '' : 'col-span-2'}>
-                                <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">插进信里的位置 / POSITION</label>
+                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">插进信里的位置 / POSITION</label>
                                 <div className="relative">
                                     <select
                                         value={tempPosition}
                                         onChange={e => setTempPosition(e.target.value as WorldbookPosition)}
-                                        className="w-full appearance-none bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     >
                                         {POSITION_OPTIONS.map(o => (
                                             <option key={o.value} value={o.value}>{o.label}</option>
@@ -370,48 +366,48 @@ const WorldbookApp: React.FC = () => {
                             </div>
                             {tempPosition.startsWith('depth_') && (
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">夹在第几层</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">夹在第几层</label>
                                     <input
                                         type="number" min={0}
                                         value={tempDepth}
                                         onChange={e => setTempDepth(parseInt(e.target.value) || 0)}
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     />
                                 </div>
                             )}
                         </div>
 
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">先后顺序 / ORDER</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">先后顺序 / ORDER</label>
                             <input
                                 type="number"
                                 value={tempOrder}
                                 onChange={e => setTempOrder(parseInt(e.target.value) || 0)}
-                                className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                             />
-                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>
                                 ✎ 同一个位置里，数字小的排前面（和 SillyTavern 最终生效顺序一致）。「夹进对话」= 以所选口吻插到聊天记录倒数第 N 条处（0 = 紧贴最末尾）。
                             </p>
                         </div>
 
                         {/* 出场方式（ST 蓝灯/绿灯移植） */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">出场方式 / TRIGGER</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">出场方式 / TRIGGER</label>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => setTempActivation('always')}
-                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[-0.5deg] ${tempActivation === 'always' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                    className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${tempActivation === 'always' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
                                     ■ 钉死（每次都在）
                                 </button>
                                 <button
                                     onClick={() => setTempActivation('keyword')}
-                                    className={`flex-1 py-2 text-[10px] font-black border-2 border-[#1c1b1a] transition-all rotate-[0.5deg] flex items-center justify-center gap-1 ${tempActivation === 'keyword' ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}
+                                    className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] flex items-center justify-center gap-1 ${tempActivation === 'keyword' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
                                     <Key size={11} weight="bold" /> 对上暗号才出场
                                 </button>
                             </div>
-                            <p className="text-[12px] text-[#1c1b1a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
+                            <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
                                 ✎ 钉死：开关开着就每次寄出（ST 蓝灯）。暗号：翻最近的聊天，提到暗号才出场（ST 绿灯）——大部头设定按需登场，省墨水（token）。
                             </p>
                         </div>
@@ -419,27 +415,27 @@ const WorldbookApp: React.FC = () => {
                         {tempActivation === 'keyword' && (
                             <div className="space-y-3 border-2 border-dashed border-[#1c1b1a]/40 p-3">
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">触发暗号（逗号分隔，对上任何一个就出场）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">触发暗号（逗号分隔，对上任何一个就出场）</label>
                                     <input
                                         value={tempKeys}
                                         onChange={e => setTempKeys(e.target.value)}
                                         placeholder="比如：魔法, 咒语, 法术"
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                     />
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">二级暗号（可选，逗号分隔）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">二级暗号（可选，逗号分隔）</label>
                                     <input
                                         value={tempSecondaryKeys}
                                         onChange={e => setTempSecondaryKeys(e.target.value)}
                                         placeholder="比如：学院, 导师"
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                                     />
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div>
                                         <label className="text-[11px] font-black block">需同时对上二级暗号</label>
-                                        <p className="text-[12px] text-[#1c1b1a]/50 mt-0.5" style={HAND_CN}>开着：主暗号 + 任一二级暗号都对上才出场（Selective）</p>
+                                        <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>开着：主暗号 + 任一二级暗号都对上才出场（Selective）</p>
                                     </div>
                                     <InkSwitch on={tempSelective} onChange={setTempSelective} />
                                 </div>
@@ -448,26 +444,26 @@ const WorldbookApp: React.FC = () => {
                                     <InkSwitch on={tempCaseSensitive} onChange={setTempCaseSensitive} />
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">回看几条消息（扫描深度）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">回看几条消息（扫描深度）</label>
                                     <input
                                         type="number" min={1}
                                         value={tempScanDepth}
                                         onChange={e => setTempScanDepth(parseInt(e.target.value) || 1)}
-                                        className="w-full bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                                     />
                                 </div>
 
                                 {/* 暗号演练台：和聊天注入用同一套判定逻辑，编辑时即可演练 */}
                                 <div className="pt-2 border-t border-dashed border-[#1c1b1a]/30">
-                                    <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">暗号演练台（贴一段聊天进来，每行算一条消息）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">暗号演练台（贴一段聊天进来，每行算一条消息）</label>
                                     <textarea
                                         value={scanTestText}
                                         onChange={e => setScanTestText(e.target.value)}
                                         placeholder={'比如：\n今晚的月色真好\n要不要一起去学魔法？'}
-                                        className="w-full h-20 bg-white border-2 border-[#1c1b1a]/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] resize-none placeholder:text-[#1c1b1a]/25"
+                                        className="w-full h-20 bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] resize-none placeholder:text-[#26242a]/25"
                                     />
                                     {scanTestResult && (
-                                        <div className={`mt-2 px-3 py-2 text-[11px] leading-relaxed border-2 ${scanTestResult.triggered ? 'border-[#1c1b1a] bg-[#1c1b1a] text-[#f7f5ef]' : 'border-dashed border-[#1c1b1a]/60 bg-white'}`}>
+                                        <div className={`mt-2 px-3 py-2 text-[11px] leading-relaxed border-2 ${scanTestResult.triggered ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/60 bg-white'}`}>
                                             <div className="font-black mb-0.5">{scanTestResult.triggered ? '✓ 会出场，剪报照常寄出' : '✗ 不会出场'}</div>
                                             {scanTestResult.hitKeys.length > 0 && (
                                                 <div>对上的暗号：{scanTestResult.hitKeys.join('、')}</div>
@@ -484,12 +480,12 @@ const WorldbookApp: React.FC = () => {
                     </div>
 
                     <div className="pb-6">
-                        <label className="label-mono text-[8px] text-[#1c1b1a]/45 mb-1.5 block">剪报内容 / CLIPPING</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">剪报内容 / CLIPPING</label>
                         <textarea
                             value={tempContent}
                             onChange={e => setTempContent(e.target.value)}
                             placeholder="把设定誊在这里，Markdown 随便用…"
-                            className="w-full h-72 bg-white border-2 border-[#1c1b1a]/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
+                            className="w-full h-72 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                             style={RULED_BG}
                         />
                     </div>
@@ -500,7 +496,7 @@ const WorldbookApp: React.FC = () => {
 
     // ── 列表页（卷册 + 剪报） ─────────────────────────────
     return (
-        <div className="h-full w-full relative overflow-hidden bg-[#f2f0e9] text-[#1c1b1a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+        <div className="h-full w-full relative overflow-hidden bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
             {/* 刊头 */}
             <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
                 <div className="flex items-center gap-3">
@@ -512,15 +508,15 @@ const WorldbookApp: React.FC = () => {
                     </button>
                     <div className="flex-1 min-w-0 relative">
                         <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">CLIPPINGS BINDER — LOREBOOK</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">CLIPPINGS BINDER — LOREBOOK</div>
                         <div className="flex items-baseline gap-2">
                             <h1 className="text-2xl font-black tracking-[0.08em]">剪报夹</h1>
-                            <span className="text-sm text-[#1c1b1a]/55 truncate" style={HAND_CN}>世界观、人物、暗号，都剪下来夹好</span>
+                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>世界观、人物、暗号，都剪下来夹好</span>
                         </div>
                     </div>
                     <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
                         <span className="text-base font-black leading-none">{worldbooks.length}</span>
-                        <span className="label-mono text-[7px] text-[#1c1b1a]/55 leading-none mt-0.5">条</span>
+                        <span className="label-mono text-[7px] text-[#26242a]/55 leading-none mt-0.5">条</span>
                     </div>
                 </div>
             </div>
@@ -528,11 +524,11 @@ const WorldbookApp: React.FC = () => {
             {/* 卷册列表 */}
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 pb-28 space-y-5">
                 {Object.keys(groupedBooks).length === 0 && (
-                    <div className="relative bg-[#fbfaf6] border-2 border-[#1c1b1a] shadow-[4px_4px_0_#1c1b1a] p-6 rotate-[-0.6deg] text-center space-y-2">
+                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 rotate-[-0.6deg] text-center space-y-2">
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
-                        <NewspaperClipping size={36} weight="bold" className="mx-auto text-[#1c1b1a]/40" />
+                        <NewspaperClipping size={36} weight="bold" className="mx-auto text-[#26242a]/40" />
                         <p className="text-lg" style={HAND_CN}>夹子还是空的。</p>
-                        <p className="text-xs text-[#1c1b1a]/55 leading-relaxed">点右下角的剪刀，把第一条设定剪下来贴进去。</p>
+                        <p className="text-xs text-[#26242a]/55 leading-relaxed">点右下角的剪刀，把第一条设定剪下来贴进去。</p>
                     </div>
                 )}
 
@@ -544,14 +540,14 @@ const WorldbookApp: React.FC = () => {
                             {/* 卷脊（分组 = 一卷 = 一本世界书） */}
                             <div
                                 onClick={() => toggleCategory(category)}
-                                className={`relative bg-white border-2 border-[#1c1b1a] px-3 py-2.5 flex items-center gap-2 cursor-pointer select-none ${open ? 'shadow-none translate-x-[2px] translate-y-[2px]' : 'shadow-[3px_3px_0_#1c1b1a]'} transition-all`}
+                                className={`relative bg-white border border-black/10 rounded-xl px-3 py-2.5 flex items-center gap-2 cursor-pointer select-none ${open ? 'shadow-none translate-x-[2px] translate-y-[2px]' : 'shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'} transition-all`}
                             >
                                 <span className={`text-sm font-black transition-transform inline-block ${open ? 'rotate-90' : ''}`}>▸</span>
                                 <h3 className="text-sm font-black truncate">{category}</h3>
                                 <span className="label-mono text-[8px] border border-[#1c1b1a]/50 px-1 py-0.5 shrink-0">{books.length} 条</span>
-                                {!bookEnabled && <span className="label-mono text-[8px] bg-[#1c1b1a] text-[#f7f5ef] px-1.5 py-0.5 rotate-[-2deg] shrink-0">整卷封存</span>}
+                                {!bookEnabled && <span className="label-mono text-[8px] bg-[#1c1b1a] text-white px-1.5 py-0.5 rotate-[-2deg] shrink-0">整卷封存</span>}
                                 <div className="ml-auto flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                                    <span className="text-[11px] text-[#1c1b1a]/50" style={HAND_CN}>整卷</span>
+                                    <span className="text-[11px] text-[#26242a]/50" style={HAND_CN}>整卷</span>
                                     <InkSwitch
                                         on={bookEnabled}
                                         onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `《${category}》整卷已展开` : `《${category}》整卷已封存（所有剪报暂停寄出）`, 'info'); }}
@@ -563,7 +559,7 @@ const WorldbookApp: React.FC = () => {
                             {/* 卷里的剪报 */}
                             <div className={`space-y-3 pl-3 border-l-2 border-dashed border-[#1c1b1a]/30 ml-2 transition-all duration-300 overflow-hidden ${open ? 'max-h-[1000px] opacity-100 mt-3 pb-1' : 'max-h-0 opacity-0'}`}>
                                 {books.map((book, i) => (
-                                    <div key={book.id} className={`relative bg-white border-2 border-[#1c1b1a]/45 shadow-sm ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'}`}>
+                                    <div key={book.id} className={`relative bg-white border border-black/10 rounded-xl/45 shadow-sm ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'}`}>
                                         {/* 剪报头 */}
                                         <div
                                             onClick={() => togglePreview(book.id)}
@@ -571,7 +567,7 @@ const WorldbookApp: React.FC = () => {
                                         >
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">
-                                                    <h4 className={`text-sm font-black truncate ${book.enabled === false ? 'text-[#1c1b1a]/35 line-through decoration-2' : ''}`}>{book.title}</h4>
+                                                    <h4 className={`text-sm font-black truncate ${book.enabled === false ? 'text-[#26242a]/35 line-through decoration-2' : ''}`}>{book.title}</h4>
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -580,17 +576,17 @@ const WorldbookApp: React.FC = () => {
                                                             addToast(next === 'global' ? `「${book.title}」现在满世界跟着（所有聊天生效）` : `「${book.title}」收回卷里了（要挂载这一卷才出场）`, 'info');
                                                         }}
                                                         title="点一下在 随卷 / 全局 之间换"
-                                                        className={`label-mono text-[8px] px-1.5 py-0.5 border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-[#1c1b1a] text-[#f7f5ef] border-[#1c1b1a]' : 'bg-white text-[#1c1b1a]/70 border-[#1c1b1a]/50'}`}
+                                                        className={`label-mono text-[8px] px-1.5 py-0.5 border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-[#1c1b1a] text-white border-[#1c1b1a]' : 'bg-white text-[#26242a]/70 border-[#1c1b1a]/50'}`}
                                                     >
                                                         {book.scope === 'global' ? '全局' : '随卷'}
                                                     </button>
                                                 </div>
-                                                <div className="label-mono text-[8px] text-[#1c1b1a]/45 truncate flex items-center gap-1.5">
+                                                <div className="label-mono text-[8px] text-[#26242a]/45 truncate flex items-center gap-1.5">
                                                     {triggerStamp(book)}
                                                     <span>· {positionLabel(book.position)} · 顺序 {book.order ?? 100} · {new Date(book.updatedAt).toLocaleDateString()}</span>
                                                 </div>
                                                 {book.activation === 'keyword' && (book.keys?.length || 0) > 0 && (
-                                                    <div className="text-[11px] text-[#1c1b1a]/50 truncate mt-0.5" style={HAND_CN}>
+                                                    <div className="text-[11px] text-[#26242a]/50 truncate mt-0.5" style={HAND_CN}>
                                                         暗号：{book.keys!.slice(0, 3).join(' / ')}{book.keys!.length > 3 ? '…' : ''}
                                                     </div>
                                                 )}
@@ -627,45 +623,45 @@ const WorldbookApp: React.FC = () => {
                                                     （新导入自动启用；旧导入条目在编辑器里保存一次即可接上） */}
                                                 {book.source === 'sillytavern' && (
                                                     <div className="mb-2.5 flex flex-wrap gap-1.5 label-mono text-[8px]">
-                                                        <span className="px-1.5 py-0.5 bg-[#1c1b1a] text-[#f7f5ef] rotate-[-1deg]">ST 舶来</span>
+                                                        <span className="px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[-1deg]">ST 舶来</span>
                                                         {book.stData?.entry && (
                                                             <>
-                                                                <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">
+                                                                <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">
                                                                     {book.stData.entry.constant ? '■ 钉死 (constant)' : '⚿ 暗号出场'}
                                                                 </span>
                                                                 {book.stData.entry.enabled === false && (
                                                                     <span className="px-1.5 py-0.5 border border-[#1c1b1a] bg-white line-through">原卡里就停用</span>
                                                                 )}
                                                                 {(book.stData.entry.keys?.length || 0) > 0 && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">暗号: {book.stData.entry.keys!.join(', ')}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">暗号: {book.stData.entry.keys!.join(', ')}</span>
                                                                 )}
                                                                 {(book.stData.entry.secondaryKeys?.length || 0) > 0 && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">二级暗号: {book.stData.entry.secondaryKeys!.join(', ')}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">二级暗号: {book.stData.entry.secondaryKeys!.join(', ')}</span>
                                                                 )}
                                                                 {book.stData.entry.insertionOrder !== undefined && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">顺序: {book.stData.entry.insertionOrder}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">顺序: {book.stData.entry.insertionOrder}</span>
                                                                 )}
                                                                 {book.stData.entry.position !== undefined && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">位置: {String(book.stData.entry.position)}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">位置: {String(book.stData.entry.position)}</span>
                                                                 )}
                                                             </>
                                                         )}
                                                         {book.stData?.bookName && (
-                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">原书: {book.stData.bookName}</span>
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">原书: {book.stData.bookName}</span>
                                                         )}
                                                         {book.stData?.scanDepth !== undefined && (
-                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">scan_depth: {book.stData.scanDepth}</span>
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">scan_depth: {book.stData.scanDepth}</span>
                                                         )}
                                                         {book.stData?.tokenBudget !== undefined && (
-                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">token_budget: {book.stData.tokenBudget}</span>
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">token_budget: {book.stData.tokenBudget}</span>
                                                         )}
                                                         {book.stData?.recursiveScanning !== undefined && (
-                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#1c1b1a]/70">递归扫描: {book.stData.recursiveScanning ? '开' : '关'}</span>
+                                                            <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">递归扫描: {book.stData.recursiveScanning ? '开' : '关'}</span>
                                                         )}
                                                     </div>
                                                 )}
-                                                <p className="text-xs text-[#1c1b1a]/75 leading-relaxed whitespace-pre-wrap select-text">
-                                                    {book.content || <span className="italic text-[#1c1b1a]/35">这条还没写内容…</span>}
+                                                <p className="text-xs text-[#26242a]/75 leading-relaxed whitespace-pre-wrap select-text">
+                                                    {book.content || <span className="italic text-[#26242a]/35">这条还没写内容…</span>}
                                                 </p>
                                             </div>
                                         )}
@@ -682,7 +678,7 @@ const WorldbookApp: React.FC = () => {
             <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={importing}
-                className="absolute bottom-[4.7rem] right-5 z-20 px-4 py-2.5 rotate-[2deg] flex items-center gap-1.5 bg-[#f7f5ef] text-[#1c1b1a] border-2 border-[#1c1b1a] shadow-[3px_3px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
+                className="absolute bottom-[4.7rem] right-5 z-20 px-4 py-2.5 rotate-[2deg] flex items-center gap-1.5 bg-white text-[#26242a] border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft disabled:opacity-50"
                 title="导入世界书（.json 或 .zip 压缩包）"
             >
                 <UploadSimple size={15} weight="bold" />
@@ -692,7 +688,7 @@ const WorldbookApp: React.FC = () => {
             {/* 剪一条新的：右下角剪刀贴纸（替代原顶栏 + 号） */}
             <button
                 onClick={handleCreate}
-                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[3px_3px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
                 title="剪一条新剪报"
             >
                 <Scissors size={16} weight="bold" />
@@ -702,8 +698,8 @@ const WorldbookApp: React.FC = () => {
             {/* 丢弃确认（撕边纸卡） */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-                    <div className="absolute inset-0 bg-[#1c1b1a]/45" onClick={() => setShowDeleteConfirm(false)} />
-                    <div className="relative w-full max-w-sm bg-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[5px_5px_0_#1c1b1a] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
+                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                         <button
                             onClick={() => setShowDeleteConfirm(false)}
@@ -713,18 +709,18 @@ const WorldbookApp: React.FC = () => {
                             <X size={14} weight="bold" color={INK} />
                         </button>
                         <div className="px-5 pt-6 pb-2">
-                            <div className="label-mono text-[9px] text-[#1c1b1a]/45">DISCARD / 不可复原</div>
+                            <div className="label-mono text-[9px] text-[#26242a]/45">DISCARD / 不可复原</div>
                             <h3 className="text-lg font-black tracking-wide mt-0.5">把这条剪报丢掉？</h3>
                             <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
                         </div>
-                        <div className="px-5 py-3 text-sm text-[#1c1b1a]/70 leading-relaxed">
+                        <div className="px-5 py-3 text-sm text-[#26242a]/70 leading-relaxed">
                             「{editingBook?.title}」丢进废纸篓就找不回来了。
                         </div>
                         <div className="px-5 pb-5 pt-2 flex gap-3">
                             <button onClick={() => setShowDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
                             <button
                                 onClick={confirmDelete}
-                                className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all"
+                                className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
                             >
                                 丢掉！
                             </button>

@@ -6,7 +6,7 @@ import { DB } from '../../utils/db';
 import { resolveAuxApi } from '../../utils/auxApi';
 import { generateTalkOpening, generateTalkReply } from '../../utils/talkTherapy';
 import { candidateToItem, collectionId } from '../../utils/collection';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
 
 /**
  * 折子戏·谈心（肆）：给 user 一个被认真倾听、被安慰的地方。

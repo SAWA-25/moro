@@ -10,7 +10,7 @@ import {
     nodeWhen,
 } from '../../utils/theaterTimeline';
 import { Shell, CharPicker } from './TrajectoryApp';
-import { ScrapButton, WashiTape, HALFTONE, INK, INK_SOFT } from './scrapbook';
+import { ScrapButton, WashiTape, HALFTONE, INK, INK_SOFT } from '../ui/insScrapKit';
 import { resolveAuxApi } from '../../utils/auxApi';
 
 /**

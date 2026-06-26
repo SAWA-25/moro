@@ -9,7 +9,7 @@ import {
     createTruthDareSession, playerById, spinBottle, pickPoser,
     genUserChallenge, genCharRound, genCharAnswer,
 } from '../../utils/theaterTruthDare';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
 
 /**
  * 折子戏·真心话大冒险（玖）：和角色们围一圈转瓶子。
@@ -166,7 +166,7 @@ const TruthDareApp: React.FC<Props> = ({ onExit }) => {
                         <div className="flex flex-wrap gap-3.5 pb-1">
                             {characters.map((c, i) => (
                                 <Polaroid key={c.id} src={c.avatar} caption={c.name} size={56} rotate={i % 2 ? 1.5 : -1.5}
-                                    selected={picked.has(c.id)} grayscale
+                                    selected={picked.has(c.id)}
                                     onClick={() => setPicked(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })} />
                             ))}
                         </div>
@@ -224,7 +224,7 @@ const TruthDareApp: React.FC<Props> = ({ onExit }) => {
                     return (
                         <div key={p.id} className="shrink-0 flex flex-col items-center gap-0.5" style={{ width: 46 }}>
                             <div className="w-9 h-9 rounded-full overflow-hidden transition" style={{ boxShadow: on ? '0 0 0 2px #f6f3ec, 0 0 0 4px #1f1d1a' : `0 0 0 1.5px #f6f3ec, 0 0 0 2.5px ${p.isUser ? INK : 'rgba(176,170,158,0.8)'}`, transform: on ? 'scale(1.08)' : undefined }}>
-                                {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" style={{ filter: 'grayscale(1) contrast(1.05)' }} alt="" /> : <div className="w-full h-full flex items-center justify-center text-[15px]" style={{ background: '#e6e2d8' }}>🙂</div>}
+                                {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" style={{ filter: 'contrast(1.02)' }} alt="" /> : <div className="w-full h-full flex items-center justify-center text-[15px]" style={{ background: '#e6e2d8' }}>🙂</div>}
                             </div>
                             <span className="text-[9px] font-bold leading-none truncate w-full text-center" style={{ color: on ? INK : INK_SOFT }}>{p.isUser ? '你' : p.name.slice(0, 3)}</span>
                         </div>

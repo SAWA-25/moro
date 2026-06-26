@@ -16,7 +16,7 @@ import { TarotSpreadView, LenormandSpreadView } from '../../components/theater/d
 import { LiuyaoView, MeihuaView } from '../../components/theater/divination/HexagramView';
 import CardDeckManager from '../../components/theater/divination/CardDeckManager';
 import CardPicker from '../../components/theater/divination/CardPicker';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, INK, INK_SOFT } from '../ui/insScrapKit';
 
 interface Props { onExit: () => void; }
 

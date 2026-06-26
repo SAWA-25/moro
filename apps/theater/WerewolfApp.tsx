@@ -10,7 +10,7 @@ import {
     checkWinner, mkLog, resolveNightAI, generateDaySpeeches, collectVotes, tallyVotes, hunterShotTarget,
     type NightAIResult,
 } from '../../utils/theaterWerewolf';
-import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from './scrapbook';
+import { PaperShell, ScrapScroll, ScrapHeader, Polaroid, ScrapButton, SectionTag, PaperCard, WashiTape, INK, INK_SOFT } from '../ui/insScrapKit';
 
 /**
  * 折子戏·狼人杀（捌）：拉一桌熟人开一局。
@@ -339,7 +339,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         <div className="flex flex-wrap gap-3.5 pb-1">
                             {characters.map((c, i) => (
                                 <Polaroid key={c.id} src={c.avatar} caption={c.name} size={56} rotate={i % 2 ? 1.5 : -1.5}
-                                    selected={picked.has(c.id)} grayscale
+                                    selected={picked.has(c.id)}
                                     onClick={() => setPicked(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })} />
                             ))}
                         </div>
@@ -390,7 +390,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         <div key={p.seat} className="shrink-0 flex flex-col items-center gap-0.5" style={{ width: 46, opacity: dead ? 0.5 : 1 }}>
                             <div className="relative">
                                 <div className="w-9 h-9 rounded-full overflow-hidden" style={{ boxShadow: `0 0 0 1.5px #f6f3ec, 0 0 0 2.5px ${p.isUser ? INK : 'rgba(176,170,158,0.8)'}` }}>
-                                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" style={{ filter: dead ? 'grayscale(1) opacity(0.7)' : 'grayscale(1) contrast(1.05)' }} alt="" /> : <div className="w-full h-full flex items-center justify-center text-[15px]" style={{ background: '#e6e2d8' }}>🙂</div>}
+                                    {p.avatar ? <img src={p.avatar} className="w-full h-full object-cover" style={{ filter: dead ? 'opacity(0.55)' : 'contrast(1.02)' }} alt="" /> : <div className="w-full h-full flex items-center justify-center text-[15px]" style={{ background: '#e6e2d8' }}>🙂</div>}
                                 </div>
                                 {dead && <span className="absolute -top-1 -right-1 text-[11px]"><Skull size={13} weight="fill" style={{ color: INK }} /></span>}
                             </div>
@@ -434,7 +434,7 @@ const WerewolfApp: React.FC<Props> = ({ onExit }) => {
                         return (
                             <div key={i} className={`flex items-start gap-2 ${isUserSp ? 'flex-row-reverse' : ''}`}>
                                 {p?.avatar
-                                    ? <img src={p.avatar} className="w-6 h-6 rounded-full object-cover mt-0.5 shrink-0" style={{ filter: 'grayscale(1) contrast(1.05)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />
+                                    ? <img src={p.avatar} className="w-6 h-6 rounded-full object-cover mt-0.5 shrink-0" style={{ filter: 'contrast(1.02)', boxShadow: '0 0 0 1.5px #f6f3ec, 0 0 0 2.5px rgba(176,170,158,0.7)' }} alt="" />
                                     : <span className="w-6 h-6 rounded-full bg-[#e6e2d8] flex items-center justify-center text-[11px] shrink-0">🙂</span>}
                                 <div className="max-w-[78%]">
                                     <div className={`text-[9.5px] mb-0.5 ${isUserSp ? 'text-right' : ''}`} style={{ color: INK_SOFT }}>{e.seat}号 {e.name}</div>
