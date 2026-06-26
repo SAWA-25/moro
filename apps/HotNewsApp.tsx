@@ -3,9 +3,8 @@ import { useOS } from '../context/OSContext';
 import { ArrowClockwise, WarningCircle, ArrowSquareOut, PaperPlaneTilt, TrendUp } from '@phosphor-icons/react';
 import { DB } from '../utils/db';
 import { RealtimeContextManager } from '../utils/realtimeContext';
-import Modal from '../components/os/Modal';
 import {
-    InsShell, InsHeader, InsCard, IconCircle, StoryRing, accent, INK, INK_SOFT,
+    InsShell, InsHeader, InsCard, IconCircle, StoryRing, InsSheet, accent, INK, INK_SOFT,
 } from '../components/ui/insKit';
 import type { HotNewsSnapshot, HotNewsItem } from '../types';
 
@@ -206,26 +205,27 @@ const HotNewsApp: React.FC = () => {
                 )}
             </div>
 
-            {/* 转发到聊天：挑一个角色，把这条热点当新闻卡片递过去 */}
-            <Modal isOpen={!!forwardItem} title="转发给角色" onClose={() => setForwardItem(null)}>
+            {/* 转发到聊天：底部抽屉里挑一个角色，把这条热点当新闻卡片递过去 */}
+            <InsSheet open={!!forwardItem} title="转发给角色" onClose={() => setForwardItem(null)}>
                 {forwardItem && (
-                    <p className="text-[12px] mb-3 line-clamp-2 leading-snug" style={{ color: INK_SOFT }}>
-                        「{forwardItem.title}」
-                    </p>
+                    <div className="mb-3 px-3.5 py-2.5 rounded-2xl flex items-start gap-2" style={{ background: accent(AC).soft }}>
+                        <PaperPlaneTilt size={15} weight="fill" className="shrink-0 mt-0.5" style={{ color: accent(AC).solid }} />
+                        <p className="text-[12.5px] line-clamp-2 leading-snug font-medium" style={{ color: accent(AC).ink }}>{forwardItem.title}</p>
+                    </div>
                 )}
                 {characters.length === 0 ? (
-                    <div className="text-center text-xs py-6" style={{ color: INK_SOFT }}>还没有可转发的角色</div>
+                    <div className="text-center text-xs py-8" style={{ color: INK_SOFT }}>还没有可转发的角色</div>
                 ) : (
-                    <div className="grid grid-cols-4 gap-4 p-2 max-h-[50vh] overflow-y-auto no-scrollbar">
+                    <div className="grid grid-cols-4 gap-x-3 gap-y-4 pt-1 pb-2 max-h-[46vh] overflow-y-auto no-scrollbar">
                         {characters.map(c => (
-                            <button key={c.id} onClick={() => handleForward(c.id)} className="flex flex-col items-center gap-2 press-soft">
-                                <StoryRing src={c.avatar} size={48} active={false} fallback={(c.convoSettings?.remarkName?.trim() || c.name)?.charAt(0)} />
-                                <span className="text-[10px] truncate w-full text-center" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</span>
+                            <button key={c.id} onClick={() => handleForward(c.id)} className="flex flex-col items-center gap-1.5 press-soft">
+                                <StoryRing src={c.avatar} size={52} active fallback={(c.convoSettings?.remarkName?.trim() || c.name)?.charAt(0)} />
+                                <span className="text-[10.5px] truncate w-full text-center font-medium" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</span>
                             </button>
                         ))}
                     </div>
                 )}
-            </Modal>
+            </InsSheet>
         </InsShell>
     );
 };

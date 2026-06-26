@@ -352,3 +352,8 @@ pm run build passes after the time-gap grouping fix.
   - **拾光图库**（`apps/XhsStockApp.tsx`，red）：`InsShell`+`InsHeader`（标题 + 入库数 + 右上角红色 + 钮），标签筛选改 `Chip` 行，网格瀑布显影（`.animate-photo-develop`）+ 标签/使用次数浮层 + hover 删除，新增图预览改**拍立得式相框**，提交按钮 `InsButton` IG 渐变，空状态 `InsEmpty`。逻辑零改动。
   - **热点**（`apps/HotNewsApp.tsx`，red）：从报纸 serif 风改清爽 ins 杂志信息流——`InsShell`+`InsHeader`（热点 / HOT NOW + 刷新），保留「Moro Daily / 今日热点」刊头但用 `.ins-gradient-text` 渐变点睛，每个平台一张 `InsCard` 白卡（前 3 名红色序号 + 外链 + 转发），声明条改 `InsCard` 左缘强调，转发选人改 `StoryRing`。逻辑零改动。
   - 演示页 `demo-gallery.tsx` 升级为**多 App 预览**（相册 + 拾光图库 + 热点分区登场）。`tsc` 0 非 api 错误，`vite build` 通过。
+- 逐 App 换肤·收尾与第三个：拆演示脚手架 + 弹窗补全 + 见闻簿完整重做
+  - **拆演示页**：删 `demo-gallery.html`/`demo-gallery.tsx`，`vite.config.ts` 恢复单入口（按反馈不再做预览页）。
+  - **弹窗补全单独设计**：拾光图库删除确认改 `InsDialog`（红主题，替原通用 ConfirmDialog）；热点转发选人改 `InsSheet` 底部抽屉（彩色故事环网格，替原通用 Modal）。
+  - **见闻簿**（`apps/SocialApp.tsx`，rose）**完整 bespoke 重做**（逻辑零改动）：黑白手账 → 彩色小红书瀑布流——`Avatar` 彩色圆头像（无图用日落渐变首字）、`PostCard` 白色大圆角 + 彩色封面 + 瀑布显影、见闻/交友改胶囊滑块段控、`DatingCard` 彩照圆角软卡 + 三键互动、详情页彩色封面 + 评论 + 底部赞/藏/剪互动栏、`InsDialog`「剪下来」/「清空整簿（新增确认）」、`InsSheet`「我喜欢的」、`InsDialog`「打招呼回应」，话题/筛选改 `Chip`。
+  - `tsc` 0 非 api 错误，`vite build` 通过。**进度 4/28**（相册·拾光图库·热点·见闻簿）。

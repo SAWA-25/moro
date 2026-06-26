@@ -3,9 +3,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { XhsStockImage } from '../types';
-import ConfirmDialog from '../components/os/ConfirmDialog';
 import {
-    InsShell, InsHeader, Chip, InsButton, InsEmpty, accent, INK, INK_SOFT,
+    InsShell, InsHeader, Chip, InsButton, InsEmpty, InsDialog, accent, INK, INK_SOFT,
 } from '../components/ui/insKit';
 import { Plus, X, ImageSquare } from '@phosphor-icons/react';
 
@@ -205,15 +204,19 @@ const XhsStockApp: React.FC = () => {
 
     return (
         <InsShell accent={AC}>
-            <ConfirmDialog
-                isOpen={!!confirmDialog}
-                title={confirmDialog?.title || ''}
-                message={confirmDialog?.message || ''}
-                variant={confirmDialog?.variant}
-                confirmText="确认"
-                onConfirm={confirmDialog?.onConfirm || (() => setConfirmDialog(null))}
-                onCancel={() => setConfirmDialog(null)}
-            />
+            <InsDialog
+                open={!!confirmDialog}
+                title={confirmDialog?.title}
+                en="DELETE PHOTO"
+                accent={AC}
+                onClose={() => setConfirmDialog(null)}
+                actions={confirmDialog ? <>
+                    <InsButton variant="soft" accent="slate" onClick={() => setConfirmDialog(null)} className="flex-1 py-2.5 text-[13px]">留着</InsButton>
+                    <InsButton variant="solid" accent={AC} onClick={confirmDialog.onConfirm} className="flex-1 py-2.5 text-[13px]">删掉</InsButton>
+                </> : null}
+            >
+                <span style={{ whiteSpace: 'pre-line' }}>{confirmDialog?.message}</span>
+            </InsDialog>
 
             <InsHeader
                 accent={AC}

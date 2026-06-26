@@ -93,11 +93,6 @@ export default defineConfig({
     assetsDir: 'assets',
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
-      // 多页入口：主应用 index.html + 临时演示页 demo-gallery.html（相册新设计预览，审定后删）
-      input: {
-        main: 'index.html',
-        'demo-gallery': 'demo-gallery.html',
-      },
       // 关键修复：将这些包排除在打包之外，让浏览器通过 index.html 的 importmap 加载
       external: ['pdfjs-dist', 'katex'],
       onwarn(warning, defaultHandler) {
