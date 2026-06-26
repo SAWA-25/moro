@@ -45,7 +45,7 @@ const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentC
         >
             <div className="absolute inset-y-0 right-0 w-[42%] pointer-events-none opacity-70"
                 style={{
-                    background: 'linear-gradient(150deg, rgba(96,165,250,0.18), rgba(45,212,191,0.16), rgba(251,191,36,0.12))',
+                    background: 'linear-gradient(150deg, rgba(255,255,255,0.24), rgba(226,232,240,0.14), transparent 72%)',
                     clipPath: 'polygon(36% 0, 100% 0, 100% 100%, 0 100%)',
                 }}
             />

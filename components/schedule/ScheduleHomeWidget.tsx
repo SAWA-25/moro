@@ -39,7 +39,7 @@ const StoryAvatar: React.FC<{
     accent: string;
 }> = ({ character, size = 48, ring, accent }) => {
     const avatar = character?.avatar;
-    const isImg = !!avatar && (avatar.startsWith('http') || avatar.startsWith('data:'));
+    const isImg = !!avatar && (/^https?:\/\//i.test(avatar) || avatar.startsWith('data:') || avatar.startsWith('blob:') || avatar.startsWith('/'));
     return (
         <div className="shrink-0 rounded-full" style={{ width: size, height: size, padding: 2.5, background: ring }}>
             <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center" style={{ border: '2px solid #fff', background: '#fff' }}>
@@ -194,6 +194,9 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                     <div className="moro-routine-timecard shrink-0">
                         <span>{currentSlot ? currentSlot.startTime : timeLabel}</span>
                         <i>{currentSlot ? 'now' : 'idle'}</i>
+                    </div>
+                    <div className="moro-routine-avatar shrink-0" aria-hidden="true">
+                        <StoryAvatar character={character} size={54} ring={pal.ring} accent={pal.accent} />
                     </div>
                     <div className="min-w-0 flex-1">
                         <div className="moro-routine-activity truncate">

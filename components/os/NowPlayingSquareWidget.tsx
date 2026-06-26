@@ -45,7 +45,7 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
         />
       )}
 
-      <div className="relative z-10 flex h-full items-center gap-4 px-4 py-3.5">
+      <div className="moro-vinyl-body relative z-10 flex h-full items-center gap-4 px-4 py-3.5">
         <div className="moro-vinyl-wrap shrink-0">
           <div
             className="moro-vinyl-disc"
@@ -71,7 +71,7 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
           </button>
         </div>
 
-        <div className="min-w-0 flex-1">
+        <div className="moro-vinyl-info min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="moro-vinyl-chip">Music</span>
             <span className="moro-vinyl-tiny">CosmicPhone</span>
@@ -85,7 +85,7 @@ const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentCol
               <span key={i} style={{ height: `${8 + ((i * 7) % 18)}px`, opacity: playing ? 0.78 : 0.38 }} />
             ))}
           </div>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="moro-vinyl-controls mt-3 flex items-center gap-3">
             <div className="moro-vinyl-progress">
               <i style={{ width: `${pct}%` }} />
             </div>

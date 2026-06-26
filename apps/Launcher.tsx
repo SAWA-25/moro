@@ -204,7 +204,7 @@ const CALENDAR_WEEKDAYS = [
 // (Calendar + Upcoming Events 小组件页已移除)
 
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
-const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v2';
+const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v5';
 const loadLastPageIndex = (): number => {
     try {
         if (typeof sessionStorage === 'undefined') return 0;
@@ -252,7 +252,7 @@ const loadStoredDeskOrder = (): string[] => {
     } catch { return []; }
 };
 
-const DESK_LAYOUT_KEY = 'moro_desktop_layout_v11_visual_home_clean_wallpaper';
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v15_requested_rows';
 const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
     try {
         const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
@@ -379,52 +379,51 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         if (appKeys.includes(key) && place(key, page, col, row)) placedAppKeys.add(key);
     };
 
-    place('widget:music', 0, 0, 0);
-    place('widget:image', 0, 0, 3);
-    placeApp(AppID.Gallery, 0, 2, 3);
-    placeApp(AppID.Music, 0, 3, 3);
-    placeApp(AppID.HotNews, 0, 2, 5);
-    placeApp(AppID.Appearance, 0, 3, 5);
-    place('widget:schedule', 0, 0, 7);
-    placeApp(AppID.Personas, 0, 0, 9);
-    placeApp(AppID.Worldbook, 0, 1, 9);
-    placeApp(AppID.Presets, 0, 2, 9);
-    placeApp(AppID.Regex, 0, 3, 9);
+    place('widget:clock', 0, 0, 0);
+    place('widget:schedule', 0, 0, 2);
+    place('widget:music', 0, 0, 4);
+    place('widget:image', 0, 2, 4);
+    placeApp(AppID.Gallery, 0, 0, 7);
+    placeApp(AppID.Music, 0, 1, 7);
+    placeApp(AppID.HotNews, 0, 2, 7);
+    placeApp(AppID.Appearance, 0, 3, 7);
+    place('widget:character', 0, 0, 9);
 
-    place('widget:clock', 1, 0, 0);
-    place('widget:character', 1, 0, 2);
-    place('widget:weather', 1, 0, 4);
+    placeApp(AppID.Personas, 1, 0, 2);
+    placeApp(AppID.Almanac, 1, 1, 2);
+    placeApp(AppID.Room, 1, 0, 4);
+    placeApp(AppID.Journal, 1, 1, 4);
+    place('widget:weather', 1, 2, 2);
     place('widget:text', 1, 0, 6);
-    placeApp(AppID.MemoryPalace, 1, 0, 8);
-    placeApp(AppID.Room, 1, 1, 8);
-    placeApp(AppID.Journal, 1, 2, 8);
-    placeApp(AppID.Study, 1, 0, 10);
-    placeApp(AppID.Theater, 1, 1, 10);
-    placeApp(AppID.Creative, 1, 2, 10);
+    placeApp(AppID.Study, 1, 2, 5);
+    placeApp(AppID.Theater, 1, 3, 5);
+    placeApp(AppID.Creative, 1, 2, 7);
+    placeApp(AppID.LifeSim, 1, 3, 7);
 
-    let galleryRow = 0;
-    if (place('widget:imgwide', 2, 0, galleryRow)) galleryRow += 3;
-    const placedSmallPhoto = place('widget:imgtl', 2, 0, galleryRow) || place('widget:imgtr', 2, 2, galleryRow);
-    if (placedSmallPhoto) {
-        place('widget:imgtr', 2, 2, galleryRow);
-        galleryRow += 3;
-    }
-    const toolsRow = Math.min(galleryRow, 6);
-    placeApp(AppID.Bank, 2, 0, toolsRow);
-    placeApp(AppID.VRWorld, 2, 1, toolsRow);
-    placeApp(AppID.Almanac, 2, 2, toolsRow);
-    placeApp(AppID.LifeSim, 2, 3, toolsRow);
-    placeApp(AppID.Takeout, 2, 0, toolsRow + 2);
-    placeApp(AppID.Shop, 2, 1, toolsRow + 2);
-    placeApp(AppID.Harem, 2, 2, toolsRow + 2);
-    placeApp(AppID.Forum, 2, 3, toolsRow + 2);
-    placeApp(AppID.XhsFreeRoam, 2, 0, toolsRow + 4);
-    placeApp(AppID.XhsStock, 2, 1, toolsRow + 4);
+    const pageThreeApps = [
+        AppID.Worldbook,
+        AppID.Presets,
+        AppID.Regex,
+        AppID.MemoryPalace,
+        AppID.Bank,
+        AppID.VRWorld,
+        AppID.Takeout,
+        AppID.Shop,
+        AppID.Harem,
+        AppID.Forum,
+        AppID.XhsFreeRoam,
+        AppID.XhsStock,
+    ];
+    pageThreeApps.forEach((id, index) => {
+        placeApp(id, 2, index % PAGE_COLS, Math.floor(index / PAGE_COLS) * 2);
+    });
 
     for (const key of orderedKeys) {
         const item = itemsByKey.get(key);
         if (!item || layout[key]) continue;
-        const pageStart = key.startsWith('app:') ? (placedAppKeys.has(key) ? layout[key]?.page ?? 0 : 2) : 0;
+        const pageStart = key.startsWith('app:')
+            ? (placedAppKeys.has(key) ? layout[key]?.page ?? 0 : 2)
+            : (['widget:imgtl', 'widget:imgtr', 'widget:imgwide'].includes(key) ? 3 : 0);
         layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, pageStart);
     }
     return layout;
@@ -629,9 +628,9 @@ const Launcher: React.FC = () => {
         { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 2 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
         { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 2 },
-        { key: 'widget:music', kind: 'widget', id: 'music', w: 4, h: 3 },
+        { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 3 },
         { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 3 },
-        { key: 'widget:text', kind: 'widget', id: 'text', w: 4, h: 2 },
+        { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
         ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 3 }] : []),
         ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 3 }] : []),
         ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
@@ -688,7 +687,9 @@ const Launcher: React.FC = () => {
   }, [deskOrder]);
   useEffect(() => {
       const keys = deskItems.map(item => item.key);
-      const normalized = normalizeDeskLayout(deskItems, deskLayout, keys);
+      const normalized = Object.keys(deskLayout).length > 0
+          ? normalizeDeskLayout(deskItems, deskLayout, keys)
+          : buildDefaultDeskLayout(deskItems, keys);
       const changed =
           keys.length !== Object.keys(deskLayout).length ||
           keys.some(key => {
@@ -1086,7 +1087,7 @@ const Launcher: React.FC = () => {
                       image={theme.launcherWidgets?.['dsq']}
                       contentColor={contentColor}
                       onClick={() => openApp(AppID.Appearance)}
-                      caption="Desk photo"
+                      caption=""
                   />
               );
           case 'imgtl':
@@ -1202,7 +1203,6 @@ const Launcher: React.FC = () => {
             overscrollBehaviorY: 'none',
             touchAction: 'pan-x pan-y',
             willChange: 'scroll-position',
-            contain: 'layout paint',
             transform: 'translateZ(0)',
             WebkitOverflowScrolling: 'touch',
         }}
@@ -1214,7 +1214,7 @@ const Launcher: React.FC = () => {
                 data-desk-page={idx}
                 data-page-index={idx}
                 className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--safe-top)+3.15rem)] pb-7 h-full relative"
-                style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
+                style={{ transform: 'translateZ(0)' }}
               >
                   {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
                   {idx === 2 && theme.desktopDecorations && theme.desktopDecorations.length > 0 && (

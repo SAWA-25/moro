@@ -578,6 +578,7 @@
         color: var(--moro-desk-ink);
       }
       .moro-theme-statusbar {
+        display: none !important;
         top: calc(var(--safe-top) + 0.65rem);
         color: #20211f;
         text-shadow: 0 1px 0 rgba(255,255,255,0.8);
@@ -923,25 +924,22 @@
         }
       }
       .moro-clock-card {
-        background:
-          linear-gradient(180deg, rgba(255,255,250,0.72), rgba(236,241,230,0.42));
-        border: 1px solid rgba(255,255,255,0.66);
-        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.62);
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        box-shadow: none !important;
         color: var(--moro-desk-ink) !important;
-        backdrop-filter: blur(20px) saturate(0.94);
-        -webkit-backdrop-filter: blur(20px) saturate(0.94);
+        text-shadow: 0 1px 0 rgba(255,255,255,0.72), 0 12px 24px rgba(63,82,98,0.12);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
       }
       .moro-clock-sheen {
-        background:
-          linear-gradient(105deg, transparent 0 24%, rgba(255,255,255,0.28) 39%, transparent 54% 100%),
-          repeating-linear-gradient(90deg, rgba(47,48,45,0.04) 0 1px, transparent 1px 11px);
-        animation: moroClockSheen 7s ease-in-out infinite alternate;
+        display: none;
       }
       .moro-clock-card [class*="bg-white"] {
-        background-color: rgba(255,255,255,0.36) !important;
+        background-color: rgba(255,255,255,0.18) !important;
       }
       .moro-clock-card [class*="border-white"] {
-        border-color: rgba(255,255,255,0.46) !important;
+        border-color: rgba(255,255,255,0.22) !important;
       }
       @keyframes moroClockSheen {
         from { transform: translateX(-8%); opacity: 0.7; }
@@ -950,22 +948,25 @@
       .moro-image-widget,
       .moro-desktop-root [data-desk-item].moro-widget-weather > .moro-widget-weather {
         background:
-          linear-gradient(180deg, rgba(255,255,250,0.76), rgba(238,242,232,0.42));
-        border: 1px solid var(--moro-desk-border);
-        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.58);
-        backdrop-filter: blur(22px) saturate(0.96);
-        -webkit-backdrop-filter: blur(22px) saturate(0.96);
+          linear-gradient(180deg, rgba(255,255,255,0.66), rgba(244,247,250,0.28));
+        border: 1px solid rgba(255,255,255,0.42);
+        box-shadow: 0 16px 30px -26px rgba(63,82,98,0.28), inset 0 1px 0 rgba(255,255,255,0.42);
+        backdrop-filter: blur(18px) saturate(0.92);
+        -webkit-backdrop-filter: blur(18px) saturate(0.92);
         color: var(--moro-desk-ink) !important;
       }
       .moro-image-widget {
         background:
-          repeating-linear-gradient(90deg, rgba(255,255,255,0.2) 0 1px, transparent 1px 12px),
-          linear-gradient(145deg, rgba(255,255,250,0.74), rgba(224,232,220,0.32));
+          linear-gradient(145deg, rgba(255,255,255,0.62), rgba(238,242,246,0.24));
       }
       .moro-desktop-root .moro-character-card.glass-card {
         background-color: rgba(255,255,255,0.88);
         background-image: none !important;
         box-shadow: 0 16px 36px -22px rgba(50,48,60,0.22);
+      }
+      .moro-desktop-root .moro-character-card.glass-card::before,
+      .moro-desktop-root .moro-character-card.glass-card::after {
+        background-image: none !important;
       }
       .moro-quote-widget {
         position: relative;
@@ -1028,8 +1029,7 @@
         padding: 0.64rem 0.64rem 0.56rem;
         border-radius: 0.42rem;
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,249,244,0.92)),
-          repeating-linear-gradient(90deg, rgba(47,48,45,0.025) 0 1px, transparent 1px 9px);
+          linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,249,244,0.92));
         border: 1px solid rgba(255,255,255,0.92);
         box-shadow:
           0 18px 30px -25px rgba(47,48,45,0.54),
@@ -1044,8 +1044,7 @@
         border-radius: 0.22rem;
         background:
           radial-gradient(circle at 26% 22%, rgba(255,255,255,0.72), transparent 28%),
-          repeating-linear-gradient(90deg, rgba(172,184,178,0.16) 0 1px, transparent 1px 9px),
-          linear-gradient(145deg, rgba(224,234,226,0.92), rgba(246,241,235,0.8));
+          linear-gradient(145deg, rgba(235,239,244,0.9), rgba(249,248,246,0.78));
         border: 1px solid rgba(47,48,45,0.07);
         box-shadow: inset 0 1px 7px rgba(47,48,45,0.08);
       }
@@ -1079,15 +1078,16 @@
           radial-gradient(circle, rgba(47,48,45,0.42) 0 1.5px, transparent 2px) 0 50% / 0.35rem 0.35rem repeat-x;
         opacity: 0.45;
       }
+      .moro-desktop-root [data-desk-item="widget:image"] .moro-polaroid-caption-row span {
+        display: none;
+      }
       .moro-polaroid-tape {
         position: absolute;
         top: -0.34rem;
         width: 2.3rem;
         height: 0.78rem;
         border-radius: 0.1rem;
-        background:
-          repeating-linear-gradient(90deg, rgba(255,255,255,0.24) 0 4px, transparent 4px 8px),
-          rgba(232,231,219,0.76);
+        background: rgba(232,231,219,0.76);
         border: 1px solid rgba(255,255,255,0.72);
         box-shadow: 0 5px 10px -8px rgba(47,48,45,0.32);
         pointer-events: none;
@@ -1148,15 +1148,7 @@
         -webkit-backdrop-filter: blur(18px) saturate(0.98);
       }
       .moro-routine-glow {
-        content: '';
-        position: absolute;
-        right: -2.4rem;
-        top: -2.4rem;
-        width: 7rem;
-        height: 7rem;
-        border-radius: 999px;
-        opacity: 0.1;
-        filter: blur(2px);
+        display: none;
       }
       .moro-routine-kicker {
         font-size: 9px;
@@ -1210,6 +1202,17 @@
         text-transform: uppercase;
         opacity: 0.45;
       }
+      .moro-routine-avatar {
+        width: 54px;
+        height: 54px;
+        flex: 0 0 54px;
+        display: grid;
+        place-items: center;
+      }
+      .moro-routine-avatar > div {
+        width: 54px !important;
+        height: 54px !important;
+      }
       .moro-routine-activity {
         font-size: 14px;
         line-height: 1.05;
@@ -1252,22 +1255,18 @@
         font-variant-numeric: tabular-nums;
       }
       .moro-desktop-root .moro-widget-music > div {
-        border: 1px solid rgba(255,255,255,0.62);
-        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.58) !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
       }
       .moro-vinyl-widget {
-        background:
-          linear-gradient(180deg, rgba(255,255,250,0.82), rgba(231,237,226,0.48)),
-          repeating-linear-gradient(90deg, rgba(47,48,45,0.04) 0 1px, transparent 1px 14px);
-        border: 1px solid rgba(255,255,255,0.68);
-        box-shadow: 0 20px 34px -28px rgba(47,48,45,0.48), inset 0 1px 0 rgba(255,255,255,0.68);
-        backdrop-filter: blur(22px) saturate(0.96);
-        -webkit-backdrop-filter: blur(22px) saturate(0.96);
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        box-shadow: none !important;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
       }
       .moro-vinyl-sheen {
-        background:
-          linear-gradient(115deg, transparent 0 24%, rgba(255,255,255,0.42) 38%, transparent 56%),
-          linear-gradient(90deg, rgba(255,255,255,0.36), transparent 42%);
+        display: none;
       }
       .moro-vinyl-wrap {
         position: relative;
@@ -1299,7 +1298,7 @@
         border-radius: 999px;
         color: #2f302d;
         background:
-          linear-gradient(145deg, #f7f7f0, #dfe7d8);
+          linear-gradient(145deg, #fafafa, #e9edf2);
         background-size: cover;
         background-position: center;
         border: 2px solid rgba(255,255,255,0.82);
@@ -1386,9 +1385,66 @@
       @keyframes moroVinylSpin {
         to { transform: rotate(360deg); }
       }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-body {
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.4rem;
+        padding: 0.88rem 0.82rem 0.72rem;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-wrap {
+        width: min(5.35rem, 64%);
+        min-width: 0;
+        max-width: none;
+        flex: 0 0 auto;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-play {
+        width: 2.1rem;
+        height: 2.1rem;
+        right: -0.22rem;
+        bottom: 0.2rem;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info {
+        width: 100%;
+        flex: 0 0 auto;
+        text-align: center;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info > .flex {
+        justify-content: center;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-tiny {
+        display: none;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-waveform {
+        justify-content: center;
+        height: 16px;
+        margin-top: 0.38rem !important;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-waveform span {
+        width: 2px;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-chip {
+        height: 1.28rem;
+        font-size: 9px;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info .mt-2 {
+        margin-top: 0.38rem !important;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info .text-\[17px\] {
+        font-size: 15px !important;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-info .mt-3 {
+        margin-top: 0.55rem !important;
+      }
+      .moro-desktop-root [data-desk-item="widget:music"] .moro-vinyl-controls {
+        display: none !important;
+      }
       .moro-widget-clock .moro-clock-card {
         padding: 0.9rem 0.95rem !important;
         border-radius: 1.65rem !important;
+      }
+      .moro-widget-clock .moro-clock-card > .absolute {
+        display: none !important;
       }
       .moro-widget-clock .moro-clock-card > .relative {
         display: flex !important;
