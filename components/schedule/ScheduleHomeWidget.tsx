@@ -96,9 +96,12 @@ export const ScheduleSquareWidget: React.FC<ScheduleSquareWidgetProps> = ({
                 color: INK,
             }}
         >
-            {/* Accent corner glow（柔和） */}
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full pointer-events-none opacity-40"
-                style={{ background: `radial-gradient(circle, ${pal.accent}, transparent 70%)` }} />
+            <div className="absolute inset-y-0 right-0 w-[34%] pointer-events-none opacity-55"
+                style={{
+                    background: `linear-gradient(155deg, ${pal.accent}22, transparent 72%)`,
+                    clipPath: 'polygon(36% 0, 100% 0, 100% 100%, 0 100%)',
+                }}
+            />
 
             {/* Top row: Now badge + time */}
             <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 pt-3 z-10">
@@ -166,98 +169,57 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     const timeLabel = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
     const timelineSlots = schedule?.slots ?? [];
+    const nextLabel = nextSlot ? `${nextSlot.startTime} ${nextSlot.emoji ? `${nextSlot.emoji} ` : ''}${nextSlot.activity}` : '';
 
     return (
         <button
             onClick={onOpen}
-            className="w-full group text-left rounded-3xl overflow-hidden press-soft relative"
-            style={{
-                background: 'rgba(255,255,255,0.95)',
-                backdropFilter: 'blur(22px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
-                border: `1px solid ${HAIRLINE}`,
-                boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 36px -28px rgba(38,38,38,0.34)',
-                color: INK,
-            }}
+            className="moro-routine-widget w-full h-full group text-left overflow-hidden press-soft relative"
+            style={{ color: INK }}
         >
-            {/* Accent corner glow */}
-            <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full pointer-events-none opacity-30"
-                style={{ background: `radial-gradient(circle, ${pal.accent}, transparent 70%)` }} />
+            <span className="moro-routine-glow" style={{ background: pal.accent }} />
 
-            <div className="relative flex flex-col p-4 gap-3">
-                {/* Header row: label + time */}
-                <div className="flex items-center gap-2 text-[9px]">
-                    <span className="font-bold tracking-[0.16em] uppercase" style={{ color: pal.accent }}>Daily</span>
-                    <span className="text-[10px]" style={{ color: INK_SOFT }}>今日作息</span>
-                    <div className="h-px flex-1" style={{ background: HAIRLINE }}></div>
-                    <span className="font-mono tracking-wider" style={{ color: INK_SOFT }}>{timeLabel}</span>
-                </div>
-
-                {/* Main row: story avatar | activity | open */}
-                <div className="flex items-center gap-3.5">
-                    <StoryAvatar character={character} size={64} ring={pal.ring} accent={pal.accent} />
-
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[9px] font-bold tracking-[0.18em] uppercase px-1.5 py-0.5 rounded-full"
-                                style={{
-                                    background: currentSlot ? pal.accentTint : '#f4f4f5',
-                                    color: currentSlot ? pal.accentDeep : INK_SOFT,
-                                    border: `1px solid ${currentSlot ? pal.accentBorder : HAIRLINE}`,
-                                }}>
-                                {currentSlot ? 'Now' : 'Idle'}
-                            </span>
-                            <span className="text-[10px] font-mono tracking-wider" style={{ color: INK_SOFT }}>
-                                {currentSlot ? currentSlot.startTime : timeLabel}
-                            </span>
-                            <span className="text-[9px] tracking-widest uppercase ml-auto shrink-0 truncate max-w-[40%]" style={{ color: INK_FAINT }}>
-                                {character?.name || '—'}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            {currentSlot?.emoji && <span className="text-lg shrink-0">{currentSlot.emoji}</span>}
-                            <span className="text-[15px] font-bold truncate leading-tight" style={{ color: INK }}>
-                                {currentSlot?.activity || (schedule ? '休息中 · 暂无安排' : '尚未生成作息')}
-                            </span>
-                        </div>
-                        {(currentSlot?.description || nextSlot) && (
-                            <div className="text-[10.5px] truncate mt-0.5 leading-snug" style={{ color: INK_SOFT }}>
-                                {currentSlot?.description ? (
-                                    currentSlot.description
-                                ) : nextSlot ? (
-                                    <>
-                                        <span className="font-mono mr-1" style={{ color: pal.accent }}>→ {nextSlot.startTime}</span>
-                                        {nextSlot.emoji ? `${nextSlot.emoji} ` : ''}{nextSlot.activity}
-                                    </>
-                                ) : null}
-                            </div>
-                        )}
+            <div className="relative z-10 flex h-full flex-col px-4 py-3.5">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="moro-routine-kicker">routine</div>
+                        <div className="moro-routine-date truncate">{character?.name ? `${character.name} rhythm` : 'daily rhythm'}</div>
                     </div>
-
-                    {/* Open indicator */}
-                    <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-opacity opacity-80 group-hover:opacity-100 self-start"
-                        style={{ background: '#f6f6f7', border: `1px solid ${HAIRLINE}` }}>
-                        <OpenChevron />
+                    <div className="moro-routine-open">
+                        <OpenChevron color={INK_SOFT} />
                     </div>
                 </div>
 
-                {/* Timeline footer */}
+                <div className="mt-3 flex min-h-0 flex-1 items-center gap-3.5">
+                    <div className="moro-routine-timecard shrink-0">
+                        <span>{currentSlot ? currentSlot.startTime : timeLabel}</span>
+                        <i>{currentSlot ? 'now' : 'idle'}</i>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <div className="moro-routine-activity truncate">
+                            {currentSlot?.emoji && <span className="mr-1.5">{currentSlot.emoji}</span>}
+                            {currentSlot?.activity || (schedule ? '休息中' : '尚未生成作息')}
+                        </div>
+                        <div className="moro-routine-note truncate">
+                            {currentSlot?.description || (nextLabel ? `Next · ${nextLabel}` : 'Tap for details')}
+                        </div>
+                    </div>
+                </div>
+
                 {timelineSlots.length > 0 && (
-                    <div className="flex items-center gap-1.5 pt-1">
-                        {timelineSlots.slice(0, 10).map((slot, i) => {
+                    <div className="moro-routine-timeline mt-3">
+                        {timelineSlots.slice(0, 7).map((slot, i) => {
                             const isCurrent = i === currentIdx;
                             const isPast = currentIdx >= 0 && i < currentIdx;
                             return (
-                                <div key={i} className="flex-1 min-w-0 flex flex-col items-center gap-1">
-                                    <div className="w-full h-[3px] rounded-full transition-all"
+                                <div key={i} className="moro-routine-tick">
+                                    <span
                                         style={{
-                                            background: isCurrent ? pal.accent : isPast ? '#d6d4db' : '#ececec',
-                                            boxShadow: isCurrent ? `0 0 6px ${pal.accent}66` : 'none',
-                                        }}></div>
-                                    <span className="text-[8px] font-mono tracking-wider"
-                                        style={{ color: isCurrent ? pal.accentDeep : isPast ? INK_FAINT : INK_SOFT }}>
-                                        {slot.startTime.slice(0, 5)}
-                                    </span>
+                                            background: isCurrent ? pal.accent : isPast ? '#aaa79f' : '#dedbd0',
+                                            boxShadow: isCurrent ? `0 0 0 3px ${pal.accent}20` : 'none',
+                                        }}
+                                    />
+                                    <i style={{ color: isCurrent ? pal.accentDeep : INK_FAINT }}>{slot.startTime.slice(0, 5)}</i>
                                 </div>
                             );
                         })}

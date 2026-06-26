@@ -15,68 +15,70 @@ import WeatherWidget from '../components/os/WeatherWidget';
 const DesktopClock = React.memo(() => {
     const { virtualTime, openApp, lock } = useOS();
 
-    const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     const now = new Date();
     const dayName = days[now.getDay()];
-    const dateNum = now.getDate().toString();
+    const monthName = months[now.getMonth()];
+    const dateNum = now.getDate().toString().padStart(2, '0');
 
-    // 治愈系问候（基于虚拟时间）
-    const greeting = virtualTime.hours < 5 ? '夜深了，记得早点休息。'
-        : virtualTime.hours < 12 ? '早安，新的一天慢慢来。'
+    const greeting = virtualTime.hours < 5 ? '夜深了，慢慢收束。'
+        : virtualTime.hours < 12 ? '早安，先把心放稳。'
         : virtualTime.hours < 14 ? '午后小憩，喝口水吧。'
-        : virtualTime.hours < 18 ? '天天开心，万事顺意。'
-        : '晚风正好，今天辛苦了。';
+        : virtualTime.hours < 18 ? '今天也在向前。'
+        : '晚风正好，辛苦了。';
 
     const hh = virtualTime.hours.toString().padStart(2, '0');
     const mm = virtualTime.minutes.toString().padStart(2, '0');
 
-    // 手帐拼贴日期卡（参照黑白手帐桌面）：天空蓝照片质感 + 大号日期 + 星期 + FOCUS 胶囊
     return (
-        <div className="moro-clock-card h-full w-full rounded-[2rem] px-5 py-5 relative overflow-hidden animate-rise-in select-none flex flex-col text-white"
-            style={{
-                background: 'linear-gradient(168deg, #5d7eab 0%, #4a6a9b 42%, #3e5d8d 100%)',
-                boxShadow: '0 20px 44px -20px rgba(52, 74, 110, 0.55)',
-            }}>
-            {/* 照片氛围：右侧"阳台白墙"色块 + 漂浮云影，模拟拍立得天空照 */}
-            <div className="absolute inset-y-0 right-0 w-[38%] pointer-events-none opacity-90"
-                style={{ background: 'linear-gradient(195deg, rgba(244,242,238,0.92) 0%, rgba(235,232,226,0.85) 55%, rgba(222,219,212,0.8) 100%)', clipPath: 'polygon(34% 0, 100% 0, 100% 100%, 12% 100%, 30% 52%)' }} />
-            <div className="absolute top-6 right-[30%] w-28 h-28 rounded-full pointer-events-none animate-drift-slow"
-                style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.28), transparent 70%)' }} />
-            <div className="absolute bottom-2 -left-8 w-40 h-24 rounded-full pointer-events-none animate-breathe"
-                style={{ background: 'radial-gradient(ellipse, rgba(255,255,255,0.18), transparent 70%)' }} />
+        <div className="moro-clock-card h-full w-full rounded-[2rem] px-4 py-4 relative overflow-hidden animate-rise-in select-none flex flex-col text-white">
+            <div className="moro-clock-sheen absolute inset-0 pointer-events-none" />
+            <div className="absolute inset-x-0 top-0 h-16 pointer-events-none opacity-80"
+                style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.2), transparent)' }} />
+            <div className="absolute right-0 top-0 bottom-0 w-[46%] pointer-events-none opacity-65"
+                style={{
+                    background: 'linear-gradient(155deg, rgba(125,211,252,0.36), rgba(244,114,182,0.2) 48%, rgba(250,204,21,0.16))',
+                    clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0 100%)',
+                }}
+            />
 
             <div className="relative z-10 flex-1 flex flex-col">
-                <div className="moro-clock-time text-[3.75rem] leading-none font-bold tracking-tight"
-                    style={{ fontFamily: 'var(--font-hand)', textShadow: '0 2px 14px rgba(30,48,80,0.35)' }}>
-                    {dateNum}
+                <div className="flex items-center justify-between gap-3">
+                    <div className="label-mono text-[9px] font-bold opacity-75">MORO</div>
+                    <button
+                        onClick={lock}
+                        className="w-8 h-8 shrink-0 rounded-full press-soft inline-flex items-center justify-center bg-white/16 border border-white/22 backdrop-blur-md"
+                        aria-label="一键锁屏"
+                    >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"/></svg>
+                    </button>
                 </div>
-                <div className="text-[13px] label-mono font-bold tracking-[0.3em] mt-1 opacity-95">{dayName}</div>
 
-                {/* 半宽卡片：时间/问候与按钮纵向堆叠，避免挤压（参照设计稿 FOCUS 胶囊在卡片下部） */}
-                <div className="mt-auto flex flex-col gap-2.5 min-w-0">
-                    <div className="min-w-0">
-                        <div className="text-[20px] font-semibold leading-none tabular-nums" style={{ textShadow: '0 1px 10px rgba(30,48,80,0.3)' }}>
-                            {hh}<span className="opacity-60 animate-pulse mx-0.5">:</span>{mm}
-                        </div>
-                        <div className="moro-clock-greeting text-[11px] mt-1.5 opacity-85 font-medium tracking-wide truncate">{greeting}</div>
+                <div className="mt-3">
+                    <div className="moro-clock-time text-[2.7rem] leading-none font-black tabular-nums">
+                        {hh}<span className="opacity-40 mx-0.5">:</span>{mm}
                     </div>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="label-mono text-[11px] font-bold opacity-85">{monthName}</span>
+                        <span className="h-px flex-1 bg-white/28" />
+                        <span className="label-mono text-[11px] font-bold opacity-85">{dayName}</span>
+                    </div>
+                </div>
 
-                    <div className="flex items-center gap-2">
-                        {/* 一键锁屏：只切换到锁屏界面，主动消息 / 推送 / 锁屏通知卡照常运行 */}
-                        <button
-                            onClick={lock}
-                            className="w-9 h-9 shrink-0 rounded-full press-soft inline-flex items-center justify-center"
-                            style={{ background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)' }}
-                            aria-label="一键锁屏"
-                        >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9z"/></svg>
-                        </button>
+                <div className="mt-auto min-w-0 rounded-[1.25rem] border border-white/18 bg-white/13 backdrop-blur-md px-3.5 py-3">
+                    <div className="flex items-end justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="text-[1.15rem] leading-none font-bold tabular-nums">
+                                {dateNum}
+                            </div>
+                            <div className="moro-clock-greeting text-[11px] mt-1.5 opacity-80 font-medium truncate">{greeting}</div>
+                        </div>
                         <button
                             onClick={() => openApp(AppID.Appearance)}
-                            className="moro-palette-btn label-mono text-[10px] font-bold px-4 py-2.5 rounded-full press-soft min-w-0 truncate"
-                            style={{ background: 'rgba(255,255,255,0.24)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.45)', color: '#ffffff', textShadow: '0 1px 6px rgba(30,48,80,0.3)' }}
+                            className="moro-palette-btn label-mono text-[9px] font-bold px-3 py-2 rounded-full press-soft shrink-0 bg-white/18 border border-white/24 backdrop-blur-md"
                         >
-                            Focus
+                            Tune
                         </button>
                     </div>
                 </div>
@@ -99,7 +101,7 @@ const CharacterWidget = React.memo(({
     onClick: () => void,
     contentColor: string
 }) => {
-    // 手帐聊天预览卡（参照黑白手帐桌面）：黑色聊天圆钮 + 红色未读角标 + 头像/气泡式消息预览
+    // Handwritten scrapbook chat preview: black chat button + small avatar bubble.
     return (
         <div className="h-full w-full group animate-rise-in" style={{ animationDelay: '60ms' }}>
              <div
@@ -108,7 +110,6 @@ const CharacterWidget = React.memo(({
                 style={{ color: contentColor }}
              >
                  <div className="relative h-full flex items-center px-5 py-3 gap-4">
-                     {/* 黑色聊天圆钮 + 未读红点（仿 WeChat 小组件入口） */}
                      <div className="relative shrink-0">
                          <div className="w-[52px] h-[52px] rounded-full flex items-center justify-center transition-transform duration-500 group-hover:-rotate-6"
                              style={{ background: '#1c1b22', boxShadow: '0 12px 26px -12px rgba(28,27,34,0.6)' }}>
@@ -121,7 +122,6 @@ const CharacterWidget = React.memo(({
                          )}
                      </div>
 
-                     {/* 消息预览：手写体标签 + 灰底气泡里的最近一条 */}
                      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                          <div className="flex items-center gap-2 min-w-0">
                              <span className="font-hand text-[17px] leading-none opacity-55 truncate">{char?.name || 'Letters'}</span>
@@ -147,31 +147,46 @@ const CharacterWidget = React.memo(({
     );
 });
 
-// 3. Square image slot (free-position widget)
-const DesktopSquareImage = React.memo(({ image, contentColor, onClick }: {
+// 3. Polaroid image slot (free-position widget)
+const DesktopPolaroidImage = React.memo(({ image, contentColor, onClick, caption = 'Polaroid', variant = 'portrait' }: {
     image?: string,
     contentColor: string,
     onClick: () => void,
+    caption?: string,
+    variant?: 'portrait' | 'wide',
 }) => {
     return (
         <div
             onClick={onClick}
-            className={`relative w-full h-full rounded-[1.75rem] overflow-hidden cursor-pointer animate-fade-in press-soft ${image ? '' : 'glass-card'}`}
+            className={`moro-polaroid-widget moro-polaroid-widget-${variant} group relative w-full h-full cursor-pointer animate-fade-in press-soft`}
             style={{ color: contentColor }}
         >
-            {image ? (
-                <img src={image} alt="" className="w-full h-full object-cover" loading="lazy" />
-            ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center bg-white/60 border border-[#ececf2]">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4 opacity-70">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                        </svg>
-                    </div>
-                    <div className="text-[8.5px] label-mono font-bold opacity-55">Add Image</div>
-                    <div className="text-[8.5px] opacity-40 leading-tight">从 外观 · 启动器组件<br/>设置一张方图</div>
+            <div className="moro-polaroid-paper relative h-full w-full overflow-hidden">
+                <span className="moro-polaroid-tape tape-left" />
+                <span className="moro-polaroid-tape tape-right" />
+                <div className="moro-polaroid-print relative overflow-hidden">
+                    {image ? (
+                        <>
+                            <img src={image} alt="" className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.035]" loading="lazy" />
+                            <div className="absolute inset-0 pointer-events-none moro-polaroid-print-glaze" />
+                        </>
+                    ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
+                            <div className="moro-polaroid-placeholder-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor" className="w-4 h-4 opacity-70">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                                </svg>
+                            </div>
+                            <div className="text-[8.5px] label-mono font-bold opacity-60">Photo</div>
+                            <div className="text-[9px] opacity-45 leading-tight">从外观里放一张桌面图</div>
+                        </div>
+                    )}
                 </div>
-            )}
+                <div className="moro-polaroid-caption-row min-w-0">
+                    <span className="truncate">{caption}</span>
+                    <i />
+                </div>
+            </div>
         </div>
     );
 });
@@ -189,7 +204,7 @@ const CALENDAR_WEEKDAYS = [
 // (Calendar + Upcoming Events 小组件页已移除)
 
 // --- Persist scroll page across remounts (e.g. returning from apps) ---
-const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v1';
+const DESK_ACTIVE_PAGE_KEY = 'moro_desktop_active_page_v2';
 const loadLastPageIndex = (): number => {
     try {
         if (typeof sessionStorage === 'undefined') return 0;
@@ -237,7 +252,7 @@ const loadStoredDeskOrder = (): string[] => {
     } catch { return []; }
 };
 
-const DESK_LAYOUT_KEY = 'moro_desktop_layout_v2';
+const DESK_LAYOUT_KEY = 'moro_desktop_layout_v11_visual_home_clean_wallpaper';
 const loadStoredDeskLayout = (): Record<string, DeskLayoutCell> => {
     try {
         const raw = JSON.parse(localStorage.getItem(DESK_LAYOUT_KEY) || '{}');
@@ -336,10 +351,81 @@ const findFirstFreeSpot = (
 const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Record<string, DeskLayoutCell> => {
     const itemsByKey = new Map(items.map(item => [item.key, item]));
     const layout: Record<string, DeskLayoutCell> = {};
+    const place = (key: string | undefined, page: number, col: number, row: number): boolean => {
+        if (!key || layout[key]) return false;
+        const item = itemsByKey.get(key);
+        if (!item) return false;
+        const desired = clampPlacement(item, page, col, row);
+        let blocked = false;
+        for (const [otherKey, otherPos] of Object.entries(layout)) {
+            const otherItem = itemsByKey.get(otherKey);
+            if (!otherItem) continue;
+            if (cellsOverlap(desired, item.w, item.h, otherPos, otherItem.w, otherItem.h)) {
+                blocked = true;
+                break;
+            }
+        }
+        if (!blocked) {
+            layout[key] = desired;
+            return true;
+        }
+        return false;
+    };
+
+    const appKeys = orderedKeys.filter(key => key.startsWith('app:'));
+    const placedAppKeys = new Set<string>();
+    const placeApp = (id: AppID, page: number, col: number, row: number) => {
+        const key = `app:${id}`;
+        if (appKeys.includes(key) && place(key, page, col, row)) placedAppKeys.add(key);
+    };
+
+    place('widget:music', 0, 0, 0);
+    place('widget:image', 0, 0, 3);
+    placeApp(AppID.Gallery, 0, 2, 3);
+    placeApp(AppID.Music, 0, 3, 3);
+    placeApp(AppID.HotNews, 0, 2, 5);
+    placeApp(AppID.Appearance, 0, 3, 5);
+    place('widget:schedule', 0, 0, 7);
+    placeApp(AppID.Personas, 0, 0, 9);
+    placeApp(AppID.Worldbook, 0, 1, 9);
+    placeApp(AppID.Presets, 0, 2, 9);
+    placeApp(AppID.Regex, 0, 3, 9);
+
+    place('widget:clock', 1, 0, 0);
+    place('widget:character', 1, 0, 2);
+    place('widget:weather', 1, 0, 4);
+    place('widget:text', 1, 0, 6);
+    placeApp(AppID.MemoryPalace, 1, 0, 8);
+    placeApp(AppID.Room, 1, 1, 8);
+    placeApp(AppID.Journal, 1, 2, 8);
+    placeApp(AppID.Study, 1, 0, 10);
+    placeApp(AppID.Theater, 1, 1, 10);
+    placeApp(AppID.Creative, 1, 2, 10);
+
+    let galleryRow = 0;
+    if (place('widget:imgwide', 2, 0, galleryRow)) galleryRow += 3;
+    const placedSmallPhoto = place('widget:imgtl', 2, 0, galleryRow) || place('widget:imgtr', 2, 2, galleryRow);
+    if (placedSmallPhoto) {
+        place('widget:imgtr', 2, 2, galleryRow);
+        galleryRow += 3;
+    }
+    const toolsRow = Math.min(galleryRow, 6);
+    placeApp(AppID.Bank, 2, 0, toolsRow);
+    placeApp(AppID.VRWorld, 2, 1, toolsRow);
+    placeApp(AppID.Almanac, 2, 2, toolsRow);
+    placeApp(AppID.LifeSim, 2, 3, toolsRow);
+    placeApp(AppID.Takeout, 2, 0, toolsRow + 2);
+    placeApp(AppID.Shop, 2, 1, toolsRow + 2);
+    placeApp(AppID.Harem, 2, 2, toolsRow + 2);
+    placeApp(AppID.Forum, 2, 3, toolsRow + 2);
+    placeApp(AppID.XhsFreeRoam, 2, 0, toolsRow + 4);
+    placeApp(AppID.XhsStock, 2, 1, toolsRow + 4);
+
     for (const key of orderedKeys) {
         const item = itemsByKey.get(key);
-        if (!item) continue;
-        layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, 0);
+        if (!item || layout[key]) continue;
+        const pageStart = key.startsWith('app:') ? (placedAppKeys.has(key) ? layout[key]?.page ?? 0 : 2) : 0;
+        layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, pageStart);
     }
     return layout;
 };
@@ -410,7 +496,7 @@ const WIDGET_LABELS: Record<string, string> = {
 const TEXT_WIDGET_KEY = 'moro_text_widget_v1';
 const DesktopTextWidget: React.FC<{ contentColor: string; editMode: boolean }> = ({ contentColor, editMode }) => {
     const [text, setText] = useState<string>(() => {
-        try { const v = localStorage.getItem(TEXT_WIDGET_KEY); return v != null ? v : '轻点编辑\n写点什么…'; } catch { return '轻点编辑'; }
+        try { const v = localStorage.getItem(TEXT_WIDGET_KEY); return v != null ? v : '今日备忘\n把想留下的话写在这里'; } catch { return '今日备忘'; }
     });
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(text);
@@ -423,13 +509,15 @@ const DesktopTextWidget: React.FC<{ contentColor: string; editMode: boolean }> =
         <>
             <button
                 onClick={() => { if (!editMode) { setDraft(text); setEditing(true); } }}
-                className="moro-widget-text w-full h-full glass-card rounded-[1.5rem] p-3 flex items-center justify-center text-center overflow-hidden active:scale-[0.98] transition-transform"
+                className="moro-widget-text moro-quote-widget w-full h-full px-4 py-3 flex flex-col justify-center text-left overflow-hidden active:scale-[0.98] transition-transform"
                 style={{ color: contentColor }}
                 aria-label="文字小组件"
             >
-                <span className="text-[13px] font-semibold leading-snug whitespace-pre-wrap break-words line-clamp-6" style={{ fontFamily: 'var(--font-hand)', textShadow: '0 1px 8px rgba(30,48,80,0.18)' }}>
+                <span className="moro-quote-mark">"</span>
+                <span className="moro-quote-copy whitespace-pre-wrap break-words line-clamp-4">
                     {text || '轻点编辑'}
                 </span>
+                <span className="moro-quote-rule" />
             </button>
             {editing && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-6" style={{ background: 'rgba(20,18,28,0.5)', backdropFilter: 'blur(3px)' }} onClick={() => setEditing(false)}>
@@ -537,15 +625,15 @@ const Launcher: React.FC = () => {
     const clampH = (n: number) => Math.max(1, Math.min(PAGE_ROWS, Math.round(n)));
     const widgetItems: DeskItem[] = ([
         // 参照手帐桌面设计稿：左半蓝色日期卡 + 右半天气卡（尺寸可在 主题 → 桌面小组件 覆盖）
-        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 2, h: 6 },
-        { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 3 },
+        { key: 'widget:clock', kind: 'widget', id: 'clock', w: 4, h: 2 },
+        { key: 'widget:weather', kind: 'widget', id: 'weather', w: 2, h: 2 },
         { key: 'widget:character', kind: 'widget', id: 'character', w: 4, h: 2 },
-        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 5 },
-        { key: 'widget:music', kind: 'widget', id: 'music', w: 2, h: 4 },
-        { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 4 },
-        { key: 'widget:text', kind: 'widget', id: 'text', w: 2, h: 2 },
-        ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 4 }] : []),
-        ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 4 }] : []),
+        { key: 'widget:schedule', kind: 'widget', id: 'schedule', w: 4, h: 2 },
+        { key: 'widget:music', kind: 'widget', id: 'music', w: 4, h: 3 },
+        { key: 'widget:image', kind: 'widget', id: 'image', w: 2, h: 3 },
+        { key: 'widget:text', kind: 'widget', id: 'text', w: 4, h: 2 },
+        ...(lw['tl'] ? [{ key: 'widget:imgtl', kind: 'widget' as const, id: 'imgtl', w: 2, h: 3 }] : []),
+        ...(lw['tr'] ? [{ key: 'widget:imgtr', kind: 'widget' as const, id: 'imgtr', w: 2, h: 3 }] : []),
         ...(lw['wide'] ? [{ key: 'widget:imgwide', kind: 'widget' as const, id: 'imgwide', w: 4, h: 3 }] : []),
     ] as DeskItem[])
         .filter(it => !prefs[it.id]?.hidden)
@@ -558,7 +646,15 @@ const Launcher: React.FC = () => {
                 h: p.h ? clampH(p.h) : it.h,
             };
         });
-    const appItems: DeskItem[] = gridApps.map(a => ({ key: `app:${a.id}`, kind: 'app', id: a.id, w: 1, h: 2 }));
+    const appItems: DeskItem[] = gridApps.map((a) => {
+        return {
+            key: `app:${a.id}`,
+            kind: 'app',
+            id: a.id,
+            w: 1,
+            h: 2,
+        };
+    });
     const byKey = new Map<string, DeskItem>();
     for (const it of [...widgetItems, ...appItems]) byKey.set(it.key, it);
 
@@ -908,6 +1004,7 @@ const Launcher: React.FC = () => {
   };
 
   const contentColor = theme.contentColor || '#2b2933';
+  const themeHue = Number.isFinite(theme.hue) ? theme.hue : 248;
   const dockStyle = theme.desktopDockStyle || 'glass';
   const dockShellStyle: React.CSSProperties =
       dockStyle === 'minimal' ? {
@@ -985,10 +1082,11 @@ const Launcher: React.FC = () => {
               return <DesktopTextWidget contentColor={contentColor} editMode={editMode} />;
           case 'image':
               return (
-                  <DesktopSquareImage
+                  <DesktopPolaroidImage
                       image={theme.launcherWidgets?.['dsq']}
                       contentColor={contentColor}
                       onClick={() => openApp(AppID.Appearance)}
+                      caption="Desk photo"
                   />
               );
           case 'imgtl':
@@ -998,9 +1096,13 @@ const Launcher: React.FC = () => {
               const src = theme.launcherWidgets?.[slot];
               if (!src) return null;
               return (
-                  <div className="w-full h-full rounded-2xl overflow-hidden shadow-md border border-white/20">
-                      <img src={src} className="w-full h-full object-cover" alt="" loading="lazy" />
-                  </div>
+                  <DesktopPolaroidImage
+                      image={src}
+                      contentColor={contentColor}
+                      onClick={() => openApp(AppID.Appearance)}
+                      caption={item.id === 'imgwide' ? 'Gallery memo' : 'Pocket shot'}
+                      variant={item.id === 'imgwide' ? 'wide' : 'portrait'}
+                  />
               );
           }
           default:
@@ -1009,7 +1111,13 @@ const Launcher: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none">
+    <div
+      className="moro-desktop-root h-full w-full flex flex-col relative z-10 overflow-hidden font-sans select-none"
+      style={{
+        color: contentColor,
+        '--moro-desktop-hue': themeHue,
+      } as React.CSSProperties}
+    >
 
       {/* 小组件自定义 CSS（主题 → 桌面小组件，.moro-widget-* 钩子类） */}
       {widgetCustomCss && <style>{widgetCustomCss}</style>}
@@ -1050,19 +1158,32 @@ const Launcher: React.FC = () => {
         </div>
       )}
 
-      {/* 手帐纸面氛围背景：点点网纹（仿手帐内页）+ 极淡的暖白光斑（纯渐变，无 blur，低开销） */}
-      <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 opacity-60" style={{
-              backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.16) 1.2px, transparent 0)',
-              backgroundSize: '17px 17px',
-          }}></div>
-          {/* 拼贴页眉：顶部蕾丝花边带（仿手帐贴纸边条） */}
-          <div className="absolute left-0 right-0 opacity-80" style={{ top: 'calc(var(--safe-top) + 1.85rem)' }}>
-              <div className="lace-edge w-full" />
-              <div className="lace-edge w-full" style={{ transform: 'scaleY(-1)', marginTop: '-2px', opacity: 0.5 }} />
+      <div className="moro-desktop-atmosphere absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute inset-0 moro-desktop-mesh" />
+          <div className="moro-theme-watermarks absolute inset-0">
+              <span>MoroPhone</span>
+              <span>Shining</span>
+              <span>CosmicLove</span>
+              <span>Finne</span>
+              <span>Memory</span>
+              <span>Polaroid</span>
           </div>
-          <div className="absolute -top-20 -right-20 w-80 h-80 rounded-full animate-drift-slow" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.5) 0%, transparent 70%)' }}></div>
-          <div className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full animate-drift-slower" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.4) 0%, transparent 70%)' }}></div>
+          <div className="moro-theme-sparkles absolute inset-0">
+              <span className="moro-star s1" />
+              <span className="moro-star s2" />
+              <span className="moro-star s3" />
+              <span className="moro-star s4" />
+              <span className="moro-star s5" />
+              <span className="moro-star s6" />
+              <span className="moro-star s7" />
+          </div>
+          <div className="moro-theme-collage absolute inset-0">
+              <span className="moro-polaroid-deco deco-a"><i /></span>
+              <span className="moro-polaroid-deco deco-b"><i /></span>
+              <span className="moro-vinyl-deco" />
+              <span className="moro-soft-sticker sticker-a" />
+              <span className="moro-soft-sticker sticker-b" />
+          </div>
       </div>
 
       {/* Scrollable Content Layer */}
@@ -1074,7 +1195,7 @@ const Launcher: React.FC = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onClickCapture={handleClickCapture}
-        className="flex-1 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
+        className="relative z-10 flex-1 flex overflow-x-auto snap-x snap-mandatory no-scrollbar cursor-grab active:cursor-grabbing"
         style={{
             scrollBehavior: 'smooth',
             overscrollBehaviorX: 'contain',
@@ -1092,7 +1213,7 @@ const Launcher: React.FC = () => {
                 key={idx}
                 data-desk-page={idx}
                 data-page-index={idx}
-                className="w-full flex-shrink-0 snap-center snap-always px-6 pt-12 pb-8 h-full relative"
+                className="moro-desktop-page w-full flex-shrink-0 snap-center snap-always px-5 pt-[calc(var(--safe-top)+3.15rem)] pb-7 h-full relative"
                 style={{ contentVisibility: 'auto', contain: 'layout paint', transform: 'translateZ(0)' }}
               >
                   {/* Free-positioned Desktop Decorations 保持挂在第 3 页（z-20 浮在网格之上，不挡点击） */}
@@ -1120,18 +1241,19 @@ const Launcher: React.FC = () => {
 
                   <div
                       data-desk-grid="true"
-                      className="w-full h-full grid grid-cols-4 gap-x-2 gap-y-2"
+                      className="moro-desktop-grid w-full h-full grid grid-cols-4 gap-x-3 gap-y-3"
                       style={{ gridTemplateRows: `repeat(${PAGE_ROWS}, minmax(0, 1fr))` }}
                   >
-                      {placed.map(({ item, col, row }) => (
+                      {placed.map(({ item, col, row }, itemIndex) => (
                           <div
                               key={item.key}
                               data-desk-item={item.key}
-                              className={`relative min-w-0 min-h-0 transition-[transform,opacity,filter,box-shadow] duration-200 will-change-transform ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode && item.kind === 'app' && editEffect === 'wiggle' ? 'animate-icon-jiggle' : ''} ${editMode && item.kind === 'app' && editEffect === 'breathe' ? 'animate-icon-breathe' : ''} ${draggingKey === item.key ? 'opacity-25 scale-[0.97]' : ''} ${dropTargetKey === item.key ? 'scale-[1.02] z-10' : ''}`}
+                              className={`moro-desk-item relative min-w-0 min-h-0 transition-[transform,opacity,filter,box-shadow] duration-200 will-change-transform ${item.kind === 'app' ? 'moro-desk-app-cell' : ''} ${item.kind === 'widget' ? `moro-widget-${item.id}` : ''} ${editMode && item.kind === 'app' && editEffect === 'wiggle' ? 'animate-icon-jiggle' : ''} ${editMode && item.kind === 'app' && editEffect === 'breathe' ? 'animate-icon-breathe' : ''} ${draggingKey === item.key ? 'opacity-25 scale-[0.97]' : ''} ${dropTargetKey === item.key ? 'scale-[1.02] z-10' : ''}`}
                               style={{
                                   gridColumn: `${col + 1} / span ${item.w}`,
                                   gridRow: `${row + 1} / span ${item.h}`,
-                                  boxShadow: dropTargetKey === item.key ? '0 0 0 2px rgba(43,41,51,0.16), 0 12px 24px -18px rgba(43,41,51,0.35)' : undefined,
+                                  animationDelay: `${Math.min(260, itemIndex * 24)}ms`,
+                                  boxShadow: dropTargetKey === item.key ? '0 0 0 2px rgba(255,255,255,0.62), 0 16px 28px -18px rgba(16,22,34,0.45)' : undefined,
                                   filter: dropTargetKey === item.key ? 'saturate(1.04)' : undefined,
                                   ...(editMode ? { touchAction: 'none' as const } : {}),
                               }}
@@ -1176,7 +1298,7 @@ const Launcher: React.FC = () => {
                {dockAppsConfig.map(app => (
                    <div key={app.id} className="relative">
                         <AppIcon app={app} onClick={() => openApp(app.id)} variant="dock" size="md" />
-                        {app.id === 'chat' && totalUnread > 0 && (
+                        {app.id === AppID.GroupChat && totalUnread > 0 && (
                             <div className="absolute -top-1 -right-1.5 w-5 h-5 bg-[#f43f3f] rounded-full text-white text-[9px] flex items-center justify-center border-2 border-white shadow-sm font-bold pointer-events-none animate-pop-in">
                                 {totalUnread > 9 ? '9+' : totalUnread}
                             </div>

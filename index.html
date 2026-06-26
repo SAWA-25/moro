@@ -561,6 +561,869 @@
           transform: scale(0.97);
         }
       }
+
+      /* ===== Moro desktop refresh ===== */
+      .moro-desktop-root {
+        --moro-desk-ink: #2f302d;
+        --moro-desk-muted: #8b8d86;
+        --moro-desk-paper: rgba(255, 255, 250, 0.74);
+        --moro-desk-border: rgba(255, 255, 255, 0.62);
+        --moro-desk-shadow: 0 18px 34px -28px rgba(58, 62, 56, 0.42);
+        background:
+          radial-gradient(ellipse at 18% 18%, rgba(119,174,218,0.2), transparent 36%),
+          radial-gradient(ellipse at 86% 78%, rgba(218,200,235,0.22), transparent 34%),
+          linear-gradient(135deg, transparent 0 28%, rgba(255,255,255,0.46) 28% 29%, transparent 29% 62%, rgba(144,181,210,0.12) 62% 63%, transparent 63%),
+          linear-gradient(180deg, #fbfdff 0%, #eef6fb 42%, #faf5fb 100%);
+        background-size: 100% 100%;
+        color: var(--moro-desk-ink);
+      }
+      .moro-theme-statusbar {
+        top: calc(var(--safe-top) + 0.65rem);
+        color: #20211f;
+        text-shadow: 0 1px 0 rgba(255,255,255,0.8);
+      }
+      .moro-status-time {
+        font-size: 13px;
+        line-height: 1;
+      }
+      .moro-status-signal {
+        width: 17px;
+        height: 12px;
+        display: inline-block;
+        background:
+          linear-gradient(to top, #20211f 0 4px, transparent 4px) 0 100% / 3px 4px no-repeat,
+          linear-gradient(to top, #20211f 0 7px, transparent 7px) 5px 100% / 3px 7px no-repeat,
+          linear-gradient(to top, #20211f 0 10px, transparent 10px) 10px 100% / 3px 10px no-repeat,
+          linear-gradient(to top, rgba(32,33,31,0.32) 0 12px, transparent 12px) 15px 100% / 3px 12px no-repeat;
+      }
+      .moro-status-wifi {
+        width: 15px;
+        height: 11px;
+        display: inline-block;
+        border: 2px solid #20211f;
+        border-left-color: transparent;
+        border-right-color: transparent;
+        border-bottom: 0;
+        border-radius: 16px 16px 0 0;
+        position: relative;
+      }
+      .moro-status-wifi::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        bottom: -4px;
+        width: 4px;
+        height: 4px;
+        border-radius: 999px;
+        background: #20211f;
+        transform: translateX(-50%);
+      }
+      .moro-status-battery {
+        width: 24px;
+        height: 12px;
+        border: 1.8px solid #20211f;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        padding: 1px;
+        position: relative;
+      }
+      .moro-status-battery::after {
+        content: '';
+        position: absolute;
+        right: -4px;
+        top: 3px;
+        width: 2px;
+        height: 5px;
+        border-radius: 0 2px 2px 0;
+        background: #20211f;
+      }
+      .moro-status-battery i {
+        display: block;
+        width: 78%;
+        height: 100%;
+        border-radius: 2px;
+        background: #20211f;
+      }
+      .moro-desktop-root .label-mono {
+        letter-spacing: 0;
+      }
+      .moro-desktop-root [class*="tracking-"] {
+        letter-spacing: 0 !important;
+      }
+      .moro-desktop-mesh {
+        background:
+          radial-gradient(ellipse at 16% 31%, rgba(255,255,255,0.52), transparent 22%),
+          radial-gradient(ellipse at 74% 22%, rgba(126,164,196,0.13), transparent 26%),
+          linear-gradient(115deg, transparent 0 18%, rgba(255,255,255,0.26) 18% 19%, transparent 19% 100%);
+        mix-blend-mode: normal;
+        opacity: 0.86;
+        animation: moroDesktopMesh 36s ease-in-out infinite alternate;
+      }
+      @keyframes moroDesktopMesh {
+        from { background-position: 0 0, 0 0, center; }
+        to { background-position: 10px -12px, -8px 12px, center; }
+      }
+      .moro-desktop-atmosphere::before,
+      .moro-desktop-atmosphere::after {
+        content: '';
+        position: absolute;
+        pointer-events: none;
+        border-radius: 42% 58% 54% 46%;
+        background: rgba(255,255,255,0.22);
+        filter: blur(0.2px);
+        opacity: 0.5;
+      }
+      .moro-desktop-atmosphere::before {
+        left: -5.2rem;
+        top: 17%;
+        width: 13rem;
+        height: 9rem;
+        transform: rotate(-18deg);
+      }
+      .moro-desktop-atmosphere::after {
+        right: -4.6rem;
+        bottom: 16%;
+        width: 12rem;
+        height: 11rem;
+        transform: rotate(14deg);
+      }
+      .moro-theme-watermarks {
+        display: none;
+      }
+      .moro-theme-watermarks span {
+        position: absolute;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 13px;
+        color: rgba(255,255,255,0.62);
+        text-shadow: 0 1px 1px rgba(47,48,45,0.08);
+        opacity: 0.55;
+      }
+      .moro-theme-watermarks span:nth-child(1) { left: 7%; top: 9%; }
+      .moro-theme-watermarks span:nth-child(2) { right: 9%; top: 16%; }
+      .moro-theme-watermarks span:nth-child(3) { left: 54%; top: 41%; }
+      .moro-theme-watermarks span:nth-child(4) { left: 13%; bottom: 22%; }
+      .moro-theme-watermarks span:nth-child(5) { right: 8%; bottom: 18%; }
+      .moro-theme-watermarks span:nth-child(6) { left: 34%; bottom: 9%; }
+      .moro-star {
+        position: absolute;
+        width: 34px;
+        height: 34px;
+        opacity: 0.74;
+        animation: moroStarTwinkle 4.8s ease-in-out infinite;
+      }
+      .moro-star::before,
+      .moro-star::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        background: rgba(255,255,255,0.92);
+        box-shadow: 0 0 12px rgba(255,255,255,0.58);
+      }
+      .moro-star::before {
+        width: 2px;
+        height: 100%;
+        border-radius: 999px;
+      }
+      .moro-star::after {
+        width: 100%;
+        height: 2px;
+        border-radius: 999px;
+      }
+      .moro-star.s1 { left: 14%; top: 13%; transform: scale(1.25); }
+      .moro-star.s2 { right: 12%; top: 26%; transform: scale(0.72); animation-delay: -1.2s; }
+      .moro-star.s3 { left: 48%; top: 21%; transform: scale(1.05); animation-delay: -2s; }
+      .moro-star.s4 { left: 8%; top: 58%; transform: scale(0.8); animation-delay: -0.6s; }
+      .moro-star.s5 { right: 16%; bottom: 28%; transform: scale(1.18); animation-delay: -3s; }
+      .moro-star.s6 { left: 42%; bottom: 18%; transform: scale(0.66); animation-delay: -2.4s; }
+      .moro-star.s7 { right: 33%; bottom: 11%; transform: scale(0.82); animation-delay: -1.8s; }
+      @keyframes moroStarTwinkle {
+        0%, 100% { opacity: 0.34; filter: blur(0.2px); }
+        50% { opacity: 0.86; filter: blur(0); }
+      }
+      .moro-theme-collage > span {
+        position: absolute;
+        display: block;
+      }
+      .moro-polaroid-deco {
+        width: 92px;
+        height: 112px;
+        border-radius: 3px;
+        background: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255,255,255,0.86);
+        box-shadow: 0 16px 28px -22px rgba(47,48,45,0.42), inset 0 -18px 0 rgba(255,255,255,0.72);
+        opacity: 0.52;
+      }
+      .moro-polaroid-deco i {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        top: 10px;
+        height: 68px;
+        border-radius: 2px;
+        background:
+          linear-gradient(145deg, rgba(196,214,226,0.42), rgba(238,228,240,0.34));
+      }
+      .moro-polaroid-deco.deco-a { left: 55%; top: 28%; rotate: -8deg; }
+      .moro-polaroid-deco.deco-b { right: 6%; top: 48%; rotate: 7deg; transform: scale(0.86); }
+      .moro-vinyl-deco {
+        width: 92px;
+        height: 92px;
+        right: 16%;
+        top: 35%;
+        border-radius: 999px;
+        opacity: 0.42;
+        background:
+          radial-gradient(circle at center, #f7f7f0 0 9px, #2b2b2b 10px 16px, transparent 17px),
+          repeating-radial-gradient(circle at center, #252525 0 5px, #131313 5px 9px);
+        box-shadow: 0 16px 22px -18px rgba(0,0,0,0.55);
+      }
+      .moro-soft-sticker {
+        display: none !important;
+      }
+      .moro-soft-sticker.sticker-a { left: 10%; top: 31%; rotate: -3deg; }
+      .moro-soft-sticker.sticker-b { right: 10%; bottom: 35%; rotate: 4deg; transform: scale(1.18); }
+      @keyframes moroDeskItemIn {
+        from { opacity: 0; transform: translateY(16px) scale(0.965); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .moro-desk-item {
+        animation: moroDeskItemIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      .moro-desktop-root .moro-widget-clock::after,
+      .moro-desktop-root .moro-widget-character::after,
+      .moro-desktop-root .moro-widget-schedule::after,
+      .moro-desktop-root .moro-widget-weather::after,
+      .moro-desktop-root .moro-widget-music::after {
+        content: none;
+      }
+      .moro-desktop-grid {
+        align-content: start;
+      }
+      .moro-desk-app-cell {
+        border-radius: 1.45rem;
+        perspective: 900px;
+      }
+      .moro-app-slot {
+        border-radius: 1.45rem;
+        transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .moro-polaroid-app {
+        align-items: center;
+        justify-content: center;
+        gap: 0.34rem;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        rotate: 0deg;
+        overflow: visible !important;
+        transition:
+          transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+          box-shadow 0.28s ease;
+      }
+      .moro-polaroid-photo {
+        flex: none !important;
+        width: min(100%, 4.15rem);
+        height: 3.72rem;
+        overflow: visible !important;
+        border-radius: 1.08rem;
+        background: linear-gradient(180deg, rgba(255,255,250,0.78), rgba(232,238,228,0.48));
+        border: 1px solid rgba(255,255,255,0.68);
+        box-shadow: 0 12px 20px -16px rgba(47,48,45,0.42), inset 0 1px 0 rgba(255,255,255,0.66);
+      }
+      .moro-polaroid-photo::before {
+        content: '';
+        position: absolute;
+        left: 11px;
+        top: -7px;
+        width: 30px;
+        height: 13px;
+        border-radius: 9px 9px 3px 3px;
+        background: linear-gradient(180deg, rgba(255,255,250,0.78), rgba(226,234,222,0.54));
+        border: 1px solid rgba(255,255,255,0.68);
+        border-bottom: 0;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.66);
+      }
+      .moro-aesthetic-tile-bg {
+        background:
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.2) 0 1px, transparent 1px 9px),
+          linear-gradient(145deg, rgba(249,250,244,0.9), rgba(220,228,216,0.52));
+        border-radius: inherit;
+      }
+      .moro-polaroid-custom-icon {
+        filter: saturate(0.22) contrast(0.9) brightness(1.08);
+        opacity: 0.92;
+        border-radius: inherit;
+      }
+      .moro-polaroid-symbol {
+        width: 58%;
+        aspect-ratio: 1;
+        color: var(--moro-desk-ink);
+        background: rgba(255,255,255,0.28);
+        border: 1px solid rgba(255,255,255,0.42);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.48);
+        backdrop-filter: blur(8px) saturate(0.9);
+        -webkit-backdrop-filter: blur(8px) saturate(0.9);
+      }
+      .moro-polaroid-flash {
+        opacity: 0;
+        background: linear-gradient(105deg, transparent 0 28%, rgba(255,255,255,0.58) 45%, transparent 62% 100%);
+        transform: translateX(-80%);
+        transition: opacity 0.25s ease, transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .moro-polaroid-caption {
+        color: var(--moro-desk-ink);
+        text-align: center;
+        text-shadow: 0 1px 0 rgba(255,255,255,0.72);
+        min-height: 1rem !important;
+        padding-top: 0 !important;
+        font-size: 11px;
+      }
+      .moro-polaroid-caption span {
+        max-width: 4.8rem;
+      }
+      .moro-desk-app-cell:nth-child(5n + 2) .moro-polaroid-photo {
+        border-radius: 1.35rem;
+        width: min(100%, 3.9rem);
+        height: 3.9rem;
+      }
+      .moro-desk-app-cell:nth-child(5n + 2) .moro-polaroid-photo::before {
+        display: none;
+      }
+      .moro-desk-app-cell:nth-child(6n + 3) .moro-polaroid-photo {
+        rotate: -2deg;
+        border-radius: 0.85rem;
+        width: min(100%, 4.05rem);
+        height: 4.22rem;
+        background: rgba(255,255,255,0.82);
+        box-shadow: 0 14px 24px -17px rgba(47,48,45,0.48), inset 0 -14px 0 rgba(255,255,255,0.72);
+      }
+      .moro-desk-app-cell:nth-child(6n + 3) .moro-polaroid-photo::before {
+        display: none;
+      }
+      .moro-desk-app-cell:nth-child(7n + 4) .moro-polaroid-photo {
+        background: linear-gradient(180deg, rgba(251,246,249,0.78), rgba(235,230,239,0.42));
+      }
+      .moro-desk-app-cell:nth-child(7n + 5) .moro-polaroid-photo {
+        background: linear-gradient(180deg, rgba(244,249,252,0.78), rgba(219,232,239,0.44));
+      }
+      @media (hover: hover) {
+        .moro-desk-app-cell:hover .moro-app-slot {
+          transform: translateY(-3px) scale(1.02);
+        }
+        .moro-desk-app-cell:hover .moro-polaroid-app {
+          filter: drop-shadow(0 12px 14px rgba(47,48,45,0.12));
+        }
+        .moro-desk-app-cell:hover .moro-polaroid-flash {
+          opacity: 0.58;
+          transform: translateX(76%);
+        }
+      }
+      .moro-clock-card {
+        background:
+          linear-gradient(180deg, rgba(255,255,250,0.72), rgba(236,241,230,0.42));
+        border: 1px solid rgba(255,255,255,0.66);
+        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.62);
+        color: var(--moro-desk-ink) !important;
+        backdrop-filter: blur(20px) saturate(0.94);
+        -webkit-backdrop-filter: blur(20px) saturate(0.94);
+      }
+      .moro-clock-sheen {
+        background:
+          linear-gradient(105deg, transparent 0 24%, rgba(255,255,255,0.28) 39%, transparent 54% 100%),
+          repeating-linear-gradient(90deg, rgba(47,48,45,0.04) 0 1px, transparent 1px 11px);
+        animation: moroClockSheen 7s ease-in-out infinite alternate;
+      }
+      .moro-clock-card [class*="bg-white"] {
+        background-color: rgba(255,255,255,0.36) !important;
+      }
+      .moro-clock-card [class*="border-white"] {
+        border-color: rgba(255,255,255,0.46) !important;
+      }
+      @keyframes moroClockSheen {
+        from { transform: translateX(-8%); opacity: 0.7; }
+        to { transform: translateX(8%); opacity: 1; }
+      }
+      .moro-image-widget,
+      .moro-desktop-root [data-desk-item].moro-widget-weather > .moro-widget-weather {
+        background:
+          linear-gradient(180deg, rgba(255,255,250,0.76), rgba(238,242,232,0.42));
+        border: 1px solid var(--moro-desk-border);
+        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.58);
+        backdrop-filter: blur(22px) saturate(0.96);
+        -webkit-backdrop-filter: blur(22px) saturate(0.96);
+        color: var(--moro-desk-ink) !important;
+      }
+      .moro-image-widget {
+        background:
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.2) 0 1px, transparent 1px 12px),
+          linear-gradient(145deg, rgba(255,255,250,0.74), rgba(224,232,220,0.32));
+      }
+      .moro-desktop-root .moro-character-card.glass-card {
+        background-color: rgba(255,255,255,0.88);
+        background-image: none !important;
+        box-shadow: 0 16px 36px -22px rgba(50,48,60,0.22);
+      }
+      .moro-quote-widget {
+        position: relative;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        color: var(--moro-desk-ink) !important;
+        text-shadow: 0 1px 0 rgba(255,255,255,0.75), 0 12px 24px rgba(79,105,125,0.1);
+      }
+      .moro-quote-widget::before {
+        content: '';
+        position: absolute;
+        inset: 0.4rem 0.7rem;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.28);
+        filter: blur(14px);
+        opacity: 0.92;
+      }
+      .moro-quote-mark {
+        position: relative;
+        z-index: 1;
+        height: 1rem;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 38px;
+        line-height: 0.72;
+        font-weight: 900;
+        color: rgba(70,94,112,0.26);
+      }
+      .moro-quote-copy {
+        position: relative;
+        z-index: 1;
+        font-size: 16px;
+        line-height: 1.22;
+        font-weight: 800;
+        color: rgba(38,46,54,0.7);
+      }
+      .moro-quote-rule {
+        position: relative;
+        z-index: 1;
+        display: block;
+        width: 3rem;
+        height: 2px;
+        margin-top: 0.62rem;
+        border-radius: 999px;
+        background: rgba(70,94,112,0.22);
+      }
+      .moro-polaroid-widget {
+        display: block;
+        overflow: visible;
+        color: var(--moro-desk-ink);
+        filter: drop-shadow(0 18px 18px rgba(47,48,45,0.08));
+      }
+      .moro-polaroid-paper {
+        display: flex;
+        flex-direction: column;
+        gap: 0.48rem;
+        padding: 0.64rem 0.64rem 0.56rem;
+        border-radius: 0.42rem;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,249,244,0.92)),
+          repeating-linear-gradient(90deg, rgba(47,48,45,0.025) 0 1px, transparent 1px 9px);
+        border: 1px solid rgba(255,255,255,0.92);
+        box-shadow:
+          0 18px 30px -25px rgba(47,48,45,0.54),
+          inset 0 1px 0 rgba(255,255,255,0.9),
+          inset 0 -14px 24px rgba(228,229,220,0.24);
+        transform-origin: center;
+        animation: moroPolaroidSettle 0.64s cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      .moro-polaroid-print {
+        flex: 1 1 auto;
+        min-height: 0;
+        border-radius: 0.22rem;
+        background:
+          radial-gradient(circle at 26% 22%, rgba(255,255,255,0.72), transparent 28%),
+          repeating-linear-gradient(90deg, rgba(172,184,178,0.16) 0 1px, transparent 1px 9px),
+          linear-gradient(145deg, rgba(224,234,226,0.92), rgba(246,241,235,0.8));
+        border: 1px solid rgba(47,48,45,0.07);
+        box-shadow: inset 0 1px 7px rgba(47,48,45,0.08);
+      }
+      .moro-polaroid-print img {
+        filter: saturate(0.72) contrast(0.96) brightness(1.04);
+      }
+      .moro-polaroid-print-glaze {
+        background:
+          linear-gradient(115deg, rgba(255,255,255,0.45), transparent 36% 62%, rgba(255,255,255,0.14)),
+          linear-gradient(180deg, transparent 54%, rgba(47,48,45,0.1));
+      }
+      .moro-polaroid-caption-row {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        min-height: 1.34rem;
+        padding: 0 0.1rem 0.02rem;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 11px;
+        font-weight: 700;
+        color: rgba(47,48,45,0.62);
+      }
+      .moro-polaroid-caption-row i {
+        flex: none;
+        width: 1.05rem;
+        height: 0.42rem;
+        border-radius: 999px;
+        background:
+          radial-gradient(circle, rgba(47,48,45,0.42) 0 1.5px, transparent 2px) 0 50% / 0.35rem 0.35rem repeat-x;
+        opacity: 0.45;
+      }
+      .moro-polaroid-tape {
+        position: absolute;
+        top: -0.34rem;
+        width: 2.3rem;
+        height: 0.78rem;
+        border-radius: 0.1rem;
+        background:
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.24) 0 4px, transparent 4px 8px),
+          rgba(232,231,219,0.76);
+        border: 1px solid rgba(255,255,255,0.72);
+        box-shadow: 0 5px 10px -8px rgba(47,48,45,0.32);
+        pointer-events: none;
+      }
+      .moro-polaroid-tape.tape-left {
+        left: 0.8rem;
+        rotate: -7deg;
+      }
+      .moro-polaroid-tape.tape-right {
+        right: 0.74rem;
+        rotate: 8deg;
+        opacity: 0.74;
+      }
+      .moro-polaroid-placeholder-icon {
+        width: 2.45rem;
+        height: 2.45rem;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.58);
+        border: 1px solid rgba(255,255,255,0.64);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+      }
+      .moro-polaroid-widget-wide .moro-polaroid-paper {
+        padding-bottom: 0.48rem;
+      }
+      .moro-polaroid-widget-wide .moro-polaroid-print {
+        border-radius: 0.28rem;
+      }
+      .moro-desktop-root [data-desk-item="widget:image"] .moro-polaroid-paper {
+        rotate: 2.4deg;
+      }
+      .moro-desktop-root [data-desk-item="widget:imgwide"] .moro-polaroid-paper {
+        rotate: -1.2deg;
+      }
+      .moro-desktop-root [data-desk-item="widget:imgtl"] .moro-polaroid-paper {
+        rotate: -3.2deg;
+      }
+      .moro-desktop-root [data-desk-item="widget:imgtr"] .moro-polaroid-paper {
+        rotate: 3.4deg;
+      }
+      @keyframes moroPolaroidSettle {
+        from { opacity: 0; transform: translateY(10px) scale(0.97); filter: brightness(1.12) saturate(0.68); }
+        to { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1) saturate(1); }
+      }
+      .moro-desktop-root [data-desk-item].moro-widget-weather > .moro-widget-weather > .absolute {
+        opacity: 0.24 !important;
+        filter: saturate(0.25);
+      }
+      .moro-routine-widget {
+        border-radius: 1.45rem;
+        background:
+          linear-gradient(120deg, rgba(255,255,255,0.76), rgba(247,251,255,0.46)),
+          linear-gradient(90deg, rgba(118,161,195,0.08), transparent 42%, rgba(235,210,228,0.1));
+        border: 1px solid rgba(255,255,255,0.72);
+        box-shadow: 0 16px 28px -24px rgba(63,82,98,0.38), inset 0 1px 0 rgba(255,255,255,0.76);
+        backdrop-filter: blur(18px) saturate(0.98);
+        -webkit-backdrop-filter: blur(18px) saturate(0.98);
+      }
+      .moro-routine-glow {
+        content: '';
+        position: absolute;
+        right: -2.4rem;
+        top: -2.4rem;
+        width: 7rem;
+        height: 7rem;
+        border-radius: 999px;
+        opacity: 0.1;
+        filter: blur(2px);
+      }
+      .moro-routine-kicker {
+        font-size: 9px;
+        line-height: 1;
+        font-weight: 900;
+        text-transform: uppercase;
+        color: rgba(49,66,80,0.42);
+      }
+      .moro-routine-date {
+        margin-top: 0.28rem;
+        font-size: 12px;
+        line-height: 1;
+        font-weight: 900;
+        color: rgba(49,66,80,0.72);
+      }
+      .moro-routine-open {
+        width: 1.9rem;
+        height: 1.9rem;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.46);
+        border: 1px solid rgba(255,255,255,0.64);
+      }
+      .moro-routine-timecard {
+        width: 5.1rem;
+        min-height: 2.95rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        border-radius: 1.05rem;
+        padding: 0.55rem 0.72rem;
+        background: rgba(255,255,255,0.58);
+        color: rgba(36,48,58,0.82);
+        border: 1px solid rgba(255,255,255,0.66);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+      }
+      .moro-routine-timecard span {
+        font-size: 19px;
+        line-height: 1;
+        font-weight: 900;
+        font-variant-numeric: tabular-nums;
+      }
+      .moro-routine-timecard i {
+        margin-top: 0.45rem;
+        font-size: 9px;
+        line-height: 1;
+        font-style: normal;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+        opacity: 0.45;
+      }
+      .moro-routine-activity {
+        font-size: 14px;
+        line-height: 1.05;
+        font-weight: 900;
+        color: rgba(36,48,58,0.78);
+      }
+      .moro-routine-note {
+        margin-top: 0.45rem;
+        font-size: 10px;
+        line-height: 1.2;
+        font-weight: 650;
+        color: rgba(49,66,80,0.42);
+      }
+      .moro-routine-timeline {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 0.36rem;
+        align-items: end;
+      }
+      .moro-routine-tick {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.34rem;
+      }
+      .moro-routine-tick span {
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 999px;
+      }
+      .moro-routine-tick i {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: clip;
+        font-size: 8px;
+        line-height: 1;
+        font-style: normal;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+      .moro-desktop-root .moro-widget-music > div {
+        border: 1px solid rgba(255,255,255,0.62);
+        box-shadow: var(--moro-desk-shadow), inset 0 1px 0 rgba(255,255,255,0.58) !important;
+      }
+      .moro-vinyl-widget {
+        background:
+          linear-gradient(180deg, rgba(255,255,250,0.82), rgba(231,237,226,0.48)),
+          repeating-linear-gradient(90deg, rgba(47,48,45,0.04) 0 1px, transparent 1px 14px);
+        border: 1px solid rgba(255,255,255,0.68);
+        box-shadow: 0 20px 34px -28px rgba(47,48,45,0.48), inset 0 1px 0 rgba(255,255,255,0.68);
+        backdrop-filter: blur(22px) saturate(0.96);
+        -webkit-backdrop-filter: blur(22px) saturate(0.96);
+      }
+      .moro-vinyl-sheen {
+        background:
+          linear-gradient(115deg, transparent 0 24%, rgba(255,255,255,0.42) 38%, transparent 56%),
+          linear-gradient(90deg, rgba(255,255,255,0.36), transparent 42%);
+      }
+      .moro-vinyl-wrap {
+        position: relative;
+        width: 7.15rem;
+        max-width: 38%;
+        min-width: 5.85rem;
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+      }
+      .moro-vinyl-disc {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        background:
+          radial-gradient(circle at center, transparent 0 13%, rgba(255,255,255,0.16) 13.5% 15%, transparent 15.5%),
+          repeating-radial-gradient(circle at center, #303030 0 5px, #121212 5px 9px);
+        box-shadow:
+          0 18px 24px -20px rgba(0,0,0,0.72),
+          inset 0 0 0 1px rgba(255,255,255,0.12),
+          inset 0 0 22px rgba(255,255,255,0.06);
+      }
+      .moro-vinyl-label {
+        position: absolute;
+        inset: 29%;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #2f302d;
+        background:
+          linear-gradient(145deg, #f7f7f0, #dfe7d8);
+        background-size: cover;
+        background-position: center;
+        border: 2px solid rgba(255,255,255,0.82);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+        filter: saturate(0.28) contrast(0.92) brightness(1.06);
+      }
+      .moro-vinyl-hole {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #141414;
+        border: 2px solid rgba(255,255,255,0.82);
+        transform: translate(-50%, -50%);
+      }
+      .moro-vinyl-play {
+        position: absolute;
+        right: -5px;
+        bottom: 7px;
+        width: 2.45rem;
+        height: 2.45rem;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #2f302d;
+        background: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255,255,255,0.72);
+        box-shadow: 0 12px 20px -14px rgba(47,48,45,0.55), inset 0 1px 0 rgba(255,255,255,0.76);
+      }
+      .moro-vinyl-chip {
+        display: inline-flex;
+        align-items: center;
+        height: 1.35rem;
+        padding: 0 0.62rem;
+        border-radius: 999px;
+        background: #2f302d;
+        color: #f8f7ef;
+        font-size: 10px;
+        font-weight: 900;
+        line-height: 1;
+      }
+      .moro-vinyl-tiny {
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 11px;
+        color: rgba(47,48,45,0.46);
+      }
+      .moro-waveform {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        height: 28px;
+      }
+      .moro-waveform span {
+        width: 3px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(47,48,45,0.78), rgba(47,48,45,0.28));
+      }
+      .moro-vinyl-progress {
+        position: relative;
+        flex: 1;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(47,48,45,0.12);
+      }
+      .moro-vinyl-progress i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: rgba(47,48,45,0.72);
+      }
+      .moro-vinyl-next {
+        width: 2rem;
+        height: 2rem;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        color: #2f302d;
+        background: rgba(255,255,255,0.54);
+        border: 1px solid rgba(255,255,255,0.64);
+      }
+      @keyframes moroVinylSpin {
+        to { transform: rotate(360deg); }
+      }
+      .moro-widget-clock .moro-clock-card {
+        padding: 0.9rem 0.95rem !important;
+        border-radius: 1.65rem !important;
+      }
+      .moro-widget-clock .moro-clock-card > .relative {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center;
+        gap: 0.9rem;
+      }
+      .moro-widget-clock .moro-clock-card > .relative > .flex.items-center.justify-between {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+      }
+      .moro-widget-clock .moro-clock-card .moro-clock-time {
+        font-size: 3.05rem !important;
+      }
+      .moro-widget-clock .moro-clock-card .mt-3 {
+        margin-top: 1.05rem !important;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .moro-widget-clock .moro-clock-card .mt-auto {
+        margin-top: 1.05rem !important;
+        padding: 0.62rem 0.72rem !important;
+        width: 42%;
+        min-width: 7.1rem;
+        flex: 0 0 auto;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .moro-desktop-mesh,
+        .moro-clock-sheen,
+        .moro-desk-item {
+          animation: none !important;
+        }
+      }
       /* ── 来往·入场/微交互动效（纯 CSS，避开 CDN Tailwind 自定义 animate-* 的不确定性）── */
       /* 列表行逐行轻起：上浮 + 极轻缩放 + 淡入（配合行内 animationDelay 做错峰）。
          只动 transform/opacity；与 .scrap-card 的 nth-child rotate 用的是独立 rotate 属性、互不打架。 */

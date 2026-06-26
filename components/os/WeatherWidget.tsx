@@ -36,26 +36,35 @@ const WeatherWidget: React.FC<{ contentColor: string }> = React.memo(({ contentC
         <>
         {detailOpen && <WeatherDetail onClose={() => setDetailOpen(false)} />}
         <div
-            className="moro-widget-weather glass-card relative h-full w-full rounded-[1.75rem] px-5 py-4 cursor-pointer press-soft animate-rise-in overflow-hidden flex flex-col justify-between"
+            className="moro-widget-weather relative h-full w-full rounded-[1.75rem] px-4 py-4 cursor-pointer press-soft animate-rise-in overflow-hidden flex flex-col justify-between"
             style={{ color: contentColor, animationDelay: '40ms' }}
             onClick={() => {
                 if (!configured) openApp(AppID.Settings);
                 else setDetailOpen(true);
             }}
         >
+            <div className="absolute inset-y-0 right-0 w-[42%] pointer-events-none opacity-70"
+                style={{
+                    background: 'linear-gradient(150deg, rgba(96,165,250,0.18), rgba(45,212,191,0.16), rgba(251,191,36,0.12))',
+                    clipPath: 'polygon(36% 0, 100% 0, 100% 100%, 0 100%)',
+                }}
+            />
             <div className="flex items-start justify-between gap-2">
-                <div className="text-[2rem] leading-none font-bold tracking-tight" style={{ fontFamily: 'var(--font-hand)' }}>
-                    {weather ? `${weather.temp}°` : '—°'}
+                <div>
+                    <div className="text-[9px] font-bold uppercase opacity-45">Weather</div>
+                    <div className="text-[2.05rem] leading-none font-black tabular-nums tracking-tight mt-1">
+                        {weather ? `${weather.temp}°` : '—°'}
+                    </div>
                 </div>
-                <WeatherGlyph icon={weather?.icon} className="w-10 h-10 opacity-45 shrink-0" />
+                <WeatherGlyph icon={weather?.icon} className="relative z-10 w-11 h-11 opacity-55 shrink-0" />
             </div>
-            <div className="min-w-0">
-                <div className="font-hand text-[17px] leading-none opacity-70 truncate">{weather ? desc : 'Cloudy'}</div>
+            <div className="relative z-10 min-w-0">
+                <div className="text-[14px] leading-none font-bold opacity-75 truncate">{weather ? desc : 'Cloudy'}</div>
                 {!configured && (
-                    <div className="text-[8.5px] opacity-40 mt-1 leading-tight truncate">点这里去 设置 配置天气</div>
+                    <div className="text-[9px] opacity-45 mt-1 leading-tight truncate">点这里去设置天气</div>
                 )}
                 {configured && weather?.city && (
-                    <div className="text-[8.5px] label-mono opacity-40 mt-1 truncate">{weather.city}</div>
+                    <div className="text-[9px] opacity-45 mt-1 truncate">{weather.city}</div>
                 )}
             </div>
         </div>

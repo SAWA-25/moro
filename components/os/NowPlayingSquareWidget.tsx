@@ -1,9 +1,3 @@
-/**
- * 方形「正在播放」组件 — 用于桌面第二页的风车布局
- * — 全局 Music Context 驱动，点击跳到 Music App。
- * — 填满父容器（由父的 aspect-square 约束成方形）。
- * — 黑白手帐桌面风：黑色胶囊卡 + 手写体 Music 标签 + 白色圆形播放钮。
- */
 import React from 'react';
 import { Play, Pause, SkipForward, MusicNote } from '@phosphor-icons/react';
 import { useOS } from '../../context/OSContext';
@@ -13,95 +7,98 @@ import { AppID } from '../../types';
 const NowPlayingSquareWidget: React.FC<{ contentColor: string }> = ({ contentColor }) => {
   const { openApp } = useOS();
   const { current, playing, progress, duration, togglePlay, nextSong } = useMusic();
-  void contentColor; // 黑胶囊固定白字，但保留 prop 兼容旧调用
+  void contentColor;
 
   const pct = duration > 0 ? (progress / duration) * 100 : 0;
   const hasSong = !!current;
-
   const albumPic = current?.albumPic;
   const title = current?.name || 'Music';
-  const subtitle = hasSong ? (current?.artists || '') : 'Tap to ...';
+  const subtitle = hasSong ? (current?.artists || '') : 'Tap to open';
 
   const stopProp = (e: React.MouseEvent) => { e.stopPropagation(); };
-  const handlePlay = (e: React.MouseEvent) => { e.stopPropagation(); if (hasSong) togglePlay(); else openApp(AppID.Music); };
-  const handleNext = (e: React.MouseEvent) => { e.stopPropagation(); if (hasSong) nextSong(); };
+  const handlePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (hasSong) togglePlay();
+    else openApp(AppID.Music);
+  };
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (hasSong) nextSong();
+  };
 
   return (
     <div
       onClick={() => openApp(AppID.Music)}
-      className="relative w-full h-full rounded-[2.4rem] overflow-hidden cursor-pointer animate-fade-in group press-soft flex flex-col items-center justify-between px-4 py-5 text-white"
-      style={{
-        background: 'linear-gradient(180deg, #232229 0%, #17161c 100%)',
-        boxShadow: '0 18px 38px -16px rgba(23,22,28,0.65)',
-      }}
+      className="moro-music-widget moro-vinyl-widget relative w-full h-full rounded-[2rem] overflow-hidden cursor-pointer animate-fade-in group press-soft text-[#2f302d]"
     >
-      {/* 背景封面：低透明度铺底，保持黑胶囊质感 */}
+      <div className="moro-vinyl-sheen pointer-events-none absolute inset-0" />
       {albumPic && (
-        <div className="absolute inset-0 opacity-20 pointer-events-none"
+        <div
+          className="absolute inset-0 pointer-events-none"
           style={{
             backgroundImage: `url(${albumPic})`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            transform: 'scale(1.1)',
+            filter: 'saturate(0.08) contrast(0.86) brightness(1.12)',
+            opacity: 0.08,
           }}
         />
       )}
 
-      {/* 顶部：暗色内圈唱片 / 封面 */}
-      <div
-        className="relative z-10 w-12 h-12 shrink-0 rounded-full overflow-hidden flex items-center justify-center"
-        style={{
-          background: 'rgba(255,255,255,0.08)',
-          border: '1px solid rgba(255,255,255,0.12)',
-        }}
-      >
-        {albumPic ? (
-          <img src={albumPic} alt="" className="w-full h-full object-cover rounded-full"
-            style={{ animation: playing ? 'spin 14s linear infinite' : 'none' }} />
-        ) : (
-          <MusicNote size={18} weight="fill" className="opacity-80" />
-        )}
-      </div>
-
-      {/* 中部：手写体 Music 标签 + 歌名 */}
-      <div className="relative z-10 flex flex-col items-center min-w-0 w-full px-1 gap-0.5">
-        <div className="font-hand text-[22px] leading-none truncate max-w-full">{hasSong ? 'Music' : title}</div>
-        <div className="font-hand text-[13px] opacity-60 truncate max-w-full">{hasSong ? title : subtitle}</div>
-        {hasSong && subtitle && (
-          <div className="text-[8.5px] opacity-40 truncate max-w-full">{subtitle}</div>
-        )}
-      </div>
-
-      {/* 底部：白色播放圆钮 + 下一首小箭头 + 细进度条 */}
-      <div className="relative z-10 w-full flex flex-col items-center gap-2.5">
-        <div className="flex items-center justify-center gap-3 w-full">
+      <div className="relative z-10 flex h-full items-center gap-4 px-4 py-3.5">
+        <div className="moro-vinyl-wrap shrink-0">
+          <div
+            className="moro-vinyl-disc"
+            style={{ animation: playing ? 'moroVinylSpin 16s linear infinite' : 'none' }}
+          >
+            <div
+              className="moro-vinyl-label"
+              style={albumPic ? {
+                backgroundImage: `linear-gradient(rgba(255,255,255,0.16), rgba(255,255,255,0.16)), url(${albumPic})`,
+              } : undefined}
+            >
+              {!albumPic && <MusicNote size={16} weight="fill" />}
+            </div>
+            <span className="moro-vinyl-hole" />
+          </div>
           <button
             aria-label={playing ? 'Pause' : 'Play'}
             onClick={handlePlay}
             onMouseDown={stopProp}
-            className="w-11 h-11 flex items-center justify-center rounded-full active:scale-95 transition"
-            style={{
-              background: '#ffffff',
-              color: '#17161c',
-              boxShadow: '0 8px 20px -8px rgba(0,0,0,0.6)',
-            }}
+            className="moro-vinyl-play active:scale-95 transition"
           >
-            {playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" className="translate-x-[1px]" />}
-          </button>
-          <button
-            aria-label="Next"
-            onClick={handleNext}
-            onMouseDown={stopProp}
-            className="w-7 h-7 flex items-center justify-center rounded-full opacity-60 hover:opacity-100 active:scale-90 transition disabled:opacity-25"
-            style={{ border: '1px solid rgba(255,255,255,0.25)' }}
-            disabled={!hasSong}
-          >
-            <SkipForward size={12} weight="fill" />
+            {playing ? <Pause size={15} weight="fill" /> : <Play size={15} weight="fill" className="translate-x-[1px]" />}
           </button>
         </div>
-        <div className="h-[3px] w-3/4 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.14)' }}>
-          <div className="h-full rounded-full transition-[width] duration-150"
-            style={{ width: `${pct}%`, background: 'rgba(255,255,255,0.85)' }} />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="moro-vinyl-chip">Music</span>
+            <span className="moro-vinyl-tiny">CosmicPhone</span>
+          </div>
+          <div className="mt-2 min-w-0">
+            <div className="truncate text-[17px] font-black leading-tight">{title}</div>
+            <div className="mt-0.5 truncate text-[10px] font-semibold opacity-45">{subtitle}</div>
+          </div>
+          <div className="moro-waveform mt-3" aria-hidden="true">
+            {Array.from({ length: 18 }).map((_, i) => (
+              <span key={i} style={{ height: `${8 + ((i * 7) % 18)}px`, opacity: playing ? 0.78 : 0.38 }} />
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="moro-vinyl-progress">
+              <i style={{ width: `${pct}%` }} />
+            </div>
+            <button
+              aria-label="Next"
+              onClick={handleNext}
+              onMouseDown={stopProp}
+              className="moro-vinyl-next active:scale-90 transition disabled:opacity-25"
+              disabled={!hasSong}
+            >
+              <SkipForward size={13} weight="fill" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
