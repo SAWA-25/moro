@@ -2,7 +2,7 @@
 
 
 import {
-    CharacterProfile, ChatTheme, Message, UserProfile,
+    CharacterProfile, ChatTheme, Message, PrivateChatArchive, UserProfile,
     Task, Anniversary, DiaryEntry, RoomTodo, RoomNote, DailySchedule,
     GalleryImage, FullBackupData, GroupProfile, SocialPost, StudyCourse, GameSession, Worldbook, NovelBook, Emoji, EmojiCategory,
     BankTransaction, SavingsGoal, BankFullState, DollhouseState, XhsStockImage, XhsActivityRecord, XhsFeedPost, SongSheet, QuizSession, GuidebookSession,
@@ -14,10 +14,11 @@ import {
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 74; // Bumped: v74 新增 truthdare_sessions（折子戏·真心话大冒险）
+const DB_VERSION = 75; // Bumped: v75 新增 private_chat_archives（絮语私聊档案）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
+const STORE_PRIVATE_CHAT_ARCHIVES = 'private_chat_archives';
 const STORE_EMOJIS = 'emojis';
 const STORE_EMOJI_CATEGORIES = 'emoji_categories'; 
 const STORE_THEMES = 'themes';
@@ -358,6 +359,21 @@ export const openDB = (): Promise<IDBDatabase> => {
               try {
                   msgStore.createIndex('groupId', 'groupId', { unique: false });
               } catch (e) { console.log('Index already exists'); }
+          }
+      }
+
+      // v75: 絮语私聊档案（每角色多份聊天记录，当前活跃记录仍恢复到 messages 表）
+      if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) {
+          const pcaStore = db.createObjectStore(STORE_PRIVATE_CHAT_ARCHIVES, { keyPath: 'id' });
+          pcaStore.createIndex('charId', 'charId', { unique: false });
+          pcaStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      } else {
+          const pcaStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_PRIVATE_CHAT_ARCHIVES);
+          if (pcaStore && !pcaStore.indexNames.contains('charId')) {
+              try { pcaStore.createIndex('charId', 'charId', { unique: false }); } catch { /* ignore */ }
+          }
+          if (pcaStore && !pcaStore.indexNames.contains('updatedAt')) {
+              try { pcaStore.createIndex('updatedAt', 'updatedAt', { unique: false }); } catch { /* ignore */ }
           }
       }
 
@@ -1063,6 +1079,80 @@ export const DB = {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
+    });
+  },
+
+  getPrivateChatArchives: async (charId: string): Promise<PrivateChatArchive[]> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) return [];
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_PRIVATE_CHAT_ARCHIVES, 'readonly');
+      const store = transaction.objectStore(STORE_PRIVATE_CHAT_ARCHIVES);
+      const request = store.index('charId').getAll(IDBKeyRange.only(charId));
+      request.onsuccess = () => {
+        const rows = (request.result || []) as PrivateChatArchive[];
+        rows.sort((a, b) => {
+          const pinDelta = Number(!!b.pinned) - Number(!!a.pinned);
+          return pinDelta || (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+        resolve(rows);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  getPrivateChatArchive: async (id: string): Promise<PrivateChatArchive | undefined> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) return undefined;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_PRIVATE_CHAT_ARCHIVES, 'readonly');
+      const request = transaction.objectStore(STORE_PRIVATE_CHAT_ARCHIVES).get(id);
+      request.onsuccess = () => resolve(request.result as PrivateChatArchive | undefined);
+      request.onerror = () => reject(request.error);
+    });
+  },
+
+  savePrivateChatArchive: async (archive: PrivateChatArchive): Promise<void> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_PRIVATE_CHAT_ARCHIVES, 'readwrite');
+      transaction.objectStore(STORE_PRIVATE_CHAT_ARCHIVES).put(archive);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('savePrivateChatArchive aborted'));
+    });
+  },
+
+  deletePrivateChatArchive: async (id: string): Promise<void> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_PRIVATE_CHAT_ARCHIVES, 'readwrite');
+      transaction.objectStore(STORE_PRIVATE_CHAT_ARCHIVES).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('deletePrivateChatArchive aborted'));
+    });
+  },
+
+  deletePrivateChatArchivesByCharId: async (charId: string): Promise<void> => {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(STORE_PRIVATE_CHAT_ARCHIVES)) return;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_PRIVATE_CHAT_ARCHIVES, 'readwrite');
+      const store = transaction.objectStore(STORE_PRIVATE_CHAT_ARCHIVES);
+      const request = store.index('charId').openCursor(IDBKeyRange.only(charId));
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        cursor.delete();
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error || new Error('deletePrivateChatArchivesByCharId aborted'));
     });
   },
 
@@ -3240,9 +3330,10 @@ export const DB = {
           });
       };
 
-      const [characters, messages, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas] = await Promise.all([
+      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
+          getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
           getAllFromStore(STORE_THEMES),
           getAllFromStore(STORE_EMOJIS),
           getAllFromStore(STORE_EMOJI_CATEGORIES),
@@ -3301,7 +3392,7 @@ export const DB = {
       const dollhouseRecord = bankData.find((d: any) => d.id === 'dollhouse_state');
 
       return {
-          characters, messages, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
+          characters, messages, privateChatArchives, customThemes: themes, savedEmojis: emojis, emojiCategories, assets, galleryImages, userProfile, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, savedJournalStickers: journalStickers, socialPosts, courses, games, worldbooks, novels,
           bankState: mainState ? { ...mainState, id: undefined } : undefined,
           bankDollhouse: dollhouseRecord?.data || undefined,
           bankTransactions: bankTx,
@@ -3352,7 +3443,7 @@ export const DB = {
       const db = await openDB();
       
       const availableStores = [
-          STORE_CHARACTERS, STORE_MESSAGES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
+          STORE_CHARACTERS, STORE_MESSAGES, STORE_PRIVATE_CHAT_ARCHIVES, STORE_THEMES, STORE_EMOJIS, STORE_EMOJI_CATEGORIES,
           STORE_ASSETS, STORE_GALLERY, STORE_USER, STORE_DIARIES,
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
           STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS, STORE_SONGS,
@@ -3408,6 +3499,7 @@ export const DB = {
       const plannedSections = [
           data.characters !== undefined || data.mediaAssets !== undefined,
           data.messages !== undefined,
+          data.privateChatArchives !== undefined,
           data.customThemes !== undefined,
           data.savedEmojis !== undefined,
           data.emojiCategories !== undefined,
@@ -3619,6 +3711,16 @@ export const DB = {
           await putItems(STORE_MESSAGES, data.messages || [], '聊天记录', true);
           data.messages = undefined as any;
       }, data.messages?.length || 0);
+
+      await runSection('私聊档案', data.privateChatArchives !== undefined, async () => {
+          if (!hasStore(STORE_PRIVATE_CHAT_ARCHIVES)) return;
+          const isPatchMode = !hasCharacterBackup;
+          if (!isPatchMode) {
+              await clearStore(STORE_PRIVATE_CHAT_ARCHIVES);
+          }
+          await putItems(STORE_PRIVATE_CHAT_ARCHIVES, data.privateChatArchives || [], '私聊档案', true);
+          data.privateChatArchives = undefined as any;
+      }, data.privateChatArchives?.length || 0);
 
       await runSection('聊天主题', data.customThemes !== undefined, async () => {
           await mergeStore(STORE_THEMES, data.customThemes, '聊天主题', true);

@@ -1861,6 +1861,8 @@ export interface CharacterProfile {
   contextLimit?: number;
   hideSystemLogs?: boolean; 
   hideBeforeMessageId?: number; 
+  /** 絮语私聊档案：当前打开的聊天记录快照 id。实际活跃消息仍落 messages 表，切换档案时恢复。 */
+  activePrivateChatId?: string;
   
   dateBackground?: string;
   sprites?: Record<string, string>;
@@ -3264,6 +3266,36 @@ export interface Message {
     };
 }
 
+/** 絮语私聊档案内的消息快照。id 会在恢复到活跃 messages 表时重新生成。 */
+export interface PrivateChatArchiveMessage {
+    originalId?: number;
+    charId: string;
+    role: 'user' | 'assistant' | 'system';
+    type: MessageType;
+    content: string;
+    timestamp: number;
+    metadata?: any;
+    replyTo?: {
+        id?: number;
+        content: string;
+        name: string;
+    };
+}
+
+/** 絮语私聊档案：参考 SillyTavern 的 per-character chat file 管理。 */
+export interface PrivateChatArchive {
+    id: string;
+    charId: string;
+    title: string;
+    pinned?: boolean;
+    createdAt: number;
+    updatedAt: number;
+    messageCount: number;
+    lastMessagePreview?: string;
+    messages: PrivateChatArchiveMessage[];
+    source?: 'moro' | 'sillytavern' | 'manual';
+}
+
 /** 电话 App：一条通话记录（拨出 / 接听 / 未接）。
  *  与 CallApp 的通话消息（metadata.callSessionId）互补：CallApp 落详细逐字稿，
  *  这里只落"通话发生过"的轻量条目，供电话 App 的通话记录列表展示与回拨。 */
@@ -3344,6 +3376,7 @@ export interface FullBackupData {
     characters?: CharacterProfile[];
     groups?: GroupProfile[]; 
     messages?: Message[];
+    privateChatArchives?: PrivateChatArchive[];
     customThemes?: ChatTheme[];
     savedEmojis?: Emoji[]; 
     emojiCategories?: EmojiCategory[]; 

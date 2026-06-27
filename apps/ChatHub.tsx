@@ -767,6 +767,9 @@ const ChatHub: React.FC = () => {
     const [tempArchiveTitle, setTempArchiveTitle] = useState('');
     const [tempSpecialCareIds, setTempSpecialCareIds] = useState<Set<string>>(new Set());
     const [tempSpecialCareNotify, setTempSpecialCareNotify] = useState(true);
+    const [groupArchiveSearch, setGroupArchiveSearch] = useState('');
+    const [renamingGroupRecordId, setRenamingGroupRecordId] = useState<string | null>(null);
+    const [renamingGroupRecordTitle, setRenamingGroupRecordTitle] = useState('');
     // 点开「改名小心思」系统提示后，要展示动机的那条消息
     const [nicknameThoughtMsg, setNicknameThoughtMsg] = useState<Message | null>(null);
     // 群聊表情抽屉搜索
@@ -905,7 +908,15 @@ const ChatHub: React.FC = () => {
 
     const openGroupSettings = (group = activeGroup) => {
         hydrateGroupSettingsDraft(group);
+        setGroupArchiveSearch('');
+        setRenamingGroupRecordId(null);
+        setRenamingGroupRecordTitle('');
         setModalType('settings');
+        if (group) {
+            saveActiveGroupChatSnapshot(group, group.chatArchiveTitle || group.name).catch(err => {
+                console.warn('[GroupChat] snapshot before settings failed', err);
+            });
+        }
     };
 
     // Load shared archive prompts from localStorage (same key as Chat app)
@@ -981,6 +992,10 @@ const ChatHub: React.FC = () => {
         setSearchTerm('');
         setSearchAllMsgs(await DB.getGroupMessages(activeGroup.id));
         setSearchOpen(true);
+    };
+    const openSearchFromGroupSettings = async () => {
+        setModalType('none');
+        await openSearch();
     };
 
     /** 命中结果：只搜文本/系统通知（图片/红包等富媒体 content 是 base64/URL，搜了无意义）；最新在前 */
@@ -1492,6 +1507,26 @@ const ChatHub: React.FC = () => {
             if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
             return (b.updatedAt || 0) - (a.updatedAt || 0);
         });
+    const groupArchiveTimeLabel = (ts?: number) => {
+        if (!ts) return '刚刚';
+        const d = new Date(ts);
+        return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    const groupArchivePreview = (items: Message[] = []) => {
+        const last = [...items]
+            .reverse()
+            .find(m => typeof m.content === 'string' && m.content.trim() && m.metadata?.source !== 'group_call');
+        if (!last) return '这页还没有消息。';
+        const text = String(last.content).replace(/\s+/g, ' ').trim();
+        return text.length > 52 ? `${text.slice(0, 52)}...` : text;
+    };
+    const groupArchiveMatches = (record: GroupChatRecord, activeMessages: Message[], query: string) => {
+        if (!query) return true;
+        const q = query.toLowerCase();
+        if (record.title.toLowerCase().includes(q)) return true;
+        const source = record.id === activeGroup?.activeChatRecordId ? activeMessages : record.messages;
+        return (source || []).some(m => typeof m.content === 'string' && m.content.toLowerCase().includes(q));
+    };
 
     const buildActiveGroupChatRecord = (group: GroupProfile, currentMessages: Message[], titleOverride?: string): GroupChatRecord => {
         const now = Date.now();
@@ -1614,9 +1649,9 @@ const ChatHub: React.FC = () => {
         addToast(`已切到「${target.title}」`, 'success');
     };
 
-    const handleRenameGroupChatRecord = async (record: GroupChatRecord) => {
+    const renameGroupChatRecordTo = async (record: GroupChatRecord, rawTitle: string) => {
         if (!activeGroup) return;
-        const title = window.prompt('给这份群聊记录改个标题', record.title)?.trim().slice(0, 80);
+        const title = rawTitle.trim().slice(0, 80);
         if (!title) return;
         const updatedRecords = (activeGroup.chatArchives || []).map(item =>
             item.id === record.id ? { ...item, title, updatedAt: Date.now() } : item);
@@ -1630,6 +1665,23 @@ const ChatHub: React.FC = () => {
         setActiveGroup(updatedGroup);
         if (isActive) setTempArchiveTitle(title);
         addToast('聊天记录标题已修改', 'success');
+    };
+
+    const handleRenameGroupChatRecord = async (record: GroupChatRecord) => {
+        const title = window.prompt('给这份群聊记录改个标题', record.title);
+        if (title === null) return;
+        await renameGroupChatRecordTo(record, title);
+    };
+
+    const beginInlineRenameGroupRecord = (record: GroupChatRecord) => {
+        setRenamingGroupRecordId(record.id);
+        setRenamingGroupRecordTitle(record.title);
+    };
+
+    const commitInlineRenameGroupRecord = async (record: GroupChatRecord) => {
+        await renameGroupChatRecordTo(record, renamingGroupRecordTitle);
+        setRenamingGroupRecordId(null);
+        setRenamingGroupRecordTitle('');
     };
 
     const handleToggleGroupChatRecordPinned = async (record: GroupChatRecord) => {
@@ -3606,22 +3658,27 @@ ${attachedImagesNote}
                                     {/* 点空白处收起菜单 */}
                                     <div className="fixed inset-0 z-40" onClick={() => setShowPlusMenu(false)} />
                                     <div
-                                        className="absolute right-0 top-full mt-2 z-50 w-44 overflow-hidden animate-pop-in"
-                                        style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}55`, outline: `1px dashed ${INK_SOFT}66`, outlineOffset: -5, borderRadius: 16, boxShadow: '0 22px 44px -20px rgba(20,18,14,0.55)', transform: 'rotate(-0.8deg)', color: INK }}
+                                        className="absolute right-0 top-full mt-2 z-50 w-44 overflow-hidden animate-pop-in bg-white"
+                                        style={{
+                                            border: '1px solid #f0cbd7',
+                                            borderRadius: 18,
+                                            boxShadow: '0 18px 40px -24px rgba(38,38,38,0.42), 0 1px 2px rgba(38,38,38,0.08)',
+                                            color: '#334155',
+                                        }}
                                     >
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('add-friend'); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-transform"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-all hover:bg-[#fff6f9]"
                                         >
-                                            <AddressBook size={18} weight="bold" className="shrink-0" style={{ color: INK }} />
+                                            <AddressBook size={18} weight="bold" className="shrink-0" style={{ color: '#9c5e74' }} />
                                             添个新朋友
                                         </button>
-                                        <ScrapDivider className="mx-3" />
+                                        <div className="mx-4 border-t" style={{ borderColor: '#f2d9e2' }} />
                                         <button
                                             onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); setTempArchiveTitle(''); }}
-                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-transform"
+                                            className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-all hover:bg-[#fff6f9]"
                                         >
-                                            <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: INK }} />
+                                            <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: '#9c5e74' }} />
                                             拉个新群聊
                                         </button>
                                     </div>
@@ -4551,74 +4608,133 @@ ${attachedImagesNote}
                     </div>
                 </GroupSettingsPage>
 
-                <GroupSettingsPage no="02" title="聊天记录" en="Chat Files">
-                    <div className="pt-3">
-                        <ScrapDivider className="mb-3" />
-                        <div className="flex items-center justify-between gap-2">
-                            <ScrapLabel en="CHAT FILES">群聊聊天记录</ScrapLabel>
-                            <button
-                                type="button"
-                                onClick={handleToggleGroupPinned}
-                                className="shrink-0 px-2.5 py-1.5 rounded-full text-[10px] font-black active:scale-95 transition-transform flex items-center gap-1"
-                                style={{ background: activeGroup?.pinned ? INK : 'rgba(255,253,247,0.82)', color: activeGroup?.pinned ? '#f6f3ec' : INK, border: `1px solid ${INK_SOFT}66` }}
-                            >
-                                {activeGroup?.pinned ? <PushPinSlash size={12} weight="bold" /> : <PushPin size={12} weight="bold" />}
-                                {activeGroup?.pinned ? '取消置顶' : '置顶群聊'}
-                            </button>
-                        </div>
-                        <ScrapInput value={tempArchiveTitle} onChange={e => setTempArchiveTitle(e.target.value)} onBlur={() => void saveGroupSettingsDraft()} placeholder="这份聊天记录的标题" />
-                        <div className="grid grid-cols-2 gap-2 mt-3">
-                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleStartNewGroupChat()} icon={<ChatsTeardrop size={15} weight="bold" />}>新聊天</ScrapBtn>
-                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleExportGroupChat('moro')} icon={<DownloadSimple size={15} weight="bold" />}>导出记录</ScrapBtn>
-                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleExportGroupChat('jsonl')} icon={<Export size={15} weight="bold" />}>导出 JSONL</ScrapBtn>
-                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => groupArchiveInputRef.current?.click()} icon={<UploadSimple size={15} weight="bold" />}>导入记录</ScrapBtn>
-                            <ScrapBtn variant="danger" full={false} className="text-xs" onClick={() => void handleDeleteAllGroupChatRecords()} icon={<Trash size={15} weight="bold" />}>删除当前</ScrapBtn>
-                        </div>
-                        <input type="file" ref={groupArchiveInputRef} className="hidden" accept=".json,.jsonl,.ndjson,application/json,text/plain" onChange={handleImportGroupChat} />
-                        <div className="mt-3 space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
-                            {getSortedGroupChatRecords(activeGroup).map(record => {
-                                const active = record.id === activeGroup?.activeChatRecordId;
-                                const count = active ? totalMsgCount : record.messages.length;
-                                return (
-                                    <div
-                                        key={record.id}
-                                        onClick={() => void handleSwitchGroupChatRecord(record.id)}
-                                        className="flex items-center gap-2.5 px-3 py-2 active:scale-[0.99] transition-transform cursor-pointer"
-                                        style={{ background: active ? 'rgba(31,29,26,0.10)' : 'rgba(255,253,247,0.78)', border: `1px solid ${active ? INK : `${INK_SOFT}55`}`, borderRadius: 12 }}
-                                    >
-                                        <FileText size={17} weight={active ? 'fill' : 'bold'} className="shrink-0" style={{ color: active ? INK : INK_SOFT }} />
-                                        <div className="flex-1 min-w-0">
+                <GroupSettingsPage no="02" title="群聊档案" en="Group Chats">
+                    {(() => {
+                        const sortedRecords = getSortedGroupChatRecords(activeGroup);
+                        const query = groupArchiveSearch.trim();
+                        const visibleRecords = sortedRecords.filter(record => groupArchiveMatches(record, messages, query));
+                        const pillStyle: React.CSSProperties = { background: '#fffdfa', border: '1px solid #eed6df', color: '#9c5e74', boxShadow: '0 1px 2px rgba(122,90,114,0.10)' };
+                        return (
+                            <div className="pt-2">
+                                <div className="py-3 border-b" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
                                             <div className="flex items-center gap-1.5">
-                                                {record.pinned && <PushPin size={11} weight="fill" className="shrink-0" style={{ color: INK }} />}
-                                                <span className="text-[12px] font-black truncate" style={{ color: INK }}>{record.title}</span>
+                                                <EnvelopeOpen size={13} weight="bold" style={{ color: '#c98ba0' }} />
+                                                <span className="text-[12.5px] font-bold" style={{ color: INK }}>当前群的聊天文件</span>
                                             </div>
-                                            <div className="text-[10px] mt-0.5 truncate" style={{ color: INK_SOFT }}>
-                                                {active ? '当前打开' : `${count} 条`} · {new Date(record.updatedAt || record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                            </div>
+                                            <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
+                                                像 SillyTavern 一样给同一个群保留多份聊天：新建、打开、改名、置顶、导入、导出、删除。
+                                            </p>
                                         </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <button type="button" onClick={e => { e.stopPropagation(); void handleToggleGroupChatRecordPinned(record); }} className="p-1 active:scale-90 transition-transform" title={record.pinned ? '取消置顶' : '置顶'}>
-                                                {record.pinned ? <PushPinSlash size={14} weight="bold" style={{ color: INK }} /> : <PushPin size={14} weight="bold" style={{ color: INK_SOFT }} />}
-                                            </button>
-                                            <button type="button" onClick={e => { e.stopPropagation(); void handleRenameGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="修改标题">
-                                                <PencilSimpleLine size={14} weight="bold" style={{ color: INK_SOFT }} />
-                                            </button>
-                                            <button type="button" onClick={e => { e.stopPropagation(); void handleExportGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="导出">
-                                                <DownloadSimple size={14} weight="bold" style={{ color: INK_SOFT }} />
-                                            </button>
-                                            <button type="button" onClick={e => { e.stopPropagation(); void handleDeleteGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="删除">
-                                                <Trash size={14} weight="bold" style={{ color: '#b45353' }} />
-                                            </button>
+                                        <div className="shrink-0 flex gap-1.5">
+                                            <button type="button" onClick={() => void handleStartNewGroupChat()} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform whitespace-nowrap" style={{ background: '#f6fbf8', border: '1px solid #dbe9e2', color: '#5f7f6d' }}>新聊天</button>
+                                            <button type="button" onClick={() => groupArchiveInputRef.current?.click()} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform whitespace-nowrap" style={pillStyle}>导入</button>
                                         </div>
                                     </div>
-                                );
-                            })}
-                            {getSortedGroupChatRecords(activeGroup).length === 0 && (
-                                <ScrapNote center className="py-2">点「新聊天」后，当前这份会存进其他聊天记录。</ScrapNote>
-                            )}
-                        </div>
-                        <ScrapNote className="mt-2">导入支持 Moro 记录包，也能读 SillyTavern JSONL；导入会作为一份新聊天记录并自动切过去。</ScrapNote>
-                    </div>
+                                    <div className="mt-3 space-y-2.5">
+                                        <div className="w-full">
+                                            <div className="text-[9px] mb-0.5 tracking-wider" style={{ ...GROUP_SETTINGS_MONO, color: '#a892a3' }}>SEARCH</div>
+                                            <input
+                                                value={groupArchiveSearch}
+                                                onChange={e => setGroupArchiveSearch(e.target.value)}
+                                                placeholder="搜索标题、预览或聊天正文..."
+                                                className="w-full px-3 py-2 text-[13px] outline-none rounded-[14px] placeholder:text-[#cfb8c4]"
+                                                style={{ color: INK, caretColor: '#d8a5b7', background: '#fffdfa', border: '1px solid #eed6df' }}
+                                            />
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button type="button" onClick={() => void openSearchFromGroupSettings()} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>查询记录</button>
+                                            <button type="button" onClick={() => void handleExportGroupChat('moro')} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>导出当前可见</button>
+                                            <button type="button" onClick={() => void handleExportGroupChat('jsonl')} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>导出 JSONL</button>
+                                            <button type="button" onClick={handleToggleGroupPinned} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={activeGroup?.pinned ? { background: '#5a3140', border: '1px solid #5a3140', color: '#fffdfa' } : pillStyle}>{activeGroup?.pinned ? '取消置顶群' : '置顶群聊'}</button>
+                                            <button type="button" onClick={() => void handleDeleteAllGroupChatRecords()} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={{ background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f' }}>删除当前</button>
+                                        </div>
+                                    </div>
+                                    <input type="file" ref={groupArchiveInputRef} className="hidden" accept=".json,.jsonl,.ndjson,application/json,text/plain" onChange={handleImportGroupChat} />
+                                </div>
+
+                                <div className="py-3">
+                                    <div className="flex items-center gap-1.5">
+                                        <EnvelopeOpen size={13} weight="bold" style={{ color: '#c98ba0' }} />
+                                        <span className="text-[12.5px] font-bold" style={{ color: INK }}>聊天记录列表</span>
+                                    </div>
+                                    <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
+                                        共 {sortedRecords.length} 份档案，置顶会排在最上面。
+                                    </p>
+
+                                    <div className="mt-3 space-y-2.5 max-h-[380px] overflow-y-auto no-scrollbar pr-1">
+                                        {visibleRecords.map(record => {
+                                            const active = record.id === activeGroup?.activeChatRecordId;
+                                            const renaming = renamingGroupRecordId === record.id;
+                                            const sourceMessages = active ? messages : record.messages;
+                                            const count = active ? totalMsgCount : record.messages.length;
+                                            return (
+                                                <div
+                                                    key={record.id}
+                                                    className="rounded-[14px] p-3"
+                                                    style={{ background: active ? '#fff4f7' : '#fffdfa', border: active ? '1px solid #eab6c6' : '1px solid #eed6df' }}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-1.5 min-w-0">
+                                                            {active && <span className="text-[10px] shrink-0" style={{ color: '#7aa58a' }}>当前</span>}
+                                                            {record.pinned && <span className="text-[10px] shrink-0" style={{ color: '#c98ba0' }}>置顶</span>}
+                                                            {renaming ? (
+                                                                <input
+                                                                    value={renamingGroupRecordTitle}
+                                                                    onChange={e => setRenamingGroupRecordTitle(e.target.value)}
+                                                                    className="min-w-0 flex-1 px-2 py-1 rounded-[10px] outline-none text-[12px] font-bold"
+                                                                    style={{ background: '#fff', border: '1px solid #e8cad4', color: INK }}
+                                                                    maxLength={80}
+                                                                    autoFocus
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') void commitInlineRenameGroupRecord(record);
+                                                                        if (e.key === 'Escape') { setRenamingGroupRecordId(null); setRenamingGroupRecordTitle(''); }
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <div className="text-[12.5px] font-bold truncate" style={{ color: INK }}>{record.title}</div>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[9.5px] mt-1" style={{ ...GROUP_SETTINGS_MONO, color: INK_SOFT }}>
+                                                            {count} 条 · {groupArchiveTimeLabel(record.updatedAt || record.createdAt)}
+                                                        </div>
+                                                        <div className="text-[10.5px] mt-1.5 leading-relaxed line-clamp-2" style={{ color: INK_SOFT }}>
+                                                            {groupArchivePreview(sourceMessages)}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                                        {renaming ? (
+                                                            <>
+                                                                <button type="button" onClick={() => void commitInlineRenameGroupRecord(record)} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={{ background: '#f6fbf8', border: '1px solid #dbe9e2', color: '#5f7f6d' }}>保存</button>
+                                                                <button type="button" onClick={() => { setRenamingGroupRecordId(null); setRenamingGroupRecordTitle(''); }} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>取消</button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <button type="button" onClick={() => void handleSwitchGroupChatRecord(record.id)} disabled={active} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform disabled:opacity-40" style={{ background: '#f6fbf8', border: '1px solid #dbe9e2', color: '#5f7f6d' }}>打开</button>
+                                                                <button type="button" onClick={() => beginInlineRenameGroupRecord(record)} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>改名</button>
+                                                                <button type="button" onClick={() => void handleToggleGroupChatRecordPinned(record)} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>{record.pinned ? '取消置顶' : '置顶'}</button>
+                                                                <button type="button" onClick={() => void handleExportGroupChatRecord(record, 'moro')} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>导出</button>
+                                                                <button type="button" onClick={() => void handleExportGroupChatRecord(record, 'jsonl')} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={pillStyle}>JSONL</button>
+                                                                <button type="button" onClick={() => void handleDeleteGroupChatRecord(record)} className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform" style={{ background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f' }}>删除</button>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {visibleRecords.length === 0 && (
+                                            <div className="rounded-[14px] px-3 py-5 text-center text-[11px]" style={{ background: '#fffdfa', border: '1px dashed #eadbe2', color: INK_SOFT }}>
+                                                {query ? '没有搜到匹配的群聊档案' : '还没有群聊档案。点「新聊天」会把当前群聊收进档案，并开启一页空白群聊。'}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </GroupSettingsPage>
 
                 <GroupSettingsPage no="03" title="公告与成员" en="Members">

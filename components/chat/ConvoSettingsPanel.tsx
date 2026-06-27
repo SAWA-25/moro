@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { CharacterProfile, ConvoSettings, EmojiCategory, AppID } from '../../types';
+import { CharacterProfile, ConvoSettings, EmojiCategory, AppID, PrivateChatArchive } from '../../types';
 import { processImage } from '../../utils/file';
 import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 import { fetchMiniMaxVoices, MiniMaxVoiceItem } from '../../utils/minimaxVoice';
@@ -12,9 +12,9 @@ import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
 
 /**
  * 聊天设置（会话设置）全屏面板。
- * 原 01~06 分区重排成 11 个功能区：
+ * 原 01~06 分区重排成 12 个功能区：
  *   P.01 名字与名片 / P.02 氛围布置 / P.03 记性 / P.04 说话的样子 / P.05 TA 的小日子
- *   P.06 相片角 / P.07 世界书挂载 / P.08 界面背景 / P.09 外观设置 / P.10 使用习惯 / P.11 数据管理
+ *   P.06 相片角 / P.07 世界书挂载 / P.08 界面背景 / P.09 外观设置 / P.10 使用习惯 / P.11 私聊档案 / P.12 数据管理
  * 功能、数据流与持久化与旧版完全一致：会话专属配置写 char.convoSettings，
  * 老字段沿用原 per-char 持久化；所有更改即时保存。
  */
@@ -42,6 +42,15 @@ interface ConvoSettingsPanelProps {
     onForceVectorize?: () => void;
     onExportChat: () => void;
     messagesCount: number;
+    privateChatArchives: PrivateChatArchive[];
+    activePrivateChatId?: string;
+    onNewPrivateChat: () => void;
+    onSwitchPrivateChat: (archiveId: string) => void;
+    onRenamePrivateChat: (archiveId: string, title: string) => void;
+    onTogglePinPrivateChat: (archiveId: string) => void;
+    onDeletePrivateChat: (archiveId: string) => void;
+    onExportPrivateChat: (archiveId: string) => void;
+    onImportPrivateChat: (file: File) => void;
     // 表情
     categories: EmojiCategory[];
     emojiCounts: Record<string, number>;
@@ -203,17 +212,44 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         onSetTranslateSourceLang, onSetTranslateLang,
         onOpenHistoryManager, onClearHistory, onClearChatContextOnly, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
+        privateChatArchives, activePrivateChatId,
+        onNewPrivateChat, onSwitchPrivateChat, onRenamePrivateChat, onTogglePinPrivateChat, onDeletePrivateChat, onExportPrivateChat, onImportPrivateChat,
         categories, emojiCounts, onSaveCategoryVisibility,
         onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
     } = props;
-    const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp } = useOS();
+    const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp, userProfile } = useOS();
 
     const cs: ConvoSettings = char.convoSettings || {};
     const updateConvo = (patch: Partial<ConvoSettings>) => {
         updateCharacter(char.id, { convoSettings: { ...char.convoSettings, ...patch } });
     };
+    const defaultUserRemark = useMemo(() => {
+        const name = (userProfile?.name || '').trim();
+        return (name || '你').slice(0, 24);
+    }, [userProfile?.name]);
+
+    useEffect(() => {
+        if ((char.convoSettings?.userNickname || '').trim()) return;
+        const now = Date.now();
+        updateCharacter(char.id, {
+            convoSettings: {
+                ...char.convoSettings,
+                userNickname: defaultUserRemark,
+                userRemarkMotivation: `默认备注：先按你的个人资料称呼你，之后 ${char.name} 可以根据剧情和相处主动改。`,
+                userRemarkUpdatedAt: now,
+                userRemarkHistory: [
+                    { remark: defaultUserRemark, motivation: '私聊建立时自动生成的初始备注。', at: now },
+                    ...(char.convoSettings?.userRemarkHistory || []),
+                ].slice(0, 20),
+            },
+        });
+    }, [char.id, char.name, char.convoSettings?.userNickname, defaultUserRemark]);
 
     const bgInputRef = useRef<HTMLInputElement>(null);
+    const archiveImportRef = useRef<HTMLInputElement>(null);
+    const [archiveSearch, setArchiveSearch] = useState('');
+    const [renameArchiveId, setRenameArchiveId] = useState<string | null>(null);
+    const [renameTitle, setRenameTitle] = useState('');
 
     // ── 拉黑保护（整体开关，localStorage 持久化，对所有会话生效） ──
     const [charBlockProtect, setCharBlockProtect] = useState(() => isCharBlockDisabled());
@@ -221,6 +257,30 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     // ── MiniMax 音色 ──
     const [voices, setVoices] = useState<MiniMaxVoiceItem[] | null>(null);
     const [voicesLoading, setVoicesLoading] = useState(false);
+    const filteredPrivateArchives = useMemo(() => {
+        const q = archiveSearch.trim().toLowerCase();
+        if (!q) return privateChatArchives;
+        return privateChatArchives.filter(a =>
+            a.title.toLowerCase().includes(q)
+            || (a.lastMessagePreview || '').toLowerCase().includes(q)
+            || (a.messages || []).some(m => (m.content || '').toLowerCase().includes(q))
+        );
+    }, [archiveSearch, privateChatArchives]);
+    const archiveTimeLabel = (ts?: number) => {
+        if (!ts) return '刚刚';
+        const d = new Date(ts);
+        return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    const beginRenameArchive = (archive: PrivateChatArchive) => {
+        setRenameArchiveId(archive.id);
+        setRenameTitle(archive.title);
+    };
+    const commitRenameArchive = () => {
+        if (!renameArchiveId || !renameTitle.trim()) return;
+        onRenamePrivateChat(renameArchiveId, renameTitle);
+        setRenameArchiveId(null);
+        setRenameTitle('');
+    };
     const loadVoices = async () => {
         if (voices || voicesLoading) return;
         const key = resolveMiniMaxApiKey(apiConfig);
@@ -1117,8 +1177,113 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     />
                 </Page>
 
-                {/* ═══ P.11 数据管理 ═══ */}
-                <Page no="11" title="数据管理" en="Data" tape="blush" pattern="heart" paper="cream">
+                {/* ═══ P.11 私聊档案 ═══ */}
+                <Page no="11" title="私聊档案" en="Private Chats" tape="blush" pattern="heart" paper="cream">
+                    <Entry
+                        mark="✉" title="当前角色的聊天文件"
+                        note="像 SillyTavern 一样给同一个角色保留多份私聊：新建、打开、改名、置顶、导入、导出、删除。"
+                        side={
+                            <div className="flex gap-1.5">
+                                <PinButton tone="mint" onClick={onNewPrivateChat}>新聊天</PinButton>
+                                <PinButton onClick={() => archiveImportRef.current?.click()}>导入</PinButton>
+                            </div>
+                        }
+                    >
+                        <input
+                            ref={archiveImportRef}
+                            type="file"
+                            accept=".json,.jsonl,application/json"
+                            className="hidden"
+                            onChange={e => {
+                                const f = e.target.files?.[0];
+                                if (f) onImportPrivateChat(f);
+                                e.target.value = '';
+                            }}
+                        />
+                        <div className="grid grid-cols-1 gap-2.5">
+                            <LineInput
+                                value={archiveSearch}
+                                onChange={setArchiveSearch}
+                                placeholder="搜索标题、预览或聊天正文…"
+                                tag="SEARCH"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                                <PinButton onClick={onOpenHistoryManager}>查当前记录</PinButton>
+                                <PinButton onClick={onExportChat}>导出当前可见</PinButton>
+                            </div>
+                        </div>
+                    </Entry>
+
+                    <Entry mark="✉" title="聊天记录列表" note={`共 ${privateChatArchives.length} 份档案，置顶会排在最上面。`}>
+                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                            {filteredPrivateArchives.length === 0 && (
+                                <div className="rounded-[14px] px-3 py-5 text-center text-[11px]" style={{ background: '#fffdfa', border: '1px dashed #eadbe2', color: PAPER_TONES.inkSoft }}>
+                                    {archiveSearch.trim() ? '没有搜到匹配的私聊档案' : '还没有私聊档案。点「新聊天」会把当前聊天收进档案，并开启一页空白私聊。'}
+                                </div>
+                            )}
+
+                            {filteredPrivateArchives.map(archive => {
+                                const active = archive.id === activePrivateChatId;
+                                const renaming = renameArchiveId === archive.id;
+                                return (
+                                    <div key={archive.id} className="rounded-[14px] p-3" style={{ background: active ? '#fff4f7' : '#fffdfa', border: active ? '1px solid #eab6c6' : '1px solid #eed6df' }}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    {archive.pinned && <span className="text-[10px] shrink-0" style={{ color: '#c98ba0' }}>置顶</span>}
+                                                    {active && <span className="text-[10px] shrink-0" style={{ color: '#7aa58a' }}>当前</span>}
+                                                    {renaming ? (
+                                                        <input
+                                                            value={renameTitle}
+                                                            onChange={e => setRenameTitle(e.target.value)}
+                                                            className="min-w-0 flex-1 px-2 py-1 rounded-[10px] outline-none text-[12px] font-bold"
+                                                            style={{ background: '#fff', border: '1px solid #e8cad4', color: PAPER_TONES.ink }}
+                                                            maxLength={80}
+                                                            autoFocus
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') commitRenameArchive();
+                                                                if (e.key === 'Escape') { setRenameArchiveId(null); setRenameTitle(''); }
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <div className="text-[12.5px] font-bold truncate" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{archive.title}</div>
+                                                    )}
+                                                </div>
+                                                <div className="text-[9.5px] mt-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>
+                                                    {archive.messageCount} 条 · {archiveTimeLabel(archive.updatedAt)}
+                                                    {archive.source === 'sillytavern' ? ' · ST 导入' : ''}
+                                                </div>
+                                                <div className="text-[10.5px] mt-1.5 leading-relaxed line-clamp-2" style={{ color: PAPER_TONES.inkSoft }}>
+                                                    {archive.lastMessagePreview || '这页还没有消息'}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-1.5 mt-2.5">
+                                            {renaming ? (
+                                                <>
+                                                    <PinButton tone="mint" onClick={commitRenameArchive}>保存</PinButton>
+                                                    <PinButton onClick={() => { setRenameArchiveId(null); setRenameTitle(''); }}>取消</PinButton>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <PinButton tone="mint" onClick={() => onSwitchPrivateChat(archive.id)} disabled={active}>打开</PinButton>
+                                                    <PinButton onClick={() => beginRenameArchive(archive)}>改名</PinButton>
+                                                    <PinButton onClick={() => onTogglePinPrivateChat(archive.id)}>{archive.pinned ? '取消置顶' : '置顶'}</PinButton>
+                                                    <PinButton onClick={() => onExportPrivateChat(archive.id)}>导出</PinButton>
+                                                    <PinButton onClick={() => onDeletePrivateChat(archive.id)}>删除</PinButton>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Entry>
+                </Page>
+
+                {/* ═══ P.12 数据管理 ═══ */}
+                <Page no="12" title="数据管理" en="Data" tape="blush" pattern="heart" paper="cream">
                     <Entry
                         mark="❒" title="导出聊天记录"
                         note={`当前有 ${messagesCount} 条看得见的消息，可以导出为 JSON 文件。`}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
 import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
@@ -64,6 +64,190 @@ type InstantToolUiStatus = {
     text: string;
     sessionId?: string;
     updatedAt?: number;
+};
+
+const PRIVATE_CHAT_ARCHIVE_EXPORT_TYPE = 'moro_private_chat_archive';
+const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
+    'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'chat_forward',
+    'xhs_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
+    'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
+    'relay_card', 'checkin_card', 'gift_card',
+]);
+
+const makePrivateChatArchiveId = () => `pchat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const cloneArchiveValue = <T,>(value: T): T => {
+    if (value === undefined || value === null) return value;
+    try {
+        return structuredClone(value);
+    } catch {
+        try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+    }
+};
+
+const privateChatFileBaseName = (name: string) => {
+    const raw = (name || '导入聊天').replace(/\.[^.]+$/, '').trim();
+    return raw || '导入聊天';
+};
+
+const formatPrivateChatTitleTime = (ts: number) => {
+    const d = new Date(ts);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const privateChatPreview = (text: string, max = 44) => {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+    return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
+};
+
+const asMessageType = (raw: any): MessageType => {
+    return KNOWN_MESSAGE_TYPES.has(raw) ? raw as MessageType : 'text';
+};
+
+const toPrivateChatMessages = (source: Message[], charId: string): PrivateChatArchiveMessage[] => {
+    return (source || [])
+        .filter(m => !m.groupId && m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
+        .map(m => ({
+            originalId: m.id,
+            charId,
+            role: m.role,
+            type: asMessageType(m.type),
+            content: m.content || '',
+            timestamp: typeof m.timestamp === 'number' ? m.timestamp : Date.now(),
+            metadata: cloneArchiveValue(m.metadata),
+            replyTo: m.replyTo ? cloneArchiveValue(m.replyTo) : undefined,
+        }));
+};
+
+const derivePrivateChatArchiveMeta = (messages: PrivateChatArchiveMessage[], fallbackTitle: string) => {
+    const sorted = [...messages].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const lastText = [...sorted].reverse().find(m => (m.content || '').trim());
+    const firstText = sorted.find(m => m.role !== 'system' && (m.content || '').trim()) || lastText;
+    const titleFromText = firstText ? privateChatPreview(firstText.content, 18) : '';
+    const title = titleFromText || fallbackTitle;
+    return {
+        title,
+        messageCount: messages.length,
+        lastMessagePreview: lastText ? privateChatPreview(lastText.content, 52) : '',
+        updatedAt: lastText?.timestamp || Date.now(),
+    };
+};
+
+const normalizeLooseChatMessages = (
+    rawMessages: any[],
+    char: CharacterProfile,
+    source: PrivateChatArchive['source'],
+): PrivateChatArchiveMessage[] => {
+    const now = Date.now();
+    return rawMessages
+        .map((raw, index): PrivateChatArchiveMessage | null => {
+            if (!raw || typeof raw !== 'object') return null;
+            if ((raw as any).chat_metadata || (raw as any).user_name || (raw as any).character_name) return null;
+            const content = String(raw.content ?? raw.mes ?? raw.message ?? raw.text ?? '').trim();
+            const extra = raw.extra && typeof raw.extra === 'object' ? raw.extra : undefined;
+            const role: PrivateChatArchiveMessage['role'] =
+                raw.role === 'system' || raw.is_system ? 'system'
+                : raw.role === 'assistant' || raw.role === 'char' || raw.is_user === false ? 'assistant'
+                : raw.role === 'user' || raw.is_user === true ? 'user'
+                : raw.name && String(raw.name).trim() === char.name ? 'assistant'
+                : 'user';
+            const parsedTs = (() => {
+                if (typeof raw.timestamp === 'number') return raw.timestamp;
+                if (typeof raw.createdAt === 'number') return raw.createdAt;
+                if (typeof raw.send_date === 'number') return raw.send_date;
+                const dateText = raw.send_date || raw.timestamp || raw.createdAt || raw.date;
+                if (dateText) {
+                    const parsed = Date.parse(String(dateText));
+                    if (Number.isFinite(parsed)) return parsed;
+                }
+                return now + index;
+            })();
+            if (!content && !extra?.image && !raw.image) return null;
+            return {
+                originalId: typeof raw.id === 'number' ? raw.id : undefined,
+                charId: char.id,
+                role,
+                type: asMessageType(raw.type),
+                content,
+                timestamp: parsedTs,
+                metadata: {
+                    ...(raw.metadata && typeof raw.metadata === 'object' ? cloneArchiveValue(raw.metadata) : {}),
+                    ...(extra ? { sillyTavernExtra: cloneArchiveValue(extra) } : {}),
+                    ...(source ? { importedArchiveSource: source } : {}),
+                },
+                replyTo: raw.replyTo ? cloneArchiveValue(raw.replyTo) : undefined,
+            };
+        })
+        .filter(Boolean) as PrivateChatArchiveMessage[];
+};
+
+const parsePrivateChatArchiveImport = (fileName: string, rawText: string, char: CharacterProfile): PrivateChatArchive => {
+    const fallbackTitle = privateChatFileBaseName(fileName);
+    const build = (
+        messages: PrivateChatArchiveMessage[],
+        source: PrivateChatArchive['source'],
+        title?: string,
+        createdAt?: number,
+        updatedAt?: number,
+    ): PrivateChatArchive => {
+        const now = Date.now();
+        const meta = derivePrivateChatArchiveMeta(messages, title || fallbackTitle || `新聊天 ${formatPrivateChatTitleTime(now)}`);
+        return {
+            id: makePrivateChatArchiveId(),
+            charId: char.id,
+            title: (title || meta.title || fallbackTitle).slice(0, 80),
+            pinned: false,
+            createdAt: createdAt || messages[0]?.timestamp || now,
+            updatedAt: updatedAt || meta.updatedAt || now,
+            messageCount: messages.length,
+            lastMessagePreview: meta.lastMessagePreview,
+            messages,
+            source,
+        };
+    };
+
+    const trimmed = rawText.trim();
+    if (!trimmed) throw new Error('文件里没有可导入的聊天记录');
+
+    // SillyTavern JSONL：每行一个消息/元数据对象，首行通常也以 "{" 开头。
+    if (trimmed.includes('\n')) {
+        try {
+            const rows = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => JSON.parse(line));
+            if (rows.length > 1) {
+                const messages = normalizeLooseChatMessages(rows, char, 'sillytavern');
+                if (messages.length) {
+                    const metaRow = rows.find((r: any) => r?.chat_metadata || r?.character_name || r?.user_name);
+                    return build(messages, 'sillytavern', metaRow?.chat_metadata?.title || fallbackTitle);
+                }
+            }
+        } catch { /* 不是 JSONL，继续尝试普通 JSON */ }
+    }
+
+    const parsed = JSON.parse(trimmed);
+    if (parsed?.type === PRIVATE_CHAT_ARCHIVE_EXPORT_TYPE && parsed.archive) {
+        const sourceMessages = Array.isArray(parsed.archive.messages) ? parsed.archive.messages : [];
+        const messages = normalizeLooseChatMessages(sourceMessages, char, 'moro');
+        return build(messages, 'moro', parsed.archive.title || fallbackTitle, parsed.archive.createdAt, parsed.archive.updatedAt);
+    }
+    if (parsed?.type === 'moro_chat_export' && Array.isArray(parsed.messages)) {
+        const messages = normalizeLooseChatMessages(parsed.messages, char, 'moro');
+        return build(messages, 'moro', parsed.title || parsed.character?.name || fallbackTitle);
+    }
+    if (Array.isArray(parsed)) {
+        const messages = normalizeLooseChatMessages(parsed, char, 'sillytavern');
+        if (!messages.length) throw new Error('没有识别到可导入消息');
+        return build(messages, 'sillytavern', fallbackTitle);
+    }
+    if (Array.isArray(parsed?.messages)) {
+        const source = parsed.type?.toString?.().includes('silly') ? 'sillytavern' : 'moro';
+        const messages = normalizeLooseChatMessages(parsed.messages, char, source);
+        if (!messages.length) throw new Error('没有识别到可导入消息');
+        return build(messages, source, parsed.title || parsed.name || fallbackTitle, parsed.createdAt, parsed.updatedAt);
+    }
+
+    throw new Error('暂时不认识这个聊天记录格式');
 };
 
 const Chat: React.FC = () => {
@@ -130,6 +314,7 @@ const Chat: React.FC = () => {
     const [recenterResult, setRecenterResult] = useState<RecenterResult | null>(null);
     const [isRecentering, setIsRecentering] = useState(false);
     const [allHistoryMessages, setAllHistoryMessages] = useState<Message[]>([]);
+    const [privateChatArchives, setPrivateChatArchives] = useState<PrivateChatArchive[]>([]);
     const [transferAmt, setTransferAmt] = useState('');
     const [transferMode, setTransferMode] = useState<'transfer' | 'redpacket'>('transfer');
     const [transferNote, setTransferNote] = useState('');
@@ -1065,6 +1250,26 @@ const Chat: React.FC = () => {
             });
         }
     }, [modalType, activeCharacterId]);
+
+    const refreshPrivateChatArchives = useCallback(async (charId = activeCharacterId) => {
+        if (!charId) {
+            setPrivateChatArchives([]);
+            return [];
+        }
+        try {
+            const rows = await DB.getPrivateChatArchives(charId);
+            if (activeCharIdRef.current === charId) setPrivateChatArchives(rows);
+            return rows;
+        } catch (e) {
+            console.warn('[Chat] load private chat archives failed', e);
+            if (activeCharIdRef.current === charId) setPrivateChatArchives([]);
+            return [];
+        }
+    }, [activeCharacterId]);
+
+    useEffect(() => {
+        refreshPrivateChatArchives(activeCharacterId);
+    }, [activeCharacterId, refreshPrivateChatArchives]);
 
     useEffect(() => {
         const savedPrompts = localStorage.getItem('chat_archive_prompts');
@@ -2474,6 +2679,283 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             addToast('聊天背景已更新', 'success');
         } catch(err: any) {
             addToast(err.message, 'error');
+        }
+    };
+
+    const resetPrivateChatUi = (nextMessages: Message[] = []) => {
+        clearMessageRevealTimers();
+        setMessages(nextMessages.slice(-LOAD_BATCH_SIZE));
+        setAllHistoryMessages([]);
+        setTotalMsgCount(nextMessages.length);
+        setHistoryLoaded(true);
+        setVisibleCount(LOAD_BATCH_SIZE);
+        visibleCountRef.current = LOAD_BATCH_SIZE;
+        setReplyTarget(null);
+        setSelectionMode(false);
+        setSelectedMsgIds(new Set());
+        setSelectedThinkingMsgIds(new Set());
+        setSelectedMessage(null);
+        setWindowedFocusMsgId(null);
+        setFlashMsgId(null);
+        setShowPanel('none');
+        setShowActionSelector(false);
+        setInput('');
+        try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+        setInstantToolStatus(null);
+        setLastTokenUsage(null);
+        setPlayingMsgId(null);
+        if (chatAudioRef.current) {
+            try { chatAudioRef.current.pause(); } catch { /* ignore */ }
+        }
+        lastMsgIdRef.current = nextMessages.length ? nextMessages[nextMessages.length - 1].id : null;
+        revealKnownIdsRef.current = new Set(nextMessages.map(m => m.id));
+        revealHydratedRef.current = true;
+        setPoppingMessageIds(new Set());
+        setRevealedAssistantIds(new Set(nextMessages.filter(m => m.role === 'assistant').map(m => m.id)));
+    };
+
+    const saveCurrentPrivateChatArchive = async (opts: { activateIfCreated?: boolean } = {}): Promise<PrivateChatArchive | null> => {
+        if (!char) return null;
+        const allMessages = await DB.getMessagesByCharId(char.id, true);
+        const snapshot = toPrivateChatMessages(allMessages, char.id);
+        const existing = char.activePrivateChatId ? await DB.getPrivateChatArchive(char.activePrivateChatId).catch(() => undefined) : undefined;
+        if (!existing && snapshot.length === 0) return null;
+
+        const now = Date.now();
+        const meta = derivePrivateChatArchiveMeta(snapshot, `新聊天 ${formatPrivateChatTitleTime(now)}`);
+        const archive: PrivateChatArchive = {
+            id: existing?.id || makePrivateChatArchiveId(),
+            charId: char.id,
+            title: (existing?.title?.trim() || meta.title || `新聊天 ${formatPrivateChatTitleTime(now)}`).slice(0, 80),
+            pinned: existing?.pinned,
+            createdAt: existing?.createdAt || snapshot[0]?.timestamp || now,
+            updatedAt: snapshot.length ? (meta.updatedAt || now) : now,
+            messageCount: snapshot.length,
+            lastMessagePreview: meta.lastMessagePreview,
+            messages: snapshot,
+            source: existing?.source || 'moro',
+        };
+        await DB.savePrivateChatArchive(archive);
+        if (!existing && opts.activateIfCreated) {
+            await updateCharacter(char.id, { activePrivateChatId: archive.id });
+        }
+        await refreshPrivateChatArchives(char.id);
+        return archive;
+    };
+
+    const handleOpenChatSettings = () => {
+        setModalType('chat-settings');
+        saveCurrentPrivateChatArchive({ activateIfCreated: true }).catch(e => {
+            console.warn('[Chat] snapshot before settings failed', e);
+        });
+    };
+
+    const handleNewPrivateChat = async () => {
+        if (!char) return;
+        if (isTyping) {
+            addToast('等 TA 这句说完再新开一页吧', 'info');
+            return;
+        }
+        try {
+            await saveCurrentPrivateChatArchive();
+            const currentIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
+            await DB.clearMessages(char.id);
+            discardVoiceForMessages(currentIds);
+            const now = Date.now();
+            const archive: PrivateChatArchive = {
+                id: makePrivateChatArchiveId(),
+                charId: char.id,
+                title: `新聊天 ${formatPrivateChatTitleTime(now)}`,
+                pinned: false,
+                createdAt: now,
+                updatedAt: now,
+                messageCount: 0,
+                lastMessagePreview: '',
+                messages: [],
+                source: 'moro',
+            };
+            await DB.savePrivateChatArchive(archive);
+            try { localStorage.removeItem(`mp_lastMsgId_${char.id}`); } catch { /* ignore */ }
+            await updateCharacter(char.id, {
+                activePrivateChatId: archive.id,
+                hideBeforeMessageId: undefined,
+                memoryPalaceInjection: undefined,
+            });
+            resetPrivateChatUi([]);
+            await refreshPrivateChatArchives(char.id);
+            addToast('已开启一页新的私聊', 'success');
+        } catch (e: any) {
+            addToast(e?.message || '新建私聊失败', 'error');
+        }
+    };
+
+    const handleSwitchPrivateChat = async (archiveId: string) => {
+        if (!char) return;
+        if (isTyping) {
+            addToast('等 TA 这句说完再切换记录吧', 'info');
+            return;
+        }
+        try {
+            if (archiveId === char.activePrivateChatId) {
+                await saveCurrentPrivateChatArchive({ activateIfCreated: true });
+                addToast('当前私聊已保存', 'success');
+                return;
+            }
+            await saveCurrentPrivateChatArchive();
+            const archive = await DB.getPrivateChatArchive(archiveId);
+            if (!archive || archive.charId !== char.id) {
+                addToast('这份私聊档案不见了', 'error');
+                await refreshPrivateChatArchives(char.id);
+                return;
+            }
+
+            const currentIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
+            await DB.clearMessages(char.id);
+            discardVoiceForMessages(currentIds);
+
+            const idMap = new Map<number, number>();
+            const restored: Message[] = [];
+            const ordered = [...(archive.messages || [])].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            for (const src of ordered) {
+                const replyTo = src.replyTo ? {
+                    id: (src.replyTo.id !== undefined && idMap.has(src.replyTo.id)) ? idMap.get(src.replyTo.id)! : (src.replyTo.id || 0),
+                    content: src.replyTo.content,
+                    name: src.replyTo.name,
+                } : undefined;
+                const metadata = cloneArchiveValue(src.metadata);
+                const newId = await DB.saveMessage({
+                    charId: char.id,
+                    role: src.role,
+                    type: asMessageType(src.type),
+                    content: src.content || '',
+                    timestamp: src.timestamp || Date.now(),
+                    metadata,
+                    replyTo,
+                });
+                if (typeof src.originalId === 'number') idMap.set(src.originalId, newId);
+                restored.push({
+                    id: newId,
+                    charId: char.id,
+                    role: src.role,
+                    type: asMessageType(src.type),
+                    content: src.content || '',
+                    timestamp: src.timestamp || Date.now(),
+                    metadata,
+                    replyTo,
+                });
+            }
+
+            try { localStorage.removeItem(`mp_lastMsgId_${char.id}`); } catch { /* ignore */ }
+            await updateCharacter(char.id, {
+                activePrivateChatId: archive.id,
+                hideBeforeMessageId: undefined,
+                memoryPalaceInjection: undefined,
+            });
+            resetPrivateChatUi(restored);
+            await refreshPrivateChatArchives(char.id);
+            addToast(`已打开「${archive.title}」`, 'success');
+        } catch (e: any) {
+            addToast(e?.message || '切换私聊失败', 'error');
+        }
+    };
+
+    const handleRenamePrivateChat = async (archiveId: string, title: string) => {
+        if (!char) return;
+        const nextTitle = title.trim().slice(0, 80);
+        if (!nextTitle) return;
+        try {
+            const archive = archiveId === char.activePrivateChatId
+                ? await saveCurrentPrivateChatArchive({ activateIfCreated: true })
+                : await DB.getPrivateChatArchive(archiveId);
+            if (!archive) return;
+            await DB.savePrivateChatArchive({ ...archive, title: nextTitle, updatedAt: Date.now() });
+            await refreshPrivateChatArchives(char.id);
+            addToast('私聊标题已改好', 'success');
+        } catch (e: any) {
+            addToast(e?.message || '改名失败', 'error');
+        }
+    };
+
+    const handleTogglePinPrivateChat = async (archiveId: string) => {
+        if (!char) return;
+        try {
+            const archive = archiveId === char.activePrivateChatId
+                ? await saveCurrentPrivateChatArchive({ activateIfCreated: true })
+                : await DB.getPrivateChatArchive(archiveId);
+            if (!archive) return;
+            await DB.savePrivateChatArchive({ ...archive, pinned: !archive.pinned, updatedAt: Date.now() });
+            await refreshPrivateChatArchives(char.id);
+        } catch (e: any) {
+            addToast(e?.message || '置顶失败', 'error');
+        }
+    };
+
+    const handleDeletePrivateChat = async (archiveId: string) => {
+        if (!char) return;
+        const archive = await DB.getPrivateChatArchive(archiveId).catch(() => undefined);
+        const ok = confirm(`确定删除「${archive?.title || '这份私聊'}」吗？删除后不会影响角色卡，但聊天记录本身会消失。`);
+        if (!ok) return;
+        try {
+            await DB.deletePrivateChatArchive(archiveId);
+            if (archiveId === char.activePrivateChatId) {
+                const currentIds = (await DB.getMessagesByCharId(char.id, true)).map(m => m.id);
+                await DB.clearMessages(char.id);
+                discardVoiceForMessages(currentIds);
+                try { localStorage.removeItem(`mp_lastMsgId_${char.id}`); } catch { /* ignore */ }
+                await updateCharacter(char.id, {
+                    activePrivateChatId: undefined,
+                    hideBeforeMessageId: undefined,
+                    memoryPalaceInjection: undefined,
+                });
+                resetPrivateChatUi([]);
+            }
+            await refreshPrivateChatArchives(char.id);
+            addToast('私聊档案已删除', 'success');
+        } catch (e: any) {
+            addToast(e?.message || '删除失败', 'error');
+        }
+    };
+
+    const handleExportPrivateChat = async (archiveId: string) => {
+        if (!char) return;
+        try {
+            const archive = archiveId === char.activePrivateChatId
+                ? await saveCurrentPrivateChatArchive({ activateIfCreated: true })
+                : await DB.getPrivateChatArchive(archiveId);
+            if (!archive) {
+                addToast('没有可导出的私聊档案', 'info');
+                return;
+            }
+            const data = {
+                type: PRIVATE_CHAT_ARCHIVE_EXPORT_TYPE,
+                exportedAt: new Date().toISOString(),
+                character: { id: char.id, name: char.name },
+                archive,
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const cleanTitle = archive.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40) || 'private_chat';
+            a.href = url;
+            a.download = `moro_private_${char.name}_${cleanTitle}_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            addToast('私聊档案已导出', 'success');
+        } catch (e: any) {
+            addToast(e?.message || '导出失败', 'error');
+        }
+    };
+
+    const handleImportPrivateChat = async (file: File) => {
+        if (!char) return;
+        try {
+            const text = await file.text();
+            const archive = parsePrivateChatArchiveImport(file.name, text, char);
+            await DB.savePrivateChatArchive(archive);
+            await refreshPrivateChatArchives(char.id);
+            addToast(`已导入「${archive.title}」`, 'success');
+        } catch (e: any) {
+            addToast(e?.message || '导入失败，请确认文件格式', 'error');
         }
     };
 
@@ -4019,7 +4501,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 // 左上角头像 = 心声面板（心声 / 好感值 / 当前心情）；点角色名的「切换角色 / 信纸花样」弹窗已移除
                 onAvatarClick={tryOpenInnerVoice}
                 // 聊天设置移入右上角 ··· 内
-                onOpenSettings={() => setModalType('chat-settings')}
+                onOpenSettings={handleOpenChatSettings}
                 onDeleteBuff={(buffId) => {
                     const currentBuffs = char.activeBuffs || [];
                     const newBuffs = currentBuffs.filter(b => b.id !== buffId);
@@ -4809,6 +5291,15 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onForceVectorize={handleForceVectorize}
                     onExportChat={handleExportChat}
                     messagesCount={(allHistoryMessages && allHistoryMessages.length > 0) ? allHistoryMessages.length : messages.length}
+                    privateChatArchives={privateChatArchives}
+                    activePrivateChatId={char.activePrivateChatId}
+                    onNewPrivateChat={handleNewPrivateChat}
+                    onSwitchPrivateChat={handleSwitchPrivateChat}
+                    onRenamePrivateChat={handleRenamePrivateChat}
+                    onTogglePinPrivateChat={handleTogglePinPrivateChat}
+                    onDeletePrivateChat={handleDeletePrivateChat}
+                    onExportPrivateChat={handleExportPrivateChat}
+                    onImportPrivateChat={handleImportPrivateChat}
                     categories={categories}
                     emojiCounts={emojiCounts}
                     onSaveCategoryVisibility={handleSaveCategoryVisibility}
