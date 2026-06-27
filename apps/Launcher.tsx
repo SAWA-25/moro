@@ -374,10 +374,9 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
     };
 
     const appKeys = orderedKeys.filter(key => key.startsWith('app:'));
-    const placedAppKeys = new Set<string>();
     const placeApp = (id: AppID, page: number, col: number, row: number) => {
         const key = `app:${id}`;
-        if (appKeys.includes(key) && place(key, page, col, row)) placedAppKeys.add(key);
+        if (appKeys.includes(key)) place(key, page, col, row);
     };
 
     place('widget:clock', 0, 0, 0);
@@ -423,7 +422,7 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         const item = itemsByKey.get(key);
         if (!item || layout[key]) continue;
         const pageStart = key.startsWith('app:')
-            ? (placedAppKeys.has(key) ? layout[key]?.page ?? 0 : 2)
+            ? 2
             : (['widget:imgtl', 'widget:imgtr', 'widget:imgwide'].includes(key) ? 3 : 0);
         layout[key] = findFirstFreeSpot(item, itemsByKey, layout, key, pageStart);
     }

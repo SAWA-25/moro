@@ -277,6 +277,8 @@ export interface OSTheme {
   chatInputStyle?: 'default' | 'rounded' | 'flat' | 'wechat' | 'ios' | 'telegram' | 'discord' | 'pixel';
   chatChromeStyle?: 'soft' | 'flat' | 'floating' | 'pixel';
   chatBackgroundStyle?: 'plain' | 'grid' | 'paper' | 'mesh';
+  /** 群聊通用背景。单个群若设置了 chatBackgroundImage，则优先使用单群背景。 */
+  groupChatBackgroundStyle?: 'plain' | 'grid' | 'paper' | 'mesh';
   chatHeaderAlign?: 'left' | 'center';
   chatHeaderDensity?: 'compact' | 'default' | 'airy';
   chatStatusStyle?: 'subtle' | 'pill' | 'dot';
@@ -2449,6 +2451,15 @@ export interface GroupAnnouncement {
     at: number;
 }
 
+export interface GroupChatRecord {
+    id: string;
+    title: string;
+    createdAt: number;
+    updatedAt: number;
+    pinned?: boolean;
+    messages: Message[];
+}
+
 export interface GroupProfile {
     id: string;
     name: string;
@@ -2474,6 +2485,27 @@ export interface GroupProfile {
     mutedAll?: boolean;
     /** 群公告：群主/管理员发布，进入群聊时置顶展示，并注入群聊上下文让成员知晓。撤下时为 undefined。 */
     announcement?: GroupAnnouncement;
+    /** 聊天列表置顶。 */
+    pinned?: boolean;
+    /** 特别关心：这些成员在群里的消息会被高亮/提醒。 */
+    specialCareMemberIds?: string[];
+    /** 特别关心是否开启消息提醒。undefined 视为开启。 */
+    specialCareNotify?: boolean;
+    /** 当前群聊记录包标题，用于导出/导入后显示，不等同于群名。 */
+    chatArchiveTitle?: string;
+    /** 当前打开的群聊记录 id。未设置时沿用默认消息流。 */
+    activeChatRecordId?: string;
+    /** 群聊记录快照，用于新聊天、切换旧记录、改标题、置顶和删除。 */
+    chatArchives?: GroupChatRecord[];
+    /** 单个群聊专属背景图（data URL）。 */
+    chatBackgroundImage?: string;
+    /** 群聊回形针「赴个约」设置。 */
+    offlineMode?: {
+        enabled?: boolean;
+        style?: string;
+        maxChars?: number;
+        openingStrategy?: 'choose' | 'story' | 'skip';
+    };
     /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
     dissolved?: boolean;
     dissolvedAt?: number;

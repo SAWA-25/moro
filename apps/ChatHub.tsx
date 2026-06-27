@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, GroupProfile, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory } from '../types';
+import { AppID, Message, GroupProfile, GroupChatRecord, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import { ContextBuilder } from '../utils/context';
@@ -12,7 +12,8 @@ import { processImage } from '../utils/file';
 import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin } from '@phosphor-icons/react';
+import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, Signpost, FastForward, Prohibit, Export } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
@@ -31,6 +32,64 @@ const PRESET_THEME_GROUP: ChatTheme = {
     user: { textColor: '#ffffff', backgroundColor: '#8b5cf6', borderRadius: 18, opacity: 1 }, // Violet for User
     ai: { textColor: '#1e293b', backgroundColor: '#ffffff', borderRadius: 18, opacity: 1 }  // White for Others
 };
+
+const groupBackgroundStyleFor = (
+    image: string | undefined,
+    style: OSTheme['groupChatBackgroundStyle'] | OSTheme['chatBackgroundStyle'] | undefined,
+): React.CSSProperties => {
+    if (image) {
+        return {
+            backgroundColor: '#f7f3ec',
+            backgroundImage: `linear-gradient(rgba(250,249,246,0.78), rgba(250,249,246,0.82)), url(${image})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundAttachment: 'local',
+        };
+    }
+    if (style === 'grid') {
+        return {
+            backgroundColor: '#f8fafc',
+            backgroundImage: 'linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px)',
+            backgroundSize: '20px 20px',
+        };
+    }
+    if (style === 'paper') {
+        return {
+            backgroundColor: '#faf9f6',
+            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(148,163,184,0.13) 1px, transparent 0)',
+            backgroundSize: '16px 16px',
+        };
+    }
+    if (style === 'mesh') {
+        return {
+            backgroundColor: '#f8fafc',
+            backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(59,130,246,0.15), transparent 28%), radial-gradient(circle at 86% 18%, rgba(244,114,182,0.14), transparent 24%), radial-gradient(circle at 60% 78%, rgba(45,212,191,0.13), transparent 26%)',
+        };
+    }
+    return { backgroundColor: '#faf9f6' };
+};
+
+const GROUP_SETTINGS_SERIF: React.CSSProperties = { fontFamily: 'Georgia, "Times New Roman", "Songti SC", serif' };
+const GROUP_SETTINGS_MONO: React.CSSProperties = { fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace' };
+
+const GroupSettingsPage: React.FC<{ no: string; title: string; en: string; children: React.ReactNode }> = ({ no, title, en, children }) => (
+    <section
+        className="relative rounded-[18px] bg-white"
+        style={{
+            border: '1px solid #ededed',
+            boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)',
+        }}
+    >
+        <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
+            <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-[9px] tracking-[0.22em] shrink-0" style={{ ...GROUP_SETTINGS_MONO, color: '#b07a8d' }}>P.{no}</span>
+                <span className="text-[15px] font-bold leading-tight truncate" style={{ color: INK }}>{title}</span>
+            </div>
+            <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...GROUP_SETTINGS_MONO, color: INK_SOFT }}>{en}</span>
+        </div>
+        <div className="px-4 pb-5 pt-1">{children}</div>
+    </section>
+);
 
 // --- Sub-Component: Group Message Bubble ---
 const GroupMessageItem = React.memo(({
@@ -55,7 +114,8 @@ const GroupMessageItem = React.memo(({
     onPollVote,
     onPollClick,
     onRelayClick,
-    onCheckinClick
+    onCheckinClick,
+    specialCare
 }: {
     msg: Message,
     isUser: boolean,
@@ -91,7 +151,9 @@ const GroupMessageItem = React.memo(({
     /** 群接龙：点卡片打开接龙详情/加入 */
     onRelayClick?: (msg: Message) => void,
     /** 群签到：点卡片打开签到详情 */
-    onCheckinClick?: (msg: Message) => void
+    onCheckinClick?: (msg: Message) => void,
+    /** 本成员是本群特别关心对象时，在消息上做轻量提醒。 */
+    specialCare?: boolean
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? '我' : displayName || char?.name || '未知成员';
@@ -422,18 +484,24 @@ const GroupMessageItem = React.memo(({
 
             {!isUser && (
                 <div className="flex flex-col items-center gap-1 shrink-0">
-                    <img
-                        src={avatar}
-                        className={`w-9 h-9 rounded-full object-cover shadow-sm border border-white ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
-                        loading="lazy"
-                        onClick={handleAvatarClick}
-                    />
+                    <div className={`relative rounded-full ${specialCare ? 'ring-2 ring-rose-300 ring-offset-2 ring-offset-[#faf9f6]' : ''}`}>
+                        <img
+                            src={avatar}
+                            className={`w-9 h-9 rounded-full object-cover shadow-sm border border-white ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
+                            loading="lazy"
+                            onClick={handleAvatarClick}
+                        />
+                        {specialCare && <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-rose-500 text-white flex items-center justify-center border border-white"><BellRinging size={10} weight="fill" /></span>}
+                    </div>
                 </div>
             )}
 
             <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] ${selectionMode ? 'pointer-events-none' : ''}`}>
                 {!isUser && (
                     <span className="text-[10px] text-slate-400 ml-1 mb-1 flex items-center gap-1">
+                        {specialCare && (
+                            <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
+                        )}
                         {memberTitle && (
                             <span className="px-1 py-px rounded bg-amber-100 text-amber-600 border border-amber-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
                         )}
@@ -473,7 +541,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime, adjustUserBalance } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime, adjustUserBalance, theme: osTheme } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -498,6 +566,7 @@ const ChatHub: React.FC = () => {
         dissolved?: boolean;
         memberCount?: number;
         starred?: boolean;
+        specialCareCount?: number;
         /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
         lifeStatus?: { activity: string; mood?: string };
     }>>([]);
@@ -513,6 +582,12 @@ const ChatHub: React.FC = () => {
     const [confirmTransferId, setConfirmTransferId] = useState<string | null>(null);
     // 我的群名片编辑（设置弹窗里）
     const [tempMyNickname, setTempMyNickname] = useState('');
+    const [tempArchiveTitle, setTempArchiveTitle] = useState('');
+    const [tempSpecialCareIds, setTempSpecialCareIds] = useState<Set<string>>(new Set());
+    const [tempSpecialCareNotify, setTempSpecialCareNotify] = useState(true);
+    const [tempOfflineStyle, setTempOfflineStyle] = useState('');
+    const [tempOfflineMaxChars, setTempOfflineMaxChars] = useState(280);
+    const [tempOfflineOpeningStrategy, setTempOfflineOpeningStrategy] = useState<'choose' | 'story' | 'skip'>('choose');
     // 点开「改名小心思」系统提示后，要展示动机的那条消息
     const [nicknameThoughtMsg, setNicknameThoughtMsg] = useState<Message | null>(null);
     // 群聊表情抽屉搜索
@@ -605,7 +680,7 @@ const ChatHub: React.FC = () => {
     // 群签到：详情弹窗目标
     const [checkinDetailMsg, setCheckinDetailMsg] = useState<Message | null>(null);
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
-    const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
+    const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd' | 'offline-mode'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
     const [memberPicker, setMemberPicker] = useState<{ action: string; title: string; hint?: string } | null>(null);
     const [locName, setLocName] = useState('');
@@ -622,6 +697,26 @@ const ChatHub: React.FC = () => {
     const jumpTargetRef = useRef<number | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const groupAvatarInputRef = useRef<HTMLInputElement>(null);
+    const groupBackgroundInputRef = useRef<HTMLInputElement>(null);
+    const groupArchiveInputRef = useRef<HTMLInputElement>(null);
+
+    const hydrateGroupSettingsDraft = (group: GroupProfile | null) => {
+        if (!group) return;
+        setTempGroupName(group.name || '');
+        setTempPrivateContextCap(group.privateContextCap ?? 80);
+        setTempMyNickname(group.memberNicknames?.['user'] || '');
+        setTempArchiveTitle(group.chatArchiveTitle || group.name || '');
+        setTempSpecialCareIds(new Set(group.specialCareMemberIds || []));
+        setTempSpecialCareNotify(group.specialCareNotify !== false);
+        setTempOfflineStyle(group.offlineMode?.style || '');
+        setTempOfflineMaxChars(group.offlineMode?.maxChars || 280);
+        setTempOfflineOpeningStrategy(group.offlineMode?.openingStrategy || 'choose');
+    };
+
+    const openGroupSettings = (group = activeGroup) => {
+        hydrateGroupSettingsDraft(group);
+        setModalType('settings');
+    };
 
     // Load shared archive prompts from localStorage (same key as Chat app)
     useEffect(() => {
@@ -865,6 +960,8 @@ const ChatHub: React.FC = () => {
                     last: last[last.length - 1],
                     dissolved: !!g.dissolved,
                     memberCount: g.members.length,
+                    starred: !!g.pinned,
+                    specialCareCount: (g.specialCareMemberIds || []).length,
                 });
             }
             // 「此刻」状态新鲜度：最近一条线下生活事件在这个时长内才显示（再久就不算「此刻」了）
@@ -1107,12 +1204,24 @@ const ChatHub: React.FC = () => {
         const oldName = activeGroup.name;
         const oldMyNickname = activeGroup.memberNicknames?.['user'] || '';
         const newMyNickname = tempMyNickname.trim();
+        const oldArchiveTitle = activeGroup.chatArchiveTitle || activeGroup.name;
+        const newArchiveTitle = (tempArchiveTitle || newName).trim().slice(0, 80);
+        const specialCareMemberIds = Array.from(tempSpecialCareIds).filter(id => activeGroup.members.includes(id));
+        const nextChatArchives = activeGroup.activeChatRecordId && activeGroup.chatArchives?.length
+            ? activeGroup.chatArchives.map(record => record.id === activeGroup.activeChatRecordId
+                ? { ...record, title: newArchiveTitle, updatedAt: Date.now() }
+                : record)
+            : activeGroup.chatArchives;
 
         const updatedGroup: GroupProfile = {
             ...activeGroup,
             name: newName,
             privateContextCap: tempPrivateContextCap,
             memberNicknames: { ...(activeGroup.memberNicknames || {}), user: newMyNickname },
+            chatArchiveTitle: newArchiveTitle,
+            chatArchives: nextChatArchives,
+            specialCareMemberIds,
+            specialCareNotify: tempSpecialCareNotify,
         };
         if (!newMyNickname) delete updatedGroup.memberNicknames!['user'];
         await updateGroup(activeGroup.id, updatedGroup);
@@ -1126,7 +1235,295 @@ const ChatHub: React.FC = () => {
         if (newMyNickname !== oldMyNickname) {
             await postGroupNotice(activeGroup.id, newMyNickname ? `你将自己的群名片改为「${newMyNickname}」` : '你清除了自己的群名片');
         }
+        if (newArchiveTitle !== oldArchiveTitle) {
+            await postGroupNotice(activeGroup.id, `你将这份群聊记录标题改为「${newArchiveTitle}」`);
+        }
         addToast('群信息已更新', 'success');
+    };
+
+    const handleToggleGroupPinned = async () => {
+        if (!activeGroup) return;
+        const next = !activeGroup.pinned;
+        const updated = await applyGroupUpdate({ pinned: next });
+        if (updated) addToast(next ? '群聊已置顶' : '已取消置顶', 'success');
+    };
+
+    const memberNameMapFor = (group: GroupProfile): Record<string, string> => {
+        const names: Record<string, string> = { user: group.memberNicknames?.['user'] || userProfile.name || '我' };
+        for (const id of group.members) {
+            names[id] = displayNameOf(group, id);
+        }
+        return names;
+    };
+
+    const downloadTextFile = (filename: string, content: string, mime = 'application/json;charset=utf-8') => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    const makeGroupChatRecordId = () => `gchat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const makeNewGroupChatTitle = () => {
+        const stamp = new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return `新聊天 ${stamp}`;
+    };
+    const cloneMessagesForGroupRecord = (groupId: string, items: Message[]): Message[] =>
+        items.map(message => ({ ...message, groupId }));
+    const upsertGroupChatRecord = (records: GroupChatRecord[] = [], record: GroupChatRecord): GroupChatRecord[] => {
+        const next = records.filter(item => item.id !== record.id);
+        next.push(record);
+        return next;
+    };
+    const getSortedGroupChatRecords = (group: GroupProfile | null | undefined): GroupChatRecord[] =>
+        [...(group?.chatArchives || [])].sort((a, b) => {
+            if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+            return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+
+    const buildActiveGroupChatRecord = (group: GroupProfile, currentMessages: Message[], titleOverride?: string): GroupChatRecord => {
+        const now = Date.now();
+        const activeId = group.activeChatRecordId || makeGroupChatRecordId();
+        const existing = group.chatArchives?.find(record => record.id === activeId);
+        const title = (titleOverride || group.chatArchiveTitle || existing?.title || group.name || '群聊记录').trim() || '群聊记录';
+        return {
+            id: activeId,
+            title,
+            createdAt: existing?.createdAt || group.createdAt || now,
+            updatedAt: now,
+            pinned: existing?.pinned,
+            messages: cloneMessagesForGroupRecord(group.id, currentMessages),
+        };
+    };
+
+    const refreshGroupMessagesState = async (groupId: string) => {
+        const fresh = await DB.getGroupMessages(groupId);
+        setMessages(fresh);
+        setTotalMsgCount(fresh.length);
+        setVisibleCount(Math.max(30, Math.min(fresh.length, 200)));
+        return fresh;
+    };
+
+    const saveActiveGroupChatSnapshot = async (group: GroupProfile, titleOverride?: string): Promise<GroupProfile> => {
+        const current = await DB.getGroupMessages(group.id);
+        const record = buildActiveGroupChatRecord(group, current, titleOverride);
+        const updatedGroup: GroupProfile = {
+            ...group,
+            activeChatRecordId: record.id,
+            chatArchiveTitle: record.title,
+            chatArchives: upsertGroupChatRecord(group.chatArchives || [], record),
+        };
+        await updateGroup(group.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        return updatedGroup;
+    };
+
+    const handleExportGroupChat = async (format: 'moro' | 'jsonl' = 'moro') => {
+        if (!activeGroup) return;
+        const all = await DB.getGroupMessages(activeGroup.id);
+        const memberNames = memberNameMapFor(activeGroup);
+        if (format === 'jsonl') {
+            downloadTextFile(
+                buildGroupChatFilename(activeGroup).replace(/\.moro-group-chat\.json$/, '.sillytavern.jsonl'),
+                serializeGroupChatJsonl(activeGroup, all, { memberNames }),
+                'application/x-ndjson;charset=utf-8',
+            );
+        } else {
+            downloadTextFile(buildGroupChatFilename(activeGroup), exportGroupChatArchive(activeGroup, all, { memberNames }));
+        }
+        addToast('群聊记录已导出', 'success');
+    };
+
+    const handleExportGroupChatRecord = async (record: GroupChatRecord, format: 'moro' | 'jsonl' = 'moro') => {
+        if (!activeGroup) return;
+        const isActive = record.id === activeGroup.activeChatRecordId;
+        const all = isActive ? await DB.getGroupMessages(activeGroup.id) : record.messages;
+        const groupForExport = { ...activeGroup, chatArchiveTitle: record.title };
+        const memberNames = memberNameMapFor(activeGroup);
+        if (format === 'jsonl') {
+            downloadTextFile(
+                buildGroupChatFilename(groupForExport).replace(/\.moro-group-chat\.json$/, '.sillytavern.jsonl'),
+                serializeGroupChatJsonl(groupForExport, all, { memberNames }),
+                'application/x-ndjson;charset=utf-8',
+            );
+        } else {
+            downloadTextFile(buildGroupChatFilename(groupForExport), exportGroupChatArchive(groupForExport, all, { memberNames }));
+        }
+        addToast('这份群聊记录已导出', 'success');
+    };
+
+    const handleStartNewGroupChat = async () => {
+        if (!activeGroup) return;
+        const savedGroup = await saveActiveGroupChatSnapshot(activeGroup, tempArchiveTitle || activeGroup.chatArchiveTitle || activeGroup.name);
+        const now = Date.now();
+        const nextRecord: GroupChatRecord = {
+            id: makeGroupChatRecordId(),
+            title: makeNewGroupChatTitle(),
+            createdAt: now,
+            updatedAt: now,
+            messages: [],
+        };
+        const updatedGroup: GroupProfile = {
+            ...savedGroup,
+            activeChatRecordId: nextRecord.id,
+            chatArchiveTitle: nextRecord.title,
+            chatArchives: upsertGroupChatRecord(savedGroup.chatArchives || [], nextRecord),
+        };
+        await DB.replaceGroupMessages(activeGroup.id, []);
+        await updateGroup(activeGroup.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        setTempArchiveTitle(nextRecord.title);
+        setMessages([]);
+        setTotalMsgCount(0);
+        setVisibleCount(30);
+        hydrateGroupSettingsDraft(updatedGroup);
+        addToast('已开始一份新的群聊记录', 'success');
+    };
+
+    const handleSwitchGroupChatRecord = async (recordId: string) => {
+        if (!activeGroup || recordId === activeGroup.activeChatRecordId) return;
+        const savedGroup = await saveActiveGroupChatSnapshot(activeGroup, tempArchiveTitle || activeGroup.chatArchiveTitle || activeGroup.name);
+        const target = savedGroup.chatArchives?.find(record => record.id === recordId);
+        if (!target) {
+            addToast('这份聊天记录找不到了', 'error');
+            return;
+        }
+        const updatedGroup: GroupProfile = {
+            ...savedGroup,
+            activeChatRecordId: target.id,
+            chatArchiveTitle: target.title,
+        };
+        await DB.replaceGroupMessages(activeGroup.id, target.messages);
+        await updateGroup(activeGroup.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        setTempArchiveTitle(target.title);
+        await refreshGroupMessagesState(activeGroup.id);
+        hydrateGroupSettingsDraft(updatedGroup);
+        addToast(`已切到「${target.title}」`, 'success');
+    };
+
+    const handleRenameGroupChatRecord = async (record: GroupChatRecord) => {
+        if (!activeGroup) return;
+        const title = window.prompt('给这份群聊记录改个标题', record.title)?.trim().slice(0, 80);
+        if (!title) return;
+        const updatedRecords = (activeGroup.chatArchives || []).map(item =>
+            item.id === record.id ? { ...item, title, updatedAt: Date.now() } : item);
+        const isActive = record.id === activeGroup.activeChatRecordId;
+        const updatedGroup: GroupProfile = {
+            ...activeGroup,
+            chatArchives: updatedRecords,
+            ...(isActive ? { chatArchiveTitle: title } : {}),
+        };
+        await updateGroup(activeGroup.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        if (isActive) setTempArchiveTitle(title);
+        addToast('聊天记录标题已修改', 'success');
+    };
+
+    const handleToggleGroupChatRecordPinned = async (record: GroupChatRecord) => {
+        if (!activeGroup) return;
+        const updatedRecords = (activeGroup.chatArchives || []).map(item =>
+            item.id === record.id ? { ...item, pinned: !item.pinned, updatedAt: Date.now() } : item);
+        const updatedGroup = { ...activeGroup, chatArchives: updatedRecords };
+        await updateGroup(activeGroup.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        addToast(record.pinned ? '已取消置顶这份记录' : '这份记录已置顶', 'success');
+    };
+
+    const handleDeleteGroupChatRecord = async (record: GroupChatRecord) => {
+        if (!activeGroup) return;
+        if (!window.confirm(`确定删除「${record.title}」？`)) return;
+        const remaining = (activeGroup.chatArchives || []).filter(item => item.id !== record.id);
+        const isActive = record.id === activeGroup.activeChatRecordId;
+        if (!isActive) {
+            const updatedGroup = { ...activeGroup, chatArchives: remaining };
+            await updateGroup(activeGroup.id, updatedGroup);
+            setActiveGroup(updatedGroup);
+            addToast('聊天记录已删除', 'success');
+            return;
+        }
+
+        const nextRecord = getSortedGroupChatRecords({ ...activeGroup, chatArchives: remaining } as GroupProfile)[0] || {
+            id: makeGroupChatRecordId(),
+            title: makeNewGroupChatTitle(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messages: [],
+        };
+        const nextArchives = remaining.some(item => item.id === nextRecord.id) ? remaining : upsertGroupChatRecord(remaining, nextRecord);
+        const updatedGroup: GroupProfile = {
+            ...activeGroup,
+            activeChatRecordId: nextRecord.id,
+            chatArchiveTitle: nextRecord.title,
+            chatArchives: nextArchives,
+        };
+        await DB.replaceGroupMessages(activeGroup.id, nextRecord.messages);
+        await updateGroup(activeGroup.id, updatedGroup);
+        setActiveGroup(updatedGroup);
+        setTempArchiveTitle(nextRecord.title);
+        await refreshGroupMessagesState(activeGroup.id);
+        hydrateGroupSettingsDraft(updatedGroup);
+        addToast('聊天记录已删除', 'success');
+    };
+
+    const handleImportGroupChat = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file || !activeGroup) return;
+        try {
+            const raw = await file.text();
+            const parsed = parseGroupChatArchive(raw, activeGroup.id, {
+                characterNameMap: Object.fromEntries(characters.map(c => [c.name, c.id])),
+                userName: userProfile.name,
+            });
+            const savedGroup = await saveActiveGroupChatSnapshot(activeGroup, tempArchiveTitle || activeGroup.chatArchiveTitle || activeGroup.name);
+            const now = Date.now();
+            const importedRecord: GroupChatRecord = {
+                id: makeGroupChatRecordId(),
+                title: parsed.title || '导入的群聊记录',
+                createdAt: now,
+                updatedAt: now,
+                messages: cloneMessagesForGroupRecord(activeGroup.id, parsed.messages),
+            };
+            const updatedGroup: GroupProfile = {
+                ...savedGroup,
+                activeChatRecordId: importedRecord.id,
+                chatArchiveTitle: importedRecord.title,
+                chatArchives: upsertGroupChatRecord(savedGroup.chatArchives || [], importedRecord),
+            };
+            await DB.replaceGroupMessages(activeGroup.id, importedRecord.messages);
+            await updateGroup(activeGroup.id, updatedGroup);
+            setActiveGroup(updatedGroup);
+            setTempArchiveTitle(importedRecord.title);
+            const fresh = await refreshGroupMessagesState(activeGroup.id);
+            hydrateGroupSettingsDraft(updatedGroup);
+            setModalType('settings');
+            addToast(`已导入 ${fresh.length} 条群聊记录，并切到新聊天`, 'success');
+        } catch (err) {
+            console.error('[GroupChat] import failed', err);
+            addToast('导入失败：文件格式不认识', 'error');
+        }
+    };
+
+    const handleDeleteAllGroupChatRecords = async () => {
+        if (!activeGroup) return;
+        const activeRecord = activeGroup.chatArchives?.find(record => record.id === activeGroup.activeChatRecordId);
+        if (activeRecord) {
+            await handleDeleteGroupChatRecord(activeRecord);
+            return;
+        }
+        if (!window.confirm('确定删除这个群的全部聊天记录？群资料会保留。')) return;
+        const all = await DB.getGroupMessages(activeGroup.id);
+        await DB.deleteMessages(all.map(m => m.id));
+        setMessages([]);
+        setTotalMsgCount(0);
+        setVisibleCount(30);
+        addToast('群聊记录已删除', 'success');
     };
 
     // --- 成员管理：移除 / 头衔 / 禁言 / 戳一戳 ---
@@ -1292,6 +1689,7 @@ const ChatHub: React.FC = () => {
 
     const handleGroupAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.target.value = '';
         if (!file || !activeGroup) return;
         try {
             const base64 = await processImage(file);
@@ -1302,6 +1700,28 @@ const ChatHub: React.FC = () => {
         } catch (err: any) {
             addToast('图片处理失败', 'error');
         }
+    };
+
+    const handleGroupBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file || !activeGroup) return;
+        try {
+            const image = await processImage(file, { maxWidth: 1200, quality: 0.76, forceJpeg: true });
+            const updated = await applyGroupUpdate({ chatBackgroundImage: image });
+            if (updated) addToast('这个群的聊天背景已换好', 'success');
+        } catch {
+            addToast('背景图处理失败', 'error');
+        }
+    };
+
+    const handleRemoveGroupBackground = async () => {
+        if (!activeGroup) return;
+        const updated = { ...activeGroup };
+        delete updated.chatBackgroundImage;
+        await updateGroup(activeGroup.id, updated);
+        setActiveGroup(updated);
+        addToast('已恢复拼贴册里的群聊通用背景', 'success');
     };
 
     const toggleMemberSelection = (id: string) => {
@@ -1796,6 +2216,27 @@ ${logText.substring(0, 10000)}
         setActionModal('none'); setSysCmd('');
     };
 
+    const enterGroupOfflineMode = async () => {
+        if (!activeGroup) return;
+        const offline = {
+            enabled: true,
+            style: tempOfflineStyle.trim().slice(0, 1200),
+            maxChars: Math.max(60, Math.min(2000, Math.round(tempOfflineMaxChars || 280))),
+            openingStrategy: tempOfflineOpeningStrategy,
+        };
+        const updated = await applyGroupUpdate({ offlineMode: offline });
+        const modeLabel = offline.openingStrategy === 'story'
+            ? '随剧情进入线下'
+            : offline.openingStrategy === 'skip'
+                ? '不用选择开场'
+                : '先选择开场';
+        await postGroupNotice(activeGroup.id, `赴约已开启：${modeLabel}；单条建议不超过 ${offline.maxChars} 字${offline.style ? `；文风：${offline.style}` : ''}`);
+        if (updated) hydrateGroupSettingsDraft(updated);
+        setActionModal('none');
+        setShowActions(false);
+        addToast('赴约已接上', 'success');
+    };
+
     // 装订成册：把群聊「现在就」整理进群记忆宫殿
     const archiveGroupMemory = async () => {
         if (!activeGroup || isSummarizing) return;
@@ -1891,12 +2332,24 @@ ${logText.substring(0, 10000)}
             const announcementBlock = activeGroup.announcement?.text
                 ? `\n📢 当前群公告（由 ${displayNameOf(activeGroup, activeGroup.announcement.by)} 发布）:\n"${activeGroup.announcement.text}"\n（这是群里置顶、所有成员都看得到的公告。可在合适时自然遵守、提及或回应它，但别每句话都围着它转。）\n`
                 : '';
+            const specialCareNames = (activeGroup.specialCareMemberIds || [])
+                .map(id => displayNameOf(activeGroup, id))
+                .filter(Boolean);
+            const specialCareBlock = specialCareNames.length > 0
+                ? `\n特别关心提醒：用户把 ${specialCareNames.map(n => `「${n}」`).join('、')} 设成了特别关心。TA 发言时可以更容易被用户注意到，但不要因此让 TA 每轮都必须说话。\n`
+                : '';
+            const offline = activeGroup.offlineMode;
+            const offlineBlock = offline?.enabled
+                ? `\n赴约状态：本群当前处于面对面/同处一地的互动感。${offline.openingStrategy === 'story' ? '开场方式=随剧情自然赴约，不要硬切场。' : offline.openingStrategy === 'skip' ? '开场方式=不用选择开场，直接承接当前剧情。' : '开场方式=可以先给出一个短开场。'}${offline.style ? ` 自定义赴约文风：${offline.style}` : ''} 单条消息建议不超过 ${offline.maxChars || 280} 字，动作、环境、近距离反应可以更具体，但仍然像群聊而不是旁白堆砌。\n`
+                : '';
 
             let context = `【系统：群聊模拟器配置】
 当前群名: "${activeGroup.name}"
 当前系统时间: ${currentTimeStr}
 时间流逝感知: ${timeGapInfo}
 ${announcementBlock}
+${specialCareBlock}
+${offlineBlock}
 群成员花名册（群名片 = 成员在本群显示的昵称，可自己修改；头衔由群主/管理员授予）:
 ${userRosterLine}
 ${rosterLines}
@@ -2582,7 +3035,7 @@ ${attachedImagesNote}
                                         </button>
                                         <ScrapDivider className="mx-3" />
                                         <button
-                                            onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); }}
+                                            onClick={() => { setShowPlusMenu(false); setModalType('create'); setSelectedMembers(new Set()); setTempGroupName(''); setTempOwnerId('user'); setTempAdminIds(new Set()); setTempArchiveTitle(''); }}
                                             className="w-full px-4 py-3 flex items-center gap-2.5 text-sm font-bold active:scale-[0.98] transition-transform"
                                         >
                                             <UsersThree size={18} weight="bold" className="shrink-0" style={{ color: INK }} />
@@ -2609,7 +3062,7 @@ ${attachedImagesNote}
                                         key={`g-${cv.id}`}
                                         onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
                                         style={{ animationDelay: enterDelay }}
-                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''}`}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''} ${cv.starred ? 'bg-amber-50/60' : ''}`}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -2625,9 +3078,11 @@ ${attachedImagesNote}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5">
+                                                {cv.starred && <PushPin size={11} weight="fill" className="text-amber-400 shrink-0" />}
                                                 <span className={`font-bold truncate text-sm ${cv.dissolved ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{cv.name}</span>
                                                 <UsersThree size={12} className="text-slate-300 shrink-0" />
                                                 <span className="text-[9px] text-slate-300 shrink-0">{cv.memberCount}</span>
+                                                {!!cv.specialCareCount && <BellRinging size={12} weight="fill" className="text-rose-400 shrink-0" />}
                                             </div>
                                             {cv.dissolved ? (
                                                 <div className="text-[11px] text-red-400/80 mt-0.5 font-medium">此群聊已被解散</div>
@@ -2921,9 +3376,10 @@ ${attachedImagesNote}
                         <button onClick={() => setView('list')} className="p-2 -ml-2 rounded-full hover:bg-slate-100 active:bg-slate-200 transition-colors">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
-                        <div className="flex-1 min-w-0" onClick={() => { setTempGroupName(activeGroup?.name || ''); setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80); setTempMyNickname(activeGroup?.memberNicknames?.['user'] || ''); setModalType('settings'); }}>
+                        <div className="flex-1 min-w-0" onClick={() => openGroupSettings()}>
                             <h1 className="text-base font-bold text-slate-800 truncate flex items-center gap-1">
                                 {activeGroup?.name}
+                                {activeGroup?.pinned && <PushPin size={12} weight="fill" className="text-amber-400 shrink-0" />}
                                 {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已解散</span>}
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-slate-400"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
                             </h1>
@@ -2931,6 +3387,9 @@ ${attachedImagesNote}
                                 <p className="text-[10px] text-slate-500 font-medium">{activeGroup?.members.length} 成员</p>
                                 {activeGroup?.mutedAll && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
+                                )}
+                                {activeGroup?.offlineMode?.enabled && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-500 border border-emerald-100 font-bold flex items-center gap-0.5"><Signpost size={9} weight="fill" />线下</span>
                                 )}
                                 {lastTokenUsage && (
                                     <div
@@ -2965,12 +3424,7 @@ ${attachedImagesNote}
 
                         {/* 群设置入口（原 + 面板里的「群设置」迁移到右上角；⚡手动触发已删除——空输入回车/发送即触发） */}
                         <button
-                            onClick={() => {
-                                setTempGroupName(activeGroup?.name || '');
-                                setTempPrivateContextCap(activeGroup?.privateContextCap ?? 80);
-                                setTempMyNickname(activeGroup?.memberNicknames?.['user'] || '');
-                                setModalType('settings');
-                            }}
+                            onClick={() => openGroupSettings()}
                             className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#2b2933] transition-all active:scale-90"
                             title="群设置"
                         >
@@ -3063,7 +3517,11 @@ ${attachedImagesNote}
             )}
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 bg-[#faf9f6] scrap-panel" ref={scrollRef}>
+            <div
+                className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 scrap-panel"
+                ref={scrollRef}
+                style={groupBackgroundStyleFor(activeGroup?.chatBackgroundImage, osTheme.groupChatBackgroundStyle || osTheme.chatBackgroundStyle || 'paper')}
+            >
                 {totalMsgCount > messages.length && activeGroup && (
                     <div className="flex justify-center mb-4">
                         <button onClick={async () => {
@@ -3109,6 +3567,7 @@ ${attachedImagesNote}
                                 onPollClick={setPollDetailMsg}
                                 onRelayClick={setRelayDetailMsg}
                                 onCheckinClick={setCheckinDetailMsg}
+                                specialCare={!isUser && activeGroup?.specialCareNotify !== false && !!char && (activeGroup?.specialCareMemberIds || []).includes(char.id)}
                             />
                         </div>
                     );
@@ -3235,7 +3694,7 @@ ${attachedImagesNote}
                             {/* 群友互动：单聊专属功能，先选「对谁」再深链到该成员单聊 */}
                             <div className="drawer-tag col-span-2"><span>找 个 群 友</span></div>
                             {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '给某位群友打电话', () => openMemberPicker('voice-call', '给谁打电话？'))}
-                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '约某位群友线下见', () => openMemberPicker('offline-date', '约谁见面？'))}
+                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '线下见面·自定义文风', () => { hydrateGroupSettingsDraft(activeGroup); setActionModal('offline-mode'); })}
                             {strip(<Detective size={20} weight="bold" />, '翻翻手机', '翻某位群友的手机', () => openMemberPicker('check-phone', '翻谁的手机？'))}
                             {strip(<EnvelopeOpen size={20} weight="bold" />, '悄悄来信', '设置某位群友主动找你', () => openMemberPicker('proactive', '让谁悄悄来信？'))}
                             {strip(<Scroll size={20} weight="bold" />, 'TA 的日常', '看某位群友离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
@@ -3287,9 +3746,38 @@ ${attachedImagesNote}
 
             {/* --- Modals --- */}
 
-            {/* Group Settings Modal */}
-            <Modal isOpen={modalType === 'settings'} title="群聊设置" en="GROUP SETTINGS · 后台" icon={<ScrapStamp><GearSix size={16} weight="bold" /></ScrapStamp>} onClose={() => setModalType('none')} footer={<ScrapBtn onClick={handleUpdateGroupInfo} icon={<GearSix size={16} weight="bold" />}>记下这些改动</ScrapBtn>}>
-                <div className="space-y-6">
+            {/* Group Settings Panel */}
+            {modalType === 'settings' && activeGroup && (
+                <div className="absolute inset-0 z-[260] flex flex-col animate-fade-in" style={{ paddingTop: 'var(--safe-top)', backgroundColor: '#fafafa' }}>
+                    <div className="shrink-0 flex items-center gap-3 px-4 py-3 bg-white" style={{ borderBottom: '1px solid #ededed', boxShadow: '0 1px 3px rgba(122,90,114,0.08)' }}>
+                        <button
+                            onClick={() => setModalType('none')}
+                            className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                            style={{ boxShadow: '0 1px 3px rgba(122,90,114,0.18)', border: '1px solid #ededed' }}
+                            aria-label="返回群聊"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="#9c5e74" className="w-[18px] h-[18px]">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                            </svg>
+                        </button>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-[16px] font-bold leading-tight" style={{ ...GROUP_SETTINGS_SERIF, color: '#5a3140' }}>群聊手帐</span>
+                                <span className="text-[8.5px] tracking-[0.24em] select-none" style={{ ...GROUP_SETTINGS_MONO, color: '#b07a8d' }}>GROUP NOTE</span>
+                            </div>
+                            <div className="text-[10px] truncate mt-0.5" style={{ color: '#a96f84' }}>{activeGroup.name} · 群聊设置</div>
+                        </div>
+                        <button
+                            onClick={handleUpdateGroupInfo}
+                            className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 transition-transform flex items-center gap-1"
+                            style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#b25e7a', boxShadow: '0 1px 2px rgba(122,90,114,0.12)' }}
+                        >
+                            <GearSix size={13} weight="bold" />
+                            记下
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
+                <GroupSettingsPage no="01" title="群名与名片" en="Name Tags">
                     {/* Header Info */}
                     <div className="flex justify-center">
                         <div onClick={() => groupAvatarInputRef.current?.click()} className="w-24 h-24 flex items-center justify-center cursor-pointer overflow-hidden relative group active:scale-95 transition-transform" style={{ background: '#efece3', border: `1.5px dashed ${INK_SOFT}`, borderRadius: 22 }}>
@@ -3309,7 +3797,79 @@ ${attachedImagesNote}
                         <ScrapInput value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} />
                         <ScrapNote className="mt-1.5">你在这个群里挂的名字，留空就用本名。成员们也会随心情和剧情给自己改名片。</ScrapNote>
                     </div>
+                </GroupSettingsPage>
 
+                <GroupSettingsPage no="02" title="聊天记录" en="Chat Files">
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <div className="flex items-center justify-between gap-2">
+                            <ScrapLabel en="CHAT FILES">群聊聊天记录</ScrapLabel>
+                            <button
+                                type="button"
+                                onClick={handleToggleGroupPinned}
+                                className="shrink-0 px-2.5 py-1.5 rounded-full text-[10px] font-black active:scale-95 transition-transform flex items-center gap-1"
+                                style={{ background: activeGroup?.pinned ? INK : 'rgba(255,253,247,0.82)', color: activeGroup?.pinned ? '#f6f3ec' : INK, border: `1px solid ${INK_SOFT}66` }}
+                            >
+                                {activeGroup?.pinned ? <PushPinSlash size={12} weight="bold" /> : <PushPin size={12} weight="bold" />}
+                                {activeGroup?.pinned ? '取消置顶' : '置顶群聊'}
+                            </button>
+                        </div>
+                        <ScrapInput value={tempArchiveTitle} onChange={e => setTempArchiveTitle(e.target.value)} placeholder="这份聊天记录的标题" />
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleStartNewGroupChat()} icon={<ChatsTeardrop size={15} weight="bold" />}>新聊天</ScrapBtn>
+                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleExportGroupChat('moro')} icon={<DownloadSimple size={15} weight="bold" />}>导出记录</ScrapBtn>
+                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleExportGroupChat('jsonl')} icon={<Export size={15} weight="bold" />}>导出 JSONL</ScrapBtn>
+                            <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => groupArchiveInputRef.current?.click()} icon={<UploadSimple size={15} weight="bold" />}>导入记录</ScrapBtn>
+                            <ScrapBtn variant="danger" full={false} className="text-xs" onClick={() => void handleDeleteAllGroupChatRecords()} icon={<Trash size={15} weight="bold" />}>删除当前</ScrapBtn>
+                        </div>
+                        <input type="file" ref={groupArchiveInputRef} className="hidden" accept=".json,.jsonl,.ndjson,application/json,text/plain" onChange={handleImportGroupChat} />
+                        <div className="mt-3 space-y-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                            {getSortedGroupChatRecords(activeGroup).map(record => {
+                                const active = record.id === activeGroup?.activeChatRecordId;
+                                const count = active ? totalMsgCount : record.messages.length;
+                                return (
+                                    <div
+                                        key={record.id}
+                                        onClick={() => void handleSwitchGroupChatRecord(record.id)}
+                                        className="flex items-center gap-2.5 px-3 py-2 active:scale-[0.99] transition-transform cursor-pointer"
+                                        style={{ background: active ? 'rgba(31,29,26,0.10)' : 'rgba(255,253,247,0.78)', border: `1px solid ${active ? INK : `${INK_SOFT}55`}`, borderRadius: 12 }}
+                                    >
+                                        <FileText size={17} weight={active ? 'fill' : 'bold'} className="shrink-0" style={{ color: active ? INK : INK_SOFT }} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                {record.pinned && <PushPin size={11} weight="fill" className="shrink-0" style={{ color: INK }} />}
+                                                <span className="text-[12px] font-black truncate" style={{ color: INK }}>{record.title}</span>
+                                            </div>
+                                            <div className="text-[10px] mt-0.5 truncate" style={{ color: INK_SOFT }}>
+                                                {active ? '当前打开' : `${count} 条`} · {new Date(record.updatedAt || record.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button type="button" onClick={e => { e.stopPropagation(); void handleToggleGroupChatRecordPinned(record); }} className="p-1 active:scale-90 transition-transform" title={record.pinned ? '取消置顶' : '置顶'}>
+                                                {record.pinned ? <PushPinSlash size={14} weight="bold" style={{ color: INK }} /> : <PushPin size={14} weight="bold" style={{ color: INK_SOFT }} />}
+                                            </button>
+                                            <button type="button" onClick={e => { e.stopPropagation(); void handleRenameGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="修改标题">
+                                                <PencilSimpleLine size={14} weight="bold" style={{ color: INK_SOFT }} />
+                                            </button>
+                                            <button type="button" onClick={e => { e.stopPropagation(); void handleExportGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="导出">
+                                                <DownloadSimple size={14} weight="bold" style={{ color: INK_SOFT }} />
+                                            </button>
+                                            <button type="button" onClick={e => { e.stopPropagation(); void handleDeleteGroupChatRecord(record); }} className="p-1 active:scale-90 transition-transform" title="删除">
+                                                <Trash size={14} weight="bold" style={{ color: '#b45353' }} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {getSortedGroupChatRecords(activeGroup).length === 0 && (
+                                <ScrapNote center className="py-2">点「新聊天」后，当前这份会存进其他聊天记录。</ScrapNote>
+                            )}
+                        </div>
+                        <ScrapNote className="mt-2">导入支持 Moro 记录包，也能读 SillyTavern JSONL；导入会作为一份新聊天记录并自动切过去。</ScrapNote>
+                    </div>
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="03" title="公告与成员" en="Members">
                     {/* 群公告：群主/管理员可发布，所有成员可查看 */}
                     <div>
                         <ScrapLabel en="NOTICE">群里公告</ScrapLabel>
@@ -3375,6 +3935,73 @@ ${attachedImagesNote}
                         </div>
                         <ScrapNote className="mt-2">点成员看资料；聊天里点头像也能进，连点两下就是戳一戳。</ScrapNote>
                     </div>
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="04" title="特别关心" en="Special Care">
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <ScrapLabel en="SPECIAL CARE">特别关心角色</ScrapLabel>
+                                <ScrapNote className="mt-0.5">这些成员在群里发言会带提醒感，适合你想重点追的角色。</ScrapNote>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setTempSpecialCareNotify(v => !v)}
+                                className="relative w-11 h-6 rounded-full shrink-0 transition-colors"
+                                style={{ background: tempSpecialCareNotify ? INK : '#d9d3c7' }}
+                                title={tempSpecialCareNotify ? '消息提醒开启' : '消息提醒关闭'}
+                            >
+                                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${tempSpecialCareNotify ? 'translate-x-5' : ''}`} style={{ background: '#fbf9f2', boxShadow: '0 1px 3px rgba(31,29,26,0.35)' }} />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 mt-3 max-h-36 overflow-y-auto no-scrollbar pr-1">
+                            {(activeGroup?.members || []).map(mid => {
+                                const c = characters.find(ch => ch.id === mid);
+                                if (!c) return null;
+                                return (
+                                    <ScrapPickTile
+                                        key={mid}
+                                        src={c.avatar}
+                                        label={displayNameOf(activeGroup, mid)}
+                                        selected={tempSpecialCareIds.has(mid)}
+                                        badge={tempSpecialCareIds.has(mid) ? <BellRinging size={12} weight="fill" style={{ color: INK }} /> : undefined}
+                                        onClick={() => setTempSpecialCareIds(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(mid)) next.delete(mid);
+                                            else next.add(mid);
+                                            return next;
+                                        })}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+                </GroupSettingsPage>
+
+                <GroupSettingsPage no="05" title="底纸与记性" en="Paper Memory">
+                    <div className="pt-3">
+                        <ScrapDivider className="mb-3" />
+                        <ScrapLabel en="BACKGROUND">这个群的聊天背景</ScrapLabel>
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => groupBackgroundInputRef.current?.click()}
+                                className="w-24 h-16 rounded-xl overflow-hidden border border-dashed flex items-center justify-center shrink-0 active:scale-95 transition-transform"
+                                style={{ borderColor: INK_SOFT, ...groupBackgroundStyleFor(activeGroup?.chatBackgroundImage, osTheme.groupChatBackgroundStyle || osTheme.chatBackgroundStyle || 'paper') }}
+                            >
+                                {!activeGroup?.chatBackgroundImage && <ImageSquare size={20} weight="bold" style={{ color: INK_SOFT }} />}
+                            </button>
+                            <div className="flex-1 min-w-0 space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => groupBackgroundInputRef.current?.click()} icon={<ImageSquare size={15} weight="bold" />}>换背景</ScrapBtn>
+                                    <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleRemoveGroupBackground()} icon={<Eraser size={15} weight="bold" />}>用通用</ScrapBtn>
+                                </div>
+                                <ScrapNote>单群背景在这里设；全群通用背景移到「拼贴册 → 聊天界面 → 群聊通用背景」。</ScrapNote>
+                            </div>
+                        </div>
+                        <input type="file" ref={groupBackgroundInputRef} className="hidden" accept="image/*" onChange={handleGroupBackgroundUpload} />
+                    </div>
 
                     {/* Context Limit */}
                     <div className="pt-3">
@@ -3393,7 +4020,9 @@ ${attachedImagesNote}
                         <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>20 · 省着用</span><span>500 · 全带上</span></div>
                         <ScrapNote className="mt-1">成员各自的私聊里，最多捎上本群最近这么多条当「近来群里的事」。每个群单独算，免得热闹的群把安静的群挤没了。</ScrapNote>
                     </div>
+                </GroupSettingsPage>
 
+                <GroupSettingsPage no="06" title="收纳箱" en="Storage">
                     {/* Memory & Context Management */}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
@@ -3441,8 +4070,11 @@ ${attachedImagesNote}
                             <ScrapBtn variant="danger" full={false} className="flex-1 text-xs" onClick={() => { if(activeGroup) handleDissolveGroup(activeGroup.id); }} icon={<Trash size={15} weight="bold" />}>就地解散</ScrapBtn>
                         </div>
                     </div>
+                </GroupSettingsPage>
+                <ScrapBtn onClick={handleUpdateGroupInfo} icon={<GearSix size={16} weight="bold" />}>记下这些改动</ScrapBtn>
                 </div>
-            </Modal>
+                </div>
+            )}
 
             {/* Message Options Modal */}
             <Modal isOpen={modalType === 'message-options'} title="这条怎么处理" en="MESSAGE" onClose={() => { setModalType('none'); setSelectedMessage(null); }}>
@@ -3788,6 +4420,38 @@ ${attachedImagesNote}
                 <div className="space-y-2.5">
                     <ScrapNote>你当「导演/旁白」，给全群递一条后台提示（作为系统提示出现，大家照着演）。</ScrapNote>
                     <ScrapTextarea value={sysCmd} onChange={e => setSysCmd(e.target.value)} placeholder="比如：忽然停电了，大家摸黑找蜡烛…" rows={3} autoFocus />
+                </div>
+            </Modal>
+
+            {/* 赴个约：回形针入口，一键把当前群聊切成面对面场景 */}
+            <Modal isOpen={actionModal === 'offline-mode'} title="赴个约" en="DATE · FACE TO FACE" icon={<ScrapStamp><Signpost size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={() => void enterGroupOfflineMode()} icon={<Signpost size={16} weight="bold" />}>赴约</ScrapBtn>}>
+                <div className="space-y-3">
+                    <ScrapNote>这会保存赴约文风，并往群里落一条系统纸条；下一轮导演会按面对面状态接着写。</ScrapNote>
+                    <div className="grid grid-cols-3 gap-2">
+                        {([
+                            ['choose', '选择开场', <FileText size={14} weight="bold" />],
+                            ['story', '随剧情赴约', <FastForward size={14} weight="bold" />],
+                            ['skip', '不用开场', <Prohibit size={14} weight="bold" />],
+                        ] as const).map(([value, label, icon]) => (
+                            <button
+                                key={value}
+                                type="button"
+                                onClick={() => setTempOfflineOpeningStrategy(value)}
+                                className="px-2 py-2 rounded-xl text-[10px] font-black flex flex-col items-center gap-1 active:scale-95 transition-transform"
+                                style={tempOfflineOpeningStrategy === value
+                                    ? { background: INK, color: '#f6f3ec', outline: '1px dashed rgba(255,255,255,0.35)', outlineOffset: -4 }
+                                    : { background: 'rgba(255,253,247,0.82)', color: INK, border: `1px solid ${INK_SOFT}55` }}
+                            >
+                                {icon}
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    <ScrapTextarea value={tempOfflineStyle} onChange={e => setTempOfflineStyle(e.target.value)} placeholder="赴约文风：比如少旁白、多动作短句、像坐在同一张桌边…" rows={3} autoFocus />
+                    <div>
+                        <ScrapLabel en="MAX CHARS">字数限制 · {tempOfflineMaxChars}</ScrapLabel>
+                        <input type="range" min="60" max="2000" step="20" value={tempOfflineMaxChars} onChange={e => setTempOfflineMaxChars(parseInt(e.target.value, 10))} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
+                    </div>
                 </div>
             </Modal>
 

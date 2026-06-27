@@ -1102,6 +1102,32 @@ export const DB = {
       });
   },
 
+  replaceGroupMessages: async (groupId: string, messages: Message[]): Promise<void> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_MESSAGES, 'readwrite');
+          const store = transaction.objectStore(STORE_MESSAGES);
+          const index = store.index('groupId');
+          const cursorReq = index.openCursor(IDBKeyRange.only(groupId));
+          cursorReq.onsuccess = () => {
+              const cursor = cursorReq.result;
+              if (cursor) {
+                  cursor.delete();
+                  cursor.continue();
+              } else {
+                  for (const msg of messages) {
+                      const { id: _id, ...payload } = msg;
+                      store.add({ ...payload, groupId, timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Date.now() });
+                  }
+              }
+          };
+          cursorReq.onerror = () => reject(cursorReq.error);
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+      });
+  },
+
   getRecentGroupMessagesWithCount: async (groupId: string, limit: number): Promise<{ messages: Message[], totalCount: number }> => {
       const db = await openDB();
       return new Promise((resolve, reject) => {

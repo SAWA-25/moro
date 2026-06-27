@@ -21,6 +21,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'soft',
             chatBackgroundStyle: 'plain',
+            groupChatBackgroundStyle: 'plain',
             chatHeaderStyle: 'default',
             chatHeaderAlign: 'left',
             chatHeaderDensity: 'default',
@@ -41,6 +42,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'floating',
             chatBackgroundStyle: 'plain',
+            groupChatBackgroundStyle: 'plain',
             chatHeaderStyle: 'minimal',
             chatHeaderAlign: 'center',
             chatHeaderDensity: 'airy',
@@ -61,6 +63,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'flat',
             chatBackgroundStyle: 'paper',
+            groupChatBackgroundStyle: 'paper',
             chatHeaderStyle: 'wechat',
             chatHeaderAlign: 'left',
             chatHeaderDensity: 'compact',
@@ -81,6 +84,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'floating',
             chatBackgroundStyle: 'mesh',
+            groupChatBackgroundStyle: 'mesh',
             chatHeaderStyle: 'telegram',
             chatHeaderAlign: 'center',
             chatHeaderDensity: 'default',
@@ -101,6 +105,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'floating',
             chatBackgroundStyle: 'grid',
+            groupChatBackgroundStyle: 'grid',
             chatHeaderStyle: 'discord',
             chatHeaderAlign: 'left',
             chatHeaderDensity: 'default',
@@ -121,6 +126,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'soft',
             chatBackgroundStyle: 'mesh',
+            groupChatBackgroundStyle: 'mesh',
             chatHeaderStyle: 'minimal',
             chatHeaderAlign: 'center',
             chatHeaderDensity: 'airy',
@@ -141,6 +147,7 @@ const presets: Array<{ name: string; desc: string; config: Partial<OSTheme> }> =
         config: {
             chatChromeStyle: 'pixel',
             chatBackgroundStyle: 'grid',
+            groupChatBackgroundStyle: 'grid',
             chatHeaderStyle: 'pixel',
             chatHeaderAlign: 'left',
             chatHeaderDensity: 'compact',
@@ -168,6 +175,7 @@ const defaults = {
     chatInputStyle: 'default',
     chatChromeStyle: 'soft',
     chatBackgroundStyle: 'plain',
+    groupChatBackgroundStyle: 'plain',
     chatHeaderAlign: 'left',
     chatHeaderDensity: 'default',
     chatStatusStyle: 'subtle',
@@ -425,6 +433,7 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
     const inputStyle = theme.chatInputStyle || defaults.chatInputStyle;
     const chromeStyle = theme.chatChromeStyle || defaults.chatChromeStyle;
     const backgroundStyle = theme.chatBackgroundStyle || defaults.chatBackgroundStyle;
+    const groupBackgroundStyle = theme.groupChatBackgroundStyle || backgroundStyle;
     const headerAlign = theme.chatHeaderAlign || defaults.chatHeaderAlign;
     const headerDensity = theme.chatHeaderDensity || defaults.chatHeaderDensity;
     const statusStyle = theme.chatStatusStyle || defaults.chatStatusStyle;
@@ -563,6 +572,9 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <ChoiceGroup title="聊天壳" items={choices.chrome} value={chromeStyle} onPick={(value) => updateTheme({ chatChromeStyle: value as OSTheme['chatChromeStyle'] })} />
                 <div className="mt-4">
                     <ChoiceGroup title="消息区背景" items={choices.background} value={backgroundStyle} onPick={(value) => updateTheme({ chatBackgroundStyle: value as OSTheme['chatBackgroundStyle'] })} />
+                </div>
+                <div className="mt-4">
+                    <ChoiceGroup title="群聊通用背景" items={choices.background} value={groupBackgroundStyle} onPick={(value) => updateTheme({ groupChatBackgroundStyle: value as OSTheme['groupChatBackgroundStyle'] })} />
                 </div>
             </section>
 
