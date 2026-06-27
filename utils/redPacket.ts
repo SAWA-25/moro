@@ -14,6 +14,50 @@ export const yuanToCents = (yuan: number): number => Math.round(yuan * 100);
 /** 分 → 元（保留两位小数的数值）。 */
 export const centsToYuan = (cents: number): number => Math.round(cents) / 100;
 
+export type GroupRedPacketKind = 'normal' | 'password';
+
+export interface GroupRedPacketMetadata {
+    kind: 'redpacket';
+    amount: number;
+    status: 'pending';
+    note?: string;
+    rpType?: 'password';
+    password?: string;
+}
+
+export function buildGroupRedPacketMetadata({
+    amount,
+    type,
+    note,
+    password,
+}: {
+    amount: number;
+    type: GroupRedPacketKind;
+    note?: string;
+    password?: string;
+}): GroupRedPacketMetadata {
+    const trimmedNote = note?.trim();
+    const trimmedPassword = password?.trim();
+    const meta: GroupRedPacketMetadata = {
+        kind: 'redpacket',
+        amount,
+        status: 'pending',
+    };
+    if (trimmedNote) meta.note = trimmedNote;
+    if (type === 'password' && trimmedPassword) {
+        meta.rpType = 'password';
+        meta.password = trimmedPassword;
+    }
+    return meta;
+}
+
+export function isPasswordRedPacketPhraseAccepted(password: string, input: string): boolean {
+    const expected = password.trim();
+    const actual = input.trim();
+    if (!expected || !actual) return false;
+    return expected === actual;
+}
+
 /**
  * 把 totalCents 分成 count 份的拼手气红包。
  * @param totalCents 总额（分，整数）

@@ -19,7 +19,8 @@ import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
-import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from '../utils/redPacket';
+import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, buildGroupRedPacketMetadata, isPasswordRedPacketPhraseAccepted } from '../utils/redPacket';
+import { OFFLINE_OPENING_PRESETS, resolveOpeningFrame, type OfflineOpeningPreset } from '../utils/offlineMode';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 
@@ -29,8 +30,8 @@ const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
 // 复用 Chat.tsx 的高颜值样式逻辑，但针对群聊微调
 const PRESET_THEME_GROUP: ChatTheme = {
     id: 'group_default', name: 'Group', type: 'preset',
-    user: { textColor: '#ffffff', backgroundColor: '#8b5cf6', borderRadius: 18, opacity: 1 }, // Violet for User
-    ai: { textColor: '#1e293b', backgroundColor: '#ffffff', borderRadius: 18, opacity: 1 }  // White for Others
+    user: { textColor: '#5a3140', backgroundColor: '#fff4f7', borderRadius: 22, opacity: 1 },
+    ai: { textColor: '#5a3140', backgroundColor: '#fffdfa', borderRadius: 22, opacity: 1 },
 };
 
 const groupBackgroundStyleFor = (
@@ -48,25 +49,25 @@ const groupBackgroundStyleFor = (
     }
     if (style === 'grid') {
         return {
-            backgroundColor: '#f8fafc',
-            backgroundImage: 'linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px)',
+            backgroundColor: '#ededed',
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.46) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.46) 1px, transparent 1px)',
             backgroundSize: '20px 20px',
         };
     }
     if (style === 'paper') {
         return {
-            backgroundColor: '#faf9f6',
-            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(148,163,184,0.13) 1px, transparent 0)',
+            backgroundColor: '#ededed',
+            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.78) 1px, transparent 0)',
             backgroundSize: '16px 16px',
         };
     }
     if (style === 'mesh') {
         return {
-            backgroundColor: '#f8fafc',
-            backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(59,130,246,0.15), transparent 28%), radial-gradient(circle at 86% 18%, rgba(244,114,182,0.14), transparent 24%), radial-gradient(circle at 60% 78%, rgba(45,212,191,0.13), transparent 26%)',
+            backgroundColor: '#ededed',
+            backgroundImage: 'radial-gradient(circle at 18% 18%, rgba(255,255,255,0.68), transparent 30%), radial-gradient(circle at 82% 24%, rgba(255,244,247,0.55), transparent 28%)',
         };
     }
-    return { backgroundColor: '#faf9f6' };
+    return { backgroundColor: '#ededed' };
 };
 
 const GROUP_SETTINGS_SERIF: React.CSSProperties = { fontFamily: 'Georgia, "Times New Roman", "Songti SC", serif' };
@@ -111,6 +112,7 @@ const GroupMessageItem = React.memo(({
     onShowNicknameThought,
     mentionNames,
     onCollectClick,
+    onRedPacketOpen,
     onPollVote,
     onPollClick,
     onRelayClick,
@@ -144,6 +146,8 @@ const GroupMessageItem = React.memo(({
     mentionNames?: string[],
     /** 点群收款卡：打开收款详情（收款方视角，逐笔点收） */
     onCollectClick?: (msg: Message) => void,
+    /** 点口令红包卡：输入口令后打开 */
+    onRedPacketOpen?: (msg: Message) => void,
     /** 群投票：用户点某选项投票（单选） */
     onPollVote?: (msg: Message, optionIdx: number) => void,
     /** 群投票：点卡片头部打开票数详情 */
@@ -314,15 +318,81 @@ const GroupMessageItem = React.memo(({
                         <button
                             onClick={() => { if (!selectionMode) onCollectClick?.(msg); }}
                             className="w-60 text-left p-3 rounded-[14px] flex items-center gap-3 relative overflow-hidden active:scale-95 transition-transform"
-                            style={{ background: done ? 'linear-gradient(150deg,#0f766e,#134e4a)' : 'linear-gradient(150deg,#0d9488,#0f766e)', boxShadow: '0 12px 24px -16px rgba(13,148,136,0.7)' }}
+                            style={{ background: done ? 'linear-gradient(180deg,#fffdfa,#f8f4f6)' : 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 12px 24px -18px rgba(122,90,114,0.38)' }}
                         >
-                            <div className="bg-white/20 p-2 rounded-full shrink-0 text-white"><Wallet size={24} weight="fill" /></div>
-                            <div className="z-10 min-w-0 text-white">
+                            <div className="p-2 rounded-full shrink-0" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}><Wallet size={24} weight="fill" /></div>
+                            <div className="z-10 min-w-0">
                                 <div className="font-bold text-sm tracking-wide truncate">{tmeta.note || '群收款 · AA'}</div>
-                                <div className="text-[10px] opacity-90">{done ? `已收齐 ¥${tmeta.total}` : `已收 ¥${paidSum} / ¥${tmeta.total} · ${paidCount}/${shares.length} 人`}</div>
-                                <div className="text-[9px] opacity-70 mt-0.5">{done ? 'Moro Pay · 收款单' : '点开收款 · Moro Pay'}</div>
+                                <div className="text-[10px]" style={{ color: '#8a6478' }}>{done ? `已收齐 ¥${tmeta.total}` : `已收 ¥${paidSum} / ¥${tmeta.total} · ${paidCount}/${shares.length} 人`}</div>
+                                <div className="text-[9px] mt-0.5" style={{ color: '#a892a3' }}>{done ? 'Moro Pay · 收款单' : '点开收款 · Moro Pay'}</div>
                             </div>
                         </button>
+                    );
+                }
+                if (tmeta.kind === 'redpacket') {
+                    const isLucky = tmeta.rpType === 'lucky';
+                    const isPassword = tmeta.rpType === 'password';
+                    const passwordPhrase = isPassword && typeof tmeta.password === 'string' ? tmeta.password.trim() : '';
+                    const opened = tmeta.status === 'opened' || tmeta.status === 'claimed' || tmeta.status === 'finished';
+                    const canOpen = isPassword && !opened && !selectionMode && !!onRedPacketOpen;
+                    const note = typeof tmeta.note === 'string' && tmeta.note.trim()
+                        ? tmeta.note.trim()
+                        : isLucky
+                            ? '拼手气红包，看谁手气最好'
+                            : isPassword
+                                ? '输入口令拆开红包'
+                                : '恭喜发财，大吉大利';
+                    const title = isLucky ? '拼手气红包' : isPassword ? '口令红包' : '红包';
+                    const sub = isLucky
+                        ? `共 ${tmeta.count ?? (Array.isArray(tmeta.grabs) ? tmeta.grabs.length : 0)} 份`
+                        : isPassword
+                            ? (opened ? '口令正确 · 已打开' : '输入口令才能打开')
+                            : 'Moro Pay · 红包';
+                    const grabs: any[] = Array.isArray(tmeta.grabs) ? tmeta.grabs : [];
+                    return (
+                        <div
+                            onClick={() => { if (canOpen) onRedPacketOpen?.(msg); }}
+                            className={`w-64 rounded-[18px] p-4 relative overflow-hidden transition-transform ${canOpen ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+                            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
+                        >
+                            <div className="relative flex items-center gap-2 mb-3">
+                                <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>
+                                    {isLucky ? '拼' : isPassword ? '令' : '包'}
+                                </span>
+                                <div className="leading-tight min-w-0">
+                                    <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase truncate" style={{ color: '#a892a3' }}>Red&nbsp;Packet</div>
+                                    <div className="text-[10px] truncate" style={{ color: '#a892a3' }}>{title}</div>
+                                </div>
+                            </div>
+                            <div className="relative">
+                                <div className="text-[12.5px] mb-1.5 truncate italic" style={{ opacity: 0.82 }}>「{note}」</div>
+                                {isPassword && passwordPhrase && (
+                                    <div className="mb-2 inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-bold" style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}>
+                                        <span className="shrink-0" style={{ color: '#a892a3' }}>口令</span>
+                                        <span className="min-w-0 truncate">{passwordPhrase}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-end gap-1">
+                                    <span className="text-[15px] font-bold pb-1" style={{ opacity: 0.65 }}>{isLucky ? '共 ¥' : '¥'}</span>
+                                    <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{tmeta.amount}</span>
+                                </div>
+                                {isLucky && grabs.length > 0 && (
+                                    <div className="mt-2.5 pt-2 space-y-1 max-h-[92px] overflow-y-auto no-scrollbar" style={{ borderTop: '1px solid #eed6df' }}>
+                                        {grabs.slice(0, 4).map((g, i) => (
+                                            <div key={i} className="flex items-center justify-between text-[11px]">
+                                                <span className="truncate" style={{ color: '#5a3140' }}>{g.id === tmeta.bestId ? '手气最佳 · ' : ''}{g.name}</span>
+                                                <span className="font-bold tabular-nums" style={{ color: '#5a3140' }}>¥{g.amount}</span>
+                                            </div>
+                                        ))}
+                                        {grabs.length > 4 && <div className="text-[10px]" style={{ color: '#a892a3' }}>还有 {grabs.length - 4} 人已领取</div>}
+                                    </div>
+                                )}
+                                <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
+                                    <span className={`text-[10px] ${canOpen ? 'font-bold' : ''}`} style={{ color: canOpen ? '#5a3140' : '#a892a3' }}>{sub}</span>
+                                    <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
+                                </div>
+                            </div>
+                        </div>
                     );
                 }
                 return (
@@ -354,13 +424,13 @@ const GroupMessageItem = React.memo(({
             case 'location': {
                 const meta = (msg.metadata as any) || {};
                 return (
-                    <div className="w-56 rounded-2xl overflow-hidden shadow-sm border border-slate-100 bg-white active:scale-95 transition-transform">
-                        <div className="h-20 bg-gradient-to-br from-sky-100 to-emerald-100 flex items-center justify-center">
-                            <svg viewBox="0 0 24 24" fill="#10b981" className="w-8 h-8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" /></svg>
+                    <div className="w-56 rounded-2xl overflow-hidden border bg-[#fffdfa] active:scale-95 transition-transform" style={{ borderColor: '#eed6df' }}>
+                        <div className="h-20 bg-[#fff4f7] flex items-center justify-center">
+                            <svg viewBox="0 0 24 24" fill="#d8a5b7" className="w-8 h-8"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z" /></svg>
                         </div>
                         <div className="p-2.5">
-                            <div className="text-[13px] font-bold text-slate-800 truncate">{msg.content}</div>
-                            {meta.address && <div className="text-[11px] text-slate-400 truncate mt-0.5">{meta.address}</div>}
+                            <div className="text-[13px] font-bold text-[#5a3140] truncate">{msg.content}</div>
+                            {meta.address && <div className="text-[11px] text-[#a892a3] truncate mt-0.5">{meta.address}</div>}
                         </div>
                     </div>
                 );
@@ -370,12 +440,12 @@ const GroupMessageItem = React.memo(({
                 const options: any[] = Array.isArray(pmeta.options) ? pmeta.options : [];
                 const totalVotes = options.reduce((a, o) => a + (o.voters?.length || 0), 0);
                 return (
-                    <div className="w-64 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white">
-                        <button onClick={() => { if (!selectionMode) onPollClick?.(msg); }} className="w-full px-3.5 pt-3 pb-2 flex items-start gap-2 text-left active:bg-slate-50">
-                            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0"><ChartBar size={16} weight="bold" /></div>
+                    <div className="w-64 rounded-2xl overflow-hidden border bg-[#fffdfa]" style={{ borderColor: '#eed6df' }}>
+                        <button onClick={() => { if (!selectionMode) onPollClick?.(msg); }} className="w-full px-3.5 pt-3 pb-2 flex items-start gap-2 text-left active:bg-[#fff4f7]">
+                            <div className="w-7 h-7 rounded-lg bg-[#fff4f7] text-[#9c5e74] flex items-center justify-center shrink-0"><ChartBar size={16} weight="bold" /></div>
                             <div className="min-w-0 flex-1">
-                                <div className="text-[10px] text-indigo-400 font-bold">群投票</div>
-                                <div className="text-[13px] font-bold text-slate-800 leading-snug break-all">{pmeta.question}</div>
+                                <div className="text-[10px] text-[#a892a3] font-bold">群投票</div>
+                                <div className="text-[13px] font-bold text-[#5a3140] leading-snug break-all">{pmeta.question}</div>
                             </div>
                         </button>
                         <div className="px-3 pb-3 space-y-1.5">
@@ -384,17 +454,17 @@ const GroupMessageItem = React.memo(({
                                 const pct = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
                                 const mine = (o.voters || []).includes('user');
                                 return (
-                                    <button key={i} onClick={() => { if (!selectionMode) onPollVote?.(msg, i); }} className="w-full relative rounded-lg overflow-hidden border border-slate-100 active:scale-[0.98] transition-transform text-left">
-                                        <div className="absolute inset-0 bg-indigo-50" style={{ width: `${pct}%` }} />
+                                    <button key={i} onClick={() => { if (!selectionMode) onPollVote?.(msg, i); }} className="w-full relative rounded-lg overflow-hidden border active:scale-[0.98] transition-transform text-left" style={{ borderColor: '#eed6df' }}>
+                                        <div className="absolute inset-0 bg-[#fff4f7]" style={{ width: `${pct}%` }} />
                                         <div className="relative flex items-center gap-2 px-2.5 py-1.5">
-                                            <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${mine ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300'}`}>{mine && <span className="w-1.5 h-1.5 rounded-full bg-white" />}</span>
-                                            <span className="text-[12px] text-slate-700 flex-1 truncate">{o.text}</span>
-                                            <span className="text-[11px] text-slate-400 font-bold shrink-0">{count}</span>
+                                            <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 flex items-center justify-center ${mine ? 'border-[#d8a5b7] bg-[#d8a5b7]' : 'border-[#eed6df]'}`}>{mine && <span className="w-1.5 h-1.5 rounded-full bg-white" />}</span>
+                                            <span className="text-[12px] text-[#5a3140] flex-1 truncate">{o.text}</span>
+                                            <span className="text-[11px] text-[#a892a3] font-bold shrink-0">{count}</span>
                                         </div>
                                     </button>
                                 );
                             })}
-                            <div className="text-[10px] text-slate-300 text-center pt-0.5">{totalVotes} 票 · 点选项投票 · 点标题看是谁投的</div>
+                            <div className="text-[10px] text-[#a892a3] text-center pt-0.5">{totalVotes} 票 · 点选项投票 · 点标题看是谁投的</div>
                         </div>
                     </div>
                 );
@@ -404,25 +474,25 @@ const GroupMessageItem = React.memo(({
                 const entries: any[] = Array.isArray(rmeta.entries) ? rmeta.entries : [];
                 const shown = entries.slice(0, 4);
                 return (
-                    <button onClick={() => { if (!selectionMode) onRelayClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white text-left active:bg-slate-50 transition-colors">
-                        <div className="px-3.5 pt-3 pb-2 flex items-start gap-2 border-b border-slate-50">
-                            <div className="w-7 h-7 rounded-lg bg-orange-50 text-orange-500 flex items-center justify-center shrink-0"><ListNumbers size={16} weight="bold" /></div>
+                    <button onClick={() => { if (!selectionMode) onRelayClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden border bg-[#fffdfa] text-left active:bg-[#fff4f7] transition-colors" style={{ borderColor: '#eed6df' }}>
+                        <div className="px-3.5 pt-3 pb-2 flex items-start gap-2 border-b bg-[#fffdfa]" style={{ borderColor: '#eed6df' }}>
+                            <div className="w-7 h-7 rounded-lg bg-[#fff4f7] text-[#9c5e74] flex items-center justify-center shrink-0"><ListNumbers size={16} weight="bold" /></div>
                             <div className="min-w-0 flex-1">
-                                <div className="text-[10px] text-orange-400 font-bold">接龙</div>
-                                <div className="text-[13px] font-bold text-slate-800 leading-snug break-all">{rmeta.title}</div>
+                                <div className="text-[10px] text-[#a892a3] font-bold">接龙</div>
+                                <div className="text-[13px] font-bold text-[#5a3140] leading-snug break-all">{rmeta.title}</div>
                             </div>
                         </div>
                         <div className="px-3.5 py-2 space-y-1">
                             {entries.length === 0 ? (
-                                <div className="text-[11px] text-slate-300 py-1">还没人接 · 点开来接龙</div>
+                                <div className="text-[11px] text-[#a892a3] py-1">还没人接 · 点开来接龙</div>
                             ) : (
                                 shown.map((e, i) => (
-                                    <div key={i} className="text-[12px] text-slate-600 leading-snug truncate"><span className="text-orange-400 font-bold mr-1">{i + 1}.</span><span className="font-medium text-slate-700">{e.name}</span> {e.text}</div>
+                                    <div key={i} className="text-[12px] text-[#8a6478] leading-snug truncate"><span className="text-[#d8a5b7] font-bold mr-1">{i + 1}.</span><span className="font-medium text-[#5a3140]">{e.name}</span> {e.text}</div>
                                 ))
                             )}
-                            {entries.length > shown.length && <div className="text-[10px] text-slate-300">…还有 {entries.length - shown.length} 条</div>}
+                            {entries.length > shown.length && <div className="text-[10px] text-[#a892a3]">…还有 {entries.length - shown.length} 条</div>}
                         </div>
-                        <div className="px-3.5 pb-2.5 text-[10px] text-orange-400 font-bold">+ 点开接龙</div>
+                        <div className="px-3.5 pb-2.5 text-[10px] text-[#9c5e74] font-bold">+ 点开接龙</div>
                     </button>
                 );
             }
@@ -431,23 +501,23 @@ const GroupMessageItem = React.memo(({
                 const entries: any[] = Array.isArray(cmeta.entries) ? cmeta.entries : [];
                 const shown = entries.slice(0, 5);
                 return (
-                    <button onClick={() => { if (!selectionMode) onCheckinClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden shadow-sm border border-emerald-100 bg-white text-left active:bg-emerald-50/40 transition-colors">
-                        <div className="px-3.5 pt-3 pb-2 flex items-center gap-2 border-b border-emerald-50 bg-gradient-to-r from-emerald-50 to-white">
-                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><CalendarCheck size={16} weight="bold" /></div>
+                    <button onClick={() => { if (!selectionMode) onCheckinClick?.(msg); }} className="w-64 rounded-2xl overflow-hidden border bg-[#fffdfa] text-left active:bg-[#fff4f7] transition-colors" style={{ borderColor: '#eed6df' }}>
+                        <div className="px-3.5 pt-3 pb-2 flex items-center gap-2 border-b bg-[#fffdfa]" style={{ borderColor: '#eed6df' }}>
+                            <div className="w-7 h-7 rounded-lg bg-[#fff4f7] text-[#9c5e74] flex items-center justify-center shrink-0"><CalendarCheck size={16} weight="bold" /></div>
                             <div className="min-w-0 flex-1">
-                                <div className="text-[10px] text-emerald-500 font-bold">群签到 · {cmeta.date}</div>
-                                <div className="text-[13px] font-bold text-slate-800 leading-snug">今日已打卡 {entries.length} 人</div>
+                                <div className="text-[10px] text-[#a892a3] font-bold">群签到 · {cmeta.date}</div>
+                                <div className="text-[13px] font-bold text-[#5a3140] leading-snug">今日已打卡 {entries.length} 人</div>
                             </div>
                         </div>
                         <div className="px-3.5 py-2 flex flex-wrap gap-1">
                             {entries.length === 0 ? (
-                                <span className="text-[11px] text-slate-300">还没人签到</span>
+                                <span className="text-[11px] text-[#a892a3]">还没人签到</span>
                             ) : (
                                 <>
                                     {shown.map((e, i) => (
-                                        <span key={i} className="text-[11px] text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 truncate max-w-full">{e.name}{e.mood ? ` · ${e.mood}` : ''}</span>
+                                        <span key={i} className="text-[11px] text-[#5a3140] bg-[#fff4f7] rounded-full px-2 py-0.5 truncate max-w-full" style={{ border: '1px solid #eed6df' }}>{e.name}{e.mood ? ` · ${e.mood}` : ''}</span>
                                     ))}
-                                    {entries.length > shown.length && <span className="text-[11px] text-slate-300 px-1">+{entries.length - shown.length}</span>}
+                                    {entries.length > shown.length && <span className="text-[11px] text-[#a892a3] px-1">+{entries.length - shown.length}</span>}
                                 </>
                             )}
                         </div>
@@ -456,7 +526,7 @@ const GroupMessageItem = React.memo(({
             }
             default:
                 return (
-                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed shadow-sm whitespace-pre-wrap break-all ${isUser ? 'bg-[#d8a5b7] text-white rounded-tr-sm' : 'bg-white text-slate-700 rounded-tl-sm border border-slate-100'}`}>
+                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed whitespace-pre-wrap break-all ${isUser ? 'bg-[#fff4f7] text-[#5a3140] rounded-tr-sm' : 'bg-[#fffdfa] text-[#5a3140] rounded-tl-sm border border-[#eed6df]'}`}>
                         {renderTextWithMentions(msg.content)}
                     </div>
                 );
@@ -503,7 +573,7 @@ const GroupMessageItem = React.memo(({
                             <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
                         )}
                         {memberTitle && (
-                            <span className="px-1 py-px rounded bg-amber-100 text-amber-600 border border-amber-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
+                            <span className="px-1 py-px rounded bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] text-[8px] font-bold leading-tight">{memberTitle}</span>
                         )}
                         {name}
                     </span>
@@ -657,12 +727,15 @@ const ChatHub: React.FC = () => {
     const [tempAdminIds, setTempAdminIds] = useState<Set<string>>(new Set());
     const [transferAmount, setTransferAmount] = useState('');
     const [transferNote, setTransferNote] = useState('');
+    const [transferPassword, setTransferPassword] = useState('');
     // 群公告编辑草稿（打开「群公告」弹窗时回填当前公告）
     const [tempAnnouncement, setTempAnnouncement] = useState('');
-    // 红包类型：普通（整包给一人） / 拼手气（随机拆 N 份，群成员抢）
-    const [transferRpType, setTransferRpType] = useState<'normal' | 'lucky'>('normal');
+    // 红包类型：普通 / 口令 / 拼手气
+    const [transferRpType, setTransferRpType] = useState<'normal' | 'password' | 'lucky'>('normal');
     // 拼手气份数（默认随群成员数变化，见 Transfer Modal）
     const [transferShares, setTransferShares] = useState('');
+    const [redPacketOpenMsg, setRedPacketOpenMsg] = useState<Message | null>(null);
+    const [redPacketPasswordInput, setRedPacketPasswordInput] = useState('');
     // 群收款（AA 收款）：总额 / 事由 / 被收成员 / 收款详情弹窗目标
     const [collectAmount, setCollectAmount] = useState('');
     const [collectNote, setCollectNote] = useState('');
@@ -690,6 +763,8 @@ const ChatHub: React.FC = () => {
     const [imgPreview, setImgPreview] = useState<string | null>(null);
     const [imgBusy, setImgBusy] = useState(false);
     const [sysCmd, setSysCmd] = useState('');
+    const [tempOfflinePreset, setTempOfflinePreset] = useState<OfflineOpeningPreset>('appointment');
+    const [tempOfflineCustomScenario, setTempOfflineCustomScenario] = useState('');
 
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -711,6 +786,8 @@ const ChatHub: React.FC = () => {
         setTempOfflineStyle(group.offlineMode?.style || '');
         setTempOfflineMaxChars(group.offlineMode?.maxChars || 280);
         setTempOfflineOpeningStrategy(group.offlineMode?.openingStrategy || 'choose');
+        setTempOfflinePreset(group.offlineMode?.openingPreset || 'appointment');
+        setTempOfflineCustomScenario(group.offlineMode?.customScenario || '');
     };
 
     const openGroupSettings = (group = activeGroup) => {
@@ -828,7 +905,7 @@ const ChatHub: React.FC = () => {
         const match = content.slice(idx, idx + term.length);
         const postEnd = idx + term.length + 40;
         const post = content.slice(idx + term.length, postEnd) + (content.length > postEnd ? '…' : '');
-        return <>{pre}<mark className="bg-amber-200/70 text-amber-900 rounded px-0.5">{match}</mark>{post}</>;
+        return <>{pre}<mark className="bg-[#fff4f7] text-[#5a3140] border border-[#eed6df] rounded px-0.5">{match}</mark>{post}</>;
     };
 
     /** 跳到某条命中消息：载入全量消息确保可见，关浮层并滚动+短暂高亮 */
@@ -1198,7 +1275,7 @@ const ChatHub: React.FC = () => {
         addToast('群聊已创建', 'success');
     };
 
-    const handleUpdateGroupInfo = async () => {
+    const saveGroupSettingsDraft = async (options: { close?: boolean; toast?: boolean } = {}) => {
         if (!activeGroup) return;
         const newName = (tempGroupName || activeGroup.name).trim();
         const oldName = activeGroup.name;
@@ -1226,7 +1303,7 @@ const ChatHub: React.FC = () => {
         if (!newMyNickname) delete updatedGroup.memberNicknames!['user'];
         await updateGroup(activeGroup.id, updatedGroup);
         setActiveGroup(updatedGroup);
-        setModalType('none');
+        if (options.close) setModalType('none');
 
         // 群内系统通知：角色下一轮能从历史里"看到"这些变化
         if (newName !== oldName) {
@@ -1238,8 +1315,10 @@ const ChatHub: React.FC = () => {
         if (newArchiveTitle !== oldArchiveTitle) {
             await postGroupNotice(activeGroup.id, `你将这份群聊记录标题改为「${newArchiveTitle}」`);
         }
-        addToast('群信息已更新', 'success');
+        if (options.toast) addToast('群信息已更新', 'success');
+        return updatedGroup;
     };
+    const handleUpdateGroupInfo = async () => { await saveGroupSettingsDraft({ close: true, toast: true }); };
 
     const handleToggleGroupPinned = async () => {
         if (!activeGroup) return;
@@ -1985,7 +2064,7 @@ ${logText.substring(0, 10000)}
     // 普通红包＝整包给群里（沿用旧行为）；拼手气红包＝随机拆 N 份，群成员当场抢（手气最佳上榜）。
     const resetTransferModal = () => {
         setModalType('none'); setTransferAmount(''); setTransferNote('');
-        setTransferShares(''); setTransferRpType('normal');
+        setTransferPassword(''); setTransferShares(''); setTransferRpType('normal');
     };
     const sendGroupTransfer = async () => {
         if (!activeGroup) return;
@@ -2023,9 +2102,46 @@ ${logText.substring(0, 10000)}
             return;
         }
 
+        const password = transferPassword.trim();
+        if (transferRpType === 'password' && !password) { addToast('写一句口令吧', 'info'); return; }
         adjustUserBalance(-amt);
-        void handleSendMessage(`[红包] ${amt} Credits`, 'transfer', { amount: amt, note: transferNote.trim() || undefined });
+        await DB.saveMessage({
+            charId: 'user',
+            groupId: activeGroup.id,
+            role: 'user',
+            type: 'transfer',
+            content: transferRpType === 'password' ? `[口令红包] ${amt}` : `[红包] ${amt}`,
+            metadata: buildGroupRedPacketMetadata({
+                amount: amt,
+                type: transferRpType,
+                note: transferNote.trim() || undefined,
+                password,
+            }),
+        });
+        setMessages(await DB.getGroupMessages(activeGroup.id));
+        addToast(transferRpType === 'password' ? '口令红包已发出' : '红包已发出', 'success');
         resetTransferModal();
+    };
+
+    const openPasswordRedPacket = async () => {
+        const msg = redPacketOpenMsg;
+        if (!activeGroup || !msg || msg.id == null) return;
+        const meta: any = msg.metadata || {};
+        if (!isPasswordRedPacketPhraseAccepted(String(meta.password || ''), redPacketPasswordInput)) {
+            addToast('口令不对，再看一眼红包上的字', 'error');
+            return;
+        }
+        await DB.updateMessageMetadata(msg.id, (prev: any) => ({
+            ...(prev || {}),
+            status: 'opened',
+            openedBy: 'user',
+            openedAt: Date.now(),
+        }));
+        const updated = await DB.getGroupMessages(activeGroup.id);
+        setMessages(updated);
+        setRedPacketOpenMsg(null);
+        setRedPacketPasswordInput('');
+        addToast('口令正确，红包已打开', 'success');
     };
 
     // 群收款（AA 收款）：用户向选定成员收钱，钱随「收」逐笔进钱包。
@@ -2218,23 +2334,40 @@ ${logText.substring(0, 10000)}
 
     const enterGroupOfflineMode = async () => {
         if (!activeGroup) return;
+        const customScenario = tempOfflineCustomScenario.trim().slice(0, 500);
+        if (tempOfflinePreset === 'custom' && !customScenario) { addToast('写一句这场见面怎么开始吧', 'info'); return; }
+        const openingFrame = resolveOpeningFrame(tempOfflinePreset, customScenario, activeGroup.name, userProfile.name || '你');
         const offline = {
             enabled: true,
             style: tempOfflineStyle.trim().slice(0, 1200),
             maxChars: Math.max(60, Math.min(2000, Math.round(tempOfflineMaxChars || 280))),
             openingStrategy: tempOfflineOpeningStrategy,
+            openingPreset: tempOfflinePreset,
+            customScenario,
         };
         const updated = await applyGroupUpdate({ offlineMode: offline });
-        const modeLabel = offline.openingStrategy === 'story'
-            ? '随剧情进入线下'
-            : offline.openingStrategy === 'skip'
-                ? '不用选择开场'
-                : '先选择开场';
-        await postGroupNotice(activeGroup.id, `赴约已开启：${modeLabel}；单条建议不超过 ${offline.maxChars} 字${offline.style ? `；文风：${offline.style}` : ''}`);
+        const presetLabel = OFFLINE_OPENING_PRESETS.find(p => p.key === tempOfflinePreset)?.label || '赴约';
+        await postGroupNotice(activeGroup.id, `赴约已开启：${presetLabel}。${openingFrame ? `开场：${openingFrame}` : ''} 单条建议不超过 ${offline.maxChars} 字${offline.style ? `；文风：${offline.style}` : ''}`);
         if (updated) hydrateGroupSettingsDraft(updated);
         setActionModal('none');
         setShowActions(false);
         addToast('赴约已接上', 'success');
+    };
+
+    const startGroupVoiceCall = async () => {
+        if (!activeGroup) return;
+        setShowActions(false);
+        const names = activeGroup.members.map(id => displayNameOf(activeGroup, id)).filter(Boolean);
+        await DB.saveMessage({
+            charId: 'user',
+            groupId: activeGroup.id,
+            role: 'user',
+            type: 'call_log',
+            content: `[群聊电话] 你向 ${activeGroup.name} 发起了群聊电话`,
+            metadata: { kind: 'group_call', callDirection: 'outgoing', callOutcome: 'started', memberIds: activeGroup.members, memberNames: names, msgStatus: 'sent' },
+        } as any);
+        setMessages(await DB.getGroupMessages(activeGroup.id));
+        addToast('已发起群聊电话', 'success');
     };
 
     // 群聊归档：把群聊「现在就」整理进群记忆宫殿
@@ -2268,8 +2401,7 @@ ${logText.substring(0, 10000)}
         await triggerDirector(remain);
     };
 
-    // 碰一碰：群里选个成员戳一戳（复用已有的 handlePokeMember）
-    // 单聊专属功能在群里：先选「对谁？」→ 把动作写进 localStorage 深链到该成员单聊执行
+    // 成员专属动作：先选成员，再在群里处理或深链到该成员私聊执行
     const routeToMemberAction = (charId: string, action: string) => {
         if (action === 'poke') { void handlePokeMember(charId); setMemberPicker(null); setShowActions(false); return; }
         try { localStorage.setItem('moro_chat_pending_action', action); } catch { /* ignore */ }
@@ -2339,8 +2471,11 @@ ${logText.substring(0, 10000)}
                 ? `\n特别关心提醒：用户把 ${specialCareNames.map(n => `「${n}」`).join('、')} 设成了特别关心。TA 发言时可以更容易被用户注意到，但不要因此让 TA 每轮都必须说话。\n`
                 : '';
             const offline = activeGroup.offlineMode;
+            const offlineOpeningFrame = offline?.enabled && offline.openingPreset
+                ? resolveOpeningFrame(offline.openingPreset, offline.customScenario, activeGroup.name, userProfile.name || '你')
+                : '';
             const offlineBlock = offline?.enabled
-                ? `\n赴约状态：本群当前处于面对面/同处一地的互动感。${offline.openingStrategy === 'story' ? '开场方式=随剧情自然赴约，不要硬切场。' : offline.openingStrategy === 'skip' ? '开场方式=不用选择开场，直接承接当前剧情。' : '开场方式=可以先给出一个短开场。'}${offline.style ? ` 自定义赴约文风：${offline.style}` : ''} 单条消息建议不超过 ${offline.maxChars || 280} 字，动作、环境、近距离反应可以更具体，但仍然像群聊而不是旁白堆砌。\n`
+                ? `\n赴约状态：本群当前处于面对面/同处一地的互动感。${offlineOpeningFrame ? `这场见面开场=${offlineOpeningFrame}` : '开场方式=可以先给出一个短开场。'}${offline.style ? ` 自定义赴约文风：${offline.style}` : ''} 单条消息建议不超过 ${offline.maxChars || 280} 字，动作、环境、近距离反应可以更具体，但仍然像群聊而不是旁白堆砌。\n`
                 : '';
 
             let context = `【系统：群聊模拟器配置】
@@ -3062,7 +3197,7 @@ ${attachedImagesNote}
                                         key={`g-${cv.id}`}
                                         onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
                                         style={{ animationDelay: enterDelay }}
-                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''} ${cv.starred ? 'bg-amber-50/60' : ''}`}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''} ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -3078,14 +3213,14 @@ ${attachedImagesNote}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-1.5">
-                                                {cv.starred && <PushPin size={11} weight="fill" className="text-amber-400 shrink-0" />}
+                                                {cv.starred && <PushPin size={11} weight="fill" className="text-[#d8a5b7] shrink-0" />}
                                                 <span className={`font-bold truncate text-sm ${cv.dissolved ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{cv.name}</span>
                                                 <UsersThree size={12} className="text-slate-300 shrink-0" />
                                                 <span className="text-[9px] text-slate-300 shrink-0">{cv.memberCount}</span>
                                                 {!!cv.specialCareCount && <BellRinging size={12} weight="fill" className="text-rose-400 shrink-0" />}
                                             </div>
                                             {cv.dissolved ? (
-                                                <div className="text-[11px] text-red-400/80 mt-0.5 font-medium">此群聊已被解散</div>
+                                                <div className="text-[11px] text-[#9c5e74] mt-0.5 font-medium">此群聊已被解散</div>
                                             ) : (
                                                 <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
                                             )}
@@ -3095,7 +3230,7 @@ ${attachedImagesNote}
                                             {cv.dissolved && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleDeleteGroup(cv.id); }}
-                                                    className="text-[9px] px-2 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 hover:bg-red-100"
+                                                    className="text-[9px] px-2 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] hover:bg-[#fff4f7]"
                                                 >删除</button>
                                             )}
                                         </div>
@@ -3107,7 +3242,7 @@ ${attachedImagesNote}
                                     key={`c-${cv.id}`}
                                     onClick={() => openPrivateChat(cv.id)}
                                     style={{ animationDelay: enterDelay }}
-                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.starred ? 'bg-amber-50/60' : ''}`}
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
                                 >
                                     {cv.lifeStatus ? (
                                         // 「此刻」有动态的角色 = IG story ring（渐变环），一眼看出谁正活跃
@@ -3117,7 +3252,7 @@ ${attachedImagesNote}
                                     )}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1">
-                                            {cv.starred && <span className="text-amber-400 text-[12px] shrink-0" title="已星标置顶">★</span>}
+                                            {cv.starred && <span className="text-[#d8a5b7] text-[12px] shrink-0" title="已星标置顶">★</span>}
                                             <span className="font-bold text-slate-700 truncate text-sm">{cv.name}</span>
                                         </div>
                                         <div className="text-[11px] text-slate-400 mt-0.5 truncate">{previewOf(cv.last)}</div>
@@ -3125,10 +3260,10 @@ ${attachedImagesNote}
                                         {cv.lifeStatus && (
                                             <div className="flex items-start gap-1.5 mt-1">
                                                 <span className="relative flex h-1.5 w-1.5 shrink-0 mt-[5px]" aria-hidden>
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/50" />
-                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500/80" />
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full" style={{ background: 'rgba(216,165,183,0.36)' }} />
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: '#d8a5b7' }} />
                                                 </span>
-                                                <span className="text-[10px] text-emerald-700/70 leading-snug min-w-0 break-words">此刻 · {cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}</span>
+                                                <span className="text-[10px] leading-snug min-w-0 break-words" style={{ color: '#9c5e74' }}>此刻 · {cv.lifeStatus.activity}{cv.lifeStatus.mood ? ` · ${cv.lifeStatus.mood}` : ''}</span>
                                             </div>
                                         )}
                                     </div>
@@ -3329,7 +3464,7 @@ ${attachedImagesNote}
 
     // CHAT VIEW
     return (
-        <div className="h-full w-full bg-[#f0f4f8] moro-laiwang flex flex-col font-sans relative">
+        <div className="h-full w-full bg-[#ededed] moro-laiwang flex flex-col font-sans relative">
             {/* 群记忆宫殿"提取中"浮动胶囊 — 不阻塞交互 */}
             {groupPalaceStatus && (
                 <div
@@ -3345,13 +3480,13 @@ ${attachedImagesNote}
                         style={{
                             background: 'rgba(255,255,255,0.88)',
                             borderRadius: 999,
-                            border: '1px solid rgba(139,92,246,0.22)',
-                            boxShadow: '0 6px 18px -6px rgba(15,23,42,0.22)',
+                            border: '1px solid #eed6df',
+                            boxShadow: '0 6px 18px -10px rgba(122,90,114,0.24)',
                         }}
                     >
                         <span
                             className="shrink-0 inline-block w-3.5 h-3.5 rounded-full border-2 border-slate-200 animate-spin"
-                            style={{ borderTopColor: '#8b5cf6', animationDuration: '0.9s' }}
+                            style={{ borderTopColor: '#d8a5b7', animationDuration: '0.9s' }}
                         />
                         <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
                             群记忆整理中
@@ -3362,9 +3497,9 @@ ${attachedImagesNote}
             )}
 
             {/* Header — safe-top spacer 透明 + backdrop-blur 自适应容器色，跟 iOS status bar 一致 */}
-            <div className="shrink-0 z-30 sticky top-0 transition-all">
-            <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
-            <div className="bg-white/80 backdrop-blur-xl px-5 flex items-end pb-4 border-b border-[#eed6df] shadow-sm h-24">
+            <div className="shrink-0 z-30 sticky top-0 transition-all bg-[#ededed]">
+            <div className="bg-[#ededed]" style={{ height: 'var(--safe-top)' }} />
+            <div className="mx-3 mt-2 mb-2 bg-white px-4 flex items-center rounded-[24px] h-[72px]" style={{ boxShadow: '0 10px 28px -24px rgba(38,38,38,0.45)' }}>
                 {selectionMode ? (
                     <div className="flex items-center justify-between w-full">
                         <button onClick={() => { setSelectionMode(false); setSelectedMsgIds(new Set()); }} className="text-sm font-bold text-slate-500 px-2 py-1">取消</button>
@@ -3373,23 +3508,23 @@ ${attachedImagesNote}
                     </div>
                 ) : (
                     <div className="flex items-center gap-3 w-full">
-                        <button onClick={() => setView('list')} className="p-2 -ml-2 rounded-full hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-600"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                        <button onClick={() => setView('list')} className="p-2 -ml-2 rounded-full hover:bg-[#f4f4f4] active:bg-[#eeeeee] transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#5a3140]"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
                         <div className="flex-1 min-w-0" onClick={() => openGroupSettings()}>
-                            <h1 className="text-base font-bold text-slate-800 truncate flex items-center gap-1">
+                            <h1 className="text-base font-bold text-[#5a3140] truncate flex items-center gap-1">
                                 {activeGroup?.name}
-                                {activeGroup?.pinned && <PushPin size={12} weight="fill" className="text-amber-400 shrink-0" />}
-                                {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold shrink-0">已解散</span>}
+                                {activeGroup?.pinned && <PushPin size={12} weight="fill" className="text-[#d8a5b7] shrink-0" />}
+                                {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold shrink-0">已解散</span>}
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-slate-400"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
                             </h1>
                             <div className="flex items-center gap-2">
-                                <p className="text-[10px] text-slate-500 font-medium">{activeGroup?.members.length} 成员</p>
+                                <p className="text-[10px] text-[#a892a3] font-medium">{activeGroup?.members.length} 成员</p>
                                 {activeGroup?.mutedAll && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-400 border border-red-100 font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
                                 )}
                                 {activeGroup?.offlineMode?.enabled && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-500 border border-emerald-100 font-bold flex items-center gap-0.5"><Signpost size={9} weight="fill" />线下</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold flex items-center gap-0.5"><Signpost size={9} weight="fill" />线下</span>
                                 )}
                                 {lastTokenUsage && (
                                     <div
@@ -3406,7 +3541,7 @@ ${attachedImagesNote}
                         {canReroll && !isTyping && (
                             <button 
                                 onClick={handleReroll} 
-                                className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#9c5e74] transition-colors"
+                                className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-colors"
                                 title="重新生成回复"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
@@ -3416,7 +3551,7 @@ ${attachedImagesNote}
                         {/* 群聊天记录查找入口 */}
                         <button
                             onClick={openSearch}
-                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#9c5e74] transition-all active:scale-90"
+                            className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-all active:scale-90"
                             title="查找聊天记录"
                         >
                             <MagnifyingGlass size={20} weight="bold" />
@@ -3425,7 +3560,7 @@ ${attachedImagesNote}
                         {/* 群设置入口（原 + 面板里的「群设置」迁移到右上角；⚡手动触发已删除——空输入回车/发送即触发） */}
                         <button
                             onClick={() => openGroupSettings()}
-                            className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#9c5e74] transition-all active:scale-90"
+                            className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-all active:scale-90"
                             title="群设置"
                         >
                             <GearSix size={20} weight="bold" />
@@ -3505,14 +3640,14 @@ ${attachedImagesNote}
             {activeGroup?.announcement?.text && !selectionMode && (
                 <button
                     onClick={openAnnouncementModal}
-                    className="shrink-0 w-full flex items-start gap-2 px-5 py-2.5 bg-[#fdf6e3] border-b border-[#f0e6c8] text-left active:bg-[#f8eecf] transition-colors"
+                    className="shrink-0 w-full flex items-start gap-2 px-5 py-2.5 bg-[#fffdfa] border-b border-[#eed6df] text-left active:bg-[#fff4f7] transition-colors"
                 >
-                    <Megaphone size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
-                    <p className="text-[12px] text-amber-800/90 leading-snug line-clamp-2 flex-1 min-w-0">
+                    <Megaphone size={16} weight="fill" className="text-[#9c5e74] shrink-0 mt-0.5" />
+                    <p className="text-[12px] text-[#5a3140] leading-snug line-clamp-2 flex-1 min-w-0">
                         <span className="font-bold mr-1">群公告</span>
                         {activeGroup.announcement.text}
                     </p>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-[#a892a3] shrink-0 mt-0.5"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
                 </button>
             )}
 
@@ -3542,7 +3677,7 @@ ${attachedImagesNote}
                         <div
                             key={m.id || i}
                             id={m.id != null ? `gmsg-${m.id}` : undefined}
-                            className={`rounded-2xl transition-all duration-500 ${highlightMsgId === m.id ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-[#faf9f6] bg-amber-50/40' : ''}`}
+                            className={`rounded-2xl transition-all duration-500 ${highlightMsgId === m.id ? 'ring-2 ring-[#d8a5b7] ring-offset-2 ring-offset-[#ededed] bg-[#fff4f7]' : ''}`}
                         >
                             <GroupMessageItem
                                 msg={m}
@@ -3563,6 +3698,7 @@ ${attachedImagesNote}
                                 onShowNicknameThought={(mm) => setNicknameThoughtMsg(mm)}
                                 mentionNames={mentionNames}
                                 onCollectClick={setCollectDetailMsg}
+                                onRedPacketOpen={(mm) => { setRedPacketOpenMsg(mm); setRedPacketPasswordInput(''); }}
                                 onPollVote={votePoll}
                                 onPollClick={setPollDetailMsg}
                                 onRelayClick={setRelayDetailMsg}
@@ -3584,7 +3720,7 @@ ${attachedImagesNote}
             </div>
 
             {/* 输入区 */}
-            <div className="bg-[#fffdfa] border-t border-[#eed6df] pb-safe shrink-0 z-40 relative">
+            <div className="bg-[#ededed] pb-safe shrink-0 z-40 relative">
                 {activeGroup?.dissolved ? (
                     <div className="p-4 text-center text-xs text-slate-400 font-medium">此群聊已被解散，仅可查看历史消息</div>
                 ) : voice.isRecording ? (
@@ -3601,8 +3737,8 @@ ${attachedImagesNote}
                     <div className="p-3 flex justify-center bg-white">
                         <button
                             onClick={deleteSelectedMessages}
-                            className="w-full py-3 bg-white text-red-500 font-bold rounded-2xl border border-red-200 shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
-                            style={{ outline: '1px dashed rgba(239,68,68,0.4)', outlineOffset: '-4px' }}
+                            className="w-full py-3 bg-[#fffdfa] text-[#9c5e74] font-bold rounded-2xl border border-[#eed6df] shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
+                            style={{ outline: '1px dashed rgba(216,165,183,0.42)', outlineOffset: '-4px' }}
                         >
                             <Trash size={20} weight="bold" />
                             删除 {selectedMsgIds.size} 条
@@ -3613,7 +3749,7 @@ ${attachedImagesNote}
                         {/* 左外侧：贴纸册入口（与单聊一致） */}
                         <button
                             onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowActions(false); }}
-                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-600 transition-colors hover:bg-[#ece7dc]"
+                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[#8a7f86] transition-colors hover:bg-white"
                         >
                             <Sticker size={24} weight={showEmojiPicker ? 'fill' : 'bold'} />
                         </button>
@@ -3621,14 +3757,14 @@ ${attachedImagesNote}
                         {/* @ 成员：点名让 TA 本轮优先回应 */}
                         <button
                             onClick={() => { setShowEmojiPicker(false); setShowActions(false); setModalType('mention-picker'); }}
-                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-600 transition-colors hover:bg-[#ece7dc] text-[19px] font-bold leading-none"
+                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[#8a7f86] transition-colors hover:bg-white text-[19px] font-bold leading-none"
                             title="@ 成员"
                         >
                             @
                         </button>
 
                         {/* Input Field Container */}
-                        <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-xl flex items-end px-3 py-2 border border-slate-200 focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-200 transition-all">
+                        <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-[22px] flex items-end px-3 py-2 border border-transparent focus-within:border-[#eed6df] transition-all">
                             <textarea
                                 rows={1}
                                 value={input}
@@ -3644,14 +3780,14 @@ ${attachedImagesNote}
                                         handleSendMessage(input);
                                     }
                                 }}
-                                className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-slate-800 placeholder:text-slate-400 py-1"
+                                className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-[#5a3140] placeholder:text-[#aaa] py-1"
                                 placeholder="说点什么…"
                                 style={{ height: 'auto', minHeight: '24px' }}
                             />
                             {/* 输入框内右侧：回形针 = 别上点什么（功能抽屉） */}
                             <button
                                 onClick={() => { setShowActions(!showActions); setShowEmojiPicker(false); }}
-                                className={`p-1 -mr-1 ml-1 text-slate-400 hover:text-slate-700 transition-transform shrink-0 ${showActions ? 'rotate-45 text-slate-700' : ''}`}
+                                className={`p-1 -mr-1 ml-1 text-[#a892a3] hover:text-[#5a3140] transition-transform shrink-0 ${showActions ? 'rotate-45 text-[#5a3140]' : ''}`}
                             >
                                 <Paperclip size={24} weight={showActions ? 'bold' : 'regular'} />
                             </button>
@@ -3666,14 +3802,14 @@ ${attachedImagesNote}
                                 }
                                 handleSendMessage(input);
                             }}
-                            className={`h-9 px-4 shrink-0 rounded-xl font-bold text-sm shadow-md active:scale-95 transition-all ${input.trim() ? 'bg-[#d8a5b7] text-white' : 'bg-[#f0e7eb] text-[#9c5e74]'}`}
+                            className={`h-9 px-4 shrink-0 rounded-full font-bold text-sm active:scale-95 transition-all ${input.trim() ? 'bg-[#d8a5b7] text-white' : 'bg-white text-[#9c5e74]'}`}
                         >
                             寄出
                         </button>
                     </div>
                 )}
 
-                {/* --- 功能面板（与单聊同一套按钮，全功能移植到群聊） --- */}
+                {/* --- 功能面板：群聊动作直接执行，成员专属动作先选人 --- */}
                 {showActions && (
                     <div className="h-64 bg-[#fffdfa] scrap-panel border-t border-[#eed6df] px-4 py-4 animate-slide-up overflow-y-auto no-scrollbar">
                         <div className="stationery-grid grid grid-cols-2 gap-x-3 gap-y-2.5">
@@ -3681,7 +3817,7 @@ ${attachedImagesNote}
                             <div className="drawer-tag col-span-2"><span>寄 给 大 家</span></div>
                             {strip(<ImageSquare size={20} weight="bold" />, '发图片', '从相册选择图片', () => fileInputRef.current?.click())}
                             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
-                            {strip(<Coins size={20} weight="bold" />, '发红包', '转账或发送红包', () => setModalType('transfer'))}
+                            {strip(<Coins size={20} weight="bold" />, '发红包', '普通/口令/拼手气', () => setModalType('transfer'))}
                             {strip(<Wallet size={20} weight="bold" />, '发起收款', 'AA 收款·向群成员收钱', () => { setShowActions(false); setCollectMembers(new Set(activeGroup?.members || [])); setCollectAmount(''); setCollectNote(''); setModalType('collect'); })}
                             {strip(<ChartBar size={20} weight="bold" />, '发起投票', '群成员按性格投·看结果', () => { setShowActions(false); setPollQuestion(''); setPollOptions(['', '']); setModalType('poll'); })}
                             {strip(<ListNumbers size={20} weight="bold" />, '发起接龙', '主题接龙·成员自然加入', () => { setShowActions(false); setRelayTitle(''); setRelayFirst(''); setModalType('relay'); })}
@@ -3691,24 +3827,24 @@ ${attachedImagesNote}
                             {strip(<PaintBrush size={20} weight="bold" />, 'AI 画图', '生成一张图片', () => setActionModal('image-gen'))}
                             {strip(<HandTap size={20} weight="bold" />, '碰一碰', '戳一戳某位群友', () => openMemberPicker('poke', '戳一戳谁？'))}
 
-                            {/* 群友互动：单聊专属功能，先选「对谁」再深链到该成员单聊 */}
-                            <div className="drawer-tag col-span-2"><span>找 个 群 友</span></div>
-                            {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '给某位群友打电话', () => openMemberPicker('voice-call', '给谁打电话？'))}
+                            {/* 群聊共用动作 */}
+                            <div className="drawer-tag col-span-2"><span>群 里 一 起</span></div>
+                            {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '发起群聊电话', () => void startGroupVoiceCall())}
                             {strip(<HandHeart size={20} weight="bold" />, '赴个约', '线下见面·自定义文风', () => { hydrateGroupSettingsDraft(activeGroup); setActionModal('offline-mode'); })}
-                            {strip(<Detective size={20} weight="bold" />, '查看手机', '查看某位群友的手机', () => openMemberPicker('check-phone', '看谁的手机？'))}
-                            {strip(<EnvelopeOpen size={20} weight="bold" />, '主动消息', '设置某位群友主动找你', () => openMemberPicker('proactive', '设置谁主动消息？'))}
-                            {strip(<Scroll size={20} weight="bold" />, 'TA 的日常', '看某位群友离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
+                            {strip(<Detective size={20} weight="bold" />, '成员手机', '选择一位群友查看手机', () => openMemberPicker('check-phone', '看谁的手机？'))}
+                            {strip(<EnvelopeOpen size={20} weight="bold" />, '成员主动消息', '选择一位群友设置主动消息', () => openMemberPicker('proactive', '设置谁主动消息？'))}
+                            {strip(<Scroll size={20} weight="bold" />, '成员日常', '选择一位群友看离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
 
                             {/* 群聊工具 */}
                             <div className="drawer-tag col-span-2"><span>群 聊 工 具</span></div>
                             {strip(<BookBookmark size={20} weight="bold" />, isSummarizing ? '归档中…' : '归档群聊', '把群聊整理进群记忆', () => void archiveGroupMemory(), { disabled: isSummarizing })}
                             {strip(<Eraser size={20} weight="bold" />, '重写一遍', '撤掉上一轮重新接话', () => void rerollDirector(), { disabled: isTyping })}
-                            {strip(<Wind size={20} weight="bold" />, '回个神', '帮某位群友自我校准', () => openMemberPicker('recenter', '帮谁回个神？'))}
-                            {strip(<CalendarCheck size={20} weight="bold" />, '今日作息', '看某位群友的作息', () => openMemberPicker('schedule', '看谁的作息？'))}
+                            {strip(<Wind size={20} weight="bold" />, '成员回神', '选择一位群友自我校准', () => openMemberPicker('recenter', '帮谁回个神？'))}
+                            {strip(<CalendarCheck size={20} weight="bold" />, '成员作息', '选择一位群友看今日作息', () => openMemberPicker('schedule', '看谁的作息？'))}
 
                             {/* 特别通道 */}
                             <div className="drawer-tag col-span-2"><span>特 别 通 道</span></div>
-                            {strip(<Hamburger size={20} weight="bold" />, '麦麦点单', '找某位群友一起点麦麦', () => openMemberPicker('mcd-request', '和谁一起点？'))}
+                            {strip(<Hamburger size={20} weight="bold" />, '找人点单', '选择一位群友一起点麦麦', () => openMemberPicker('mcd-request', '和谁一起点？'))}
                             {strip(<Lightbulb size={20} weight="bold" />, '看看思绪', '调某位群友的思考展示', () => openMemberPicker('thinking-settings', '看谁的思绪？'))}
                             {strip(<Scroll size={20} weight="bold" />, '幕后指令', '给成员们一条 OOC 指令', () => setActionModal('system-cmd'), { ink: true })}
                         </div>
@@ -3767,14 +3903,7 @@ ${attachedImagesNote}
                             </div>
                             <div className="text-[10px] truncate mt-0.5" style={{ color: '#a96f84' }}>{activeGroup.name} · 群聊设置</div>
                         </div>
-                        <button
-                            onClick={handleUpdateGroupInfo}
-                            className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black active:scale-95 transition-transform flex items-center gap-1"
-                            style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#b25e7a', boxShadow: '0 1px 2px rgba(122,90,114,0.12)' }}
-                        >
-                            <GearSix size={13} weight="bold" />
-                            保存
-                        </button>
+                        <span className="shrink-0 px-3 py-1.5 rounded-full text-[10px] font-black" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#a892a3' }}>自动保存</span>
                     </div>
                     <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
                 <GroupSettingsPage no="01" title="群名与名片" en="Name Tags">
@@ -3788,13 +3917,13 @@ ${attachedImagesNote}
                     </div>
                     <div>
                         <ScrapLabel en="NAME">群名字</ScrapLabel>
-                        <ScrapInput value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} />
+                        <ScrapInput value={tempGroupName} onChange={e => setTempGroupName(e.target.value)} onBlur={() => void saveGroupSettingsDraft()} />
                         <ScrapNote className="mt-1.5">改完会在群里发送一条系统提示，成员们都能看见群名变化。</ScrapNote>
                     </div>
 
                     <div>
                         <ScrapLabel en="MY CARD">我的群名片</ScrapLabel>
-                        <ScrapInput value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} placeholder={userProfile.name} />
+                        <ScrapInput value={tempMyNickname} onChange={e => setTempMyNickname(e.target.value)} onBlur={() => void saveGroupSettingsDraft()} placeholder={userProfile.name} />
                         <ScrapNote className="mt-1.5">你在这个群里挂的名字，留空就用本名。成员们也会随心情和剧情给自己改名片。</ScrapNote>
                     </div>
                 </GroupSettingsPage>
@@ -3814,7 +3943,7 @@ ${attachedImagesNote}
                                 {activeGroup?.pinned ? '取消置顶' : '置顶群聊'}
                             </button>
                         </div>
-                        <ScrapInput value={tempArchiveTitle} onChange={e => setTempArchiveTitle(e.target.value)} placeholder="这份聊天记录的标题" />
+                        <ScrapInput value={tempArchiveTitle} onChange={e => setTempArchiveTitle(e.target.value)} onBlur={() => void saveGroupSettingsDraft()} placeholder="这份聊天记录的标题" />
                         <div className="grid grid-cols-2 gap-2 mt-3">
                             <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleStartNewGroupChat()} icon={<ChatsTeardrop size={15} weight="bold" />}>新聊天</ScrapBtn>
                             <ScrapBtn variant="paper" full={false} className="text-xs" onClick={() => void handleExportGroupChat('moro')} icon={<DownloadSimple size={15} weight="bold" />}>导出记录</ScrapBtn>
@@ -3947,7 +4076,11 @@ ${attachedImagesNote}
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setTempSpecialCareNotify(v => !v)}
+                                onClick={() => {
+                                    const next = !tempSpecialCareNotify;
+                                    setTempSpecialCareNotify(next);
+                                    void applyGroupUpdate({ specialCareNotify: next });
+                                }}
                                 className="relative w-11 h-6 rounded-full shrink-0 transition-colors"
                                 style={{ background: tempSpecialCareNotify ? INK : '#d9d3c7' }}
                                 title={tempSpecialCareNotify ? '消息提醒开启' : '消息提醒关闭'}
@@ -3970,6 +4103,7 @@ ${attachedImagesNote}
                                             const next = new Set(prev);
                                             if (next.has(mid)) next.delete(mid);
                                             else next.add(mid);
+                                            void applyGroupUpdate({ specialCareMemberIds: Array.from(next).filter(id => activeGroup.members.includes(id)) });
                                             return next;
                                         })}
                                     />
@@ -4016,7 +4150,7 @@ ${attachedImagesNote}
                     <div className="pt-3">
                         <ScrapDivider className="mb-3" />
                         <ScrapLabel en="SPILLOVER">私聊里捎带的群动静 · {tempPrivateContextCap}</ScrapLabel>
-                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => setTempPrivateContextCap(parseInt(e.target.value))} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
+                        <input type="range" min="20" max="500" step="10" value={tempPrivateContextCap} onChange={e => { const v = parseInt(e.target.value); setTempPrivateContextCap(v); void applyGroupUpdate({ privateContextCap: v }); }} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
                         <div className="flex justify-between text-[10px] mt-1" style={{ color: INK_SOFT }}><span>20 · 省着用</span><span>500 · 全带上</span></div>
                         <ScrapNote className="mt-1">成员各自的私聊里，最多捎上本群最近这么多条当「近来群里的事」。每个群单独算，免得热闹的群把安静的群挤没了。</ScrapNote>
                     </div>
@@ -4071,7 +4205,7 @@ ${attachedImagesNote}
                         </div>
                     </div>
                 </GroupSettingsPage>
-                <ScrapBtn onClick={handleUpdateGroupInfo} icon={<GearSix size={16} weight="bold" />}>记下这些改动</ScrapBtn>
+                <div className="text-center text-[10px] pb-1 select-none" style={{ color: '#a892a3' }}>设置已自动保存</div>
                 </div>
                 </div>
             )}
@@ -4132,16 +4266,17 @@ ${attachedImagesNote}
                 />
             </Modal>
 
-            {/* Transfer Modal —— 钱包实扣（普通红包 / 拼手气红包） */}
-            <Modal isOpen={modalType === 'transfer'} title="发送红包" en="SEND RED PACKET" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={resetTransferModal} footer={<ScrapBtn onClick={sendGroupTransfer} icon={<Coins size={16} weight="bold" />}>{transferRpType === 'lucky' ? '发送拼手气红包' : '发送红包'}</ScrapBtn>}>
+            {/* 发红包：钱包实扣（普通 / 口令 / 拼手气） */}
+            <Modal isOpen={modalType === 'transfer'} title="发送红包" en="SEND RED PACKET" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={resetTransferModal} footer={<ScrapBtn onClick={sendGroupTransfer} icon={<Coins size={16} weight="bold" />}>{transferRpType === 'lucky' ? '发送拼手气红包' : transferRpType === 'password' ? '发送口令红包' : '发送红包'}</ScrapBtn>}>
                 {(() => {
                     const memberCount = activeGroup ? characters.filter(c => activeGroup.members.includes(c.id)).length : 0;
                     return (
                         <div className="space-y-4">
-                            <div className="text-center py-2"><img src={twemojiUrl('1f9e7')} alt="red envelope" className="w-12 h-12 mx-auto opacity-80" /></div>
-                            {/* 红包类型：普通整包 / 拼手气随机拆 */}
-                            <div className="grid grid-cols-2 gap-2">
-                                {([['normal', '普通红包', '整包发送'], ['lucky', '拼手气红包', '随机分配金额']] as const).map(([t, label, hint]) => {
+                            <div className="flex justify-center py-1">
+                                <div className="w-16 h-16 rounded-[18px] flex items-center justify-center text-2xl font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 12px 28px -24px rgba(122,90,114,0.42)' }}>包</div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                {([['normal', '普通红包', '整包发送'], ['password', '口令红包', '输口令打开'], ['lucky', '拼手气红包', '随机分配']] as const).map(([t, label, hint]) => {
                                     const on = transferRpType === t;
                                     return (
                                         <button key={t} onClick={() => setTransferRpType(t)}
@@ -4158,6 +4293,9 @@ ${attachedImagesNote}
                             <ScrapInput type="number" big value={transferAmount} onChange={e => setTransferAmount(e.target.value)} placeholder={transferRpType === 'lucky' ? '一共多少' : '金额'} autoFocus />
                             {transferRpType === 'lucky' && (
                                 <ScrapInput type="number" center min={1} max={memberCount || undefined} value={transferShares} onChange={e => setTransferShares(e.target.value)} placeholder={memberCount ? `拆几个（默认 ${memberCount}，最多 ${memberCount}）` : '拆几个'} />
+                            )}
+                            {transferRpType === 'password' && (
+                                <ScrapInput value={transferPassword} onChange={e => setTransferPassword(e.target.value)} placeholder="红包口令（会显示在红包上）" />
                             )}
                             <ScrapInput value={transferNote} onChange={e => setTransferNote(e.target.value)} placeholder="附句话（选填）" />
                             <div className="text-center text-[12px] font-bold flex items-center justify-center gap-1" style={{ color: INK_SOFT }}><Wallet size={13} weight="fill" />钱包里还有 ¥{wallet}</div>
@@ -4423,30 +4561,55 @@ ${attachedImagesNote}
                 </div>
             </Modal>
 
+            <Modal isOpen={!!redPacketOpenMsg} title="口令红包" en="PASSWORD" icon={<ScrapStamp><Coins size={15} weight="bold" /></ScrapStamp>} onClose={() => { setRedPacketOpenMsg(null); setRedPacketPasswordInput(''); }} footer={<ScrapBtn onClick={() => void openPasswordRedPacket()} icon={<Coins size={16} weight="bold" />}>打开红包</ScrapBtn>}>
+                {redPacketOpenMsg && (
+                    <div className="space-y-4">
+                        <div className="rounded-[18px] px-4 py-5 text-center" style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df' }}>
+                            <div className="text-[11px] font-bold tracking-[0.24em] uppercase" style={{ color: '#a892a3' }}>Password Red Packet</div>
+                            <div className="mt-2 text-2xl font-black" style={{ color: '#5a3140' }}>¥{(redPacketOpenMsg.metadata as any)?.amount}</div>
+                            <div className="mt-2 text-[12px]" style={{ color: '#8a6478' }}>口令：{(redPacketOpenMsg.metadata as any)?.password || '红包上的那句话'}</div>
+                        </div>
+                        <ScrapInput value={redPacketPasswordInput} onChange={e => setRedPacketPasswordInput(e.target.value)} placeholder="输入红包口令" autoFocus />
+                        <ScrapNote center>必须完整输入红包上的口令才能打开。</ScrapNote>
+                    </div>
+                )}
+            </Modal>
+
             {/* 赴个约：回形针入口，一键把当前群聊切成面对面场景 */}
             <Modal isOpen={actionModal === 'offline-mode'} title="赴个约" en="DATE · FACE TO FACE" icon={<ScrapStamp><Signpost size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={() => void enterGroupOfflineMode()} icon={<Signpost size={16} weight="bold" />}>赴约</ScrapBtn>}>
                 <div className="space-y-3">
-                    <ScrapNote>这会保存赴约文风，并在群里发送一条系统提示；下一轮导演会按面对面状态接着写。</ScrapNote>
-                    <div className="grid grid-cols-3 gap-2">
-                        {([
-                            ['choose', '选择开场', <FileText size={14} weight="bold" />],
-                            ['story', '随剧情赴约', <FastForward size={14} weight="bold" />],
-                            ['skip', '不用开场', <Prohibit size={14} weight="bold" />],
-                        ] as const).map(([value, label, icon]) => (
+                    <ScrapNote>选择这场群里线下见面的开场方式；系统会把设定写进群提示，下一轮导演按面对面状态接着写。</ScrapNote>
+                    <div className="space-y-2.5">
+                        {OFFLINE_OPENING_PRESETS.map((p, idx) => {
+                            const active = tempOfflinePreset === p.key;
+                            const desc = p.desc.replace(/\{char\}/g, activeGroup?.name || '这个群').replace(/\{user\}/g, userProfile.name || '你');
+                            return (
                             <button
-                                key={value}
+                                key={p.key}
                                 type="button"
-                                onClick={() => setTempOfflineOpeningStrategy(value)}
-                                className="px-2 py-2 rounded-xl text-[10px] font-black flex flex-col items-center gap-1 active:scale-95 transition-transform"
-                                style={tempOfflineOpeningStrategy === value
-                                    ? { background: INK, color: '#f6f3ec', outline: '1px dashed rgba(255,255,255,0.35)', outlineOffset: -4 }
-                                    : { background: 'rgba(255,253,247,0.82)', color: INK, border: `1px solid ${INK_SOFT}55` }}
+                                onClick={() => setTempOfflinePreset(p.key)}
+                                className="w-full text-left rounded-[12px] px-4 py-3 active:scale-[0.98] transition flex items-center gap-3"
+                                style={active
+                                    ? { background: '#fff4f7', color: '#5a3140', border: '1px solid #d8a5b7', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.32)' }
+                                    : { background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}
                             >
-                                {icon}
-                                {label}
+                                <span
+                                    className="w-9 h-9 rounded-[11px] flex items-center justify-center shrink-0 text-[10px] font-black tracking-[0.12em]"
+                                    style={{ background: active ? '#fffdfa' : '#fff4f7', color: active ? '#5a3140' : '#a892a3', border: '1px solid #eed6df' }}
+                                    aria-hidden
+                                >
+                                    {String(idx + 1).padStart(2, '0')}
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block text-[13px] font-black">{p.label}</span>
+                                    <span className="block text-[10.5px] mt-0.5 leading-snug" style={{ color: '#a892a3' }}>{desc}</span>
+                                </span>
                             </button>
-                        ))}
+                        );})}
                     </div>
+                    {tempOfflinePreset === 'custom' && (
+                        <ScrapTextarea value={tempOfflineCustomScenario} onChange={e => setTempOfflineCustomScenario(e.target.value)} placeholder="例：大家约在常去的咖啡馆，已经有人先到了，桌上放着给全群留的位置…" rows={3} />
+                    )}
                     <ScrapTextarea value={tempOfflineStyle} onChange={e => setTempOfflineStyle(e.target.value)} placeholder="赴约文风：比如少旁白、多动作短句、像坐在同一张桌边…" rows={3} autoFocus />
                     <div>
                         <ScrapLabel en="MAX CHARS">字数限制 · {tempOfflineMaxChars}</ScrapLabel>
@@ -4455,7 +4618,7 @@ ${attachedImagesNote}
                 </div>
             </Modal>
 
-            {/* 成员选择器：单聊专属功能在群里选「对谁」 */}
+            {/* 成员选择器：成员专属功能先选「对谁」 */}
             <Modal isOpen={!!memberPicker} title={memberPicker?.title || '对谁'} en="PICK SOMEONE" onClose={() => setMemberPicker(null)}>
                 {memberPicker && (
                     <div className="space-y-2">

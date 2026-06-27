@@ -29,8 +29,6 @@ interface ChatModalsProps {
     setEmojiImportText: (v: string) => void;
     settingsContextLimit: number;
     setSettingsContextLimit: (v: number) => void;
-    settingsHideSysLogs: boolean;
-    setSettingsHideSysLogs: (v: boolean) => void;
     preserveContext: boolean;
     setPreserveContext: (v: boolean) => void;
     editContent: string;
@@ -142,7 +140,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     walletBalance = 0,
     emojiImportText, setEmojiImportText,
     settingsContextLimit, setSettingsContextLimit,
-    settingsHideSysLogs, setSettingsHideSysLogs,
     preserveContext, setPreserveContext,
     editContent, setEditContent,
     newCategoryName, setNewCategoryName, onAddCategory,
@@ -268,7 +265,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             <JournalSheet
                 open={modalType === 'transfer'} title="转账与红包" en="Send Money"
                 sub={transferMode === 'redpacket' ? '设置金额并发送红包' : '设置金额并发送转账'}
-                tape={transferMode === 'redpacket' ? 'blush' : 'lemon'} pattern="heart" paper="cream"
+                tape="blush" pattern="heart" paper="cream"
                 onClose={() => setModalType('none')}
                 footer={<>
                     <SealBtn kind="ghost" onClick={() => setModalType('none')}>再想想</SealBtn>
@@ -282,7 +279,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     <div className="flex gap-2.5">
                         <button
                             onClick={() => setTransferMode('transfer')}
-                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
+                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
                             style={{
                                 background: transferMode === 'transfer' ? '#fff4f7' : '#fffdfa',
                                 color: transferMode === 'transfer' ? '#5a3140' : '#a892a3',
@@ -291,10 +288,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 boxShadow: transferMode === 'transfer' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
-                        >💴 转账</button>
+                        >
+                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: '#a892a3', border: '1px solid #eed6df' }}>¥</span>
+                            <span>转账</span>
+                        </button>
                         <button
                             onClick={() => setTransferMode('redpacket')}
-                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
+                            className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95 inline-flex items-center justify-center gap-1.5"
                             style={{
                                 background: transferMode === 'redpacket' ? '#fff4f7' : '#fffdfa',
                                 color: transferMode === 'redpacket' ? '#5a3140' : '#a892a3',
@@ -303,7 +303,10 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                 boxShadow: transferMode === 'redpacket' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
-                        >🧧 红包</button>
+                        >
+                            <span className="inline-flex w-5 h-5 items-center justify-center rounded-full text-[10px] font-black" style={{ background: '#fffdfa', color: '#a892a3', border: '1px solid #eed6df' }}>包</span>
+                            <span>红包</span>
+                        </button>
                     </div>
                     {/* 金额 */}
                     <div className="flex items-end gap-2 px-1">
@@ -408,18 +411,6 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">上下文条数 ({settingsContextLimit})</label>
                          <input type="range" min="20" max="5000" step="10" value={settingsContextLimit} onChange={e => setSettingsContextLimit(parseInt(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-primary" />
                          <div className="flex justify-between text-[10px] text-slate-400 mt-1"><span>20 (省流)</span><span>5000 (超长记忆)</span></div>
-                     </div>
-
-                     <div className="pt-2 border-t border-slate-100">
-                         <div className="flex justify-between items-center cursor-pointer" onClick={() => setSettingsHideSysLogs(!settingsHideSysLogs)}>
-                             <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">隐藏系统日志</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${settingsHideSysLogs ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
-                                 <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settingsHideSysLogs ? 'translate-x-4' : ''}`}></div>
-                             </div>
-                         </div>
-                         <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                             开启后，将不再显示 Date/App 产生的上下文提示文本（转账、戳一戳、图片发送提示除外）。
-                         </p>
                      </div>
 
                      {/* Translation Settings */}

@@ -2505,6 +2505,8 @@ export interface GroupProfile {
         style?: string;
         maxChars?: number;
         openingStrategy?: 'choose' | 'story' | 'skip';
+        openingPreset?: 'approach' | 'visit' | 'encounter' | 'appointment' | 'custom';
+        customScenario?: string;
     };
     /** 已解散标记：解散后群保留在聊天列表显示"此群聊已被解散"，进入后只读。 */
     dissolved?: boolean;

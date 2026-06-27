@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan } from './redPacket';
+import {
+    splitRedPacket,
+    bestLuckIndex,
+    shuffle,
+    yuanToCents,
+    centsToYuan,
+    buildGroupRedPacketMetadata,
+    isPasswordRedPacketPhraseAccepted,
+} from './redPacket';
 
 /** 确定性随机源（mulberry32），让拆分结果可复现、可断言。 */
 function mulberry32(seed: number) {
@@ -11,6 +19,36 @@ function mulberry32(seed: number) {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
+
+describe('group red packet metadata', () => {
+    it('普通群红包会标成 redpacket，避免渲染成转账', () => {
+        expect(buildGroupRedPacketMetadata({ amount: 52, type: 'normal', note: ' 早茶钱 ' })).toEqual({
+            kind: 'redpacket',
+            amount: 52,
+            status: 'pending',
+            note: '早茶钱',
+        });
+    });
+
+    it('口令群红包保存修剪后的口令与备注', () => {
+        expect(buildGroupRedPacketMetadata({ amount: 8.8, type: 'password', password: ' 天王盖地虎 ', note: ' 开门 ' })).toEqual({
+            kind: 'redpacket',
+            rpType: 'password',
+            amount: 8.8,
+            status: 'pending',
+            password: '天王盖地虎',
+            note: '开门',
+        });
+    });
+
+    it('口令必须完整匹配才能打开', () => {
+        expect(isPasswordRedPacketPhraseAccepted(' 天王盖地虎 ', '天王盖地虎')).toBe(true);
+        expect(isPasswordRedPacketPhraseAccepted('open sesame', ' open sesame ')).toBe(true);
+        expect(isPasswordRedPacketPhraseAccepted('open sesame', 'Open Sesame')).toBe(false);
+        expect(isPasswordRedPacketPhraseAccepted('天王盖地虎', '天王盖地虎!')).toBe(false);
+        expect(isPasswordRedPacketPhraseAccepted('', '')).toBe(false);
+    });
+});
 
 describe('splitRedPacket', () => {
     it('各份之和恰好等于总额（多种 seed / 份数）', () => {

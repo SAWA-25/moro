@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
 import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder } from '../types';
@@ -36,7 +35,6 @@ import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
 import CharacterEntryTransition from '../components/chat/CharacterEntryTransition';
-import ChromeCssEditor from '../components/chat/ChromeCssEditor';
 import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import TabloidModal from '../components/chat/TabloidModal';
@@ -119,7 +117,7 @@ const Chat: React.FC = () => {
     // Reply Logic
     const [replyTarget, setReplyTarget] = useState<Message | null>(null);
 
-    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'chrome-css' | 'tabloid'>('none');
+    const [modalType, setModalType] = useState<'none' | 'transfer' | 'emoji-import' | 'chat-settings' | 'message-options' | 'edit-message' | 'delete-emoji' | 'delete-category' | 'add-category' | 'history-manager' | 'archive-settings' | 'prompt-editor' | 'category-options' | 'category-visibility' | 'schedule' | 'tabloid'>('none');
     const [scheduleData, setScheduleData] = useState<DailySchedule | null>(null);
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
@@ -190,7 +188,6 @@ const Chat: React.FC = () => {
     const [innerVoiceHistory, setInnerVoiceHistory] = useState<InnerVoiceEntry[]>([]);
     const [emojiImportText, setEmojiImportText] = useState('');
     const [settingsContextLimit, setSettingsContextLimit] = useState(500);
-    const [settingsHideSysLogs, setSettingsHideSysLogs] = useState(false);
     const [settingsHtmlModeCustomPrompt, setSettingsHtmlModeCustomPrompt] = useState('');
     const [preserveContext, setPreserveContext] = useState(true);
     const [isVectorizing, setIsVectorizing] = useState(false);
@@ -818,18 +815,15 @@ const Chat: React.FC = () => {
         if (!activeCharacterId) return;
 
         const charIdAtStart = activeCharacterId;
-        // 只用倒序游标取「最近 N 条」（含少量缓冲，抵消 date/call/系统消息被过滤后条数变少），
+        // 只用倒序游标取「最近 N 条」（含少量缓冲，抵消 date/call 消息被过滤后条数变少），
         // 不再 getAll 全量反序列化 —— 图片多/消息多的账号原本要把整段历史（含内联图片）一次性读进
         // 内存才显示 30 条，首次打开会卡好几秒。totalCount 走 index.count，不反序列化、极廉价。
         const fetchLimit = requestedVisibleCount >= 100000 ? requestedVisibleCount : requestedVisibleCount + 16;
         const applyResult = (recent: Message[], totalCount: number) => {
-            // 用 ref 取当前 char（避免闭包过期）
-            const currentChar = charRef.current;
             // 不在视觉层过滤 hideBeforeMessageId —— 用户能往上滚回看，
             // 上下文截断仅作用于发给 LLM 的 prompt（在 chatPrompts.ts 里处理）。
             const chatScopeMsgs = recent
-                .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
-                .filter(m => !(currentChar?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card'));
+                .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call');
             setTotalMsgCount(totalCount);
             setMessages(chatScopeMsgs.slice(-requestedVisibleCount));
             setHistoryLoaded(true);
@@ -876,7 +870,6 @@ const Chat: React.FC = () => {
             setInput(savedDraft || '');
             if (char) {
                 setSettingsContextLimit(char.contextLimit || 500);
-                setSettingsHideSysLogs(char.hideSystemLogs || false);
                 setSettingsHtmlModeCustomPrompt((char as any).htmlModeCustomPrompt || '');
                 clearUnread(char.id);
             }
@@ -1062,12 +1055,11 @@ const Chat: React.FC = () => {
         if (modalType === 'history-manager' && activeCharacterId) {
             DB.getMessagesByCharId(activeCharacterId, true).then(allMsgs => {
                 const filtered = allMsgs
-                    .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
-                    .filter(m => !(char?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card'));
+                    .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call');
                 setAllHistoryMessages(filtered);
             });
         }
-    }, [modalType, activeCharacterId, char?.hideSystemLogs]);
+    }, [modalType, activeCharacterId]);
 
     useEffect(() => {
         const savedPrompts = localStorage.getItem('chat_archive_prompts');
@@ -1906,7 +1898,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'trigger-ai': handleManualTrigger(); break;
             case 'archive': setModalType('archive-settings'); break;
             case 'settings': setModalType('chat-settings'); break;
-            case 'chrome-css': setModalType('chrome-css'); break;
             case 'emoji-import': setModalType('emoji-import'); break;
             case 'send-emoji': if (payload) handleSendText(payload.url, 'emoji'); break;
             case 'delete-emoji-req': setSelectedEmoji(payload); setModalType('delete-emoji'); break;
@@ -2482,7 +2473,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
     const saveSettings = () => {
         updateCharacter(char.id, {
             contextLimit: settingsContextLimit,
-            hideSystemLogs: settingsHideSysLogs,
             htmlModeCustomPrompt: settingsHtmlModeCustomPrompt,
         } as any);
         setModalType('none');
@@ -3252,8 +3242,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         });
         const base = messages
             .filter(m => m.metadata?.source !== 'date' && m.metadata?.source !== 'call')
-            .filter(m => !m.metadata?.proactiveHint)
-            .filter(m => { if (char?.hideSystemLogs && m.role === 'system' && m.type !== 'score_card' && !m.metadata?.systemCommand) return false; return true; });
+            .filter(m => !m.metadata?.proactiveHint);
         if (windowedFocusMsgId !== null) {
             const idx = base.findIndex(m => m.id === windowedFocusMsgId);
             if (idx >= 0) {
@@ -3264,7 +3253,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         }
         return withDisplayRegex(base.slice(-visibleCount));
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [messages, char?.id, char?.hideSystemLogs, char?.regexScripts, visibleCount, windowedFocusMsgId, regexVersion]);
+    }, [messages, char?.id, char?.regexScripts, visibleCount, windowedFocusMsgId, regexVersion]);
 
     const renderMessages = useMemo(() => {
         if (windowedFocusMsgId !== null || selectionMode) return displayMessages;
@@ -3425,9 +3414,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             className={`moro-chat-root moro-laiwang ${finalRootClass}`}
             style={finalRootStyle}
         >
-             {/* 白框自定义 CSS：全局默认在前、角色专属在后（后者叠加覆盖）。作用于 .moro-chat-* 各零件。 */}
+             {/* 白框自定义 CSS：仅保留全局外观设置，作用于 .moro-chat-* 各零件。 */}
              {osTheme.chatChromeCustomCss && <style>{osTheme.chatChromeCustomCss}</style>}
-             {char.chromeCustomCss && <style>{char.chromeCustomCss}</style>}
              {/* 会话设置「背景图」：顶栏背景 / 底部输入栏背景，走 .moro-chat-* 白框钩子注入 */}
              {(convo?.headerBgImage || convo?.inputBarImage) && (
                <style>{[
@@ -3437,7 +3425,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
              )}
              {/* 守护样式（注在用户 CSS 之后）：保证返回键永远可见可点 —— 防止坏 CSS 把它隐藏/变透明/拦截点击，
                  让用户在样式写崩时仍能退出聊天（再去「外观→聊天界面→一键还原」清掉坏 CSS）。不锁位置，正常挪位仍可用。 */}
-             {(osTheme.chatChromeCustomCss || char.chromeCustomCss) && (
+             {osTheme.chatChromeCustomCss && (
                <style>{`.moro-chat-back{visibility:visible!important;opacity:1!important;pointer-events:auto!important;}`}</style>
              )}
              {/* 角色「登场」过场：切换/进入时以 ta 的头像氛围铺底登场，再推进穿过进入聊天。key 切换即重放。 */}
@@ -3913,7 +3901,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 walletBalance={userProfile.balance || 0}
                 emojiImportText={emojiImportText} setEmojiImportText={setEmojiImportText}
                 settingsContextLimit={settingsContextLimit} setSettingsContextLimit={setSettingsContextLimit}
-                settingsHideSysLogs={settingsHideSysLogs} setSettingsHideSysLogs={setSettingsHideSysLogs}
                 preserveContext={preserveContext} setPreserveContext={setPreserveContext}
                 editContent={editContent} setEditContent={setEditContent}
                 archivePrompts={archivePrompts} selectedPromptId={selectedPromptId} setSelectedPromptId={(id: string) => {
@@ -4752,46 +4739,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             )}
 
-            {/* 角色专属「白框自定义」Modal —— 从加号面板「白框」进入；写到 char.chromeCustomCss，叠加在全局之上 */}
-            {char && modalType === 'chrome-css' && (
-                <div className="fixed inset-0 z-[110] flex items-end justify-center" style={{ background: 'rgba(20,18,16,0.18)' }} onClick={() => setModalType('none')}>
-                    <div
-                        className="w-full max-h-[68vh] overflow-y-auto rounded-t-3xl p-5 backdrop-blur-xl [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                        style={{ paddingBottom: 'calc(1.25rem + var(--safe-bottom))', background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', borderTop: `1px solid ${INK_SOFT}66`, boxShadow: '0 -12px 40px rgba(20,18,14,0.4)', color: INK }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="mb-2 flex items-start justify-between">
-                            <div>
-                                <div className="text-sm font-black" style={{ color: INK }}>白框自定义 · {char.name}</div>
-                                <div className="mt-0.5 text-[10px]" style={{ color: INK_SOFT }}>↑ 上方聊天界面即实时预览；仅对该角色生效，叠加在全局设置之上。</div>
-                            </div>
-                            <button onClick={() => setModalType('none')} className="px-2 text-xl leading-none active:scale-90 transition-transform" style={{ color: INK_SOFT }}>{'×'}</button>
-                        </div>
-                        <ChromeCssEditor value={char.chromeCustomCss || ''} onChange={(css) => updateCharacter(char.id, { chromeCustomCss: css } as any)} />
-                    </div>
-                    {/* 脱离 CSS 控制的救援键：只在「白框」自定义弹窗开着时出现（平时不显示，不丑）。portal 到 body
-                        在聊天 DOM 之外 + id 守护(#moro-safe-reset 特异性高于 *)，连 *{display:none!important} 也盖不掉，
-                        保证你刚粘进坏 CSS 当场崩掉时，这个还原键一定点得到。 */}
-                    {createPortal(
-                        <>
-                            <style>{`#moro-safe-reset{position:fixed!important;top:calc(var(--safe-top) + 6px)!important;left:50%!important;transform:translateX(-50%)!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;display:flex!important;z-index:2147483647!important;}`}</style>
-                            <button
-                                id="moro-safe-reset"
-                                onClick={() => { updateCharacter(char.id, { chromeCustomCss: '' } as any); addToast('已还原该角色白框', 'success'); }}
-                                style={{
-                                    position: 'fixed', top: 'calc(var(--safe-top) + 6px)', left: '50%', transform: 'translateX(-50%)',
-                                    zIndex: 2147483647, display: 'flex', alignItems: 'center', gap: '4px',
-                                    padding: '5px 12px', borderRadius: '999px',
-                                    background: 'rgba(15,23,42,0.62)', color: '#fff', fontSize: '11px', fontWeight: 700,
-                                    border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-                                }}
-                            >⟲ 还原此角色白框</button>
-                        </>,
-                        document.body,
-                    )}
-                </div>
-            )}
-
             {/* 情绪设置已嵌入日程 Modal（与日程强制同步开/关），不再单独渲染 */}
 
             {/* 🍔 麦当劳小程序 - MCP 数据流按钮驱动, 协同聊天走主 pipeline (完整人设/记忆/日程) */}
@@ -4835,12 +4782,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onClose={() => setModalType('none')}
                     contextLimit={settingsContextLimit}
                     onContextLimitChange={setSettingsContextLimit}
-                    hideSysLogs={settingsHideSysLogs}
-                    onToggleHideSysLogs={() => {
-                        const next = !settingsHideSysLogs;
-                        setSettingsHideSysLogs(next);
-                        updateCharacter(char.id, { hideSystemLogs: next });
-                    }}
                     translationEnabled={translationEnabled}
                     onToggleTranslation={() => {
                         const next = !translationEnabled;
@@ -4861,7 +4802,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     onForceVectorize={handleForceVectorize}
                     onExportChat={handleExportChat}
                     messagesCount={(allHistoryMessages && allHistoryMessages.length > 0) ? allHistoryMessages.length : messages.length}
-                    onOpenChromeCss={() => setModalType('chrome-css')}
                     categories={categories}
                     emojiCounts={emojiCounts}
                     onSaveCategoryVisibility={handleSaveCategoryVisibility}

@@ -330,7 +330,7 @@ const PresetManager: React.FC<PresetManagerProps> = ({ presets, onSave, onApply,
             const blob = await onExport(id);
             const preset = presets.find(p => p.id === id);
             const fileName = `appearance_${preset?.name || 'preset'}.zip`;
-            const title = `拼贴册存档 - ${preset?.name || 'preset'}`;
+            const title = `样式存档 - ${preset?.name || 'preset'}`;
 
             if (Capacitor.isNativePlatform()) {
                 // Native: 写到 Cache 再调系统分享
@@ -692,7 +692,7 @@ const CustomCssStudio: React.FC<{
             <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                 <h2 className="text-base font-bold font-display-italic text-[#2b2933] mb-1">聊天白框 · 手写码</h2>
                 <p className="text-[10px] text-[#6b6b6b] leading-relaxed mb-3">
-                    管所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。单个角色的专属白框还是在该角色聊天「＋ → 白框」里写，叠在这层之上。
+                    管所有角色的聊天顶栏 / 输入栏 / 气泡（.moro-chat-*）。私聊内不再提供角色专属白框；旧角色码可用下方救援一并清掉。
                 </p>
                 <div className="mb-3">
                     <div className="text-[10px] font-bold text-[#8b8996] label-mono mb-1.5">取景框（聊天白框）</div>
@@ -700,7 +700,7 @@ const CustomCssStudio: React.FC<{
                 </div>
                 <ChromeCssEditor value={theme.chatChromeCustomCss || ''} onChange={(css) => updateTheme({ chatChromeCustomCss: css })} />
                 <button
-                    onClick={() => { if (window.confirm('确定把全部聊天白框手写码都撕掉？会清空「全局」和「每个角色」的码。')) onResetAllChrome(); }}
+                    onClick={() => { if (window.confirm('确定把聊天白框手写码都撕掉？会清空全局码，并顺手清理旧角色专属码。')) onResetAllChrome(); }}
                     className="mt-3 w-full border-2 border-dashed border-[#2b2933]/50 bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
                     一键全撕 · 救援
                 </button>
@@ -1437,8 +1437,8 @@ const TarotSkinEditor: React.FC<{
 
 const Appearance: React.FC = () => {
   const { theme, updateTheme, closeApp, setCustomIcon, customIcons, addToast, appearancePresets, saveAppearancePreset, applyAppearancePreset, deleteAppearancePreset, renameAppearancePreset, exportAppearancePreset, importAppearancePreset, resetAppearance, characters, updateCharacter } = useOS();
-  // 一键还原全部「聊天白框自定义 CSS」：清掉全局 + 每个角色自带的。
-  // 兼作救援：单角色的坏 CSS 把聊天界面整崩、进不去该角色设置时，从这里一键全清即可恢复。
+  // 一键还原聊天白框自定义 CSS：清掉全局 + 历史遗留的角色专属码。
+  // 兼作救援：旧角色码或全局码把聊天界面整崩时，从这里一键全清即可恢复。
   const resetAllChromeCss = () => {
     let n = 0;
     if (theme.chatChromeCustomCss) { updateTheme({ chatChromeCustomCss: '' }); n++; }
@@ -1662,8 +1662,8 @@ const Appearance: React.FC = () => {
                 <span className="text-[#2b2933] text-lg leading-none -mt-0.5">‹</span>
             </button>
             <div className="flex flex-col">
-                <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">拼贴册</h1>
-                <span className="text-[8px] label-mono text-[#8b8996] mt-1">SCRAPBOOK · 黑白手账</span>
+                <h1 className="text-2xl text-[#2b2933] font-display-italic leading-none">外观设置</h1>
+                <span className="text-[8px] label-mono text-[#8b8996] mt-1">STYLE · 拍立得相册</span>
             </div>
         </div>
       </div>
@@ -1987,7 +1987,7 @@ const Appearance: React.FC = () => {
                 {/* Desktop Decoration DIY Section */}
                 <section className="bg-[#fbfaf7] p-5 border-2 border-[#2b2933] shadow-[3px_3px_0_rgba(43,41,51,0.18)]">
                     <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-base font-bold font-display-italic text-[#2b2933]">贴纸拼贴</h2>
+                        <h2 className="text-base font-bold font-display-italic text-[#2b2933]">贴纸素材</h2>
                         <span className="text-[9px] bg-[#2b2933] text-[#fbfaf7] px-2 py-0.5 label-mono -rotate-3">尽情贴</span>
                     </div>
                     <p className="text-[10px] text-[#6b6b6b] mb-4">随手往桌面贴贴纸，挪位置 / 调大小 / 转角度 / 改透明度，拼出只属于你的那一页！</p>

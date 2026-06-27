@@ -649,19 +649,19 @@ export const ChatAppearanceEditor: React.FC<Props> = ({ theme, updateTheme, onRe
                 <div className="mb-3">
                     <h2 className="text-base font-bold font-display-italic text-[#2b2933]">白框 · 手写码</h2>
                     <p className="mt-1 text-[10px] leading-relaxed text-[#6b6b6b]">
-                        全局白框手写码在「拼贴册 → 手写码」页里写（带取景框）；单个角色的专属白框在该角色聊天 →「＋」菜单 →「白框」里写，叠在全局之上。
-                        要是某个角色的码写坏了、聊天界面整崩、连设置都进不去，点下面一键全撕即可救回来。
+                        全局白框手写码在「外观设置 → 手写码」页里写（带取景框），会作用于所有角色；私聊内不再提供角色专属白框。
+                        要是旧角色码或全局码写坏了、聊天界面整崩，点下面一键全撕即可救回来。
                     </p>
                 </div>
                 <button
-                    onClick={() => { if (window.confirm('确定把全部聊天白框手写码都撕掉？会清空「全局」和「每个角色」的码（其它聊天外观不受影响）。')) onResetAllChrome?.(); }}
+                    onClick={() => { if (window.confirm('确定把聊天白框手写码都撕掉？会清空全局码，并清理旧角色专属码（其它聊天外观不受影响）。')) onResetAllChrome?.(); }}
                     className="w-full border-2 border-[#2b2933] border-dashed bg-[#f4f2ed] px-4 py-3 text-[12px] font-bold label-mono text-[#2b2933] transition-all hover:bg-[#2b2933] hover:text-[#fbfaf7] active:translate-x-[1px] active:translate-y-[1px]">
                     一键全撕 · 救援
                 </button>
             </section>
 
             <div className="px-2 pb-2 text-center text-[10px] leading-relaxed text-[#8b8996] font-hand text-sm">
-                这一版先把聊天壳做成一块块可换的贴纸。想玩更深的话，往后还能给每个角色单独裱一套壳，甚至让不同 app 装成不同平台的样子。
+                    这一版先把聊天壳做成一块块可换的贴纸。想玩更深的话，往后还能让不同 app 装成不同平台的样子。
             </div>
         </div>
     );

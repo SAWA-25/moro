@@ -22,11 +22,9 @@ import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../handbook/paper';
 interface ConvoSettingsPanelProps {
     char: CharacterProfile;
     onClose: () => void;
-    // 对话记忆（上下文条数）/ 系统日志 —— Chat 本地态 + char 字段双写
+    // 对话记忆（上下文条数）—— Chat 本地态 + char 字段双写
     contextLimit: number;
     onContextLimitChange: (v: number) => void;
-    hideSysLogs: boolean;
-    onToggleHideSysLogs: () => void;
     // 对照翻译（per-char localStorage，状态在 Chat）
     translationEnabled: boolean;
     onToggleTranslation: () => void;
@@ -44,8 +42,6 @@ interface ConvoSettingsPanelProps {
     onForceVectorize?: () => void;
     onExportChat: () => void;
     messagesCount: number;
-    // 样式
-    onOpenChromeCss: () => void;
     // 表情
     categories: EmojiCategory[];
     emojiCounts: Record<string, number>;
@@ -202,12 +198,12 @@ const LANG_OPTIONS = ['中文', 'English', '日本語', '한국어', 'Français'
 const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     const {
         char, onClose,
-        contextLimit, onContextLimitChange, hideSysLogs, onToggleHideSysLogs,
+        contextLimit, onContextLimitChange,
         translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang,
         onSetTranslateSourceLang, onSetTranslateLang,
         onOpenHistoryManager, onClearHistory, onClearChatContextOnly, preserveContext, onTogglePreserveContext,
         isVectorizing, onForceVectorize, onExportChat, messagesCount,
-        onOpenChromeCss, categories, emojiCounts, onSaveCategoryVisibility,
+        categories, emojiCounts, onSaveCategoryVisibility,
         onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
     } = props;
     const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp } = useOS();
@@ -1101,20 +1097,10 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         note="气泡、头像、顶栏、输入栏这些全局聊天样式，都在「外观」App 里设置。"
                         side={<PinButton onClick={() => openApp(AppID.Appearance)}>打开外观</PinButton>}
                     />
-                    <Entry
-                        mark="✄" title="角色专属 CSS"
-                        note="只对这个角色生效的聊天界面自定义样式（.moro-chat-* 钩子），会覆盖全局样式。"
-                        side={<PinButton onClick={onOpenChromeCss}>编辑 CSS</PinButton>}
-                    />
                 </Page>
 
                 {/* ═══ P.10 使用习惯 ═══ */}
                 <Page no="10" title="使用习惯" en="Habits" tape="lavender" pattern="dot" paper="lined">
-                    <Entry
-                        mark="✤" title="收起系统碎碎念"
-                        note="不再显示 Date / App 冒出来的上下文提示文本（转账、戳一戳、图片发送提示还是会留着）。"
-                        side={<CandyToggle on={hideSysLogs} onToggle={onToggleHideSysLogs} />}
-                    />
                     <Entry
                         mark="✤" title="谁也不许拉黑我"
                         note="打开后所有角色都不会再做出「拉黑你」的举动（对全部会话生效）。已经存在的拉黑不受影响，会照常自动解除。"
