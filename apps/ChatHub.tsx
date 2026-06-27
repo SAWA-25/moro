@@ -31,8 +31,8 @@ const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
 // 复用 Chat.tsx 的高颜值样式逻辑，但针对群聊微调
 const PRESET_THEME_GROUP: ChatTheme = {
     id: 'group_default', name: 'Group', type: 'preset',
-    user: { textColor: '#5a3140', backgroundColor: '#fff4f7', borderRadius: 22, opacity: 1 },
-    ai: { textColor: '#5a3140', backgroundColor: '#fffdfa', borderRadius: 22, opacity: 1 },
+    user: { textColor: '#2e2c36', backgroundColor: '#f1f1f3', borderRadius: 22, opacity: 1 },
+    ai: { textColor: '#2e2c36', backgroundColor: '#ffffff', borderRadius: 22, opacity: 1 },
 };
 
 const groupBackgroundStyleFor = (
@@ -97,6 +97,8 @@ const GroupSettingsPage: React.FC<{ no: string; title: string; en: string; child
 const GroupMessageItem = React.memo(({
     msg,
     isUser,
+    isFirstInGroup,
+    isLastInGroup,
     char,
     userAvatar,
     userName,
@@ -123,6 +125,8 @@ const GroupMessageItem = React.memo(({
 }: {
     msg: Message,
     isUser: boolean,
+    isFirstInGroup: boolean,
+    isLastInGroup: boolean,
     char?: CharacterProfile,
     userAvatar: string,
     userName?: string,
@@ -164,6 +168,7 @@ const GroupMessageItem = React.memo(({
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? (userName || '我') : displayName || char?.name || '未知成员';
+    const styleConfig = isUser ? PRESET_THEME_GROUP.user : PRESET_THEME_GROUP.ai;
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     // 头像单击/双击区分：260ms 内第二次点击 = 戳一戳
@@ -414,13 +419,16 @@ const GroupMessageItem = React.memo(({
                 const dur = meta.durationSec ? `${meta.durationSec}"` : '语音';
                 const playVoice = () => { try { if (meta.voiceAudio) void new Audio(meta.voiceAudio).play(); } catch { /* ignore */ } };
                 return (
-                    <div className={`px-3.5 py-2.5 rounded-[18px] shadow-sm flex flex-col gap-1 max-w-[220px] ${isUser ? 'bg-[#d8a5b7] text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm'}`}>
+                    <div
+                        className="px-5 py-3 rounded-[22px] flex flex-col gap-1 max-w-[220px]"
+                        style={{ backgroundColor: styleConfig.backgroundColor, color: styleConfig.textColor, opacity: styleConfig.opacity }}
+                    >
                         <button onClick={playVoice} className="flex items-center gap-2 active:opacity-70">
                             <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 shrink-0"><path d="M8 5v14l11-7z" /></svg>
                             <span className="flex items-end gap-0.5 h-4">{[6, 11, 7, 13, 8].map((h, i) => (<span key={i} className="w-0.5 rounded-full bg-current opacity-70" style={{ height: h }} />))}</span>
                             <span className="text-[11px] opacity-80 tabular-nums">{dur}</span>
                         </button>
-                        {meta.transcript && <span className={`text-[11px] leading-snug ${isUser ? 'text-white/60' : 'text-slate-400'}`}>{meta.transcript}</span>}
+                        {meta.transcript && <span className="text-[11px] leading-snug text-slate-400">{meta.transcript}</span>}
                     </div>
                 );
             }
@@ -529,7 +537,10 @@ const GroupMessageItem = React.memo(({
             }
             default:
                 return (
-                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed whitespace-pre-wrap break-all bg-[#f2f2f2] text-[#262626] ${isUser ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}>
+                    <div
+                        className="px-5 py-3 rounded-[22px] text-[15px] leading-relaxed whitespace-pre-wrap break-all active:scale-[0.98] transition-transform"
+                        style={{ backgroundColor: styleConfig.backgroundColor, color: styleConfig.textColor, opacity: styleConfig.opacity }}
+                    >
                         {renderTextWithMentions(msg.content)}
                     </div>
                 );
@@ -538,7 +549,7 @@ const GroupMessageItem = React.memo(({
 
     return (
         <div 
-            className={`flex gap-3 mb-4 w-full animate-fade-in relative ${isUser ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-8' : ''}`}
+            className={`flex w-full animate-fade-in relative ${isLastInGroup ? 'mb-6' : 'mb-1.5'} ${isUser ? 'justify-end' : 'justify-start'} ${selectionMode ? 'pl-8' : ''}`}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
             onTouchMove={handleMove}
@@ -555,31 +566,32 @@ const GroupMessageItem = React.memo(({
                 </div>
             )}
 
-            {!isUser && (
-                <div className="flex flex-col items-center gap-1 shrink-0">
-                    <div className={`relative rounded-full ${specialCare ? 'ring-2 ring-rose-300 ring-offset-2 ring-offset-[#faf9f6]' : ''}`}>
-                        <img
-                            src={avatar}
-                            className={`w-9 h-9 rounded-full object-cover shadow-sm border border-white ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
-                            loading="lazy"
-                            onClick={handleAvatarClick}
-                        />
-                        {specialCare && <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full bg-rose-500 text-white flex items-center justify-center border border-white"><BellRinging size={10} weight="fill" /></span>}
+            <div className={`flex flex-col ${isUser ? 'items-end mr-3' : 'items-start ml-1'} max-w-[72%] min-w-0 ${selectionMode ? 'pointer-events-none' : ''}`}>
+                {isFirstInGroup && (
+                    <div className={`text-[10px] text-slate-400 mb-1 flex items-center gap-1.5 px-0.5 ${isUser ? 'mr-1 justify-end' : 'ml-0'}`}>
+                        {!isUser && avatar && (
+                            <span className={`relative shrink-0 rounded-full ${specialCare ? 'ring-1 ring-rose-300 ring-offset-1 ring-offset-[#ededed]' : ''}`}>
+                                <img
+                                    src={avatar}
+                                    className={`w-6 h-6 rounded-full object-cover ring-1 ring-black/5 ${(onAvatarClick || onAvatarPoke) && !selectionMode ? 'cursor-pointer active:scale-90 transition-transform' : ''}`}
+                                    loading="lazy"
+                                    onClick={handleAvatarClick}
+                                    alt=""
+                                    draggable={false}
+                                />
+                                {specialCare && <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-rose-500 text-white flex items-center justify-center border border-white"><BellRinging size={8} weight="fill" /></span>}
+                            </span>
+                        )}
+                        {specialCare && !isUser && (
+                            <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
+                        )}
+                        {memberTitle && !isUser && (
+                            <span className="px-1 py-px rounded bg-[#f8f8f8] text-slate-500 border border-slate-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
+                        )}
+                        {!isUser && <span className="truncate max-w-[140px] bg-slate-200/70 rounded-md px-2 py-[3px] leading-none">{name}</span>}
+                        <span className="text-slate-300 shrink-0">{timeStr}</span>
                     </div>
-                </div>
-            )}
-
-            <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] ${selectionMode ? 'pointer-events-none' : ''}`}>
-                <span className={`text-[10px] text-slate-400 mb-1 flex items-center gap-1 ${isUser ? 'mr-1 justify-end' : 'ml-1'}`}>
-                    {specialCare && !isUser && (
-                        <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
-                    )}
-                    {memberTitle && !isUser && (
-                        <span className="px-1 py-px rounded bg-[#f8f8f8] text-slate-500 border border-slate-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
-                    )}
-                    <span className="truncate max-w-[140px]">{name}</span>
-                    <span className="text-slate-300 shrink-0">{timeStr}</span>
-                </span>
+                )}
                 {renderContent()}
                 {/* 表情回应小药丸（QQ/微信 tap-to-react） */}
                 {Array.isArray(msg.metadata?.reactions) && msg.metadata.reactions.length > 0 && (
@@ -599,7 +611,7 @@ const GroupMessageItem = React.memo(({
             </div>
 
             {isUser && (
-                <div className="flex flex-col items-center gap-1 shrink-0">
+                <div className="flex flex-col items-center gap-1 shrink-0 self-end mb-1">
                     <img src={avatar} className="w-9 h-9 rounded-full object-cover shadow-sm border border-white" loading="lazy" />
                 </div>
             )}
@@ -1281,8 +1293,7 @@ const ChatHub: React.FC = () => {
                 : record)
             : activeGroup.chatArchives;
 
-        const updatedGroup: GroupProfile = {
-            ...activeGroup,
+        const updates: Partial<GroupProfile> = {
             name: newName,
             privateContextCap: tempPrivateContextCap,
             memberNicknames: { ...(activeGroup.memberNicknames || {}), user: newMyNickname },
@@ -1291,9 +1302,9 @@ const ChatHub: React.FC = () => {
             specialCareMemberIds,
             specialCareNotify: tempSpecialCareNotify,
         };
-        if (!newMyNickname) delete updatedGroup.memberNicknames!['user'];
-        await updateGroup(activeGroup.id, updatedGroup);
-        setActiveGroup(updatedGroup);
+        if (!newMyNickname) delete updates.memberNicknames!['user'];
+        const updatedGroup = await applyGroupUpdate(updates);
+        if (!updatedGroup) return;
         if (options.close) setModalType('none');
 
         // 群内系统通知：角色下一轮能从历史里"看到"这些变化
@@ -1763,10 +1774,8 @@ const ChatHub: React.FC = () => {
         if (!file || !activeGroup) return;
         try {
             const base64 = await processImage(file);
-            const updatedGroup = { ...activeGroup, avatar: base64 };
-            await DB.saveGroup(updatedGroup);
-            setActiveGroup(updatedGroup);
-            addToast('群头像已修改', 'success');
+            const updated = await applyGroupUpdate({ avatar: base64 });
+            if (updated) addToast('群头像已修改', 'success');
         } catch (err: any) {
             addToast('图片处理失败', 'error');
         }
@@ -3465,9 +3474,9 @@ ${attachedImagesNote}
             )}
 
             {/* Header — safe-top spacer 透明 + backdrop-blur 自适应容器色，跟 iOS status bar 一致 */}
-            <div className="shrink-0 z-30 sticky top-0 transition-all bg-[#ededed]">
-            <div className="bg-[#ededed]" style={{ height: 'var(--safe-top)' }} />
-            <div className="mx-3 mt-2 mb-2 bg-white px-4 flex items-center rounded-[24px] h-[72px]" style={{ boxShadow: '0 10px 28px -24px rgba(38,38,38,0.45)' }}>
+            <div className="shrink-0 z-30 sticky top-0 transition-all">
+            <div className="bg-transparent backdrop-blur-xl" style={{ height: 'calc(var(--safe-top) + 2.5rem)' }} />
+            <div className="bg-white/95 backdrop-blur-md px-5 py-3 flex items-center rounded-b-[2rem] min-h-[6rem] shadow-[0_14px_30px_-18px_rgba(50,48,60,0.3)]">
                 {selectionMode ? (
                     <div className="flex items-center justify-between w-full">
                         <button onClick={() => { setSelectionMode(false); setSelectedMsgIds(new Set()); }} className="text-sm font-bold text-slate-500 px-2 py-1">取消</button>
@@ -3475,21 +3484,22 @@ ${attachedImagesNote}
                         <div className="w-10"></div>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-3 w-full">
-                        <button onClick={() => setView('list')} className="p-2 -ml-2 rounded-full hover:bg-[#f4f4f4] active:bg-[#eeeeee] transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#5a3140]"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+                    <div className="relative w-full min-h-[56px] flex items-end justify-center">
+                        <button onClick={() => setView('list')} className="absolute left-0 bottom-2 p-2 rounded-full text-slate-500 hover:bg-slate-100 active:scale-90 transition-transform">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
                         </button>
-                        <div className="flex-1 min-w-0" onClick={() => openGroupSettings()}>
-                            <h1 className="text-base font-bold text-[#5a3140] truncate flex items-center gap-1">
-                                {activeGroup?.name}
-                                {activeGroup?.pinned && <PushPin size={12} weight="fill" className="text-[#d8a5b7] shrink-0" />}
-                                {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold shrink-0">已解散</span>}
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-slate-400"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" /></svg>
-                            </h1>
-                            <div className="flex items-center gap-2">
-                                <p className="text-[10px] text-[#a892a3] font-medium">{activeGroup?.members.length} 成员</p>
+                        <div className="flex w-[calc(100%-7rem)] max-w-[420px] flex-col items-center justify-end text-center cursor-pointer" onClick={() => openGroupSettings()}>
+                            <div className="flex items-center justify-center gap-1.5 max-w-full">
+                                <h1 className="text-[15px] font-bold text-slate-800 truncate">
+                                    {activeGroup?.name}
+                                </h1>
+                                {activeGroup?.pinned && <PushPin size={12} weight="fill" className="text-slate-400 shrink-0" />}
+                                {activeGroup?.dissolved && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold shrink-0">已解散</span>}
+                            </div>
+                            <div className="mt-1 flex items-center justify-center gap-2 min-h-[18px]">
+                                <p className="text-[10px] text-slate-400 font-medium">{activeGroup?.members.length} 成员</p>
                                 {activeGroup?.mutedAll && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
                                 )}
                                 {lastTokenUsage && (
                                     <div
@@ -3506,7 +3516,7 @@ ${attachedImagesNote}
                         {canReroll && !isTyping && (
                             <button 
                                 onClick={handleReroll} 
-                                className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-colors"
+                                className="absolute right-20 bottom-2 p-2 rounded-full text-slate-500 hover:bg-slate-100 active:scale-90 transition-transform"
                                 title="重新生成回复"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
@@ -3516,7 +3526,7 @@ ${attachedImagesNote}
                         {/* 群聊天记录查找入口 */}
                         <button
                             onClick={openSearch}
-                            className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-all active:scale-90"
+                            className="absolute right-10 bottom-2 p-2 rounded-full text-slate-500 hover:bg-slate-100 active:scale-90 transition-transform"
                             title="查找聊天记录"
                         >
                             <MagnifyingGlass size={20} weight="bold" />
@@ -3525,7 +3535,7 @@ ${attachedImagesNote}
                         {/* 群设置入口（原 + 面板里的「群设置」迁移到右上角；⚡手动触发已删除——空输入回车/发送即触发） */}
                         <button
                             onClick={() => openGroupSettings()}
-                            className="p-2 rounded-full bg-[#f6f6f6] text-[#a892a3] hover:text-[#5a3140] transition-all active:scale-90"
+                            className="absolute right-0 bottom-2 p-2 rounded-full text-slate-500 hover:bg-slate-100 active:scale-90 transition-transform"
                             title="群设置"
                         >
                             <GearSix size={20} weight="bold" />
@@ -3618,9 +3628,9 @@ ${attachedImagesNote}
 
             {/* Messages Area */}
             <div
-                className="flex-1 overflow-y-auto p-4 no-scrollbar space-y-2 scrap-panel"
+                className="flex-1 overflow-y-auto overflow-x-hidden pt-6 pb-6 px-4 no-scrollbar"
                 ref={scrollRef}
-                style={groupBackgroundStyleFor(activeGroup?.chatBackgroundImage, osTheme.groupChatBackgroundStyle || osTheme.chatBackgroundStyle || 'paper')}
+                style={groupBackgroundStyleFor(activeGroup?.chatBackgroundImage, osTheme.groupChatBackgroundStyle || osTheme.chatBackgroundStyle || 'plain')}
             >
                 {totalMsgCount > messages.length && activeGroup && (
                     <div className="flex justify-center mb-4">
@@ -3637,16 +3647,30 @@ ${attachedImagesNote}
                 {displayMessages.map((m, i) => {
                     const isUser = m.role === 'user';
                     const char = characters.find(c => c.id === m.charId);
+                    const prevMessage = i > 0 ? displayMessages[i - 1] : null;
+                    const nextMessage = i < displayMessages.length - 1 ? displayMessages[i + 1] : null;
+                    const messageGroupGapMs = 30 * 60 * 1000;
+                    const senderKey = (msg: Message) => `${msg.role}:${msg.charId || (msg.role === 'user' ? 'user' : 'system')}`;
+                    const isFirstInGroup =
+                        !prevMessage ||
+                        senderKey(prevMessage) !== senderKey(m) ||
+                        Math.abs(m.timestamp - prevMessage.timestamp) > messageGroupGapMs;
+                    const isLastInGroup =
+                        !nextMessage ||
+                        senderKey(nextMessage) !== senderKey(m) ||
+                        Math.abs(nextMessage.timestamp - m.timestamp) > messageGroupGapMs;
 
                     return (
                         <div
                             key={m.id || i}
                             id={m.id != null ? `gmsg-${m.id}` : undefined}
-                            className={`rounded-2xl transition-all duration-500 ${highlightMsgId === m.id ? 'ring-2 ring-[#d8a5b7] ring-offset-2 ring-offset-[#ededed] bg-[#fff4f7]' : ''}`}
+                            className={`rounded-2xl transition-all duration-500 ${highlightMsgId === m.id ? 'ring-2 ring-slate-300 ring-offset-2 ring-offset-[#ededed] bg-white/40' : ''}`}
                         >
                             <GroupMessageItem
                                 msg={m}
                                 isUser={isUser}
+                                isFirstInGroup={isFirstInGroup}
+                                isLastInGroup={isLastInGroup}
                                 char={char}
                                 userAvatar={userProfile.avatar}
                                 userName={userProfile.name || '我'}
@@ -3692,45 +3716,43 @@ ${attachedImagesNote}
                 ) : voice.isRecording ? (
                     <div className="p-3 flex items-center gap-3">
                         <button onClick={() => voice.stopRecording(false)} className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center active:scale-90 transition shrink-0" title="取消"><Trash size={20} weight="bold" /></button>
-                        <div className="flex-1 min-w-0 bg-white rounded-xl border border-rose-200 px-3 py-2 flex items-center gap-2">
+                        <div className="flex-1 min-w-0 bg-white rounded-[2rem] border border-slate-200 px-3 py-2 flex items-center gap-2">
                             <Microphone size={16} weight="fill" className="text-rose-500 shrink-0" />
                             <span className="text-[13px] font-bold text-rose-500 tabular-nums shrink-0">{voice.recordSecs}s</span>
                             <span className="text-[12px] text-slate-400 truncate">{voice.liveTranscript || '正在录音…'}</span>
                         </div>
-                        <button onClick={() => voice.stopRecording(true)} className="h-10 px-4 rounded-xl bg-[#d8a5b7] text-white font-bold text-sm shrink-0 active:scale-95 transition flex items-center gap-1"><StopCircle size={18} weight="fill" />发送</button>
+                        <button onClick={() => voice.stopRecording(true)} className="h-10 px-4 rounded-full bg-primary text-white font-bold text-sm shrink-0 active:scale-95 transition flex items-center gap-1"><StopCircle size={18} weight="fill" />发送</button>
                     </div>
                 ) : selectionMode ? (
-                    <div className="p-3 flex justify-center bg-white">
+                    <div className="p-3 flex justify-center bg-[#ededed]">
                         <button
                             onClick={deleteSelectedMessages}
-                            className="w-full py-3 bg-[#fffdfa] text-[#9c5e74] font-bold rounded-2xl border border-[#eed6df] shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
-                            style={{ outline: '1px dashed rgba(216,165,183,0.42)', outlineOffset: '-4px' }}
+                            className="w-full py-3 bg-white text-slate-600 font-bold rounded-[2rem] shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-2"
                         >
                             <Trash size={20} weight="bold" />
                             删除 {selectedMsgIds.size} 条
                         </button>
                     </div>
                 ) : (
-                    <div className="p-2 flex items-end gap-2">
+                    <div className="px-4 py-3 flex items-end gap-3 rounded-t-[1.75rem] bg-white/95 backdrop-blur-2xl shadow-[0_-14px_30px_-18px_rgba(50,48,60,0.3)]">
                         {/* 左外侧：贴纸册入口（与单聊一致） */}
                         <button
                             onClick={() => { setShowEmojiPicker(!showEmojiPicker); setShowActions(false); }}
-                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[#8a7f86] transition-colors hover:bg-white"
+                            className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-slate-400 hover:text-slate-700 active:scale-90 transition-transform"
                         >
                             <Sticker size={24} weight={showEmojiPicker ? 'fill' : 'bold'} />
                         </button>
 
-                        {/* @ 成员：点名让 TA 本轮优先回应 */}
-                        <button
-                            onClick={() => { setShowEmojiPicker(false); setShowActions(false); setModalType('mention-picker'); }}
-                            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-[#8a7f86] transition-colors hover:bg-white text-[19px] font-bold leading-none"
-                            title="@ 成员"
-                        >
-                            @
-                        </button>
-
                         {/* Input Field Container */}
-                        <div className="flex-1 min-w-0 overflow-hidden bg-white rounded-[22px] flex items-end px-3 py-2 border border-transparent focus-within:border-[#eed6df] transition-all">
+                        <div className="flex-1 min-w-0 overflow-hidden bg-[#f4f4f6] rounded-[2rem] flex items-center px-1 border border-transparent focus-within:bg-white focus-within:border-slate-200 transition-all">
+                            {/* @ 成员：群聊专属，但收进输入胶囊里，避免把整条输入栏挤偏 */}
+                            <button
+                                onClick={() => { setShowEmojiPicker(false); setShowActions(false); setModalType('mention-picker'); }}
+                                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-slate-400 hover:text-slate-700 active:scale-90 transition-transform text-[18px] font-bold leading-none"
+                                title="@ 成员"
+                            >
+                                @
+                            </button>
                             <textarea
                                 rows={1}
                                 value={input}
@@ -3746,14 +3768,14 @@ ${attachedImagesNote}
                                         handleSendMessage(input);
                                     }
                                 }}
-                                className="flex-1 min-w-0 bg-transparent text-[16px] outline-none resize-none max-h-28 text-[#5a3140] placeholder:text-[#aaa] py-1"
-                                placeholder="说点什么…"
+                                className="flex-1 min-w-0 bg-transparent px-3 py-3 text-[15px] outline-none resize-none max-h-28 text-[#2e2c36] placeholder:text-slate-400"
+                                placeholder="ʕ•ﻌ•ʔ 说点什么…"
                                 style={{ height: 'auto', minHeight: '24px' }}
                             />
                             {/* 输入框内右侧：回形针 = 别上点什么（功能抽屉） */}
                             <button
                                 onClick={() => { setShowActions(!showActions); setShowEmojiPicker(false); }}
-                                className={`p-1 -mr-1 ml-1 text-[#a892a3] hover:text-[#5a3140] transition-transform shrink-0 ${showActions ? 'rotate-45 text-[#5a3140]' : ''}`}
+                                className={`p-2 -mr-1 ml-1 text-slate-400 hover:text-slate-700 transition-transform shrink-0 ${showActions ? 'rotate-45 text-slate-700' : ''}`}
                             >
                                 <Paperclip size={24} weight={showActions ? 'bold' : 'regular'} />
                             </button>
@@ -3768,16 +3790,18 @@ ${attachedImagesNote}
                                 }
                                 handleSendMessage(input);
                             }}
-                            className={`h-9 px-4 shrink-0 rounded-full font-bold text-sm active:scale-95 transition-all ${input.trim() ? 'bg-[#d8a5b7] text-white' : 'bg-white text-[#9c5e74]'}`}
+                            className={input.trim()
+                                ? 'h-11 min-w-[72px] shrink-0 rounded-full bg-primary px-4 text-[11px] font-bold text-white shadow-lg active:scale-90 transition-transform'
+                                : 'w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-rose-300 hover:scale-110 active:scale-90 transition-all'}
                         >
-                            寄出
+                            {input.trim() ? '寄出' : <Heart className="w-7 h-7" weight="fill" />}
                         </button>
                     </div>
                 )}
 
                 {/* --- 功能面板：群聊动作直接执行，成员专属动作先选人 --- */}
                 {showActions && (
-                    <div className="h-64 bg-[#fffdfa] scrap-panel border-t border-[#eed6df] px-4 py-4 animate-slide-up overflow-y-auto no-scrollbar">
+                    <div className="h-64 bg-white/95 border-t border-slate-200 px-4 py-4 animate-slide-up overflow-y-auto no-scrollbar">
                         <div className="stationery-grid grid grid-cols-2 gap-x-3 gap-y-2.5">
                             {/* 寄给大家：直接发进群 */}
                             <div className="drawer-tag col-span-2"><span>寄 给 大 家</span></div>
@@ -3819,7 +3843,7 @@ ${attachedImagesNote}
 
                 {/* --- Emoji Drawer --- */}
                 {showEmojiPicker && (
-                    <div className="h-64 bg-[#fffdfa] scrap-panel border-t border-[#eed6df] animate-slide-up flex flex-col">
+                    <div className="h-64 bg-white/95 border-t border-slate-200 animate-slide-up flex flex-col">
                         {/* 搜索：按名字/描述模糊匹配导入的表情包 */}
                         <div className="px-4 pt-3 pb-1 shrink-0">
                             <input
