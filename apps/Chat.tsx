@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
 import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
@@ -29,6 +29,7 @@ import { CHAR_WITHDRAW_EVENT } from '../utils/messageWithdraw';
 import { toggleReaction, CHAR_REACT_EVENT } from '../utils/messageReactions';
 import { CHAR_PAT_EVENT, DEFAULT_PAT_SUFFIX } from '../utils/patSuffix';
 import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/userRemarkSystem';
+import { CHAR_AVATAR_FROM_USER_IMAGE_EVENT, type CharAvatarEventDetail } from '../utils/charAvatarSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
 import McdMiniApp from '../components/mcd/McdMiniApp';
@@ -73,6 +74,22 @@ const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
     'relay_card', 'checkin_card', 'gift_card',
 ]);
+
+const clipForPreview = (text: string, limit = 160) => {
+    const clean = (text || '').replace(/\s+/g, ' ').trim();
+    return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
+};
+
+const messageKindLabel = (m: Message): string => {
+    if (m.type === 'image') return '图片';
+    if (m.type === 'emoji') return '表情';
+    if (m.type === 'voice') return '语音';
+    if (m.type === 'location') return '位置';
+    if (m.type === 'transfer') return '转账/红包';
+    return '消息';
+};
+
+const isImageUrlLike = (value: string): boolean => /^data:image\//i.test(value || '') || /^https?:\/\/.+\.(?:png|jpe?g|gif|webp|avif)(?:[?#].*)?$/i.test(value || '');
 
 const makePrivateChatArchiveId = () => `pchat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -1409,7 +1426,13 @@ const Chat: React.FC = () => {
         }
 
         // Telegram 式回执：用户消息落库即「已发出」（单勾），角色回复成功后升级为「已读」（双勾）
-        const msgPayload: any = { charId: char.id, role: 'user', type, content: text, metadata: { ...(metadata || {}), msgStatus: 'sent' } };
+        const msgPayload: any = {
+            charId: char.id,
+            role: 'user',
+            type,
+            content: text,
+            metadata: { ...(metadata || {}), ...(type === 'image' ? { charAvatarCandidate: true } : {}), msgStatus: 'sent' },
+        };
 
         if (replyTarget) {
             msgPayload.replyTo = {
@@ -1859,6 +1882,53 @@ ${recent || '（你们相处了很久）'}
         window.addEventListener(CHAR_USER_REMARK_EVENT, handler);
         return () => window.removeEventListener(CHAR_USER_REMARK_EVENT, handler);
     }, []);
+
+    // ── 角色自主把用户刚发的图片设为自己的头像：[[SET_CHAR_AVATAR_FROM_LAST_IMAGE]] ──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const d = (e as CustomEvent).detail as Partial<CharAvatarEventDetail>;
+            if (!d?.charId || d.charId !== activeCharIdRef.current) return;
+            void (async () => {
+                try {
+                    const liveChar = charRef.current;
+                    if (!liveChar?.convoSettings?.allowCharAvatarFromUserImage) return;
+                    const recent = await DB.getRecentMessagesByCharId(d.charId!, 80);
+                    const target = [...recent].reverse().find(m =>
+                        m.role === 'user' &&
+                        m.type === 'image' &&
+                        typeof m.content === 'string' &&
+                        (m.metadata?.charAvatarCandidate || isImageUrlLike(m.content))
+                    );
+                    if (!target) {
+                        addToast('没找到刚才那张头像候选图', 'info');
+                        return;
+                    }
+                    const reason = d.reason?.trim();
+                    await updateCharacter(d.charId!, {
+                        avatar: target.content,
+                        convoSettings: {
+                            ...(liveChar.convoSettings || {}),
+                            charAvatarOverride: target.content,
+                        },
+                    });
+                    await DB.saveMessage({
+                        charId: d.charId!,
+                        role: 'system',
+                        type: 'text',
+                        content: `「${liveChar?.name || 'TA'}」把你刚发的图片设成了自己的头像${reason ? `：${reason}` : ''}`,
+                        metadata: { charAvatarChanged: true, sourceMessageId: target.id, reason },
+                    } as any);
+                    await reloadMessages(visibleCountRef.current);
+                    addToast(`${liveChar?.name || 'TA'} 换上了自己的新头像`, 'success');
+                } catch (err) {
+                    console.warn('[Chat] set char avatar from image failed', err);
+                    addToast('头像更换失败', 'error');
+                }
+            })();
+        };
+        window.addEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, handler);
+        return () => window.removeEventListener(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, handler);
+    }, [addToast, reloadMessages, updateCharacter]);
 
     // 进入/切换角色时兜底：有 pending（事件发出时不在本聊天页）或未结束的线下会话则恢复弹窗
     useEffect(() => {
@@ -3470,6 +3540,112 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         addToast('已复制到剪贴板', 'success');
     };
 
+    const handleCollectMessage = async () => {
+        if (!selectedMessage || !char) return;
+        const target = selectedMessage;
+        const sender = target.role === 'user' ? (userProfile.name || '我') : char.name;
+        const kind = messageKindLabel(target);
+        const sourceId = `${char.id}:${target.id}`;
+        const excerpt = target.type === 'image'
+            ? '[图片]'
+            : target.type === 'text'
+              ? clipForPreview(target.content, 180)
+              : `[${kind}] ${clipForPreview(target.content, 120)}`;
+        const item: CollectionItem = {
+            id: `chat:${sourceId}`,
+            sourceType: 'chat',
+            sourceId,
+            title: `${sender} 的${kind}`,
+            subtitle: `来往 · ${char.name} · ${new Date(target.timestamp || Date.now()).toLocaleString()}`,
+            excerpt,
+            charIds: [char.id],
+            cover: target.type === 'image' && isImageUrlLike(target.content) ? target.content : '💬',
+            collectedAt: Date.now(),
+        };
+        try {
+            await DB.saveCollectionItem(item);
+            await DB.updateMessageMetadata(target.id, (prev: any) => ({ ...(prev || {}), collectedAt: item.collectedAt }));
+            setMessages(prev => prev.map(m => m.id === target.id ? { ...m, metadata: { ...(m.metadata || {}), collectedAt: item.collectedAt } } : m));
+            addToast('已收进典藏馆', 'success');
+        } catch (err) {
+            console.warn('[Chat] collect message failed', err);
+            addToast('收录失败', 'error');
+        } finally {
+            setModalType('none');
+            setSelectedMessage(null);
+        }
+    };
+
+    const handlePostMessageToMoments = async () => {
+        if (!selectedMessage || !char) return;
+        const target = selectedMessage;
+        if (target.role === 'system') return;
+        const kind = messageKindLabel(target);
+        const sender = target.role === 'user' ? (userProfile.name || '我') : char.name;
+        const images = target.type === 'image' && isImageUrlLike(target.content) ? [target.content] : [];
+        const rawText = target.type === 'text'
+            ? clipForPreview(target.content, 240)
+            : images.length > 0
+              ? '分享了一张聊天里的图片'
+              : clipForPreview(target.content || `[${kind}]`, 160);
+        const content = target.role === 'user'
+            ? `转发了 ${sender} 的${kind}${rawText ? `：\n${rawText}` : ''}`
+            : rawText;
+        const post: SocialPost = {
+            id: `moment-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            authorName: char.name,
+            authorAvatar: char.avatar,
+            title: '',
+            content,
+            images,
+            likes: 0,
+            isCollected: false,
+            isLiked: false,
+            comments: [],
+            timestamp: Date.now(),
+            tags: ['聊天转发'],
+            authorType: 'character',
+            authorCharId: char.id,
+            likedBy: [],
+            repostOf: {
+                postId: `chat-message-${target.id}`,
+                authorName: sender,
+                content: target.type === 'text' ? target.content : `[${kind}]`,
+                images: images.length > 0 ? images : undefined,
+            },
+            visibility: 'public',
+        };
+        try {
+            await DB.saveSocialPost(post);
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'system',
+                type: 'text',
+                content: `「${char.name}」把这条${kind}转发到了此刻`,
+                metadata: { momentPostId: post.id, forwardedMessageId: target.id },
+            } as any);
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('character-moment-posted', {
+                    detail: {
+                        charId: char.id,
+                        charName: char.name,
+                        body: images.length > 0 ? '发了一张聊天图片到此刻' : '发了一条聊天转发到此刻',
+                        avatarUrl: char.avatar,
+                        postId: post.id,
+                    },
+                }));
+            }
+            await reloadMessages(visibleCountRef.current);
+            addToast('已让 TA 发到此刻', 'success');
+        } catch (err) {
+            console.warn('[Chat] post message to moments failed', err);
+            addToast('发到此刻失败', 'error');
+        } finally {
+            setModalType('none');
+            setSelectedMessage(null);
+        }
+    };
+
     // 撤回消息（QQ/微信语义）：原文存进 metadata.recalledContent 供「重新编辑」，
     // 气泡变成"你撤回了一条消息"，发给角色的上下文只剩"撤回了一条消息"（看不到原文）。
     const handleRecallMessage = async () => {
@@ -4432,7 +4608,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 onCreatePrompt={createNewPrompt} onEditPrompt={editSelectedPrompt} onSavePrompt={handleSavePrompt} onDeletePrompt={handleDeletePrompt}
                 onSetHistoryStart={handleSetHistoryStart} onJumpToMessageInChat={handleJumpToMessageInChat} onEnterSelectionMode={handleEnterSelectionMode}
                 onReplyMessage={handleReplyMessage} onEditMessageStart={() => { if (selectedMessage) { setEditContent(selectedMessage.content); setModalType('edit-message'); } }}
-                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onReactMessage={handleReactMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
+                onConfirmEditMessage={confirmEditMessage} onDeleteMessage={handleDeleteMessage} onRecallMessage={handleRecallMessage} onForwardMessage={handleForwardSingle} onCollectMessage={handleCollectMessage} onPostMessageToMoments={handlePostMessageToMoments} onReactMessage={handleReactMessage} onCopyMessage={handleCopyMessage} onDeleteEmoji={handleDeleteEmoji} onDeleteCategory={handleDeleteCategory}
                 allCharacters={characters} onSaveCategoryVisibility={handleSaveCategoryVisibility}
                 translationEnabled={translationEnabled}
                 onToggleTranslation={() => { const next = !translationEnabled; setTranslationEnabled(next); localStorage.setItem(`chat_translate_enabled_${activeCharacterId}`, JSON.stringify(next)); if (!next) { setShowingTargetIds(new Set()); } }}

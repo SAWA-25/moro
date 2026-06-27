@@ -2384,6 +2384,12 @@ export interface ConvoSettings {
     innerVoiceEnabled?: boolean;
     /** 专属铃声：新消息通知音（undefined/'none' = 静音，预设见 utils/ringtone.ts） */
     ringtone?: 'none' | 'chime' | 'bubble' | 'bell' | 'retro' | 'koto';
+    /** 私聊特别关心：开启后 TA 的消息/此刻走独立提醒。 */
+    specialCare?: boolean;
+    /** 特别关心专属提醒音；未设置时回退到 ringtone，再回退清铃。 */
+    specialCareRingtone?: 'none' | 'chime' | 'bubble' | 'bell' | 'retro' | 'koto';
+    /** 特别关心是否提醒消息与此刻；undefined 视为开启。 */
+    specialCareNotify?: boolean;
     /** 隐藏时间戳：本会话覆盖全局 chatShowTimestamp */
     hideTimestamp?: boolean;
     /** 所在地区：注入提示词，影响角色作息 / 时差 / 话题贴合 */
@@ -2421,6 +2427,8 @@ export interface ConvoSettings {
     // ── 立绘 ──
     /** 角色·本会话头像（覆盖 char.avatar，仅本会话展示） */
     charAvatarOverride?: string;
+    /** 允许 TA 自主把用户发来的图片设为自己的头像。 */
+    allowCharAvatarFromUserImage?: boolean;
     /** 主控·本会话头像（覆盖用户头像，仅本会话展示） */
     userAvatarOverride?: string;
     /** 角色立绘：聊天界面右下角半透明立绘（galgame 式） */
@@ -4048,7 +4056,7 @@ export interface TruthDareSession {
 // 岁时记·典藏馆：把「谈心 / 创作社 / 自习室 / 小剧场」里完成的内容收进来，
 // 可在典藏馆里把已收录的剧场内容与谈心转发给任意角色（给 char B 看 user & char A 的记录）。
 // ──────────────────────────────────────────────────────────────────
-export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game';
+export type CollectionSourceType = 'talk' | 'novel' | 'song' | 'course' | 'quiz' | 'guidebook' | 'game' | 'chat';
 export interface CollectionItem {
   id: string;                 // = `${sourceType}:${sourceId}`，天然去重
   sourceType: CollectionSourceType;

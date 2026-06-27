@@ -39,6 +39,7 @@ import { extractBlockUserDirective, isCharBlockDisabled, CHAR_BLOCK_EVENT } from
 import { RELATIONSHIP_EVENT, PROPOSAL_EVENT, MARRIAGE_PLAN_EVENT } from './relationship';
 import { TAKEOUT_ORDER_EVENT } from './takeout';
 import { extractUserRemarkDirective, CHAR_USER_REMARK_EVENT } from './userRemarkSystem';
+import { extractCharAvatarDirective, CHAR_AVATAR_FROM_USER_IMAGE_EVENT } from './charAvatarSystem';
 import { applyRegexToText, splitOutDisplayRegexSegments } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { extractCheckPhoneDirective, setPhoneCheckPending, CHAR_PHONE_CHECK_EVENT } from './charPhoneCheck';
@@ -467,6 +468,19 @@ export async function applyAssistantPostProcessing(
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent(CHAR_USER_REMARK_EVENT, {
                     detail: { charId: char.id, remark: remarkExtract.remark, motivation: remarkExtract.motivation },
+                }));
+            }
+        }
+    }
+
+    // ─── Step 1.57: [[SET_CHAR_AVATAR_FROM_LAST_IMAGE]] 角色主动把用户刚发的图当自己的头像 ───
+    {
+        const avatarExtract = extractCharAvatarDirective(aiContent);
+        if (avatarExtract.useAvatar) {
+            aiContent = avatarExtract.content;
+            if (char.convoSettings?.allowCharAvatarFromUserImage && typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent(CHAR_AVATAR_FROM_USER_IMAGE_EVENT, {
+                    detail: { charId: char.id, reason: avatarExtract.reason },
                 }));
             }
         }

@@ -34,10 +34,11 @@ export const SOURCE_LABEL: Record<CollectionSourceType, string> = {
     quiz: '自习室 · 测验',
     guidebook: '攻略本',
     game: 'TRPG',
+    chat: '聊天',
 };
 
 const COVER: Record<CollectionSourceType, string> = {
-    talk: '🫂', novel: '📖', song: '🎵', course: '📚', quiz: '📝', guidebook: '💗', game: '🎲',
+    talk: '🫂', novel: '📖', song: '🎵', course: '📚', quiz: '📝', guidebook: '💗', game: '🎲', chat: '💬',
 };
 
 const clip = (s: string | undefined, n = 60): string => {

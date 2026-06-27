@@ -7,7 +7,7 @@ import { CharacterProfile, Message, EmojiCategory, DailySchedule, ScheduleSlot, 
 import ScheduleCard from '../schedule/ScheduleCard';
 import EmotionSettingsPanel from './EmotionSettingsPanel';
 import { REACTION_EMOJIS } from '../../utils/messageReactions';
-import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye } from '@phosphor-icons/react';
+import { ListNumbers, ShareNetwork, PencilSimpleLine, Copy, ClockCounterClockwise, Trash, Quotes, SpeakerHigh, Eye, BookmarkSimple } from '@phosphor-icons/react';
 
 interface ChatModalsProps {
     modalType: string;
@@ -78,6 +78,8 @@ interface ChatModalsProps {
     onDeleteMessage: () => void;
     onRecallMessage: () => void;
     onForwardMessage: () => void;
+    onCollectMessage?: () => void;
+    onPostMessageToMoments?: () => void;
     onReactMessage: (emoji: string) => void;
     onCopyMessage: () => void;
     onDeleteEmoji: () => void;
@@ -151,7 +153,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     onBgUpload, onRemoveBg, onClearHistory,
     onClearChatContextOnly,
     onArchive, onCreatePrompt, onEditPrompt, onSavePrompt, onDeletePrompt,
-    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
+    onSetHistoryStart, onJumpToMessageInChat, onEnterSelectionMode, onReplyMessage, onEditMessageStart, onConfirmEditMessage, onDeleteMessage, onRecallMessage, onForwardMessage, onCollectMessage, onPostMessageToMoments, onReactMessage, onCopyMessage, onDeleteEmoji, onDeleteCategory,
     allCharacters = [], onSaveCategoryVisibility,
     translationEnabled, onToggleTranslation, translateSourceLang, translateTargetLang, onSetTranslateSourceLang, onSetTranslateLang,
     xhsEnabled, onToggleXhs,
@@ -881,7 +883,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     </div>
                     <ScrapRowBtn onClick={onEnterSelectionMode} icon={<ListNumbers size={18} weight="bold" />}>挑几条一起收拾</ScrapRowBtn>
                     <ScrapRowBtn onClick={onReplyMessage} icon={<Quotes size={18} weight="bold" />}>引一句来回</ScrapRowBtn>
+                    {onCollectMessage && (
+                        <ScrapRowBtn onClick={onCollectMessage} icon={<BookmarkSimple size={18} weight="bold" />}>收进典藏馆</ScrapRowBtn>
+                    )}
                     <ScrapRowBtn onClick={onForwardMessage} icon={<ShareNetwork size={18} weight="bold" />}>转给别人看</ScrapRowBtn>
+                    {onPostMessageToMoments && selectedMessage?.role !== 'system' && (
+                        <ScrapRowBtn onClick={onPostMessageToMoments} icon={<ShareNetwork size={18} weight="bold" />}>让 TA 发到此刻</ScrapRowBtn>
+                    )}
                     {selectedMessage?.type === 'text' && (
                         <ScrapRowBtn onClick={onEditMessageStart} icon={<PencilSimpleLine size={18} weight="bold" />}>改改措辞</ScrapRowBtn>
                     )}

@@ -161,12 +161,15 @@ export const ChatPrompts = {
         const realtimeCfg = cityWeather ? { ...config, weatherCity: cityWeather } : config;
         const realtimePromise: Promise<string> = (async () => {
             try {
+                const includeRealtimeClock = char.convoSettings?.realtimeClockOnline !== false;
                 if (realtimeCfg.weatherEnabled || realtimeCfg.newsEnabled) {
-                    const realtimeContext = await RealtimeContextManager.buildFullContext(realtimeCfg);
-                    return `\n${realtimeContext}\n`;
+                    const realtimeContext = await RealtimeContextManager.buildFullContext(realtimeCfg, {
+                        includeTime: includeRealtimeClock,
+                    });
+                    return realtimeContext ? `\n${realtimeContext}\n` : '';
                 }
                 // 实时感知·线上（会话设置）：默认开；关掉后不再主动把当前钟点塞进在线聊天上下文。
-                if (char.convoSettings?.realtimeClockOnline === false) return '';
+                if (!includeRealtimeClock) return '';
                 const time = RealtimeContextManager.getTimeContext();
                 const specialDates = RealtimeContextManager.checkSpecialDates();
                 let s = `\n### 【当前时间】\n`;
@@ -390,7 +393,9 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
             }
         }
 
-        const emojiContextStr = ChatPrompts.buildEmojiContext(emojis, categories);
+        const emojiAssociationEnabled = !!char.convoSettings?.emojiAssociation;
+        const emojiContextStr = emojiAssociationEnabled ? ChatPrompts.buildEmojiContext(emojis, categories) : '';
+        const timeGapAwarenessEnabled = char.timeAwarenessEnabled !== false;
         const searchEnabled = !!(realtimeConfig?.newsEnabled && realtimeConfig?.newsApiKey);
         const notionEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionDatabaseId);
         const notionNotesEnabled = !!(realtimeConfig?.notionEnabled && realtimeConfig?.notionApiKey && realtimeConfig?.notionNotesDatabaseId);
@@ -419,13 +424,13 @@ ${uname} 的化身正挂在《彼方》的【${roomName}】${act ? `，状态写
    - 将回复拆分成简短的气泡（句子）。**【极其重要】当你想分成多条消息气泡时，必须使用真正的换行符（\\n）分隔，每一行会变成一个独立气泡。绝对不要用空格代替换行！空格不会产生新气泡！只有换行符（\\n）才会分割气泡。** 正常句子中的标点（句号、问号、感叹号等）不会被用来分割气泡，请自然使用。
    - 【严禁】在输出中包含时间戳、名字前缀或"[角色名]:"。
    - **【严禁】模仿历史记录中的系统日志格式（如"[你 发送了...]"）。**
-   - **发送表情包**: 必须且只能使用命令: \`[[SEND_EMOJI: 表情名称]]\`。
+${emojiAssociationEnabled ? `   - **发送表情包**: 必须且只能使用命令: \`[[SEND_EMOJI: 表情名称]]\`。
    - **可用表情库 (按分类)**: 
-     ${emojiContextStr}
+     ${emojiContextStr}` : ''}
 4. **引用功能 (Quote/Reply)**:
    - 如果你想专门回复用户某句具体的话，可以在回复开头使用: \`[[QUOTE: 引用内容]]\`。这会在UI上显示为对该消息的引用。
 5. **环境感知**:
-   - 留意 [系统提示] 中的时间跨度。如果用户消失了很久，请根据你们的关系做出反应（如撒娇、生气、担心或冷漠）。
+${timeGapAwarenessEnabled ? `   - 留意 [系统提示] 中的时间跨度。如果用户消失了很久，请根据你们的关系做出反应（如撒娇、生气、担心或冷漠）。` : ''}
    - 如果用户发送了图片，请对图片内容进行评论。
 6. **可用动作**:
    - 回戳用户: \`[[ACTION:POKE]]\`
@@ -758,9 +763,6 @@ ${xhsEnabled ? `${[notionEnabled, feishuEnabled, notionNotesEnabled].filter(Bool
 - 标签外的文字会正常显示为文本消息
 - **【重要】语音和文字是两种不同的表达方式，不要复读！** 如果你同时发了文字和语音，语音的内容不能是文字的重复或复述。要么单独发语音（不带文字），要么文字和语音表达不同的内容（比如文字聊正事，语音补一句吐槽/撒娇；或者文字发完一段话后，语音单独补充一个新的想法）。你不会打完字又发一条语音把同样的话再说一遍的——那很奇怪。`;
             }
-        } else {
-            // Voice is disabled — explicitly prohibit voice tags to prevent inertia from call/date history
-            baseSystemPrompt += `\n\n[系统提示: 语音消息功能当前未开启。严禁使用 <语音>...</语音> 标签。所有回复必须是纯文字消息。]`;
         }
 
         const perfTotal = Math.round(performance.now() - perfT0);

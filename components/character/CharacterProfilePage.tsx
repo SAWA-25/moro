@@ -3,6 +3,7 @@ import { CharacterProfile } from '../../types';
 import { DB } from '../../utils/db';
 import { useOS } from '../../context/OSContext';
 import { initUnblockAppeal } from '../../utils/unblockAppeal';
+import { RINGTONE_PRESETS, playRingtone } from '../../utils/ringtone';
 
 /**
  * 角色档案页（原创手帐拼贴风）：
@@ -48,6 +49,13 @@ const FriendSettingsPage: React.FC<{
 }> = ({ char, onBack, onOpenSettings, onDeleted }) => {
     const { updateCharacter, deleteCharacter, addToast } = useOS();
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const convoSettings = char.convoSettings || {};
+    const specialCareOn = !!convoSettings.specialCare;
+    const specialCareNotify = convoSettings.specialCareNotify !== false;
+    const specialCareTone = convoSettings.specialCareRingtone || convoSettings.ringtone || 'chime';
+    const updateConvoSettings = (updates: Partial<NonNullable<CharacterProfile['convoSettings']>>) => {
+        updateCharacter(char.id, { convoSettings: { ...(char.convoSettings || {}), ...updates } });
+    };
 
     // 行容器用 div：开关行内部有自己的 <button>，嵌套 button 是非法 HTML
     const Row: React.FC<{ label: string; onClick?: () => void; toggle?: React.ReactNode; divider?: boolean }> = ({ label, onClick, toggle, divider }) => (
@@ -102,6 +110,56 @@ const FriendSettingsPage: React.FC<{
                         label="星标 TA（置顶心意）"
                         toggle={<ToggleSwitch on={!!char.starredFriend} onToggle={() => updateCharacter(char.id, { starredFriend: !char.starredFriend })} />}
                     />
+                </Card>
+
+                <Card>
+                    <Row
+                        label="特别关心"
+                        toggle={<ToggleSwitch on={specialCareOn} onToggle={() => {
+                            const next = !specialCareOn;
+                            updateConvoSettings({
+                                specialCare: next,
+                                specialCareNotify: next ? specialCareNotify : convoSettings.specialCareNotify,
+                                specialCareRingtone: next ? specialCareTone as any : convoSettings.specialCareRingtone,
+                            });
+                            if (next) playRingtone(specialCareTone);
+                            addToast(next ? `已特别关心 ${char.name}` : `已取消特别关心 ${char.name}`, 'info');
+                        }} />}
+                        divider={specialCareOn}
+                    />
+                    {specialCareOn && (
+                        <>
+                            <div className="px-5 pt-3 pb-2">
+                                <div className="text-[12px] font-bold text-slate-400 mb-2">消息提醒声音</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {RINGTONE_PRESETS.map(p => {
+                                        const active = specialCareTone === p.id;
+                                        return (
+                                            <button
+                                                key={p.id}
+                                                onClick={() => {
+                                                    updateConvoSettings({ specialCareRingtone: p.id as any });
+                                                    playRingtone(p.id);
+                                                }}
+                                                className={`px-3 py-1.5 rounded-full text-[12px] font-bold border transition-colors ${
+                                                    active
+                                                        ? 'bg-slate-900 text-white border-slate-900'
+                                                        : 'bg-slate-50 text-slate-500 border-slate-100 active:bg-slate-100'
+                                                }`}
+                                            >
+                                                {p.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="h-px bg-slate-50 mx-5" />
+                            <Row
+                                label="消息和此刻单独提醒"
+                                toggle={<ToggleSwitch on={specialCareNotify} onToggle={() => updateConvoSettings({ specialCareNotify: !specialCareNotify })} />}
+                            />
+                        </>
+                    )}
                 </Card>
 
                 <Card>

@@ -244,9 +244,9 @@ export const ContextBuilder = {
         // 群聊场景（skipUserProfile）下跳过：这些是单聊专属语义
         if (!groupOptions?.skipUserProfile) {
             const cs = char.convoSettings;
+            const lines: string[] = [];
             if (cs) {
                 // 文案见 utils/laiwangPrompts.ts → [7] 核心系统提示词 · convoLines
-                const lines: string[] = [];
                 if (cs.userNickname?.trim()) {
                     lines.push(convoLines.userNickname(user.name, cs.userNickname.trim()));
                 }
@@ -279,9 +279,12 @@ export const ContextBuilder = {
                 if (cs.proactiveTakeoutOrder) {
                     lines.push(convoLines.proactiveTakeoutOrder(user.name));
                 }
-                if (lines.length > 0) {
-                    context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
-                }
+            }
+            if (cs?.allowCharAvatarFromUserImage) {
+                lines.push(convoLines.charAvatarCandidate(user.name));
+            }
+            if (lines.length > 0) {
+                context += `### 会话设定 (Conversation Settings)\n${lines.join('\n')}\n\n`;
             }
 
             // 真实城市系统：城市真实感接地（聊天 / 查手机 / 线下都读 coreContext，自动带上）

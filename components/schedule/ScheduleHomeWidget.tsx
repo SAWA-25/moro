@@ -180,7 +180,7 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
 
         const measure = () => {
             const { width, height } = el.getBoundingClientRect();
-            setIsCompact(height < 170 || width < 360);
+            setIsCompact(height < 190 || width < 420);
         };
 
         measure();

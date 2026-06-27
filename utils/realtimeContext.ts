@@ -92,6 +92,11 @@ export interface RealtimeConfig {
     cacheMinutes: number;   // 缓存时长（分钟）
 }
 
+export interface BuildRealtimeContextOptions {
+    /** false 时不注入当前日期/时间；天气/热点仍按各自开关注入。 */
+    includeTime?: boolean;
+}
+
 // 默认配置
 export const defaultRealtimeConfig: RealtimeConfig = {
     weatherEnabled: false,
@@ -773,28 +778,34 @@ export const RealtimeContextManager = {
     /**
      * 构建完整的实时上下文（注入到系统提示词）
      */
-    buildFullContext: async (config: RealtimeConfig): Promise<string> => {
+    buildFullContext: async (config: RealtimeConfig, options: BuildRealtimeContextOptions = {}): Promise<string> => {
         const parts: string[] = [];
+        const includeTime = options.includeTime !== false;
+        let hasMaterial = false;
 
         // 开头强调：这是真实世界的信息
         parts.push(`### 【真实世界感知系统】`);
         parts.push(`⚠️ 重要：以下信息来自真实世界，不是虚构的。你现在真的能"看到"外面的世界。`);
         parts.push('');
 
-        // 1. 时间信息（总是包含）
-        const time = RealtimeContextManager.getTimeContext();
-        parts.push(`📅 当前真实时间: ${time.dateStr} ${time.dayOfWeek} ${time.timeOfDay} ${time.timeStr}`);
+        // 1. 时间信息（会话「实时感知·线上」关闭时不注入）
+        if (includeTime) {
+            const time = RealtimeContextManager.getTimeContext();
+            parts.push(`📅 当前真实时间: ${time.dateStr} ${time.dayOfWeek} ${time.timeOfDay} ${time.timeStr}`);
+            hasMaterial = true;
 
-        // 2. 特殊日期
-        const specialDates = RealtimeContextManager.checkSpecialDates();
-        if (specialDates.length > 0) {
-            parts.push(`🎉 今日特殊: ${specialDates.join('、')}`);
+            // 2. 特殊日期
+            const specialDates = RealtimeContextManager.checkSpecialDates();
+            if (specialDates.length > 0) {
+                parts.push(`🎉 今日特殊: ${specialDates.join('、')}`);
+            }
         }
 
         // 3. 天气信息（geo 模式免密钥；fetchWeather 内部拿不到数据会返回 null）
         if (config.weatherEnabled) {
             const weather = await RealtimeContextManager.fetchWeather(config);
             if (weather) {
+                hasMaterial = true;
                 parts.push('');
                 parts.push(`🌤️ 【${weather.city}实时天气】`);
                 parts.push(`现在外面: ${weather.description}，气温 ${weather.temp}°C（体感 ${weather.feelsLike}°C），湿度 ${weather.humidity}%`);
@@ -831,6 +842,8 @@ export const RealtimeContextManager = {
                 newsLines.push('');
                 newsLines.push(`若你想主动把其中某条当作"新闻卡片"分享给对方，可单独输出一行：[[NEWS_CARD: 来源|标题]]（标题照抄上面的）。它会以卡片形式呈现，然后你再就此展开聊。别滥用，自然就好。`);
 
+                hasMaterial = true;
+
                 // ── F12 探针：本轮真正注入 prompt 的热点 + 文本量（评估 token 用）──
                 try {
                     const block = newsLines.join('\n');
@@ -847,6 +860,8 @@ export const RealtimeContextManager = {
                 parts.push(...newsLines);
             }
         }
+
+        if (!hasMaterial) return '';
 
         // 5. 行为指令（按已开启的能力裁剪，避免注入无关项 + 与新闻块去重）
         parts.push('');

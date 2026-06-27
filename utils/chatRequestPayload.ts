@@ -269,6 +269,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
     // ── 4. 双语指令注入 ───────────────────────────────────
     const bilingualActive = !!(translationConfig?.enabled && translationConfig.sourceLang && translationConfig.targetLang);
     if (bilingualActive && translationConfig) {
+        const emojiAssociationEnabled = !!char.convoSettings?.emojiAssociation;
         systemPrompt += `\n\n[CRITICAL: 双语输出模式 - 必须严格遵守]
 你的每句话都必须用以下XML标签格式输出双语内容：
 <翻译>
@@ -280,8 +281,7 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
 - 每句话单独包裹一个<翻译>标签
 - 多句话就输出多个<翻译>标签，一句一个
 - <翻译>标签外不要写任何文字
-- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<翻译>标签外面
-- 引用命令 [[QUOTE: ...]] 也放在所有<翻译>标签外面；引用内容请原样照抄用户说过的原文（不要翻译、不要包<翻译>标签）
+${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<翻译>标签外面\n' : ''}- 引用命令 [[QUOTE: ...]] 也放在所有<翻译>标签外面；引用内容请原样照抄用户说过的原文（不要翻译、不要包<翻译>标签）
 
 示例（${translationConfig.sourceLang}→${translationConfig.targetLang}）：
 <翻译>

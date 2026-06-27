@@ -90,6 +90,23 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
         changed.forEach(p => { DB.saveSocialPost(p).catch(console.error); });
     };
 
+    const notifyCharacterMomentPosts = (changed: SocialPost[]) => {
+        if (typeof window === 'undefined') return;
+        changed
+            .filter(p => p.authorType === 'character' && !!p.authorCharId)
+            .forEach(p => {
+                window.dispatchEvent(new CustomEvent('character-moment-posted', {
+                    detail: {
+                        charId: p.authorCharId,
+                        charName: p.authorName,
+                        body: (p.content || p.title || '发了一条此刻').replace(/\s+/g, ' ').trim().slice(0, 80) || '发了一条此刻',
+                        avatarUrl: p.authorAvatar,
+                        postId: p.id,
+                    },
+                }));
+            });
+    };
+
     const markReacting = (postId: string, on: boolean) => {
         setReactingIds(prev => {
             const next = new Set(prev);
@@ -158,6 +175,7 @@ const MomentsFeed: React.FC<MomentsFeedProps> = ({ embedded, onBack, backHandler
                 addToast('这一轮大家都没贴新瞬间', 'info');
             } else {
                 upsertPosts(fresh);
+                notifyCharacterMomentPosts(fresh);
                 addToast(`刷到 ${fresh.length} 条新动态`, 'success');
             }
         } catch (e: any) {

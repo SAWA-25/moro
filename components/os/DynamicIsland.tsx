@@ -37,6 +37,7 @@ interface NoticeInboxItem {
     preview: string;
     count: number;
     at: number;
+    sticky?: boolean;
 }
 
 const DynamicIsland: React.FC = () => {
@@ -92,6 +93,14 @@ const DynamicIsland: React.FC = () => {
     // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
     const lastShownRef = useRef<Record<string, number>>({});
 
+    const getNoticeRingtone = React.useCallback((srcChar?: CharacterProfile | null) => {
+        const cs = srcChar?.convoSettings;
+        if (cs?.specialCare && cs.specialCareNotify !== false) {
+            return cs.specialCareRingtone || cs.ringtone || 'chime';
+        }
+        return cs?.ringtone;
+    }, []);
+
     const pushNoticeInbox = React.useCallback((payload: {
         charId: string;
         charName: string;
@@ -99,6 +108,7 @@ const DynamicIsland: React.FC = () => {
         count?: number;
         avatarUrl?: string;
         at?: number;
+        sticky?: boolean;
     }) => {
         const preview = cleanPreview(payload.body);
         if (!preview.trim()) return;
@@ -118,6 +128,7 @@ const DynamicIsland: React.FC = () => {
                     preview,
                     count: nextCount,
                     at: payload.at || Date.now(),
+                    sticky: payload.sticky || prevItem?.sticky,
                 },
             };
         });
@@ -172,7 +183,7 @@ const DynamicIsland: React.FC = () => {
             if (cur.app === AppID.Chat && cur.charId === d.charId) return;
             const srcChar = characters.find(c => c.id === d.charId);
             // 会话设置「专属铃声」：挂在每条 notice 上，弹出时逐条播放
-            const ringtone = srcChar?.convoSettings?.ringtone;
+            const ringtone = d.ringtone || getNoticeRingtone(srcChar);
             // detail.bodies = 本轮逐条消息正文数组（主动消息多气泡时逐条弹横幅）；
             // 没带 bodies 的旧事件退化为单条 body
             const bodies: string[] = (Array.isArray(d.bodies) && d.bodies.length ? d.bodies : [String(d.body)])
@@ -195,13 +206,41 @@ const DynamicIsland: React.FC = () => {
                 scheduleNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now() + i, ringtone }, i * 260);
             });
         };
+        const onMomentPosted = (e: Event) => {
+            const d = (e as CustomEvent).detail || {};
+            if (!d.charId) return;
+            const srcChar = characters.find(c => c.id === d.charId);
+            const cs = srcChar?.convoSettings;
+            if (!cs?.specialCare || cs.specialCareNotify === false) return;
+            const body = cleanPreview(String(d.body || '发了一条此刻'));
+            const charName = d.charName || srcChar?.name || '';
+            pushNoticeInbox({
+                charId: d.charId,
+                charName,
+                body,
+                count: 1,
+                avatarUrl: d.avatarUrl || srcChar?.avatar,
+                at: Date.now(),
+                sticky: true,
+            });
+            scheduleNotice({
+                charId: d.charId,
+                charName,
+                body,
+                avatarUrl: d.avatarUrl || srcChar?.avatar,
+                at: Date.now(),
+                ringtone: getNoticeRingtone(srcChar),
+            });
+        };
         window.addEventListener('proactive-message-sent', onIncoming);
         window.addEventListener('active-msg-received', onIncoming);
+        window.addEventListener('character-moment-posted', onMomentPosted);
         return () => {
             window.removeEventListener('proactive-message-sent', onIncoming);
             window.removeEventListener('active-msg-received', onIncoming);
+            window.removeEventListener('character-moment-posted', onMomentPosted);
         };
-    }, [characters, pushNoticeInbox, scheduleNotice]);
+    }, [characters, getNoticeRingtone, pushNoticeInbox, scheduleNotice]);
 
     // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 按本次新增条数
     // 取尾部消息，逐条入队弹横幅（一条覆盖一条），而不是只弹最新一条
@@ -240,12 +279,12 @@ const DynamicIsland: React.FC = () => {
                     at: Date.now(),
                 });
                 bodies.forEach((body, i) => {
-                    scheduleNotice({ charId: char.id, charName: char.name, body, at: Date.now() + i, ringtone: char.convoSettings?.ringtone }, i * 260);
+                    scheduleNotice({ charId: char.id, charName: char.name, body, at: Date.now() + i, ringtone: getNoticeRingtone(char) }, i * 260);
                 });
             }
         })();
         return () => { cancelled = true; };
-    }, [unreadMessages, characters, pushNoticeInbox, scheduleNotice]);
+    }, [unreadMessages, characters, getNoticeRingtone, pushNoticeInbox, scheduleNotice]);
 
     useEffect(() => {
         if (!Object.keys(noticeInbox).length) return;
@@ -254,11 +293,11 @@ const DynamicIsland: React.FC = () => {
             const next: Record<string, NoticeInboxItem> = {};
             for (const [charId, item] of Object.entries(prev)) {
                 const unreadCount = unreadMessages[charId] || 0;
-                if (unreadCount <= 0) {
+                if (unreadCount <= 0 && !item.sticky) {
                     changed = true;
                     continue;
                 }
-                const nextCount = Math.max(unreadCount, item.count);
+                const nextCount = item.sticky ? Math.max(unreadCount, item.count || 1) : Math.max(unreadCount, item.count);
                 next[charId] = nextCount === item.count ? item : { ...item, count: nextCount };
                 if (nextCount !== item.count) changed = true;
             }

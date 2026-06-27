@@ -469,58 +469,43 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="♡" title="TA 对我的备注" note="TA 根据你们的相处和剧情，自己决定怎么称呼你（聊天里 TA 会主动给你换备注）。这里只展示 TA 现在给你的备注，不由你来改。">
-                        <div
-                            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-[14px] font-bold"
-                            style={cs.userNickname
-                                ? { background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)', color: '#a96f84' }
-                                : { background: 'rgba(148,163,184,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#94a3b8' }}
-                        >
-                            <span className="opacity-60 text-[12px] font-normal shrink-0">TA 叫你</span>
-                            <span className="truncate">{cs.userNickname || '还没给你起备注'}</span>
+                    <Entry mark="♡" title="TA 怎么称呼你" note="TA 根据你们的相处和剧情，自己决定怎么称呼你；聊天里 TA 可以主动改备注，这里统一展示当前称呼和改名记录。">
+                        <div className="space-y-2">
+                            <div
+                                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-[14px] font-bold"
+                                style={cs.userNickname
+                                    ? { background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)', color: '#a96f84' }
+                                    : { background: 'rgba(148,163,184,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#94a3b8' }}
+                            >
+                                <span className="opacity-60 text-[12px] font-normal shrink-0">现在叫你</span>
+                                <span className="truncate">{cs.userNickname || '还没给你起备注'}</span>
+                                {cs.userRemarkUpdatedAt && (
+                                    <span className="text-[10px] text-slate-300 ml-auto shrink-0">{new Date(cs.userRemarkUpdatedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} 改</span>
+                                )}
+                            </div>
+                            {cs.userRemarkMotivation && (
+                                <div className="rounded-xl p-2.5 text-[12px] text-slate-600 leading-relaxed" style={{ background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)' }}>
+                                    💭 {cs.userRemarkMotivation}
+                                </div>
+                            )}
+                            {cs.userRemarkHistory && cs.userRemarkHistory.length > 1 && (
+                                <details className="text-[11px] text-slate-400">
+                                    <summary className="cursor-pointer select-none py-1">TA 给你换过的备注（{cs.userRemarkHistory.length}）</summary>
+                                    <ul className="mt-1 space-y-1.5">
+                                        {cs.userRemarkHistory.map((h, i) => (
+                                            <li key={i} className="flex flex-col gap-0.5 border-l-2 pl-2" style={{ borderColor: 'rgba(176,122,141,0.3)' }}>
+                                                <span className="text-slate-600 font-bold">「{h.remark}」<span className="text-slate-300 font-normal ml-1">{new Date(h.at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</span></span>
+                                                {h.motivation && <span className="text-slate-400 leading-snug">{h.motivation}</span>}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </details>
+                            )}
                         </div>
                     </Entry>
 
-                    {(cs.userRemarkMotivation || (cs.userRemarkHistory && cs.userRemarkHistory.length > 0)) && (
-                        <Entry mark="✎" title="TA 怎么称呼你" note="TA 主动给你换的备注会记在这里，连同当时的小心思。">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[11px]" style={{ color: '#a96f84' }}>现在叫你</span>
-                                    <span className="text-[14px] font-bold" style={{ color: '#a96f84' }}>{cs.userNickname || '（未设置）'}</span>
-                                    {cs.userRemarkUpdatedAt && (
-                                        <span className="text-[10px] text-slate-300 ml-auto">{new Date(cs.userRemarkUpdatedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} 改</span>
-                                    )}
-                                </div>
-                                {cs.userRemarkMotivation && (
-                                    <div className="rounded-xl p-2.5 text-[12px] text-slate-600 leading-relaxed" style={{ background: 'rgba(176,122,141,0.08)', border: '1px solid rgba(176,122,141,0.18)' }}>
-                                        💭 {cs.userRemarkMotivation}
-                                    </div>
-                                )}
-                                {cs.userRemarkHistory && cs.userRemarkHistory.length > 1 && (
-                                    <details className="text-[11px] text-slate-400">
-                                        <summary className="cursor-pointer select-none py-1">TA 给你换过的备注（{cs.userRemarkHistory.length}）</summary>
-                                        <ul className="mt-1 space-y-1.5">
-                                            {cs.userRemarkHistory.map((h, i) => (
-                                                <li key={i} className="flex flex-col gap-0.5 border-l-2 pl-2" style={{ borderColor: 'rgba(176,122,141,0.3)' }}>
-                                                    <span className="text-slate-600 font-bold">「{h.remark}」<span className="text-slate-300 font-normal ml-1">{new Date(h.at).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</span></span>
-                                                    {h.motivation && <span className="text-slate-400 leading-snug">{h.motivation}</span>}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </details>
-                                )}
-                            </div>
-                        </Entry>
-                    )}
-
                     <Entry mark="♡" title="TA 的名片" note="角色主页上的微信号、地区和签名都由你来填（不再交给 AI 编），空着就不展示。">
                         <div className="space-y-2.5">
-                            {cs.userNickname && (
-                                <div className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: 'rgba(176,122,141,0.08)', color: '#a96f84' }}>
-                                    <span className="opacity-70">TA 叫你</span>
-                                    <span className="font-bold">{cs.userNickname}</span>
-                                </div>
-                            )}
                             <LineInput
                                 tag="WECHAT ID"
                                 value={char.socialProfile?.handle || ''}
@@ -1016,6 +1001,12 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
 
                 {/* ═══ P.06 照片与立绘 ═══ */}
                 <Page no="06" title="照片与立绘" en="Photo Assets" tape="blush" pattern="plain" paper="plain">
+                    <Entry
+                        mark="❅" title="TA 会自己挑头像"
+                        note="打开后，TA 看到你发来的合适图片时，可以自主把那张图设成自己的头像；关掉后不再注入这条能力提示。"
+                        side={<CandyToggle on={!!cs.allowCharAvatarFromUserImage} onToggle={() => updateConvo({ allowCharAvatarFromUserImage: !cs.allowCharAvatarFromUserImage })} />}
+                    />
+
                     <Entry mark="❅" title="聊天立绘" note="立绘会半透明地显示在聊天界面右下角；「生图底图」是 img2img / edits 用的参考图。">
                         <div className="grid grid-cols-3 gap-3">
                             <Polaroid label="本会话头像" aspect="aspect-square" value={cs.charAvatarOverride} hint="沿用角色头像" onChange={v => updateConvo({ charAvatarOverride: v })} />
