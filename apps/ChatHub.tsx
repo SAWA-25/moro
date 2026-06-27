@@ -13,7 +13,7 @@ import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, FastForward, Prohibit, Export } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, PhoneSlash, SpeakerHigh, UserPlus, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, MicrophoneSlash, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, FastForward, Prohibit, Export } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
@@ -27,6 +27,47 @@ import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
+const formatGroupCallDuration = (secs: number): string => {
+    const safe = Math.max(0, Math.floor(secs || 0));
+    return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+};
+const formatGroupCallTime = (ts = Date.now()): string => new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+type GroupCallState = 'connecting' | 'listening' | 'thinking' | 'speaking' | 'ended' | 'error';
+type GroupCallBubble = {
+    id: string;
+    role: 'user' | 'assistant';
+    text: string;
+    time: string;
+    timestamp: number;
+    charId?: string;
+    name?: string;
+    avatar?: string;
+};
+type GroupCallSession = {
+    groupId: string;
+    groupName: string;
+    messageId: number;
+    startedAt: number;
+    sessionId: string;
+    members: { id: string; name: string; avatar?: string }[];
+};
+const getGroupCallStateLabel = (state: GroupCallState): string => ({
+    connecting: '接线中…',
+    listening: '大家在听',
+    thinking: '群友在想…',
+    speaking: '正在说话',
+    ended: '已挂断',
+    error: '连接不稳',
+}[state]);
+const cleanGroupCallText = (raw: string): string => (raw || '')
+    .replace(/```(?:json)?/gi, '')
+    .replace(/```/g, '')
+    .replace(/\[\[\s*HANGUP\s*\]\]/gi, '')
+    .trim();
+const compactGroupCallTranscript = (items: GroupCallBubble[], max = 8): string => items
+    .slice(-max)
+    .map(item => `${item.role === 'user' ? '我' : item.name || '群友'}: ${item.text}`)
+    .join('\n');
 
 // 复用 Chat.tsx 的高颜值样式逻辑，但针对群聊微调
 const PRESET_THEME_GROUP: ChatTheme = {
@@ -121,7 +162,8 @@ const GroupMessageItem = React.memo(({
     onPollClick,
     onRelayClick,
     onCheckinClick,
-    specialCare
+    specialCare,
+    groupMembers = []
 }: {
     msg: Message,
     isUser: boolean,
@@ -165,6 +207,7 @@ const GroupMessageItem = React.memo(({
     onCheckinClick?: (msg: Message) => void,
     /** 本成员是本群特别关心对象时，在消息上做轻量提醒。 */
     specialCare?: boolean
+    groupMembers?: CharacterProfile[]
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
     const name = isUser ? (userName || '我') : displayName || char?.name || '未知成员';
@@ -303,6 +346,62 @@ const GroupMessageItem = React.memo(({
     // Special Content Renderers
     const renderContent = () => {
         switch (msg.type) {
+            case 'call_log': {
+                const meta = (msg.metadata as any) || {};
+                const outcome = meta.callOutcome as string | undefined;
+                const isMissedLike = outcome === 'declined' || outcome === 'missed' || outcome === 'cancelled';
+                const isGroupCall = meta.kind === 'group_call';
+                const memberIds: string[] = Array.isArray(meta.memberIds) ? meta.memberIds : [];
+                const memberNames: string[] = Array.isArray(meta.memberNames) ? meta.memberNames : [];
+                const memberAvatars: string[] = Array.isArray(meta.memberAvatars) ? meta.memberAvatars : [];
+                const participants = memberIds.length
+                    ? memberIds.map((id, idx) => {
+                        const found = groupMembers.find(item => item.id === id);
+                        return {
+                            id,
+                            name: memberNames[idx] || found?.name || '群友',
+                            avatar: memberAvatars[idx] || found?.avatar,
+                        };
+                    })
+                    : groupMembers.map(item => ({ id: item.id, name: item.name, avatar: item.avatar }));
+                const count = Math.max(participants.length, Number(meta.memberCount || 0), isGroupCall ? 2 : 1);
+                const shown = participants.slice(0, 3);
+                const label = isGroupCall
+                    ? (isMissedLike ? '群聊电话未接通' : '发起了群聊电话')
+                    : (msg.content || '语音通话');
+                const subLabel = isGroupCall
+                    ? `${meta.groupName || '群聊'} · ${count} 人语音通话${meta.durationSec ? ` · ${formatGroupCallDuration(Number(meta.durationSec))}` : ''}`
+                    : '语音通话';
+                return (
+                    <div className={`min-w-[220px] max-w-[280px] flex items-center gap-2 px-4 py-2.5 rounded-2xl shadow-sm border select-none ${isMissedLike ? 'bg-white border-red-100' : 'bg-white border-slate-100'}`}>
+                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${isMissedLike ? 'bg-red-50 text-red-400' : 'bg-emerald-50 text-emerald-500'}`}>
+                            <PhoneOutgoing size={15} weight="fill" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-medium truncate ${isMissedLike ? 'text-red-500' : 'text-slate-700'}`}>{label}</div>
+                            <div className="text-[10px] text-slate-400 truncate">{subLabel}</div>
+                        </div>
+                        {isGroupCall && (
+                            <div className="flex items-center shrink-0">
+                                <div className="flex -space-x-2">
+                                    {shown.map((p, idx) => (
+                                        p.avatar ? (
+                                            <img key={p.id || idx} src={p.avatar} alt="" className="w-6 h-6 rounded-full object-cover border-2 border-white bg-slate-100" loading="lazy" />
+                                        ) : (
+                                            <span key={p.id || idx} className="w-6 h-6 rounded-full border-2 border-white bg-slate-100 text-[9px] text-slate-400 font-bold flex items-center justify-center">
+                                                {p.name.slice(0, 1)}
+                                            </span>
+                                        )
+                                    ))}
+                                </div>
+                                {count > shown.length && (
+                                    <span className="ml-1 text-[10px] font-bold text-slate-400">+{count - shown.length}</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                );
+            }
             case 'image':
                 return (
                     <div className="relative group cursor-pointer" onClick={(e) => {
@@ -700,6 +799,14 @@ const ChatHub: React.FC = () => {
     const [showActions, setShowActions] = useState(false);
     const [showGroupOfflineMode, setShowGroupOfflineMode] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [groupCall, setGroupCall] = useState<GroupCallSession | null>(null);
+    const [groupCallSecs, setGroupCallSecs] = useState(0);
+    const [groupCallMuted, setGroupCallMuted] = useState(false);
+    const [groupCallSpeakerOn, setGroupCallSpeakerOn] = useState(true);
+    const [groupCallBubbles, setGroupCallBubbles] = useState<GroupCallBubble[]>([]);
+    const [groupCallDraft, setGroupCallDraft] = useState('');
+    const [groupCallState, setGroupCallState] = useState<GroupCallState>('ended');
+    const [groupCallError, setGroupCallError] = useState('');
     const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay' | 'forward-pick'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
     const [showPlusMenu, setShowPlusMenu] = useState(false);
@@ -782,6 +889,9 @@ const ChatHub: React.FC = () => {
     const groupAvatarInputRef = useRef<HTMLInputElement>(null);
     const groupBackgroundInputRef = useRef<HTMLInputElement>(null);
     const groupArchiveInputRef = useRef<HTMLInputElement>(null);
+    const groupCallScrollRef = useRef<HTMLDivElement>(null);
+    const groupCallIntroFiredRef = useRef<string | null>(null);
+    const groupCallActiveSessionRef = useRef<string | null>(null);
 
     const hydrateGroupSettingsDraft = (group: GroupProfile | null) => {
         if (!group) return;
@@ -820,8 +930,9 @@ const ChatHub: React.FC = () => {
             setPollDetailMsg(null);
             setRelayDetailMsg(null);
             setCheckinDetailMsg(null);
-            DB.getRecentGroupMessagesWithCount(activeGroup.id, 30).then(({ messages: msgs, totalCount }) => {
-                setMessages(msgs);
+            DB.getRecentGroupMessagesWithCount(activeGroup.id, 60).then(({ messages: msgs, totalCount }) => {
+                const visibleMsgs = msgs.filter(m => m.metadata?.source !== 'group_call');
+                setMessages(visibleMsgs.slice(-30));
                 setTotalMsgCount(totalCount);
             });
             // Fetch emojis AND categories
@@ -846,7 +957,22 @@ const ChatHub: React.FC = () => {
         }
     }, [messages.length, activeGroup, showActions, showEmojiPicker, isTyping, selectionMode, jumpNonce]);
 
-    const displayMessages = useMemo(() => messages.slice(-visibleCount), [messages, visibleCount]);
+    useEffect(() => {
+        if (!groupCall) {
+            setGroupCallSecs(0);
+            return;
+        }
+        const tick = () => setGroupCallSecs(Math.max(0, Math.floor((Date.now() - groupCall.startedAt) / 1000)));
+        tick();
+        const timer = window.setInterval(tick, 1000);
+        return () => window.clearInterval(timer);
+    }, [groupCall]);
+
+    useEffect(() => {
+        groupCallScrollRef.current?.scrollTo({ top: groupCallScrollRef.current.scrollHeight, behavior: 'smooth' });
+    }, [groupCallBubbles.length, groupCallState]);
+
+    const displayMessages = useMemo(() => messages.filter(m => m.metadata?.source !== 'group_call').slice(-visibleCount), [messages, visibleCount]);
 
     // ── 群聊天记录查找 ───────────────────────────────────────────────
     /** 打开查找浮层：拉全量群消息做快照（聊天列表是分页的，搜索要搜全部） */
@@ -2340,20 +2466,365 @@ ${logText.substring(0, 10000)}
         setTimeout(() => { void triggerDirector(fresh); }, 800);
     };
 
+    const groupCallTranscriptPayload = (items: GroupCallBubble[]) => items.map(item => ({
+        id: item.id,
+        role: item.role,
+        charId: item.charId,
+        name: item.name,
+        text: item.text,
+        time: item.time,
+        timestamp: item.timestamp,
+    }));
+
+    const commitGroupCallBubbles = async (session: GroupCallSession, additions: GroupCallBubble[]): Promise<GroupCallBubble[]> => {
+        if (!additions.length) return groupCallBubbles;
+        let nextTranscript: GroupCallBubble[] = [];
+        setGroupCallBubbles(prev => {
+            nextTranscript = [...prev, ...additions];
+            return nextTranscript;
+        });
+        for (const item of additions) {
+            await DB.saveMessage({
+                charId: item.role === 'user' ? 'user' : (item.charId || session.members[0]?.id || 'assistant'),
+                groupId: session.groupId,
+                role: item.role,
+                type: 'text',
+                content: item.text,
+                metadata: {
+                    source: 'group_call',
+                    callSessionId: session.sessionId,
+                    callLogMessageId: session.messageId,
+                    speakerName: item.name,
+                },
+            } as any);
+        }
+        await DB.updateMessageMetadata(session.messageId, (prev: any) => ({
+            ...(prev || {}),
+            transcript: groupCallTranscriptPayload(nextTranscript),
+            turnCount: nextTranscript.filter(item => item.role === 'user').length,
+            lastLine: nextTranscript[nextTranscript.length - 1]?.text || prev?.lastLine,
+        }));
+        if (activeGroup?.id === session.groupId) {
+            setMessages(await DB.getGroupMessages(session.groupId));
+        }
+        return nextTranscript;
+    };
+
+    const requestGroupCallReplies = async (
+        spokenText: string,
+        session: GroupCallSession,
+        transcript: GroupCallBubble[],
+        mode: 'opening' | 'turn',
+    ): Promise<GroupCallBubble[]> => {
+        const group = activeGroup;
+        const baseUrl = apiConfig.baseUrl?.replace(/\/+$/, '');
+        if (!group || group.id !== session.groupId) throw new Error('群聊电话已经不在当前群');
+        if (!baseUrl || !apiConfig.apiKey) throw new Error('请先在「文具盒」里配置聊天 API');
+        if (group.dissolved) throw new Error('该群聊已被解散');
+        if (group.mutedAll) throw new Error('全员禁言中，群友暂时不能说话');
+
+        const groupMembers = characters.filter(c => group.members.includes(c.id));
+        const availableMembers = groupMembers.filter(m => !isMuted(group, m.id));
+        if (!availableMembers.length) throw new Error('当前没有可发言的群成员');
+
+        const sharedScene = ContextBuilder.buildGroupSharedScene(groupMembers, userProfile);
+        const rosterLines = groupMembers.map(m => {
+            const muted = isMuted(group, m.id) ? ' | 禁言中，本轮不能说话' : '';
+            const nick = group.memberNicknames?.[m.id];
+            const title = group.memberTitles?.[m.id];
+            return `- ${m.name} (ID: ${m.id})${nick ? ` | 群名片: ${nick}` : ''}${title ? ` | 头衔: ${title}` : ''}${muted}`;
+        }).join('\n');
+        const userName = group.memberNicknames?.['user'] || userProfile.name || '我';
+        const currentTimeStr = `${virtualTime.hours.toString().padStart(2, '0')}:${virtualTime.minutes.toString().padStart(2, '0')}`;
+        const memberContexts: string[] = [];
+        for (const member of groupMembers) {
+            const privateMsgs = await DB.getMessagesByCharId(member.id);
+            await injectMemoryPalace(member, privateMsgs);
+            const coreContext = ContextBuilder.buildCoreContext(member, userProfile, true, undefined, {
+                skipUserProfile: true,
+                skipWorldview: sharedScene.worldviewIsShared,
+                skipWorldbookIds: sharedScene.sharedWorldbookIds,
+                headerOverride: `[Group Voice Call Member: ${member.name}]`,
+            });
+            const privateGapInfo = await getPrivateTimeGap(member.id);
+            const recentPrivate = privateMsgs
+                .filter(m => !m.groupId)
+                .slice(-6)
+                .map(m => `[${m.role === 'user' ? userName : member.name}]: ${String(m.content || '').slice(0, 80)}`)
+                .join('\n');
+            memberContexts.push(`
+<<< 成员档案 START: ${member.name} (ID: ${member.id}) >>>
+${coreContext}
+
+[私聊状态]
+- 私聊空窗期: ${privateGapInfo}
+- 最近私聊摘要:
+${recentPrivate || '(暂无私聊)'}
+<<< 成员档案 END >>>
+`);
+        }
+
+        const allGroupMsgs = await DB.getGroupMessages(group.id);
+        const recentGroupMsgs = allGroupMsgs
+            .filter(m => m.metadata?.source !== 'group_call')
+            .slice(-Math.max(10, Math.min(contextLimit, 40)))
+            .map(m => {
+                if (m.role === 'system' || m.type === 'system') return `[系统通知] ${m.content}`;
+                const name = m.role === 'user' ? userName : displayNameOf(group, m.charId);
+                const content = m.type === 'image'
+                    ? '[图片]'
+                    : m.type === 'emoji'
+                        ? '[表情]'
+                        : m.type === 'voice'
+                            ? '[语音消息]'
+                            : m.type === 'call_log'
+                                ? '[群聊电话记录]'
+                                : String(m.content || '');
+                return `${name}: ${content}`;
+            })
+            .join('\n');
+
+        const prompt = `
+你正在模拟 QQ 风格「群语音通话」。这不是普通群聊文字消息，而是已经拨通后的多人电话。
+
+当前群聊: ${group.name}
+当前时间: ${currentTimeStr}
+用户在电话里的名字: ${userName}
+
+群成员花名册:
+${rosterLines}
+
+共享场景:
+${sharedScene.text}
+
+成员档案:
+${memberContexts.join('\n')}
+
+通话前最近群聊记录:
+${recentGroupMsgs || '(暂无)'}
+
+本通电话转写:
+${compactGroupCallTranscript(transcript, 18) || '(刚接通，还没人说话)'}
+
+刚刚电话里发生的事:
+${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的人自然接电话。' : `${userName}: ${spokenText}`}
+
+规则:
+- 只让当前群成员说话，输出 1 到 4 条，安静时 1 条也可以。
+- 群语音比文字聊天更口语、更短、更像接电话；不要写旁白、动作说明、系统播报。
+- 多人通话可以互相接话、抢话、笑场、吐槽，但不要每个人都围着用户表白。
+- 被标记「禁言中」的成员不能发言。
+- 角色要像自己，不要平均分配台词；谁更可能说话由你判断。
+- 不要输出表情包指令、PRIVATE、投票、接龙、改名片等普通群聊指令。
+
+输出必须是 JSON Array，格式如下:
+[
+  { "charId": "成员ID", "content": "电话里说的话" }
+]
+`;
+
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiConfig.apiKey}` },
+            body: JSON.stringify({
+                model: apiConfig.model,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.86,
+                max_tokens: 1800,
+                stream: false,
+            }),
+        });
+        if (!response.ok) throw new Error(`文本接口调用失败（HTTP ${response.status}）`);
+        const data = await safeResponseJson(response);
+        if (data.usage?.total_tokens) {
+            setLastTokenUsage(data.usage.total_tokens);
+            setTokenBreakdown({
+                prompt: data.usage.prompt_tokens || 0,
+                completion: data.usage.completion_tokens || 0,
+                total: data.usage.total_tokens,
+                msgCount: transcript.length,
+                pass: 'group-call',
+            });
+        }
+        let raw = String(data?.choices?.[0]?.message?.content || '').trim();
+        raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const firstBracket = raw.indexOf('[');
+        const lastBracket = raw.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1) raw = raw.slice(firstBracket, lastBracket + 1);
+        let parsed: any[] = [];
+        try {
+            const maybe = JSON.parse(raw);
+            if (Array.isArray(maybe)) parsed = maybe;
+        } catch {
+            parsed = [];
+        }
+        const now = Date.now();
+        const replies = parsed
+            .map((action, idx) => {
+                const targetId = group.members.includes(action?.charId) && !isMuted(group, action.charId)
+                    ? action.charId
+                    : availableMembers[idx % availableMembers.length]?.id;
+                const member = characters.find(c => c.id === targetId);
+                const text = cleanGroupCallText(String(action?.content ?? action?.text ?? ''));
+                if (!targetId || !member || !text) return null;
+                return {
+                    id: `${now}-${idx}-${targetId}`,
+                    role: 'assistant' as const,
+                    charId: targetId,
+                    name: displayNameOf(group, targetId),
+                    avatar: member.avatar,
+                    text: text.slice(0, 500),
+                    time: formatGroupCallTime(now + idx),
+                    timestamp: now + idx,
+                };
+            })
+            .filter(Boolean)
+            .slice(0, 4) as GroupCallBubble[];
+        if (!replies.length) throw new Error('群友这轮没有接上话');
+        return replies;
+    };
+
+    const runGroupCallOpening = async (session: GroupCallSession) => {
+        if (groupCallIntroFiredRef.current === session.sessionId) return;
+        groupCallIntroFiredRef.current = session.sessionId;
+        setGroupCallState('connecting');
+        setGroupCallError('');
+        try {
+            const replies = await requestGroupCallReplies('（群语音刚接通）', session, [], 'opening');
+            if (groupCallActiveSessionRef.current !== session.sessionId) return;
+            setGroupCallState('speaking');
+            await commitGroupCallBubbles(session, replies);
+            window.setTimeout(() => {
+                if (groupCallActiveSessionRef.current === session.sessionId) setGroupCallState('listening');
+            }, 900 + replies.length * 250);
+        } catch (e: any) {
+            if (groupCallActiveSessionRef.current !== session.sessionId) return;
+            setGroupCallState('error');
+            setGroupCallError(e?.message || '群聊电话接线失败');
+            addToast(e?.message || '群聊电话接线失败', 'error');
+        }
+    };
+
+    const handleGroupCallTurn = async () => {
+        if (!groupCall) return;
+        const text = groupCallDraft.trim();
+        if (!text) { addToast('说点什么吧', 'info'); return; }
+        if (groupCallState === 'connecting' || groupCallState === 'thinking') {
+            addToast('群友还在接话，等一等', 'info');
+            return;
+        }
+        const now = Date.now();
+        const userBubble: GroupCallBubble = {
+            id: `${now}-user`,
+            role: 'user',
+            text,
+            name: displayNameOf(activeGroup, 'user'),
+            avatar: userProfile.avatar,
+            time: formatGroupCallTime(now),
+            timestamp: now,
+        };
+        setGroupCallDraft('');
+        setGroupCallState('thinking');
+        setGroupCallError('');
+        const transcriptAfterUser = await commitGroupCallBubbles(groupCall, [userBubble]);
+        try {
+            const replies = await requestGroupCallReplies(text, groupCall, transcriptAfterUser, 'turn');
+            if (groupCallActiveSessionRef.current !== groupCall.sessionId) return;
+            setGroupCallState('speaking');
+            await commitGroupCallBubbles(groupCall, replies);
+            window.setTimeout(() => {
+                if (groupCallActiveSessionRef.current === groupCall.sessionId) setGroupCallState('listening');
+            }, 900 + replies.length * 250);
+        } catch (e: any) {
+            if (groupCallActiveSessionRef.current !== groupCall.sessionId) return;
+            setGroupCallState('error');
+            setGroupCallError(e?.message || '群友这轮没接上');
+            addToast(e?.message || '群友这轮没接上', 'error');
+        }
+    };
+
     const startGroupVoiceCall = async () => {
         if (!activeGroup) return;
         setShowActions(false);
+        const callMembers = activeGroup.members
+            .map(id => characters.find(c => c.id === id))
+            .filter(Boolean) as CharacterProfile[];
+        const participants = activeGroup.members.map(id => {
+            const c = characters.find(item => item.id === id);
+            return {
+                id,
+                name: displayNameOf(activeGroup, id),
+                avatar: c?.avatar,
+            };
+        });
         const names = activeGroup.members.map(id => displayNameOf(activeGroup, id)).filter(Boolean);
-        await DB.saveMessage({
+        const startedAt = Date.now();
+        const sessionId = `group-call-${activeGroup.id}-${startedAt}`;
+        const messageId = await DB.saveMessage({
             charId: 'user',
             groupId: activeGroup.id,
             role: 'user',
             type: 'call_log',
-            content: `[群聊电话] 你向 ${activeGroup.name} 发起了群聊电话`,
-            metadata: { kind: 'group_call', callDirection: 'outgoing', callOutcome: 'started', memberIds: activeGroup.members, memberNames: names, msgStatus: 'sent' },
+            content: '发起了群聊电话',
+            metadata: {
+                kind: 'group_call',
+                groupName: activeGroup.name,
+                callDirection: 'outgoing',
+                callOutcome: 'active',
+                memberIds: activeGroup.members,
+                memberNames: names,
+                memberAvatars: callMembers.map(c => c.avatar),
+                memberCount: activeGroup.members.length,
+                startedAt,
+                callSessionId: sessionId,
+                transcript: [],
+                msgStatus: 'sent',
+            },
         } as any);
         setMessages(await DB.getGroupMessages(activeGroup.id));
+        const session: GroupCallSession = {
+            groupId: activeGroup.id,
+            groupName: activeGroup.name,
+            messageId,
+            startedAt,
+            sessionId,
+            members: participants,
+        };
+        setGroupCall(session);
+        groupCallActiveSessionRef.current = sessionId;
+        setGroupCallBubbles([]);
+        setGroupCallDraft('');
+        setGroupCallState('connecting');
+        setGroupCallError('');
+        setGroupCallMuted(false);
+        setGroupCallSpeakerOn(true);
         addToast('已发起群聊电话', 'success');
+        void runGroupCallOpening(session);
+    };
+
+    const endGroupVoiceCall = async () => {
+        if (!groupCall) return;
+        const durationSec = Math.max(1, Math.floor((Date.now() - groupCall.startedAt) / 1000));
+        await DB.updateMessageMetadata(groupCall.messageId, (prev: any) => ({
+            ...(prev || {}),
+            callOutcome: 'ended',
+            durationSec,
+            endedAt: Date.now(),
+            transcript: groupCallTranscriptPayload(groupCallBubbles),
+            turnCount: groupCallBubbles.filter(item => item.role === 'user').length,
+        }));
+        groupCallActiveSessionRef.current = null;
+        setGroupCall(null);
+        setGroupCallBubbles([]);
+        setGroupCallDraft('');
+        setGroupCallState('ended');
+        setGroupCallError('');
+        setGroupCallMuted(false);
+        setGroupCallSpeakerOn(true);
+        if (activeGroup?.id === groupCall.groupId) {
+            setMessages(await DB.getGroupMessages(groupCall.groupId));
+        }
+        addToast(`群聊电话已结束 · ${formatGroupCallDuration(durationSec)}`, 'info');
     };
 
     // 群聊归档：把群聊「现在就」整理进群记忆宫殿
@@ -3694,6 +4165,7 @@ ${attachedImagesNote}
                                 onRelayClick={setRelayDetailMsg}
                                 onCheckinClick={setCheckinDetailMsg}
                                 specialCare={!isUser && activeGroup?.specialCareNotify !== false && !!char && (activeGroup?.specialCareMemberIds || []).includes(char.id)}
+                                groupMembers={characters.filter(c => activeGroup?.members.includes(c.id))}
                             />
                         </div>
                     );
@@ -3881,6 +4353,156 @@ ${attachedImagesNote}
                     addToast={addToast}
                     onEnd={() => { void handleGroupOfflineEnd(); }}
                 />
+            )}
+
+            {groupCall && (
+                <div className="absolute inset-0 z-[320] flex flex-col animate-fade-in overflow-hidden" style={{ paddingTop: 'var(--safe-top)', background: 'linear-gradient(180deg,#f7f8fb 0%,#eef1f6 55%,#e8ebf2 100%)' }}>
+                    <div className="px-5 pt-5 pb-3 text-center shrink-0">
+                        <div className="text-[11px] tracking-[0.24em] uppercase font-bold text-slate-400">Group Voice Call</div>
+                        <div className="mt-2 text-[22px] font-black text-slate-800 truncate">{groupCall.groupName}</div>
+                        <div className="mt-1 flex items-center justify-center gap-2 text-[13px] text-slate-400">
+                            <span className="tabular-nums">{formatGroupCallDuration(groupCallSecs)}</span>
+                            <span className="w-1 h-1 rounded-full bg-slate-300" />
+                            <span className={groupCallState === 'error' ? 'text-red-400 font-bold' : 'text-slate-400'}>{getGroupCallStateLabel(groupCallState)}</span>
+                        </div>
+                    </div>
+
+                    <div className="shrink-0 px-4 pb-3">
+                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+                            {groupCall.members.map((member) => {
+                                const latestSpeakerId = [...groupCallBubbles].reverse().find(item => item.role === 'assistant')?.charId;
+                                const speaking = groupCallState === 'speaking' && latestSpeakerId === member.id;
+                                return (
+                                    <div key={member.id} className="flex flex-col items-center min-w-[66px]">
+                                        <div className={`relative rounded-full p-1 transition-all ${speaking ? 'bg-emerald-300/70 shadow-[0_0_0_6px_rgba(110,231,183,0.18)]' : 'bg-white/80 shadow-sm'}`}>
+                                            {member.avatar ? (
+                                                <img src={member.avatar} alt="" className="w-14 h-14 rounded-full object-cover bg-slate-100 border-2 border-white" />
+                                            ) : (
+                                                <div className="w-14 h-14 rounded-full bg-slate-200 text-slate-500 border-2 border-white flex items-center justify-center text-lg font-black">
+                                                    {member.name.slice(0, 1)}
+                                                </div>
+                                            )}
+                                            {speaking && (
+                                                <span className="absolute -right-0.5 bottom-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white">
+                                                    <Microphone size={10} weight="fill" />
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mt-1.5 text-[11px] font-bold text-slate-600 truncate max-w-[62px]">{member.name}</div>
+                                        <div className="mt-0.5 text-[9px] text-slate-400">{speaking ? '正在说话' : '已接入'}</div>
+                                    </div>
+                                );
+                            })}
+                            <button
+                                onClick={() => addToast('邀请入口先留着，后面可以接入加成员', 'info')}
+                                className="flex flex-col items-center min-w-[66px] active:scale-95 transition-transform"
+                            >
+                                <span className="w-16 h-16 rounded-full bg-white/80 border border-white text-slate-400 flex items-center justify-center shadow-sm">
+                                    <UserPlus size={24} weight="bold" />
+                                </span>
+                                <span className="mt-1.5 text-[11px] font-bold text-slate-400">邀请</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div ref={groupCallScrollRef} className="flex-1 overflow-y-auto no-scrollbar px-5 py-3">
+                        {groupCallBubbles.length === 0 ? (
+                            <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-center text-slate-400">
+                                <div className="w-16 h-16 rounded-full bg-white/80 flex items-center justify-center shadow-sm mb-4">
+                                    <PhoneOutgoing size={25} weight="fill" />
+                                </div>
+                                <div className="text-sm font-bold text-slate-500">{groupCallState === 'error' ? '电话那头有点杂音' : '正在等大家接通'}</div>
+                                <div className="mt-1 text-xs max-w-[240px] leading-relaxed">{groupCallError || '接通后，群友会像私聊电话一样先开口。'}</div>
+                            </div>
+                        ) : (
+                            <div className="space-y-3 pb-2">
+                                {groupCallBubbles.map(item => {
+                                    const mine = item.role === 'user';
+                                    return (
+                                        <div key={item.id} className={`flex gap-2 ${mine ? 'justify-end' : 'justify-start'}`}>
+                                            {!mine && (
+                                                item.avatar ? (
+                                                    <img src={item.avatar} alt="" className="w-8 h-8 rounded-full object-cover bg-slate-100 border border-white shrink-0 mt-5" />
+                                                ) : (
+                                                    <div className="w-8 h-8 rounded-full bg-white text-slate-400 border border-white shrink-0 mt-5 flex items-center justify-center text-xs font-black">
+                                                        {(item.name || '群').slice(0, 1)}
+                                                    </div>
+                                                )
+                                            )}
+                                            <div className={`max-w-[78%] min-w-0 ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
+                                                <div className={`mb-1 text-[10px] ${mine ? 'text-right text-slate-400' : 'text-slate-400'}`}>
+                                                    {mine ? '我' : item.name || '群友'} · {item.time}
+                                                </div>
+                                                <div className={`px-4 py-2.5 rounded-[1.35rem] text-[14px] leading-relaxed whitespace-pre-wrap break-words shadow-sm ${mine ? 'bg-slate-800 text-white rounded-br-md' : 'bg-white text-slate-700 rounded-bl-md'}`}>
+                                                    {item.text}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {groupCallState === 'thinking' && (
+                                    <div className="flex items-center gap-2 pl-10 text-xs text-slate-400 animate-pulse">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                        群友们在电话那头接话…
+                                    </div>
+                                )}
+                                {groupCallState === 'error' && groupCallError && (
+                                    <div className="mx-auto w-fit max-w-[85%] rounded-2xl bg-red-50 px-3 py-2 text-xs text-red-400 text-center">
+                                        {groupCallError}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="shrink-0 px-4 pb-6 pt-4 bg-white/82 backdrop-blur-2xl rounded-t-[2rem] shadow-[0_-18px_40px_-28px_rgba(15,23,42,0.5)]">
+                        <div className="flex items-end gap-2 mb-4">
+                            <div className="flex-1 min-w-0 bg-[#f4f4f6] rounded-[1.6rem] px-4 py-2.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-slate-200 transition-all">
+                                <textarea
+                                    value={groupCallDraft}
+                                    rows={1}
+                                    onChange={e => setGroupCallDraft(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            void handleGroupCallTurn();
+                                        }
+                                    }}
+                                    disabled={groupCallState === 'connecting' || groupCallState === 'thinking'}
+                                    placeholder={groupCallState === 'connecting' ? '正在接通…' : '对群友说点什么…'}
+                                    className="w-full max-h-24 resize-none bg-transparent outline-none text-[14px] leading-relaxed text-slate-700 placeholder:text-slate-400 disabled:opacity-60"
+                                />
+                            </div>
+                            <button
+                                onClick={() => void handleGroupCallTurn()}
+                                disabled={!groupCallDraft.trim() || groupCallState === 'connecting' || groupCallState === 'thinking'}
+                                className="h-11 min-w-[58px] rounded-full bg-slate-800 px-4 text-[12px] font-black text-white disabled:bg-slate-200 disabled:text-slate-400 active:scale-95 transition-transform"
+                            >
+                                说
+                            </button>
+                        </div>
+                        <div className="flex items-center justify-center gap-6">
+                            <button onClick={() => setGroupCallMuted(v => !v)} className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
+                                <span className={`w-14 h-14 rounded-full flex items-center justify-center ${groupCallMuted ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                    {groupCallMuted ? <MicrophoneSlash size={23} weight="fill" /> : <Microphone size={23} weight="fill" />}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400">{groupCallMuted ? '已静音' : '静音'}</span>
+                            </button>
+                            <button onClick={() => setGroupCallSpeakerOn(v => !v)} className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
+                                <span className={`w-14 h-14 rounded-full flex items-center justify-center ${groupCallSpeakerOn ? 'bg-slate-100 text-slate-600' : 'bg-slate-800 text-white'}`}>
+                                    {groupCallSpeakerOn ? <SpeakerHigh size={23} weight="fill" /> : <SpeakerSlash size={23} weight="fill" />}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400">{groupCallSpeakerOn ? '扬声器' : '听筒'}</span>
+                            </button>
+                            <button onClick={() => { void endGroupVoiceCall(); }} className="flex flex-col items-center gap-1.5 active:scale-95 transition-transform">
+                                <span className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg shadow-red-200">
+                                    <PhoneSlash size={27} weight="fill" />
+                                </span>
+                                <span className="text-[10px] font-bold text-red-400">挂断</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Group Settings Panel */}
