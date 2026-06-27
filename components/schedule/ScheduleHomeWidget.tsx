@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CharacterProfile, DailySchedule, ScheduleSlot } from '../../types';
 import ScheduleCard from './ScheduleCard';
 
@@ -158,6 +158,8 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
     character,
     onOpen,
 }) => {
+    const widgetRef = useRef<HTMLButtonElement | null>(null);
+    const [isCompact, setIsCompact] = useState(false);
     const currentIdx = schedule ? getCurrentSlotIndex(schedule.slots) : -1;
     const currentSlot = currentIdx >= 0 ? schedule!.slots[currentIdx] : null;
     const nextSlot = schedule && currentIdx < schedule.slots.length - 1
@@ -170,18 +172,35 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
 
     const timelineSlots = schedule?.slots ?? [];
     const nextLabel = nextSlot ? `${nextSlot.startTime} ${nextSlot.emoji ? `${nextSlot.emoji} ` : ''}${nextSlot.activity}` : '';
+    const noteText = currentSlot?.description || (nextLabel ? `Next · ${nextLabel}` : 'Tap for details');
+
+    useEffect(() => {
+        const el = widgetRef.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+
+        const measure = () => {
+            const { width, height } = el.getBoundingClientRect();
+            setIsCompact(height < 170 || width < 360);
+        };
+
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
 
     return (
         <button
+            ref={widgetRef}
             onClick={onOpen}
-            className="moro-routine-widget w-full h-full group text-left overflow-hidden press-soft relative"
+            className={`moro-routine-widget w-full h-full group text-left overflow-hidden press-soft relative${isCompact ? ' moro-routine-widget--compact' : ''}`}
             style={{ color: INK }}
         >
             <span className="moro-routine-glow" style={{ background: pal.accent }} />
 
-            <div className="relative z-10 flex h-full flex-col px-4 py-3.5">
-                <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
+            <div className="moro-routine-shell">
+                <div className="moro-routine-header">
+                    <div className="moro-routine-title">
                         <div className="moro-routine-kicker">routine</div>
                         <div className="moro-routine-date truncate">{character?.name ? `${character.name} rhythm` : 'daily rhythm'}</div>
                     </div>
@@ -190,27 +209,27 @@ export const ScheduleHomeWidget: React.FC<ScheduleHomeWidgetProps> = ({
                     </div>
                 </div>
 
-                <div className="mt-3 flex min-h-0 flex-1 items-center gap-3.5">
+                <div className="moro-routine-body">
                     <div className="moro-routine-timecard shrink-0">
                         <span>{currentSlot ? currentSlot.startTime : timeLabel}</span>
                         <i>{currentSlot ? 'now' : 'idle'}</i>
                     </div>
                     <div className="moro-routine-avatar shrink-0" aria-hidden="true">
-                        <StoryAvatar character={character} size={54} ring={pal.ring} accent={pal.accent} />
+                        <StoryAvatar character={character} size={isCompact ? 46 : 54} ring={pal.ring} accent={pal.accent} />
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="moro-routine-copy">
                         <div className="moro-routine-activity truncate">
                             {currentSlot?.emoji && <span className="mr-1.5">{currentSlot.emoji}</span>}
                             {currentSlot?.activity || (schedule ? '休息中' : '尚未生成作息')}
                         </div>
-                        <div className="moro-routine-note truncate">
-                            {currentSlot?.description || (nextLabel ? `Next · ${nextLabel}` : 'Tap for details')}
+                        <div className="moro-routine-note" title={noteText}>
+                            {noteText}
                         </div>
                     </div>
                 </div>
 
                 {timelineSlots.length > 0 && (
-                    <div className="moro-routine-timeline mt-3">
+                    <div className="moro-routine-timeline">
                         {timelineSlots.slice(0, 7).map((slot, i) => {
                             const isCurrent = i === currentIdx;
                             const isPast = currentIdx >= 0 && i < currentIdx;

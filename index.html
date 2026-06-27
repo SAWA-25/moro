@@ -1165,6 +1165,27 @@
         backdrop-filter: blur(20px) saturate(1.5);
         -webkit-backdrop-filter: blur(20px) saturate(1.5);
       }
+      .moro-routine-shell {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        height: 100%;
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        row-gap: 0.7rem;
+        padding: 0.85rem 1rem 0.8rem;
+      }
+      .moro-routine-header {
+        min-width: 0;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .moro-routine-title {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
       .moro-routine-glow {
         display: none;
       }
@@ -1181,6 +1202,14 @@
         line-height: 1;
         font-weight: 900;
         color: rgba(49,66,80,0.72);
+      }
+      .moro-routine-body {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 5.1rem 54px minmax(0, 1fr);
+        align-items: center;
+        gap: 0.78rem;
       }
       .moro-routine-open {
         width: 1.9rem;
@@ -1231,6 +1260,13 @@
         width: 54px !important;
         height: 54px !important;
       }
+      .moro-routine-copy {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
       .moro-routine-activity {
         font-size: 14px;
         line-height: 1.05;
@@ -1243,12 +1279,18 @@
         line-height: 1.2;
         font-weight: 650;
         color: rgba(49,66,80,0.42);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: break-word;
       }
       .moro-routine-timeline {
         display: grid;
         grid-template-columns: repeat(7, minmax(0, 1fr));
         gap: 0.36rem;
         align-items: end;
+        min-height: 2rem;
       }
       .moro-routine-tick {
         min-width: 0;
@@ -1271,6 +1313,60 @@
         font-style: normal;
         font-weight: 800;
         font-variant-numeric: tabular-nums;
+      }
+      .moro-routine-widget--compact .moro-routine-shell {
+        row-gap: 0.52rem;
+        padding: 0.72rem 0.88rem 0.7rem;
+      }
+      .moro-routine-widget--compact .moro-routine-date {
+        font-size: 11px;
+      }
+      .moro-routine-widget--compact .moro-routine-body {
+        grid-template-columns: 4.35rem 46px minmax(0, 1fr);
+        gap: 0.6rem;
+      }
+      .moro-routine-widget--compact .moro-routine-timecard {
+        width: 4.35rem;
+        min-height: 2.45rem;
+        padding: 0.44rem 0.58rem;
+      }
+      .moro-routine-widget--compact .moro-routine-timecard span {
+        font-size: 17px;
+      }
+      .moro-routine-widget--compact .moro-routine-timecard i {
+        margin-top: 0.32rem;
+        font-size: 8px;
+      }
+      .moro-routine-widget--compact .moro-routine-avatar {
+        width: 46px;
+        height: 46px;
+        flex-basis: 46px;
+      }
+      .moro-routine-widget--compact .moro-routine-avatar > div {
+        width: 46px !important;
+        height: 46px !important;
+      }
+      .moro-routine-widget--compact .moro-routine-activity {
+        font-size: 13px;
+      }
+      .moro-routine-widget--compact .moro-routine-note {
+        margin-top: 0.32rem;
+        font-size: 9px;
+        -webkit-line-clamp: 1;
+      }
+      .moro-routine-widget--compact .moro-routine-timeline {
+        gap: 0.22rem;
+        min-height: 1.68rem;
+      }
+      .moro-routine-widget--compact .moro-routine-tick {
+        gap: 0.22rem;
+      }
+      .moro-routine-widget--compact .moro-routine-tick span {
+        width: 0.46rem;
+        height: 0.46rem;
+      }
+      .moro-routine-widget--compact .moro-routine-tick i {
+        font-size: 7px;
       }
       .moro-desktop-root .moro-widget-music > div {
         border-color: transparent !important;

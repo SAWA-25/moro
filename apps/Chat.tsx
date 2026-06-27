@@ -67,7 +67,7 @@ type InstantToolUiStatus = {
 };
 
 const Chat: React.FC = () => {
-    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
+    const { characters, activeCharacterId, setActiveCharacterId, updateCharacter, apiConfig, auxApiConfig, apiPresets, addApiPreset, closeApp, openApp, activeApp, customThemes, addToast, showError, userProfile, updateUserProfile, adjustUserBalance, lastMsgTimestamp, groups, clearUnread, realtimeConfig, memoryPalaceConfig, syncEmotionApiToAllCharacters, theme: osTheme, proactiveComposingChars } = useOS();
     const isProactiveComposing = !!(activeCharacterId && proactiveComposingChars[activeCharacterId]);
 
     // 记忆宫殿高水位（用于清空聊天时的安全检查）
@@ -871,7 +871,6 @@ const Chat: React.FC = () => {
             if (char) {
                 setSettingsContextLimit(char.contextLimit || 500);
                 setSettingsHtmlModeCustomPrompt((char as any).htmlModeCustomPrompt || '');
-                clearUnread(char.id);
             }
             // Per-character translation toggle + language pair
             try {
@@ -908,6 +907,12 @@ const Chat: React.FC = () => {
             }
         }
     }, [activeCharacterId, reloadMessages]);
+
+    useEffect(() => {
+        if (activeApp === AppID.Chat && activeCharacterId) {
+            clearUnread(activeCharacterId);
+        }
+    }, [activeApp, activeCharacterId, clearUnread]);
 
     // 进入/切换角色时触发「登场」过场。useLayoutEffect 在浏览器绘制前置真，
     // 让过场层先盖住，避免一帧闪到新角色的空聊天界面。
@@ -1077,10 +1082,12 @@ const Chat: React.FC = () => {
     useEffect(() => {
         if (activeCharacterId && lastMsgTimestamp > 0) {
             reloadMessages(visibleCountRef.current);
-            clearUnread(activeCharacterId);
+            if (activeApp === AppID.Chat) {
+                clearUnread(activeCharacterId);
+            }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearUnread is stable (useCallback with []), omit to prevent stale-dep lint noise
-    }, [lastMsgTimestamp, activeCharacterId, reloadMessages, clearUnread]);
+    }, [lastMsgTimestamp, activeCharacterId, activeApp, reloadMessages, clearUnread]);
 
     useEffect(() => {
         visibleCountRef.current = visibleCount;

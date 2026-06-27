@@ -30,6 +30,15 @@ interface LiveNotice {
     ringtone?: Parameters<typeof playRingtone>[0];
 }
 
+interface NoticeInboxItem {
+    charId: string;
+    charName: string;
+    avatarUrl?: string;
+    preview: string;
+    count: number;
+    at: number;
+}
+
 const DynamicIsland: React.FC = () => {
     const { unreadMessages, characters, openApp, setActiveCharacterId, clearUnread, activeApp, activeCharacterId, theme } = useOS();
     // 灵动岛样式自定义（主题 → 灵动岛）：背景 / 文字色 / 圆角 / 自定义 CSS
@@ -41,6 +50,7 @@ const DynamicIsland: React.FC = () => {
     const [previews, setPreviews] = useState<Record<string, string>>({});
     const [notice, setNotice] = useState<LiveNotice | null>(null);
     const [noticeStack, setNoticeStack] = useState<LiveNotice[]>([]);
+    const [noticeInbox, setNoticeInbox] = useState<Record<string, NoticeInboxItem>>({});
     const noticeRef = useRef<LiveNotice | null>(null);
     const noticeTimers = useRef<number[]>([]);
     const prevUnreadRef = useRef<Record<string, number>>({});
@@ -53,15 +63,77 @@ const DynamicIsland: React.FC = () => {
             .filter((x): x is { char: CharacterProfile; count: number } => !!x.char),
         [unreadMessages, characters]);
 
+    const mergedNoticeEntries = useMemo(() => {
+        const map = new Map<string, NoticeInboxItem>();
+        Object.values(noticeInbox).forEach(item => {
+            if (!item.preview.trim()) return;
+            map.set(item.charId, item);
+        });
+        unreadEntries.forEach(({ char, count }) => {
+            const prev = map.get(char.id);
+            map.set(char.id, {
+                charId: char.id,
+                charName: char.name,
+                avatarUrl: char.avatar || prev?.avatarUrl,
+                preview: prev?.preview || previews[char.id] || '发来了新消息',
+                count: Math.max(count, prev?.count || 0),
+                at: prev?.at || 0,
+            });
+        });
+        return Array.from(map.values()).sort((a, b) => {
+            const countDiff = (b.count || 0) - (a.count || 0);
+            if (countDiff !== 0) return countDiff;
+            return b.at - a.at;
+        });
+    }, [noticeInbox, unreadEntries, previews]);
+
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
 
     // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
     const lastShownRef = useRef<Record<string, number>>({});
 
+    const pushNoticeInbox = React.useCallback((payload: {
+        charId: string;
+        charName: string;
+        body: string;
+        count?: number;
+        avatarUrl?: string;
+        at?: number;
+    }) => {
+        const preview = cleanPreview(payload.body);
+        if (!preview.trim()) return;
+        setNoticeInbox(prev => {
+            const prevItem = prev[payload.charId];
+            const nextCount = Math.max(
+                payload.count ?? 0,
+                unreadMessages[payload.charId] || 0,
+                (prevItem?.count || 0) + 1,
+            );
+            return {
+                ...prev,
+                [payload.charId]: {
+                    charId: payload.charId,
+                    charName: payload.charName,
+                    avatarUrl: payload.avatarUrl || prevItem?.avatarUrl,
+                    preview,
+                    count: nextCount,
+                    at: payload.at || Date.now(),
+                },
+            };
+        });
+    }, [unreadMessages]);
+
     const showNotice = React.useCallback((n: LiveNotice) => {
         lastShownRef.current[n.charId] = Date.now();
         // 每条消息弹出时各响一次提示音；多条消息会在岛下按时间叠成 iOS 式通知栈。
         playRingtone(n.ringtone);
+        pushNoticeInbox({
+            charId: n.charId,
+            charName: n.charName,
+            body: n.body,
+            avatarUrl: n.avatarUrl,
+            at: n.at,
+        });
         noticeRef.current = n;
         setNotice(n);
         setNoticeStack(prev => [n, ...prev.filter(item => item.id !== n.id)].slice(0, 5));
@@ -75,7 +147,7 @@ const DynamicIsland: React.FC = () => {
             });
         }, 6200);
         noticeTimers.current.push(timer);
-    }, []);
+    }, [pushNoticeInbox]);
 
     useEffect(() => () => {
         noticeTimers.current.forEach(t => window.clearTimeout(t));
@@ -108,6 +180,17 @@ const DynamicIsland: React.FC = () => {
                 .filter((b: string) => !!b.trim())
                 .slice(0, 8);
             const charName = d.charName || srcChar?.name || '';
+            const latestBody = bodies[bodies.length - 1];
+            if (latestBody) {
+                pushNoticeInbox({
+                    charId: d.charId,
+                    charName,
+                    body: latestBody,
+                    count: Math.max(1, Math.floor(Number(d.count)) || bodies.length),
+                    avatarUrl: d.avatarUrl || srcChar?.avatar,
+                    at: Date.now(),
+                });
+            }
             bodies.forEach((body, i) => {
                 scheduleNotice({ charId: d.charId, charName, body, avatarUrl: d.avatarUrl, at: Date.now() + i, ringtone }, i * 260);
             });
@@ -118,7 +201,7 @@ const DynamicIsland: React.FC = () => {
             window.removeEventListener('proactive-message-sent', onIncoming);
             window.removeEventListener('active-msg-received', onIncoming);
         };
-    }, [characters, scheduleNotice]);
+    }, [characters, pushNoticeInbox, scheduleNotice]);
 
     // 兜底：未读数上涨但没收到带正文的事件（如定时生成的消息）→ 从 DB 按本次新增条数
     // 取尾部消息，逐条入队弹横幅（一条覆盖一条），而不是只弹最新一条
@@ -148,13 +231,40 @@ const DynamicIsland: React.FC = () => {
                 } catch { /* 预览失败不阻塞横幅 */ }
                 if (!bodies.length) bodies = ['发来了新消息'];
                 if (cancelled) return;
+                pushNoticeInbox({
+                    charId: char.id,
+                    charName: char.name,
+                    body: bodies[bodies.length - 1] || '发来了新消息',
+                    count: delta,
+                    avatarUrl: char.avatar,
+                    at: Date.now(),
+                });
                 bodies.forEach((body, i) => {
                     scheduleNotice({ charId: char.id, charName: char.name, body, at: Date.now() + i, ringtone: char.convoSettings?.ringtone }, i * 260);
                 });
             }
         })();
         return () => { cancelled = true; };
-    }, [unreadMessages, characters, scheduleNotice]);
+    }, [unreadMessages, characters, pushNoticeInbox, scheduleNotice]);
+
+    useEffect(() => {
+        if (!Object.keys(noticeInbox).length) return;
+        setNoticeInbox(prev => {
+            let changed = false;
+            const next: Record<string, NoticeInboxItem> = {};
+            for (const [charId, item] of Object.entries(prev)) {
+                const unreadCount = unreadMessages[charId] || 0;
+                if (unreadCount <= 0) {
+                    changed = true;
+                    continue;
+                }
+                const nextCount = Math.max(unreadCount, item.count);
+                next[charId] = nextCount === item.count ? item : { ...item, count: nextCount };
+                if (nextCount !== item.count) changed = true;
+            }
+            return changed ? next : prev;
+        });
+    }, [noticeInbox, unreadMessages]);
 
     // 展开面板时为每个未读角色取最后一条消息作预览
     useEffect(() => {
@@ -196,6 +306,12 @@ const DynamicIsland: React.FC = () => {
 
     const jumpToChat = (charId: string) => {
         setExpanded(false);
+        setNoticeInbox(prev => {
+            if (!prev[charId]) return prev;
+            const next = { ...prev };
+            delete next[charId];
+            return next;
+        });
         setActiveCharacterId(charId);
         openApp(AppID.Chat);
     };
@@ -336,9 +452,12 @@ const DynamicIsland: React.FC = () => {
                 >
                     <div className="flex items-center justify-between px-2 pb-2">
                         <span className="text-[10px] label-mono font-bold opacity-60 tracking-widest">通知中心</span>
-                        {unreadEntries.length > 0 && (
+                        {mergedNoticeEntries.length > 0 && (
                             <button
-                                onClick={() => unreadEntries.forEach(({ char }) => clearUnread(char.id))}
+                                onClick={() => {
+                                    mergedNoticeEntries.forEach(item => clearUnread(item.charId));
+                                    setNoticeInbox({});
+                                }}
                                 className="text-[10px] font-bold opacity-60 hover:opacity-100 transition-opacity px-2 py-1 rounded-full active:scale-95"
                             >
                                 全部已读
@@ -346,26 +465,28 @@ const DynamicIsland: React.FC = () => {
                         )}
                     </div>
 
-                    {unreadEntries.length === 0 ? (
+                    {mergedNoticeEntries.length === 0 ? (
                         <div className="text-center text-xs opacity-40 py-6">暂无新消息</div>
                     ) : (
                         <div className="space-y-1 max-h-[50vh] overflow-y-auto no-scrollbar">
-                            {unreadEntries.map(({ char, count }) => (
+                            {mergedNoticeEntries.map((item) => (
                                 <button
-                                    key={char.id}
-                                    onClick={() => jumpToChat(char.id)}
+                                    key={item.charId}
+                                    onClick={() => jumpToChat(item.charId)}
                                     className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/10 active:scale-[0.98] transition-all text-left"
                                 >
-                                    <img src={char.avatar} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/15" alt={char.name} />
+                                    <img src={item.avatarUrl || characters.find(c => c.id === item.charId)?.avatar} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/15" alt={item.charName} />
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold truncate">{char.name}</span>
-                                            <span className="px-1.5 py-px rounded-full bg-red-500 text-white text-[9px] font-bold shrink-0">
-                                                {count > 99 ? '99+' : count}
-                                            </span>
+                                            <span className="text-xs font-bold truncate">{item.charName}</span>
+                                            {item.count > 0 && (
+                                                <span className="px-1.5 py-px rounded-full bg-red-500 text-white text-[9px] font-bold shrink-0">
+                                                    {item.count > 99 ? '99+' : item.count}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="text-[11px] opacity-55 truncate mt-0.5">
-                                            {previews[char.id] || '发来了新消息'}
+                                            {previews[item.charId] || item.preview || '发来了新消息'}
                                         </div>
                                     </div>
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 opacity-30 shrink-0">
