@@ -3,7 +3,7 @@ import { ChatTheme } from '../../types';
 
 // Built-in presets map to the new data structure for consistency
 export const PRESET_THEMES: Record<string, ChatTheme> = {
-    // 新默认：奶白手帐 —— 用户浅灰胶囊、AI 白底描边胶囊，全圆角（参考黑白手帐聊天界面）
+    // 新默认：奶白极简 —— 用户浅灰胶囊、AI 白底描边胶囊，全圆角。
     default: {
         id: 'default', name: 'Paper', type: 'preset',
         user: { textColor: '#2e2c36', backgroundColor: '#f1f1f3', borderRadius: 22, opacity: 1, backgroundImageOpacity: 0.5 },

@@ -73,45 +73,45 @@ const TakeoutCardView: React.FC<{
     const initiatedBy = order?.initiatedBy || snap.initiatedBy;
     const recipientLabel = snap.recipientLabel || '我';
     const headline = initiatedBy === 'char'
-        ? `${charName} 替${recipientLabel === '我' ? '你' : recipientLabel}撕了张饭票`
-        : `${recipientLabel === '我' ? '给自己' : `捎给 ${recipientLabel}`}的饭票`;
+        ? `${charName} 替${recipientLabel === '我' ? '你' : recipientLabel}下了一单外卖`
+        : `${recipientLabel === '我' ? '给自己' : `给 ${recipientLabel}`}的外卖订单`;
     const reviewed = !!order?.review;
 
-    // 「饭票·票根」——黑白拼贴手账的米白纸票（食物 emoji 保留彩色，像贴上去的小贴纸）
+    // 外卖订单卡：与来往浅色聊天设置保持一致。
     return commonLayout(
         <div
             onClick={() => onOpen?.(m)}
-            className="w-64 rounded-[14px] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer"
-            style={{ background: 'linear-gradient(180deg,#fbf9f2,#f1eee4)', border: '1px solid rgba(176,170,158,0.8)', outline: '1px dashed rgba(150,144,132,0.5)', outlineOffset: -5, boxShadow: '0 14px 26px -16px rgba(31,29,26,0.5)' }}
+            className="w-64 rounded-[16px] overflow-hidden relative transition-transform active:scale-[0.98] cursor-pointer"
+            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df', boxShadow: '0 14px 26px -18px rgba(122,90,114,0.38)' }}
         >
-            <div className="px-4 py-2 flex items-center justify-between" style={{ background: '#1f1d1a' }}>
-                <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#f6f3ec' }}>🍱 饭票 · 票根</span>
-                <span className="text-[9.5px] font-black px-2 py-0.5 rounded-[4px]" style={{ background: '#f6f3ec', color: '#1f1d1a' }}>{STATUS_LABEL[st]}</span>
+            <div className="px-4 py-2 flex items-center justify-between" style={{ background: '#fff4f7', borderBottom: '1px solid #eed6df' }}>
+                <span className="text-[11px] font-black tracking-[0.08em] flex items-center gap-1" style={{ color: '#5a3140' }}>🍱 外卖订单</span>
+                <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full" style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}>{STATUS_LABEL[st]}</span>
             </div>
             <div className="px-4 pt-3 pb-3.5">
-                <div className="text-[11px] mb-1" style={{ color: '#857f74' }}>{headline}</div>
-                <div className="text-[13px] font-black truncate mb-2" style={{ color: '#1f1d1a' }}>{snap.storeEmoji} {snap.storeName}</div>
+                <div className="text-[11px] mb-1" style={{ color: '#a892a3' }}>{headline}</div>
+                <div className="text-[13px] font-black truncate mb-2" style={{ color: '#5a3140' }}>{snap.storeEmoji} {snap.storeName}</div>
                 <div className="space-y-0.5 mb-2">
                     {items.slice(0, 4).map((it, i) => (
                         <div key={i} className="flex items-center justify-between text-[12px]" style={{ color: '#54504a' }}>
                             <span className="truncate">{it.emoji || '🍽️'} {it.name}</span>
-                            <span className="shrink-0 ml-2" style={{ color: '#857f74' }}>×{it.qty}</span>
+                            <span className="shrink-0 ml-2" style={{ color: '#a892a3' }}>×{it.qty}</span>
                         </div>
                     ))}
-                    {items.length > 4 && <div className="text-[11px]" style={{ color: '#857f74' }}>…等 {items.length} 样</div>}
+                    {items.length > 4 && <div className="text-[11px]" style={{ color: '#a892a3' }}>…等 {items.length} 样</div>}
                 </div>
-                {/* 实时配送进度条（墨色） */}
+                {/* 实时配送进度条 */}
                 {st !== 'delivered' && (
                     <div className="mb-2">
-                        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(31,29,26,0.12)' }}>
-                            <div className="h-full rounded-full transition-all duration-700" style={{ width: st === 'arrived' ? '100%' : st === 'delivering' ? '66%' : '30%', background: '#1f1d1a' }} />
+                        <div className="h-1 rounded-full overflow-hidden" style={{ background: '#f3e3e9' }}>
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: st === 'arrived' ? '100%' : st === 'delivering' ? '66%' : '30%', background: '#d8a5b7' }} />
                         </div>
-                        <div className="text-[10.5px] mt-1 font-bold" style={{ color: '#1f1d1a' }}>{eta}</div>
+                        <div className="text-[10.5px] mt-1 font-bold" style={{ color: '#5a3140' }}>{eta}</div>
                     </div>
                 )}
-                <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px dashed rgba(150,144,132,0.6)' }}>
-                    <span className="text-[10.5px]" style={{ color: '#857f74' }}>{st === 'delivered' ? (reviewed ? '已写食评 · 点开看' : '点开写食评/看详情') : `${snap.payLabel || ''} · 点开看详情`}</span>
-                    <span className="text-[14px] font-black" style={{ color: '#1f1d1a' }}>¥{total}</span>
+                <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid #eed6df' }}>
+                    <span className="text-[10.5px]" style={{ color: '#a892a3' }}>{st === 'delivered' ? (reviewed ? '已评价 · 点开查看' : '点开评价/看详情') : `${snap.payLabel || ''} · 点开看详情`}</span>
+                    <span className="text-[14px] font-black" style={{ color: '#5a3140' }}>¥{total}</span>
                 </div>
             </div>
         </div>
@@ -246,7 +246,7 @@ export const THINKING_CHAIN_PRESETS: Record<Exclude<ThinkingChainStyleId, 'custo
         showDivider: true,
         titleZh: '思绪',
         titleEn: 'MARGINALIA',
-        listenLabel: '翻开',
+        listenLabel: '查看',
         silenceLabel: '合上',
         quoteLeft: '「',
         quoteRight: '」',
@@ -267,7 +267,7 @@ export const THINKING_CHAIN_PRESETS: Record<Exclude<ThinkingChainStyleId, 'custo
         showDivider: true,
         titleZh: '思绪',
         titleEn: 'MARGINALIA',
-        listenLabel: '翻开',
+        listenLabel: '查看',
         silenceLabel: '合上',
         quoteLeft: '「',
         quoteRight: '」',
@@ -287,7 +287,7 @@ export const THINKING_CHAIN_PRESETS: Record<Exclude<ThinkingChainStyleId, 'custo
         showDivider: false,
         titleZh: '思绪',
         titleEn: 'MARGINALIA',
-        listenLabel: '翻开',
+        listenLabel: '查看',
         silenceLabel: '合上',
         quoteLeft: '"',
         quoteRight: '"',
@@ -315,7 +315,7 @@ export function resolveThinkingChainStyle(
             fadeColor: bg,
             titleZh: '思绪',
             titleEn: 'MARGINALIA',
-            listenLabel: '翻开',
+            listenLabel: '查看',
             silenceLabel: '合上',
         };
     }
@@ -538,49 +538,33 @@ const Like520ChatCard: React.FC<{ data: any }> = ({ data }) => {
 
     return (
         <>
-            {/* 拍立得 / 复古剪贴本：照片 + 胶带 + 手写感落款 */}
+            {/* 淡色照片卡：保留拍立得照片感，使用平整边框 */}
             <div
                 onClick={() => setOpen(true)}
                 style={{
                     width: 256,
                     padding: '14px 14px 18px',
-                    background: 'linear-gradient(180deg, #fdf6e3 0%, #f7eed4 100%)',
+                    background: '#fffdfa',
                     boxShadow:
-                        '0 1px 2px rgba(74,36,24,0.18), ' +
-                        '0 8px 22px rgba(74,36,24,0.22), ' +
-                        '0 0 0 1px rgba(184,146,63,0.3)',
+                        '0 1px 2px rgba(122,90,114,0.06), ' +
+                        '0 12px 28px -22px rgba(122,90,114,0.38), ' +
+                        '0 0 0 1px #eed6df',
                     cursor: 'pointer',
                     position: 'relative',
-                    transform: 'rotate(-1.4deg)',
+                    transform: 'none',
                     transformOrigin: 'center',
                     marginTop: 8,
+                    borderRadius: 14,
                 }}
             >
-                {/* 左上胶带 */}
-                <div style={{
-                    position: 'absolute', top: -6, left: 18,
-                    width: 36, height: 14,
-                    background: 'linear-gradient(135deg, rgba(218,190,140,0.55), rgba(184,146,63,0.4))',
-                    boxShadow: '0 1px 2px rgba(74,36,24,0.15)',
-                    transform: 'rotate(-6deg)',
-                    pointerEvents: 'none',
-                }} />
-                {/* 右上胶带 */}
-                <div style={{
-                    position: 'absolute', top: -6, right: 18,
-                    width: 36, height: 14,
-                    background: 'linear-gradient(135deg, rgba(218,190,140,0.55), rgba(184,146,63,0.4))',
-                    boxShadow: '0 1px 2px rgba(74,36,24,0.15)',
-                    transform: 'rotate(6deg)',
-                    pointerEvents: 'none',
-                }} />
-
                 {/* 照片本体 */}
                 <div style={{
                     position: 'relative',
                     background: '#fff',
                     padding: 0,
-                    boxShadow: '0 2px 6px rgba(74,36,24,0.18), inset 0 0 0 1px rgba(184,146,63,0.25)',
+                    boxShadow: 'inset 0 0 0 1px #eed6df',
+                    borderRadius: 8,
+                    overflow: 'hidden',
                 }}>
                     {data.photoDataUrl
                         ? <img src={data.photoDataUrl} alt="合照" style={{ width: '100%', display: 'block' }} />
@@ -759,36 +743,35 @@ const LifeSimResetCardView: React.FC<{ card: any }> = ({ card }) => {
                 outline: '1px dashed rgba(167,162,151,0.34)',
                 outlineOffset: -5,
                 boxShadow: '0 14px 30px -18px rgba(50,48,60,0.5)',
-                rotate: '-1deg',
-                backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(120,116,106,0.06) 1px, transparent 0)',
+                rotate: '0deg',
+                backgroundImage: 'none',
                 backgroundSize: '14px 14px',
             }}
         >
-            {/* 顶部和纸胶带 */}
+            {/* 顶部分隔线 */}
             <span style={{
-                position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%) rotate(-2.5deg)',
-                width: 104, height: 19, background: 'rgba(216,189,156,0.45)',
-                borderLeft: '1px dashed rgba(160,140,110,0.5)', borderRight: '1px dashed rgba(160,140,110,0.5)',
-                boxShadow: '0 1px 4px rgba(50,48,60,0.14)', pointerEvents: 'none',
+                position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+                width: 104, height: 1, background: '#eed6df',
+                pointerEvents: 'none',
             }} />
 
             <div className="px-3.5 pt-4 pb-2 flex items-center gap-2.5">
-                <div style={{ padding: 2, background: '#fff', borderRadius: 9, outline: '1px dashed rgba(167,162,151,0.5)', outlineOffset: -2 }} className="shrink-0">
+                <div style={{ padding: 2, background: '#fff', borderRadius: 9, border: '1px solid #eed6df' }} className="shrink-0">
                     {parsed.charAvatar ? (
                         <img src={parsed.charAvatar} className="w-9 h-9 object-cover" style={{ borderRadius: 7 }} />
                     ) : (
-                        <div className="w-9 h-9 flex items-center justify-center text-white text-sm font-bold" style={{ borderRadius: 7, background: 'linear-gradient(135deg, #b86c3d, #d39b62)' }}>
+                        <div className="w-9 h-9 flex items-center justify-center text-white text-sm font-bold" style={{ borderRadius: 7, background: '#d8a5b7' }}>
                             {parsed.charName?.[0] || '?'}
                         </div>
                     )}
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="label-mono" style={{ fontSize: 8, color: '#b09a82' }}>street-corner journal</div>
-                    <div className="font-hand truncate" style={{ fontSize: 16, fontWeight: 700, color: '#2b2933' }}>
+                    <div className="font-hand truncate" style={{ fontSize: 16, fontWeight: 700, color: '#5a3140' }}>
                         {parsed.headline || '这条街的小结'}
                     </div>
                 </div>
-                <span style={{ fontSize: 15, color: '#b86c3d', flexShrink: 0, lineHeight: 1 }}>✦</span>
+                <span style={{ fontSize: 15, color: '#d8a5b7', flexShrink: 0, lineHeight: 1 }}>✦</span>
             </div>
 
             <div className="lace-edge mx-3.5" />
@@ -1281,8 +1264,8 @@ const MessageItem = React.memo(({
                         </div>
                     )}
                     <div className="flex justify-center my-4 px-8 w-full" {...interactionProps}>
-                        <div className="max-w-full rounded-2xl bg-slate-900/90 text-emerald-300 px-4 py-2.5 shadow-md border border-slate-700/60 select-none">
-                            <div className="text-[9px] font-bold tracking-widest text-slate-400 mb-0.5">⌘ SYSTEM COMMAND</div>
+                        <div className="max-w-full rounded-2xl px-4 py-2.5 shadow-md border select-none" style={{ background: '#fffdfa', color: '#5a3140', borderColor: '#eed6df' }}>
+                            <div className="text-[9px] font-bold tracking-widest mb-0.5" style={{ color: '#a892a3' }}>SYSTEM COMMAND</div>
                             <div className="text-[12px] font-mono leading-relaxed break-all">{cmdText}</div>
                         </div>
                     </div>
@@ -1972,22 +1955,22 @@ const MessageItem = React.memo(({
         const card = (
             <div className="w-72">
                 <div
-                    className="rounded-2xl overflow-hidden border border-purple-300/30 shadow-[0_6px_20px_rgba(70,40,110,0.28)]"
-                    style={{ background: 'linear-gradient(155deg,#2c1c44 0%,#1a1230 100%)' }}
+                    className="rounded-2xl overflow-hidden border shadow-[0_8px_20px_-16px_rgba(122,90,114,0.32)]"
+                    style={{ background: '#fffdfa', borderColor: '#eed6df' }}
                 >
                     {/* 头部 */}
-                    <div className="px-3.5 pt-3 pb-2.5 flex items-center gap-2.5 border-b border-white/10">
-                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#a855f7,#ec4899)' }}>
+                    <div className="px-3.5 pt-3 pb-2.5 flex items-center gap-2.5 border-b border-[#eed6df]">
+                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#d8a5b7' }}>
                             <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-white"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-4Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/></svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <div className="text-[9px] tracking-[0.25em] text-purple-300/80 font-bold uppercase">TRPG · 一起玩的游戏</div>
-                            <div className="text-[13px] text-purple-50 font-semibold truncate font-serif">{gameTitle}</div>
+                            <div className="text-[9px] tracking-[0.25em] font-bold uppercase" style={{ color: '#a892a3' }}>TRPG · 一起玩的游戏</div>
+                            <div className="text-[13px] font-semibold truncate font-serif" style={{ color: '#5a3140' }}>{gameTitle}</div>
                         </div>
                     </div>
                     {/* 剧情节选 */}
                     <div className="px-3.5 py-3 space-y-2 max-h-60 overflow-hidden">
-                        {excerpt.length === 0 && <p className="text-[12px] text-purple-200/70 italic">一段冒险剧情</p>}
+                        {excerpt.length === 0 && <p className="text-[12px] italic" style={{ color: '#a892a3' }}>一段冒险剧情</p>}
                         {excerpt.slice(0, 6).map((e, i) => {
                             const isGM = e.role === 'gm';
                             const text = (e.text || '').replace(/^\*|\*$/g, '').trim();
@@ -2470,15 +2453,13 @@ const MessageItem = React.memo(({
         return commonLayout(
             <div
                 className="w-64 rounded-[18px] p-4 relative overflow-hidden"
-                style={{ background: 'linear-gradient(155deg, #2c2823 0%, #16130f 100%)', color: '#f2ece0', border: '1px solid rgba(0,0,0,0.45)', boxShadow: '0 16px 30px -18px rgba(20,16,12,0.7)' }}
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
             >
-                <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 1.6px)', backgroundSize: '7px 7px', opacity: 0.5 }} />
-                <div aria-hidden className="absolute -top-2 -right-5 w-20 h-6 rotate-[18deg]" style={{ background: 'rgba(232,228,218,0.9)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
                 <div className="relative flex items-center gap-2 mb-2.5">
-                    <span className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#f4f1ea', color: '#1f1d1a', outline: '1.5px dashed rgba(120,116,108,0.55)', outlineOffset: -3 }}>拼</span>
+                    <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>拼</span>
                     <div className="leading-tight">
-                        <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase" style={{ opacity: 0.7 }}>Lucky&nbsp;Draw</div>
-                        <div className="text-[10px]" style={{ opacity: 0.5 }}>拼手气 · {count} 个红包</div>
+                        <div className="text-[10px] font-mono font-bold tracking-[0.22em] uppercase" style={{ color: '#a892a3' }}>Group&nbsp;Packet</div>
+                        <div className="text-[10px]" style={{ color: '#a892a3' }}>拼手气 · {count} 个红包</div>
                     </div>
                 </div>
                 <div className="relative">
@@ -2487,8 +2468,8 @@ const MessageItem = React.memo(({
                         <span className="text-[14px] font-bold pb-1" style={{ opacity: 0.65 }}>共 ¥</span>
                         <span className="text-[26px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{meta.amount}</span>
                     </div>
-                    <div className="mt-2.5 pt-2 space-y-1.5 max-h-[140px] overflow-y-auto" style={{ borderTop: '1px dashed rgba(242,236,224,0.22)' }}>
-                        {grabs.length === 0 && <div className="text-[11px]" style={{ opacity: 0.5 }}>还没有人抢到</div>}
+                    <div className="mt-2.5 pt-2 space-y-1.5 max-h-[140px] overflow-y-auto" style={{ borderTop: '1px solid #eed6df' }}>
+                        {grabs.length === 0 && <div className="text-[11px]" style={{ color: '#a892a3' }}>还没有人领取</div>}
                         {grabs.map((g, i) => (
                             <div key={i} className="flex items-center justify-between text-[12px]">
                                 <span className="flex items-center gap-1 truncate" style={{ opacity: 0.92 }}>
@@ -2499,9 +2480,9 @@ const MessageItem = React.memo(({
                             </div>
                         ))}
                     </div>
-                    <div className="mt-2 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(242,236,224,0.16)' }}>
-                        <span className="text-[10px]" style={{ opacity: 0.55 }}>{isUser ? '你发的拼手气红包 · 已被抢光' : '拼手气红包 · 已被抢光'}</span>
-                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: 'radial-gradient(circle at 34% 30%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 1.5px rgba(242,236,224,0.22)' }}>✦</span>
+                    <div className="mt-2 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
+                        <span className="text-[10px]" style={{ color: '#a892a3' }}>{isUser ? '你发的拼手气红包 · 已领完' : '拼手气红包 · 已领完'}</span>
+                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
                     </div>
                 </div>
             </div>
@@ -2509,7 +2490,7 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'transfer' && m.metadata?.kind === 'redpacket') {
-        // 红包卡片（参考设计：奶油底 + 墨色字的手帐风，保留暖黄的「红包」识别色）
+        // 红包卡片：浅色功能卡。
         const note = typeof m.metadata?.note === 'string' && m.metadata.note.trim() ? m.metadata.note.trim() : '恭喜发财，大吉大利';
         const meta = m.metadata || {};
         const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
@@ -2522,24 +2503,19 @@ const MessageItem = React.memo(({
             : isClaimed ? '已收下 · 进了钱包 ✓'
             : isExpired ? '没来得及收 · 已过期退回'
             : isDeclined ? '你没有收下这个红包'
-            : isPw ? '口令红包 · 答对口令拆开'
-            : '发给你的红包 · 点开收下';
+            : isPw ? '口令红包 · 输入口令领取'
+            : '发给你的红包 · 点开领取';
         return commonLayout(
             <div
                 onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
                 className={`w-64 rounded-[18px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
-                style={{ background: 'linear-gradient(155deg, #2c2823 0%, #16130f 100%)', color: '#f2ece0', border: '1px solid rgba(0,0,0,0.45)', boxShadow: '0 16px 30px -18px rgba(20,16,12,0.7)' }}
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 16px 30px -20px rgba(122,90,114,0.38)' }}
             >
-                {/* 半调网点纹（拼贴手帐感） */}
-                <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.10) 1px, transparent 1.6px)', backgroundSize: '7px 7px', opacity: 0.5 }} />
-                {/* 牛皮胶带（灰阶条纹）斜贴右上 */}
-                <div aria-hidden className="absolute -top-2 -right-5 w-20 h-6 rotate-[18deg]" style={{ background: 'rgba(232,228,218,0.9)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.10) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
                 <div className="relative flex items-center gap-2 mb-3">
-                    {/* 邮票格：墨字「利」 */}
-                    <span className="w-8 h-8 rounded-[7px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#f4f1ea', color: '#1f1d1a', outline: '1.5px dashed rgba(120,116,108,0.55)', outlineOffset: -3 }}>利</span>
+                    <span className="w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0 text-[15px] font-black" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>包</span>
                     <div className="leading-tight">
-                        <div className="text-[10px] font-mono font-bold tracking-[0.26em] uppercase" style={{ opacity: 0.7 }}>Lucky&nbsp;Money</div>
-                        <div className="text-[10px]" style={{ opacity: 0.5 }}>利是 · 封个心意</div>
+                        <div className="text-[10px] font-mono font-bold tracking-[0.26em] uppercase" style={{ color: '#a892a3' }}>Red&nbsp;Packet</div>
+                        <div className="text-[10px]" style={{ color: '#a892a3' }}>红包</div>
                     </div>
                 </div>
                 <div className="relative">
@@ -2548,10 +2524,9 @@ const MessageItem = React.memo(({
                         <span className="text-[15px] font-bold pb-1" style={{ opacity: 0.65 }}>¥</span>
                         <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
                     </div>
-                    <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(242,236,224,0.22)' }}>
-                        <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ opacity: claimable ? 0.92 : 0.55 }}>{footerText}</span>
-                        {/* 火漆封印点 */}
-                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: 'radial-gradient(circle at 34% 30%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 1.5px rgba(242,236,224,0.22)' }}>✦</span>
+                    <div className="mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
+                        <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#5a3140' : '#a892a3' }}>{footerText}</span>
+                        <span aria-hidden className="w-4 h-4 rounded-full flex items-center justify-center text-[8px]" style={{ background: '#d8a5b7', color: '#fffdfa' }}>¥</span>
                     </div>
                 </div>
             </div>
@@ -2559,40 +2534,37 @@ const MessageItem = React.memo(({
     }
 
     if (m.type === 'transfer') {
-        // 转账卡片（参考设计：白卡 + 墨色大金额 + 细线分隔的极简手帐风）
+        // 转账卡片：浅色功能卡。
         const meta = m.metadata || {};
         const isExpired = meta.status === 'expired' || (typeof meta.expiresAt === 'number' && meta.status === 'pending' && Date.now() > meta.expiresAt);
         const isClaimed = meta.status === 'claimed';
         const isDeclined = meta.status === 'declined';
         const claimable = !isUser && !isClaimed && !isDeclined && !isExpired;
         const footerText = isUser
-            ? `寄给${charName}的零花钱`
+            ? `发给${charName}的转账`
             : isClaimed ? '已收下 · 进了钱包 ✓'
             : isExpired ? '没来得及收 · 已过期退回'
             : isDeclined ? '你没有收下'
-            : '寄给你的零花钱 · 点开收下';
+            : '发给你的转账 · 点开收下';
         return commonLayout(
             <div
                 onClick={claimable ? () => onClaimTransfer?.(m) : undefined}
                 className={`w-64 rounded-[16px] p-4 relative overflow-hidden transition-transform ${claimable ? 'active:scale-[0.98] cursor-pointer' : ''} ${(isExpired || isDeclined) ? 'opacity-55 grayscale' : ''}`}
-                style={{ background: 'linear-gradient(180deg, #fbf9f3 0%, #f1ede3 100%)', color: '#1f1d1a', border: '1px solid rgba(176,170,158,0.7)', boxShadow: '0 14px 28px -18px rgba(31,29,26,0.5)' }}
+                style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', border: '1px solid #eed6df', boxShadow: '0 14px 28px -18px rgba(122,90,114,0.38)' }}
             >
-                {/* 票据左右齿孔（撕口感） */}
-                <div aria-hidden className="absolute top-0 bottom-0 left-0 w-1.5" style={{ backgroundImage: 'radial-gradient(circle at 0 4px, transparent 3px, #f1ede3 3.4px)', backgroundSize: '6px 11px' }} />
-                <div aria-hidden className="absolute top-0 bottom-0 right-0 w-1.5" style={{ backgroundImage: 'radial-gradient(circle at 6px 4px, transparent 3px, #f1ede3 3.4px)', backgroundSize: '6px 11px' }} />
                 <div className="relative flex items-center gap-2 mb-2.5">
-                    <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#1f1d1a', color: '#f4f1ea' }}>
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
                     </span>
-                    <span className="text-[10px] font-mono font-bold tracking-[0.24em] uppercase" style={{ color: '#857f74' }}>Transfer&nbsp;Voucher</span>
+                    <span className="text-[10px] font-mono font-bold tracking-[0.24em] uppercase" style={{ color: '#a892a3' }}>Transfer</span>
                 </div>
                 <div className="relative flex items-end gap-1">
-                    <span className="text-[15px] font-bold pb-1" style={{ color: '#857f74' }}>¥</span>
+                    <span className="text-[15px] font-bold pb-1" style={{ color: '#a892a3' }}>¥</span>
                     <span className="text-[30px] font-black leading-none tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>{m.metadata?.amount}</span>
                 </div>
-                <div className="relative mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px dashed rgba(140,132,118,0.4)' }}>
-                    <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#3a352e' : '#857f74' }}>{footerText}</span>
-                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: '#b0aa9e' }}>Moro·Pay</span>
+                <div className="relative mt-2.5 pt-2 flex items-center justify-between" style={{ borderTop: '1px solid #eed6df' }}>
+                    <span className={`text-[10px] ${claimable ? 'font-bold' : ''}`} style={{ color: claimable ? '#5a3140' : '#a892a3' }}>{footerText}</span>
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: '#a892a3' }}>Moro Pay</span>
                 </div>
             </div>
         );

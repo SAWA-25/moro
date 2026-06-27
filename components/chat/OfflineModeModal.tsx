@@ -40,9 +40,9 @@ interface OfflineModeModalProps {
 const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, apiConfig, onEnd, addToast }) => {
     const { theme } = useOS();
     const modalStyle = theme.offlineModeStyle || {};
-    const modalBg = modalStyle.background || 'linear-gradient(180deg,#fbf9f2,#f2efe4)';
-    const modalInk = modalStyle.textColor || '#1f1d1a';
-    const modalAccent = modalStyle.accentColor || '#1f1d1a';
+    const modalBg = modalStyle.background || 'linear-gradient(180deg,#fffdfa,#fff4f7)';
+    const modalInk = modalStyle.textColor || '#5a3140';
+    const modalAccent = modalStyle.accentColor || '#d8a5b7';
     const modalRadius = typeof modalStyle.radius === 'number' ? Math.max(0, Math.min(32, modalStyle.radius)) : 22;
     const [entries, setEntries] = useState<OfflineEntry[]>(() => loadOfflineSession(char.id));
     const [input, setInput] = useState('');
@@ -144,38 +144,37 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     background: modalBg,
                     color: modalInk,
                     borderRadius: modalRadius,
-                    boxShadow: '0 24px 60px -24px rgba(20,18,16,0.4), 0 0 0 1px #ededed inset',
+                    boxShadow: '0 24px 60px -24px rgba(122,90,114,0.35), 0 0 0 1px #eed6df inset',
                 }}
             >
 
                 {/* 头部 */}
-                <div className="moro-offline-modal-header px-4 pt-5 pb-3 flex items-center justify-between shrink-0 border-b border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
+                <div className="moro-offline-modal-header px-4 pt-5 pb-3 flex items-center justify-between shrink-0 border-b" style={{ borderColor: '#eed6df' }}>
                     <div className="flex items-center gap-2.5 min-w-0">
-                        {/* 别在页角的小照片 */}
-                        <div className="shrink-0 bg-white p-0.5 rounded-[3px]" style={{ transform: 'rotate(-4deg)', boxShadow: '0 1px 4px rgba(31,29,26,0.3)' }}>
+                        <div className="shrink-0 bg-white p-0.5 rounded-[8px]" style={{ border: '1px solid #eed6df', boxShadow: '0 8px 18px -14px rgba(122,90,114,0.45)' }}>
                             <img src={char.avatar} className="w-8 h-8 object-cover" alt="" />
                         </div>
                         <div className="min-w-0">
                             <div className="text-[13px] font-bold truncate" style={{ ...SERIF_STACK, color: modalInk }}>和 {char.name} 面对面</div>
-                            <div className="text-[9.5px]" style={{ color: '#857f74' }}>这一页只写线下发生的事</div>
+                            <div className="text-[9.5px]" style={{ color: '#a892a3' }}>只记录线下发生的事</div>
                         </div>
                     </div>
                     <button
                         onClick={handleEnd}
                         disabled={ending}
                         className="shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-all disabled:opacity-50"
-                        style={{ background: '#fffdfa', border: '1px dashed #b0aa9e', color: modalInk, boxShadow: '0 1px 2px rgba(31,29,26,0.15)', ...CUTE_STACK }}
+                        style={{ background: '#fffdfa', border: '1px solid #eed6df', color: modalInk, boxShadow: '0 1px 2px rgba(122,90,114,0.12)', ...CUTE_STACK }}
                     >
-                        {ending ? '收尾中…' : '合上这一页'}
+                        {ending ? '保存中…' : '结束线下'}
                     </button>
                 </div>
 
                 {/* 叙述人称选择：角色 / 用户各可选 第一(我)/第二(你)/第三(TA)人称，自由组合 */}
-                <div className="shrink-0 px-4 py-2 flex items-center gap-x-3 gap-y-1.5 flex-wrap border-b border-dashed" style={{ borderColor: 'rgba(31,29,26,0.16)' }}>
-                    <span className="text-[10px] font-bold tracking-wider" style={{ ...MONO_STACK, color: '#857f74' }}>人称</span>
+                <div className="shrink-0 px-4 py-2 flex items-center gap-x-3 gap-y-1.5 flex-wrap border-b" style={{ borderColor: '#eed6df' }}>
+                    <span className="text-[10px] font-bold tracking-wider" style={{ ...MONO_STACK, color: '#a892a3' }}>人称</span>
                     {([['char', char.name], ['user', userProfile.name || '你']] as const).map(([who, label]) => (
                         <div key={who} className="flex items-center gap-1">
-                            <span className="text-[10px]" style={{ color: '#857f74' }}>{label}</span>
+                            <span className="text-[10px]" style={{ color: '#a892a3' }}>{label}</span>
                             {([['first', '我'], ['second', '你'], ['third', 'TA']] as const).map(([p, lbl]) => {
                                 const active = pov[who] === p;
                                 return (
@@ -185,8 +184,8 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                         onClick={() => setPovFor(who, p)}
                                         className="px-2 py-0.5 rounded-full text-[10.5px] font-bold transition active:scale-95"
                                         style={active
-                                            ? { background: modalAccent, color: '#f6f3ec', boxShadow: '0 1px 2px rgba(31,29,26,0.2)' }
-                                            : { background: 'rgba(255,255,255,0.55)', color: '#857f74', border: '1px dashed #b0aa9e' }}
+                                            ? { background: modalAccent, color: '#fffdfa', boxShadow: '0 1px 2px rgba(122,90,114,0.2)' }
+                                            : { background: 'rgba(255,255,255,0.65)', color: '#a892a3', border: '1px solid #eed6df' }}
                                     >
                                         {lbl}
                                     </button>
@@ -202,8 +201,8 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     {!openingChosen && (
                         <div className="pt-1">
                             <div className="text-center mb-3">
-                                <div className="text-[14px] font-bold" style={{ ...SERIF_STACK, color: '#1f1d1a' }}>这场见面，怎么开始？</div>
-                                <div className="text-[10.5px] mt-1" style={{ color: '#857f74' }}>挑一种起手式，下面就照着写开场</div>
+                                <div className="text-[14px] font-bold" style={{ ...SERIF_STACK, color: modalInk }}>这场见面怎么开始？</div>
+                                <div className="text-[10.5px] mt-1" style={{ color: '#a892a3' }}>选择开场方式，系统会生成线下开场</div>
                             </div>
                             <div className="space-y-2.5">
                                 {OFFLINE_OPENING_PRESETS.map(p => {
@@ -215,26 +214,26 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                             disabled={busy}
                                             onClick={() => startOpening(p.key)}
                                             className="w-full text-left rounded-[12px] px-4 py-3 active:scale-[0.98] transition disabled:opacity-50 flex items-center gap-3"
-                                            style={{ background: '#fffdfa', border: '1px dashed #b0aa9e', boxShadow: '0 1px 3px rgba(31,29,26,0.12)' }}
+                                            style={{ background: '#fffdfa', border: '1px solid #eed6df', boxShadow: '0 1px 3px rgba(122,90,114,0.12)' }}
                                         >
                                             <span className="text-[22px] shrink-0" aria-hidden>{p.emoji}</span>
                                             <span className="min-w-0">
-                                                <span className="block text-[13.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>{p.label}</span>
-                                                <span className="block text-[10.5px] mt-0.5 leading-snug" style={{ color: '#857f74' }}>{desc}</span>
+                                                <span className="block text-[13.5px] font-bold" style={{ ...CUTE_STACK, color: modalInk }}>{p.label}</span>
+                                                <span className="block text-[10.5px] mt-0.5 leading-snug" style={{ color: '#a892a3' }}>{desc}</span>
                                             </span>
                                         </button>
                                     );
                                 })}
                             </div>
                             {customOpen && (
-                                <div className="mt-3 rounded-[12px] px-3 py-3" style={{ background: 'rgba(243,239,229,0.7)', border: '1px dashed #b0aa9e' }}>
+                                <div className="mt-3 rounded-[12px] px-3 py-3" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                     <textarea
                                         value={customScenario}
                                         onChange={e => setCustomScenario(e.target.value)}
                                         rows={3}
                                         placeholder="例：在你们常去的那家咖啡馆，TA 已经先到了，正低头翻一本书…"
                                         className="w-full bg-transparent text-[12.5px] outline-none resize-none placeholder:text-[#a9a195]"
-                                        style={{ color: '#1f1d1a' }}
+                                        style={{ color: '#5a3140' }}
                                     />
                                     <div className="flex justify-end mt-1">
                                         <button
@@ -242,7 +241,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                                             disabled={busy || !customScenario.trim()}
                                             onClick={() => startOpening('custom')}
                                             className="px-4 py-1.5 rounded-[10px] text-[11px] font-bold active:translate-y-[1px] transition disabled:opacity-50"
-                                            style={{ background: '#1f1d1a', border: '1.5px solid #000000', color: '#f6f3ec', ...CUTE_STACK }}
+                                            style={{ background: '#d8a5b7', border: '1px solid #d8a5b7', color: '#fff', ...CUTE_STACK }}
                                         >
                                             就这么开始
                                         </button>
@@ -251,7 +250,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             )}
                             {busy && (
                                 <div className="flex items-center justify-center gap-2 text-[11px] pt-4" style={{ color: '#857f74' }}>
-                                    <span className="animate-pulse" style={{ color: '#1f1d1a' }} aria-hidden>♥</span>
+                                    <span className="animate-pulse" style={{ color: '#d8a5b7' }} aria-hidden>♥</span>
                                     正在布置见面的场景…
                                 </div>
                             )}
@@ -260,21 +259,21 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     {entries.map((e, i) => (
                         e.role === 'scene' ? (
                             // 旁白：贴在页中央的便签
-                            <div key={i} className="moro-offline-modal-entry moro-offline-modal-scene text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#857f74', background: 'rgba(243,239,229,0.85)', border: '1px dashed #b0aa9e' }}>
+                            <div key={i} className="moro-offline-modal-entry moro-offline-modal-scene text-[12.5px] leading-relaxed italic whitespace-pre-wrap rounded-[8px] px-4 py-3" style={{ color: '#857f74', background: '#fffdfa', border: '1px solid #eed6df' }}>
                                 {e.text}
                             </div>
                         ) : e.role === 'char' ? (
                             <div key={i} className="flex items-start gap-2.5">
-                                <div className="shrink-0 bg-white p-0.5 rounded-[3px] mt-0.5" style={{ transform: 'rotate(-3deg)', boxShadow: '0 1px 3px rgba(31,29,26,0.25)' }}>
+                                <div className="shrink-0 bg-white p-0.5 rounded-[8px] mt-0.5" style={{ transform: 'none', boxShadow: '0 1px 3px rgba(122,90,114,0.16)' }}>
                                     <img src={char.avatar} className="w-6 h-6 object-cover" alt="" />
                                 </div>
-                                <div className="moro-offline-modal-entry moro-offline-modal-char text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: modalInk, background: '#fffdfa', border: '1px solid #efe2e9', borderRadius: '4px 14px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.15)' }}>
+                                <div className="moro-offline-modal-entry moro-offline-modal-char text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: modalInk, background: '#fffdfa', border: '1px solid #efe2e9', borderRadius: '4px 14px 14px 14px', boxShadow: '0 1px 3px rgba(122,90,114,0.16)' }}>
                                     {e.text}
                                 </div>
                             </div>
                         ) : (
                             <div key={i} className="flex justify-end">
-                                <div className="moro-offline-modal-entry moro-offline-modal-user text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#f6f3ec', background: modalAccent, border: '1px solid rgba(93,36,52,0.15)', borderRadius: '14px 4px 14px 14px', boxShadow: '0 1px 3px rgba(31,29,26,0.2)' }}>
+                                <div className="moro-offline-modal-entry moro-offline-modal-user text-[13px] leading-relaxed whitespace-pre-wrap max-w-[85%] px-4 py-2.5" style={{ color: '#fffdfa', background: modalAccent, border: '1px solid rgba(216,165,183,0.55)', borderRadius: '14px 4px 14px 14px', boxShadow: '0 1px 3px rgba(122,90,114,0.18)' }}>
                                     {e.text}
                                 </div>
                             </div>
@@ -282,7 +281,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                     ))}
                     {busy && (
                         <div className="flex items-center gap-2 text-[11px] px-1" style={{ color: '#857f74' }}>
-                            <span className="animate-pulse" style={{ color: '#1f1d1a' }} aria-hidden>♥</span>
+                            <span className="animate-pulse" style={{ color: '#d8a5b7' }} aria-hidden>♥</span>
                             这一幕还在写…
                         </div>
                     )}
@@ -290,13 +289,13 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
 
                 {/* 输入区：发言/行动 + 让角色继续（选好开场白方式后才出现） */}
                 {openingChosen && (
-                <div className="moro-offline-modal-inputbar shrink-0 px-4 py-3 flex items-center gap-2 border-t border-dashed" style={{ borderColor: 'rgba(31,29,26,0.22)' }}>
+                <div className="moro-offline-modal-inputbar shrink-0 px-4 py-3 flex items-center gap-2 border-t" style={{ borderColor: '#eed6df' }}>
                     <input
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
                         placeholder="说句话，或写下你的动作…"
-                        className="flex-1 px-2 py-2 bg-transparent text-[13px] outline-none border-0 border-b border-dashed border-[#dcc3cf] focus:border-[#1f1d1a] placeholder:text-[#a9a195]"
+                        className="flex-1 px-2 py-2 bg-transparent text-[13px] outline-none border-0 border-b border-[#dcc3cf] focus:border-[#d8a5b7] placeholder:text-[#a9a195]"
                         style={{ color: modalInk, caretColor: modalAccent }}
                         disabled={busy || ending}
                     />
@@ -305,7 +304,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             onClick={handleSend}
                             disabled={busy || ending}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                            style={{ background: modalAccent, border: '1.5px solid #000000', color: '#f6f3ec', boxShadow: '2px 2px 0 #b0aa9e', ...CUTE_STACK }}
+                            style={{ background: modalAccent, border: '1px solid #d8a5b7', color: '#fff', boxShadow: '0 8px 18px -14px rgba(122,90,114,0.35)', ...CUTE_STACK }}
                         >
                             递过去
                         </button>
@@ -314,7 +313,7 @@ const OfflineModeModal: React.FC<OfflineModeModalProps> = ({ char, userProfile, 
                             onClick={() => { if (!busy && !ending) void runCharTurn(); }}
                             disabled={busy || ending || entries.length === 0}
                             className="shrink-0 px-4 py-2 rounded-[10px] text-[11px] font-bold active:translate-y-[2px] active:shadow-none transition-all disabled:opacity-50"
-                            style={{ background: '#fffdfa', border: '1.5px dashed #b0aa9e', color: '#8a6478', boxShadow: '2px 2px 0 #eadfe6', ...CUTE_STACK }}
+                            style={{ background: '#fffdfa', border: '1px solid #eed6df', color: '#8a6478', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.24)', ...CUTE_STACK }}
                             title="让 TA 继续推进现场"
                         >
                             让 TA 来

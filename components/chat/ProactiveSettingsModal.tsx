@@ -85,14 +85,14 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
 
     return (
         <JournalSheet
-            open={isOpen} title="悄悄来信" en="Surprise Mail"
-            sub={`让 ${char.name} 隔三差五先想起你`}
+            open={isOpen} title="主动消息" en="Proactive Messages"
+            sub={`设置 ${char.name} 主动发消息的频率和通知方式`}
             tape="lavender" pattern="heart" paper="dot"
             onClose={onClose}
             footer={<>
-                <SealBtn kind="ghost" onClick={onClose}>先不安排</SealBtn>
-                {isProactiveActive && <SealBtn kind="berry" onClick={handleStop}>叫停信差</SealBtn>}
-                <SealBtn kind="rose" onClick={handleSave}>{enabled ? '派出信差' : '记下安排'}</SealBtn>
+                <SealBtn kind="ghost" onClick={onClose}>取消</SealBtn>
+                {isProactiveActive && <SealBtn kind="berry" onClick={handleStop}>停止主动消息</SealBtn>}
+                <SealBtn kind="rose" onClick={handleSave}>{enabled ? '保存设置' : '保存'}</SealBtn>
             </>}
         >
             <div className="space-y-4">
@@ -101,31 +101,31 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                     <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>✉</span>
-                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>开启悄悄来信</span>
+                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>启用主动消息</span>
                         </div>
                         <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
-                            开了之后，{char.name} 会按下面的安排自己先发消息来——就像真人忽然想起你，随手敲来一句。
+                            开启后，{char.name} 会按下面的触发规则主动发消息。
                         </p>
                     </div>
-                    <CandyToggle on={enabled} onToggle={() => setEnabled(!enabled)} candy="#bfa3dd" />
+                    <CandyToggle on={enabled} onToggle={() => setEnabled(!enabled)} candy="#d8a5b7" />
                 </div>
 
                 {/* 进行中提示 */}
                 {isProactiveActive && (
-                    <div className="flex items-center gap-2 rounded-[8px] px-3 py-2" style={{ background: 'rgba(240,250,245,0.9)', border: '1px dashed #bfe1cf' }}>
+                    <div className="flex items-center gap-2 rounded-[8px] px-3 py-2" style={{ background: '#fff4f7', border: '1px solid #eed6df' }}>
                         <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: '#5ca57f' }} />
-                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>信差已经在路上，TA 会挑时候来信</span>
+                        <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>主动消息已启用，系统会按设置触发</span>
                     </div>
                 )}
 
                 {enabled && (
                     <>
                         {/* 离线自主生活 */}
-                        <div className="flex items-start justify-between gap-3 rounded-[8px] px-3 py-2.5" style={{ background: 'rgba(250,245,255,0.85)', border: '1px dashed #ddc9e8' }}>
+                        <div className="flex items-start justify-between gap-3 rounded-[8px] px-3 py-2.5" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                             <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-[11px] leading-none" aria-hidden>🌱</span>
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>让 TA 过自己的生活</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>启用离线生活取材</span>
                                 </div>
                                 <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                                     开了之后，{char.name} 在你不在时会有自己的日常（上班、吃饭、追剧、和朋友出门…）。
@@ -133,24 +133,23 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                     你离开一阵子再回来，还能看到「你不在时 TA 经历了…」的回顾。
                                 </p>
                             </div>
-                            <CandyToggle on={autonomousLife} onToggle={() => setAutonomousLife(!autonomousLife)} candy="#c8a3dd" />
+                            <CandyToggle on={autonomousLife} onToggle={() => setAutonomousLife(!autonomousLife)} candy="#d8a5b7" />
                         </div>
 
                         {/* 触发方式 */}
                         <div className="pt-1">
                             <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>什么时候来信</div>
                             <div className="flex gap-2 mb-3">
-                                <StickerChip seed="pm-fixed" active={!randomMode} candy="#d6c8e8" onClick={() => setRandomMode(false)}>掐着点来</StickerChip>
-                                <StickerChip seed="pm-random" active={randomMode} candy="#d6c8e8" onClick={() => setRandomMode(true)}>凭 TA 心情</StickerChip>
+                                <StickerChip seed="pm-fixed" active={!randomMode} candy="#f3d7e1" onClick={() => setRandomMode(false)}>固定间隔</StickerChip>
+                                <StickerChip seed="pm-random" active={randomMode} candy="#f3d7e1" onClick={() => setRandomMode(true)}>智能触发</StickerChip>
                             </div>
                             {randomMode ? (
                                 <NoteStrip>
-                                    时机交给 TA：系统会在后台悄悄安排（不告诉你具体时间）。当你有一阵子没回消息，
-                                    {char.name} 会照着自己的性子决定要不要先开口、说点什么——全凭人设来。
+                                    系统会根据最近聊天、角色状态和你的离线时间决定是否触发主动消息，不显示固定倒计时。
                                 </NoteStrip>
                             ) : (
                                 <>
-                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>隔多久寄一封</div>
+                                    <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#a892a3' }}>发送间隔</div>
                                     <div className="flex flex-wrap gap-2">
                                         {INTERVAL_OPTIONS.map(opt => (
                                             <StickerChip
@@ -166,14 +165,14 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                                             seed="iv-custom"
                                             active={!INTERVAL_OPTIONS.some(o => o.value === interval)}
                                             onClick={() => { /* 输入框改值即生效 */ }}
-                                        >自己定</StickerChip>
+                                        >自定义</StickerChip>
                                         <input
                                             type="number"
                                             min={5}
                                             value={interval}
                                             onChange={e => setInterval_(Math.max(5, parseInt(e.target.value) || 5))}
-                                            className="w-16 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-dashed border-[#b0aa9e] focus:border-[#857f74]"
-                                            style={{ color: '#1f1d1a', caretColor: '#857f74' }}
+                                            className="w-16 px-1 py-0.5 text-[12px] text-center bg-transparent outline-none border-0 border-b border-[#eed6df] focus:border-[#d8a5b7]"
+                                            style={{ color: '#5a3140', caretColor: '#d8a5b7' }}
                                         />
                                         <span className="text-[10px]" style={{ color: '#857f74' }}>分钟一封（最少 5 分钟）</span>
                                     </div>
@@ -182,12 +181,12 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                         </div>
 
                         {/* 副 API */}
-                        <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                        <div className="pt-3 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
                             <div className="flex items-start justify-between gap-3 mb-1">
                                 <div className="min-w-0">
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>走另一条邮路（副 API）</span>
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>使用副 API</span>
                                     <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
-                                        来信单独走一条 API，不占主线路的额度；不开就还走主 API。
+                                        主动消息单独走副 API；关闭后使用当前主 API。
                                     </p>
                                 </div>
                                 <CandyToggle
@@ -197,9 +196,9 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                             </div>
 
                             {showApiSection && (
-                                <div className="space-y-3 rounded-[8px] p-3 mt-2" style={{ background: 'rgba(255,253,250,0.7)', border: '1px dashed #ddc9d3' }}>
+                                <div className="space-y-3 rounded-[8px] p-3 mt-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                     <LinedInput
-                                        tag="POST ROAD · URL"
+                                        tag="BASE URL"
                                         type="text"
                                         value={secUrl}
                                         onChange={e => setSecUrl(e.target.value)}
@@ -224,17 +223,17 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                         </div>
 
                         {/* 离线消息弹窗 · 浏览器授权 */}
-                        <div className="pt-3 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.18)' }}>
+                        <div className="pt-3 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
                             <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] leading-none" aria-hidden>📣</span>
-                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>离线也能收到弹窗</span>
+                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>启用浏览器通知</span>
                             </div>
                             <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
                                 授权一次浏览器通知，{char.name} 来信时即使你切到别的标签或最小化，也会弹出系统通知。电脑版 Chrome / Edge 体验最好。
                             </p>
                             <div className="mt-2.5">
                                 {notifyPerm === 'granted' && (
-                                    <div className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5" style={{ background: 'rgba(240,250,245,0.9)', border: '1px dashed #bfe1cf' }}>
+                                    <div className="inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5" style={{ background: '#fff4f7', border: '1px solid #eed6df' }}>
                                         <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#5ca57f' }} />
                                         <span className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: '#3f7d5c' }}>浏览器通知已开启</span>
                                     </div>

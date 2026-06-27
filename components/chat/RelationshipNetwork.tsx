@@ -93,7 +93,7 @@ const RelationshipNetwork: React.FC<Props> = ({ characters, userName, userAvatar
             <div className="shrink-0">
                 <div className="bg-transparent backdrop-blur-xl" style={{ height: 'var(--safe-top)' }} />
                 <div className="bg-white/90 backdrop-blur-md flex items-center px-4 border-b border-[#ededed] h-16 gap-2">
-                    <ShareNetwork size={22} weight="duotone" className="text-[#2b2933]" />
+                    <ShareNetwork size={22} weight="duotone" className="text-[#9c5e74]" />
                     <span className="font-bold text-[#262626] text-lg tracking-tight">关系网</span>
                     <span className="text-[11px] text-slate-400 ml-1">{nodes.length} 位角色</span>
                     <div className="flex-1" />
@@ -177,7 +177,7 @@ const RelationshipNetwork: React.FC<Props> = ({ characters, userName, userAvatar
                                 className="w-14 h-14 rounded-full object-cover border-[3px] border-white bg-slate-100"
                                 style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.18)' }}
                             />
-                            <span className="text-[11px] font-bold text-[#2b2933] max-w-[80px] truncate px-1.5 rounded-full bg-white/80 backdrop-blur-sm">
+                            <span className="text-[11px] font-bold text-[#5a3140] max-w-[80px] truncate px-1.5 rounded-full bg-white/80 backdrop-blur-sm">
                                 {userName || '我'}
                             </span>
                         </div>
@@ -267,7 +267,7 @@ const RelationshipNetwork: React.FC<Props> = ({ characters, userName, userAvatar
 
                             <button
                                 onClick={() => onOpenChat(selected.char.id)}
-                                className="mt-4 w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/60 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+                                className="mt-4 w-full py-3 bg-[#d8a5b7] text-white font-bold rounded-2xl shadow-lg shadow-rose-100/70 active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
                             >
                                 <ChatCircleDots size={18} weight="fill" />
                                 进入聊天

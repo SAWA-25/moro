@@ -266,55 +266,53 @@ const ChatModals: React.FC<ChatModalsProps> = ({
     return (
         <>
             <JournalSheet
-                open={modalType === 'transfer'} title="零花信封" en="Pocket Money Post"
-                sub={transferMode === 'redpacket' ? '把心意封进红包递过去' : '把零花钱折好塞进信封'}
+                open={modalType === 'transfer'} title="转账与红包" en="Send Money"
+                sub={transferMode === 'redpacket' ? '设置金额并发送红包' : '设置金额并发送转账'}
                 tape={transferMode === 'redpacket' ? 'blush' : 'lemon'} pattern="heart" paper="cream"
                 onClose={() => setModalType('none')}
                 footer={<>
                     <SealBtn kind="ghost" onClick={() => setModalType('none')}>再想想</SealBtn>
                     <SealBtn kind="ink" onClick={onTransfer}>
-                        {transferMode === 'redpacket' ? '封进红包递去' : '塞进信封寄走'}
+                        {transferMode === 'redpacket' ? '发送红包' : '发送转账'}
                     </SealBtn>
                 </>}
             >
                 <div className="space-y-4">
-                    {/* 模式切换：零花钱（米纸凭条）/ 红包（墨色信封），灰阶两张贴纸 */}
+                    {/* 模式切换 */}
                     <div className="flex gap-2.5">
                         <button
                             onClick={() => setTransferMode('transfer')}
                             className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
                             style={{
-                                transform: 'rotate(-0.6deg)',
-                                background: transferMode === 'transfer' ? '#efe9dd' : '#fffdfa',
-                                color: transferMode === 'transfer' ? '#1f1d1a' : '#a8a297',
-                                border: transferMode === 'transfer' ? '1px solid rgba(31,29,26,0.28)' : '1px dashed #d9d3c7',
-                                borderRadius: '6px 12px 7px 12px',
-                                boxShadow: transferMode === 'transfer' ? '0 1px 2px rgba(31,29,26,0.18)' : 'none',
+                                background: transferMode === 'transfer' ? '#fff4f7' : '#fffdfa',
+                                color: transferMode === 'transfer' ? '#5a3140' : '#a892a3',
+                                border: transferMode === 'transfer' ? '1px solid #d8a5b7' : '1px solid #eed6df',
+                                borderRadius: 14,
+                                boxShadow: transferMode === 'transfer' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
-                        >💴 零花钱</button>
+                        >💴 转账</button>
                         <button
                             onClick={() => setTransferMode('redpacket')}
                             className="flex-1 py-2.5 text-[13px] font-bold transition-all active:scale-95"
                             style={{
-                                transform: 'rotate(0.8deg)',
-                                background: transferMode === 'redpacket' ? '#1f1d1a' : '#fffdfa',
-                                color: transferMode === 'redpacket' ? '#f4f1ea' : '#a8a297',
-                                border: transferMode === 'redpacket' ? '1px solid #1f1d1a' : '1px dashed #d9d3c7',
-                                borderRadius: '12px 6px 12px 7px',
-                                boxShadow: transferMode === 'redpacket' ? '0 2px 8px -2px rgba(31,29,26,0.45)' : 'none',
+                                background: transferMode === 'redpacket' ? '#fff4f7' : '#fffdfa',
+                                color: transferMode === 'redpacket' ? '#5a3140' : '#a892a3',
+                                border: transferMode === 'redpacket' ? '1px solid #d8a5b7' : '1px solid #eed6df',
+                                borderRadius: 14,
+                                boxShadow: transferMode === 'redpacket' ? '0 8px 18px -14px rgba(122,90,114,0.45)' : 'none',
                                 ...CUTE_STACK,
                             }}
                         >🧧 红包</button>
                     </div>
-                    {/* 数目：写在横线上的大字 */}
+                    {/* 金额 */}
                     <div className="flex items-end gap-2 px-1">
                         <span className="text-[18px] font-bold pb-1.5 select-none" style={{ color: '#857f74' }}>¥</span>
                         <input
                             type="number" value={transferAmt} onChange={e => setTransferAmt(e.target.value)}
-                            placeholder="写个数目"
-                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-dashed border-[#cfc8ba] focus:border-[#8a8479] placeholder:text-[#c4bdb0] placeholder:text-[15px]"
-                            style={{ color: INK, caretColor: '#8a8479' }}
+                            placeholder="输入金额"
+                            className="flex-1 bg-transparent px-1 py-1.5 text-[22px] font-bold outline-none border-0 border-b-2 border-[#eed6df] focus:border-[#d8a5b7] placeholder:text-[#c4bdb0] placeholder:text-[15px]"
+                            style={{ color: INK, caretColor: '#d8a5b7' }}
                             autoFocus
                         />
                     </div>
@@ -328,9 +326,9 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                     onClick={() => setTransferAmt(String(v))}
                                     className="px-3 py-1 text-[12px] font-bold transition-all active:scale-95"
                                     style={{
-                                        background: active ? '#1f1d1a' : '#fffdfa',
-                                        color: active ? '#f4f1ea' : '#6b665d',
-                                        border: active ? '1px solid #1f1d1a' : '1px solid #e4ded2',
+                                        background: active ? '#fff4f7' : '#fffdfa',
+                                        color: active ? '#5a3140' : '#6b665d',
+                                        border: active ? '1px solid #d8a5b7' : '1px solid #eed6df',
                                         borderRadius: 9999,
                                         ...CUTE_STACK,
                                     }}
@@ -341,7 +339,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     {transferMode === 'redpacket' && (
                         <LinedInput
                             value={transferNote} onChange={e => setTransferNote(e.target.value)}
-                            tag="封皮上的一句话"
+                            tag="红包备注"
                             placeholder="比如：恭喜发财，大吉大利" maxLength={30}
                         />
                     )}
@@ -368,24 +366,24 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             {/* New Category Modal */}
             <Modal
-                isOpen={modalType === 'add-category'} title="新开一页贴纸" en="NEW PAGE" onClose={() => setModalType('none')}
-                footer={<ScrapBtn onClick={onAddCategory}>翻开新的一页</ScrapBtn>}
+                isOpen={modalType === 'add-category'} title="新建表情分组" en="NEW GROUP" onClose={() => setModalType('none')}
+                footer={<ScrapBtn onClick={onAddCategory}>新建分组</ScrapBtn>}
             >
                 <ScrapInput
                     value={newCategoryName}
                     onChange={e => setNewCategoryName(e.target.value)}
-                    placeholder="给这页贴纸起个名…"
+                    placeholder="给这个分组起个名…"
                     className="text-base font-bold"
                     autoFocus
                 />
             </Modal>
 
             <Modal
-                isOpen={modalType === 'emoji-import'} title="收一批贴纸" en="STICKERS" icon={<ScrapStamp><span className="text-[13px]">✄</span></ScrapStamp>} onClose={() => setModalType('none')}
-                footer={<ScrapBtn onClick={onImportEmoji}>贴进这一页</ScrapBtn>}
+                isOpen={modalType === 'emoji-import'} title="导入表情" en="IMPORT" icon={<ScrapStamp><span className="text-[13px]">＋</span></ScrapStamp>} onClose={() => setModalType('none')}
+                footer={<ScrapBtn onClick={onImportEmoji}>导入到分组</ScrapBtn>}
             >
                 <div className="space-y-3">
-                    <ScrapNote>贴纸会收进你当前选中的那一页。末尾能补一句描述（用来搜贴纸，AI 挑贴纸时也看得到）。</ScrapNote>
+                    <ScrapNote>表情会加入当前选中的分组。末尾能补一句描述（用来搜索，AI 选择表情时也看得到）。</ScrapNote>
                     <ScrapTextarea value={emojiImportText} onChange={e => setEmojiImportText(e.target.value)} placeholder={"名字--URL（每行一个）\n名字--URL--描述（描述可选）"} className="h-40" />
                 </div>
             </Modal>
@@ -399,7 +397,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 <div className="space-y-6">
                      <div>
                          <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">聊天背景</label>
-                         <div onClick={() => bgInputRef.current?.click()} className="h-24 bg-slate-100 rounded-xl border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-primary/50 overflow-hidden relative">
+                         <div onClick={() => bgInputRef.current?.click()} className="h-24 bg-[#fffdfa] rounded-xl border-2 border-[#eed6df] flex items-center justify-center cursor-pointer hover:border-[#d8a5b7] overflow-hidden relative">
                              {activeCharacter.chatBackground ? <img src={activeCharacter.chatBackground} className="w-full h-full object-cover opacity-60" /> : <span className="text-xs text-slate-400">点击上传图片 (原画质)</span>}
                              {activeCharacter.chatBackground && <span className="absolute z-10 text-xs bg-white/80 px-2 py-1 rounded">更换</span>}
                          </div>
@@ -415,7 +413,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={() => setSettingsHideSysLogs(!settingsHideSysLogs)}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">隐藏系统日志</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${settingsHideSysLogs ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${settingsHideSysLogs ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settingsHideSysLogs ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -428,7 +426,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleTranslation}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">消息翻译</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${translationEnabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${translationEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -479,7 +477,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleXhs}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">小红书</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${xhsEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${xhsEnabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${xhsEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -492,7 +490,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleHtmlMode}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">HTML 模块模式</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${htmlModeEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${htmlModeEnabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${htmlModeEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -518,7 +516,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                      <div className="pt-2 border-t border-slate-100">
                          <div className="flex justify-between items-center cursor-pointer" onClick={onToggleChatVoice}>
                              <label className="text-xs font-bold text-slate-400 uppercase pointer-events-none">语音消息</label>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${chatVoiceEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${chatVoiceEnabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${chatVoiceEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -551,7 +549,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                      title="时间感知强化是「时间感知」的重要功能。开启时会向上下文注入「距离上次聊天已过去多久」的提示，强化角色的时间观念、让 ta 主动匹配现实世界时间。关掉后不再注入这组提示词，角色不会被强制强化时间观念、也不会被强制匹配现实世界——但具体会弱化多少，取决于 API（模型）自己的理解。"
                                  >?</span>
                              </div>
-                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${timeAwarenessEnabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}>
+                             <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${timeAwarenessEnabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}>
                                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${timeAwarenessEnabled ? 'translate-x-4' : ''}`}></div>
                              </div>
                          </div>
@@ -605,17 +603,17 @@ const ChatModals: React.FC<ChatModalsProps> = ({
 
             {/* Archive Settings Modal */}
             <JournalSheet
-                open={modalType === 'archive-settings'} title="装订成册" en="Bookbinding"
-                sub="把这一阵的聊天折成一册小书"
+                open={modalType === 'archive-settings'} title="记忆归档" en="Archive"
+                sub="把最近聊天总结进长期记忆"
                 tape="blue" pattern="stripe" paper="lined"
                 onClose={() => { if (!isSummarizing) setModalType('none'); }}
                 footer={
                     isSummarizing
-                        ? <div className="w-full py-3 rounded-[12px] text-[13px] font-bold text-center flex items-center justify-center gap-2" style={{ background: '#fffdfa', border: `1.5px dashed ${INK_SOFT}`, color: INK, ...CUTE_STACK }}>
+                        ? <div className="w-full py-3 rounded-[12px] text-[13px] font-bold text-center flex items-center justify-center gap-2" style={{ background: '#fffdfa', border: `1px solid ${INK_SOFT}66`, color: INK, ...CUTE_STACK }}>
                             <div className="w-4 h-4 rounded-full animate-spin" style={{ border: `2px solid ${INK_SOFT}55`, borderTopColor: INK }} />
-                            {archiveProgress || '正在穿针装订…'}
+                            {archiveProgress || '正在归档…'}
                         </div>
-                        : <SealBtn kind="rose" full onClick={onArchive} disabled={isSummarizing}>送去装订</SealBtn>
+                        : <SealBtn kind="rose" full onClick={onArchive} disabled={isSummarizing}>开始归档</SealBtn>
                 }
             >
                 <div className="space-y-4">
@@ -627,9 +625,9 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         if (palaceOn && autoOn) {
                             return (
                                 <NoteStrip tone="good">
-                                    <b>自动装订已经开着</b>：palace 处理完会按日期把聊天自动收进「本月日度总结」。
-                                    自动那条线用的是<b>回忆标本馆内置的笔法</b>（保证向量检索稳定）；
-                                    下面挑的笔法<b>只管这里的手动装订</b>，怎么换都不影响自动装订。
+                                    <b>自动归档已经开启</b>：palace 处理完会按日期把聊天自动收进「本月日度总结」。
+                                    自动流程用的是<b>回忆标本馆内置模板</b>（保证向量检索稳定）；
+                                    下面选择的模板<b>只影响手动归档</b>，怎么换都不影响自动归档。
                                 </NoteStrip>
                             );
                         }
@@ -639,20 +637,20 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                     回忆标本馆开着，但<b>自动归档没开</b>——palace 只在后台做向量索引，
                                     <b>不会</b>自动写进「本月日度总结」。想让它自动写：剪影集 → 登场人物 → 角色 →
                                     回忆标本馆开关下面的<b>「📚 自动归档」</b>；或者就用下面的按钮，
-                                    按选中的<b>《{activeName}》</b>笔法手动装订一次。
+                                    按选中的<b>《{activeName}》</b>模板手动归档一次。
                                 </NoteStrip>
                             );
                         }
                         return (
                             <NoteStrip>
-                                <b>纯手装本</b>（回忆标本馆没开）。按钮会按选中的<b>《{activeName}》</b>笔法
-                                把聊天按天总结进「本月日度总结」；订完会自动把已总结的旧消息收起来（留最近一段可见）。
+                                <b>手动归档模式</b>（回忆标本馆没开）。按钮会按选中的<b>《{activeName}》</b>模板
+                                把聊天按天总结进「本月日度总结」；归档后会自动把已总结的旧消息收起来（留最近一段可见）。
                             </NoteStrip>
                         );
                     })()}
-                    {/* 笔法（提示词模板）列表 */}
+                    {/* 总结模板列表 */}
                     <div>
-                        <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: INK_SOFT }}>挑一种装订笔法</div>
+                        <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: INK_SOFT }}>选择总结模板</div>
                         <div className="flex flex-col gap-2">
                             {archivePrompts.map(p => {
                                 const isSelected = selectedPromptId === p.id;
@@ -662,29 +660,29 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                         onClick={() => setSelectedPromptId(p.id)}
                                         className="px-3 py-2.5 cursor-pointer flex items-center justify-between gap-2 transition-all"
                                         style={{
-                                            background: isSelected ? INK : '#fffdfa',
-                                            border: isSelected ? '1.5px solid #000' : `1px dashed ${INK_SOFT}`,
-                                            borderRadius: '6px 12px 7px 12px',
-                                            boxShadow: isSelected ? '0 1px 3px rgba(31,29,26,0.25)' : 'none',
+                                            background: isSelected ? '#fff4f7' : '#fffdfa',
+                                            border: isSelected ? '1px solid #d8a5b7' : `1px solid ${INK_SOFT}66`,
+                                            borderRadius: 14,
+                                            boxShadow: isSelected ? '0 8px 18px -16px rgba(122,90,114,0.32)' : 'none',
                                         }}
                                     >
                                         <div className="flex items-center gap-1.5 min-w-0">
-                                            {isSelected && <span aria-hidden className="text-[11px] shrink-0">📌</span>}
-                                            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: isSelected ? '#f6f3ec' : INK_SOFT }}>{p.name}</span>
+                                            {isSelected && <span aria-hidden className="text-[11px] shrink-0" style={{ color: '#b07a8d' }}>✓</span>}
+                                            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: isSelected ? INK : INK_SOFT }}>{p.name}</span>
                                         </div>
                                         <div className="flex gap-1.5 shrink-0">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); setSelectedPromptId(p.id); onEditPrompt(); }}
                                                 className="text-[10px] font-bold px-2 py-1 rounded-full active:scale-95 transition-transform"
-                                                style={{ background: '#fffdfa', border: `1px dashed ${INK_SOFT}`, color: INK }}
-                                            >翻开看看</button>
+                                                style={{ background: '#fffdfa', border: `1px solid ${INK_SOFT}66`, color: INK }}
+                                            >查看</button>
                                             {!p.id.startsWith('preset_') && (
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); onDeletePrompt(p.id); }}
                                                     className="text-[10px] px-2 py-1 rounded-full active:scale-95 transition-transform"
-                                                    style={{ color: isSelected ? '#f6f3ec' : INK, border: `1px dashed ${isSelected ? 'rgba(255,255,255,0.5)' : INK_SOFT}` }}
-                                                    aria-label={`撕掉《${p.name}》`}
-                                                >撕掉</button>
+                                                    style={{ color: '#d4536f', border: `1px solid ${isSelected ? '#f1c6d1' : `${INK_SOFT}66`}` }}
+                                                    aria-label={`删除《${p.name}》`}
+                                                >删除</button>
                                             )}
                                         </div>
                                     </div>
@@ -694,37 +692,37 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         <button
                             onClick={onCreatePrompt}
                             className="mt-2.5 w-full py-2 text-[11px] font-bold rounded-[10px] active:scale-[0.98] transition-transform"
-                            style={{ border: `1.5px dashed ${INK_SOFT}`, color: INK, background: 'rgba(255,253,250,0.6)', ...CUTE_STACK }}
-                        >＋ 自创一种笔法</button>
+                            style={{ border: `1px solid ${INK_SOFT}66`, color: INK, background: 'rgba(255,253,250,0.72)', ...CUTE_STACK }}
+                        >＋ 新建总结模板</button>
                     </div>
                     <NoteStrip>
-                        《理性精炼》订出条理清楚的事件日志，方便 AI 翻旧账；《日记风格》订成 TA 第一人称的日记，更有温度。
-                        笔法里可以用变量：<code>{'${dateStr}'}</code>、<code>{'${char.name}'}</code>、<code>{'${userProfile.name}'}</code>、<code>{'${rawLog}'}</code>。
+                        《理性精炼》会生成条理清楚的事件日志，方便 AI 回看旧事；《日记风格》会生成 TA 第一人称的日记，更有温度。
+                        模板里可以用变量：<code>{'${dateStr}'}</code>、<code>{'${char.name}'}</code>、<code>{'${userProfile.name}'}</code>、<code>{'${rawLog}'}</code>。
                     </NoteStrip>
                 </div>
             </JournalSheet>
 
             {/* Prompt Editor Modal */}
             <JournalSheet
-                open={modalType === 'prompt-editor'} title="笔法手稿" en="Binding Recipe"
-                sub="这套笔法决定小书订出来的口吻"
+                open={modalType === 'prompt-editor'} title="编辑总结模板" en="Archive Template"
+                sub="这套模板决定归档摘要的口吻"
                 tape="silver" pattern="plain" paper="plain"
                 onClose={() => setModalType('archive-settings')}
-                footer={<SealBtn kind="rose" full onClick={onSavePrompt}>存好这套笔法</SealBtn>}
+                footer={<SealBtn kind="rose" full onClick={onSavePrompt}>保存模板</SealBtn>}
             >
                 <div className="space-y-3.5">
                     <LinedInput
                         value={editingPrompt?.name || ''}
                         onChange={e => setEditingPrompt((prev: any) => prev ? { ...prev, name: e.target.value } : null)}
-                        tag="笔法的名字"
-                        placeholder="给这套笔法起个名…"
+                        tag="模板名称"
+                        placeholder="给这套模板起个名…"
                         className="font-bold"
                     />
                     <LinedArea
                         value={editingPrompt?.content || ''}
                         onChange={e => setEditingPrompt((prev: any) => prev ? { ...prev, content: e.target.value } : null)}
                         className="h-64"
-                        placeholder="写下装订要用的提示词…"
+                        placeholder="写下归档要用的提示词…"
                     />
                 </div>
             </JournalSheet>
@@ -905,13 +903,13 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                     {selectedMessage?.role === 'user' && !selectedMessage?.metadata?.recalled && (
                         <ScrapRowBtn onClick={onRecallMessage} icon={<ClockCounterClockwise size={18} weight="bold" />}>当作没说过</ScrapRowBtn>
                     )}
-                    <ScrapRowBtn onClick={onDeleteMessage} danger icon={<Trash size={18} weight="bold" />}>撕掉这条</ScrapRowBtn>
+                    <ScrapRowBtn onClick={onDeleteMessage} danger icon={<Trash size={18} weight="bold" />}>删除这条</ScrapRowBtn>
                 </div>
             </Modal>
             
              <Modal
-                isOpen={modalType === 'delete-emoji'} title="撕下贴纸" en="REMOVE" onClose={() => setModalType('none')}
-                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>留着</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteEmoji}>撕掉</ScrapBtn></>}
+                isOpen={modalType === 'delete-emoji'} title="删除表情" en="REMOVE" onClose={() => setModalType('none')}
+                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>保留</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteEmoji}>删除</ScrapBtn></>}
             >
                 <div className="flex flex-col items-center gap-4 py-2">
                     {Array.isArray(selectedEmoji) ? (
@@ -924,28 +922,28 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                         selectedEmoji && <img src={selectedEmoji.url} className="w-24 h-24 object-contain rounded-xl" style={{ border: `1px solid ${INK_SOFT}55` }} />
                     )}
                     <ScrapNote center>
-                        {Array.isArray(selectedEmoji) ? `这 ${selectedEmoji.length} 张贴纸要撕下来吗？` : "这张贴纸要撕下来吗？"}
+                        {Array.isArray(selectedEmoji) ? `要删除这 ${selectedEmoji.length} 个表情吗？` : "要删除这个表情吗？"}
                     </ScrapNote>
                 </div>
             </Modal>
 
             {/* Delete Category Modal */}
             <Modal
-                isOpen={modalType === 'delete-category'} title="撕掉这一页" en="REMOVE PAGE" onClose={() => setModalType('none')}
-                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>留着</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteCategory}>撕掉</ScrapBtn></>}
+                isOpen={modalType === 'delete-category'} title="删除分组" en="REMOVE GROUP" onClose={() => setModalType('none')}
+                footer={<><ScrapBtn variant="paper" onClick={() => setModalType('none')}>保留</ScrapBtn><ScrapBtn variant="danger" onClick={onDeleteCategory}>删除</ScrapBtn></>}
             >
                 <div className="py-4 text-center space-y-2">
-                    <p className="text-sm font-bold" style={{ color: INK }}>这一页贴纸 <br/><span className="font-black">「{selectedCategory?.name}」</span> 要整页撕掉吗？</p>
-                    <ScrapNote center>当心：这页上的贴纸会跟着一起没。</ScrapNote>
+                    <p className="text-sm font-bold" style={{ color: INK }}>表情分组 <br/><span className="font-black">「{selectedCategory?.name}」</span> 要删除吗？</p>
+                    <ScrapNote center>注意：这个分组里的表情会一起删除。</ScrapNote>
                 </div>
             </Modal>
 
             {/* Category Options Modal (shown on long-press) */}
-            <Modal isOpen={modalType === 'category-options'} title="这一页贴纸" en="PAGE" onClose={() => setModalType('none')}>
+            <Modal isOpen={modalType === 'category-options'} title="表情分组" en="GROUP" onClose={() => setModalType('none')}>
                 <div className="space-y-2.5">
-                    <ScrapRowBtn onClick={openVisibilityModal} icon={<Eye size={18} weight="bold" />}>谁能用这页</ScrapRowBtn>
+                    <ScrapRowBtn onClick={openVisibilityModal} icon={<Eye size={18} weight="bold" />}>可用角色</ScrapRowBtn>
                     {selectedCategory && !selectedCategory.isSystem && selectedCategory.id !== 'default' && (
-                        <ScrapRowBtn onClick={() => setModalType('delete-category')} danger icon={<Trash size={18} weight="bold" />}>整页撕掉</ScrapRowBtn>
+                        <ScrapRowBtn onClick={() => setModalType('delete-category')} danger icon={<Trash size={18} weight="bold" />}>删除分组</ScrapRowBtn>
                     )}
                 </div>
             </Modal>
@@ -956,7 +954,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                 footer={<ScrapBtn onClick={handleSaveVisibility}>就这么定</ScrapBtn>}
             >
                 <div className="space-y-3">
-                    <ScrapNote>挑出能用这页贴纸的角色。一个都不勾，就是谁都能用。</ScrapNote>
+                    <ScrapNote>挑出能使用这个表情分组的角色。一个都不勾，就是谁都能用。</ScrapNote>
                     <div className="space-y-2 max-h-[40vh] overflow-y-auto no-scrollbar">
                         {allCharacters.map(c => {
                             const on = visibilitySelection.has(c.id);
@@ -999,18 +997,18 @@ const ChatModals: React.FC<ChatModalsProps> = ({
             {/* Schedule Modal */}
             <JournalSheet
                 open={modalType === 'schedule'} title="今日作息" en="Day Planner" tall
-                sub={`${activeCharacter?.name || 'TA'} 的一天，翻开看看`}
+                sub={`${activeCharacter?.name || 'TA'} 的一天，查看详情`}
                 tape="mint" pattern="dot" paper="cream"
                 onClose={() => setModalType('none')}
             >
                 <div>
                     {/* 总开关：关闭时不调副 API、不生成日程、不注入情绪 buff */}
                     {onToggleScheduleFeature && (
-                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b border-dashed" style={{ borderColor: 'rgba(133,127,116,0.32)' }}>
+                        <div className="mb-4 flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#eed6df' }}>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-[11px] leading-none" style={{ color: INK }} aria-hidden>☘</span>
-                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>作息与心情挂件</span>
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#d8a5b7' }} aria-hidden />
+                                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>作息与心情</span>
                                 </div>
                                 <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INK_SOFT }}>
                                     {isScheduleFeatureEnabled
@@ -1018,7 +1016,7 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                         : '关着：不请副 API、不排日程，也不会往对话里塞心情 buff。'}
                                 </p>
                             </div>
-                            <CandyToggle on={!!isScheduleFeatureEnabled} onToggle={onToggleScheduleFeature} candy="#8fceae" />
+                            <CandyToggle on={!!isScheduleFeatureEnabled} onToggle={onToggleScheduleFeature} candy="#d8a5b7" />
                         </div>
                     )}
 
@@ -1040,12 +1038,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             disabled={isScheduleGenerating}
                                             className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
                                             style={{
-                                                transform: 'rotate(-0.5deg)',
-                                                background: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? INK : '#fffdfa',
-                                                color: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#f6f3ec' : INK_SOFT,
-                                                border: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '1px solid #000' : `1px dashed ${INK_SOFT}`,
-                                                borderRadius: '6px 12px 7px 12px',
-                                                boxShadow: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '0 1px 2px rgba(31,29,26,0.25)' : 'none',
+                                                background: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '#fff4f7' : '#fffdfa',
+                                                color: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? INK : INK_SOFT,
+                                                border: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '1px solid #d8a5b7' : `1px solid ${INK_SOFT}66`,
+                                                borderRadius: 14,
+                                                boxShadow: (activeCharacter?.scheduleStyle || 'lifestyle') === 'lifestyle' ? '0 8px 18px -16px rgba(122,90,114,0.32)' : 'none',
                                             }}
                                         >
                                             <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>生活系</span>
@@ -1056,12 +1053,11 @@ const ChatModals: React.FC<ChatModalsProps> = ({
                                             disabled={isScheduleGenerating}
                                             className="flex-1 py-2.5 px-3 text-left transition-all active:scale-[0.97] disabled:opacity-40"
                                             style={{
-                                                transform: 'rotate(0.6deg)',
-                                                background: activeCharacter?.scheduleStyle === 'mindful' ? INK : '#fffdfa',
-                                                color: activeCharacter?.scheduleStyle === 'mindful' ? '#f6f3ec' : INK_SOFT,
-                                                border: activeCharacter?.scheduleStyle === 'mindful' ? '1px solid #000' : `1px dashed ${INK_SOFT}`,
-                                                borderRadius: '12px 6px 12px 7px',
-                                                boxShadow: activeCharacter?.scheduleStyle === 'mindful' ? '0 1px 2px rgba(31,29,26,0.25)' : 'none',
+                                                background: activeCharacter?.scheduleStyle === 'mindful' ? '#fff4f7' : '#fffdfa',
+                                                color: activeCharacter?.scheduleStyle === 'mindful' ? INK : INK_SOFT,
+                                                border: activeCharacter?.scheduleStyle === 'mindful' ? '1px solid #d8a5b7' : `1px solid ${INK_SOFT}66`,
+                                                borderRadius: 14,
+                                                boxShadow: activeCharacter?.scheduleStyle === 'mindful' ? '0 8px 18px -16px rgba(122,90,114,0.32)' : 'none',
                                             }}
                                         >
                                             <span className="block text-[13px] font-bold mb-0.5" style={CUTE_STACK}>意识系</span>

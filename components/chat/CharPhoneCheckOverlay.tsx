@@ -465,7 +465,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
         () => DOCK_APPS.map(id => INSTALLED_APPS.find(a => a.id === id)).filter((a): a is typeof INSTALLED_APPS[number] => !!a),
         []
     );
-    const contentColor = theme.contentColor || '#2b2933';
+    const contentColor = theme.contentColor || '#5a3140';
     const [phase, setPhase] = useState<'loading' | 'browsing' | 'finished'>('loading');
     const [script, setScript] = useState<CheckScript | null>(null);
     const [stepIdx, setStepIdx] = useState(0);
@@ -1160,7 +1160,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
             return (
                 <div className={`${widgetBase} px-4 py-4 flex flex-col justify-between`} style={translucent}>
                     <div className="text-[11px] font-bold opacity-55">音乐</div>
-                    <div className="w-12 h-12 rounded-2xl bg-slate-900/85 text-white flex items-center justify-center text-2xl">♪</div>
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>♪</div>
                     <div className="text-[10px] opacity-65 line-clamp-2">最近播放</div>
                 </div>
             );
@@ -1457,7 +1457,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
             {/* 左下角想法框 */}
             {phase === 'browsing' && currentStep && (
                 <div key={stepIdx} className="absolute left-3 bottom-6 max-w-[78%] z-30 animate-fade-in">
-                    <div className="bg-[#0b0b12]/90 backdrop-blur text-white rounded-2xl rounded-bl-md px-4 py-3 shadow-xl border border-white/10">
+                    <div className="backdrop-blur rounded-2xl rounded-bl-md px-4 py-3 shadow-xl border" style={{ background: 'rgba(255,253,250,0.92)', color: '#5a3140', borderColor: '#eed6df' }}>
                         <div className="flex items-center gap-1.5 mb-1">
                             <img src={char.avatar} className="w-4 h-4 rounded-full object-cover" alt="" />
                             <span className="text-[9px] font-bold opacity-60 tracking-wider">{char.name} 的想法</span>
@@ -1471,10 +1471,8 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
             {exitOpen && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center animate-fade-in p-6" style={{ background: 'rgba(20,20,28,0.4)', backdropFilter: 'blur(4px)' }}>
                     <div className="w-full max-w-[320px] bg-white rounded-[1.6rem] overflow-hidden shadow-2xl relative">
-                        {/* 右上角书签缎带 */}
-                        <div className="absolute top-0 right-6 w-4 h-7 bg-slate-900" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 70%, 0 100%)' }} />
                         <div className="px-5 pt-5 pb-3 text-center">
-                            <div className="text-[15px] font-bold text-slate-800">想拿回手机？</div>
+                            <div className="text-[15px] font-bold" style={{ color: '#5a3140' }}>想拿回手机？</div>
                             <div className="text-[12px] text-slate-500 mt-1.5 leading-relaxed">
                                 {char.name} 还没看完。你可以征求 TA 同意、回答 TA 的问题，或者……直接抢回来。
                             </div>
@@ -1483,7 +1481,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                         {exitTab === 'menu' && (
                             <div className="px-5 pb-5 space-y-2">
                                 <button onClick={() => { setExitTab('consent'); void askConsent(); }} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-2xl bg-slate-900 text-white text-[13px] font-bold shadow-lg shadow-slate-200 active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl text-white text-[13px] font-bold shadow-lg active:scale-95 transition-all disabled:opacity-50" style={{ background: '#d8a5b7', boxShadow: '0 12px 24px -16px rgba(122,90,114,0.45)' }}>
                                     好声好气地要回来（征得同意）
                                 </button>
                                 <button onClick={() => setExitTab('questions')} disabled={exitBusy}
@@ -1538,7 +1536,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                                     </div>
                                 )}
                                 <button onClick={() => void submitAnswers()} disabled={exitBusy}
-                                    className="w-full py-2.5 rounded-2xl bg-slate-900 text-white text-[13px] font-bold shadow-lg shadow-slate-200 active:scale-95 transition-all disabled:opacity-50">
+                                    className="w-full py-2.5 rounded-2xl text-white text-[13px] font-bold shadow-lg active:scale-95 transition-all disabled:opacity-50" style={{ background: '#d8a5b7', boxShadow: '0 12px 24px -16px rgba(122,90,114,0.45)' }}>
                                     {exitBusy ? 'TA 在听…' : '交卷'}
                                 </button>
                                 <button onClick={() => { setExitTab('menu'); setJudgeComment(''); }}

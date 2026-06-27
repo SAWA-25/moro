@@ -124,8 +124,8 @@ const Chat: React.FC = () => {
     const [isScheduleGenerating, setIsScheduleGenerating] = useState(false);
     // 收款弹窗：角色发来的转账 / 红包，点开后让用户选择是否收下
     const [claimTarget, setClaimTarget] = useState<Message | null>(null);
-    const [claimRevealed, setClaimRevealed] = useState(false); // 收款弹窗「拆开」前后两态
-    const [claimPwInput, setClaimPwInput] = useState(''); // 口令红包：拆开前要先答对的口令
+    const [claimRevealed, setClaimRevealed] = useState(false); // 收款弹窗领取确认前后两态
+    const [claimPwInput, setClaimPwInput] = useState(''); // 口令红包：领取前要先答对的口令
     // 日程锚点协调：记上次协调对应的「角色:末条消息id」签名，避免同一批消息重复触发
     const lastReconcileSigRef = useRef<string>('');
     // 回神：自我校准结果弹窗 + 进行中状态
@@ -2405,7 +2405,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         setActiveCategory('default');
         setModalType('none');
         setSelectedCategory(null);
-        addToast('这一页连同上面的贴纸都撕掉了', 'success');
+        addToast('这个表情分组已删除', 'success');
     };
 
     const handleSaveCategoryVisibility = async (categoryId: string, allowedCharacterIds: string[] | undefined) => {
@@ -3537,7 +3537,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                      living_room: { label: '客厅', color: '#f59e0b' },
                                      bedroom: { label: '卧室', color: '#8b5cf6' },
                                      study: { label: '书房', color: '#0ea5e9' },
-                                     user_room: { label: '用户房间', color: '#ec4899' },
+                                     user_room: { label: '用户房间', color: '#d8a5b7' },
                                      self_room: { label: '自我房间', color: '#10b981' },
                                      attic: { label: '阁楼', color: '#6366f1' },
                                      windowsill: { label: '窗台', color: '#14b8a6' },
@@ -3608,17 +3608,16 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     <div className="text-[9px] font-bold tracking-[0.4em] uppercase mb-8 select-none" style={{ ...MONO_STACK, color: voiceCallPhase === 'dialing' ? '#d18ba0' : '#b3a3ad' }}>
                         {voiceCallPhase === 'dialing' ? '☎ Calling — Hold On' : '☎ No Answer Today'}
                     </div>
-                    <div className="relative mb-7" style={{ transform: 'rotate(-2deg)' }}>
+                    <div className="relative mb-7">
                         {voiceCallPhase === 'dialing' && (
                             <>
-                                <span className="absolute -inset-3 rounded-[10px] border-2 border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.55)' }} />
-                                <span className="absolute -inset-6 rounded-[12px] border border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.35)', animationDelay: '0.4s' }} />
-                                <span className="absolute -inset-9 rounded-[14px] border border-dashed animate-ping" style={{ borderColor: 'rgba(242,157,176,0.18)', animationDelay: '0.8s' }} />
+                                <span className="absolute -inset-3 rounded-[18px] border-2 animate-ping" style={{ borderColor: 'rgba(216,165,183,0.45)' }} />
+                                <span className="absolute -inset-6 rounded-[22px] border animate-ping" style={{ borderColor: 'rgba(216,165,183,0.28)', animationDelay: '0.4s' }} />
+                                <span className="absolute -inset-9 rounded-[26px] border animate-ping" style={{ borderColor: 'rgba(216,165,183,0.14)', animationDelay: '0.8s' }} />
                             </>
                         )}
-                        {/* 拍立得相框：TA 的照片别在画面正中 */}
-                        <div className="relative bg-white p-2 pb-7 rounded-[4px]" style={{ boxShadow: '0 4px 14px rgba(122,90,114,0.3)' }}>
-                            <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(251,184,200,0.75)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                        {/* 淡色拍立得相框 */}
+                        <div className="relative bg-white p-2 pb-7 rounded-[8px]" style={{ border: '1px solid #eed6df', boxShadow: '0 12px 28px -18px rgba(122,90,114,0.38)' }}>
                             <img src={char.avatar} className="relative w-24 h-24 object-cover" alt={char.name} />
                             <span className="absolute bottom-1.5 left-0 right-0 text-center text-[9px] select-none" style={{ ...MONO_STACK, color: '#a892a3' }}>
                                 {voiceCallPhase === 'dialing' ? 'ring ring…' : 'missed'}
@@ -3633,7 +3632,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         <button
                             onClick={() => { void cancelVoiceCall(); }}
                             className="w-16 h-16 rounded-full flex items-center justify-center active:translate-y-[2px] active:shadow-none transition-all"
-                            style={{ background: '#e26b84', color: '#fff', border: '1.5px solid #c14a64', boxShadow: '2px 3px 0 #f3c1cd' }}
+                            style={{ background: '#d8a5b7', color: '#fffdfa', border: '1.5px solid #c98ba0', boxShadow: '0 12px 24px -16px rgba(122,90,114,0.55)' }}
                             aria-label="挂断这通呼叫"
                         >
                             <PhoneSlash className="w-7 h-7" weight="fill" />
@@ -3644,33 +3643,30 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
 
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
              <JournalSheet
-                open={showSystemCmdModal} title="红笔批注" en="Director's Red Pen" sub="在剧本页边写一句不容商量的话"
+                open={showSystemCmdModal} title="系统指令" en="System Command" sub="发送一条最高优先级的聊天指令"
                 tape="lavender" pattern="plain" paper="lined"
                 onClose={() => setShowSystemCmdModal(false)}
                 footer={<>
-                    <SealBtn kind="ghost" onClick={() => setShowSystemCmdModal(false)}>先收笔</SealBtn>
-                    <SealBtn kind="ink" onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()}>落笔生效</SealBtn>
+                    <SealBtn kind="ghost" onClick={() => setShowSystemCmdModal(false)}>取消</SealBtn>
+                    <SealBtn kind="ink" onClick={() => { void handleSendSystemCommand(); }} disabled={!systemCmdInput.trim()}>发送指令</SealBtn>
                 </>}
              >
                 <div className="space-y-3">
-                    {/* 批注纸：左缘一道红线，像批改作业的页边 */}
-                    <div className="relative rounded-[8px] pl-9 pr-3 py-3" style={{ background: '#fffdfa', border: '1px dashed #dcc3cf' }}>
-                        <span aria-hidden className="absolute left-6 top-2 bottom-2 w-[1.5px]" style={{ background: 'rgba(226,107,132,0.55)' }} />
+                    <div className="relative rounded-[12px] pl-4 pr-3 py-3" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                         <div className="flex items-center gap-1.5 mb-1.5">
-                            <span aria-hidden className="text-[10px] leading-none" style={{ color: '#e26b84' }}>✦</span>
-                            <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#c98ba0' }}>In Red Ink</span>
+                            <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#c98ba0' }}>System Command</span>
                         </div>
                         <textarea
                             value={systemCmdInput}
                             onChange={e => setSystemCmdInput(e.target.value)}
-                            placeholder={`想改的戏写在这儿，比如：\n· 让${char?.name || '角色'}主动拿走${userProfile?.name || '用户'}的手机翻一翻\n· 暂停这场戏，补一段两人初遇的番外\n· 接下来这段换成${char?.name || '角色'}的第一人称来写`}
+                            placeholder={`输入要立即生效的指令，比如：\n· 让${char?.name || '角色'}主动查看${userProfile?.name || '用户'}的手机\n· 暂停当前对话，补一段两人初遇\n· 接下来换成${char?.name || '角色'}第一人称回复`}
                             rows={4}
                             className="w-full bg-transparent placeholder:text-[#cfb8c4] text-[13px] resize-none outline-none leading-relaxed"
-                            style={{ color: '#3d2f3d', caretColor: '#e26b84' }}
+                            style={{ color: '#5a3140', caretColor: '#d8a5b7' }}
                             autoFocus
                         />
                     </div>
-                    <NoteStrip tone="danger">这一笔以「系统」的名义落下——盖过 TA 的人设和此前全部剧情，写完立刻照办。</NoteStrip>
+                    <NoteStrip tone="danger">系统指令优先级最高，会覆盖角色设定和此前上下文，请确认后再发送。</NoteStrip>
                 </div>
              </JournalSheet>
 
@@ -3688,7 +3684,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     <div className="flex items-center gap-2">
                         <span aria-hidden className="text-[15px] leading-none" style={{ transform: 'rotate(-6deg)', display: 'inline-block' }}>🚩</span>
                         <span className="text-[8.5px] font-bold tracking-[0.25em] uppercase select-none" style={{ ...MONO_STACK, color: '#9bb3c4' }}>Mark The Spot</span>
-                        <span aria-hidden className="flex-1 border-t border-dashed" style={{ borderColor: 'rgba(122,90,114,0.25)' }} />
+                        <span aria-hidden className="flex-1 border-t" style={{ borderColor: 'rgba(216,165,183,0.35)' }} />
                     </div>
                     <LinedInput value={locationName} onChange={e => setLocationName(e.target.value)} placeholder="这儿叫什么（比如：江汉路口那家咖啡店）" maxLength={40} className="font-bold" autoFocus />
                     <LinedInput value={locationDetail} onChange={e => setLocationDetail(e.target.value)} placeholder="几楼几号、怎么找到你，空着也行" maxLength={80} />
@@ -3711,9 +3707,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 <div className="space-y-3.5">
                     {imageGenPreview ? (
                         <div className="px-4 py-1">
-                            {/* 刚画好的拍立得 */}
-                            <div className="relative p-2 pb-8 rounded-[4px]" style={{ background: '#fffdf8', boxShadow: '0 4px 14px rgba(31,29,26,0.28)', transform: 'rotate(-1.2deg)' }}>
-                                <span aria-hidden className="absolute -top-2 left-1/2 -translate-x-1/2 w-12 h-4 pointer-events-none" style={{ background: 'rgba(31,29,26,0.82)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.18) 0 5px, transparent 5px 11px)', transform: 'rotate(-3deg)', clipPath: 'polygon(3% 0, 100% 8%, 97% 100%, 0 92%)' }} />
+                            {/* 刚生成的图片预览 */}
+                            <div className="relative p-2 pb-8 rounded-[8px]" style={{ background: '#fffdfa', border: '1px solid #eed6df', boxShadow: '0 12px 28px -18px rgba(122,90,114,0.38)' }}>
                                 <img src={imageGenPreview} className="w-full" alt="刚画好的一张" />
                                 <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between">
                                     <span className="text-[10px] font-bold" style={{ ...CUTE_STACK, color: INK }}>刚晾干的一张</span>
@@ -3731,8 +3726,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 </div>
              </JournalSheet>
 
-             {/* 心声面板（入口：顶栏角色头像）：社交主页式卡片（参考设计 MiMi Space）——
-                 书签缎带 + 渐变圆环头像 + 好感/心声/心情统计行 + Follow/Message 式双按钮 */}
+             {/* 心声面板（入口：顶栏角色头像）：浅色信息卡 */}
              {showInnerVoiceModal && char && (
                 <div
                     className="absolute inset-0 z-[220] flex items-center justify-center p-5 animate-fade-in"
@@ -3741,100 +3735,95 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 >
                     <div
                         className="w-full max-w-sm rounded-[1.8rem] shadow-2xl flex flex-col max-h-[84vh] overflow-hidden animate-slide-up relative"
-                        style={{ background: 'linear-gradient(180deg,#fbf9f2,#f2efe4)', border: `1px solid ${INK_SOFT}55`, color: INK }}
+                        style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', border: '1px solid #eed6df', color: '#5a3140' }}
                         onClick={e => e.stopPropagation()}
                     >
-                        {/* 右上角书签缎带 */}
-                        <div className="absolute top-0 right-7 w-6 h-10 z-10" style={{ background: INK, clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)' }} />
-
                         {/* 标题条：居中标题 + 左上关闭 */}
                         <div className="relative flex items-center justify-center px-6 pt-5 pb-1 shrink-0">
-                            <button onClick={() => setShowInnerVoiceModal(false)} className="absolute left-4 p-1.5 rounded-full text-slate-400 hover:bg-slate-50 active:scale-95 transition-all" aria-label="关闭">
+                            <button onClick={() => setShowInnerVoiceModal(false)} className="absolute left-4 p-1.5 rounded-full text-[#a892a3] hover:bg-white active:scale-95 transition-all" aria-label="关闭">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                             </button>
                             <div className="text-center">
-                                <div className="text-[12px] font-mono font-bold tracking-[0.45em] text-slate-700 uppercase">Inner&nbsp;Space</div>
-                                <div className="text-[9px] font-mono tracking-[0.3em] text-slate-300 mt-0.5">You &amp; Me</div>
+                                <div className="text-[12px] font-mono font-bold tracking-[0.28em] uppercase" style={{ color: '#5a3140' }}>Inner&nbsp;Voice</div>
+                                <div className="text-[9px] font-mono tracking-[0.2em] mt-0.5" style={{ color: '#a892a3' }}>Private Preview</div>
                             </div>
                         </div>
 
-                        {/* 主页卡：名字条 + 渐变圆环头像 + 统计行 + 心情签名 */}
-                        <div className="mx-5 mt-2 rounded-3xl border border-slate-100 shadow-[0_10px_28px_-18px_rgba(50,48,60,0.35)] shrink-0">
+                        {/* 概览卡 */}
+                        <div className="mx-5 mt-2 rounded-3xl border shadow-[0_12px_30px_-22px_rgba(122,90,114,0.42)] shrink-0" style={{ background: '#fffdfa', borderColor: '#eed6df' }}>
                             <div className="flex items-center justify-between px-5 pt-3.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
-                                <span className="text-[14px] font-bold text-slate-800 tracking-widest truncate max-w-[60%]">{displayCharName}</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-slate-400"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5" /></svg>
+                                <span className="text-[10px] font-bold tracking-[0.22em] uppercase" style={{ color: '#a892a3' }}>Profile</span>
+                                <span className="text-[14px] font-bold tracking-widest truncate max-w-[60%]" style={{ color: '#5a3140' }}>{displayCharName}</span>
+                                <span className="text-[10px] font-bold tracking-[0.22em] uppercase" style={{ color: '#a892a3' }}>Mood</span>
                             </div>
                             <div className="flex items-center gap-4 px-5 pt-3 pb-1">
-                                {/* 手缝圆环头像（手账风：白纸底 + 墨色虚线缝边） */}
-                                <div className="shrink-0 p-[3px] rounded-full bg-white border-2 border-dashed border-[#bdb7a8] shadow-[0_6px_16px_-8px_rgba(50,48,60,0.4)]">
+                                <div className="shrink-0 p-[3px] rounded-full bg-white border-2 shadow-[0_8px_18px_-12px_rgba(122,90,114,0.45)]" style={{ borderColor: '#eed6df' }}>
                                     <img src={displayCharAvatar} className="w-[4.6rem] h-[4.6rem] rounded-full object-cover border-[3px] border-white" alt={displayCharName} />
                                 </div>
                                 {/* 统计行：好感 / 心声 / 心情 */}
                                 <div className="flex-1 flex items-start justify-around text-center">
                                     <div>
-                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{typeof char.affection === 'number' ? Math.round(char.affection) : '—'}</div>
-                                        <div className="text-[10px] text-slate-400">好感值</div>
+                                        <div className="text-lg font-extrabold leading-tight" style={{ color: '#5a3140' }}>{typeof char.affection === 'number' ? Math.round(char.affection) : '—'}</div>
+                                        <div className="text-[10px]" style={{ color: '#a892a3' }}>好感值</div>
                                     </div>
                                     <div>
-                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{innerVoiceHistory.length}</div>
-                                        <div className="text-[10px] text-slate-400">心声</div>
+                                        <div className="text-lg font-extrabold leading-tight" style={{ color: '#5a3140' }}>{innerVoiceHistory.length}</div>
+                                        <div className="text-[10px]" style={{ color: '#a892a3' }}>记录</div>
                                     </div>
                                     <div>
-                                        <div className="text-lg font-extrabold text-slate-800 leading-tight">{char.currentMood?.emoji || '🤍'}</div>
-                                        <div className="text-[10px] text-slate-400">{char.currentMood?.label || '心情'}</div>
+                                        <div className="text-lg font-extrabold leading-tight" style={{ color: '#5a3140' }}>{char.currentMood?.emoji || '🤍'}</div>
+                                        <div className="text-[10px]" style={{ color: '#a892a3' }}>{char.currentMood?.label || '心情'}</div>
                                     </div>
                                 </div>
                             </div>
                             {/* 好感进度细线 */}
                             <div className="px-5 pt-1">
-                                <div className="h-1 rounded-full bg-slate-100 overflow-hidden">
-                                    <div className="h-full rounded-full bg-slate-900 transition-all duration-700" style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%` }} />
+                                <div className="h-1 rounded-full overflow-hidden" style={{ background: '#f3e3e9' }}>
+                                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${typeof char.affection === 'number' ? Math.max(0, Math.min(100, char.affection)) : 0}%`, background: '#d8a5b7' }} />
                                 </div>
                             </div>
                             {/* 关系状态徽标（来往·关系系统）：由 AI 依好感/设定/剧情自动更新 */}
                             <div className="px-5 pt-2.5 flex items-center justify-center gap-1.5">
-                                <span className="text-[11px]" style={{ color: INK_SOFT }}>你们的关系</span>
-                                <span className="text-[12px] font-black px-2.5 py-0.5 rounded-full" style={{ background: INK, color: '#f6f3ec' }}>
+                                <span className="text-[11px]" style={{ color: '#a892a3' }}>你们的关系</span>
+                                <span className="text-[12px] font-black px-2.5 py-0.5 rounded-full" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>
                                     {char.marriage?.active ? '💍 ' : ''}{char.relationship?.label || '尚未明确'}
                                 </span>
                             </div>
-                            {/* 双按钮（Follow / Message 式） */}
                             <div className="flex gap-2.5 px-5 py-3.5">
-                                <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className={`flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform ${innerVoiceLoading ? 'bg-slate-400' : 'bg-[#2b2933] shadow-[0_10px_22px_-12px_rgba(43,41,51,0.6)]'}`}>{innerVoiceLoading ? '偷听中…' : '再偷看一次'}</button>
-                                <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-2.5 text-[13px] font-bold rounded-xl bg-slate-100 text-slate-600 active:scale-[0.98] transition-transform">悄悄合上</button>
+                                <button onClick={generateInnerVoice} disabled={innerVoiceLoading} className="flex-1 py-2.5 text-[13px] font-bold rounded-xl text-white active:scale-[0.98] transition-transform disabled:opacity-60" style={{ background: '#d8a5b7', boxShadow: '0 10px 22px -14px rgba(122,90,114,0.45)' }}>{innerVoiceLoading ? '生成中…' : '重新生成'}</button>
+                                <button onClick={() => setShowInnerVoiceModal(false)} className="flex-1 py-2.5 text-[13px] font-bold rounded-xl active:scale-[0.98] transition-transform" style={{ background: '#fff4f7', color: '#5a3140', border: '1px solid #eed6df' }}>关闭</button>
                             </div>
                         </div>
 
                         {/* 心声内容（可滚动） */}
                         <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 space-y-3 pt-4 pb-2">
                             {innerVoiceLoading && !innerVoiceCurrent && (
-                                <div className="flex flex-col items-center gap-2 py-8 text-slate-400">
-                                    <div className="w-6 h-6 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
-                                    <span className="text-xs">正在窥探 {displayCharName} 的内心…</span>
+                                <div className="flex flex-col items-center gap-2 py-8" style={{ color: '#a892a3' }}>
+                                    <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: '#eed6df', borderTopColor: '#d8a5b7' }} />
+                                    <span className="text-xs">正在生成 {displayCharName} 的心声…</span>
                                 </div>
                             )}
                             {innerVoiceCurrent && (
                                 <div
-                                    className="p-4 rounded-2xl rounded-tl-md bg-slate-900 text-white shadow-md"
-                                    style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)', backgroundSize: '7px 7px' }}
+                                    className="p-4 rounded-2xl rounded-tl-md shadow-md"
+                                    style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}
                                 >
                                     <p className="text-[13px] leading-relaxed whitespace-pre-wrap">「{innerVoiceCurrent.content}」</p>
-                                    <p className="text-[10px] text-white/40 mt-2 text-right font-mono">{new Date(innerVoiceCurrent.timestamp).toLocaleString('zh-CN')}</p>
+                                    <p className="text-[10px] mt-2 text-right font-mono" style={{ color: '#a892a3' }}>{new Date(innerVoiceCurrent.timestamp).toLocaleString('zh-CN')}</p>
                                 </div>
                             )}
                             {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).length > 0 && (
                                 <div className="space-y-2">
-                                    <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider px-1">之前偷看到的</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider px-1" style={{ color: '#a892a3' }}>历史记录</p>
                                     {innerVoiceHistory.filter(h => h.id !== innerVoiceCurrent?.id).slice(0, 10).map(h => (
-                                        <div key={h.id} className="p-3 rounded-2xl rounded-tl-md bg-slate-50 border border-slate-100">
-                                            <p className="text-[12px] text-slate-500 leading-relaxed whitespace-pre-wrap line-clamp-3">{h.content}</p>
-                                            <p className="text-[9px] text-slate-300 mt-1.5 text-right font-mono">{new Date(h.timestamp).toLocaleString('zh-CN')}</p>
+                                        <div key={h.id} className="p-3 rounded-2xl rounded-tl-md border" style={{ background: '#fffdfa', borderColor: '#eed6df' }}>
+                                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap line-clamp-3" style={{ color: '#6f5360' }}>{h.content}</p>
+                                            <p className="text-[9px] mt-1.5 text-right font-mono" style={{ color: '#a892a3' }}>{new Date(h.timestamp).toLocaleString('zh-CN')}</p>
                                         </div>
                                     ))}
                                 </div>
                             )}
-                            <p className="text-[10px] text-slate-300 text-center pt-1 pb-3">{displayCharName} 不会知道你偷看过 ——「心声」不会进入对话。</p>
+                            <p className="text-[10px] text-center pt-1 pb-3" style={{ color: '#a892a3' }}>{displayCharName} 不会知道你查看过，心声不会进入对话上下文。</p>
                         </div>
                     </div>
                 </div>
@@ -3847,12 +3836,12 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                  return (
                      <div className="absolute inset-0 z-[400] flex items-center justify-center bg-black/40 animate-fade-in p-6" onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }}>
                          <div className="w-[min(84vw,330px)] bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-                             <div className="px-5 py-3 flex items-center justify-between" style={{ background: 'linear-gradient(135deg,#FF5339,#ff8a5c)' }}>
-                                 <span className="text-[13px] font-black text-white">🛵 外卖订单详情</span>
-                                 <span className="text-[11px] text-white/90">{t.payLabel || ''}</span>
+                             <div className="px-5 py-3 flex items-center justify-between" style={{ background: '#fff4f7', borderBottom: '1px solid #eed6df' }}>
+                                  <span className="text-[13px] font-black" style={{ color: '#5a3140' }}>🛵 外卖订单详情</span>
+                                  <span className="text-[11px]" style={{ color: '#a892a3' }}>{t.payLabel || ''}</span>
                              </div>
                              <div className="px-5 pt-4 pb-2">
-                                 <div className="text-[14px] font-black text-slate-800 mb-2">{t.storeEmoji} {t.storeName}</div>
+                                  <div className="text-[14px] font-black mb-2" style={{ color: '#5a3140' }}>{t.storeEmoji} {t.storeName}</div>
                                  <div className="space-y-1 mb-3">
                                      {items.map((it, i) => (
                                          <div key={i} className="flex items-center justify-between text-[13px]">
@@ -3861,15 +3850,15 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                          </div>
                                      ))}
                                  </div>
-                                 <div className="border-t border-dashed border-slate-200 pt-2.5 text-[12.5px] text-slate-500 space-y-1">
-                                     <div className="flex justify-between"><span>合计</span><span className="font-black text-[14px]" style={{ color: '#FF5339' }}>¥{t.total}</span></div>
+                                  <div className="border-t pt-2.5 text-[12.5px] text-slate-500 space-y-1" style={{ borderColor: '#eed6df' }}>
+                                      <div className="flex justify-between"><span>合计</span><span className="font-black text-[14px]" style={{ color: '#5a3140' }}>¥{t.total}</span></div>
                                      <div className="flex justify-between"><span>收货</span><span>{takeoutCardOrder?.address || t.recipientLabel}</span></div>
                                      {(takeoutCardOrder?.note || t.note) && <div className="flex justify-between"><span>备注</span><span className="text-right max-w-[60%] truncate">{takeoutCardOrder?.note || t.note}</span></div>}
                                  </div>
                              </div>
                              <div className="flex border-t border-slate-100">
                                  <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); }} className="flex-1 py-3.5 text-[14px] text-slate-500 font-medium active:bg-slate-50">合上</button>
-                                 <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#FF5339' }}>去外卖看进度</button>
+                                  <button onClick={() => { setTakeoutCardTarget(null); setTakeoutCardOrder(null); openApp(AppID.Takeout); }} className="flex-1 py-3.5 text-[14px] font-bold border-l border-slate-100 active:bg-slate-50" style={{ color: '#5a3140' }}>查看进度</button>
                              </div>
                          </div>
                      </div>
@@ -4419,7 +4408,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         !nextMessage ||
                         nextMessage.role !== m.role ||
                         Math.abs(nextMessage.timestamp - m.timestamp) > messageGroupGapMs;
-                    // 时间分割线（黑白手帐式「🤍 Today 22:28」）：会话开头或间隔超过 30 分钟时插入
+                    // 时间分割线：会话开头或间隔超过 30 分钟时插入
                     const needsTimeDivider = m.role !== 'system' &&
                         (!prevMessage || Math.abs(m.timestamp - prevMessage.timestamp) > messageGroupGapMs);
                     const dividerLabel = (() => {
@@ -4883,7 +4872,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             )}
 
-            {/* 回望小报（昨日来信 / 回望·周章 / 回望·月章） */}
+            {/* 回顾摘要（日回顾 / 周回顾 / 月回顾） */}
             {modalType === 'tabloid' && char && (
                 <TabloidModal char={char} isOpen onClose={() => setModalType('none')} />
             )}
@@ -4954,8 +4943,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 const isRedpacket = meta.kind === 'redpacket';
                 const amt = Math.abs(parseFloat(String(meta.amount))) || 0;
                 const note = isRedpacket && typeof meta.note === 'string' && meta.note.trim() ? meta.note.trim() : '';
-                const ink = isRedpacket; // 红包＝墨色信封；转账＝米纸凭条
-                const hair = ink ? '1px solid rgba(242,236,224,0.14)' : '1px solid rgba(140,132,118,0.25)';
+                const hair = '1px solid #eed6df';
                 const isPassword = isRedpacket && meta.rpType === 'password';
                 const closeModal = () => { setClaimTarget(null); setClaimRevealed(false); setClaimPwInput(''); };
                 return (
@@ -4963,47 +4951,39 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         <div
                             className="w-[min(84vw,330px)] relative rounded-[22px] overflow-hidden animate-pop-in"
                             onClick={e => e.stopPropagation()}
-                            style={ink
-                                ? { background: 'linear-gradient(160deg,#2c2823,#15120f)', color: '#f2ece0', boxShadow: '0 30px 60px -24px rgba(0,0,0,0.7)' }
-                                : { background: 'linear-gradient(180deg,#fbf9f3,#efebe1)', color: '#1f1d1a', boxShadow: '0 30px 60px -24px rgba(31,29,26,0.55)', border: '1px solid rgba(176,170,158,0.6)' }}
+                            style={{ background: 'linear-gradient(180deg,#fffdfa,#fff4f7)', color: '#5a3140', boxShadow: '0 30px 60px -24px rgba(122,90,114,0.45)', border: '1px solid #eed6df' }}
                         >
-                            {/* 半调网点纹 */}
-                            <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ backgroundImage: ink ? 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 1.6px)' : 'radial-gradient(circle at 1px 1px, rgba(31,29,26,0.05) 1px, transparent 1.6px)', backgroundSize: '8px 8px', opacity: 0.6 }} />
-                            {/* 牛皮胶带斜贴 */}
-                            <div aria-hidden className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-24 h-6 rotate-[-3deg]" style={{ background: ink ? 'rgba(232,228,218,0.9)' : 'rgba(31,29,26,0.82)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.18) 0 5px, transparent 5px 11px)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)' }} />
                             <div className="px-7 pt-8 pb-6 text-center relative">
-                                <div className="text-[9px] font-mono tracking-[0.34em] uppercase mb-2" style={{ opacity: 0.6 }}>{isRedpacket ? 'Lucky Money · 利是' : 'Transfer Voucher · 转账'}</div>
-                                <div className="text-[14px] font-bold">{displayCharName} 给你{isRedpacket ? '封了个红包' : '转了笔零花钱'}</div>
+                                <div className="text-[9px] font-mono tracking-[0.28em] uppercase mb-2" style={{ color: '#a892a3' }}>{isRedpacket ? 'Red Packet' : 'Transfer'}</div>
+                                <div className="text-[14px] font-bold">{displayCharName} 给你发送了{isRedpacket ? '红包' : '一笔转账'}</div>
                                 {note && <div className="text-[12.5px] mt-1.5 italic" style={{ opacity: 0.8 }}>「{note}」</div>}
                                 {!claimRevealed ? (
                                     isPassword ? (
                                         <div className="mt-4 space-y-2.5">
-                                            <div className="text-[11px]" style={{ opacity: 0.72 }}>这是个口令红包 · 答对口令才能拆开</div>
+                                            <div className="text-[11px]" style={{ color: '#a892a3' }}>这是口令红包 · 输入正确口令后领取</div>
                                             <input
                                                 value={claimPwInput}
                                                 onChange={e => setClaimPwInput(e.target.value)}
                                                 onKeyDown={e => { if (e.key === 'Enter') { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); } }}
                                                 placeholder="在此输入口令"
                                                 className="w-full px-3 py-2.5 rounded-xl text-center text-[14px] outline-none"
-                                                style={ink ? { background: 'rgba(255,255,255,0.10)', color: '#f2ece0', border: '1px solid rgba(242,236,224,0.25)' } : { background: 'rgba(31,29,26,0.05)', color: '#1f1d1a', border: '1px solid rgba(31,29,26,0.18)' }}
+                                                style={{ background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}
                                                 autoFocus
                                             />
                                             <button
                                                 onClick={() => { const ok = !!claimPwInput.trim() && claimPwInput.trim().toLowerCase() === String(meta.password || '').trim().toLowerCase(); if (ok) { setClaimRevealed(true); setClaimPwInput(''); } else addToast('口令不对，再想想？', 'error'); }}
                                                 className="w-full py-2.5 rounded-xl text-[13px] font-bold active:scale-95 transition-transform"
-                                                style={ink ? { background: '#f2ece0', color: '#1b1814' } : { background: '#1f1d1a', color: '#f4f1ea' }}
-                                            >对口令 · 拆开</button>
+                                                style={{ background: '#d8a5b7', color: '#fffdfa' }}
+                                            >确认口令</button>
                                         </div>
                                     ) : (
                                     <button
                                         onClick={() => setClaimRevealed(true)}
                                         className="mt-5 mx-auto w-20 h-20 rounded-full flex flex-col items-center justify-center active:scale-90 transition-transform"
-                                        style={ink
-                                            ? { background: 'radial-gradient(circle at 34% 28%, #6a655c, #1b1814)', color: '#f2ece0', boxShadow: '0 0 0 3px rgba(242,236,224,0.18), 0 10px 22px -10px rgba(0,0,0,0.7)' }
-                                            : { background: 'radial-gradient(circle at 34% 28%, #45403a, #1f1d1a)', color: '#f4f1ea', boxShadow: '0 0 0 3px rgba(31,29,26,0.12), 0 10px 22px -10px rgba(31,29,26,0.5)' }}
+                                        style={{ background: '#d8a5b7', color: '#fffdfa', boxShadow: '0 0 0 5px rgba(216,165,183,0.18), 0 12px 24px -16px rgba(122,90,114,0.55)' }}
                                     >
-                                        <span className="text-[22px] leading-none">{isRedpacket ? '✦' : '↥'}</span>
-                                        <span className="text-[10px] font-bold mt-0.5">拆开</span>
+                                        <span className="text-[22px] leading-none">{isRedpacket ? '¥' : '↥'}</span>
+                                        <span className="text-[10px] font-bold mt-0.5">查看</span>
                                     </button>
                                     )
                                 ) : (

@@ -70,21 +70,21 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
     const scheduleOn = isScheduleFeatureOn(char);
 
     return (
-        <div className="space-y-4 pt-4 border-t border-slate-100">
+        <div className="space-y-4 pt-4 border-t border-[#eed6df]">
             <div>
-                <div className="text-xs font-bold text-slate-700 mb-1">🎭 情绪 / 意识流 API</div>
-                <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                <div className="text-xs font-bold text-[#5a3140] mb-1">情绪 / 意识流 API</div>
+                <div className="text-[11px] text-[#8b6d79] leading-relaxed space-y-1">
                     <p>
                         原版情绪 buff 就在这里。与日程<b>强制同步</b>：日程开 → 自动启用；日程关 → 一起停。
                     </p>
-                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-                        ⚙️ 下方不填 = 自动用主 API。想细腻点就填个 <b>Claude 系列</b>模型。
+                    <p className="text-[#8b5b6b] bg-[#fff4f7] border border-[#eed6df] rounded-lg px-2 py-1.5">
+                        下方不填 = 自动用主 API。想细腻点就填个 <b>Claude 系列</b>模型。
                     </p>
                 </div>
             </div>
 
             {!scheduleOn && (
-                <div className="text-[11px] text-slate-400 bg-slate-50 border border-dashed border-slate-200 rounded-lg px-3 py-2">
+                <div className="text-[11px] text-[#a892a3] bg-[#fffdfa] border border-[#eed6df] rounded-lg px-3 py-2">
                     尚未选择日程风格。选择「生活系」或「意识系」后，情绪/意识流会自动启用。
                 </div>
             )}
@@ -98,7 +98,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                             <button
                                 key={preset.id}
                                 onClick={() => loadPreset(preset)}
-                                className="flex items-center bg-white border border-slate-200 rounded-lg px-3 py-1 shadow-sm text-xs font-medium text-slate-600 hover:text-pink-500 hover:border-pink-200 active:scale-95 transition-all"
+                                className="flex items-center bg-white border border-[#eed6df] rounded-lg px-3 py-1 shadow-sm text-xs font-medium text-[#5a3140] hover:bg-[#fff4f7] active:scale-95 transition-all"
                             >
                                 {preset.name}
                                 <span className="ml-1.5 text-slate-300">{preset.config.model}</span>
@@ -114,7 +114,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">副 API 配置</label>
                     <button
                         onClick={() => setShowSavePreset(!showSavePreset)}
-                        className="text-[10px] bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
+                        className="text-[10px] bg-[#fff4f7] text-[#5a3140] border border-[#eed6df] px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
                     >
                         保存为预设
                     </button>
@@ -128,12 +128,12 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                             onChange={e => setNewPresetName(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleSavePreset()}
                             placeholder="预设名称..."
-                            className="flex-1 bg-white/50 border border-slate-200/60 rounded-xl px-3 py-2 text-sm focus:bg-white transition-all"
+                            className="flex-1 bg-[#fffdfa] border border-[#eed6df] rounded-xl px-3 py-2 text-sm focus:bg-white transition-all"
                             autoFocus
                         />
                         <button
                             onClick={handleSavePreset}
-                            className="px-4 py-2 bg-pink-500 text-white text-sm font-bold rounded-xl active:scale-95 transition-transform"
+                            className="px-4 py-2 bg-[#d8a5b7] text-[#fffdfa] text-sm font-bold rounded-xl active:scale-95 transition-transform"
                         >
                             保存
                         </button>
@@ -147,7 +147,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                         value={url}
                         onChange={e => { setUrl(e.target.value); setDirty(true); }}
                         placeholder="留空 = 使用主 API"
-                        className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
                     />
                 </div>
                 <div>
@@ -157,7 +157,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                         value={key}
                         onChange={e => { setKey(e.target.value); setDirty(true); }}
                         placeholder="sk-..."
-                        className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
                     />
                 </div>
                 <div>
@@ -167,7 +167,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                         value={model}
                         onChange={e => { setModel(e.target.value); setDirty(true); }}
                         placeholder="claude-haiku-4-5 / gpt-4o-mini / ..."
-                        className="w-full bg-white/50 border border-slate-200/60 rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
+                        className="w-full bg-[#fffdfa] border border-[#eed6df] rounded-xl px-4 py-2.5 text-sm font-mono focus:bg-white transition-all"
                     />
                 </div>
 
@@ -176,8 +176,8 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                     disabled={!dirty}
                     className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all ${
                         dirty
-                            ? 'bg-pink-500 text-white shadow-md active:scale-95'
-                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            ? 'bg-[#d8a5b7] text-[#fffdfa] shadow-sm active:scale-95'
+                            : 'bg-[#fff4f7] text-[#a892a3] cursor-not-allowed'
                     }`}
                 >
                     {dirty ? '保存副 API 配置' : '✓ 已保存'}
@@ -189,7 +189,7 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                 <div>
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">当前情绪状态</label>
-                        <button onClick={onClearBuffs} className="text-xs text-slate-400 hover:text-red-400 transition-colors">清除</button>
+                        <button onClick={onClearBuffs} className="text-xs text-[#a892a3] hover:text-[#5a3140] transition-colors">清除</button>
                     </div>
                     <div className="flex flex-wrap gap-2">
                         {buffs.map(buff => (
@@ -197,9 +197,9 @@ const EmotionSettingsPanel: React.FC<EmotionSettingsPanelProps> = ({
                                 key={buff.id}
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold"
                                 style={{
-                                    backgroundColor: buff.color ? buff.color + '22' : '#fdf2f8',
-                                    color: buff.color || '#db2777',
-                                    border: `1px solid ${buff.color ? buff.color + '55' : '#fbcfe8'}`
+                                    backgroundColor: '#fff4f7',
+                                    color: '#5a3140',
+                                    border: '1px solid #eed6df'
                                 }}
                             >
                                 {buff.emoji && <span>{buff.emoji}</span>}

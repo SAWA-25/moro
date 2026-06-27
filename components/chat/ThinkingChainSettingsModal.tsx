@@ -20,10 +20,10 @@ interface Props {
 const SAMPLE_CHAIN = '又叫乖乖猫咪……烦死了。算了也没那么烦，比起这个——午饭吃没吃？她又拿力学所当借口，呵，老一套。算了，先骂一句再问。';
 
 const STYLE_LIST: Array<{ id: ThinkingChainStyleId; name: string; sub: string }> = [
-    { id: 'echo',    name: '夜批', sub: '深夜墨纸 × 烫金批注' },
-    { id: 'whisper', name: '信笺', sub: '奶油信纸 × 玫瑰小字' },
-    { id: 'minimal', name: '便签', sub: '白纸黑字，素面朝天' },
-    { id: 'custom',  name: '自调', sub: '三种颜色自己配' },
+    { id: 'echo',    name: '重点样式', sub: '高对比度思考链卡片' },
+    { id: 'whisper', name: '浅色样式', sub: '淡色背景与柔和文字' },
+    { id: 'minimal', name: '极简样式', sub: '纯文字信息卡' },
+    { id: 'custom',  name: '自定义', sub: '手动配置背景、重点色、文字色' },
 ];
 
 const ColorField: React.FC<{ label: string; value: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => (
@@ -34,14 +34,14 @@ const ColorField: React.FC<{ label: string; value: string; onChange: (v: string)
             value={value.startsWith('#') ? value : '#1f2937'}
             onChange={e => onChange(e.target.value)}
             className="w-8 h-8 rounded cursor-pointer"
-            style={{ border: '1px dashed #ddc9d3' }}
+            style={{ border: '1px solid #eed6df' }}
         />
         <input
             type="text"
             value={value}
             onChange={e => onChange(e.target.value)}
-            className="flex-1 px-1 py-1.5 bg-transparent text-[11px] outline-none border-0 border-b border-dashed border-[#b0aa9e] focus:border-[#857f74] placeholder:text-[#a9a195]"
-            style={{ ...MONO_STACK, color: '#1f1d1a', caretColor: '#857f74' }}
+            className="flex-1 px-1 py-1.5 bg-transparent text-[11px] outline-none border-0 border-b border-[#eed6df] focus:border-[#d8a5b7] placeholder:text-[#a9a195]"
+            style={{ ...MONO_STACK, color: '#5a3140', caretColor: '#d8a5b7' }}
             placeholder="#rrggbb 或 css 渐变"
         />
     </label>
@@ -90,7 +90,7 @@ const StylePreview: React.FC<{ styleId: ThinkingChainStyleId; customColors: Thin
     );
 };
 
-/** 小节标头：打字机角标，与手账纸页统一 */
+/** 小节标头 */
 const SectionTag: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="text-[9px] mb-2 tracking-[0.22em] uppercase select-none" style={{ ...MONO_STACK, color: '#857f74' }}>{children}</div>
 );
@@ -104,11 +104,11 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
 
     return (
         <JournalSheet
-            open={isOpen} title="看看思绪" en="Marginalia" tall zClass="z-[200]"
-            sub="TA 回话之前，在页边写下的小字"
+            open={isOpen} title="思考链设置" en="Thinking Chain" tall zClass="z-[200]"
+            sub="控制是否显示模型返回的思考链内容"
             tape="sky" pattern="star" paper="lined"
             onClose={closeAndCommit}
-            footer={<SealBtn kind="rose" full onClick={closeAndCommit}>记好了</SealBtn>}
+            footer={<SealBtn kind="rose" full onClick={closeAndCommit}>保存设置</SealBtn>}
         >
             <div className="space-y-5">
                 {/* 0. 这是什么 / 看不见怎么办 */}
@@ -160,10 +160,10 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                     <div className="min-w-0 pointer-events-none">
                         <div className="flex items-center gap-1.5">
                             <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }} aria-hidden>✎</span>
-                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#1f1d1a' }}>让页边小字现身</span>
+                            <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: '#5a3140' }}>显示思考链</span>
                         </div>
                         <p className="text-[10px] mt-1 leading-relaxed" style={{ color: '#857f74' }}>
-                            关掉后，新回复不再贴「思绪」卡片；以前消息上已有的照旧留着。
+                            关闭后，新回复不再显示思考链卡片；已生成的旧消息保持不变。
                         </p>
                     </div>
                     <CandyToggle on={value.enabled} onToggle={() => onChange({ enabled: !value.enabled })} candy="#9dc1d5" />
@@ -171,7 +171,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
 
                 {/* 2. 卡片风格 */}
                 <div>
-                    <SectionTag>卡片穿什么</SectionTag>
+                    <SectionTag>显示样式</SectionTag>
                     <div className="grid grid-cols-2 gap-2.5">
                         {STYLE_LIST.map(item => {
                             const active = value.styleId === item.id;
@@ -182,7 +182,7 @@ const ThinkingChainSettingsModal: React.FC<Props> = ({ isOpen, onClose, value, o
                                     className="text-left p-2 transition-all active:scale-[0.97]"
                                     style={{
                                         background: active ? '#fdeef3' : 'rgba(255,253,250,0.7)',
-                                        border: active ? '1.5px solid #e6a3b8' : '1px dashed #ddc9d3',
+                                        border: active ? '1.5px solid #d8a5b7' : '1px solid #eed6df',
                                         borderRadius: '8px 14px 9px 14px',
                                         boxShadow: active ? '0 1px 3px rgba(122,90,114,0.2)' : 'none',
                                     }}

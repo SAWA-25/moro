@@ -3,12 +3,11 @@ import { DB } from './db';
 import { safeResponseJson, extractContent } from './safeApi';
 
 /**
- * 回望小报（昨日来信 / 回望·周章 / 回望·月章）。
+ * 回顾摘要（日回顾 / 周回顾 / 月回顾）。
  *
  * 把过去一天 / 一周 / 一月里你们之间真实发生的事（聊天、角色的离线碎碎念、日记、
- * 朋友圈/动态、拍下的照片、临近的纪念日）整理成一份**娱乐小报**：由角色当"主笔"，
- * 用八卦小报的腔调回望这段日子——头条、栏目、边栏花絮、结尾签名。素材全部来自真实
- * 记录，不凭空编造。开关在会话设置 convoSettings.tabloidEnabled。
+ * 朋友圈/动态、拍下的照片、临近的纪念日）整理成一份关系回顾摘要。素材全部来自真实记录，
+ * 不凭空编造。开关在会话设置 convoSettings.tabloidEnabled。
  *
  * 生成结果缓存在 char.generatedTabloids[key]（同一天/周/月复用，可手动重做）。
  */
@@ -20,12 +19,12 @@ export interface TabloidApi { baseUrl: string; apiKey: string; model: string }
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const TABLOID_META: Record<TabloidPeriod, { label: string; en: string; sub: string; spanMs: number; windowLabel: string }> = {
-    day:   { label: '昨日来信', en: "YESTERDAY'S POST", sub: '把过去一天揉成一份小报', spanMs: DAY_MS,       windowLabel: '过去这一天' },
-    week:  { label: '回望·周章', en: 'WEEKLY CHAPTER',   sub: '把过去一周揉成一份小报', spanMs: 7 * DAY_MS,  windowLabel: '过去这一周' },
-    month: { label: '回望·月章', en: 'MONTHLY CHAPTER',  sub: '把过去一月揉成一份小报', spanMs: 30 * DAY_MS, windowLabel: '过去这一个月' },
+    day:   { label: '日回顾', en: 'DAILY RECAP', sub: '整理过去一天的聊天与日常', spanMs: DAY_MS,       windowLabel: '过去这一天' },
+    week:  { label: '周回顾', en: 'WEEKLY RECAP', sub: '整理过去一周的聊天与日常', spanMs: 7 * DAY_MS,  windowLabel: '过去这一周' },
+    month: { label: '月回顾', en: 'MONTHLY RECAP', sub: '整理过去一月的聊天与日常', spanMs: 30 * DAY_MS, windowLabel: '过去这一个月' },
 };
 
-/** 周期缓存键：同一天/同一周/同一月复用同一份小报 */
+/** 周期缓存键：同一天/同一周/同一月复用同一份回顾 */
 export const tabloidKey = (period: TabloidPeriod, ref: number = Date.now()): string => {
     const d = new Date(ref);
     const y = d.getFullYear();
@@ -67,7 +66,7 @@ const summarizeMsg = (m: Message): string => {
     }
 };
 
-/** 收集某段时间窗口里你们之间真实发生的素材，拼成一份给 LLM 的"剪报底稿" */
+/** 收集某段时间窗口里你们之间真实发生的素材，拼成一份给 LLM 的回顾素材 */
 const gatherDigest = async (char: CharacterProfile, user: UserProfile, from: number, to: number): Promise<{ digest: string; hasMaterial: boolean }> => {
     const inRange = (ts: number) => typeof ts === 'number' && ts >= from && ts < to;
 
@@ -105,7 +104,7 @@ const gatherDigest = async (char: CharacterProfile, user: UserProfile, from: num
         .map((g: any) => `· 一张照片${g.review ? `，TA 当时的点评：${String(g.review).slice(0, 80)}` : ''}`)
         .slice(0, 12);
 
-    // 临近的纪念日（窗口内或紧随其后 30 天）——给小报一点"前瞻花絮"
+    // 临近的纪念日（窗口内或紧随其后 30 天）——给回顾一点提醒。
     const nowYear = new Date(to).getFullYear();
     const upcoming = (annivs || [])
         .map((a: any) => {
@@ -155,7 +154,7 @@ const safeParseTabloid = (raw: string): Partial<Tabloid> | null => {
     };
 };
 
-/** 生成一份回望小报（不写库，由调用方决定缓存到 char.generatedTabloids） */
+/** 生成一份回顾摘要（不写库，由调用方决定缓存到 char.generatedTabloids） */
 export const generateTabloid = async (
     char: CharacterProfile, user: UserProfile, api: TabloidApi, period: TabloidPeriod,
 ): Promise<Tabloid> => {
@@ -165,13 +164,13 @@ export const generateTabloid = async (
     const meta = TABLOID_META[period];
 
     const persona = [
-        `主笔：${char.name}`,
-        char.systemPrompt ? `主笔人设（决定小报的腔调）：${String(char.systemPrompt).slice(0, 800)}` : '',
+        `整理者：${char.name}`,
+        char.systemPrompt ? `角色设定（决定回顾的语气）：${String(char.systemPrompt).slice(0, 800)}` : '',
     ].filter(Boolean).join('\n');
 
     const prompt = `### 任务
-你是「${char.name}」，要为${meta.windowLabel}和「${user.name}」之间的点滴出一期**娱乐小报**（就像八卦杂志/校园周报那种轻松、俏皮、有梗的腔调）。
-小报由你亲自当主笔，回望这段日子里你们之间真实发生的事，写得有趣、有温度、有你自己的语气和小心思。
+你是「${char.name}」，要把${meta.windowLabel}和「${user.name}」之间真实发生的点滴整理成一份**关系回顾摘要**。
+这份回顾由你亲自整理，语气自然、亲近、克制，有温度，也要能看出你自己的感受。
 
 ${persona}
 
@@ -179,25 +178,25 @@ ${persona}
 ${digest || '（这段时间几乎没有新鲜事——你们没怎么联系，记录也很少。）'}
 
 ### 写作要求
-1. 腔调像娱乐小报/八卦周刊：起花哨的标题、用夸张俏皮的笔法，但**所有内容必须基于上面的真实素材**，不能编造没发生过的事。
-2. 用第一人称「我」（${char.name}）当主笔，字里行间能看出你对${user.name}的态度和情绪。
-3. 如果素材很少，就坦诚又可爱地拿"这周静悄悄"做文章（比如《本期头条：失踪人口竟是你》），不要硬编。
-4. 1~4 个栏目，每个栏目一个小标题 + 一段正文，可选配一句"金句/语录"。
-5. 给几条边栏花絮（sidebar）当小料；结尾来一句俏皮的签名（signoff）。
+1. 所有内容必须基于上面的真实素材，不能编造没发生过的事。
+2. 用第一人称「我」（${char.name}）整理，字里行间能看出你对${user.name}的态度和情绪。
+3. 如果素材很少，就坦诚说明这段时间记录不多，可以轻轻带一点想念或遗憾，不要硬编。
+4. 1~4 个栏目，每个栏目一个简短标题 + 一段正文，可选配一句印象深的原话或总结。
+5. sidebar 写成几条补充记录或待留意的小事；signoff 写一句自然的收尾。
 
 ### 输出（只输出一个 JSON 对象，不要任何额外文字）
-{"headline":"头版大标题","subhead":"副标/期号小字","editorNote":"主笔开场白(50-120字)","sections":[{"tag":"头版","title":"栏目标题","body":"栏目正文(60-180字)","quote":"可选金句"}],"sidebar":["花絮1","花絮2"],"signoff":"结尾签名"}`;
+{"headline":"回顾标题","subhead":"简短说明","editorNote":"开场摘要(50-120字)","sections":[{"tag":"分类","title":"栏目标题","body":"栏目正文(60-180字)","quote":"可选原话或总结"}],"sidebar":["补充记录1","补充记录2"],"signoff":"结尾签名"}`;
 
     const raw = await callLLM(api, prompt);
     const parsed = safeParseTabloid(raw);
-    if (!parsed || !parsed.headline) throw new Error('小报解析失败，请重试');
+    if (!parsed || !parsed.headline) throw new Error('回顾解析失败，请重试');
 
     return {
         period,
         headline: parsed.headline,
         subhead: parsed.subhead,
         editorNote: parsed.editorNote,
-        sections: parsed.sections && parsed.sections.length ? parsed.sections : [{ tag: '编者按', title: '这一期', body: parsed.editorNote || '这段日子静悄悄的。', quote: undefined }],
+        sections: parsed.sections && parsed.sections.length ? parsed.sections : [{ tag: '摘要', title: '这一期', body: parsed.editorNote || '这段日子记录不多。', quote: undefined }],
         sidebar: parsed.sidebar,
         signoff: parsed.signoff,
         rangeFrom: from,

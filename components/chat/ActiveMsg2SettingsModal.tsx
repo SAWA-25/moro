@@ -175,14 +175,14 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
           这是新的云端主动消息入口。它会把当前角色设定、最近聊天快照和推送订阅一起提交到主动消息标准服务里。长周期循环任务建议在剧情变化后重新保存一次，避免使用过旧的上下文。
         </p>
 
-        <div className="flex items-center justify-between bg-[#f2efe4] border border-[#d9d3c7] rounded-2xl p-4">
+        <div className="flex items-center justify-between bg-[#fff4f7] border border-[#eed6df] rounded-2xl p-4">
           <div>
-            <div className="font-bold text-slate-700">启用主动消息 2.0</div>
-            <div className="text-xs text-[#1f1d1a] mt-1">{pushSummary || '正在检查 Push 状态...'}</div>
+            <div className="font-bold text-[#5a3140]">启用主动消息 2.0</div>
+            <div className="text-xs text-[#a892a3] mt-1">{pushSummary || '正在检查 Push 状态...'}</div>
           </div>
           <button
             onClick={() => setEnabled(!enabled)}
-            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
+            className={`w-12 h-7 rounded-full transition-colors relative ${enabled ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
@@ -205,10 +205,10 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                   <button
                     key={option.id}
                     onClick={() => setMode(option.id)}
-                    className={`w-full text-left rounded-2xl border px-4 py-3 transition-all ${mode === option.id ? 'bg-[#1f1d1a] text-white border-[#1f1d1a]' : 'bg-white border-slate-200 text-slate-600'}`}
+                    className={`w-full text-left rounded-2xl border px-4 py-3 transition-all ${mode === option.id ? 'bg-[#d8a5b7] text-white border-[#d8a5b7]' : 'bg-white border-slate-200 text-slate-600'}`}
                   >
                     <div className="font-bold">{option.label}</div>
-                    <div className={`text-xs mt-1 ${mode === option.id ? 'text-[#cfc7b8]' : 'text-slate-400'}`}>{option.desc}</div>
+                    <div className={`text-xs mt-1 ${mode === option.id ? 'text-white/75' : 'text-slate-400'}`}>{option.desc}</div>
                   </button>
                 ))}
               </div>
@@ -231,7 +231,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                   <button
                     key={option.id}
                     onClick={() => setRecurrenceType(option.id)}
-                    className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${recurrenceType === option.id ? 'bg-[#1f1d1a] text-white border-[#1f1d1a]' : 'bg-white border-slate-200 text-slate-600'}`}
+                    className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${recurrenceType === option.id ? 'bg-[#d8a5b7] text-white border-[#d8a5b7]' : 'bg-white border-slate-200 text-slate-600'}`}
                   >
                     {option.label}
                   </button>
@@ -288,7 +288,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
                 </div>
                 <button
                   onClick={() => setUseSecondaryApi(!useSecondaryApi)}
-                  className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-[#2b2933]' : 'bg-[#e7e2d8]'}`}
+                  className={`w-12 h-7 rounded-full transition-colors relative ${useSecondaryApi ? 'bg-[#d8a5b7]' : 'bg-[#e7e2d8]'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${useSecondaryApi ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>

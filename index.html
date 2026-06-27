@@ -1521,56 +1521,79 @@
         pointer-events: none;
       }
 
-      /* ════════════════ 来往 · ins 风皮肤（与手帐拼贴融合）════════════════
-         干净留白 + 发丝描边 + 大圆角 + 极柔投影；去掉拼贴账本的虚线描边 / 纸片微旋转 / 网点纸纹，
-         但留住圆润温度与柔和配色。仅作用在 .moro-laiwang 作用域内（来往），不影响折子戏等「黑白拼贴手账」身份。
+      /* ════════════════ 来往 · 淡色照片感皮肤 ════════════════
+         干净留白 + 暖白底 + 淡玫瑰发丝线 + 极柔投影；去掉拼贴账本的虚线描边 / 纸片微旋转 / 网点纸纹。
+         仅作用在 .moro-laiwang 作用域内（来往），不影响折子戏等「黑白拼贴手账」身份。
          注意：.moro-laiwang 只作纯作用域钩子、自身不设背景——聊天页有自己的皮肤底色/壁纸，别被这层盖掉。 */
-      /* 黑白灰主色调：作用域内把主题色整体去饱和成中性墨灰，一举改掉所有 primary 强调色
-         （bg-/text-/border-/ring-primary 全部变灰），营造 ins 杂志拼贴的单色编辑部观感——
-         但角色头像保留原彩色，聊天正文图片/贴纸/表情的内容色也不动。 */
       .moro-laiwang {
-        --primary-hue: 30;
-        --primary-sat: 0%;
-        --primary-lightness: 22%;
-        --ink: #1f1d1a;
-        --ink-soft: #857f74;
-        --glass-border: rgba(176, 170, 158, 0.55);
+        --primary-hue: 340;
+        --primary-sat: 26%;
+        --primary-lightness: 64%;
+        --ink: #5a3140;
+        --ink-soft: #a892a3;
+        --glass-border: rgba(238, 214, 223, 0.82);
       }
-      /* 角色头像 / 故事环头像保持原彩色（不再去色）；仅显式挂 .moro-mono 的装饰图转黑白。 */
-      .moro-laiwang .moro-mono { filter: grayscale(1) contrast(1.03); }
-      /* 卡片：纯白 + 发丝线 + 大圆角 + 极柔投影（覆盖 .scrap-card 的虚线描边/纸面投影） */
+      /* 角色头像和聊天正文图片保留原图；仅显式挂 .moro-mono 的装饰图轻微降饱和。 */
+      .moro-laiwang .moro-mono { filter: saturate(.72) contrast(1.01); }
       .moro-laiwang .scrap-card {
-        background: #ffffff;
-        border: 1px solid #ededed;
+        background: #fffdfa;
+        border: 1px solid #eed6df;
         outline: none;
         border-radius: 20px;
-        box-shadow: 0 1px 2px rgba(38, 38, 38, 0.04), 0 14px 30px -24px rgba(38, 38, 38, 0.22);
+        box-shadow: 0 1px 2px rgba(122, 90, 114, 0.05), 0 14px 30px -24px rgba(122, 90, 114, 0.24);
       }
-      /* 去掉列表卡片的拼贴微旋转 */
       .moro-laiwang .scrap-list > .scrap-card,
       .moro-laiwang .scrap-list > .scrap-card:nth-child(5n + 2),
       .moro-laiwang .scrap-list > .scrap-card:nth-child(5n + 4) { rotate: 0deg; }
-      /* 去掉网点纸纹底，换 ins 纯净浅底 */
-      .moro-laiwang.scrap-panel, .moro-laiwang .scrap-panel { background-image: none; background-color: #fafafa; }
-      /* 按钮：去虚线描边，干净圆角 */
-      .moro-laiwang .scrap-btn { outline: none; border-radius: 14px; box-shadow: 0 8px 20px -12px rgba(38, 38, 38, 0.5); }
-      .moro-laiwang .scrap-btn-paper { outline: none; border: 1px solid #ededed; border-radius: 14px; box-shadow: none; }
-      /* 文具盒贴纸/纸条：撕掉胶带与虚线，转成干净浅卡（来往输入面板更 ins） */
-      .moro-laiwang .scrap-tile { outline: none; border: 1px solid #ededed; border-radius: 16px; box-shadow: 0 1px 2px rgba(38, 38, 38, 0.04); }
+      .moro-laiwang.scrap-panel, .moro-laiwang .scrap-panel { background-image: none; background-color: #fffdfa; }
+      .moro-laiwang .scrap-btn { outline: none; border-radius: 14px; background: #d8a5b7; box-shadow: 0 8px 20px -12px rgba(122, 90, 114, 0.42); }
+      .moro-laiwang .scrap-btn-paper { outline: none; border: 1px solid #eed6df; border-radius: 14px; box-shadow: none; }
+      .moro-laiwang .scrap-tile { outline: none; border: 1px solid #eed6df; border-radius: 16px; box-shadow: 0 1px 2px rgba(122, 90, 114, 0.05); }
       .moro-laiwang .scrap-tile::after, .moro-laiwang .stationery-strip::before { display: none; }
-      .moro-laiwang .stationery-strip { outline: none; border: 1px solid #ededed; border-radius: 14px; }
-      /* 来往作用域里的滑动指示条：黑白灰墨条（去掉 IG 彩虹渐变） */
-      .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, transparent, #1f1d1a, transparent); }
-
-      /* 全域去「拼贴」信号：来往作用域内一律把虚线描边换成实线发丝线（弹窗/朋友圈/情侣空间/群聊通吃）。
-         只改 border-style，不动盒模型尺寸，安全。 */
+      .moro-laiwang .stationery-strip {
+        outline: none;
+        border: 1px solid #eed6df;
+        border-radius: 16px;
+        background: #fffdfa;
+        box-shadow: 0 8px 18px -16px rgba(122, 90, 114, 0.28);
+      }
+      .moro-laiwang .stationery-strip-ink {
+        background: #d8a5b7;
+        border-color: #d8a5b7;
+      }
+      .moro-laiwang .stamp-box {
+        background: #fff4f7;
+        color: #9c5e74;
+        outline: none;
+        border: 1px solid #eed6df;
+        border-radius: 12px;
+      }
+      .moro-laiwang .stationery-strip-ink .stamp-box {
+        background: rgba(255, 255, 255, 0.28);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.34);
+      }
+      .moro-laiwang .drawer-tag > span {
+        background: #fff4f7;
+        color: #9c5e74;
+        border: 1px solid #eed6df;
+        border-radius: 9999px;
+        rotate: 0deg;
+      }
+      .moro-laiwang .drawer-tag::after { border-top: 1px solid #eed6df; }
+      .moro-laiwang .stationery-grid > .stationery-strip:nth-child(odd),
+      .moro-laiwang .stationery-grid > .stationery-strip:nth-child(even) { rotate: 0deg; }
+      .moro-laiwang .wax-dot {
+        background: #fff;
+        box-shadow: 0 0 0 2px rgba(216, 165, 183, 0.65);
+      }
+      .moro-laiwang .moro-tab-ink { background: linear-gradient(90deg, transparent, #d8a5b7, transparent); }
       .moro-laiwang .border-dashed { border-style: solid; }
-      /* 群聊/朋友圈/情侣空间等也在作用域内，跟随上面的 token 去饱和 + 发丝线 + 去色头像一起化为黑白灰。 */
 
-      /* IG 故事环：灰阶描边 + 白缝 + 去色头像（用于「此刻」有动态的活跃角色，单色 story ring） */
+      /* 故事环：淡玫瑰描边 + 白缝 */
       .ig-ring {
         display: inline-flex; padding: 2.5px; border-radius: 9999px;
-        background: conic-gradient(from 30deg, #dcd7cd, #6b665d, #1f1d1a, #6b665d, #dcd7cd, #1f1d1a);
+        background: conic-gradient(from 30deg, #f7e6ed, #d8a5b7, #fff4f7, #c98ca3, #f7e6ed);
       }
       .ig-ring > img { border: 2px solid #fff; }
 
@@ -1605,14 +1628,14 @@
       @keyframes insCardIn { from { opacity: 0; transform: translateY(16px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
       .animate-ins-card { animation: insCardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
-      /* 彩色 IG 故事环（拍立得/ins 基调的活跃描边）：经典日落渐变，缓慢旋转 */
+      /* 淡玫瑰故事环（拍立得/ins 基调的活跃描边）：克制低饱和，缓慢旋转 */
       @keyframes insRingSpin { to { transform: rotate(360deg); } }
       .ins-ring {
         position: relative; display: inline-flex; padding: 2.5px; border-radius: 9999px; isolation: isolate;
       }
       .ins-ring::before {
         content: ''; position: absolute; inset: 0; border-radius: inherit; z-index: -1;
-        background: conic-gradient(from 0deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5, #feda75);
+        background: conic-gradient(from 0deg, #fff4f7, #ead5df, #d8a5b7, #c98ca3, #f7e6ed, #fff4f7);
         animation: insRingSpin 6s linear infinite;
       }
       .ins-ring > img, .ins-ring > div { border: 2.5px solid #fff; }
@@ -1629,9 +1652,9 @@
       /* 暖白画布底（App 外壳） */
       .ins-canvas { background: #f7f5f2; }
 
-      /* 渐变文字（IG 日落色，用于点睛标题） */
+      /* 渐变文字（淡玫瑰，用于点睛标题） */
       .ins-gradient-text {
-        background: linear-gradient(120deg, #fa7e1e, #d62976 45%, #962fbf 80%);
+        background: linear-gradient(120deg, #ead5df, #d8a5b7 45%, #c98ca3 80%);
         -webkit-background-clip: text; background-clip: text;
         -webkit-text-fill-color: transparent; color: transparent;
       }

@@ -49,7 +49,7 @@ const AI_PROMPT = `你是一个 CSS 设计师。我在用一个叫 Moro 的「�
 
 【输出要求】
 直接输出一整段可用的 CSS（可以带少量注释说明），不需要长篇解释。
-我现在想要的风格是：______（在这里填你的需求，例如「赛博朋克霓虹」「和风温泉」「Y2K 千禧辣妹」「极简性冷淡」等）`;
+我现在想要的风格是：______（在这里填你的需求，例如「淡粉白」「极简奶白」「拍立得边框」「私聊设置同款」等）`;
 
 type Preset = { name: string; code: string; swatch?: string };
 
@@ -237,6 +237,7 @@ const PRESETS: Preset[] = [
 @keyframes moro-ember{0%,100%{box-shadow:0 0 .5rem rgba(224,102,74,.6), inset 0 .1rem .2rem rgba(255,255,255,.35);}50%{box-shadow:0 0 .9rem rgba(246,178,107,.95), inset 0 .1rem .2rem rgba(255,255,255,.4);}}`,
     },
 ];
+const SOFT_PRESETS = PRESETS.filter((p) => p.name === '极简白');
 
 // 自定义预设存 IndexedDB（STORE_ASSETS，随 app 备份/导出一起走）；旧 localStorage 自动一次性迁移过来。
 const PRESET_ASSET_KEY = 'chrome_css_presets';
@@ -314,29 +315,29 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
         window.alert(`已导入 ${incoming.length} 套预设。`);
     };
 
-    const cardCls = 'group relative h-14 w-[78px] shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-95';
-    const cardLabelCls = 'absolute inset-x-0 bottom-0 truncate px-1.5 py-1 text-[10px] font-bold text-white';
+    const cardCls = 'group relative h-14 w-[78px] shrink-0 overflow-hidden rounded-xl border border-[#eed6df] shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-95';
+    const cardLabelCls = 'absolute inset-x-0 bottom-0 truncate px-1.5 py-1 text-[10px] font-bold text-[#5a3140]';
 
     return (
         <div className="space-y-4">
             {/* 需要灵感：复制提示词给 AI */}
             <button onClick={handleCopyPrompt}
-                className="flex w-full items-center gap-2.5 rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-3.5 py-3 text-left transition-all hover:from-indigo-100 hover:to-violet-100 active:scale-[0.99]">
-                <span className="text-lg leading-none">{copied ? '✓' : '🪄'}</span>
+                className="flex w-full items-center gap-2.5 rounded-2xl border border-[#eed6df] bg-[#fffdfa] px-3.5 py-3 text-left transition-all hover:bg-[#fff4f7] active:scale-[0.99]">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#eed6df] bg-[#fff4f7] text-[11px] font-black text-[#5a3140]">{copied ? '✓' : 'AI'}</span>
                 <span className="min-w-0">
-                    <span className="block text-[12px] font-bold text-indigo-700">{copied ? '已复制！丢给任意 AI 即可' : '让 AI 帮你写一套'}</span>
-                    <span className="block text-[10px] leading-snug text-indigo-400">复制提示词 → 发给任何 AI，说出你想要的风格，把它给的 CSS 粘回来</span>
+                    <span className="block text-[12px] font-bold text-[#5a3140]">{copied ? '已复制，可交给任意 AI' : '让 AI 帮你写一套'}</span>
+                    <span className="block text-[10px] leading-snug text-[#a892a3]">复制提示词 → 说明想要的淡色风格，把生成的 CSS 粘回来</span>
                 </span>
             </button>
 
             {/* 内置风格：缩略色块卡片 */}
             <div>
-                <div className="mb-2 text-[11px] font-bold text-slate-500">内置风格 <span className="font-normal text-slate-400">· 点一下套用</span></div>
+                <div className="mb-2 text-[11px] font-bold text-[#5a3140]">淡色风格 <span className="font-normal text-[#a892a3]">· 点一下套用</span></div>
                 <div className="flex flex-wrap gap-2">
-                    {PRESETS.map((p) => (
+                    {SOFT_PRESETS.map((p) => (
                         <button key={p.name} onClick={() => onChange(p.code)} title={p.name} className={cardCls}>
                             <span className="absolute inset-0" style={{ background: p.swatch }} />
-                            <span className={cardLabelCls} style={{ background: 'linear-gradient(to top, rgba(0,0,0,.5), transparent)' }}>{p.name}</span>
+                            <span className={cardLabelCls} style={{ background: 'rgba(255,244,247,.88)' }}>{p.name}</span>
                         </button>
                     ))}
                 </div>
@@ -356,15 +357,15 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                         <div key={p.name} className={cardCls}>
                             <button onClick={() => onChange(p.code)} title={p.name} className="absolute inset-0">
                                 <span className="absolute inset-0" style={{ background: extractSwatch(p.code) }} />
-                                <span className={cardLabelCls} style={{ background: 'linear-gradient(to top, rgba(0,0,0,.5), transparent)' }}>{p.name}</span>
+                                <span className={cardLabelCls} style={{ background: 'rgba(255,244,247,.88)' }}>{p.name}</span>
                             </button>
                             <button onClick={() => handleDeletePreset(p.name)} title="删除"
-                                className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/45 text-[10px] leading-none text-white opacity-80 hover:bg-rose-500">×</button>
+                                className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full border border-[#eed6df] bg-[#fffdfa] text-[10px] leading-none text-[#5a3140] opacity-90 shadow-sm hover:bg-[#fff4f7]">×</button>
                         </div>
                     ))}
                     {/* 保存当前为预设 */}
                     <button onClick={handleSavePreset} disabled={!value.trim()} title={value.trim() ? '把当前 CSS 存为预设' : '先写点 CSS'}
-                        className={`flex h-14 w-[78px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed text-[10px] font-bold transition-all active:scale-95 ${value.trim() ? 'border-emerald-300 text-emerald-600 hover:bg-emerald-50' : 'border-slate-200 text-slate-300'}`}>
+                        className={`flex h-14 w-[78px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border text-[10px] font-bold transition-all active:scale-95 ${value.trim() ? 'border-[#eed6df] text-[#5a3140] hover:bg-[#fff4f7]' : 'border-[#eed6df] text-[#a892a3]'}`}>
                         <span className="text-lg leading-none">＋</span>存当前
                     </button>
                 </div>
@@ -379,13 +380,13 @@ const ChromeCssEditor: React.FC<{ value: string; onChange: (css: string) => void
                 <textarea
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
-                    placeholder={'/* 点上面任一套，或在这里直接写 / 粘贴 CSS */\n.moro-chat-header{\n  background: linear-gradient(135deg,#ffe3ef,#f1e7ff) !important;\n  border-bottom: none !important;\n}'}
+                    placeholder={'/* 点上面任一套，或在这里直接写 / 粘贴 CSS */\n.moro-chat-header{\n  background: #fffdfa !important;\n  border-bottom: 1px solid #eed6df !important;\n}'}
                     spellCheck={false}
                     rows={8}
-                    className="w-full resize-y rounded-2xl border border-slate-700 bg-slate-900 p-4 font-mono text-xs leading-relaxed text-slate-200 outline-none focus:border-primary/50 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    className="w-full resize-y rounded-2xl border border-[#eed6df] bg-[#fffdfa] p-4 font-mono text-xs leading-relaxed text-[#5a3140] outline-none placeholder:text-[#a892a3] focus:border-[#d8a5b7] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 />
                 <div className="mt-1.5 text-[10px] leading-relaxed text-slate-400">
-                    可用选择器：<code className="rounded bg-slate-100 px-1 text-slate-500">.moro-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -inputbar / -panel / -root</code>
+                    可用选择器：<code className="rounded bg-[#fff4f7] px-1 text-[#8b5b6b]">.moro-chat-header / -avatar / -name / -buffs / -token / -trigger / -back / -status / -inputbar / -panel / -root</code>
                 </div>
             </div>
         </div>

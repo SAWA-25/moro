@@ -72,21 +72,21 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
     return (
         <JournalSheet
             open={isOpen} title="TA 的日常" en="Daily Life"
-            sub={`${char.name} 自己的生活轨迹`}
-            tape="mint" pattern="dot" paper="sage"
+            sub={`${char.name} 的离线生活记录`}
+            tape="blush" pattern="dot" paper="plain"
             onClose={onClose}
             tall
-            footer={<SealBtn kind="rose" onClick={onClose}>看完啦</SealBtn>}
+            footer={<SealBtn kind="rose" onClick={onClose}>关闭</SealBtn>}
         >
             {loading ? (
-                <div className="py-10 text-center text-[11px]" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>翻看中…</div>
+                <div className="py-10 text-center text-[11px]" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>加载中…</div>
             ) : events.length === 0 ? (
                 <div className="py-8 px-3 text-center">
-                    <div className="text-[26px] mb-2" aria-hidden>🌱</div>
+                    <div className="mx-auto mb-3 w-10 h-10 rounded-full flex items-center justify-center text-[18px]" style={{ color: '#d8a5b7', border: '1px solid #eed6df', background: '#fffdfa' }} aria-hidden>♡</div>
                     <p className="text-[11.5px] leading-relaxed" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>
                         还没有 {char.name} 的日常记录。<br />
-                        在「悄悄来信」里开启<b>「让 TA 过自己的生活」</b>后，<br />
-                        你不在身边时，TA 会慢慢攒下属于自己的故事。
+                        在「聊天设置」里启用<b>「离线生活取材」</b>后，<br />
+                        TA 离线时的日常会整理在这里。
                     </p>
                 </div>
             ) : (
@@ -96,7 +96,7 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                             {/* 日期标签 */}
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="text-[10px] font-bold tracking-[0.15em] px-2 py-0.5 rounded-full"
-                                    style={{ ...MONO_STACK, color: '#3f7d5c', background: 'rgba(191,225,207,0.4)' }}>{group.day}</span>
+                                    style={{ ...MONO_STACK, color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{group.day}</span>
                                 <span className="flex-1 h-px" style={{ background: 'rgba(122,90,114,0.12)' }} />
                             </div>
                             {/* 时间线 */}
@@ -106,21 +106,21 @@ const LifeRecapModal: React.FC<LifeRecapModalProps> = ({ isOpen, onClose, char }
                                         {/* 时间轴节点 + 竖线 */}
                                         <div className="flex flex-col items-center pt-1 shrink-0" style={{ width: 38 }}>
                                             <span className="text-[9px]" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{timeLabel(ev.timestamp)}</span>
-                                            <span className="w-1.5 h-1.5 rounded-full mt-1" style={{ background: '#bfa3dd' }} />
+                                            <span className="w-1.5 h-1.5 rounded-full mt-1" style={{ background: '#d8a5b7' }} />
                                         </div>
                                         {/* 内容卡 */}
                                         <div className="flex-1 min-w-0 rounded-[9px] px-3 py-2"
-                                            style={{ background: 'rgba(255,255,255,0.62)', border: '1px dashed rgba(122,90,114,0.18)' }}>
+                                            style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
                                             <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words" style={{ ...CUTE_STACK, color: PAPER_TONES.ink, overflowWrap: 'anywhere' }}>{sanitizeLifeText(ev.activity) || ev.activity}</p>
                                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                                 {ev.mood && (
-                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#7a3845', background: 'rgba(251,184,200,0.32)' }}>{ev.mood}</span>
+                                                    <span className="text-[9.5px] px-1.5 py-0.5 rounded-full" style={{ color: '#5a3140', background: '#fff4f7', border: '1px solid #eed6df' }}>{ev.mood}</span>
                                                 )}
                                                 {ev.location && (
-                                                    <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>📍{ev.location}</span>
+                                                    <span className="text-[9.5px] break-words min-w-0" style={{ color: PAPER_TONES.inkFaint, overflowWrap: 'anywhere' }}>位置：{ev.location}</span>
                                                 )}
                                                 {ev.surfacedAsMsg && (
-                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#5a7d9a', background: 'rgba(157,193,213,0.28)' }}>已跟你说过</span>
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ ...MONO_STACK, color: '#a892a3', background: '#fff4f7', border: '1px solid #eed6df' }}>已跟你说过</span>
                                                 )}
                                             </div>
                                         </div>
