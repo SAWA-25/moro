@@ -13,14 +13,15 @@ import { generateImage } from '../utils/imageGen';
 import { useVoiceRecorder } from '../components/chat/useVoiceRecorder';
 import { DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import { exportGroupChatArchive, parseGroupChatArchive, buildGroupChatFilename, serializeGroupChatJsonl } from '../utils/groupChatArchive';
-import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, Signpost, FastForward, Prohibit, Export } from '@phosphor-icons/react';
+import { UsersThree, ChatsTeardrop, AddressBook, Planet, HandPointing, SpeakerSlash, Crown, GearSix, Sticker, Paperclip, Scissors, Coins, ImageSquare, IdentificationCard, CassetteTape, MapTrifold, PaintBrush, HandTap, PhoneOutgoing, HandHeart, Detective, EnvelopeOpen, Scroll, Wind, CalendarCheck, Lightbulb, Hamburger, BookBookmark, Eraser, StopCircle, Trash, Microphone, Wallet, Heart, Megaphone, MagnifyingGlass, XCircle, ChartBar, ListNumbers, ShareNetwork, Copy, ClockCounterClockwise, PencilSimpleLine, MapPin, BellRinging, DownloadSimple, UploadSimple, PushPin, PushPinSlash, FileText, FastForward, Prohibit, Export } from '@phosphor-icons/react';
 import MomentsFeed from '../components/moments/MomentsFeed';
 import CoupleSpace from '../components/couple/CoupleSpace';
 import RelationshipNetwork from '../components/chat/RelationshipNetwork';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
+import GroupOfflineModeModal from '../components/chat/GroupOfflineModeModal';
 import { isAutonomousLifeEnabled, sanitizeLifeText } from '../utils/autonomousLife';
 import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, buildGroupRedPacketMetadata, isPasswordRedPacketPhraseAccepted } from '../utils/redPacket';
-import { OFFLINE_OPENING_PRESETS, resolveOpeningFrame, type OfflineOpeningPreset } from '../utils/offlineMode';
+import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 
@@ -98,6 +99,7 @@ const GroupMessageItem = React.memo(({
     isUser,
     char,
     userAvatar,
+    userName,
     onImageClick,
     selectionMode,
     isSelected,
@@ -123,6 +125,7 @@ const GroupMessageItem = React.memo(({
     isUser: boolean,
     char?: CharacterProfile,
     userAvatar: string,
+    userName?: string,
     onImageClick: (url: string) => void,
     selectionMode: boolean,
     isSelected: boolean,
@@ -160,7 +163,7 @@ const GroupMessageItem = React.memo(({
     specialCare?: boolean
 }) => {
     const avatar = isUser ? userAvatar : char?.avatar;
-    const name = isUser ? '我' : displayName || char?.name || '未知成员';
+    const name = isUser ? (userName || '我') : displayName || char?.name || '未知成员';
     const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const startPos = useRef({ x: 0, y: 0 });
     // 头像单击/双击区分：260ms 内第二次点击 = 戳一戳
@@ -526,7 +529,7 @@ const GroupMessageItem = React.memo(({
             }
             default:
                 return (
-                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed whitespace-pre-wrap break-all ${isUser ? 'bg-[#fff4f7] text-[#5a3140] rounded-tr-sm' : 'bg-[#fffdfa] text-[#5a3140] rounded-tl-sm border border-[#eed6df]'}`}>
+                    <div className={`px-3.5 py-2 rounded-[18px] text-[15px] leading-relaxed whitespace-pre-wrap break-all bg-[#f2f2f2] text-[#262626] ${isUser ? 'rounded-tr-sm' : 'rounded-tl-sm'}`}>
                         {renderTextWithMentions(msg.content)}
                     </div>
                 );
@@ -567,17 +570,16 @@ const GroupMessageItem = React.memo(({
             )}
 
             <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[80%] ${selectionMode ? 'pointer-events-none' : ''}`}>
-                {!isUser && (
-                    <span className="text-[10px] text-slate-400 ml-1 mb-1 flex items-center gap-1">
-                        {specialCare && (
-                            <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
-                        )}
-                        {memberTitle && (
-                            <span className="px-1 py-px rounded bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] text-[8px] font-bold leading-tight">{memberTitle}</span>
-                        )}
-                        {name}
-                    </span>
-                )}
+                <span className={`text-[10px] text-slate-400 mb-1 flex items-center gap-1 ${isUser ? 'mr-1 justify-end' : 'ml-1'}`}>
+                    {specialCare && !isUser && (
+                        <span className="px-1 py-px rounded bg-rose-50 text-rose-500 border border-rose-100 text-[8px] font-bold leading-tight flex items-center gap-0.5"><BellRinging size={8} weight="fill" />特别关心</span>
+                    )}
+                    {memberTitle && !isUser && (
+                        <span className="px-1 py-px rounded bg-[#f8f8f8] text-slate-500 border border-slate-200 text-[8px] font-bold leading-tight">{memberTitle}</span>
+                    )}
+                    <span className="truncate max-w-[140px]">{name}</span>
+                    <span className="text-slate-300 shrink-0">{timeStr}</span>
+                </span>
                 {renderContent()}
                 {/* 表情回应小药丸（QQ/微信 tap-to-react） */}
                 {Array.isArray(msg.metadata?.reactions) && msg.metadata.reactions.length > 0 && (
@@ -594,7 +596,6 @@ const GroupMessageItem = React.memo(({
                         })}
                     </div>
                 )}
-                <span className="text-[9px] text-slate-300 mt-1 px-1">{timeStr}</span>
             </div>
 
             {isUser && (
@@ -611,7 +612,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, addToast, userProfile, virtualTime, adjustUserBalance, theme: osTheme } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, virtualTime, adjustUserBalance, theme: osTheme } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -655,9 +656,6 @@ const ChatHub: React.FC = () => {
     const [tempArchiveTitle, setTempArchiveTitle] = useState('');
     const [tempSpecialCareIds, setTempSpecialCareIds] = useState<Set<string>>(new Set());
     const [tempSpecialCareNotify, setTempSpecialCareNotify] = useState(true);
-    const [tempOfflineStyle, setTempOfflineStyle] = useState('');
-    const [tempOfflineMaxChars, setTempOfflineMaxChars] = useState(280);
-    const [tempOfflineOpeningStrategy, setTempOfflineOpeningStrategy] = useState<'choose' | 'story' | 'skip'>('choose');
     // 点开「改名小心思」系统提示后，要展示动机的那条消息
     const [nicknameThoughtMsg, setNicknameThoughtMsg] = useState<Message | null>(null);
     // 群聊表情抽屉搜索
@@ -688,6 +686,7 @@ const ChatHub: React.FC = () => {
     
     // UI State
     const [showActions, setShowActions] = useState(false);
+    const [showGroupOfflineMode, setShowGroupOfflineMode] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [modalType, setModalType] = useState<'none' | 'create' | 'add-friend' | 'settings' | 'transfer' | 'member_select' | 'message-options' | 'edit-message' | 'member-profile' | 'set-title' | 'set-member-nickname' | 'mute-member' | 'add-member' | 'group-announcement' | 'mention-picker' | 'collect' | 'poll' | 'relay' | 'forward-pick'>('none');
     // 右上角 + 号弹出菜单（添加好友 / 创建群聊）
@@ -753,7 +752,7 @@ const ChatHub: React.FC = () => {
     // 群签到：详情弹窗目标
     const [checkinDetailMsg, setCheckinDetailMsg] = useState<Message | null>(null);
     // 文具盒·扩展功能（群聊版回形针：与单聊同一套功能）
-    const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd' | 'offline-mode'>('none');
+    const [actionModal, setActionModal] = useState<'none' | 'location' | 'image-gen' | 'system-cmd'>('none');
     // 单聊专属功能（拨过去/翻手机/回个神…）在群里先选「对谁」，再深链到该成员单聊执行
     const [memberPicker, setMemberPicker] = useState<{ action: string; title: string; hint?: string } | null>(null);
     const [locName, setLocName] = useState('');
@@ -763,9 +762,6 @@ const ChatHub: React.FC = () => {
     const [imgPreview, setImgPreview] = useState<string | null>(null);
     const [imgBusy, setImgBusy] = useState(false);
     const [sysCmd, setSysCmd] = useState('');
-    const [tempOfflinePreset, setTempOfflinePreset] = useState<OfflineOpeningPreset>('appointment');
-    const [tempOfflineCustomScenario, setTempOfflineCustomScenario] = useState('');
-
     // Refs
     const scrollRef = useRef<HTMLDivElement>(null);
     // 聊天记录查找跳转目标：非空时 layout effect 滚到该消息而非底部
@@ -783,11 +779,6 @@ const ChatHub: React.FC = () => {
         setTempArchiveTitle(group.chatArchiveTitle || group.name || '');
         setTempSpecialCareIds(new Set(group.specialCareMemberIds || []));
         setTempSpecialCareNotify(group.specialCareNotify !== false);
-        setTempOfflineStyle(group.offlineMode?.style || '');
-        setTempOfflineMaxChars(group.offlineMode?.maxChars || 280);
-        setTempOfflineOpeningStrategy(group.offlineMode?.openingStrategy || 'choose');
-        setTempOfflinePreset(group.offlineMode?.openingPreset || 'appointment');
-        setTempOfflineCustomScenario(group.offlineMode?.customScenario || '');
     };
 
     const openGroupSettings = (group = activeGroup) => {
@@ -2332,26 +2323,12 @@ ${logText.substring(0, 10000)}
         setActionModal('none'); setSysCmd('');
     };
 
-    const enterGroupOfflineMode = async () => {
+    const handleGroupOfflineEnd = async () => {
         if (!activeGroup) return;
-        const customScenario = tempOfflineCustomScenario.trim().slice(0, 500);
-        if (tempOfflinePreset === 'custom' && !customScenario) { addToast('写一句这场见面怎么开始吧', 'info'); return; }
-        const openingFrame = resolveOpeningFrame(tempOfflinePreset, customScenario, activeGroup.name, userProfile.name || '你');
-        const offline = {
-            enabled: true,
-            style: tempOfflineStyle.trim().slice(0, 1200),
-            maxChars: Math.max(60, Math.min(2000, Math.round(tempOfflineMaxChars || 280))),
-            openingStrategy: tempOfflineOpeningStrategy,
-            openingPreset: tempOfflinePreset,
-            customScenario,
-        };
-        const updated = await applyGroupUpdate({ offlineMode: offline });
-        const presetLabel = OFFLINE_OPENING_PRESETS.find(p => p.key === tempOfflinePreset)?.label || '赴约';
-        await postGroupNotice(activeGroup.id, `赴约已开启：${presetLabel}。${openingFrame ? `开场：${openingFrame}` : ''} 单条建议不超过 ${offline.maxChars} 字${offline.style ? `；文风：${offline.style}` : ''}`);
-        if (updated) hydrateGroupSettingsDraft(updated);
-        setActionModal('none');
-        setShowActions(false);
-        addToast('赴约已接上', 'success');
+        setShowGroupOfflineMode(false);
+        const fresh = await refreshGroupMessagesState(activeGroup.id);
+        addToast('群聊赴约已结束，回到线上聊天', 'info');
+        setTimeout(() => { void triggerDirector(fresh); }, 800);
     };
 
     const startGroupVoiceCall = async () => {
@@ -2470,21 +2447,12 @@ ${logText.substring(0, 10000)}
             const specialCareBlock = specialCareNames.length > 0
                 ? `\n特别关心提醒：用户把 ${specialCareNames.map(n => `「${n}」`).join('、')} 设成了特别关心。TA 发言时可以更容易被用户注意到，但不要因此让 TA 每轮都必须说话。\n`
                 : '';
-            const offline = activeGroup.offlineMode;
-            const offlineOpeningFrame = offline?.enabled && offline.openingPreset
-                ? resolveOpeningFrame(offline.openingPreset, offline.customScenario, activeGroup.name, userProfile.name || '你')
-                : '';
-            const offlineBlock = offline?.enabled
-                ? `\n赴约状态：本群当前处于面对面/同处一地的互动感。${offlineOpeningFrame ? `这场见面开场=${offlineOpeningFrame}` : '开场方式=可以先给出一个短开场。'}${offline.style ? ` 自定义赴约文风：${offline.style}` : ''} 单条消息建议不超过 ${offline.maxChars || 280} 字，动作、环境、近距离反应可以更具体，但仍然像群聊而不是旁白堆砌。\n`
-                : '';
-
             let context = `【系统：群聊模拟器配置】
 当前群名: "${activeGroup.name}"
 当前系统时间: ${currentTimeStr}
 时间流逝感知: ${timeGapInfo}
 ${announcementBlock}
 ${specialCareBlock}
-${offlineBlock}
 群成员花名册（群名片 = 成员在本群显示的昵称，可自己修改；头衔由群主/管理员授予）:
 ${userRosterLine}
 ${rosterLines}
@@ -3523,9 +3491,6 @@ ${attachedImagesNote}
                                 {activeGroup?.mutedAll && (
                                     <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold flex items-center gap-0.5"><SpeakerSlash size={9} weight="fill" />全员禁言</span>
                                 )}
-                                {activeGroup?.offlineMode?.enabled && (
-                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] font-bold flex items-center gap-0.5"><Signpost size={9} weight="fill" />线下</span>
-                                )}
                                 {lastTokenUsage && (
                                     <div
                                         className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-mono border border-slate-200"
@@ -3684,6 +3649,7 @@ ${attachedImagesNote}
                                 isUser={isUser}
                                 char={char}
                                 userAvatar={userProfile.avatar}
+                                userName={userProfile.name || '我'}
                                 onImageClick={(url) => window.open(url, '_blank')}
                                 selectionMode={selectionMode}
                                 isSelected={selectedMsgIds.has(m.id)}
@@ -3830,7 +3796,7 @@ ${attachedImagesNote}
                             {/* 群聊共用动作 */}
                             <div className="drawer-tag col-span-2"><span>群 里 一 起</span></div>
                             {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '发起群聊电话', () => void startGroupVoiceCall())}
-                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '线下见面·自定义文风', () => { hydrateGroupSettingsDraft(activeGroup); setActionModal('offline-mode'); })}
+                            {strip(<HandHeart size={20} weight="bold" />, '赴个约', '单独线下窗口', () => { setShowActions(false); setShowGroupOfflineMode(true); })}
                             {strip(<Detective size={20} weight="bold" />, '成员手机', '选择一位群友查看手机', () => openMemberPicker('check-phone', '看谁的手机？'))}
                             {strip(<EnvelopeOpen size={20} weight="bold" />, '成员主动消息', '选择一位群友设置主动消息', () => openMemberPicker('proactive', '设置谁主动消息？'))}
                             {strip(<Scroll size={20} weight="bold" />, '成员日常', '选择一位群友看离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
@@ -3881,6 +3847,17 @@ ${attachedImagesNote}
             </div>
 
             {/* --- Modals --- */}
+
+            {showGroupOfflineMode && activeGroup && (
+                <GroupOfflineModeModal
+                    group={activeGroup}
+                    members={characters.filter(c => activeGroup.members.includes(c.id))}
+                    userProfile={userProfile}
+                    apiConfig={resolveAuxApi(auxApiConfig, apiConfig)}
+                    addToast={addToast}
+                    onEnd={() => { void handleGroupOfflineEnd(); }}
+                />
+            )}
 
             {/* Group Settings Panel */}
             {modalType === 'settings' && activeGroup && (
@@ -4573,49 +4550,6 @@ ${attachedImagesNote}
                         <ScrapNote center>必须完整输入红包上的口令才能打开。</ScrapNote>
                     </div>
                 )}
-            </Modal>
-
-            {/* 赴个约：回形针入口，一键把当前群聊切成面对面场景 */}
-            <Modal isOpen={actionModal === 'offline-mode'} title="赴个约" en="DATE · FACE TO FACE" icon={<ScrapStamp><Signpost size={15} weight="bold" /></ScrapStamp>} onClose={() => setActionModal('none')} footer={<ScrapBtn onClick={() => void enterGroupOfflineMode()} icon={<Signpost size={16} weight="bold" />}>赴约</ScrapBtn>}>
-                <div className="space-y-3">
-                    <ScrapNote>选择这场群里线下见面的开场方式；系统会把设定写进群提示，下一轮导演按面对面状态接着写。</ScrapNote>
-                    <div className="space-y-2.5">
-                        {OFFLINE_OPENING_PRESETS.map((p, idx) => {
-                            const active = tempOfflinePreset === p.key;
-                            const desc = p.desc.replace(/\{char\}/g, activeGroup?.name || '这个群').replace(/\{user\}/g, userProfile.name || '你');
-                            return (
-                            <button
-                                key={p.key}
-                                type="button"
-                                onClick={() => setTempOfflinePreset(p.key)}
-                                className="w-full text-left rounded-[12px] px-4 py-3 active:scale-[0.98] transition flex items-center gap-3"
-                                style={active
-                                    ? { background: '#fff4f7', color: '#5a3140', border: '1px solid #d8a5b7', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.32)' }
-                                    : { background: '#fffdfa', color: '#5a3140', border: '1px solid #eed6df' }}
-                            >
-                                <span
-                                    className="w-9 h-9 rounded-[11px] flex items-center justify-center shrink-0 text-[10px] font-black tracking-[0.12em]"
-                                    style={{ background: active ? '#fffdfa' : '#fff4f7', color: active ? '#5a3140' : '#a892a3', border: '1px solid #eed6df' }}
-                                    aria-hidden
-                                >
-                                    {String(idx + 1).padStart(2, '0')}
-                                </span>
-                                <span className="min-w-0">
-                                    <span className="block text-[13px] font-black">{p.label}</span>
-                                    <span className="block text-[10.5px] mt-0.5 leading-snug" style={{ color: '#a892a3' }}>{desc}</span>
-                                </span>
-                            </button>
-                        );})}
-                    </div>
-                    {tempOfflinePreset === 'custom' && (
-                        <ScrapTextarea value={tempOfflineCustomScenario} onChange={e => setTempOfflineCustomScenario(e.target.value)} placeholder="例：大家约在常去的咖啡馆，已经有人先到了，桌上放着给全群留的位置…" rows={3} />
-                    )}
-                    <ScrapTextarea value={tempOfflineStyle} onChange={e => setTempOfflineStyle(e.target.value)} placeholder="赴约文风：比如少旁白、多动作短句、像坐在同一张桌边…" rows={3} autoFocus />
-                    <div>
-                        <ScrapLabel en="MAX CHARS">字数限制 · {tempOfflineMaxChars}</ScrapLabel>
-                        <input type="range" min="60" max="2000" step="20" value={tempOfflineMaxChars} onChange={e => setTempOfflineMaxChars(parseInt(e.target.value, 10))} className="w-full h-2 rounded-full appearance-none" style={{ background: '#d9d3c7', accentColor: INK }} />
-                    </div>
-                </div>
             </Modal>
 
             {/* 成员选择器：成员专属功能先选「对谁」 */}
