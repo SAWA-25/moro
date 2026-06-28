@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { ShopReview, ShopRegular } from '../../types';
-import { paperTexture, WashiTape, HAND_FONT } from '../../apps/almanac/handbookKit';
+import { HAND_FONT } from '../../apps/almanac/handbookKit';
 import { REGULAR_VISITS, VIP_VISITS, regularTier } from './BankGameConstants';
 
 /**
- * 存钱罐 · 营业结算 & 口碑评价
+ * 生活拟 · 营业结算 & 口碑评价
  * ------------------------------------------------------------
  * BusinessResultModal —— 每轮「营业」后的逐单结算（卖了什么、小费、总收入、新评价）
  * ReviewsOverlay      —— 口碑墙：平均星级 + 全部顾客评价
@@ -54,8 +54,7 @@ export const BusinessResultModal: React.FC<{
 }> = ({ result, currency, onClose, onViewReviews }) => (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-5 animate-fade-in">
         <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-        <div className="relative w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up" style={{ background: '#FFFDF7', boxShadow: '0 20px 50px rgba(96,66,40,0.4)', transform: 'rotate(-0.6deg)' }}>
-            <WashiTape className="top-1 left-12 z-10" color="rgba(255,255,255,0.55)" rotate={-10} width={70} height={16} />
+        <div className="relative w-full max-w-sm rounded-3xl overflow-hidden animate-slide-up" style={{ background: '#FFFDF7', boxShadow: '0 20px 50px rgba(96,66,40,0.4)' }}>
             {/* 头 */}
             <div className="px-5 pt-5 pb-4 text-white" style={{ background: 'linear-gradient(135deg,#66BB6A,#43A047)' }}>
                 <div className="text-[11px] font-bold tracking-[0.2em] opacity-80 uppercase">Business Closed</div>
@@ -157,14 +156,13 @@ export const ReviewsOverlay: React.FC<{
     }, [reviews]);
 
     return (
-        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={paperTexture('kraft')}>
-            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
+        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={{ background: '#f7f5f2' }}>
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-48" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.08), transparent 70%)' }} />
             {/* 头 */}
             <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
-                <WashiTape className="top-0 left-16" color="rgba(231,196,120,0.7)" rotate={-10} width={70} height={16} />
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-3deg)' }}>⭐</div>
+                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)' }}>⭐</div>
                         <div style={{ fontFamily: HAND_FONT }}>
                             <div className="font-black text-[18px]" style={{ color: '#5b4636' }}>口碑墙</div>
                             <div className="text-[10px]" style={{ color: '#a98e6f' }}>顾客们的真实心声</div>
@@ -178,8 +176,7 @@ export const ReviewsOverlay: React.FC<{
 
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar p-4" style={{ color: '#5D4037' }}>
                 {/* 评分概览 */}
-                <div className="relative rounded-2xl p-4 mb-4 flex items-center gap-5" style={{ background: '#FFFDF7', boxShadow: '0 4px 14px rgba(96,66,40,0.16)', transform: 'rotate(-0.5deg)' }}>
-                    <WashiTape className="-top-2 right-10" color="rgba(245,166,35,0.5)" rotate={10} width={64} />
+                <div className="relative rounded-2xl p-4 mb-4 flex items-center gap-5" style={{ background: '#FFFDF7', boxShadow: '0 4px 14px rgba(96,66,40,0.16)' }}>
                     <div className="text-center shrink-0">
                         <div className="text-[36px] font-black leading-none" style={{ color: '#F5A623', fontFamily: HAND_FONT }}>{avg || '—'}</div>
                         <Stars n={avg} size={14} />
@@ -251,14 +248,13 @@ export const RegularsOverlay: React.FC<{
     };
 
     return (
-        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={paperTexture('kraft')}>
-            <div aria-hidden className="pointer-events-none absolute inset-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
+        <div className="absolute inset-0 z-[110] flex flex-col animate-slide-up" style={{ background: '#f7f5f2' }}>
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-48" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.08), transparent 70%)' }} />
             {/* 头 */}
             <div className="relative pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0 z-10">
-                <WashiTape className="top-0 left-16" color="rgba(231,196,120,0.7)" rotate={-10} width={70} height={16} />
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-3deg)' }}>👑</div>
+                        <div className="w-10 h-10 flex items-center justify-center text-xl" style={{ background: '#fffdf7', borderRadius: 12, boxShadow: '0 2px 6px rgba(96,66,40,0.18)' }}>👑</div>
                         <div style={{ fontFamily: HAND_FONT }}>
                             <div className="font-black text-[18px]" style={{ color: '#5b4636' }}>常客名册</div>
                             <div className="text-[10px]" style={{ color: '#a98e6f' }}>谁是你的回头客与 VIP</div>

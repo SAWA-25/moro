@@ -97,7 +97,6 @@ const BankGameMenu: React.FC<Props> = ({
 
     return (
         <div className="space-y-5">
-            {/* 三枚纸签 Tab */}
             <div className="flex gap-2">
                 {[
                     { key: 'staff', label: '员工' },
@@ -110,7 +109,7 @@ const BankGameMenu: React.FC<Props> = ({
                             key={t.key}
                             onClick={() => setTab(t.key as any)}
                             className="relative flex-1 py-2.5 px-3 text-[14px] font-black transition-transform active:scale-95 flex items-center justify-center gap-1.5"
-                            style={{ fontFamily: HAND_FONT, borderRadius: '8px 11px 7px 10px', transform: `rotate(${[-1.2, 0.8, -0.6][i]}deg)`,
+                            style={{ fontFamily: HAND_FONT, borderRadius: 999,
                                 ...(on ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' } : { background: '#efe2cd', color: '#a98e6f' }) }}
                         >
                             {t.key === 'menu' && menuLowStock && (

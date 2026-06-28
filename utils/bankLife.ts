@@ -361,7 +361,7 @@ export function getJobsByCategory(category: string): BankJobPosting[] {
     return JOB_POSTINGS.filter(j => j.category === category);
 }
 
-function buildInterviewQuestions(posting: BankJobPosting, seedKey: string) {
+function buildInterviewQuestions(posting: BankJobPosting, seedKey: string): NonNullable<BankJobApplication['questions']> {
     const base = [
         `为什么想做「${posting.title}」？`,
         `遇到${posting.riskTags[0] || '高压情况'}时你会怎么处理？`,

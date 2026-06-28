@@ -8,13 +8,17 @@ import {
 } from '../../utils/regex/engine';
 import { BracketsCurly, CaretLeft, FloppyDisk, Play } from '@phosphor-icons/react';
 
-const AC = '#6bb7a8';
-const AC_DARK = '#3f756d';
-const AC_SOFT = '#e8f5f1';
-const AC_WASH = 'rgba(125,199,182,0.44)';
-const CANVAS = 'radial-gradient(120% 72% at 50% -18%, rgba(125,199,182,0.42), transparent 62%), linear-gradient(158deg, #fffaf7 0%, #f6faf6 44%, #edf5f8 100%)';
+const AC = '#9ecfc4';
+const AC_DARK = '#5b7771';
+const AC_SOFT = '#f0faf7';
+const AC_WASH = 'rgba(172,214,204,0.34)';
+const CANVAS = 'radial-gradient(120% 72% at 50% -18%, rgba(172,214,204,0.30), transparent 62%), linear-gradient(158deg, #fffaf8 0%, #f8fbf7 44%, #f1f7f9 100%)';
+const GRAD_MAIN = 'linear-gradient(135deg, #d4eee7 0%, #d8edf4 62%, #f2e6c2 145%)';
+const GRAD_SOFT = 'linear-gradient(135deg, rgba(240,250,247,0.98) 0%, rgba(243,250,252,0.96) 58%, rgba(255,250,236,0.90) 100%)';
+const GRAD_CARD = 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94)), linear-gradient(135deg, rgba(172,214,204,0.12), rgba(191,220,232,0.10), rgba(232,213,164,0.09))';
+const GRAD_FIELD = 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(247,252,250,0.96) 58%, rgba(255,250,241,0.94))';
 const PAPER = '#ffffff';
-const EDGE = 'rgba(63,117,109,0.16)';
+const EDGE = 'rgba(91,119,113,0.14)';
 const HAIRLINE = 'rgba(43,41,51,0.07)';
 const INK = '#2b2933';
 const INK_SOFT = '#6f6b76';
@@ -72,14 +76,14 @@ const FieldLabel: React.FC<{ children: React.ReactNode; hint?: string }> = ({ ch
 const fieldStyle: React.CSSProperties = {
     color: INK,
     caretColor: AC,
-    background: '#fbfaf8',
+    background: GRAD_FIELD,
     border: `1px solid ${HAIRLINE}`,
     borderRadius: 14,
 };
 
 const Page: React.FC<{ title: string; en: string; children: React.ReactNode }> = ({ title, en, children }) => (
-    <section className="rounded-[20px] bg-white" style={{ border: `1px solid ${HAIRLINE}`, boxShadow: CARD_SHADOW }}>
-        <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-0.5">
+    <section className="rounded-[20px]" style={{ background: GRAD_CARD, border: `1px solid ${HAIRLINE}`, boxShadow: CARD_SHADOW }}>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-0.5" style={{ background: 'linear-gradient(135deg, rgba(232,245,241,0.34), rgba(255,255,255,0), rgba(255,247,229,0.24))' }}>
             <span className="text-[15px] font-bold leading-tight" style={{ color: INK }}>{title}</span>
             <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...LABEL_STACK, color: INK_FAINT }}>{en}</span>
         </div>
@@ -102,20 +106,20 @@ const Entry: React.FC<{ title: string; note?: string; side?: React.ReactNode; ch
 
 const StickerChip: React.FC<{ active: boolean; onClick?: () => void; children: React.ReactNode; tone?: 'rose' | 'blue' | 'mint' | 'plain' }> = ({ active, onClick, children, tone = 'rose' }) => {
     const palette = {
-        rose: { bg: AC, ink: '#ffffff', edge: AC },
-        blue: { bg: '#0ea5e9', ink: '#ffffff', edge: '#0ea5e9' },
-        mint: { bg: '#10b981', ink: '#ffffff', edge: '#10b981' },
-        plain: { bg: '#fbfaf8', ink: INK_SOFT, edge: HAIRLINE },
+        rose: { bg: GRAD_MAIN, ink: AC_DARK, edge: 'rgba(91,119,113,0.24)' },
+        blue: { bg: 'linear-gradient(135deg, #e7f5fa, #d8edf4)', ink: '#607780', edge: 'rgba(121,161,174,0.24)' },
+        mint: { bg: 'linear-gradient(135deg, #edf9f5, #dff2ec)', ink: AC_DARK, edge: 'rgba(91,119,113,0.24)' },
+        plain: { bg: GRAD_FIELD, ink: INK_SOFT, edge: HAIRLINE },
     }[tone];
     return (
         <button
             onClick={onClick}
             className="px-3 py-1.5 text-[11px] font-bold rounded-full transition-all active:scale-95 max-w-full truncate"
             style={{
-                background: active ? palette.bg : PAPER,
+                background: active ? palette.bg : GRAD_FIELD,
                 color: active ? palette.ink : INK_SOFT,
                 border: `1px solid ${active ? palette.edge : HAIRLINE}`,
-                boxShadow: active ? '0 8px 16px -12px rgba(95,175,160,0.34)' : 'none',
+                boxShadow: active ? '0 8px 16px -13px rgba(91,119,113,0.26)' : 'none',
             }}
         >
             {children}
@@ -131,9 +135,9 @@ const CheckRow: React.FC<{
 }> = ({ active, title, desc, onToggle }) => (
     <label
         className="flex items-start gap-3 rounded-[14px] px-3 py-2.5 cursor-pointer active:scale-[0.99] transition-transform"
-        style={{ background: active ? AC_SOFT : PAPER, border: `1px solid ${active ? 'rgba(95,175,160,0.40)' : HAIRLINE}` }}
+        style={{ background: active ? GRAD_SOFT : GRAD_FIELD, border: `1px solid ${active ? 'rgba(91,119,113,0.24)' : HAIRLINE}` }}
     >
-        <span className="mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{ background: active ? AC : '#f1f0ec', border: `1px solid ${EDGE}`, color: '#fff' }}>
+        <span className="mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center" style={{ background: active ? GRAD_MAIN : 'linear-gradient(135deg, #f7f6f2, #ebe9e3)', border: `1px solid ${EDGE}`, color: AC_DARK }}>
             {active && <span className="text-[12px] leading-none">✓</span>}
         </span>
         <input type="checkbox" checked={active} onChange={e => onToggle(e.target.checked)} className="hidden" />
@@ -168,6 +172,7 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
     return (
         <div className="fixed inset-0 z-[320] flex flex-col animate-fade-in overflow-hidden" style={{ background: CANVAS, color: INK }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72" style={{ background: `radial-gradient(115% 88% at 50% -22%, ${AC_WASH}, transparent 68%)` }} />
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-[92px] h-48" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0), rgba(130,189,213,0.13), rgba(255,247,229,0))' }} />
 
             <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: PAPER, borderBottom: '1px solid #ededed' }}>
                 <button
@@ -178,8 +183,8 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                 >
                     <CaretLeft size={18} weight="bold" />
                 </button>
-                <div className="w-9 h-9 rounded-[12px] p-1.5 shrink-0" style={{ background: PAPER, border: `1px solid ${HAIRLINE}` }}>
-                    <div className="w-full h-full rounded-[5px] flex items-center justify-center" style={{ background: AC_SOFT, color: AC_DARK }}>
+                <div className="w-9 h-9 rounded-[12px] p-1.5 shrink-0" style={{ background: GRAD_FIELD, border: `1px solid ${HAIRLINE}` }}>
+                    <div className="w-full h-full rounded-[5px] flex items-center justify-center" style={{ background: GRAD_MAIN, color: AC_DARK, boxShadow: '0 8px 18px -14px rgba(91,119,113,0.38)' }}>
                         <BracketsCurly size={18} weight="bold" />
                     </div>
                 </div>
@@ -190,7 +195,7 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                     </div>
                     <div className="text-[10px] truncate mt-0.5" style={{ color: INK_SOFT }}>保存后立即生效</div>
                 </div>
-                <span className="text-[10px] font-bold select-none shrink-0 px-2.5 py-1 rounded-full" style={{ color: AC_DARK, background: AC_SOFT, border: `1px solid ${EDGE}` }}>
+                <span className="text-[10px] font-bold select-none shrink-0 px-2.5 py-1 rounded-full" style={{ color: AC_DARK, background: GRAD_SOFT, border: `1px solid ${EDGE}` }}>
                     编辑中
                 </span>
             </div>
@@ -316,7 +321,7 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                             onChange={e => setTestInput(e.target.value)}
                         />
                         {testInput && (
-                            <div className="mt-2.5 rounded-[14px] px-3 py-3 min-h-[3rem] whitespace-pre-wrap break-words text-[12px] leading-relaxed" style={{ background: AC_SOFT, color: AC_DARK, border: `1px solid ${EDGE}` }}>
+                            <div className="mt-2.5 rounded-[14px] px-3 py-3 min-h-[3rem] whitespace-pre-wrap break-words text-[12px] leading-relaxed" style={{ background: GRAD_SOFT, color: AC_DARK, border: `1px solid ${EDGE}` }}>
                                 <div className="mb-1.5 flex items-center gap-1.5 text-[10px] tracking-[0.18em] uppercase" style={{ ...LABEL_STACK, color: AC }}>
                                     <Play size={11} weight="fill" /> Output
                                 </div>
@@ -338,7 +343,7 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
                 <button
                     onClick={onSave}
                     className="flex-1 rounded-full py-3 text-[13px] font-bold active:scale-[0.98] transition-transform"
-                    style={{ background: AC, color: '#fff', boxShadow: '0 12px 24px -13px rgba(95,175,160,0.52)' }}
+                    style={{ background: GRAD_MAIN, color: AC_DARK, boxShadow: '0 12px 24px -14px rgba(91,119,113,0.38)' }}
                 >
                     <span className="inline-flex items-center gap-1.5"><FloppyDisk size={15} weight="bold" /> 保存</span>
                 </button>

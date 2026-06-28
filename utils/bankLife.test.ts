@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
     COMPANY_FOUND_COST,
+    BUSINESS_TEMPLATES,
     JOB_POSTINGS,
     advanceBankLifeDay,
+    advanceJobApplicationStage,
     applyForJob,
     borrowLoan,
     buyStock,
@@ -11,8 +13,10 @@ import {
     leaveJob,
     loanTotal,
     migrateBankLifeState,
+    openLifeShop,
     repayLoan,
     sellStock,
+    startJobApplication,
 } from './bankLife';
 import { BankFullState } from '../types';
 
@@ -60,17 +64,47 @@ describe('bankLife', () => {
         } as unknown as BankFullState;
         const migrated = migrateBankLifeState(legacy);
         expect(migrated.life?.shopUnlocked).toBe(true);
+        expect(migrated.life?.shopBusinessType).toBe('drinks');
         expect(migrated.life?.stockMarket.length).toBeGreaterThan(0);
+    });
+
+    it('opens a selected business type with its own product shelf', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const flower = BUSINESS_TEMPLATES.find(b => b.id === 'flower')!;
+        const life = openLifeShop(life0, flower.id, '花间一角');
+        expect(life.shopUnlocked).toBe(true);
+        expect(life.shopBusinessType).toBe('flower');
+        expect(life.shopBusinessName).toBe('花间一角');
+        expect(life.shopProducts?.map(p => p.name)).toEqual(flower.products.map(p => p.name));
+    });
+
+    it('advances job applications through multiple stages', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const job = JOB_POSTINGS.find(j => !j.black)!;
+        const started = startJobApplication(life0, job);
+        expect(started.application.stage).toBe('submitted');
+        const next = advanceJobApplicationStage(started.life, started.application.id, '我有相关经验，也能稳定排班。');
+        expect(next.application?.stage).toBe('screening');
+        expect(next.life.jobHistory[0].id).toBe(started.application.id);
     });
 
     it('buys and sells virtual stocks with holdings and money results', () => {
         const life0 = createDefaultBankLifeState('2026-06-01');
+        expect(life0.stockMarket[0].history?.length).toBeGreaterThan(10);
         const bought = buyStock(life0, 'MORO', 1000);
         expect(bought.cost).toBeGreaterThan(0);
         expect(bought.life.holdings.MORO.shares).toBeGreaterThan(0);
         const sold = sellStock(bought.life, 'MORO', bought.life.holdings.MORO.shares);
         expect(sold.revenue).toBeGreaterThan(0);
         expect(sold.life.holdings.MORO).toBeUndefined();
+    });
+
+    it('appends stock candles when advancing a day', () => {
+        const life0 = createDefaultBankLifeState('2026-06-01');
+        const before = life0.stockMarket[0].history?.length || 0;
+        const advanced = advanceBankLifeDay(life0);
+        expect(advanced.life.stockMarket[0].history?.length).toBe(before + 1);
+        expect(advanced.life.stockMarket[0].intraday?.length).toBeGreaterThan(3);
     });
 
     it('creates company state with starting capital', () => {

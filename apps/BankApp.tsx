@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankJobApplication, BankStockQuote } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -60,7 +60,7 @@ const INITIAL_STATE: BankFullState = {
     },
     shop: {
         actionPoints: 100,
-        shopName: '咖啡馆',
+        shopName: '我的小店',
         shopLevel: 1,
         appeal: 100,
         background: '',
@@ -104,7 +104,7 @@ const INITIAL_STATE: BankFullState = {
     lastLoginDate: new Date().toISOString().split('T')[0],
 };
 
-// 失效图床：sharkpan.xyz 已无法访问，历史默认资源（店铺背景 / 系统店员头像 / 咖啡馆房间贴图）
+// 失效图床：sharkpan.xyz 已无法访问，历史默认资源（店铺背景 / 系统店员头像 / 房间贴图）
 // 都指向它，会渲染成裂图。加载时统一清洗成可用的兜底（emoji / 留空走渐变），并配合 <img onError>。
 const DEAD_IMG_HOSTS = ['sharkpan.xyz'];
 const isDeadImg = (u?: string | null): boolean =>
@@ -148,7 +148,7 @@ const ensureWeather = (shop: { weather?: { id: string; until: number } }, now: n
     return { id: rollWeatherId(), until: now + WEATHER_DURATION_MS };
 };
 
-// 手账风弹窗壳 + 输入样式（替代共享 Modal，统一拼贴手账观感）
+// 弹窗壳 + 输入样式
 const hbInputStyle: React.CSSProperties = {
     background: '#fff',
     borderRadius: 16,
@@ -180,8 +180,8 @@ const cleanCardStyle: React.CSSProperties = {
 
 const HbModal: React.FC<{
     open: boolean; onClose: () => void; title: string; sub?: string;
-    tapeColor?: string; rotate?: number; footer?: React.ReactNode; children: React.ReactNode;
-}> = ({ open, onClose, title, sub, tapeColor = 'rgba(231,196,120,0.72)', rotate = -0.6, footer, children }) => {
+    footer?: React.ReactNode; children: React.ReactNode;
+}> = ({ open, onClose, title, sub, footer, children }) => {
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={onClose}>
@@ -219,7 +219,6 @@ const BankApp: React.FC = () => {
     // UI Modals
     const [showAddTxModal, setShowAddTxModal] = useState(false);
     const [showGoalModal, setShowGoalModal] = useState(false);
-    const [showTutorial, setShowTutorial] = useState(false);
     const [showStaffEdit, setShowStaffEdit] = useState(false);
     
     // Guestbook Fullscreen State (Changed from Modal)
@@ -391,7 +390,7 @@ const BankApp: React.FC = () => {
             await DB.saveBankDollhouse(dh);
         }
 
-        // 清洗失效图床(sharkpan)留下的死链：救回历史存档里裂掉的店员头像 / 房间贴图 / 贴纸 / 背景。
+        // 清洗失效图床(sharkpan)留下的死链：救回历史存档里裂掉的店员头像 / 房间贴图 / 装饰 / 背景。
         // 幂等——没有死链就什么都不做、不写库。
         {
             let shopChanged = false;
@@ -478,14 +477,14 @@ const BankApp: React.FC = () => {
                 shop: { ...currentState.shop, background: INITIAL_STATE.shop.background }
             };
 
-            // Force-update café room texture URL in dollhouse
-            const cafeRoom = dh.rooms.find(r => r.id === 'room-1f-left');
-            const expectedCafeTexture = INITIAL_DOLLHOUSE.rooms.find(r => r.id === 'room-1f-left')?.roomTextureUrl;
-            if (cafeRoom && expectedCafeTexture) {
+            // Force-update main shop room texture URL in dollhouse
+            const mainShopRoom = dh.rooms.find(r => r.id === 'room-1f-left');
+            const expectedShopTexture = INITIAL_DOLLHOUSE.rooms.find(r => r.id === 'room-1f-left')?.roomTextureUrl;
+            if (mainShopRoom && expectedShopTexture) {
                 const updatedDh: DollhouseState = {
                     ...dh,
                     rooms: dh.rooms.map(r =>
-                        r.id === 'room-1f-left' ? { ...r, roomTextureUrl: expectedCafeTexture } : r
+                        r.id === 'room-1f-left' ? { ...r, roomTextureUrl: expectedShopTexture } : r
                     )
                 };
                 dollhouseRef.current = updatedDh;
@@ -555,7 +554,7 @@ const BankApp: React.FC = () => {
         await DB.saveBankState(finalState);
 
         // Show tutorial if first time (default budget is 100 and ap is 100 initial)
-        if (!savedState) setShowTutorial(true);
+        if (!savedState) setActiveTab('life');
         setIsBankDataLoaded(true);
     };
 
@@ -582,7 +581,8 @@ const BankApp: React.FC = () => {
         
         await DB.saveTransaction(newTx);
         
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
+        const lifeState = cur.life!;
         // 只有「支出」计入今日花费（进账不算）；记账纯记现实金钱，不再影响店铺 AP
         const newSpent = cur.todaySpent + (txType === 'expense' ? amount : 0);
         const newState = { ...cur, todaySpent: newSpent };
@@ -729,6 +729,30 @@ const BankApp: React.FC = () => {
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
     };
 
+    const handleRestockLifeProduct = async (productId: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const product = cur.life?.shopProducts?.find(p => p.id === productId);
+        if (!product) return;
+        if (product.stock >= STOCK_CAP) {
+            addToast(`${product.name} 库存已满`, 'info');
+            return;
+        }
+        const batch = RESTOCK_BATCH;
+        const cost = Math.max(1, Math.round(product.cost * batch));
+        if ((userProfile.balance || 0) < cost) {
+            addToast(`钱包不够进货（需 ¥${cost}）`, 'error');
+            return;
+        }
+        const nextLife = {
+            ...cur.life!,
+            shopProducts: (cur.life!.shopProducts || []).map(p => p.id === productId ? { ...p, stock: Math.min(STOCK_CAP, p.stock + batch) } : p),
+            shopEvents: [{ id: `shop-event-${Date.now()}`, dateStr: cur.life!.dateStr, title: '补了一批货', detail: `${product.name} 补货 +${batch}，货架又满起来了。`, tone: 'info' as const }, ...(cur.life!.shopEvents || [])].slice(0, 20),
+        };
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+        adjustUserBalance(-cost, { note: `${product.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '生活拟', sourceId: product.id });
+        addToast(`${product.name} 进货 +${batch}`, 'success');
+    };
+
     // --- 店铺升级：花钱包的钱提升等级（客流↑、档次溢价↑、过夜分红↑） ---
     const handleUpgradeShop = async () => {
         const cur = stateRef.current;
@@ -873,15 +897,15 @@ const BankApp: React.FC = () => {
 
             // 3. Prompt
             const prompt = `${charContext}
-### Scenario: Visiting User's Savings App Café Guestbook
-${userProfile.name} has a savings/budgeting app (记账App). Inside the app there's a virtual café mini-game, similar to how Alipay has "蚂蚁庄园" or how friends visit each other's farms in QQ Farm.
-You are visiting this virtual café as a friend/player.
-Café Name: "${current.shop.shopName}".
+### Scenario: Visiting User's Life-Sim Shop Guestbook
+${userProfile.name} has a virtual life finance app. Inside the app there's a small shop that friends can visit.
+You are visiting this shop as a friend/customer.
+Shop Name: "${current.shop.shopName}".
 Recent Chat Context: ${chatSnippet}
 
 ### Task
 Generate a guestbook page update.
-1. **${randomChar.name}**: Write a guestbook message. React to the cafe or start drama. (Use your personality).
+1. **${randomChar.name}**: Write a guestbook message. React to the shop or start drama. (Use your personality).
 2. **NPCs**: Generate 3-4 other random messages from strangers or staff.
    - **Themes**: Gossip (e.g. staff fighting), Argument (e.g. arguing about food), Heartwarming story, or Continuing previous drama.
    - **Style**: Internet slang, funny, emotional, or chaotic ("乐子人").
@@ -928,7 +952,7 @@ ${previousGuestbook}
                                 charId: entry.charId,
                                 role: 'system',
                                 type: 'text',
-                                content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的记账App咖啡馆，并表示："${entry.content}"]`,
+                                content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的生活拟小店，并表示："${entry.content}"]`,
                             });
                             entry.systemMessageId = msgId;
                         } catch (e) {
@@ -1256,15 +1280,15 @@ ${previousGuestbook}
     const enrichReviewsWithAI = async (batch: ShopReview[], soldProductNames: string[], shopLevel: number) => {
         try {
             const cur = stateRef.current;
-            const shopName = cur.shop.shopName || '咖啡馆';
+            const shopName = cur.shop.shopName || '我的小店';
             const rv = cur.shop.reviews || [];
             const avg = rv.length ? (rv.reduce((s, r) => s + r.rating, 0) / rv.length).toFixed(1) : '—';
             const charNote = (name: string) => {
                 const c = characters.find(ch => ch.name === name);
                 return c ? `（熟人，人设：${(c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 60)}）` : '（普通顾客）';
             };
-            const list = batch.map(r => ({ id: r.id, 顾客: r.authorName + (r.isNpc ? '' : charNote(r.authorName)), 点的: r.productName || '咖啡', 初评分: r.rating }));
-            const prompt = `你在为一家叫「${shopName}」的虚拟咖啡馆生成顾客点评。店铺等级 Lv.${shopLevel}，当前口碑均分 ${avg}。本轮卖出：${soldProductNames.join('、') || '咖啡'}。
+            const list = batch.map(r => ({ id: r.id, 顾客: r.authorName + (r.isNpc ? '' : charNote(r.authorName)), 点的: r.productName || '商品', 初评分: r.rating }));
+            const prompt = `你在为一家叫「${shopName}」的小店生成顾客点评。店铺等级 Lv.${shopLevel}，当前口碑均分 ${avg}。本轮卖出：${soldProductNames.join('、') || '商品'}。
 请为下面每位顾客写一条**真实、多样、口语化**的点评（中文，约 20~40 字，可用网络梗 / 吐槽 / 夸赞 / 中肯等不同口吻，切忌雷同套话）。熟人顾客要贴合其人设口吻。
 同时给出 1~5 的星级：以「初评分」为基准，按你写的点评情绪适度上下浮动（最多差 1 星），不要全给五星。
 
@@ -1310,7 +1334,8 @@ ${JSON.stringify(list, null, 2)}
 
     // --- 营业：模拟一波顾客逐单消费，结算收入进钱包 + 产生评价（与记账无关） ---
     const handleOperate = async () => {
-        const cur = stateRef.current;
+        const cur = migrateBankLifeState(stateRef.current);
+        const lifeState = cur.life!;
         const last = cur.shop.lastBusinessAt || 0;
         const elapsed = Date.now() - last;
         if (elapsed < BUSINESS_COOLDOWN_MS) {
@@ -1324,7 +1349,11 @@ ${JSON.stringify(list, null, 2)}
             addToast('先去「经营」雇个店员，才能开门营业', 'info');
             return;
         }
-        const products = SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id));
+        const lifeProducts = (lifeState.shopProducts || []).filter(p => p.stock > 0 || p.stock === 0);
+        const products = lifeProducts.length
+            ? lifeProducts.map(p => ({ id: p.id, name: p.name, icon: '🛍️', price: p.price, appeal: p.appeal, stock: p.stock }))
+            : SHOP_RECIPES.filter(r => cur.shop.unlockedRecipes.includes(r.id)).map(r => ({ ...r, price: recipePrice(r), stock: cur.shop.stock?.[r.id] || 0 }));
+        const usingLifeProducts = lifeProducts.length > 0;
         if (products.length === 0) {
             addToast('菜单空空，先去「经营」解锁可卖的商品', 'info');
             return;
@@ -1332,7 +1361,8 @@ ${JSON.stringify(list, null, 2)}
 
         // 库存：取一份可变副本，营业卖出逐个扣减。货架全空就别开门（不消耗营业冷却），先去进货。
         const stockLeft: Record<string, number> = { ...(cur.shop.stock || {}) };
-        const availableStock = products.reduce((s, p) => s + Math.max(0, stockLeft[p.id] || 0), 0);
+        const lifeStockLeft: Record<string, number> = Object.fromEntries((lifeState.shopProducts || []).map(p => [p.id, p.stock]));
+        const availableStock = products.reduce((s, p) => s + Math.max(0, usingLifeProducts ? (lifeStockLeft[p.id] || 0) : (stockLeft[p.id] || 0)), 0);
         if (availableStock === 0) {
             addToast('货架都空了，先去「经营」里进货，再开门营业', 'info');
             return;
@@ -1383,7 +1413,7 @@ ${JSON.stringify(list, null, 2)}
 
         for (let i = 0; i < customerCount; i++) {
             // 只卖还有库存的商品；若全部售罄，这位客人空手而归（缺货流失，不计收入也不留评，也不算到访）
-            const inStock = products.filter(p => (stockLeft[p.id] || 0) > 0);
+            const inStock = products.filter(p => (usingLifeProducts ? (lifeStockLeft[p.id] || 0) : (stockLeft[p.id] || 0)) > 0);
             if (inStock.length === 0) { lostSales++; continue; }
 
             const who = pickCustomer();
@@ -1393,8 +1423,9 @@ ${JSON.stringify(list, null, 2)}
             if (isRegular) regularVisits++;
 
             const p = inStock[Math.floor(Math.random() * inStock.length)];
-            stockLeft[p.id] = (stockLeft[p.id] || 0) - 1;
-            const price = recipePrice(p);
+            if (usingLifeProducts) lifeStockLeft[p.id] = (lifeStockLeft[p.id] || 0) - 1;
+            else stockLeft[p.id] = (stockLeft[p.id] || 0) - 1;
+            const price = p.price;
             base += price;
             const fumbled = Math.random() < fumbleChance; // 店员手忙脚乱：照付钱，但没小费 + 招差评
             if (fumbled) mishaps++;
@@ -1463,6 +1494,15 @@ ${JSON.stringify(list, null, 2)}
                 reviews: mergedReviews,
                 stock: stockLeft,
                 regulars: prunedRegulars,
+            },
+            life: {
+                ...lifeState,
+                shopProducts: usingLifeProducts
+                    ? (lifeState.shopProducts || []).map(p => ({ ...p, stock: Math.max(0, lifeStockLeft[p.id] ?? p.stock) }))
+                    : lifeState.shopProducts,
+                shopEvents: usingLifeProducts
+                    ? [{ id: `shop-event-${Date.now()}`, dateStr: lifeState.dateStr, title: '今日营业', detail: `${lifeState.shopBusinessName || cur.shop.shopName} 接待了 ${customerCount} 位客人，收入 ¥${total}。`, tone: 'good' as const }, ...(lifeState.shopEvents || [])].slice(0, 20)
+                    : lifeState.shopEvents,
             },
         };
         stateRef.current = newState;
@@ -1780,8 +1820,8 @@ ${JSON.stringify(list, null, 2)}
                         </div>
                         {renderStockChart(q)}
                         <div className="grid grid-cols-3 gap-2 text-center">
-                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.at(-1)?.time || '15:00'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
-                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.history?.at(-1)?.volume.toLocaleString() || 0}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>成交量</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.[q.intraday.length - 1]?.time || '15:00'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.history?.[q.history.length - 1]?.volume.toLocaleString() || 0}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>成交量</div></div>
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{life.watchlist.includes(q.symbol) ? '已加' : '未加'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>自选</div></div>
                         </div>
                         <p className="text-[12px] rounded-2xl px-3 py-2" style={{ color: '#4a4750', background: '#faf8f5' }}>{q.news}</p>
@@ -1943,6 +1983,204 @@ ${JSON.stringify(list, null, 2)}
         );
     };
 
+    const renderShop = () => {
+        const tpl = BUSINESS_TEMPLATES.find(b => b.id === life.shopBusinessType) || selectedBusiness || BUSINESS_TEMPLATES[0];
+        if (!life.shopUnlocked) {
+            return (
+                <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+                    <PaperCard className="p-4 space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-[22px] font-black" style={{ color: INK, fontFamily: HAND_FONT }}>选择你的第一间店</div>
+                                <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>准备开业资金 ¥{SHOP_UNLOCK_COST}</div>
+                            </div>
+                            <div className="w-14 h-14 rounded-[18px] flex items-center justify-center text-[26px]" style={{ background: '#faf8f5', border: '1px solid rgba(43,41,51,0.06)' }}>{selectedBusiness.icon}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            {BUSINESS_TEMPLATES.map(b => (
+                                <button key={b.id} onClick={() => setSelectedBusinessType(b.id)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: selectedBusinessType === b.id ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-9 h-9 rounded-2xl flex items-center justify-center text-[20px]" style={{ background: '#faf8f5' }}>{b.icon}</span>
+                                        <div className="min-w-0">
+                                            <div className="text-[13px] font-black truncate" style={{ color: INK }}>{b.name}</div>
+                                            <div className="text-[10px]" style={{ color: INK_SOFT }}>毛利 {Math.round(b.margin * 100)}% · 风险 {b.risk}/5</div>
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 max-[420px]:grid-cols-1">
+                            <div>
+                                <FieldLabel>店铺名字</FieldLabel>
+                                <input value={newShopName} onChange={e => setNewShopName(e.target.value)} placeholder={`${selectedBusiness.name}小店`} className="w-full px-3 py-2 outline-none" style={hbInputStyle} />
+                            </div>
+                            <div>
+                                <FieldLabel>钱包余额</FieldLabel>
+                                <div className="px-3 py-2 text-[14px] font-black" style={hbInputStyle}>¥{Math.round(userProfile.balance || 0)}</div>
+                            </div>
+                        </div>
+                        <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>
+                            <b>{selectedBusiness.name}</b> · {selectedBusiness.vibe}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {selectedBusiness.products.map(p => <CleanBadge key={p.id} tone="default">{p.name} ¥{p.price}</CleanBadge>)}
+                        </div>
+                        <button onClick={handleUnlockLifeShop} className="w-full py-3 text-[15px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
+                            投入 ¥{SHOP_UNLOCK_COST} 开始营业
+                        </button>
+                    </PaperCard>
+                </div>
+            );
+        }
+
+        const products = life.shopProducts?.length ? life.shopProducts : tpl.products.map(p => ({ ...p, stock: 8 }));
+        return (
+            <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="px-3.5 pt-3 shrink-0">
+                    <PaperCard className="p-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0 flex items-center gap-3">
+                                <span className="w-12 h-12 rounded-[18px] flex items-center justify-center text-[24px]" style={{ background: '#faf8f5' }}>{tpl.icon}</span>
+                                <div className="min-w-0">
+                                    <div className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.shopBusinessName || state.shop.shopName || tpl.name}</div>
+                                    <div className="text-[11px] truncate" style={{ color: INK_SOFT }}>{tpl.name} · Lv.{state.shop.shopLevel || 1} · 口碑 {state.shop.reviews?.length || 0} 条</div>
+                                </div>
+                            </div>
+                            <button onClick={handleOperate} className="px-4 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>营业</button>
+                        </div>
+                    </PaperCard>
+                    <div className="flex gap-2 pt-2 pb-2">
+                        {([['game', '店铺现场'], ['manage', '经营打理']] as const).map(([k, label]) => (
+                            <button key={k} onClick={() => setShopView(k)} className="flex-1 py-2 text-[13px] font-black active:scale-95 transition-transform" style={chipStyle(shopView === k)}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {shopView === 'game' ? (
+                    <div className="flex-1 overflow-hidden relative">
+                        {isBankDataLoaded ? (
+                            <BankDollhouse
+                                shopState={state.shop}
+                                dollhouseState={dollhouseState}
+                                onDollhouseChange={async (updater) => { await persistDollhouseUpdate(updater); }}
+                                characters={characters}
+                                userProfile={userProfile}
+                                apiConfig={auxApi}
+                                updateState={async (updater) => {
+                                    const nextState = { ...stateRef.current, shop: updater(stateRef.current.shop) };
+                                    stateRef.current = nextState;
+                                    setState(nextState);
+                                    await DB.saveBankState(nextState);
+                                }}
+                                onStaffClick={handleOpenStaffEdit}
+                                onOpenGuestbook={() => setShowGuestbook(true)}
+                                onWipeCounter={handleWipeCounter}
+                            />
+                        ) : <div className="flex-1 flex items-center justify-center text-sm" style={{ color: INK_SOFT }}>加载店铺中...</div>}
+                        {(() => {
+                            const rv = state.shop.reviews || [];
+                            const avg = rv.length ? Math.round((rv.reduce((s, r) => s + r.rating, 0) / rv.length) * 10) / 10 : 0;
+                            return (
+                                <button onClick={() => setShowReviews(true)} className="absolute left-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 8px 20px -12px rgba(38,38,38,0.42)' }}>
+                                    <span className="text-[12px] font-black" style={{ color: INK }}>{avg || '口碑'}</span>
+                                    <span className="text-[10px]" style={{ color: INK_SOFT }}>{rv.length ? `${rv.length} 条` : '看看'}</span>
+                                </button>
+                            );
+                        })()}
+                        {(() => {
+                            const regs = Object.values(state.shop.regulars || {});
+                            const regN = regs.filter(r => r.visits >= REGULAR_VISITS).length;
+                            return (
+                                <button onClick={() => setShowRegulars(true)} className="absolute left-3 bottom-[58px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 8px 20px -12px rgba(38,38,38,0.42)' }}>
+                                    <span className="text-[12px] font-black" style={{ color: INK }}>{regN || '常客'}</span>
+                                    <span className="text-[10px]" style={{ color: INK_SOFT }}>名册</span>
+                                </button>
+                            );
+                        })()}
+                        {(() => {
+                            const pending = Math.floor(state.shop.pendingRevenue || 0);
+                            if (pending < 1) return null;
+                            const full = pending >= idleCapNow(state.shop);
+                            return (
+                                <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 bottom-[60px] z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
+                                    <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
+                                    {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
+                                </button>
+                            );
+                        })()}
+                        {(() => {
+                            const w = getWeatherDef(state.shop.weather?.id);
+                            return (
+                                <div className="absolute right-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full" style={{ background: 'rgba(255,255,255,0.95)', boxShadow: '0 8px 20px -12px rgba(38,38,38,0.42)' }} title={w.note}>
+                                    <span className="text-sm">{w.emoji}</span>
+                                    <span className="text-[12px] font-black" style={{ color: INK }}>{w.label}</span>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                ) : (
+                    <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pb-4 space-y-3">
+                        <PaperCard className="p-4">
+                            <SectionTag en="goods">今日货架</SectionTag>
+                            <div className="grid grid-cols-2 gap-2 mt-3">
+                                {products.map(p => (
+                                    <div key={p.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#faf8f5' }}>
+                                        <div className="font-black truncate" style={{ color: INK }}>{p.name}</div>
+                                        <div className="mt-1 flex justify-between" style={{ color: INK_SOFT }}><span>售价 ¥{p.price}</span><span>库存 {p.stock}</span></div>
+                                        <button onClick={() => handleRestockLifeProduct(p.id)} className="mt-2 w-full py-1.5 text-[11px] font-black active:scale-95 transition-transform" style={chipStyle(false)}>
+                                            补货 · 约 ¥{Math.max(1, Math.round(p.cost * RESTOCK_BATCH))}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </PaperCard>
+                        <PaperCard className="p-4">
+                            <SectionTag en="crowd">客群和动向</SectionTag>
+                            <div className="flex flex-wrap gap-1.5 mt-3">
+                                {(life.shopCustomers?.length ? life.shopCustomers : tpl.customerGroups).map(c => <CleanBadge key={c} tone="blue">{c}</CleanBadge>)}
+                            </div>
+                            <div className="space-y-2 mt-3">
+                                {(life.shopEvents?.length ? life.shopEvents : tpl.events.map((detail, idx) => ({ id: `shop-event-${idx}`, dateStr: life.dateStr, title: '店里动向', detail }))).slice(0, 3).map(ev => (
+                                    <div key={ev.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#faf8f5', color: '#4a4750' }}>
+                                        <b>{ev.title}</b><div>{ev.detail}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </PaperCard>
+                        <PaperCard className="p-4">
+                            <div className="flex justify-between items-center gap-3">
+                                <div>
+                                    <div className="text-[15px] font-black" style={{ color: INK }}>店铺等级</div>
+                                    <div className="text-[11px]" style={{ color: INK_SOFT }}>Lv.{state.shop.shopLevel || 1} · 客流、价格和挂机收入会跟着成长</div>
+                                </div>
+                                <button onClick={handleUpgradeShop} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>
+                                    升级
+                                </button>
+                            </div>
+                        </PaperCard>
+                        <BankGameMenu
+                            state={state}
+                            characters={characters}
+                            walletBalance={Math.round(userProfile.balance || 0)}
+                            onUnlockRecipe={handleUnlockRecipe}
+                            onRestock={handleRestock}
+                            onHireStaff={handleHireStaff}
+                            onStaffRest={handleStaffRest}
+                            onFireStaff={handleFireStaff}
+                            onRehireStaff={handleRehireStaff}
+                            onDeleteFiredStaff={handleDeleteFiredStaff}
+                            onUpdateConfig={handleConfigUpdate}
+                            onAddGoal={() => setShowGoalModal(true)}
+                            onDeleteGoal={async (id) => { await persistStateUpdate(prev => ({ ...prev, goals: prev.goals.filter(g => g.id !== id) })); }}
+                            onEditStaff={handleOpenStaffEdit}
+                        />
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAGE_BG, color: INK }}>
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-64 z-0" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.10), transparent 70%)' }} />
@@ -1956,7 +2194,7 @@ ${JSON.stringify(list, null, 2)}
                         >
                             ‹
                         </button>
-                        <Stamp color="rose" size={40}><span className="text-[18px] font-black">¥</span></Stamp>
+                        <span className="w-10 h-10 rounded-[14px] flex items-center justify-center text-[18px] font-black shrink-0" style={{ background: '#ffe4e6', color: '#be123c' }}>¥</span>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-baseline gap-2">
                                 <span className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>生活拟</span>
@@ -1970,13 +2208,6 @@ ${JSON.stringify(list, null, 2)}
                                 <span className="truncate">净资产 ¥{netWorth}</span>
                             </div>
                         </div>
-                        <button
-                            onClick={() => setShowTutorial(true)}
-                            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black active:scale-90 transition-transform shrink-0"
-                            style={{ background: '#faf8f5', color: INK_SOFT, border: '1px solid rgba(43,41,51,0.06)' }}
-                        >
-                            ?
-                        </button>
                         <button
                             onClick={handleOperate}
                             disabled={!life.shopUnlocked}
@@ -2180,7 +2411,7 @@ ${JSON.stringify(list, null, 2)}
             </div>
 
             {/* 记账弹窗 */}
-            <HbModal open={showAddTxModal} onClose={() => setShowAddTxModal(false)} title="记一笔现实账" sub="进账还是支出，写下来，角色会看见" tapeColor="rgba(231,196,120,0.72)"
+            <HbModal open={showAddTxModal} onClose={() => setShowAddTxModal(false)} title="记一笔现实账" sub="进账还是支出，写下来，角色会看见"
                 footer={
                     <button onClick={handleAddTransaction} className="w-full py-3.5 text-[16px] font-black active:scale-[0.98] transition-transform" style={{ background: '#b1543f', color: '#fff7ef', borderRadius: 14, fontFamily: HAND_FONT, letterSpacing: 1 }}>
                         记下这笔
@@ -2188,7 +2419,7 @@ ${JSON.stringify(list, null, 2)}
                 }>
                 <div className="space-y-4">
                     <div>
-                        <TapeLabel color="#e8c8a0" className="mb-2">是进是出</TapeLabel>
+                        <FieldLabel>是进是出</FieldLabel>
                         <div className="flex gap-2 mt-2">
                             {([['expense', '📤 花出去'], ['income', '📥 进账来']] as const).map(([k, label]) => (
                                 <button key={k} onClick={() => setTxType(k)} className="flex-1 py-2.5 text-[14px] font-black active:scale-95 transition-transform" style={{ borderRadius: 12, fontFamily: HAND_FONT,
@@ -2201,33 +2432,33 @@ ${JSON.stringify(list, null, 2)}
                         </div>
                     </div>
                     <div>
-                        <TapeLabel color="#cfe3c6" textColor="#4a6b3c" className="mb-2">多少钱</TapeLabel>
+                        <FieldLabel>多少钱</FieldLabel>
                         <div className="relative mt-2">
                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[18px] font-black" style={{ color: '#a98e6f' }}>{state.config.currencySymbol}</span>
                             <input type="number" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0.00" className="w-full pl-10 pr-4 py-3.5 text-[24px] font-black focus:outline-none" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
                         </div>
                     </div>
                     <div>
-                        <TapeLabel color="#eec7cb" textColor="#8a3b4c" className="mb-2">记点什么</TapeLabel>
+                        <FieldLabel>记点什么</FieldLabel>
                         <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder={txType === 'income' ? '这笔钱哪来的？' : '钱花哪了？'} className="w-full px-4 py-3 text-[15px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
                     </div>
                 </div>
             </HbModal>
 
             {/* 攒钱心愿弹窗 */}
-            <HbModal open={showGoalModal} onClose={() => setShowGoalModal(false)} title="立一个攒钱心愿" sub="想买什么、要攒多少，贴上来" tapeColor="rgba(158,201,163,0.7)" rotate={0.6}
+            <HbModal open={showGoalModal} onClose={() => setShowGoalModal(false)} title="立一个攒钱心愿" sub="想买什么、要攒多少，写下来"
                 footer={
                     <button onClick={handleAddGoal} className="w-full py-3.5 text-[16px] font-black active:scale-[0.98] transition-transform" style={{ background: '#3f8a6b', color: '#fff7ef', borderRadius: 14, fontFamily: HAND_FONT, letterSpacing: 1 }}>
-                        贴上心愿
+                        存好心愿
                     </button>
                 }>
                 <div className="space-y-4">
                     <div>
-                        <TapeLabel color="#cfe3c6" textColor="#4a6b3c" className="mb-2">想要什么</TapeLabel>
+                        <FieldLabel>想要什么</FieldLabel>
                         <input value={goalName} onChange={e => setGoalName(e.target.value)} placeholder="比如：一台 Switch" className="w-full px-4 py-3 text-[15px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
                     </div>
                     <div>
-                        <TapeLabel color="#e8c8a0" className="mb-2">要攒多少</TapeLabel>
+                        <FieldLabel>要攒多少</FieldLabel>
                         <div className="relative mt-2">
                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[18px] font-black" style={{ color: '#a98e6f' }}>{state.config.currencySymbol}</span>
                             <input type="number" value={goalTarget} onChange={e => setGoalTarget(e.target.value)} placeholder="2000" className="w-full pl-10 pr-4 py-3.5 text-[24px] font-black focus:outline-none" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
@@ -2237,7 +2468,7 @@ ${JSON.stringify(list, null, 2)}
             </HbModal>
 
             {/* 店员档案弹窗 */}
-            <HbModal open={showStaffEdit} onClose={() => { setShowStaffEdit(false); setEditingStaff(null); }} title="店员小档案" sub="改个名字、写句性格备注" tapeColor="rgba(155,191,224,0.7)"
+            <HbModal open={showStaffEdit} onClose={() => { setShowStaffEdit(false); setEditingStaff(null); }} title="店员小档案" sub="改个名字、写句性格备注"
                 footer={
                     <button onClick={handleSaveStaff} className="w-full py-3.5 text-[16px] font-black active:scale-[0.98] transition-transform" style={{ background: '#3f6b8a', color: '#fff7ef', borderRadius: 14, fontFamily: HAND_FONT, letterSpacing: 1 }}>
                         存好档案
@@ -2257,36 +2488,15 @@ ${JSON.stringify(list, null, 2)}
                             </div>
                             <div className="flex-1 space-y-2.5">
                                 <input value={editingStaff.name} onChange={e => setEditingStaff({ ...editingStaff, name: e.target.value })} placeholder="名字" className="w-full font-black text-[20px] bg-transparent outline-none pb-1" style={{ fontFamily: HAND_FONT, color: '#5b4636', borderBottom: '2px dashed #d8c7a8' }} />
-                                <TapeLabel color="#e8c8a0">{editingStaff.role === 'manager' ? '经理' : editingStaff.role === 'chef' ? '主厨' : '服务员'}</TapeLabel>
+                                <CleanBadge>{editingStaff.role === 'manager' ? '经理' : editingStaff.role === 'chef' ? '主厨' : '服务员'}</CleanBadge>
                             </div>
                         </div>
                         <div>
-                            <TapeLabel color="#eec7cb" textColor="#8a3b4c" className="mb-2">性格 / 备注</TapeLabel>
+                            <FieldLabel>性格 / 备注</FieldLabel>
                             <input value={editingStaff.personality || ''} onChange={e => setEditingStaff({ ...editingStaff, personality: e.target.value })} placeholder="懒洋洋的，爱晒太阳" className="w-full px-4 py-3 text-[14px] focus:outline-none mt-2" style={{ ...hbInputStyle, fontFamily: HAND_FONT }} />
                         </div>
                     </div>
                 )}
-            </HbModal>
-
-            {/* 玩法说明弹窗（已按新玩法重写） */}
-            <HbModal open={showTutorial} onClose={() => setShowTutorial(false)} title="这间小店怎么玩" sub="一页纸看懂" tapeColor="rgba(231,163,156,0.7)">
-                <div className="space-y-3" style={{ color: '#5b4636' }}>
-                    {[
-                        { emoji: '💰', t: '营业与挂机', d: '点顶栏「营业」让店员接客、卖出有货的商品收钱进「钱包」。离店时店铺会慢慢攒「挂机营业额」，回来点店里的金币收进钱包（攒满约 8 小时就停，记得常回来）。在「经营」里花钱包升级，客流和收入档次都更高。', bg: '#dfeccd' },
-                        { emoji: '📦', t: '进货与库存', d: '每件商品都有库存，营业卖一份扣一份；见底就去「经营·商品」花钱包的钱进货。进货价只有售价四成，卖出去就是赚的——货架空了客人会空手而归。', bg: '#e3d2bd' },
-                        { emoji: '🧾', t: '口碑与熟客', d: '客人会点单、留 1~5 星评价（配了 API 会由 AI 写得更鲜活多样）；常来的成为常客 / VIP——小费更高、评分更稳、还爱回头。口碑越好营业收入越高，点店铺「⭐口碑」可翻看。', bg: '#f6ddc9' },
-                        { emoji: '📖', t: '记账是另一本账', d: '「账本」记的是你现实的钱（进账/支出），和店铺的钱各算各的；记完角色会点评，角色也会记自己的账等你回应。', bg: '#cfe3e0' },
-                        { emoji: '⚡', t: '行动点 AP', d: '每天登录领 AP，用来解锁商品、雇店员、装修房间。店员忙累了要歇会儿才能再营业。', bg: '#e7dcc4' },
-                    ].map((c, i) => (
-                        <div key={i} className="flex gap-3 p-3.5" style={{ background: c.bg, borderRadius: 14, transform: `rotate(${tinyRotate('tut' + i)}deg)`, boxShadow: '0 2px 8px rgba(96,66,40,0.12)' }}>
-                            <span className="text-2xl shrink-0">{c.emoji}</span>
-                            <div>
-                                <div className="text-[15px] font-black mb-0.5" style={{ fontFamily: HAND_FONT }}>{c.t}</div>
-                                <p className="text-[12px] leading-relaxed" style={{ color: '#6d5142' }}>{c.d}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
             </HbModal>
 
             {/* 营业结算 */}

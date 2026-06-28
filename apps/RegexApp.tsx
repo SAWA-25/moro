@@ -31,13 +31,18 @@ import {
     WarningCircle,
 } from '@phosphor-icons/react';
 
-const AC = '#6bb7a8';
-const AC_DARK = '#3f756d';
-const AC_SOFT = '#e8f5f1';
-const AC_WASH = 'rgba(125,199,182,0.44)';
-const CANVAS = 'radial-gradient(120% 72% at 50% -18%, rgba(125,199,182,0.42), transparent 62%), linear-gradient(158deg, #fffaf7 0%, #f6faf6 44%, #edf5f8 100%)';
+const AC = '#9ecfc4';
+const AC_DARK = '#5b7771';
+const AC_SOFT = '#f0faf7';
+const AC_WASH = 'rgba(172,214,204,0.34)';
+const CANVAS = 'radial-gradient(120% 72% at 50% -18%, rgba(172,214,204,0.30), transparent 62%), linear-gradient(158deg, #fffaf8 0%, #f8fbf7 44%, #f1f7f9 100%)';
+const GRAD_MAIN = 'linear-gradient(135deg, #d4eee7 0%, #d8edf4 62%, #f2e6c2 145%)';
+const GRAD_SOFT = 'linear-gradient(135deg, rgba(240,250,247,0.98) 0%, rgba(243,250,252,0.96) 58%, rgba(255,250,236,0.90) 100%)';
+const GRAD_CARD = 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.94)), linear-gradient(135deg, rgba(172,214,204,0.12), rgba(191,220,232,0.10), rgba(232,213,164,0.09))';
+const GRAD_FIELD = 'linear-gradient(135deg, rgba(255,255,255,0.98), rgba(247,252,250,0.96) 58%, rgba(255,250,241,0.94))';
+const GRAD_WARM = 'linear-gradient(135deg, #fff8ea 0%, #f8eccb 58%, #ead89f 120%)';
 const PAPER = '#ffffff';
-const EDGE = 'rgba(63,117,109,0.16)';
+const EDGE = 'rgba(91,119,113,0.14)';
 const HAIRLINE = 'rgba(43,41,51,0.07)';
 const INK = '#2b2933';
 const INK_SOFT = '#6f6b76';
@@ -76,12 +81,12 @@ const CandyToggle: React.FC<{ on: boolean; onToggle: () => void }> = ({ on, onTo
         aria-checked={on}
         className="relative w-[52px] h-[28px] shrink-0 rounded-full transition-all duration-300 active:scale-95"
         style={{
-            background: on ? AC : '#f1f0ec',
+            background: on ? GRAD_MAIN : 'linear-gradient(135deg, #f7f6f2, #ebe9e3)',
             border: `1px solid ${EDGE}`,
-            boxShadow: on ? '0 8px 18px -12px rgba(95,175,160,0.48)' : 'inset 0 1px 2px rgba(38,38,38,0.08)',
+            boxShadow: on ? '0 8px 18px -13px rgba(91,119,113,0.34)' : 'inset 0 1px 2px rgba(38,38,38,0.08)',
         }}
     >
-        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...LABEL_STACK, left: 8, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...LABEL_STACK, left: 8, color: AC_DARK, opacity: on ? 1 : 0 }}>ON</span>
         <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...LABEL_STACK, right: 7, color: '#aaa6a0', opacity: on ? 0 : 1 }}>off</span>
         <span
             className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] rounded-full bg-white transition-all duration-300"
@@ -98,10 +103,10 @@ const StickerChip: React.FC<{
     tone?: 'rose' | 'blue' | 'mint' | 'gold' | 'plain';
 }> = ({ active, onClick, children, title, tone = 'rose' }) => {
     const palette = {
-        rose: { bg: AC, ink: '#ffffff', edge: AC },
-        blue: { bg: '#0ea5e9', ink: '#ffffff', edge: '#0ea5e9' },
-        mint: { bg: '#10b981', ink: '#ffffff', edge: '#10b981' },
-        gold: { bg: '#f59e0b', ink: '#ffffff', edge: '#f59e0b' },
+        rose: { bg: GRAD_MAIN, ink: AC_DARK, edge: 'rgba(91,119,113,0.24)' },
+        blue: { bg: 'linear-gradient(135deg, #e7f5fa, #d8edf4)', ink: '#607780', edge: 'rgba(121,161,174,0.24)' },
+        mint: { bg: 'linear-gradient(135deg, #edf9f5, #dff2ec)', ink: AC_DARK, edge: 'rgba(91,119,113,0.24)' },
+        gold: { bg: GRAD_WARM, ink: '#6f4c1c', edge: 'rgba(215,166,79,0.36)' },
         plain: { bg: '#fbfaf8', ink: INK_SOFT, edge: HAIRLINE },
     }[tone];
     return (
@@ -113,10 +118,10 @@ const StickerChip: React.FC<{
             title={title}
             className="px-3 py-1.5 text-[11px] font-bold rounded-full transition-all active:scale-95 max-w-full truncate"
             style={{
-                background: active ? palette.bg : PAPER,
+                background: active ? palette.bg : GRAD_FIELD,
                 color: active ? palette.ink : INK_SOFT,
                 border: `1px solid ${active ? palette.edge : HAIRLINE}`,
-                boxShadow: active ? '0 7px 16px -12px rgba(95,175,160,0.34)' : 'none',
+                boxShadow: active ? '0 7px 16px -13px rgba(91,119,113,0.24)' : 'none',
             }}
         >
             {children}
@@ -156,14 +161,14 @@ const ScopeTab: React.FC<{
         onClick={onClick}
         className="min-w-[104px] flex-1 rounded-[16px] px-3 py-2.5 text-left active:scale-[0.98] transition-transform"
         style={{
-            background: active ? AC : PAPER,
-            color: active ? '#fff' : INK,
-            border: `1px solid ${active ? 'rgba(95,175,160,0.24)' : HAIRLINE}`,
-            boxShadow: active ? '0 14px 26px -16px rgba(95,175,160,0.52)' : '0 10px 24px -22px rgba(38,38,38,0.28)',
+            background: active ? GRAD_MAIN : GRAD_FIELD,
+            color: active ? AC_DARK : INK,
+            border: `1px solid ${active ? 'rgba(91,119,113,0.20)' : HAIRLINE}`,
+            boxShadow: active ? '0 14px 26px -17px rgba(91,119,113,0.32)' : '0 10px 24px -22px rgba(38,38,38,0.28)',
         }}
     >
         <div className="flex items-center gap-2">
-            <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: active ? 'rgba(255,255,255,0.18)' : AC_SOFT, color: active ? '#fff' : AC_DARK }}>
+            <span className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: active ? 'rgba(255,255,255,0.48)' : GRAD_SOFT, color: AC_DARK }}>
                 {icon}
             </span>
             <span className="min-w-0 flex-1 text-[12px] font-bold truncate">{title}</span>
@@ -174,8 +179,8 @@ const ScopeTab: React.FC<{
 
 const ToolCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
     <section
-        className={`rounded-[22px] bg-white ${className}`}
-        style={{ border: `1px solid ${HAIRLINE}`, boxShadow: CARD_SHADOW }}
+        className={`rounded-[22px] ${className}`}
+        style={{ background: GRAD_CARD, border: `1px solid ${HAIRLINE}`, boxShadow: CARD_SHADOW }}
     >
         {children}
     </section>
@@ -183,9 +188,9 @@ const ToolCard: React.FC<{ children: React.ReactNode; className?: string }> = ({
 
 const StatTile: React.FC<{ label: string; value: number | string; tone: 'teal' | 'sky' | 'paper' }> = ({ label, value, tone }) => {
     const palette = {
-        teal: { bg: AC_SOFT, ink: AC_DARK },
-        sky: { bg: '#e6f6fe', ink: '#075985' },
-        paper: { bg: '#fff6e8', ink: '#6f4c1c' },
+        teal: { bg: 'linear-gradient(135deg, #f0faf7, #e5f4ef)', ink: AC_DARK },
+        sky: { bg: 'linear-gradient(135deg, #eff8fb, #edf8f4)', ink: '#607780' },
+        paper: { bg: 'linear-gradient(135deg, #fff6e8, #f6eed3)', ink: '#6f4c1c' },
     }[tone];
     return (
         <div className="rounded-[14px] px-3 py-2 text-center" style={{ background: palette.bg, border: `1px solid ${HAIRLINE}` }}>
@@ -215,8 +220,8 @@ const CharacterPolaroid: React.FC<{
                 className="relative h-[72px] rounded-[10px] overflow-hidden"
                 style={{
                     background: active
-                        ? 'linear-gradient(145deg, rgba(232,245,241,0.98), rgba(223,239,246,0.92))'
-                        : 'linear-gradient(145deg, #fbfaf8, #eef6f2)',
+                        ? 'linear-gradient(145deg, rgba(232,245,241,0.98), rgba(223,239,246,0.92), rgba(255,247,229,0.78))'
+                        : 'linear-gradient(145deg, #fbfaf8, #eef6f2, #fff8ea)',
                     border: `1px solid ${active ? EDGE : HAIRLINE}`,
                 }}
             >
@@ -229,8 +234,8 @@ const CharacterPolaroid: React.FC<{
                         <span
                             className="w-10 h-10 rounded-[14px] flex items-center justify-center"
                             style={{
-                                background: active ? AC : 'rgba(255,255,255,0.86)',
-                                color: active ? '#fff' : AC_DARK,
+                            background: active ? GRAD_MAIN : 'linear-gradient(135deg, rgba(255,255,255,0.94), rgba(240,250,247,0.90))',
+                                color: AC_DARK,
                                 border: `1px solid ${active ? 'rgba(255,255,255,0.28)' : HAIRLINE}`,
                             }}
                         >
@@ -265,14 +270,14 @@ const ScriptCard: React.FC<{
         onClick={onOpen}
         className="relative cursor-pointer rounded-[16px] px-3 py-2.5 active:scale-[0.99] transition-transform"
         style={{
-            background: disabled ? '#f6f5f2' : PAPER,
+            background: disabled ? 'linear-gradient(135deg, #f6f5f2, #eeece8)' : GRAD_CARD,
             border: `1px solid ${HAIRLINE}`,
             boxShadow: '0 10px 24px -22px rgba(38,38,38,0.32)',
             opacity: disabled ? 0.72 : 1,
         }}
     >
         <div className="flex items-start gap-2.5">
-            <span className="shrink-0 mt-0.5 w-8 h-8 rounded-[11px] flex items-center justify-center" style={{ background: disabled ? '#eceae6' : AC_SOFT, color: disabled ? '#aaa6a0' : AC_DARK }}>
+            <span className="shrink-0 mt-0.5 w-8 h-8 rounded-[11px] flex items-center justify-center" style={{ background: disabled ? '#eceae6' : GRAD_SOFT, color: disabled ? '#aaa6a0' : AC_DARK }}>
                 <BracketsCurly size={16} weight="bold" />
             </span>
             <div className="min-w-0 flex-1">
@@ -502,6 +507,7 @@ const RegexApp: React.FC = () => {
             style={{ background: CANVAS, color: INK }}
         >
             <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72" style={{ background: `radial-gradient(115% 88% at 50% -22%, ${AC_WASH}, transparent 68%)` }} />
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-[92px] h-48" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0), rgba(130,189,213,0.13), rgba(255,247,229,0))' }} />
 
             <div className="relative z-20 shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: PAPER, borderBottom: '1px solid #ededed' }}>
                 <button
@@ -512,8 +518,8 @@ const RegexApp: React.FC = () => {
                 >
                     <CaretLeft size={18} weight="bold" />
                 </button>
-                <div className="w-9 h-9 rounded-[12px] p-1.5 shrink-0" style={{ background: PAPER, border: `1px solid ${HAIRLINE}` }}>
-                    <div className="w-full h-full rounded-[5px] flex items-center justify-center" style={{ background: AC_SOFT, color: AC_DARK }}>
+                <div className="w-9 h-9 rounded-[12px] p-1.5 shrink-0" style={{ background: GRAD_FIELD, border: `1px solid ${HAIRLINE}` }}>
+                    <div className="w-full h-full rounded-[5px] flex items-center justify-center" style={{ background: GRAD_MAIN, color: AC_DARK, boxShadow: '0 8px 18px -14px rgba(91,119,113,0.38)' }}>
                         <BracketsCurly size={18} weight="bold" />
                     </div>
                 </div>
@@ -526,7 +532,7 @@ const RegexApp: React.FC = () => {
                         {scope === 'global' ? '全局正则' : scope === 'preset' ? (preset?.name || '预设正则') : scopedChar?.name || '角色正则'} · 更改会自动保存
                     </div>
                 </div>
-                <span className="text-[10px] font-bold select-none shrink-0 px-2.5 py-1 rounded-full" style={{ color: AC_DARK, background: AC_SOFT, border: `1px solid ${EDGE}` }}>已保存</span>
+                <span className="text-[10px] font-bold select-none shrink-0 px-2.5 py-1 rounded-full" style={{ color: AC_DARK, background: GRAD_SOFT, border: `1px solid ${EDGE}` }}>已保存</span>
             </div>
 
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-2.5 pb-24 space-y-2.5">
@@ -570,7 +576,7 @@ const RegexApp: React.FC = () => {
                             </div>
                             <span
                                 className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform"
-                                style={{ background: AC_SOFT, color: AC_DARK, border: `1px solid ${EDGE}`, transform: (scope === 'preset' ? presetSelectorOpen : characterSelectorOpen) ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                                style={{ background: GRAD_SOFT, color: AC_DARK, border: `1px solid ${EDGE}`, transform: (scope === 'preset' ? presetSelectorOpen : characterSelectorOpen) ? 'rotate(180deg)' : 'rotate(0deg)' }}
                             >
                                 <CaretDown size={15} weight="bold" />
                             </span>
@@ -578,7 +584,7 @@ const RegexApp: React.FC = () => {
 
                         {scope === 'preset' && presetSelectorOpen && (
                             <div className="pt-2.5 space-y-2.5">
-                                <label className="flex h-12 items-center gap-2 rounded-[18px] px-4" style={{ background: PAPER, border: `1px solid ${HAIRLINE}`, boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)' }}>
+                                <label className="flex h-12 items-center gap-2 rounded-[18px] px-4" style={{ background: GRAD_FIELD, border: `1px solid ${HAIRLINE}`, boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)' }}>
                                     <MagnifyingGlass size={18} weight="bold" style={{ color: '#718096' }} />
                                     <input
                                         value={presetQuery}
@@ -594,8 +600,8 @@ const RegexApp: React.FC = () => {
                                             value={presetId || ''}
                                             onChange={e => selectPreset(e.target.value)}
                                             disabled={presetSelectOptions.length === 0}
-                                            className="w-full h-12 appearance-none rounded-[18px] bg-white pl-4 pr-10 text-[14px] font-extrabold outline-none disabled:opacity-50"
-                                            style={{ color: INK, border: `1px solid ${HAIRLINE}`, boxShadow: '0 8px 18px -16px rgba(38,38,38,0.24)' }}
+                                            className="w-full h-12 appearance-none rounded-[18px] pl-4 pr-10 text-[14px] font-extrabold outline-none disabled:opacity-50"
+                                            style={{ background: GRAD_FIELD, color: INK, border: `1px solid ${HAIRLINE}`, boxShadow: '0 8px 18px -16px rgba(38,38,38,0.24)' }}
                                         >
                                             {presetSelectOptions.map(p => (
                                                 <option key={p.id} value={p.id}>
@@ -616,7 +622,7 @@ const RegexApp: React.FC = () => {
                                         disabled={!preset}
                                         className="h-12 rounded-[18px] flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
                                         style={{
-                                            background: presetPinned ? '#fff7e6' : PAPER,
+                                            background: presetPinned ? GRAD_WARM : GRAD_FIELD,
                                             color: presetPinned ? '#7a5b1f' : '#718096',
                                             border: `1px solid ${presetPinned ? 'rgba(215,166,79,0.40)' : HAIRLINE}`,
                                             boxShadow: presetPinned ? '0 10px 20px -17px rgba(215,166,79,0.58)' : '0 8px 18px -16px rgba(38,38,38,0.24)',
@@ -648,7 +654,7 @@ const RegexApp: React.FC = () => {
                 )}
 
                 <ToolCard>
-                    <div className="px-4 pt-3 pb-2.5 border-b" style={{ borderColor: HAIRLINE }}>
+                    <div className="px-4 pt-3 pb-2.5 border-b" style={{ borderColor: HAIRLINE, background: 'linear-gradient(135deg, rgba(232,245,241,0.42), rgba(255,255,255,0.18), rgba(255,247,229,0.34))' }}>
                         <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                                 <div className="text-[15px] font-extrabold truncate" style={{ color: INK }}>
@@ -688,7 +694,7 @@ const RegexApp: React.FC = () => {
                         {scripts.length === 0 ? (
                             <div className="py-7 text-center">
                                 <div className="mx-auto mb-2.5 w-14 h-14 rounded-[18px] bg-white p-2" style={{ boxShadow: '0 14px 26px -18px rgba(38,38,38,0.36)' }}>
-                                    <div className="w-full h-full rounded-[14px] flex items-center justify-center" style={{ background: AC_SOFT, color: AC }}>
+                                    <div className="w-full h-full rounded-[14px] flex items-center justify-center" style={{ background: GRAD_SOFT, color: AC }}>
                                         <BracketsCurly size={26} weight="thin" />
                                     </div>
                                 </div>
@@ -726,7 +732,7 @@ const RegexApp: React.FC = () => {
                     onClick={handleNewScript}
                     disabled={scope === 'preset' && !preset}
                     className="w-full rounded-full py-3 text-[13px] font-bold active:scale-[0.98] transition-transform"
-                    style={{ background: AC, color: '#fff', boxShadow: '0 12px 24px -13px rgba(95,175,160,0.52)' }}
+                    style={{ background: GRAD_MAIN, color: AC_DARK, boxShadow: '0 12px 24px -14px rgba(91,119,113,0.38)' }}
                 >
                     <span className="inline-flex items-center gap-1.5"><Plus size={15} weight="bold" /> 新建正则</span>
                 </button>
