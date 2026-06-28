@@ -27,6 +27,7 @@ const ROOM_UNLOCK_COSTS: Record<string, number> = {
     'room-2f-left': 200,
     'room-2f-right': 300,
 };
+const shopEnergyText = (value: number) => `${value} 点精力`;
 
 const MAIN_ROOM_ID = 'room-1f-left';
 const FLOOR_H_RATIO = 0.24;
@@ -48,7 +49,7 @@ const DECOR_TABS: { id: DecorTab; label: string }[] = [
     { id: 'furniture', label: '家具' },
     { id: 'wallpaper', label: '墙纸' },
     { id: 'floor', label: '地板' },
-    { id: 'roomTexture', label: '全屋贴图' },
+    { id: 'roomTexture', label: '背景图' },
     { id: 'layout', label: '房型' },
     { id: 'rename', label: '改名' },
 ];
@@ -235,7 +236,7 @@ const BankDollhouse: React.FC<Props> = ({
         const x = rect ? ((e.clientX - rect.left) / rect.width) * 100 : 50;
         const y = rect ? ((e.clientY - rect.top) / rect.height) * 100 : 66;
         const ap = await onWipeCounter();
-        setWipeFx({ x, y, text: ap > 0 ? `✨ +${ap} AP` : '擦干净啦~' });
+        setWipeFx({ x, y, text: ap > 0 ? `+${ap} 精力` : '擦干净啦' });
         if (wipeFxTimerRef.current) window.clearTimeout(wipeFxTimerRef.current);
         wipeFxTimerRef.current = window.setTimeout(() => setWipeFx(null), 1100);
     };
@@ -426,7 +427,7 @@ const BankDollhouse: React.FC<Props> = ({
     }, [shopState.staff.length]);
 
     const normalizedRooms = useMemo(() => dh.rooms.map(room => (
-        room.id === MAIN_ROOM_ID ? { ...room, name: '咖啡店' } : room
+        room.id === MAIN_ROOM_ID ? { ...room, name: '店铺' } : room
     )), [dh.rooms]);
 
     const roomOrder = ['room-2f-left', 'room-1f-left', 'room-1f-right', 'room-2f-right'];
@@ -478,7 +479,7 @@ const BankDollhouse: React.FC<Props> = ({
     const handleUnlockRoom = async (roomId: string) => {
         const cost = ROOM_UNLOCK_COSTS[roomId] || 150;
         if (shopState.actionPoints < cost) {
-            addToast(`AP 不足 (需 ${cost})`, 'error');
+            addToast(`店员精力不够（需要 ${cost} 点）`, 'error');
             return;
         }
         // Save dollhouse changes separately from AP deduction
@@ -499,12 +500,12 @@ const BankDollhouse: React.FC<Props> = ({
             actionPoints: prev.actionPoints - cost,
         }));
         setShowUnlockConfirm(null);
-        addToast(`房间已解锁！-${cost} AP`, 'success');
+        addToast(`房间已解锁，消耗${shopEnergyText(cost)}`, 'success');
     };
 
     const handleRenameRoom = (room: DollhouseRoom) => {
         if (room.id === MAIN_ROOM_ID) {
-            addToast('初始房间固定为「咖啡店」', 'error');
+            addToast('第一间店铺不能改名', 'info');
             return;
         }
         setRenameValue(room.name);
@@ -740,7 +741,7 @@ const BankDollhouse: React.FC<Props> = ({
         const layout = getLayout(layoutId);
         if (!layout) return;
         if (layout.apCost > 0 && shopState.actionPoints < layout.apCost) {
-            addToast(`AP 不足 (需 ${layout.apCost})`, 'error');
+            addToast(`店员精力不够（需要 ${layout.apCost} 点）`, 'error');
             return;
         }
         // Save dollhouse changes separately from AP deduction
@@ -815,7 +816,7 @@ const BankDollhouse: React.FC<Props> = ({
                 ...prev,
                 rooms: prev.rooms.map(r => r.id === activeRoom.id ? { ...r, roomTextureUrl: url, roomTextureScale: textureScale } : r)
             }));
-            addToast('全屋贴图已更新', 'success');
+            addToast('背景图已更新', 'success');
         } else if (textureTarget === 'wallpaper') {
             await handleSetWallpaper(activeRoom.id, url);
         } else {
@@ -1061,7 +1062,7 @@ const BankDollhouse: React.FC<Props> = ({
 
                     {/* 擦吧台攒 AP：吧台一带的可点区域（演员在其上、装修/摆件不受影响） */}
                     {!locked && room.id === MAIN_ROOM_ID && !roomTexture && onWipeCounter && !editMode && !placingFurniture && (
-                        <div className="absolute left-0 right-0 cursor-pointer" style={{ top: '58%', height: '20%', zIndex: 8 }} title="擦擦吧台，攒点 AP" onClick={(e) => { e.stopPropagation(); void handleWipe(e); }} />
+                        <div className="absolute left-0 right-0 cursor-pointer" style={{ top: '58%', height: '20%', zIndex: 8 }} title="擦擦柜台，恢复一点精力" onClick={(e) => { e.stopPropagation(); void handleWipe(e); }} />
                     )}
                     {wipeFx && room.id === MAIN_ROOM_ID && (
                         <div className="absolute z-[46] pointer-events-none animate-fade-in" style={{ left: `${wipeFx.x}%`, top: `${wipeFx.y}%`, transform: 'translate(-50%,-120%)' }}>
@@ -1206,7 +1207,7 @@ const BankDollhouse: React.FC<Props> = ({
                         >
                             <div className="bg-white/90 backdrop-blur-sm px-5 py-4 rounded-2xl shadow-lg text-center">
                                 <div className="text-2xl mb-1">🔒</div>
-                                <div className="text-sm font-bold text-[#8A5A3D]">解锁 {ROOM_UNLOCK_COSTS[room.id] || 150} AP</div>
+                                <div className="text-sm font-bold text-[#8A5A3D]">{shopEnergyText(ROOM_UNLOCK_COSTS[room.id] || 150)}</div>
                             </div>
                         </button>
                     )}
@@ -1278,7 +1279,7 @@ const BankDollhouse: React.FC<Props> = ({
                 <button
                     onClick={onOpenGuestbook}
                     className="w-10 h-10 rounded-xl bg-white/90 border border-[#E8D5C4] text-[#7A5238] shadow-sm flex items-center justify-center active:scale-90 transition-transform"
-                    aria-label="翻开情报志"
+                    aria-label="打开店里来信"
                 >
                     <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
@@ -1420,7 +1421,7 @@ const BankDollhouse: React.FC<Props> = ({
                                                 <div className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
                                                     isActive ? 'bg-[#FF8E6B] text-white' : layout.apCost > 0 ? 'bg-[#FFF4E8] text-[#C4956A]' : 'bg-[#E8F5E9] text-[#4CAF50]'
                                                 }`}>
-                                                    {isActive ? '当前' : layout.apCost > 0 ? `${layout.apCost} AP` : '免费'}
+                                                    {isActive ? '当前' : layout.apCost > 0 ? shopEnergyText(layout.apCost) : '免费'}
                                                 </div>
                                             </button>
                                         );
@@ -1502,7 +1503,7 @@ const BankDollhouse: React.FC<Props> = ({
                                         <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
                                         </svg>
-                                        上传全屋贴图
+                                        上传背景图
                                     </button>
 
                                     {activeRoom.roomTextureUrl ? (
@@ -1510,12 +1511,12 @@ const BankDollhouse: React.FC<Props> = ({
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-2 h-2 rounded-full bg-[#4CAF50]" />
-                                                    <span className="text-[11px] text-[#6B4528] font-bold">当前贴图</span>
+                                                    <span className="text-[11px] text-[#6B4528] font-bold">当前背景</span>
                                                 </div>
                                                 <button
                                                     onClick={async () => {
                                                         await saveDollhouse(prev => ({ ...prev, rooms: prev.rooms.map(r => r.id === activeRoom.id ? { ...r, roomTextureUrl: undefined, roomTextureScale: 1 } : r) }));
-                                                        addToast('已清除全屋贴图', 'success');
+                                                        addToast('已清除背景图', 'success');
                                                     }}
                                                     className="text-[10px] text-[#E53935] font-bold px-2 py-1 rounded-lg hover:bg-[#FFEBEE] transition-colors"
                                                 >
@@ -1569,7 +1570,7 @@ const BankDollhouse: React.FC<Props> = ({
                                     ) : (
                                         <div className="text-center py-8 bg-white rounded-2xl border border-[#F0E3D6]">
                                             <div className="text-3xl mb-2 opacity-30">🖼️</div>
-                                            <div className="text-xs text-[#B8956E]">暂无全屋贴图</div>
+                                            <div className="text-xs text-[#B8956E]">还没有背景图</div>
                                             <div className="text-[10px] text-[#D4B99A] mt-1">点击上方按钮上传图片</div>
                                         </div>
                                     )}
@@ -1737,7 +1738,7 @@ const BankDollhouse: React.FC<Props> = ({
                         <div className="bg-gradient-to-r from-[#FF8E6B] to-[#FF6B55] px-5 py-4 flex items-center justify-between flex-shrink-0">
                             <div>
                                 <div className="text-white font-bold text-sm">
-                                    {textureTarget === 'room' ? '全屋贴图' : textureTarget === 'wallpaper' ? '自定义墙纸' : '自定义地板'}
+                                    {textureTarget === 'room' ? '背景图' : textureTarget === 'wallpaper' ? '自定义墙纸' : '自定义地板'}
                                 </div>
                                 <div className="text-white/70 text-[10px] mt-0.5">
                                     {textureTarget === 'room' ? '覆盖在整个房间上方的图层' : '替换当前墙面/地板样式'}
@@ -1872,7 +1873,7 @@ const BankDollhouse: React.FC<Props> = ({
                             <div className="text-center mb-4">
                                 <div className="text-3xl mb-2">🔓</div>
                                 <div className="text-sm font-bold text-[#6B4528]">解锁「{room?.name || '房间'}」</div>
-                                <div className="text-xs text-[#B8956E] mt-1">需要消耗 {cost} AP</div>
+                                <div className="text-xs text-[#B8956E] mt-1">需要{shopEnergyText(cost)}</div>
                             </div>
                             <div className="flex gap-2">
                                 <button

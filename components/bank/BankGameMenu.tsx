@@ -4,7 +4,7 @@ import { BankFullState, ShopStaff, CharacterProfile } from '../../types';
 import { AVAILABLE_STAFF } from './BankGameConstants';
 import BankAssetIcon from './BankAssetIcon';
 import { processImage } from '../../utils/file';
-import { UsersThree, Target, Sparkle, PawPrint, Link as LinkIcon, Camera, Check, Lightbulb, Confetti, Briefcase, CookingPot, HandWaving, Dog, Cat, Rabbit } from '@phosphor-icons/react';
+import { UsersThree, Target, Sparkle, PawPrint, Link as LinkIcon, Camera, Check, Lightbulb, Confetti } from '@phosphor-icons/react';
 import { HAND_FONT } from '../../apps/almanac/handbookKit';
 
 interface Props {
@@ -25,7 +25,7 @@ interface Props {
 }
 
 const BankGameMenu: React.FC<Props> = ({
-    state, characters = [], walletBalance = 0, onUnlockRecipe, onRestock, onHireStaff, onStaffRest, onFireStaff, onRehireStaff, onDeleteFiredStaff, onUpdateConfig,
+    state, characters = [], onHireStaff, onStaffRest, onFireStaff, onRehireStaff, onDeleteFiredStaff,
     onAddGoal, onDeleteGoal, onEditStaff
 }) => {
     const [tab, setTab] = useState<'staff' | 'goals'>('staff');
@@ -349,7 +349,7 @@ const BankGameMenu: React.FC<Props> = ({
                                                 : 'bg-gradient-to-r from-[#42A5F5] to-[#1E88E5] text-white hover:shadow-lg active:scale-95'
                                         }`}
                                     >
-                                        {isPetMode ? '领养 · 150 AP' : '雇佣 · 200 AP'}
+                                        {isPetMode ? '领养 · 150 精力' : '雇佣 · 200 精力'}
                                     </button>
                                 </div>
 
@@ -385,7 +385,7 @@ const BankGameMenu: React.FC<Props> = ({
                                         onClick={() => onHireStaff({ ...s, id: `staff-${Date.now()}`, fatigue: 0, hireDate: Date.now() }, 200)}
                                         className="bg-gradient-to-r from-[#FF8A65] to-[#FF7043] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md hover:shadow-lg active:scale-95 transition-all"
                                     >
-                                        雇佣 · 200 AP
+                                        雇佣 · 200 精力
                                     </button>
                                 </div>
                             ))}
@@ -442,67 +442,6 @@ const BankGameMenu: React.FC<Props> = ({
                             </div>
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* 商品菜单：解锁可卖商品（营业时随机被点单） */}
-            {tab === 'menu' && (
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between px-1">
-                        <h4 className="text-[15px] font-black flex items-center gap-2" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>
-                            <span className="w-6 h-6 bg-gradient-to-br from-[#FFCC80] to-[#FF8A65] rounded-lg flex items-center justify-center text-white text-xs">☕</span>
-                            店铺菜单
-                        </h4>
-                        <span className="text-[10px] text-[#A1887F]">解锁花样 · 进货才有货卖</span>
-                    </div>
-                    {SHOP_RECIPES.map(r => {
-                        const unlocked = state.shop.unlockedRecipes.includes(r.id);
-                        const price = recipePrice(r);
-                        const afford = (state.shop.actionPoints || 0) >= r.cost;
-                        const stock = state.shop.stock?.[r.id] ?? 0;
-                        const restockCost = restockBatchCost(r);
-                        const stockFull = stock >= STOCK_CAP;
-                        const canAffordRestock = walletBalance >= restockCost;
-                        return (
-                            <div key={r.id} className="bg-white p-3.5 rounded-2xl border border-[#E8DCC8] shadow-sm flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#FFF8E1] to-[#FFE0B2] flex items-center justify-center shrink-0">
-                                    {r.icon.startsWith('http') ? <img src={r.icon} className="w-7 h-7" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} /> : <span className="text-2xl">{r.icon}</span>}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[15px] font-black truncate" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>{r.name}</div>
-                                    <div className="text-[10px] flex items-center gap-2 mt-0.5" style={{ color: '#A1887F' }}>
-                                        <span>售价 {state.config.currencySymbol}{price}</span>
-                                        {unlocked
-                                            ? <span style={{ color: stock <= 3 ? '#E57373' : '#A1887F', fontWeight: stock <= 3 ? 700 : 400 }}>· 库存 {stock}{stock <= 3 ? ' · 偏低' : ''}</span>
-                                            : <span>· 人气 +{r.appeal} · 进货价 {state.config.currencySymbol}{restockCost / RESTOCK_BATCH}/份</span>}
-                                    </div>
-                                </div>
-                                {unlocked ? (
-                                    <div className="flex flex-col items-end gap-1 shrink-0">
-                                        <span className="text-[10px] font-bold" style={{ color: stock > 0 ? '#43A047' : '#E57373' }}>{stock > 0 ? '✓ 在售' : '✕ 缺货'}</span>
-                                        <button
-                                            onClick={() => onRestock(r.id)}
-                                            disabled={stockFull || !canAffordRestock}
-                                            className="text-[11px] font-bold px-3 py-1.5 rounded-full active:scale-95 transition-all disabled:opacity-40"
-                                            style={{ background: '#FFF3E0', color: '#E67E22', boxShadow: 'inset 0 0 0 1px rgba(230,126,34,0.3)' }}
-                                            title={stockFull ? '库存已满' : !canAffordRestock ? '钱包不够进货' : '从钱包扣钱补一批库存'}
-                                        >
-                                            {stockFull ? '库存满' : `进货+${RESTOCK_BATCH} · ${state.config.currencySymbol}${restockCost}`}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        onClick={() => onUnlockRecipe(r.id, r.cost)}
-                                        disabled={!afford}
-                                        className="text-[11px] font-bold px-3 py-1.5 rounded-full shrink-0 active:scale-95 transition-all disabled:opacity-40"
-                                        style={{ background: 'linear-gradient(135deg,#8D6E63,#6D4C41)', color: '#fff' }}
-                                    >
-                                        解锁 · {r.cost} AP
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
                 </div>
             )}
 

@@ -178,6 +178,42 @@ const cleanCardStyle: React.CSSProperties = {
     boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 16px 34px -26px rgba(38,38,38,0.28)',
 };
 
+const shopEnergyText = (value: number) => `${value} 点店员精力`;
+
+const buildLocalGuestbookEntries = (
+    shopName: string,
+    char?: { id: string; name: string; avatar?: string }
+): BankGuestbookItem[] => {
+    const now = Date.now();
+    const npcPool = [
+        ['附近住户', `路过${shopName || '这家店'}，橱窗收拾得很清爽。`],
+        ['回头客', '今天的服务比上次更顺，愿意再来一次。'],
+        ['夜班客人', '打烊前还能买到东西，救了我一命。'],
+        ['挑剔顾客', '货架可以再补快一点，想买的东西差点没了。'],
+        ['慢悠悠的客人', '店里气氛不错，适合发会儿呆。'],
+    ];
+    const shuffled = [...npcPool].sort(() => Math.random() - 0.5).slice(0, 3);
+    const entries: BankGuestbookItem[] = shuffled.map(([authorName, content], idx) => ({
+        id: `gb-local-${now}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+        authorName,
+        content,
+        isChar: false,
+        timestamp: now - idx * 1000,
+    }));
+    if (char) {
+        entries.unshift({
+            id: `gb-local-char-${now}-${Math.random().toString(36).slice(2, 5)}`,
+            authorName: char.name,
+            content: `来${shopName || '店里'}看了看，感觉你真的在认真把日子经营起来。`,
+            isChar: true,
+            charId: char.id,
+            avatar: char.avatar,
+            timestamp: now,
+        });
+    }
+    return entries;
+};
+
 const HbModal: React.FC<{
     open: boolean; onClose: () => void; title: string; sub?: string;
     footer?: React.ReactNode; children: React.ReactNode;
@@ -500,10 +536,9 @@ const BankApp: React.FC = () => {
         const today = new Date().toISOString().split('T')[0];
 
         if (currentState.lastLoginDate !== today) {
-            // 解耦：AP 不再来自「记账预算结余」（记账已独立为现实流水）。
-            // 改为店铺自身的每日补给：登录奖励 + 人气分红。
+            // 店员精力来自店铺每日补给：登录奖励 + 人气分红。
             const appealNow = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
-            const dailyAP = 10 + Math.floor(appealNow / 25);
+            const dailyEnergy = 10 + Math.floor(appealNow / 25);
             // 过夜营业额已并入「挂机营业额」——离店时间会在下方折算成待收金币，不再一次性补发。
 
             // Recover Fatigue
@@ -525,7 +560,7 @@ const BankApp: React.FC = () => {
                 lastLoginDate: today,
                 shop: {
                     ...currentState.shop,
-                    actionPoints: (currentState.shop.actionPoints || 0) + dailyAP,
+                    actionPoints: (currentState.shop.actionPoints || 0) + dailyEnergy,
                     staff: updatedStaff,
                     activeVisitor: undefined,
                     stock: replenishedStock,
@@ -533,7 +568,7 @@ const BankApp: React.FC = () => {
             };
 
             await DB.saveBankState(currentState);
-            addToast(`新的一天！店铺补给 +${dailyAP} AP`, 'success');
+            addToast(`新的一天！店员精力 +${dailyEnergy}`, 'success');
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
@@ -582,8 +617,7 @@ const BankApp: React.FC = () => {
         await DB.saveTransaction(newTx);
         
         const cur = migrateBankLifeState(stateRef.current);
-        const lifeState = cur.life!;
-        // 只有「支出」计入今日花费（进账不算）；记账纯记现实金钱，不再影响店铺 AP
+        // 只有「支出」计入今日花费（进账不算）；记账纯记现实金钱，不再影响店铺精力
         const newSpent = cur.todaySpent + (txType === 'expense' ? amount : 0);
         const newState = { ...cur, todaySpent: newSpent };
         stateRef.current = newState;
@@ -633,21 +667,21 @@ const BankApp: React.FC = () => {
 
     // --- Game Logic ---
 
-    const consumeAP = async (cost: number): Promise<boolean> => {
+    const consumeShopEnergy = async (cost: number): Promise<boolean> => {
         const cur = stateRef.current;
         if (cur.shop.actionPoints < cost) {
-            addToast(`AP 不足 (需 ${cost})。去省钱吧！`, 'error');
+            addToast(`店员精力不够（需要 ${cost} 点）`, 'error');
             return false;
         }
-        const newAP = cur.shop.actionPoints - cost;
-        const newState = { ...cur, shop: { ...cur.shop, actionPoints: newAP } };
+        const nextEnergy = cur.shop.actionPoints - cost;
+        const newState = { ...cur, shop: { ...cur.shop, actionPoints: nextEnergy } };
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
         return true;
     };
 
-    // 擦吧台攒 AP：60s 冷却，每次 +1~2 AP（轻量「活的店」互动，返回实得 AP，0=冷却中）
+    // 擦柜台恢复精力：60s 冷却，每次 +1~2。
     const wipeCooldownRef = useRef(0);
     const handleWipeCounter = async (): Promise<number> => {
         const now = Date.now();
@@ -664,7 +698,7 @@ const BankApp: React.FC = () => {
 
     const handleStaffRest = async (staffId: string) => {
         const COST = 20;
-        if (!(await consumeAP(COST))) return;
+        if (!(await consumeShopEnergy(COST))) return;
 
         const cur = stateRef.current;
         const updatedStaff = cur.shop.staff.map(s =>
@@ -679,7 +713,7 @@ const BankApp: React.FC = () => {
     };
 
     const handleUnlockRecipe = async (recipeId: string, cost: number) => {
-        if (!(await consumeAP(cost))) return;
+        if (!(await consumeShopEnergy(cost))) return;
 
         const cur = stateRef.current;
         const newUnlocked = [...cur.shop.unlockedRecipes, recipeId];
@@ -846,7 +880,7 @@ const BankApp: React.FC = () => {
     };
 
     const handleHireStaff = async (newStaff: ShopStaff, cost: number) => {
-        if (!(await consumeAP(cost))) return;
+        if (!(await consumeShopEnergy(cost))) return;
 
         const cur = stateRef.current;
         const randomX = 20 + Math.random() * 60;
@@ -869,34 +903,29 @@ const BankApp: React.FC = () => {
         addToast('新店员入职！', 'success');
     };
 
-    // --- Guestbook Logic (Gossip & Drama) ---
     const handleRefreshGuestbook = async () => {
         const COST = 40;
         if (stateRef.current.shop.actionPoints < COST) {
-            addToast(`AP 不足 (需 ${COST})。去省钱吧！`, 'error');
+            addToast(`店员精力不够（需要 ${COST} 点）`, 'error');
             return;
         }
-        if (!auxApi.apiKey) { addToast('需配置 API Key', 'error'); return; }
 
         setIsRefreshingGuestbook(true);
         try {
             const current = stateRef.current;
-            // 1. Pick a random Char (Try to avoid last visitor if possible)
             const availableChars = characters.filter(c => c.id !== current.shop.activeVisitor?.charId);
             const pool = availableChars.length > 0 ? availableChars : characters;
-            if (pool.length === 0) { addToast('没有可用角色', 'error'); return; }
-            const randomChar = pool[Math.floor(Math.random() * pool.length)];
+            const randomChar = pool.length ? pool[Math.floor(Math.random() * pool.length)] : undefined;
+            let newEntries: BankGuestbookItem[] | null = null;
 
-            // 2. Build Context
-            await injectMemoryPalace(randomChar);
-            const charContext = ContextBuilder.buildCoreContext(randomChar, userProfile, true);
-            const recentMsgs = await DB.getMessagesByCharId(randomChar.id);
-            const chatSnippet = recentMsgs.slice(-10).map(m => m.content.substring(0, 50)).join(' | ');
-
-            const previousGuestbook = (current.shop.guestbook || []).slice(0, 10).map(g => `${g.authorName}: ${g.content}`).join('\n');
-
-            // 3. Prompt
-            const prompt = `${charContext}
+            if (auxApi.apiKey && randomChar) {
+                try {
+                    await injectMemoryPalace(randomChar);
+                    const charContext = ContextBuilder.buildCoreContext(randomChar, userProfile, true);
+                    const recentMsgs = await DB.getMessagesByCharId(randomChar.id);
+                    const chatSnippet = recentMsgs.slice(-10).map(m => m.content.substring(0, 50)).join(' | ');
+                    const previousGuestbook = (current.shop.guestbook || []).slice(0, 10).map(g => `${g.authorName}: ${g.content}`).join('\n');
+                    const prompt = `${charContext}
 ### Scenario: Visiting User's Life-Sim Shop Guestbook
 ${userProfile.name} has a virtual life finance app. Inside the app there's a small shop that friends can visit.
 You are visiting this shop as a friend/customer.
@@ -907,7 +936,7 @@ Recent Chat Context: ${chatSnippet}
 Generate a guestbook page update.
 1. **${randomChar.name}**: Write a guestbook message. React to the shop or start drama. (Use your personality).
 2. **NPCs**: Generate 3-4 other random messages from strangers or staff.
-   - **Themes**: Gossip (e.g. staff fighting), Argument (e.g. arguing about food), Heartwarming story, or Continuing previous drama.
+   - **Themes**: small shop notes, customer opinions, warm stories, or continuing previous guestbook threads.
    - **Style**: Internet slang, funny, emotional, or chaotic ("乐子人").
    - **Continuity**: If previous guestbook entries show an argument, continue it!
 
@@ -922,81 +951,82 @@ ${previousGuestbook}
 ]
 `;
 
-            const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
-                body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] })
-            });
+                    const response = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                        body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }] })
+                    });
 
-            if (response.ok) {
-                const data = await safeResponseJson(response);
-                let jsonStr = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
-                const result = JSON.parse(jsonStr);
+                    if (response.ok) {
+                        const data = await safeResponseJson(response);
+                        const jsonStr = data.choices[0].message.content.replace(/```json/g, '').replace(/```/g, '').trim();
+                        const result = JSON.parse(jsonStr);
+                        newEntries = result.map((item: any) => ({
+                            id: `gb-${Date.now()}-${Math.random()}`,
+                            authorName: item.authorName,
+                            content: item.content,
+                            isChar: item.isChar,
+                            charId: item.isChar ? randomChar.id : undefined,
+                            avatar: item.isChar ? randomChar.avatar : undefined,
+                            timestamp: Date.now(),
+                            systemMessageId: undefined,
+                        }));
+                    }
+                } catch (e) {
+                    console.warn('Guestbook AI failed, using local notes', e);
+                }
+            }
 
-                const newEntries: BankGuestbookItem[] = result.map((item: any) => ({
-                    id: `gb-${Date.now()}-${Math.random()}`,
-                    authorName: item.authorName,
-                    content: item.content,
-                    isChar: item.isChar,
-                    charId: item.isChar ? randomChar.id : undefined,
-                    avatar: item.isChar ? randomChar.avatar : undefined,
-                    timestamp: Date.now(),
-                    systemMessageId: undefined,
-                }));
+            if (!newEntries?.length) {
+                newEntries = buildLocalGuestbookEntries(current.shop.shopName, randomChar ? { id: randomChar.id, name: randomChar.name, avatar: randomChar.avatar } : undefined);
+            }
 
-                // Push system messages (🔔 format) for character entries
-                for (const entry of newEntries) {
-                    if (entry.isChar && entry.charId) {
-                        try {
-                            const msgId = await DB.saveMessage({
-                                charId: entry.charId,
-                                role: 'system',
-                                type: 'text',
-                                content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的生活拟小店，并表示："${entry.content}"]`,
-                            });
-                            entry.systemMessageId = msgId;
-                        } catch (e) {
-                            console.error('Failed to push visitor system message', e);
-                        }
+            for (const entry of newEntries) {
+                if (entry.isChar && entry.charId) {
+                    try {
+                        const msgId = await DB.saveMessage({
+                            charId: entry.charId,
+                            role: 'system',
+                            type: 'text',
+                            content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的生活拟小店，并表示："${entry.content}"]`,
+                        });
+                        entry.systemMessageId = msgId;
+                    } catch (e) {
+                        console.error('Failed to push visitor system message', e);
                     }
                 }
-
-                // Update State: 
-                // 1. Add new entries to guestbook (prepend)
-                // 2. Set Active Visitor to the Char who posted
-                // Use separately managed dollhouseState for room lookup
-                const unlockedRooms = (dollhouseState.rooms || []).filter(r => r.isUnlocked);
-                const fallbackRoom = dollhouseState.rooms?.[0];
-                const spawnRoom = unlockedRooms.length > 0
-                    ? unlockedRooms[Math.floor(Math.random() * unlockedRooms.length)]
-                    : fallbackRoom;
-                const spawnX = 18 + Math.random() * 64;
-                const spawnY = 64 + Math.random() * 24;
-
-                await persistStateUpdate(prev => ({
-                    ...prev,
-                    shop: {
-                        ...prev.shop,
-                        actionPoints: Math.max(0, prev.shop.actionPoints - COST),
-                        guestbook: [...newEntries, ...(prev.shop.guestbook || [])].slice(0, 50), // Keep last 50
-                        activeVisitor: {
-                            charId: randomChar.id,
-                            message: newEntries.find(e => e.isChar)?.content || "来逛逛~",
-                            timestamp: Date.now(),
-                            roomId: spawnRoom?.id,
-                            x: spawnX,
-                            y: spawnY,
-                        }
-                    }
-                }));
-                addToast('留言板已刷新，新客人到了！', 'success');
-            } else {
-                throw new Error('API Error');
             }
+
+            const unlockedRooms = (dollhouseState.rooms || []).filter(r => r.isUnlocked);
+            const fallbackRoom = dollhouseState.rooms?.[0];
+            const spawnRoom = unlockedRooms.length > 0
+                ? unlockedRooms[Math.floor(Math.random() * unlockedRooms.length)]
+                : fallbackRoom;
+            const spawnX = 18 + Math.random() * 64;
+            const spawnY = 64 + Math.random() * 24;
+            const charEntry = newEntries.find(e => e.isChar && e.charId);
+
+            await persistStateUpdate(prev => ({
+                ...prev,
+                shop: {
+                    ...prev.shop,
+                    actionPoints: Math.max(0, prev.shop.actionPoints - COST),
+                    guestbook: [...newEntries, ...(prev.shop.guestbook || [])].slice(0, 50),
+                    activeVisitor: charEntry ? {
+                        charId: charEntry.charId!,
+                        message: charEntry.content || "来逛逛~",
+                        timestamp: Date.now(),
+                        roomId: spawnRoom?.id,
+                        x: spawnX,
+                        y: spawnY,
+                    } : prev.shop.activeVisitor
+                }
+            }));
+            addToast('收到新的店里来信', 'success');
 
         } catch (e: any) {
             console.error(e);
-            addToast('刷新失败: ' + e.message, 'error');
+            addToast('今天暂时没有新留言', 'info');
         } finally {
             setIsRefreshingGuestbook(false);
         }
@@ -1276,7 +1306,7 @@ ${previousGuestbook}
     };
 
     // --- AI 后台润色评价：把模板评价改写得更多样、有个性，并据点评情绪微调星级（影响口碑）。
-    //     非阻塞、失败兜底（保留模板）。营业时若配了 API Key 才调用。 ---
+    //     非阻塞、失败时沿用本地点评。营业时若配了 AI 服务才调用。 ---
     const enrichReviewsWithAI = async (batch: ShopReview[], soldProductNames: string[], shopLevel: number) => {
         try {
             const cur = stateRef.current;
@@ -1328,7 +1358,7 @@ ${JSON.stringify(list, null, 2)}
             // 结算弹窗若仍在展示这批，原地刷新文案 / 星级
             setBusinessResult(prev => prev && prev.reviews.some(r => ids.has(r.id)) ? { ...prev, reviews: prev.reviews.map(apply) } : prev);
         } catch (e) {
-            console.warn('AI review enrich failed', e); // 失败保留模板，不打扰用户
+            console.warn('AI review enrich failed', e); // 失败沿用本地点评，不打扰用户
         }
     };
 
@@ -1529,7 +1559,7 @@ ${JSON.stringify(list, null, 2)}
         });
 
         // 客户评价交给 AI 后台润色：把模板评价改写得更多样、有个性，并据此微调星级（影响口碑）。
-        // 非阻塞——营业已即时出结果；没配 Key 或失败就保留模板。
+        // 非阻塞——营业已即时出结果；没配 Key 或失败就沿用本地点评。
         if (auxApi.apiKey && newReviews.length > 0) {
             void enrichReviewsWithAI(newReviews, Array.from(itemMap.values()).map(it => it.name), level);
         }
@@ -2267,119 +2297,107 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                 )}
             </div>
-            {/* Premium Guestbook Overlay */}
+            {/* Guestbook Overlay */}
             {showGuestbook && (
-                <div className="absolute inset-0 z-[100] flex flex-col animate-slide-up" style={{ background: 'linear-gradient(180deg, #FDF6E3 0%, #FFF8E1 100%)' }}>
-                    {/* Header */}
-                    <div className="pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0"
-                         style={{ background: 'linear-gradient(180deg, rgba(141, 110, 99, 0.95) 0%, rgba(109, 76, 65, 0.95) 100%)', backdropFilter: 'blur(10px)' }}>
+                <div className="absolute inset-0 z-[100] flex flex-col animate-slide-up" style={{ background: PAGE_BG }}>
+                    <div className="pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 px-4 shrink-0">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center">
-                                    <span className="text-xl">📜</span>
+                                <div className="w-10 h-10 rounded-[14px] flex items-center justify-center text-[18px] font-black" style={{ background: '#ffe4e6', color: '#be123c' }}>
+                                    ✦
                                 </div>
                                 <div>
-                                    <h2 className="text-base font-bold text-white tracking-wide">店铺情报志</h2>
-                                    <p className="text-[10px] text-white/60 uppercase tracking-wider">Gossip & Rumors</p>
+                                    <h2 className="text-base font-black tracking-wide" style={{ color: INK }}>店里来信</h2>
+                                    <p className="text-[10px] tracking-[0.2em] uppercase" style={{ color: INK_SOFT }}>guest notes</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setShowGuestbook(false)}
-                                className="w-9 h-9 rounded-xl bg-white/15 text-white/90 flex items-center justify-center hover:bg-white/25 active:scale-95 transition-all text-lg font-bold"
+                                className="w-9 h-9 rounded-full flex items-center justify-center active:scale-95 transition-all text-lg font-bold"
+                                style={{ background: '#fff', color: INK, border: '1px solid rgba(43,41,51,0.06)' }}
                             >
                                 ×
                             </button>
                         </div>
                     </div>
 
-                    {/* Content */}
                     <div className="flex-1 overflow-y-auto p-4 space-y-5">
-
-                        {/* Refresh Action Card */}
-                        <div className="bg-white p-5 rounded-2xl shadow-md border border-[#E8DCC8] flex items-center justify-between">
+                        <div className="bg-white p-4 rounded-[22px] flex items-center justify-between gap-3" style={{ border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -30px rgba(38,38,38,0.30)' }}>
                             <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 bg-gradient-to-br from-[#FFE0B2] to-[#FFCC80] rounded-xl flex items-center justify-center text-2xl shadow-inner">
-                                    👂
+                                <div className="w-11 h-11 rounded-[16px] flex items-center justify-center text-[18px]" style={{ background: '#faf8f5' }}>
+                                    ✉
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-[#5D4037] text-sm">打听消息</h3>
-                                    <p className="text-[10px] text-[#A1887F] mt-0.5">消耗 AP 让大家聊聊八卦</p>
+                                    <h3 className="font-black text-sm" style={{ color: INK }}>看看今天谁来过</h3>
+                                    <p className="text-[10px] mt-0.5" style={{ color: INK_SOFT }}>花一点店员精力，收集新的留言</p>
                                 </div>
                             </div>
                             <button
                                 onClick={handleRefreshGuestbook}
                                 disabled={isRefreshingGuestbook}
-                                className={`px-5 py-3 rounded-xl font-bold text-xs shadow-lg transition-all ${
-                                    isRefreshingGuestbook
-                                        ? 'bg-[#EFEBE9] text-[#BCAAA4]'
-                                        : 'bg-gradient-to-r from-[#42A5F5] to-[#1E88E5] text-white hover:shadow-xl active:scale-95'
-                                }`}
+                                className="px-4 py-2.5 rounded-full font-black text-xs transition-all active:scale-95 disabled:opacity-50"
+                                style={isRefreshingGuestbook ? chipStyle(false) : smallBtn('#f43f5e')}
                             >
                                 {isRefreshingGuestbook ? (
                                     <span className="flex items-center gap-2">
                                         <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                                        偷听中...
+                                        等一等
                                     </span>
-                                ) : '刷新情报 · 40 AP'}
+                                ) : '收新留言'}
                             </button>
                         </div>
 
                         {(!state.shop.guestbook || state.shop.guestbook.length === 0) ? (
                             <div className="text-center py-20">
-                                <div className="text-7xl mb-4 opacity-40">🍃</div>
-                                <p className="text-sm font-bold text-[#BCAAA4]">风中什么声音都没有...</p>
-                                <p className="text-xs text-[#D7CCC8] mt-1">点击上方按钮开始打听</p>
+                                <div className="text-5xl mb-4 opacity-50">✉</div>
+                                <p className="text-sm font-black" style={{ color: INK_SOFT }}>留言板还很安静</p>
+                                <p className="text-xs mt-1" style={{ color: '#aaa3ad' }}>开门久一点，来信会慢慢多起来。</p>
                             </div>
                         ) : (
                             <div className="space-y-4">
                                 {state.shop.guestbook.map((msg, idx) => (
                                     <div
                                         key={msg.id}
-                                        className={`relative p-4 rounded-2xl group animate-fade-in transition-all hover:shadow-md ${
-                                            msg.isChar
-                                                ? 'bg-white border-l-4 border-l-[#FF7043] shadow-md'
-                                                : 'bg-[#FDF6E3] border border-[#E8DCC8]'
-                                        }`}
+                                        className="relative p-4 rounded-[22px] group animate-fade-in transition-all bg-white"
+                                        style={{ border: msg.isChar ? '1px solid rgba(244,63,94,0.24)' : '1px solid rgba(43,41,51,0.06)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 32px -28px rgba(38,38,38,0.25)' }}
                                     >
                                         <div className="flex justify-between items-start mb-2">
                                             <div className="flex items-center gap-2">
                                                 {msg.isChar && (
-                                                    <span className="w-5 h-5 bg-gradient-to-br from-[#FF8A65] to-[#FF7043] rounded-full flex items-center justify-center text-[10px] text-white">⭐</span>
+                                                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white" style={{ background: '#f43f5e' }}>★</span>
                                                 )}
-                                                <span className={`font-bold text-sm ${msg.isChar ? 'text-[#E64A19]' : 'text-[#8D6E63]'}`}>
+                                                <span className="font-black text-sm" style={{ color: msg.isChar ? '#be123c' : INK }}>
                                                     {msg.authorName}
                                                 </span>
-                                                <span className="text-[9px] text-[#BCAAA4] bg-[#EFEBE9] px-2 py-0.5 rounded-full">
+                                                <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ color: INK_SOFT, background: '#f5f3ef' }}>
                                                     {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 <button
                                                     onClick={() => handleDeleteGuestbookEntry(msg.id)}
-                                                    className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-[#E53935] text-xs font-bold px-1.5 py-0.5 rounded-lg hover:bg-[#FFEBEE]"
+                                                    className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity text-xs font-bold px-1.5 py-0.5 rounded-lg"
+                                                    style={{ color: '#e11d48' }}
                                                     title="删除留言"
                                                 >
                                                     ×
                                                 </button>
-                                                <div className="text-lg opacity-30 group-hover:opacity-60 transition-opacity select-none">
-                                                    {idx % 2 === 0 ? '●' : '○'}
-                                                </div>
                                             </div>
                                         </div>
-                                        <p className="text-sm text-[#5D4037] leading-relaxed whitespace-pre-wrap">
+                                        <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#4a4750' }}>
                                             {msg.content}
                                         </p>
                                         {msg.isChar && (
                                             <div className="mt-3">
-                                                <span className="text-[9px] text-white bg-gradient-to-r from-[#FF8A65] to-[#FF7043] px-3 py-1 rounded-full font-bold shadow-sm">
-                                                    ⭐ 重要人物
+                                                <span className="text-[9px] text-white px-3 py-1 rounded-full font-bold" style={{ background: '#f43f5e' }}>
+                                                    熟人来过
                                                 </span>
                                             </div>
                                         )}
                                     </div>
                                 ))}
-                                <div className="text-center py-6 text-[10px] text-[#BCAAA4]">
-                                    ——— 已经到底了 ———
+                                <div className="text-center py-6 text-[10px]" style={{ color: INK_SOFT }}>
+                                    今天的来信到这里
                                 </div>
                             </div>
                         )}
