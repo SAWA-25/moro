@@ -226,7 +226,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
             return;
         }
         if (!activePhoneLock.passcode) {
-            setPhoneLockExitError('这次没有设置口令答案，只能等 Ta 完成题目自动解锁。');
+            setPhoneLockExitError('这次没有设置口令答案，锁屏无法被题目解开。');
             return;
         }
         const passcodeInput = sanitizePhoneLockPasscode(phoneLockExitCode);
@@ -1015,7 +1015,7 @@ Format:
         const clock = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
         if (activePhoneLock) {
-            const firstQuestion = activePhoneLock.questions[0]?.text || '完成任意一道题目即可解锁';
+            const firstQuestion = activePhoneLock.questions[0]?.text || '没有题目，得靠口令或继续交流';
             return (
                 <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: '#202124', color: '#f7f7f7' }}>
                     <div className="h-10 px-6 pt-3 flex items-center justify-between text-[12px] font-semibold tabular-nums opacity-85">
@@ -1048,7 +1048,7 @@ Format:
                                 <div className="text-[14px] leading-relaxed">{firstQuestion}</div>
                             </div>
                             <div className="py-3 rounded-2xl text-center text-[13px] font-black" style={{ background: '#f5f5f5', color: '#202124' }}>
-                                口令正确或任意题完成后自动解锁
+                                只有口令正确才会自动解锁
                             </div>
                         </div>
                     </div>
@@ -1196,7 +1196,7 @@ Format:
                 clue={activePhoneLock?.note || activePhoneLock?.message}
                 value={phoneLockExitCode}
                 error={phoneLockExitError}
-                disabledReason={activePhoneLock && !activePhoneLock.passcode ? '这次没有设置口令答案，只能等 Ta 完成题目自动解锁。' : undefined}
+                disabledReason={activePhoneLock && !activePhoneLock.passcode ? '这次没有设置口令答案，锁屏无法被题目解开。' : undefined}
                 busy={phoneLockExitBusy}
                 onChange={(value) => {
                     setPhoneLockExitCode(sanitizePhoneLockPasscode(value));

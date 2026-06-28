@@ -1,7 +1,7 @@
 import type { PhoneLockState, PhoneLockSubmission, PhoneLockQuestion, PhoneLockAttemptRecord } from '../types';
 
 const DEFAULT_LOCK_MESSAGE = (ownerUserName: string, charName: string) =>
-  `${ownerUserName || '用户'} 锁住了 ${charName || 'TA'} 的手机。请先读完留言，再输入口令或完成任意一道题目解锁。`;
+  `${ownerUserName || '用户'} 锁住了 ${charName || 'TA'} 的手机。请先读完留言，再输入正确口令解锁；题目只用于交流和提示。`;
 
 export const sanitizePhoneLockPasscode = (value: string | undefined | null): string =>
   String(value || '').replace(/\s+/g, ' ').trim().slice(0, 80);
@@ -92,7 +92,7 @@ export const evaluatePhoneLockSubmission = (
   const idx = answers.findIndex((answer, answerIdx) => !!lock.questions[answerIdx] && isMeaningfulAnswer(answer));
   if (idx >= 0) completedQuestionId = lock.questions[idx]?.id || `q-${idx + 1}`;
   const reason: 'passcode' | 'question' | 'both' | 'none' = passcodeOk && completedQuestionId ? 'both' : passcodeOk ? 'passcode' : completedQuestionId ? 'question' : 'none';
-  const unlocked = reason !== 'none';
+  const unlocked = passcodeOk;
   const record: PhoneLockAttemptRecord = {
     at: now,
     passcodeInput,
@@ -110,7 +110,7 @@ export const evaluatePhoneLockSubmission = (
       ...lock,
       active: unlocked ? false : lock.active,
       unlockedAt: unlocked ? now : lock.unlockedAt,
-      unlockedBy: unlocked ? reason : lock.unlockedBy,
+      unlockedBy: unlocked ? (completedQuestionId ? 'both' : 'passcode') : lock.unlockedBy,
       attempts: [...(lock.attempts || []), record].slice(-20),
     },
   };

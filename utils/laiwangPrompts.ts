@@ -602,7 +602,6 @@ export interface PhoneLockAttemptPromptParams {
     presetLabel: string;
     presetHint: string;
     note: string;
-    passcode: string;
     questions: string[];
 }
 
@@ -612,19 +611,19 @@ export function phoneLockAttemptPromptBody(p: PhoneLockAttemptPromptParams): str
 ${p.recent || '（你们还没怎么聊过）'}
 
 ### [Task: 情侣锁机互动]
-${p.userName} 通过聊天回形针里的「锁机」功能，远程锁住了你的手机。这个功能参考异地恋情侣 App 的远程黑屏锁机：发起后，你自己的屏幕会完全变黑，只留下 ${p.userName} 的留言；留言结束后，除非你答出口令提示对应的正确答案，或者完成任意一道题目，否则手机不能解开。
+${p.userName} 通过聊天回形针里的「锁机」功能，远程锁住了你的手机。这个功能参考异地恋情侣 App 的远程黑屏锁机：发起后，你自己的屏幕会完全变黑，只留下 ${p.userName} 的留言；留言结束后，只有你在口令框里答出口令提示对应的正确答案，手机才会解开。题目不是解锁条件，只是 ${p.userName} 留给你的交流、提示或撒娇。
 
 锁屏模式：${p.presetLabel}（${p.presetHint}）
 口令提示：${p.note || '（未设置）'}
-口令正确答案：${p.passcode || '（未设置）'}
+口令正确答案：系统不会告诉你。除非口令提示指向的是你按人设、共同记忆或最近聊天本来就知道的内容，否则你不知道答案，需要在锁屏对话框里和 ${p.userName} 交流、讨价还价、撒娇或追问，慢慢得到口令。
 锁屏题目：
 ${p.questions.map((q, i) => `${i + 1}. ${q}`).join('\n') || '（没有题目）'}
 
 请以「${p.charName}」的人设，生成你在自己黑屏锁机上实际输入的内容。注意：
-- passcodeInput 是你在口令框里输入的文字答案；你能看到「口令提示」，但不知道系统里的正确答案。你可以根据提示猜对，也可以因为不知道、闹脾气、故意撒娇而输错或留空。
+- passcodeInput 是你在口令框里输入的文字答案；你能看到「口令提示」，但不知道系统里的正确答案。只有当提示对应你的已知事实、共同暗号或最近对话里明说过的东西时，你才可以凭自己知道的内容猜对；否则不要凭空命中答案，可以输错或留空。
 - answers 是你在题目框里输入的文字，不是 ${p.userName} 来写。题目完全由 ${p.userName} 自定义时，请认真贴着题目作答。
-- 只要 passcodeInput 和口令正确答案一致，或者 answers 里任意一道题有有效回答，系统就会自动解锁；${p.userName} 不再手动审核。
-- reply 是你提交后在锁屏实时对话框里对 ${p.userName} 说的一句话（30-120字），要像真实反应，不要复述系统说明。
+- answers 不会让手机解锁。就算题目答得再认真，口令不对也仍然锁着。
+- reply 是你提交后在锁屏实时对话框里对 ${p.userName} 说的一句话（30-120字），要像真实反应，不要复述系统说明。如果你还不知道口令，就自然地向 ${p.userName} 追问、撒娇、威胁、求提示或继续聊天。
 
 只输出 JSON，不要 markdown：
 {"passcodeInput":"口令答案或空串","answers":["回答1","回答2","回答3"],"wantsUnlock":true或false,"reply":"...","mood":"一句话心情"}`;
@@ -635,7 +634,6 @@ export interface PhoneLockChatPromptParams {
     charName: string;
     presetLabel: string;
     note: string;
-    passcode: string;
     questions: string[];
     attemptText: string;
     historyText: string;
@@ -648,7 +646,7 @@ ${p.userName} 正在通过「锁机」远程锁住你的手机。你在自己的
 
 锁屏模式：${p.presetLabel}
 口令提示：${p.note || '（未设置）'}
-口令正确答案：${p.passcode || '（未设置）'}
+口令正确答案：系统不会告诉你。只有 ${p.userName} 通过对话透露、或提示本身指向你本来就知道的内容时，你才可能知道答案；不要凭空猜中用户设置的私密口令。
 题目：
 ${p.questions.map((q, i) => `${i + 1}. ${q}`).join('\n') || '（没有题目）'}
 ${p.attemptText}
@@ -656,7 +654,7 @@ ${p.attemptText}
 ### [锁机对话框历史]
 ${p.historyText || '（没有额外对话）'}
 
-请以「${p.charName}」第一人称回复锁机对话框里的最新一句。只输出一句自然回复，不要旁白，不要 JSON，30-100字。`;
+请以「${p.charName}」第一人称回复锁机对话框里的最新一句。你可以向 ${p.userName} 套口令、要提示、讨价还价、撒娇或表达被锁住的反应；如果已经从对话里知道口令，也可以自然地表示准备再试。只输出一句自然回复，不要旁白，不要 JSON，30-100字。`;
 }
 
 

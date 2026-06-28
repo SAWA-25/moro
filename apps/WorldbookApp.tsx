@@ -16,7 +16,9 @@ import { DEFAULT_WB_CATEGORY } from '../utils/worldbookRuntime';
 const INK = '#26242a';
 const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(99,102,241,0.06), transparent 60%)' };
+const DOT_PATTERN = 'radial-gradient(120% 80% at 50% -10%, rgba(99,102,241,0.06), transparent 60%)';
+const DOT_BG: React.CSSProperties = { background: DOT_PATTERN };
+const MODAL_BG: React.CSSProperties = { backgroundColor: '#fff', backgroundImage: DOT_PATTERN };
 const RULED_BG: React.CSSProperties = {
     backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(38,36,42,0.08) 23px, rgba(38,36,42,0.08) 24px)',
     lineHeight: '24px',
@@ -718,8 +720,8 @@ const WorldbookApp: React.FC = () => {
             {/* 删除条目确认 */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
-                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                    <div className="absolute inset-0 z-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
+                    <div className="relative z-10 w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={MODAL_BG}>
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                         <button
                             onClick={() => setShowDeleteConfirm(false)}
@@ -752,8 +754,8 @@ const WorldbookApp: React.FC = () => {
             {/* 删除整本世界书确认 */}
             {deleteCategoryConfirm && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteCategoryConfirm(null)} />
-                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                    <div className="absolute inset-0 z-0 bg-black/40" onClick={() => setDeleteCategoryConfirm(null)} />
+                    <div className="relative z-10 w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={MODAL_BG}>
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
                         <button
                             onClick={() => setDeleteCategoryConfirm(null)}

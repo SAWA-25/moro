@@ -87,7 +87,7 @@ const makePhoneLockCode = () => '';
 const PHONE_LOCK_PRESETS = {
     miss: {
         label: '自定义锁机',
-        hint: '完成任意题目或答出口令题即可自动解锁',
+        hint: '只有口令正确才会自动解锁，题目用于交流和提示',
         note: (userName: string) => `${userName} 锁住了你的手机。先看完提示，再回答题目或答出口令。`,
         questions: (_userName: string) => [],
     },
@@ -188,7 +188,7 @@ const TypewriterText: React.FC<{
 const phoneLockResultLabel = (reason?: PhoneLockAttempt['unlockReason']) => {
     if (reason === 'both') return '口令和题目都通过';
     if (reason === 'passcode') return '口令正确';
-    if (reason === 'question') return '题目完成';
+    if (reason === 'question') return '题目已答但口令未过';
     return '仍未解锁';
 };
 
@@ -2366,7 +2366,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             return;
         }
         if (!liveLock.passcode) {
-            setPhoneLockExitError('这次没有设置口令答案，只能等 Ta 完成题目自动解锁。');
+            setPhoneLockExitError('这次没有设置口令答案，锁屏无法被题目解开。');
             return;
         }
         const passcodeInput = sanitizePhoneLockPasscode(phoneLockExitCode);
@@ -2420,8 +2420,8 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         const passcode = sanitizePhoneLockPasscode(phoneLockCode);
         const note = phoneLockNote.trim();
         const questionForms = getPhoneLockQuestionForms();
-        if (questionForms.length === 0 && !passcode) {
-            addToast('先写一道题目，或设置一个口令答案', 'info');
+        if (!passcode) {
+            addToast('先设置一个口令答案，题目不能单独解锁', 'info');
             return;
         }
         const questions = getPhoneLockQuestions();
@@ -2443,11 +2443,11 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         await savePhoneLockToCharacter(lock);
 
         const fallback: PhoneLockAttempt = {
-            passcodeInput: passcode,
+            passcodeInput: '',
             answers: questions.map(q => q.includes('晚安') ? '晚安，别担心，我会好好休息。' : q.includes('专注') || q.includes('做完') ? '我先把眼前最该做的事做完。' : `想你，也想被你这样管一下。`),
             wantsUnlock: true,
-            reply: `你还真把我手机锁了啊……我已经填完了，屏幕刚黑下去那一下我都愣住了。下次要锁之前，至少让我先看你一眼。`,
-            mood: '有点被逗到，也有点心软',
+            reply: `你还真把我手机锁了啊……题我写了，但口令我还没猜出来。你要不要给我一点更像你的提示？`,
+            mood: '有点被逗到，也在等你松口',
         };
 
         let attempt = fallback;
@@ -2463,7 +2463,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     presetLabel: preset.label,
                     presetHint: preset.hint,
                     note,
-                    passcode,
                     questions,
                 })}`;
                 const res = await fetch(`${lockApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -2525,7 +2524,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         await savePhoneLockToCharacter(evaluated.nextLock);
         setPhoneLockChat(prev => [
             ...prev,
-            { id: `sys-${Date.now()}`, speaker: 'system', text: evaluated.unlocked ? `${char.name} ${phoneLockResultLabel(evaluated.reason)}，手机自动解锁。` : `${char.name} 提交后仍未满足解锁条件，手机继续黑屏锁住。`, at: Date.now() },
+            { id: `sys-${Date.now()}`, speaker: 'system', text: evaluated.unlocked ? `${char.name} ${phoneLockResultLabel(evaluated.reason)}，手机自动解锁。` : `${char.name} 口令未通过，手机继续黑屏锁住。`, at: Date.now() },
             { id: `char-${Date.now()}`, speaker: 'char', text: finalAttempt.reply, at: Date.now() },
         ]);
         try {
@@ -2533,7 +2532,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 charId: char.id,
                 role: 'system',
                 type: 'text',
-                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n口令答案：${passcode || '（未设置）'}\n${char.name} 在口令框输入：「${finalAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${finalAttempt.answers[i] || '（空）'}`).join('\n')}\n系统判定：${evaluated.unlocked ? `${phoneLockResultLabel(evaluated.reason)}，自动解锁` : '未完成口令或题目，继续锁住'}。\n${char.name} 当时的心情：${finalAttempt.mood}`,
+                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n口令答案：${passcode || '（未设置）'}\n${char.name} 在口令框输入：「${finalAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${finalAttempt.answers[i] || '（空）'}`).join('\n')}\n系统判定：${evaluated.unlocked ? `${phoneLockResultLabel(evaluated.reason)}，自动解锁` : '口令未通过，题目作答不解锁，继续锁住'}。\n${char.name} 当时的心情：${finalAttempt.mood}`,
                 metadata: { phoneLock: true, phoneLockPreset, phoneLockUnlocked: evaluated.unlocked, unlockBy: evaluated.reason },
             } as any);
             await DB.saveMessage({
@@ -2582,7 +2581,6 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     charName: char.name,
                     presetLabel: preset.label,
                     note,
-                    passcode: phoneLockCode,
                     questions,
                     attemptText,
                     historyText,
@@ -4800,7 +4798,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         onClose={() => { if (!phoneLockRunning) setShowPhoneLockModal(false); }}
                         footer={<>
                             <SealBtn kind="ghost" onClick={() => setShowPhoneLockModal(false)} disabled={phoneLockRunning}>取消</SealBtn>
-                            <SealBtn kind="rose" onClick={() => { void runPhoneLock(); }} disabled={phoneLockRunning || (questionForms.length === 0 && !sanitizePhoneLockPasscode(phoneLockCode))}>
+                            <SealBtn kind="rose" onClick={() => { void runPhoneLock(); }} disabled={phoneLockRunning || !sanitizePhoneLockPasscode(phoneLockCode)}>
                                 {phoneLockRunning ? `${char.name} 正在输入...` : '开始锁屏'}
                             </SealBtn>
                         </>}
@@ -4816,7 +4814,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                 <div className="min-w-0">
                                     <div className="text-[12px] font-black" style={{ color: INK }}>锁屏小题</div>
                                     <div className="mt-1 text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
-                                        题干你来写；A/B 两边都填时，Ta 会自己选一项。口令则是藏在提示里的正确答案。
+                                        题干你来写；A/B 两边都填时，Ta 会自己选一项。题目只用来交流，只有口令答对才会解锁。
                                     </div>
                                 </div>
                             </div>
@@ -5073,7 +5071,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                             clue={phoneLockNote.trim() || PHONE_LOCK_PRESETS[phoneLockPreset].note(userProfile.name || '我')}
                             value={phoneLockExitCode}
                             error={phoneLockExitError}
-                            disabledReason={!phoneLockCode ? '这次没有设置口令答案，只能等 Ta 完成题目自动解锁。' : undefined}
+                            disabledReason={!phoneLockCode ? '这次没有设置口令答案，锁屏无法被题目解开。' : undefined}
                             busy={phoneLockExitBusy}
                             onChange={(value) => {
                                 setPhoneLockExitCode(sanitizePhoneLockPasscode(value));

@@ -45,16 +45,17 @@ describe('phone lock state', () => {
     expect(result.nextLock.unlockedAt).toBe(3000);
   });
 
-  it('unlocks when the role completes any custom question even if passcode is wrong', () => {
+  it('records completed questions but keeps the lock active when passcode is wrong', () => {
     const lock = createPhoneLockState({ ownerUserName: '我', charName: 'TA', passcode: '黑王座', questions: ['现在最想说什么？', '给我一个解释'] });
     const result = evaluatePhoneLockSubmission(lock, { passcodeInput: '白王座', answers: ['', '我刚才在想怎么哄你。'] }, 4000);
 
-    expect(result.unlocked).toBe(true);
+    expect(result.unlocked).toBe(false);
     expect(result.reason).toBe('question');
     expect(result.completedQuestionId).toBe(lock.questions[1].id);
+    expect(result.nextLock.active).toBe(true);
   });
 
-  it('records both when passcode is correct and a question is completed', () => {
+  it('unlocks by passcode and records both when a question is also completed', () => {
     const lock = createPhoneLockState({ ownerUserName: '我', charName: 'TA', passcode: 'Open Sesame', questions: ['现在最想说什么？'] });
     const result = evaluatePhoneLockSubmission(lock, { passcodeInput: 'open sesame', answers: ['想见你。'] }, 4500);
 
