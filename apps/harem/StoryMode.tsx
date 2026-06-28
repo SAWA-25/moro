@@ -155,7 +155,7 @@ const StoryMode: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const seedOf = (c: any): StorySeed => ({
         charId: c.id, name: c.convoSettings?.remarkName?.trim() || c.name,
         avatar: c.convoSettings?.charAvatarOverride || c.avatar, affection: c.affection,
-        persona: c.description as string | undefined,
+        persona: c.systemPrompt as string | undefined,
         gender: charGenders[c.id] || 'unknown',
     });
 

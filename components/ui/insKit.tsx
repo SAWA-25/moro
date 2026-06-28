@@ -29,7 +29,7 @@ export const SUNSET = 'linear-gradient(120deg, #feda75, #fa7e1e 30%, #d62976 62%
 export type AccentName =
   | 'orange' | 'rose' | 'red' | 'violet' | 'indigo' | 'sky' | 'teal'
   | 'slate' | 'amber' | 'lime' | 'emerald' | 'pink' | 'fuchsia' | 'purple'
-  | 'green' | 'blue';
+  | 'green' | 'blue' | 'typepress';
 
 export interface Accent { solid: string; soft: string; ink: string; }
 
@@ -51,6 +51,7 @@ export const ACCENTS: Record<AccentName, Accent> = {
   purple:  { solid: '#a855f7', soft: '#f5ebfe', ink: '#6b21a8' },
   green:   { solid: '#22c55e', soft: '#e6f9ee', ink: '#166534' },
   blue:    { solid: '#3b82f6', soft: '#e9f1fe', ink: '#1e40af' },
+  typepress: { solid: '#4057c8', soft: '#edf1ff', ink: '#293985' },
 };
 
 export const accent = (name?: AccentName | string): Accent =>

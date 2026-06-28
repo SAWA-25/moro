@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
 import { DB } from '../utils/db';
-import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
+import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
@@ -255,6 +255,9 @@ interface OSContextType {
   /** 整书开关（按分组/书名，false = 整书关闭；undefined = 开） */
   worldbookGroupToggles: Record<string, boolean>;
   setWorldbookGroupEnabled: (category: string, enabled: boolean) => void;
+  /** 整书作用域（按分组/书名，undefined/local = 局部需挂载；global = 所有角色可用） */
+  worldbookGroupScopes: Record<string, WorldbookGroupScope>;
+  setWorldbookGroupScope: (category: string, scope: WorldbookGroupScope) => void;
 
   // Novels (NEW)
   novels: NovelBook[];
@@ -663,6 +666,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [worldbooks, setWorldbooks] = useState<Worldbook[]>([]);
   // 整书开关（按 category 分组），持久化在 localStorage（见 worldbookRuntime）
   const [worldbookGroupToggles, setWorldbookGroupToggles] = useState<Record<string, boolean>>(() => loadGroupTogglesFromStorage());
+  // 整书作用域（按 category 分组）：local=需挂载，global=所有角色可用
+  const [worldbookGroupScopes, setWorldbookGroupScopes] = useState<Record<string, WorldbookGroupScope>>(() => loadGroupScopesFromStorage());
   const [novels, setNovels] = useState<NovelBook[]>([]); // New
   const [songs, setSongs] = useState<SongSheet[]>([]);
 
@@ -2831,11 +2836,21 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
   };
 
+  const setWorldbookGroupScope = (category: string, scope: WorldbookGroupScope) => {
+      setWorldbookGroupScopes(prev => {
+          const next = { ...prev };
+          if (scope === 'global') next[category] = 'global';
+          else delete next[category]; // 局部 = 默认态，不留冗余键
+          saveGroupScopesToStorage(next);
+          return next;
+      });
+  };
+
   // 世界书注册表镜像：让 ContextBuilder / chatRequestPayload 这些非 React 模块
-  // 能读到最新的全量世界书与整书开关（全局作用域、条目开关都依赖它）
+  // 能读到最新的全量世界书、整书开关与整书作用域
   useEffect(() => {
-      WorldbookRuntime.sync(worldbooks, worldbookGroupToggles);
-  }, [worldbooks, worldbookGroupToggles]);
+      WorldbookRuntime.sync(worldbooks, worldbookGroupToggles, worldbookGroupScopes);
+  }, [worldbooks, worldbookGroupToggles, worldbookGroupScopes]);
 
   const updateWorldbook = async (id: string, updates: Partial<Worldbook>) => {
       // Compute the updated entity up-front. Relying on a closure side-effect
@@ -2914,6 +2929,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           const next = { ...prev };
           delete next[normalizedCategory];
           saveGroupTogglesToStorage(next);
+          return next;
+      });
+
+      setWorldbookGroupScopes(prev => {
+          const next = { ...prev };
+          delete next[normalizedCategory];
+          saveGroupScopesToStorage(next);
           return next;
       });
 
@@ -4222,6 +4244,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     updateWorldbook,
     worldbookGroupToggles,
     setWorldbookGroupEnabled,
+    worldbookGroupScopes,
+    setWorldbookGroupScope,
     deleteWorldbook,
     deleteWorldbookCategory,
     novels,

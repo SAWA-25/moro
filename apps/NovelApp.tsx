@@ -432,7 +432,7 @@ const NovelApp: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                     </div>
                     <div className="space-y-2.5">
                         {importTab === 'system' && characters.map(c => (
-                            <button key={c.id} onClick={() => handleImportProtagonist({ name: c.name, role: '客串', description: c.description })} className="w-full flex items-center gap-3 p-2.5 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
+                            <button key={c.id} onClick={() => handleImportProtagonist({ name: c.name, role: '客串', description: c.systemPrompt })} className="w-full flex items-center gap-3 p-2.5 bg-white border-2 border-[#1c1b1a] shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all text-left">
                                 <img src={c.avatar} className="w-9 h-9 object-cover border border-[#1c1b1a]" />
                                 <div className="flex-1 min-w-0"><div className="font-black text-sm text-[#1c1b1a]" style={BRUSH}>{c.name}</div><div className="text-[10px] text-[#1c1b1a]/50 truncate" style={HAND}>{c.description}</div></div>
                             </button>

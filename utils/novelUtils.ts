@@ -23,7 +23,7 @@ export const extractWritingTags = (char: CharacterProfile): string[] => {
     if (!char) return ['风格未定'];
 
     const tags = new Set<string>();
-    const desc = ((char.description || '') + (char.worldview || '')).toLowerCase();
+    const desc = ((char.systemPrompt || '') + (char.worldview || '')).toLowerCase();
     
     // 1. 从描述提取
     const descMap: Record<string, string[]> = {
@@ -85,7 +85,7 @@ export const analyzeWriterPersonaSimple = (char: CharacterProfile): string => {
     
     const traits: string[] = [];
     const mbti = '';
-    const desc = char.description || '';
+    const desc = char.systemPrompt || '';
     
     const personaMap: Record<string, any> = {
         '冷漠': { focus: '逻辑漏洞、战术细节', style: '简洁、克制，避免情感渲染', rhythm: '快节奏，少废话', taboo: '煽情、过度心理描写' },
@@ -201,7 +201,7 @@ export const extractWritingTaboos = (char: CharacterProfile): string => {
     }
     
     // 特殊人格追加
-    if (char.description?.includes('猫') || traits.includes('猫')) {
+    if (char.systemPrompt?.includes('猫') || traits.includes('猫')) {
         taboos += `\n### 🐱 猫属性强制规则：\n`;
         taboos += `- 注意力最多持续3句话就要走神。\n`;
         taboos += `- 必须关注"舒适度"、"食物"、"好玩的东西"。\n`;
@@ -239,8 +239,8 @@ export const generateWriterPersonaDeep = async (
 
 **姓名**: ${char.name}
 
-**基础描述**: 
-${char.description || '无'}
+**核心设定**: 
+${char.systemPrompt || '无'}
 
 **背景故事**: 
 ${char.worldview || '无详细背景'}
@@ -559,11 +559,11 @@ ${userText || '[用户未输入，请根据上文自然续写]'}
    
    如果你（${char.name}）对他们的写法有意见，可以在吐槽里说出来！
    - 如果你觉得他们理解错了角色，可以反驳
-   - 如果你有专业知识（${char.description}），可以用术语纠正
+   - 如果你有专业知识（${char.systemPrompt}），可以用术语纠正
    - 如果你就是看不惯，直说！
    ` : ''}
    
-   ${char.description?.includes('猫') ? '必须有"喵"！' : ''}
+   ${char.systemPrompt?.includes('猫') ? '必须有"喵"！' : ''}
 `;
         jsonStructure.push(`"comment": { "content": "即时反应（与用户对话）" }`);
     }

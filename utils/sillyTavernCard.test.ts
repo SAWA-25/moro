@@ -157,8 +157,7 @@ describe('convertSTCardToCharacter', () => {
         expect(result.systemPrompt).toContain('回复保持简短');
         expect(result.systemPrompt).not.toContain('{{char}}');
         expect(result.systemPrompt).not.toContain('{{user}}');
-        expect(result.description).toContain('by tester');
-        expect(result.description).toContain('v1.2');
+        expect(result.description).toBe('');
         expect(result.avatarFallback.startsWith('data:image/svg+xml')).toBe(true);
     });
 

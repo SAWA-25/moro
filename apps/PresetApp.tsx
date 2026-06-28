@@ -21,47 +21,135 @@ import {
     importTavernPreset,
 } from '../utils/presets';
 import { setPresetRegexScripts } from '../utils/regex/store';
-import { PLACEMENT_LABELS, createEmptyRegexScript, looksLikeWrapMisconfig } from '../utils/regex/engine';
-import RegexEditor from '../components/regex/RegexEditor';
-import type { PresetPrompt, PresetPromptOrderEntry, RegexScriptData, TavernPreset } from '../types';
+import type { PresetPrompt, PresetPromptOrderEntry, TavernPreset } from '../types';
 import {
-    InsShell, InsHeader, InsScroll, InsCard, InsButton, IconCircle, Polaroid,
-    SectionLabel, Chip, InsSheet, accent, INK as INS_INK, INK_SOFT as INS_SOFT,
+    InsSheet, accent,
 } from '../components/ui/insKit';
 import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
-    List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X, Scissors,
-    Power, SlidersHorizontal, LinkSimple, FileText, Sparkle, CheckCircle,
+    List, Placeholder, ArrowElbowDownRight, Eject, StackPlus,
+    SlidersHorizontal, LinkSimple, FileText,
 } from '@phosphor-icons/react';
 
-const AC = 'sky' as const;
-const SKY = accent(AC);
-const INK = INS_INK;
-const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
-const INK_BTN = 'rounded-full bg-[#26242a] text-white press-soft shadow-[0_12px_24px_-12px_rgba(38,36,42,0.55)]';
-const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(14,165,233,0.06), transparent 60%)' };
+const AC = 'typepress' as const;
+const PRESS = accent(AC);
+const INK = '#252338';
+const INS_SOFT = '#716d80';
+const CANVAS_BG = 'linear-gradient(155deg, #eef4ff 0%, #f7f1e8 48%, #ecf8f4 100%)';
+const PAPER = '#fffdf8';
+const LINE = 'rgba(37,35,56,0.10)';
+const ACTIVE_TONE = { solid: '#16826f', soft: '#e3f4ef', ink: '#0d5c50' };
+const COPPER_TONE = { solid: '#b86b2d', soft: '#fff0de', ink: '#7a4219' };
+const WARN_TONE = { solid: '#c2582f', soft: '#fff1e8', ink: '#8a351c' };
 const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(38,36,42,0.08) 23px, rgba(38,36,42,0.08) 24px)',
+    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(37,35,56,0.08) 23px, rgba(37,35,56,0.08) 24px)',
     lineHeight: '24px',
 };
 /** 斜纹（AI 口吻章的底纹） */
 const HATCH_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(45deg, rgba(14,165,233,0.18) 0 2px, transparent 2px 5px)',
+    backgroundImage: 'repeating-linear-gradient(45deg, rgba(22,130,111,0.17) 0 2px, transparent 2px 5px)',
 };
 
 const FIELD_STYLE: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.94)',
-    border: '1px solid rgba(0,0,0,0.06)',
+    background: 'rgba(255,253,248,0.96)',
+    border: `1px solid ${LINE}`,
     borderRadius: 16,
     color: INK,
-    boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)',
+    boxShadow: 'inset 0 1px 2px rgba(37,35,56,0.04)',
 };
 
-const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
-        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
+const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: () => void; status?: string }> = ({ title, en, sub, onBack, status }) => (
+    <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: 'rgba(255,253,248,0.96)', borderBottom: `1px solid ${LINE}` }}>
+        <button
+            onClick={onBack}
+            className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0"
+            style={{ background: PAPER, color: PRESS.solid, border: `1px solid ${LINE}`, boxShadow: '0 1px 3px rgba(37,35,56,0.16)' }}
+            aria-label="返回"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-[18px] h-[18px]">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+            </svg>
+        </button>
+        <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+                <span className="text-[16px] font-bold leading-tight" style={{ color: INK }}>{title}</span>
+                <span className="text-[8.5px] tracking-[0.24em] select-none uppercase" style={{ color: PRESS.solid, fontFamily: 'var(--font-label)' }}>{en}</span>
+            </div>
+            {sub && <div className="text-[10px] truncate mt-0.5" style={{ color: INS_SOFT }}>{sub}</div>}
+        </div>
+        {status && (
+            <span className="text-[10px] select-none shrink-0 px-2 py-1 rounded-full" style={{ color: ACTIVE_TONE.ink, background: ACTIVE_TONE.soft, border: `1px solid ${ACTIVE_TONE.solid}30` }}>
+                {status}
+            </span>
+        )}
+    </div>
 );
+
+const Page: React.FC<{ title: string; en: string; children: React.ReactNode }> = ({ title, en, children }) => (
+    <section className="relative rounded-[18px]" style={{ background: 'rgba(255,253,248,0.96)', border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(37,35,56,0.04), 0 14px 30px -24px rgba(37,35,56,0.24)' }}>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
+            <span className="text-[15px] font-bold leading-tight" style={{ color: INK }}>{title}</span>
+            <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ color: INS_SOFT, fontFamily: 'var(--font-label)' }}>{en}</span>
+        </div>
+        <div className="px-4 pb-5 pt-1">{children}</div>
+    </section>
+);
+
+const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode }> = ({ mark = '•', title, note, side, children }) => (
+    <div className="py-3 border-b last:border-b-0" style={{ borderColor: `${PRESS.solid}22` }}>
+        <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] leading-none font-bold" style={{ color: PRESS.solid, fontFamily: 'var(--font-label)' }}>{mark}</span>
+                    <span className="text-[12.5px] font-bold" style={{ color: INK }}>{title}</span>
+                </div>
+                {note && <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INS_SOFT }}>{note}</p>}
+            </div>
+            {side && <div className="shrink-0 pt-0.5">{side}</div>}
+        </div>
+        {children && <div className="mt-2.5">{children}</div>}
+    </div>
+);
+
+const PressChip: React.FC<{ active?: boolean; children: React.ReactNode; onClick?: () => void; tone?: 'press' | 'active' | 'copper' | 'plain' }> = ({ active, children, onClick, tone = 'press' }) => {
+    const palette = tone === 'active' ? ACTIVE_TONE : tone === 'copper' ? COPPER_TONE : tone === 'plain' ? { solid: LINE, soft: PAPER, ink: INS_SOFT } : PRESS;
+    const Comp = onClick ? 'button' : 'span';
+    return (
+        <Comp
+            onClick={onClick as any}
+            className={`px-3 py-1.5 text-[11px] font-bold rounded-full max-w-full truncate ${onClick ? 'active:scale-95 transition-transform' : ''}`}
+            style={{
+                background: active ? palette.soft : PAPER,
+                color: active ? palette.ink : INS_SOFT,
+                border: `1px solid ${active ? `${palette.solid}42` : LINE}`,
+                boxShadow: active ? `0 6px 14px -12px ${palette.solid}` : 'none',
+            }}
+        >
+            {children}
+        </Comp>
+    );
+};
+
+const PressButton: React.FC<{ children: React.ReactNode; onClick?: () => void; icon?: React.ReactNode; disabled?: boolean; tone?: 'press' | 'plain' | 'danger' | 'active' | 'copper'; className?: string; title?: string }> = ({ children, onClick, icon, disabled, tone = 'press', className = '', title }) => {
+    const palette = tone === 'danger' ? WARN_TONE : tone === 'active' ? ACTIVE_TONE : tone === 'copper' ? COPPER_TONE : PRESS;
+    const soft = tone === 'plain';
+    return (
+        <button
+            onClick={onClick}
+            disabled={disabled}
+            title={title}
+            className={`inline-flex items-center justify-center gap-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-40 disabled:active:scale-100 ${className}`}
+            style={{
+                background: soft ? PAPER : palette.soft,
+                color: soft ? INS_SOFT : palette.ink,
+                border: `1px solid ${soft ? LINE : `${palette.solid}3b`}`,
+                boxShadow: '0 1px 2px rgba(37,35,56,0.07)',
+            }}
+        >
+            {icon}{children}
+        </button>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // 小部件
@@ -70,21 +158,32 @@ const Tape: React.FC<{ className?: string }> = ({ className }) => (
 const VoiceStamp: React.FC<{ role?: string }> = ({ role }) => {
     const r = role || 'system';
     if (r === 'assistant') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#0ea5e9]/30 text-[#075985] rounded-full shrink-0" style={HATCH_BG}>assistant</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ ...HATCH_BG, backgroundColor: ACTIVE_TONE.soft, border: `1px solid ${ACTIVE_TONE.solid}3f`, color: ACTIVE_TONE.ink }}>assistant</span>;
     }
     if (r === 'user') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#0ea5e9]/30 text-[#075985] bg-white rounded-full shrink-0">user</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: COPPER_TONE.soft, border: `1px solid ${COPPER_TONE.solid}3f`, color: COPPER_TONE.ink }}>user</span>;
     }
-    return <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#0ea5e9] text-white rounded-full shrink-0">system</span>;
+    return <span className="label-mono text-[8px] px-1.5 py-0.5 text-white rounded-full shrink-0" style={{ background: PRESS.solid }}>system</span>;
 };
 
 const InkSwitch: React.FC<{ on: boolean; onChange: (v: boolean) => void; small?: boolean }> = ({ on, onChange, small }) => (
     <button
         onClick={() => onChange(!on)}
-        className={`relative ${small ? 'w-9 h-5' : 'w-11 h-6'} rounded-full shrink-0 transition-colors press-soft`}
-        style={{ background: on ? '#0ea5e9' : '#dcd9d3' }}
+        role="switch"
+        aria-checked={on}
+        className={`relative ${small ? 'w-[42px] h-[24px]' : 'w-[52px] h-[28px]'} rounded-full shrink-0 transition-all duration-300 active:scale-95`}
+        style={{
+            background: on ? ACTIVE_TONE.solid : '#f6f2ed',
+            border: `1px solid ${on ? `${ACTIVE_TONE.solid}30` : LINE}`,
+            boxShadow: on ? `0 8px 16px -12px ${ACTIVE_TONE.solid}` : 'inset 0 1px 2px rgba(37,35,56,0.08)',
+        }}
     >
-        <span className={`absolute top-0.5 ${small ? 'w-4 h-4' : 'w-5 h-5'} rounded-full bg-white transition-all shadow`} style={{ left: on ? `calc(100% - ${small ? '1.125rem' : '1.375rem'})` : '0.125rem' }} />
+        {!small && <span className="absolute top-1/2 -translate-y-1/2 left-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0, fontFamily: 'var(--font-label)' }}>ON</span>}
+        {!small && <span className="absolute top-1/2 -translate-y-1/2 right-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ color: '#b4aaa0', opacity: on ? 0 : 1, fontFamily: 'var(--font-label)' }}>off</span>}
+        <span
+            className={`absolute top-1/2 -translate-y-1/2 ${small ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'} rounded-full bg-white transition-all duration-300`}
+            style={{ left: on ? (small ? 20 : 27) : 3, boxShadow: '0 2px 6px rgba(37,35,56,0.22)' }}
+        />
     </button>
 );
 
@@ -111,8 +210,8 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                     max={max}
                     step={step}
                     onChange={e => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(n); }}
-                    className="w-20 text-right text-xs font-mono px-2 py-1 outline-none focus:ring-2 focus:ring-sky-100"
-                    style={FIELD_STYLE}
+                    className="w-20 text-right text-xs font-mono px-2 py-1 outline-none focus:ring-2"
+                    style={{ ...FIELD_STYLE, ['--tw-ring-color' as any]: `${PRESS.solid}24` }}
                 />
             </div>
             <input
@@ -122,14 +221,15 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                 max={max}
                 step={step}
                 onChange={e => onChange(parseFloat(e.target.value))}
-                className="w-full accent-[#0ea5e9]"
+                className="w-full"
+                style={{ accentColor: PRESS.solid }}
             />
         </div>
     );
 };
 
 // ---------------------------------------------------------------------------
-// 字条编辑弹层
+// 提示词编辑弹层
 
 interface PromptEditorProps {
     prompt: PresetPrompt;
@@ -161,19 +261,18 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col animate-fade-in" style={{ background: '#f7f5f2', color: INK }}>
-            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56" style={{ background: `radial-gradient(120% 90% at 50% -28%, ${SKY.soft}, transparent 70%)` }} />
-            <InsHeader
-                accent={AC}
+        <div className="fixed inset-0 z-[100] flex flex-col animate-fade-in" style={{ background: CANVAS_BG, color: INK }}>
+            <PanelHeader
                 title={isMarker ? '系统占位' : '编辑提示词'}
                 en={isMarker ? 'MARKER' : 'PROMPT'}
+                sub={isMarker ? '系统自动填充，支持调整列表位置' : '编辑后自动写入当前预设'}
                 onBack={onClose}
-                right={!isMarker ? <InsButton onClick={save} accent={AC} className="px-4 py-2 text-[12px]">保存</InsButton> : undefined}
+                status={isMarker ? '只读' : '待保存'}
             />
 
-            <InsScroll className="p-4 space-y-4 pb-8">
-                <InsCard accent={AC} className="p-4 space-y-2">
-                    <SectionLabel en="NAME" accent={AC}>提示词名称</SectionLabel>
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-5 pb-10 space-y-6">
+                <Page title="基础信息" en="Name">
+                    <Entry mark="ID" title="提示词名称" note={isMarker ? '系统占位名称用于在列表中识别，内容由发送流程自动填充。' : '名称只影响管理界面，不会直接写入发送内容。'}>
                     <input
                         value={name}
                         onChange={e => setName(e.target.value)}
@@ -181,26 +280,23 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                         className="w-full px-4 py-3 text-sm font-bold outline-none disabled:opacity-45"
                         style={FIELD_STYLE}
                     />
-                </InsCard>
+                    </Entry>
+                </Page>
 
                 {isMarker ? (
-                    <InsCard accent={AC} edge className="p-4 space-y-3">
-                        <SectionLabel en="SYSTEM SLOT" accent={AC}>自动插入内容</SectionLabel>
-                        <div className="flex items-start gap-3">
-                            <span className="mt-0.5 inline-flex w-9 h-9 rounded-full items-center justify-center shrink-0" style={{ background: SKY.soft, color: SKY.solid }}>
-                                <Placeholder size={18} weight="bold" />
-                            </span>
-                            <p className="text-[13px] leading-relaxed" style={{ color: INS_SOFT }}>
-                                {markerHint || '发送时由系统自动填充内容，这里只能调整它在提示词列表中的位置和开关。'}
-                            </p>
-                        </div>
-                    </InsCard>
+                    <Page title="自动内容" en="System Slot">
+                        <Entry mark="SYS" title="发送时填充" note={markerHint || '发送时由系统自动填充内容，这里只能调整它在提示词列表中的位置和开关。'}>
+                            <div className="rounded-[14px] px-3 py-2.5 text-[11px] leading-relaxed" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${PRESS.solid}26` }}>
+                                该条目属于内置 marker，不需要手动编辑正文。
+                            </div>
+                        </Entry>
+                    </Page>
                 ) : (
                     <>
-                        <InsCard accent={AC} className="p-4 space-y-4">
+                        <Page title="注入规则" en="Runtime">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>消息角色</label>
+                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>消息角色</label>
                                     <div className="relative">
                                         <select
                                             value={role}
@@ -216,7 +312,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>注入位置</label>
+                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>注入位置</label>
                                     <div className="relative">
                                         <select
                                             value={position}
@@ -235,7 +331,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                             {position === INJECTION_POSITION.ABSOLUTE && (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>@Depth 深度</label>
+                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>@Depth 深度</label>
                                         <input
                                             type="number" min={0} max={9999} value={depth}
                                             onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setDepth(Math.max(0, n)); }}
@@ -244,7 +340,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>同深度排序</label>
+                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>同深度排序</label>
                                         <input
                                             type="number" min={0} max={9999} value={order}
                                             onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setOrder(n); }}
@@ -254,11 +350,11 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                     </div>
                                 </div>
                             )}
-                        </InsCard>
+                        </Page>
 
-                        <InsCard accent={AC} className="p-4">
+                        <Page title="提示词内容" en="Content">
                             <div className="flex items-end justify-between mb-2">
-                                <SectionLabel en="CONTENT" accent={AC}>提示词内容</SectionLabel>
+                                <span className="text-[12.5px] font-bold" style={{ color: INK }}>正文</span>
                                 <span className="label-mono text-[8px]" style={{ color: INS_SOFT }}>≈ {estimateTokens(content)} tokens</span>
                             </div>
                             <textarea
@@ -268,22 +364,15 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                 className="w-full h-72 px-4 py-3 text-xs leading-6 resize-none outline-none placeholder:text-slate-400"
                                 style={{ ...FIELD_STYLE, ...RULED_BG }}
                             />
-                        </InsCard>
+                        </Page>
 
-                        {onDelete && (
-                            <InsButton
-                                variant="soft"
-                                accent="rose"
-                                onClick={onDelete}
-                                className="w-full py-3 text-[13px]"
-                                icon={<Trash size={15} weight="bold" />}
-                            >
-                                删除这条提示词
-                            </InsButton>
-                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                            {onDelete && <PressButton tone="danger" onClick={onDelete} className="py-3 text-[12px]" icon={<Trash size={15} weight="bold" />}>删除提示词</PressButton>}
+                            <PressButton tone="press" onClick={save} className={`${onDelete ? '' : 'col-span-2'} py-3 text-[12px]`} icon={<PenNib size={15} weight="bold" />}>保存修改</PressButton>
+                        </div>
                     </>
                 )}
-            </InsScroll>
+            </div>
         </div>
     );
 };
@@ -292,7 +381,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 // 主组件
 
 const PresetApp: React.FC = () => {
-    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig, userProfile } = useOS();
+    const { closeApp, addToast, apiPresets, apiConfig, updateApiConfig } = useOS();
     const [presets, setPresets] = useState<TavernPreset[]>([]);
     const [activeId, setActiveId] = useState<string | null>(PresetRuntime.getActiveId());
     const [enabled, setEnabled] = useState(PresetRuntime.isEnabled());
@@ -301,9 +390,6 @@ const PresetApp: React.FC = () => {
     const [showParams, setShowParams] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showInsert, setShowInsert] = useState(false);
-    // 随字版正则补丁的编辑弹层（缝纫台），与补丁铺共用同一个 RegexEditor
-    const [editingRegex, setEditingRegex] = useState<RegexScriptData | null>(null);
-    const [editingRegexIsNew, setEditingRegexIsNew] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // 拖拽排序状态
@@ -329,8 +415,8 @@ const PresetApp: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // 把激活字版自带的正则即时推进运行时缓存：选字版 / 开关印坊 / 改动正则都会
-    // 立刻反映到聊天管线与气泡渲染（歇业或没选中本字版时为空）。其余时机（App 启动、
+    // 把激活预设自带的正则即时推进运行时缓存：切换预设 / 启停预设 / 改动正则都会
+    // 立刻反映到聊天管线与气泡渲染（未启用或没选中本预设时为空）。其余时机（App 启动、
     // 每次发送）由 OSContext / chatRequestPayload 兜底刷新。
     useEffect(() => {
         setPresetRegexScripts(enabled && active ? active.regexScripts ?? null : null);
@@ -340,7 +426,7 @@ const PresetApp: React.FC = () => {
     const persistPreset = (next: TavernPreset) => {
         next.updatedAt = Date.now();
         setPresets(prev => prev.map(p => (p.id === next.id ? next : p)));
-        DB.savePreset(next).catch(e => addToast(`没存上: ${e?.message || e}`, 'error'));
+        DB.savePreset(next).catch(e => addToast(`预设保存失败: ${e?.message || e}`, 'error'));
     };
 
     const mutateActive = (fn: (draft: TavernPreset) => void) => {
@@ -353,7 +439,7 @@ const PresetApp: React.FC = () => {
     const selectPreset = (id: string, list?: TavernPreset[]) => {
         setActiveId(id);
         PresetRuntime.setActiveId(id);
-        // API 联动：字版绑定了 API 预设时，激活即套用对应连接配置（类似 ST 切连接档案）
+        // API 联动：预设绑定了 API 方案时，激活即套用对应连接配置。
         const preset = (list ?? presets).find(p => p.id === id);
         if (preset?.moroApiPresetId) {
             const bound = apiPresets.find(ap => ap.id === preset.moroApiPresetId);
@@ -366,13 +452,11 @@ const PresetApp: React.FC = () => {
 
     // ── 预设操作 ──────────────────────────────────────
     const handleNewPreset = () => {
-        const name = window.prompt('新建预设名称', `预设 ${presets.length + 1}`);
-        if (name === null) return;
-        const preset = createDefaultPreset(name.trim() || 'Default');
+        const preset = createDefaultPreset(`预设 ${presets.length + 1}`);
         setPresets(prev => [...prev, preset]);
         DB.savePreset(preset).catch(() => addToast('预设保存失败', 'error'));
         selectPreset(preset.id);
-        addToast('已新建预设', 'success');
+        addToast('已新建默认预设', 'success');
     };
 
     const handleSaveAs = () => {
@@ -435,7 +519,7 @@ const PresetApp: React.FC = () => {
             selectPreset(preset.id);
             const regexCount = preset.regexScripts?.length ?? 0;
             const regexNote = regexCount > 0 ? `，随带 ${regexCount} 条正则补丁` : '';
-            if (!enabled) addToast(`已导入${regexNote}。当前未启用预设，请在右上角打开开关`, 'info');
+            if (!enabled) addToast(`已导入${regexNote}。当前未启用预设，请在顶部状态区打开开关`, 'info');
             else addToast(`已导入「${preset.name}」${regexNote}`, 'success');
         } catch (err: any) {
             addToast(`导入失败: ${err?.message || err}`, 'error');
@@ -528,61 +612,6 @@ const PresetApp: React.FC = () => {
         setShowInsert(false);
     };
 
-    // ── 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域） ──────
-    const presetRegex = active?.regexScripts ?? [];
-
-    const togglePresetRegex = (id: string, on: boolean) => {
-        mutateActive(d => {
-            d.regexScripts = (d.regexScripts ?? []).map(s => (s.id === id ? { ...s, disabled: !on } : s));
-        });
-    };
-
-    /** 「误配置一键修」：USER_INPUT + 看起来在包裹但没勾 promptOnly → 一键改成 promptOnly=true。 */
-    const fixPresetRegexWrap = (id: string) => {
-        const target = (active?.regexScripts ?? []).find(s => s.id === id);
-        if (!target) return;
-        if (!window.confirm(`把「${target.scriptName || '未命名补丁'}」改为只处理发送给 LLM 的内容？\n\n勾上 promptOnly 后，聊天原文和气泡显示不会被改写。`)) return;
-        mutateActive(d => {
-            d.regexScripts = (d.regexScripts ?? []).map(s => (s.id === id ? { ...s, promptOnly: true } : s));
-        });
-        addToast('已改为只处理发送内容', 'success');
-    };
-
-    const deletePresetRegex = (id: string) => {
-        if (!window.confirm('删除这条随预设的正则补丁？不会影响补丁铺里的通用补丁。')) return;
-        mutateActive(d => {
-            d.regexScripts = (d.regexScripts ?? []).filter(s => s.id !== id);
-        });
-    };
-
-    // 新缝一条 / 拆开重缝（与补丁铺共用 RegexEditor）。缝牢后写回 active.regexScripts，
-    // 经 mutateActive → persistPreset → setPresets 触发 active 引用更新，上面那条
-    // useEffect([enabled, active]) 立刻把改动推进运行时缓存，聊天与气泡渲染即时生效。
-    const openNewPresetRegex = () => {
-        if (!active) return;
-        setEditingRegex(createEmptyRegexScript());
-        setEditingRegexIsNew(true);
-    };
-
-    const openEditPresetRegex = (s: RegexScriptData) => {
-        setEditingRegex({ ...s, trimStrings: [...(s.trimStrings || [])], placement: [...(s.placement || [])] });
-        setEditingRegexIsNew(false);
-    };
-
-    const savePresetRegex = () => {
-        if (!editingRegex) return;
-        if (!editingRegex.findRegex.trim()) { addToast('查找正则不能为空', 'error'); return; }
-        const named = { ...editingRegex, scriptName: editingRegex.scriptName.trim() || '未命名补丁' };
-        mutateActive(d => {
-            const list = d.regexScripts ?? [];
-            d.regexScripts = list.some(s => s.id === named.id)
-                ? list.map(s => (s.id === named.id ? named : s))
-                : [...list, named];
-        });
-        setEditingRegex(null);
-        addToast('正则补丁已保存', 'success');
-    };
-
     // ── 拖拽排序（pointer events，手机 / 桌面通吃） ──────
     const dragState = useRef<{ from: number; to: number } | null>(null);
 
@@ -666,58 +695,40 @@ const PresetApp: React.FC = () => {
 
     // ── 渲染 ────────────────────────────────────────────
     return (
-        <div className="h-full w-full bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
-            {/* 刊头：合上贴纸 + 标题 + 开印章 */}
-            <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
-                <div className="flex items-center gap-3">
-                    <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`} title="合上活字盘">
-                        <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-                        </svg>
-                        <span className="text-[10px] font-black">合上</span>
-                    </button>
-                    <div className="flex-1 min-w-0 relative">
-                        <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#26242a]/45">TYPESETTING TRAY — PROMPT PRESS</div>
-                        <div className="flex items-baseline gap-2">
-                            <h1 className="text-2xl font-black tracking-[0.08em]">活字盘</h1>
-                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>提示词一块块排好再开印</span>
-                        </div>
-                    </div>
-                    {/* 开印章：预设总开关 */}
-                    <button
-                        onClick={() => toggleEnabled(!enabled)}
-                        title={enabled ? '印坊开着工：激活的字版接管提示词与火候。点一下歇业' : '印坊歇业中：聊天走 Moro 原生组装。点一下开印'}
-                        className={`shrink-0 w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center rotate-[6deg] select-none transition-all active:scale-95 ${enabled ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-dashed border-[#1c1b1a]/60 bg-white text-[#26242a]/60'}`}
+        <div className="absolute inset-0 flex flex-col overflow-hidden animate-fade-in" style={{ background: CANVAS_BG, color: INK }}>
+            <input type="file" ref={fileInputRef} className="hidden" accept=".json,application/json" onChange={handleImportFile} />
+            <PanelHeader
+                title="活字盘"
+                en="PROMPT PRESETS"
+                sub={loaded ? `${active?.name || '未选择预设'} · 更改会自动保存` : '正在读取本地预设'}
+                onBack={closeApp}
+                status="自动保存"
+            />
+
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-5 pb-12 space-y-6">
+                <Page title="当前预设" en="Active Preset">
+                    <Entry
+                        mark="ON"
+                        title={enabled ? '预设已启用' : '预设未启用'}
+                        note={enabled ? '聊天请求会使用当前选中的提示词顺序、marker 和随预设正则。' : '聊天请求仍使用 Moro 默认提示词组装，下面的预设配置暂不接管。'}
+                        side={<InkSwitch on={enabled} onChange={toggleEnabled} />}
                     >
-                        <span className="text-sm font-black leading-none">{enabled ? '开印' : '歇业'}</span>
-                        <span className="label-mono text-[6px] leading-none mt-1 opacity-70">{enabled ? 'ON' : 'OFF'}</span>
-                    </button>
-                </div>
-            </div>
+                        <div className="flex flex-wrap gap-2">
+                            <PressChip active tone="press">{presets.length} 个预设</PressChip>
+                            <PressChip active tone="active">{enabledEntriesCount}/{orderEntries.length} 条启用</PressChip>
+                            <PressChip tone="plain">约 {totalTokens} tokens</PressChip>
+                            <PressChip tone="plain">{markerEntriesCount} 个 marker</PressChip>
+                        </div>
+                    </Entry>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5 pb-10">
-                {!enabled && (
-                    <div className="relative border-2 border-dashed border-[#1c1b1a]/50 bg-white/55 px-4 py-3 rotate-[-0.3deg]">
-                        <p className="text-[13px] text-[#26242a]/60 leading-relaxed" style={HAND_CN}>
-                            印坊歇业中：聊天走 Moro 原生的信件组装，下面排得再好也不会上机。按一下右上角的「开印」章，激活的字版才会接管提示词结构和火候。
-                        </p>
-                    </div>
-                )}
+                    <Entry mark="SET" title="预设文件" note="新建、导入、复制后会自动选中；所有修改都会写入本地 IndexedDB。">
 
-                {/* 字版条 */}
-                <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
-                    <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
-                    <div className="flex items-end justify-between">
-                        <span className="label-mono text-[8px] text-[#26242a]/45">ACTIVE PLATE / 在用的字版</span>
-                        <span className="text-[11px] text-[#26242a]/45" style={HAND_CN}>改动随手就存，不用按保存</span>
-                    </div>
                     {loaded && presets.length === 0 ? (
-                        <div className="text-center py-5 space-y-3">
-                            <p className="text-lg" style={HAND_CN}>盘里还没有字版。</p>
-                            <div className="flex justify-center gap-3 flex-wrap">
-                                <button onClick={handleNewPreset} className={`px-4 py-2 text-xs font-black rotate-[-0.5deg] ${INK_BTN}`}>刻一副默认字版</button>
-                                <button onClick={() => fileInputRef.current?.click()} className={`px-4 py-2 text-xs font-black rotate-[0.5deg] ${STICKER}`}>收一副酒馆预设进来</button>
+                        <div className="py-2 space-y-3 text-center">
+                            <div className="text-[13px] font-bold" style={{ color: INK }}>暂无预设</div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <PressButton onClick={handleNewPreset} className="py-2.5" icon={<PenNib size={14} weight="bold" />}>新建默认预设</PressButton>
+                                <PressButton onClick={() => fileInputRef.current?.click()} tone="plain" className="py-2.5" icon={<TrayArrowDown size={14} weight="bold" />}>导入 JSON</PressButton>
                             </div>
                         </div>
                     ) : (
@@ -726,50 +737,45 @@ const PresetApp: React.FC = () => {
                                 <select
                                     value={activeId ?? ''}
                                     onChange={e => selectPreset(e.target.value)}
-                                    className="w-full appearance-none bg-white border border-black/10 rounded-xl px-3 py-2.5 text-sm font-black outline-none focus:border-dashed"
+                                    className="w-full appearance-none px-4 py-3 text-sm font-extrabold outline-none"
+                                    style={FIELD_STYLE}
                                 >
                                     {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                 </select>
                                 <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none">▾</span>
                             </div>
-                            <div className="grid grid-cols-6 gap-1.5 pt-1">
+                            <div className="grid grid-cols-3 gap-2">
                                 {[
-                                    { icon: PenNib, label: '新刻', fn: handleNewPreset, tilt: '-1deg' },
-                                    { icon: TrayArrowDown, label: '收进', fn: () => fileInputRef.current?.click(), tilt: '0.8deg' },
-                                    { icon: TrayArrowUp, label: '拓出', fn: handleExport, tilt: '-0.6deg' },
-                                    { icon: NotePencil, label: '改名', fn: handleRename, tilt: '0.6deg' },
-                                    { icon: Stamp, label: '翻刻', fn: handleSaveAs, tilt: '-0.8deg' },
-                                    { icon: Trash, label: '销版', fn: handleDelete, tilt: '1deg', danger: true },
-                                ].map(({ icon: Icon, label, fn, tilt, danger }) => (
-                                    <button
+                                    { icon: PenNib, label: '新建', fn: handleNewPreset, tone: 'press' as const },
+                                    { icon: TrayArrowDown, label: '导入', fn: () => fileInputRef.current?.click(), tone: 'press' as const },
+                                    { icon: TrayArrowUp, label: '导出', fn: handleExport, tone: 'press' as const },
+                                    { icon: NotePencil, label: '重命名', fn: handleRename, tone: 'plain' as const },
+                                    { icon: Stamp, label: '复制', fn: handleSaveAs, tone: 'plain' as const },
+                                    { icon: Trash, label: '删除', fn: handleDelete, tone: 'danger' as const },
+                                ].map(({ icon: Icon, label, fn, tone }) => (
+                                    <PressButton
                                         key={label}
+                                        tone={tone}
                                         onClick={fn}
-                                        style={{ rotate: tilt }}
-                                        className={`flex flex-col items-center gap-1 py-2 ${danger ? INK_BTN : STICKER}`}
+                                        className="py-2.5 text-[11px]"
+                                        icon={<Icon size={14} weight="bold" />}
                                     >
-                                        <Icon size={15} weight="bold" />
-                                        <span className="text-[9px] font-black">{label}</span>
-                                    </button>
+                                        {label}
+                                    </PressButton>
                                 ))}
                             </div>
                         </>
                     )}
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".json,application/json" onChange={handleImportFile} />
-                </div>
+                    </Entry>
+                </Page>
 
                 {active && (
                     <>
-                        {/* 接口联动 */}
-                        <div className="relative bg-white border border-black/10 rounded-xl/60 p-4 space-y-3 rotate-[0.3deg]">
-                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">WIRE-UP / 接口联动</span>
-                            <div className="border border-dashed border-[#1c1b1a]/40 px-3 py-2 text-xs text-[#26242a]/60">
-                                现在接的线：<span className="font-mono font-black text-[#26242a]">{apiConfig.model || '还没设置'}</span>
-                                {apiConfig.baseUrl && (
-                                    <span className="font-mono text-[#26242a]/40"> @ {(() => { try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; } })()}</span>
-                                )}
-                            </div>
-                            <div>
-                                <label className="text-[11px] font-black mb-1 block">绑一套 API 方案（启用这副字版时自动接线）</label>
+                        <Page title="API 与采样" en="Model Route">
+                            <Entry mark="API" title="API 方案" note="绑定后，切换到这个预设时会同步套用对应的连接配置。" side={<LinkSimple size={18} weight="bold" style={{ color: PRESS.solid }} />}>
+                                <div className="rounded-[14px] px-3 py-2.5 text-[11px] font-mono mb-2.5" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${PRESS.solid}20` }}>
+                                    {apiConfig.model || '未设置模型'}{apiHost ? ` @ ${apiHost}` : ''}
+                                </div>
                                 <div className="relative">
                                     <select
                                         value={active.moroApiPresetId ?? ''}
@@ -780,214 +786,145 @@ const PresetApp: React.FC = () => {
                                                 const bound = apiPresets.find(ap => ap.id === val);
                                                 if (bound) {
                                                     updateApiConfig(bound.config);
-                                                    addToast(`接口已换线：「${bound.name}」`, 'success');
+                                                    addToast(`已切换 API 方案：「${bound.name}」`, 'success');
                                                 }
                                             }
                                         }}
-                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
+                                        className="w-full appearance-none px-4 py-3 text-xs font-bold outline-none"
+                                        style={FIELD_STYLE}
                                     >
-                                        <option value="">不绑（沿用文具盒里的全局 API）</option>
+                                        <option value="">不绑定 API 方案</option>
                                         {apiPresets.map(ap => (
                                             <option key={ap.id} value={ap.id}>{ap.name}（{ap.config.model}）</option>
                                         ))}
                                     </select>
                                     <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
                                 </div>
-                                <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>
-                                    ✎ API 方案在「文具盒 → 接线盒（API 配置）」里存。温度那些由下面的「火候」接管（可以关）。
-                                </p>
-                            </div>
-                        </div>
+                            </Entry>
 
-                        {/* 火候（生成参数） */}
-                        <div className="relative bg-white border border-black/10 rounded-xl/60 rotate-[-0.3deg]">
-                            <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">SAMPLING / 火候</span>
-                            <button
-                                onClick={() => setShowParams(v => !v)}
-                                className="w-full px-4 py-3.5 flex items-center justify-between"
+                            <Entry
+                                mark="SMP"
+                                title="采样参数"
+                                note="控制当前预设的回复自由度、长度和重复惩罚；可选择是否随请求下发。"
+                                side={<PressButton tone="copper" onClick={() => setShowParams(v => !v)} className="px-3 py-1.5" icon={<SlidersHorizontal size={14} weight="bold" />}>{showParams ? '收起' : '展开'}</PressButton>}
                             >
-                                <span className="text-[11px] font-black">温度、惩罚、token 上限…都在这格抽屉里</span>
-                                <span className={`text-sm font-black transition-transform inline-block ${showParams ? 'rotate-90' : ''}`}>▸</span>
-                            </button>
-                            {showParams && (
-                                <div className="px-4 pb-4 space-y-4">
-                                    <div className="flex items-center justify-between border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2.5">
-                                        <div>
-                                            <p className="text-[11px] font-black">火候随请求下发</p>
-                                            <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>关掉的话字版只管排版，火候仍走「文具盒」里的全局 API 配置</p>
-                                        </div>
-                                        <InkSwitch on={applySampling} onChange={toggleSampling} small />
-                                    </div>
-                                    <SliderRow label="温度 Temperature" value={active.temperature} fallback={1} min={0} max={2} step={0.01} onChange={v => mutateActive(d => { d.temperature = v; })} />
-                                    <SliderRow label="频率惩罚 Frequency Penalty" value={active.frequency_penalty} fallback={0} min={-2} max={2} step={0.01} onChange={v => mutateActive(d => { d.frequency_penalty = v; })} />
-                                    <SliderRow label="存在惩罚 Presence Penalty" value={active.presence_penalty} fallback={0} min={-2} max={2} step={0.01} onChange={v => mutateActive(d => { d.presence_penalty = v; })} />
-                                    <SliderRow label="Top P" value={active.top_p} fallback={1} min={0} max={1} step={0.01} onChange={v => mutateActive(d => { d.top_p = v; })} />
-                                    <SliderRow label="Top K" value={active.top_k} fallback={0} min={0} max={500} step={1} onChange={v => mutateActive(d => { d.top_k = v; })} />
-                                    <SliderRow label="重复惩罚 Repetition Penalty" value={active.repetition_penalty} fallback={1} min={0} max={3} step={0.01} onChange={v => mutateActive(d => { d.repetition_penalty = v; })} />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">上下文长度 (TOKENS)</label>
-                                            <input
-                                                type="number"
-                                                value={active.openai_max_context ?? 4095}
-                                                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_context = n; }); }}
-                                                className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
-                                            />
-                                            <p className="text-[12px] text-[#26242a]/50 mt-1" style={HAND_CN}>只是存档（Moro 按消息条数截上下文）</p>
-                                        </div>
-                                        <div>
-                                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">回复上限 (MAX_TOKENS)</label>
-                                            <input
-                                                type="number"
-                                                value={active.openai_max_tokens ?? 8000}
-                                                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_tokens = n; }); }}
-                                                className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* 排字架（提示词管理器） */}
-                        <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
-                            <Tape className="-top-2.5 right-6 rotate-[5deg] w-12" />
-                            <div className="flex items-end justify-between">
-                                <span className="label-mono text-[8px] text-[#26242a]/45">COMPOSING STICK / 排字架</span>
-                                <span className="label-mono text-[8px] text-[#26242a]/35">墨量 ≈ {totalTokens} TK</span>
-                            </div>
-
-                            <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
-                                {orderEntries.map((entry, idx) => {
-                                    const prompt = promptById.get(entry.identifier);
-                                    if (!prompt) return null;
-                                    const isMarker = !!prompt.marker;
-                                    const isAbsolute = prompt.injection_position === INJECTION_POSITION.ABSOLUTE;
-                                    const isCore = CORE_CONTEXT_MARKERS.has(prompt.identifier) || prompt.identifier === CHAT_HISTORY_MARKER;
-                                    const hint = MARKER_HINTS[prompt.identifier]?.hint;
-                                    return (
-                                        <div
-                                            key={entry.identifier}
-                                            ref={el => { rowRefs.current[idx] = el; }}
-                                            className={`flex items-center gap-2 border-2 px-2 py-2 bg-white transition-all ${dragIdx === idx ? 'border-[#1c1b1a] shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.5deg]' : 'border-[#1c1b1a]/40'} ${entry.enabled ? '' : 'opacity-45'}`}
-                                        >
-                                            <div
-                                                onPointerDown={onDragPointerDown(idx)}
-                                                className="p-1 cursor-grab touch-none text-[#26242a]/35 shrink-0"
-                                                title="捏住拖动换位置"
-                                            >
-                                                <List size={15} weight="bold" />
+                                {showParams && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between rounded-[14px] px-3 py-2.5" style={{ background: COPPER_TONE.soft, border: `1px solid ${COPPER_TONE.solid}24` }}>
+                                            <div>
+                                                <p className="text-[11px] font-bold" style={{ color: COPPER_TONE.ink }}>采样参数随请求下发</p>
+                                                <p className="text-[10px] mt-0.5" style={{ color: COPPER_TONE.ink, opacity: 0.72 }}>关闭后使用全局 API 配置。</p>
                                             </div>
-                                            <button onClick={() => setEditingId(entry.identifier)} className="flex-1 min-w-0 text-left">
-                                                <div className="flex items-center gap-1.5">
-                                                    {isMarker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
-                                                    {isAbsolute && <ArrowElbowDownRight size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
-                                                    <span className={`text-sm font-black truncate ${entry.enabled ? '' : 'line-through decoration-2'}`}>{prompt.name}</span>
-                                                    {isAbsolute && <span className="label-mono text-[8px] text-[#26242a]/50 shrink-0">@{prompt.injection_depth ?? 4}</span>}
-                                                </div>
-                                                <div className="flex items-center gap-1.5 mt-0.5">
-                                                    <VoiceStamp role={prompt.role} />
-                                                    {isCore
-                                                        ? <span className="text-[10px] text-[#26242a]/45 truncate">{hint}</span>
-                                                        : <span className="label-mono text-[8px] text-[#26242a]/40">≈{estimateTokens(prompt.content || '')} TK</span>}
-                                                </div>
-                                            </button>
-                                            {!isCore && (
-                                                <button onClick={() => handleDetach(entry.identifier)} className="p-1.5 text-[#26242a]/40 hover:text-[#26242a] active:scale-90 transition-all shrink-0" title="从架上取下（字条留在字库）">
-                                                    <Eject size={14} weight="bold" />
-                                                </button>
-                                            )}
-                                            <InkSwitch small on={entry.enabled} onChange={v => handleToggleEntry(entry.identifier, v)} />
+                                            <InkSwitch on={applySampling} onChange={toggleSampling} small />
                                         </div>
-                                    );
-                                })}
-                            </div>
+                                        <SliderRow label="Temperature" value={active.temperature} fallback={1} min={0} max={2} step={0.01} onChange={v => mutateActive(d => { d.temperature = v; })} />
+                                        <SliderRow label="Frequency Penalty" value={active.frequency_penalty} fallback={0} min={-2} max={2} step={0.01} onChange={v => mutateActive(d => { d.frequency_penalty = v; })} />
+                                        <SliderRow label="Presence Penalty" value={active.presence_penalty} fallback={0} min={-2} max={2} step={0.01} onChange={v => mutateActive(d => { d.presence_penalty = v; })} />
+                                        <SliderRow label="Top P" value={active.top_p} fallback={1} min={0} max={1} step={0.01} onChange={v => mutateActive(d => { d.top_p = v; })} />
+                                        <SliderRow label="Top K" value={active.top_k} fallback={0} min={0} max={500} step={1} onChange={v => mutateActive(d => { d.top_k = v; })} />
+                                        <SliderRow label="Repetition Penalty" value={active.repetition_penalty} fallback={1} min={0} max={3} step={0.01} onChange={v => mutateActive(d => { d.repetition_penalty = v; })} />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[11px] font-bold mb-1 block" style={{ color: INK }}>上下文 tokens</label>
+                                                <input
+                                                    type="number"
+                                                    value={active.openai_max_context ?? 4095}
+                                                    onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_context = n; }); }}
+                                                    className="w-full px-3 py-2 text-xs font-mono outline-none"
+                                                    style={FIELD_STYLE}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] font-bold mb-1 block" style={{ color: INK }}>回复 tokens</label>
+                                                <input
+                                                    type="number"
+                                                    value={active.openai_max_tokens ?? 8000}
+                                                    onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) mutateActive(d => { d.openai_max_tokens = n; }); }}
+                                                    className="w-full px-3 py-2 text-xs font-mono outline-none"
+                                                    style={FIELD_STYLE}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </Entry>
+                        </Page>
 
-                            <div className="flex gap-2 pt-1">
-                                <button onClick={handleNewPrompt} className={`flex-1 py-2.5 text-[10px] font-black flex items-center justify-center gap-1.5 rotate-[-0.4deg] ${INK_BTN}`}>
-                                    <PenNib size={13} weight="bold" />刻一枚新字条
-                                </button>
-                                <button
-                                    onClick={() => setShowInsert(true)}
-                                    disabled={detachedPrompts.length === 0}
-                                    className={`flex-1 py-2.5 text-[10px] font-black flex items-center justify-center gap-1.5 rotate-[0.4deg] disabled:opacity-35 ${STICKER}`}
-                                >
-                                    <StackPlus size={13} weight="bold" />从字库里捡一枚
-                                </button>
-                            </div>
-                        </div>
-
-                        <p className="text-[13px] text-[#26242a]/50 leading-relaxed px-2" style={HAND_CN}>
-                            带 <Placeholder size={12} weight="bold" className="inline" /> 的是占位铅块（marker）：Chat History 处填进聊天记录；角色相关的铅块共同对应
-                            Moro 的角色核心上下文（人设+世界书+记忆+印象），填在架上第一枚启用的角色铅块处。带 <ArrowElbowDownRight size={12} weight="bold" className="inline" /> 的按
-                            @深度插进聊天历史（和酒馆的 In-Chat 注入一致）。
-                        </p>
-
-                        {/* 随字版的正则补丁（ST extensions.regex_scripts，PRESET 作用域）：
-                            随字版走，可在这里直接增/删/改/启停（与补丁铺共用缝纫台）。 */}
-                        <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
-                            <Tape className="-top-2.5 left-8 rotate-[3deg] w-12" />
-                            <div className="flex items-end justify-between">
-                                <span className="label-mono text-[8px] text-[#26242a]/45 flex items-center gap-1">
-                                    <Scissors size={11} weight="bold" /> PRESET PATCHES / 随字版的补丁
-                                </span>
-                                <span className="label-mono text-[8px] text-[#26242a]/35">{presetRegex.length} 条</span>
-                            </div>
-                            <p className="text-[12px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>
-                                这些正则补丁跟着这副字版走（酒馆 extensions.regex_scripts）：只有选中本字版、且印坊开印时才生效，执行顺序排在补丁铺「满铺通用」之后、角色「只缝给 TA」之前。点一条即可拆开重缝。
-                            </p>
-                            {presetRegex.length > 0 && (
-                                <div className="space-y-2">
-                                    {presetRegex.map(s => {
-                                        const places = (s.placement || []).map(p => PLACEMENT_LABELS[p]).filter(Boolean).join(' · ');
-                                        const scope = s.markdownOnly ? '只改显示' : s.promptOnly ? '只改寄出' : '改原文';
+                        <Page title="提示词列表" en="Prompt Order">
+                            <Entry mark="ORD" title="发送顺序" note="拖动左侧列表图标排序；关闭某条后，它不会进入本次聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
+                                <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
+                                    {orderEntries.map((entry, idx) => {
+                                        const prompt = promptById.get(entry.identifier);
+                                        if (!prompt) return null;
+                                        const isMarker = !!prompt.marker;
+                                        const isAbsolute = prompt.injection_position === INJECTION_POSITION.ABSOLUTE;
+                                        const isCore = CORE_CONTEXT_MARKERS.has(prompt.identifier) || prompt.identifier === CHAT_HISTORY_MARKER;
+                                        const hint = MARKER_HINTS[prompt.identifier]?.hint;
                                         return (
                                             <div
-                                                key={s.id}
-                                                className={`flex items-center gap-2 border border-black/10 rounded-xl/40 px-2 py-2 bg-white ${s.disabled ? 'opacity-45' : ''}`}
+                                                key={entry.identifier}
+                                                ref={el => { rowRefs.current[idx] = el; }}
+                                                className={`flex items-center gap-2 rounded-[14px] px-2.5 py-2.5 transition-all ${entry.enabled ? '' : 'opacity-50'}`}
+                                                style={{
+                                                    background: dragIdx === idx ? PRESS.soft : PAPER,
+                                                    border: `1px solid ${dragIdx === idx ? PRESS.solid : LINE}`,
+                                                    boxShadow: dragIdx === idx ? `0 14px 30px -18px ${PRESS.solid}` : '0 1px 2px rgba(37,35,56,0.04)',
+                                                }}
                                             >
-                                                <Scissors size={14} weight="bold" className="shrink-0 text-[#26242a]/55" />
-                                                <button onClick={() => openEditPresetRegex(s)} className="flex-1 min-w-0 text-left" title="拆开重缝这条补丁">
-                                                    <div className={`text-sm font-black truncate ${s.disabled ? 'line-through decoration-2' : ''}`}>{s.scriptName}</div>
-                                                    <div className="label-mono text-[9px] text-[#26242a]/40 truncate">{s.findRegex}</div>
-                                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                        <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#26242a]/70">{scope}</span>
-                                                        {places && <span className="label-mono text-[8px] text-[#26242a]/40 truncate">{places}</span>}
-                                                        {looksLikeWrapMisconfig(s) && (
-                                                            <span
-                                                                role="button"
-                                                                tabIndex={0}
-                                                                onClick={(e) => { e.stopPropagation(); fixPresetRegexWrap(s.id); }}
-                                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); fixPresetRegexWrap(s.id); } }}
-                                                                title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
-                                                                className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#26242a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] cursor-pointer active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-                                                            >
-                                                                ⚠ 像在改原文？一键改
-                                                            </span>
-                                                        )}
+                                                <div
+                                                    onPointerDown={onDragPointerDown(idx)}
+                                                    className="p-1 cursor-grab touch-none shrink-0"
+                                                    style={{ color: INS_SOFT }}
+                                                    title="拖动排序"
+                                                >
+                                                    <List size={16} weight="bold" />
+                                                </div>
+                                                <button onClick={() => setEditingId(entry.identifier)} className="flex-1 min-w-0 text-left">
+                                                    <div className="flex items-center gap-1.5">
+                                                        {isMarker && <Placeholder size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
+                                                        {isAbsolute && <ArrowElbowDownRight size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
+                                                        <span className={`text-sm font-bold truncate ${entry.enabled ? '' : 'line-through decoration-2'}`} style={{ color: INK }}>{prompt.name}</span>
+                                                        {isAbsolute && <span className="label-mono text-[8px] shrink-0" style={{ color: INS_SOFT }}>@{prompt.injection_depth ?? 4}</span>}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 mt-1 min-w-0">
+                                                        <VoiceStamp role={prompt.role} />
+                                                        {isCore
+                                                            ? <span className="text-[10px] truncate" style={{ color: INS_SOFT }}>{hint}</span>
+                                                            : <span className="label-mono text-[8px]" style={{ color: INS_SOFT }}>≈ {estimateTokens(prompt.content || '')} tokens</span>}
                                                     </div>
                                                 </button>
-                                                <button onClick={() => deletePresetRegex(s.id)} className="p-1.5 text-[#26242a]/40 hover:text-[#26242a] active:scale-90 transition-all shrink-0" title="拆掉这条补丁">
-                                                    <Trash size={14} weight="bold" />
-                                                </button>
-                                                <InkSwitch small on={!s.disabled} onChange={v => togglePresetRegex(s.id, v)} />
+                                                {!isCore && (
+                                                    <button onClick={() => handleDetach(entry.identifier)} className="p-1.5 active:scale-90 transition-all shrink-0" style={{ color: INS_SOFT }} title="从当前列表移除">
+                                                        <Eject size={15} weight="bold" />
+                                                    </button>
+                                                )}
+                                                <InkSwitch small on={entry.enabled} onChange={v => handleToggleEntry(entry.identifier, v)} />
                                             </div>
                                         );
                                     })}
                                 </div>
-                            )}
-                            <button
-                                onClick={openNewPresetRegex}
-                                className={`w-full py-2 text-[10px] font-black flex items-center justify-center gap-1.5 ${STICKER}`}
-                            >
-                                <Scissors size={13} weight="bold" /> 给这副字版缝一条补丁
-                            </button>
-                        </div>
+                            </Entry>
+
+                            <Entry mark="ADD" title="管理提示词" note="marker 由系统在发送时填充；@Depth 提示词按 ST In-Chat 规则插入聊天历史。">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <PressButton onClick={handleNewPrompt} className="py-2.5 text-[12px]" icon={<PenNib size={14} weight="bold" />}>新增提示词</PressButton>
+                                    <PressButton
+                                        onClick={() => setShowInsert(true)}
+                                        disabled={detachedPrompts.length === 0}
+                                        tone="plain"
+                                        className="py-2.5 text-[12px]"
+                                        icon={<StackPlus size={14} weight="bold" />}
+                                    >
+                                        插入未使用
+                                    </PressButton>
+                                </div>
+                            </Entry>
+                        </Page>
+
                     </>
                 )}
             </div>
 
-            {/* 字条编辑弹层 */}
             {editingPrompt && (
                 <PromptEditor
                     prompt={editingPrompt}
@@ -997,55 +934,24 @@ const PresetApp: React.FC = () => {
                 />
             )}
 
-            {/* 随字版正则补丁的缝纫台（与补丁铺共用 RegexEditor） */}
-            {editingRegex && (
-                <RegexEditor
-                    script={editingRegex}
-                    isNew={editingRegexIsNew}
-                    userName={userProfile?.name || 'User'}
-                    charName={'{{char}}'}
-                    eyebrow={{ neu: 'NEW PRESET PATCH', old: 'RE-STITCH PRESET' }}
-                    onChange={setEditingRegex}
-                    onSave={savePresetRegex}
-                    onClose={() => setEditingRegex(null)}
-                />
-            )}
-
-            {/* 从字库里捡一枚 */}
-            {showInsert && (
-                <div className="fixed inset-0 z-[100] flex items-end justify-center animate-fade-in" onClick={() => setShowInsert(false)}>
-                    <div className="absolute inset-0 bg-black/40" />
-                    <div
-                        className="relative w-full max-h-[60vh] bg-white border-t-2 border-x-2 border-[#1c1b1a] p-5 overflow-y-auto no-scrollbar animate-slide-up"
-                        style={DOT_BG}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
+            <InsSheet open={showInsert} title="未使用提示词" onClose={() => setShowInsert(false)}>
+                <div className="space-y-2 max-h-[55vh] overflow-y-auto no-scrollbar">
+                    {detachedPrompts.length === 0 ? (
+                        <div className="py-8 text-center text-[12px]" style={{ color: INS_SOFT }}>没有可插入的未使用提示词。</div>
+                    ) : detachedPrompts.map((p) => (
                         <button
-                            onClick={() => setShowInsert(false)}
-                            className={`absolute top-3 right-3 w-7 h-7 flex items-center justify-center rotate-[3deg] ${STICKER}`}
-                            aria-label="合上字库"
+                            key={p.identifier}
+                            onClick={() => handleInsertExisting(p.identifier)}
+                            className="w-full flex items-center gap-2 px-3 py-3 text-left rounded-2xl active:scale-[0.98] transition-transform"
+                            style={{ background: PAPER, border: `1px solid ${LINE}`, color: INK }}
                         >
-                            <X size={13} weight="bold" color={INK} />
+                            {p.marker ? <Placeholder size={14} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} /> : <FileText size={14} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
+                            <span className="text-sm font-extrabold truncate flex-1">{p.name}</span>
+                            <VoiceStamp role={p.role} />
                         </button>
-                        <div className="label-mono text-[9px] text-[#26242a]/45">SPARE TYPES</div>
-                        <h3 className="text-lg font-black tracking-wide mb-3">字库 —— 捡一枚回排字架</h3>
-                        <div className="space-y-2">
-                            {detachedPrompts.map((p, i) => (
-                                <button
-                                    key={p.identifier}
-                                    onClick={() => handleInsertExisting(p.identifier)}
-                                    className={`w-full flex items-center gap-2 px-3 py-2.5 text-left ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'} ${STICKER}`}
-                                >
-                                    {p.marker && <Placeholder size={12} weight="bold" className="shrink-0 text-[#26242a]/60" />}
-                                    <span className="text-sm font-black truncate flex-1">{p.name}</span>
-                                    <VoiceStamp role={p.role} />
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    ))}
                 </div>
-            )}
+            </InsSheet>
         </div>
     );
 };

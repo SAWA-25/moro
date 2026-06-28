@@ -272,13 +272,11 @@ export async function generatePromptViaLLM(
   // 切片只会把最有特色的那部分人设丢掉。
   let charBlock: string;
   if (collaborator) {
-    const desc = collaborator.description || '';
     const systemPrompt = collaborator.systemPrompt || '';
     const writer = collaborator.writerPersona || '';
     const worldview = collaborator.worldview || '';
     charBlock = `【创作角色 — 这首歌是 TA 的歌】
 名字：${collaborator.name}
-用户对 TA 的备注/爱称：${desc || '无'}
 
 人设：
 ${systemPrompt}${writer ? `\n\n写手 persona 速写：\n${writer}` : ''}${worldview ? `\n\n世界观：\n${worldview}` : ''}`;

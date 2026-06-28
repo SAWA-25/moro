@@ -300,7 +300,7 @@ function normalizeCharacterBook(book: any): STBookNorm | null {
  *   进入空聊天时由用户选择一条作为第一条消息，不污染 systemPrompt）
  * - mes_example → mesExample（独立字段，按 ST 语义注入 dialogueExamples 占位 / 示例块）
  * - scenario → worldview
- * - creator / character_version / tags → description（列表页一行摘要）
+ * - description（剪影集列表备注）不从 ST 卡导入；只保留用户在 Moro 内手动填写
  * - creator_notes 及卡片元信息 → 一条 enabled=false 的世界书（保留信息但不进 prompt）
  * - character_book → 全部条目导入世界书库（默认局部作用域），有内容的条目按
  *   insertion_order 挂载到角色；开关 / 位置(@Depth 含 role) / 顺序按原卡映射
@@ -337,15 +337,9 @@ export function convertSTCardToCharacter(
 
     const worldview = m(d.scenario) || undefined;
 
-    // ---- 列表页摘要 ----
-    const metaBits: string[] = [];
-    if (strOrU(d.creator)) metaBits.push(`by ${d.creator.trim()}`);
-    if (strOrU(d.character_version)) metaBits.push(`v${String(d.character_version).trim()}`);
+    // 剪影集的 description 是 Moro 内的列表备注，不承接 ST 卡设定、作者或标签。
+    const description = '';
     const tags = toStrArray(d.tags);
-    if (tags.length > 0) metaBits.push(tags.slice(0, 6).join(' / '));
-    const description = metaBits.length > 0
-        ? `SillyTavern 卡 · ${metaBits.join(' · ')}`
-        : 'SillyTavern 角色卡导入';
 
     // ---- 世界书 ----
     const worldbooks: Worldbook[] = [];

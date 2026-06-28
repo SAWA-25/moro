@@ -326,7 +326,7 @@ const ShopApp: React.FC = () => {
         let agree = false; let reply = '';
         try {
             const api = resolveAuxApi(auxApiConfig, apiConfig);
-            const sys = `你是「${char.name}」。${char.description ? `【人设】\n${String(char.description).slice(0, 800)}` : ''}`;
+            const sys = `你是「${char.name}」。${char.systemPrompt ? `【人设】\n${String(char.systemPrompt).slice(0, 800)}` : ''}`;
             const usr = `${userProfile.name || '对方'} 让你帮 TA 代付购物车（共 ¥${formatPrice(total)}：${cartBrief}）。请完全按你的人设、你们的关系亲密度和这个金额决定愿不愿意付。\n只输出 JSON：{"pay": true 或 false, "reply": "你对 TA 说的一句话，第一人称，30字内，贴人设"}`;
             const raw = await llmComplete(api, [{ role: 'system', content: sys }, { role: 'user', content: usr }], { temperature: 0.8, maxTokens: 200 });
             const txt = raw.replace(/```(?:json)?/gi, '').trim();
@@ -406,7 +406,7 @@ const ShopApp: React.FC = () => {
 
     const onCharShop = async (char: CharacterProfile) => {
         const budget = Math.round(100 + (char.affection ?? 50) * 4);
-        const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.description }, userProfile.name || '你', budget);
+        const { system, user } = buildCharShopPrompt({ name: char.name, personaText: char.systemPrompt }, userProfile.name || '你', budget);
         let decision = null as ReturnType<typeof parseCharShopDecision>;
         try {
             const raw = await llmComplete(resolveAuxApi(auxApiConfig, apiConfig), [

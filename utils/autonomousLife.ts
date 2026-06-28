@@ -86,10 +86,10 @@ function describeTime(d: Date): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]} ${hh}:${mm}（${dayPart(d.getHours())}）`;
 }
 
-/** 把角色人设压成一小段喂给 agent —— 只取 name + description + worldview，截断防超长。 */
+/** 把角色核心设定压成一小段喂给 agent —— 只取 name + systemPrompt + worldview，截断防超长。 */
 function personaBrief(char: CharacterProfile): string {
   const parts: string[] = [`名字：${char.name}`];
-  const desc = (char.description || '').trim();
+  const desc = (char.systemPrompt || '').trim();
   if (desc) parts.push(`人设：${desc.slice(0, 1200)}`);
   const wv = (char.worldview || '').trim();
   if (wv) parts.push(`世界观：${wv.slice(0, 400)}`);

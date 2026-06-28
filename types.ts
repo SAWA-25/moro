@@ -975,9 +975,9 @@ export interface Worldbook {
      */
     enabled?: boolean;
     /**
-     * 作用域：
-     * - 'local'（默认）：仅当角色在神经链接「扩展设定」里挂载后才注入
-     * - 'global'：任意角色任意消息都注入（仍尊重条目/整书开关），无需挂载
+     * 旧版条目级作用域字段，仅为导入/备份兼容保留。
+     * 当前运行时的全局/局部由「整本世界书分组」决定：
+     * 见 utils/worldbookRuntime.ts 的 GROUP_SCOPES_KEY。
      */
     scope?: 'local' | 'global';
     /** 插入位置，undefined = 'after_char' */
@@ -1857,6 +1857,7 @@ export interface CharacterProfile {
   id: string;
   name: string;
   avatar: string;
+  /** 剪影集列表备注：仅供界面展示与搜索，不注入任何 AI 提示词。 */
   description: string;
   systemPrompt: string;
   worldview?: string;

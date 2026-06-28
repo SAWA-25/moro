@@ -217,7 +217,7 @@ export async function generateDatingBatch(
     // 随机抽几位角色「出镜」
     const pool = [...characters];
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[pool[i], pool[j]] = [pool[j], pool[i]]; }
-    const briefs: CharBrief[] = pool.slice(0, 5).map(c => ({ id: c.id, name: c.name, persona: c.description || c.systemPrompt || '', avatar: c.convoSettings?.charAvatarOverride || c.avatar }));
+    const briefs: CharBrief[] = pool.slice(0, 5).map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || '', avatar: c.convoSettings?.charAvatarOverride || c.avatar }));
     const prompt = buildDatingPrompt(briefs, userProfile, count);
     const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',

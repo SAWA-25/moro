@@ -8,7 +8,7 @@ const baseChar = (over: Partial<CharacterProfile>): CharacterProfile => ({
 } as CharacterProfile);
 
 describe('buildAppearanceSourceText', () => {
-    it('拼入人设与已启用的绑定世界书', () => {
+    it('拼入核心设定与已启用的绑定世界书，不使用列表备注', () => {
         const char = baseChar({
             description: '银发红瞳的少女',
             systemPrompt: '设定正文',
@@ -18,9 +18,9 @@ describe('buildAppearanceSourceText', () => {
             ],
         });
         const text = buildAppearanceSourceText(char);
-        expect(text).toContain('银发红瞳');
         expect(text).toContain('设定正文');
         expect(text).toContain('黑色长外套');
+        expect(text).not.toContain('银发红瞳');
         expect(text).not.toContain('不该出现'); // 禁用条目被过滤
     });
 

@@ -289,7 +289,7 @@ export function normalizeRegexScript(raw: any): RegexScriptData | null {
  * - replaceString 比 findRegex 字面长（启发：在加文本/包裹，不是在删文本）
  *
  * 命中 = 多半是预设作者笔误，本意应是 promptOnly=true（只改寄出的信）。
- * 补丁铺 / 活字盘的卡片上据此显示一个徽章 + 一键修正。
+ * 补丁铺的卡片上据此显示一个徽章 + 一键修正。
  */
 export function looksLikeWrapMisconfig(s: RegexScriptData): boolean {
     if (!s || s.disabled) return false;

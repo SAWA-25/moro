@@ -1,6 +1,8 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useOS } from '../context/OSContext';
-import { RegexScriptData } from '../types';
+import { RegexScriptData, TavernPreset } from '../types';
+import { DB } from '../utils/db';
+import { PresetRuntime, refreshPresetRegexCache } from '../utils/presets';
 import {
     PLACEMENT_LABELS,
     createEmptyRegexScript,
@@ -19,6 +21,7 @@ import {
     DownloadSimple,
     Globe,
     Plus,
+    SlidersHorizontal,
     Trash,
     UploadSimple,
     UserCircle,
@@ -164,9 +167,11 @@ const ScopeCard: React.FC<{
 
 const RegexApp: React.FC = () => {
     const { closeApp, addToast, characters, updateCharacter, userProfile } = useOS();
-    const [scope, setScope] = useState<'global' | 'scoped'>('global');
+    const [scope, setScope] = useState<'global' | 'preset' | 'scoped'>('global');
     const [scopedCharId, setScopedCharId] = useState<string>(characters[0]?.id || '');
     const [globalScripts, setGlobalScripts] = useState<RegexScriptData[]>(() => getGlobalRegexScripts());
+    const [presets, setPresets] = useState<TavernPreset[]>([]);
+    const [presetId, setPresetId] = useState<string>(PresetRuntime.getActiveId() || '');
     const [editing, setEditing] = useState<RegexScriptData | null>(null);
     const [editingIsNew, setEditingIsNew] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
@@ -176,15 +181,42 @@ const RegexApp: React.FC = () => {
         () => characters.find(c => c.id === scopedCharId) || null,
         [characters, scopedCharId],
     );
+    const preset = useMemo(
+        () => presets.find(p => p.id === presetId) || null,
+        [presets, presetId],
+    );
     const scripts: RegexScriptData[] = scope === 'global'
         ? globalScripts
-        : (scopedChar?.regexScripts || []);
+        : scope === 'preset'
+            ? (preset?.regexScripts || [])
+            : (scopedChar?.regexScripts || []);
     const enabledCount = scripts.filter(s => !s.disabled).length;
+
+    useEffect(() => {
+        DB.getAllPresets()
+            .then(list => {
+                list.sort((a, b) => a.createdAt - b.createdAt);
+                setPresets(list);
+                setPresetId(cur => {
+                    if (cur && list.some(p => p.id === cur)) return cur;
+                    const activeId = PresetRuntime.getActiveId();
+                    if (activeId && list.some(p => p.id === activeId)) return activeId;
+                    return list[0]?.id || '';
+                });
+            })
+            .catch(e => addToast(`预设列表读取失败：${e?.message || e}`, 'error'));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const persist = async (next: RegexScriptData[]) => {
         if (scope === 'global') {
             setGlobalScripts(next);
             saveGlobalRegexScripts(next);
+        } else if (scope === 'preset' && preset) {
+            const nextPreset = { ...preset, regexScripts: next, updatedAt: Date.now() };
+            setPresets(prev => prev.map(p => (p.id === nextPreset.id ? nextPreset : p)));
+            await DB.savePreset(nextPreset);
+            if (PresetRuntime.getActiveId() === nextPreset.id) void refreshPresetRegexCache();
         } else if (scopedChar) {
             await updateCharacter(scopedChar.id, { regexScripts: next });
         }
@@ -221,6 +253,7 @@ const RegexApp: React.FC = () => {
         if (!editing) return;
         if (!editing.findRegex.trim()) { addToast('查找正则不能为空', 'error'); return; }
         if (scope === 'scoped' && !scopedChar) { addToast('请先选择角色', 'error'); return; }
+        if (scope === 'preset' && !preset) { addToast('请先选择预设', 'error'); return; }
         const named = { ...editing, scriptName: editing.scriptName.trim() || '未命名脚本' };
         const exists = scripts.some(s => s.id === named.id);
         await persist(exists ? scripts.map(s => s.id === named.id ? named : s) : [...scripts, named]);
@@ -252,7 +285,11 @@ const RegexApp: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = scope === 'global' ? 'regex-global.json' : `regex-${scopedChar?.name || 'scoped'}.json`;
+        a.download = scope === 'global'
+            ? 'regex-global.json'
+            : scope === 'preset'
+                ? `regex-preset-${preset?.name || 'preset'}.json`
+                : `regex-${scopedChar?.name || 'scoped'}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -262,6 +299,7 @@ const RegexApp: React.FC = () => {
 
     const handleNewScript = () => {
         if (scope === 'scoped' && !scopedChar) { addToast('请先选择角色', 'error'); return; }
+        if (scope === 'preset' && !preset) { addToast('请先选择预设', 'error'); return; }
         setEditing(createEmptyRegexScript());
         setEditingIsNew(true);
     };
@@ -288,7 +326,7 @@ const RegexApp: React.FC = () => {
                         <span className="text-[8.5px] tracking-[0.24em] select-none" style={{ ...MONO_STACK, color: '#b07a8d' }}>REGEX SETTINGS</span>
                     </div>
                     <div className="text-[10px] truncate mt-0.5" style={{ color: '#a96f84' }}>
-                        {scope === 'global' ? '全局脚本' : scopedChar?.name || '角色脚本'} · 更改会自动保存
+                        {scope === 'global' ? '全局脚本' : scope === 'preset' ? (preset?.name || '预设脚本') : scopedChar?.name || '角色脚本'} · 更改会自动保存
                     </div>
                 </div>
                 <span className="text-[10px] select-none shrink-0 px-2 py-1 rounded-full" style={{ color: '#a96f84', background: '#fff4f7', border: `1px solid ${EDGE}` }}>已保存</span>
@@ -296,7 +334,7 @@ const RegexApp: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-28 space-y-8">
                 <Page title="作用范围" en="Scope">
-                    <Entry mark="♡" title="脚本应用到哪里" note="全局脚本会作用于所有角色聊天；角色脚本只作用于当前选中的角色。">
+                    <Entry mark="♡" title="脚本应用到哪里" note="全局脚本作用于所有聊天；预设脚本只随当前预设启用；角色脚本只作用于选中的角色。">
                         <div className="flex gap-2">
                             <ScopeCard
                                 active={scope === 'global'}
@@ -304,6 +342,13 @@ const RegexApp: React.FC = () => {
                                 title="全局脚本"
                                 note="所有角色聊天"
                                 onClick={() => setScope('global')}
+                            />
+                            <ScopeCard
+                                active={scope === 'preset'}
+                                icon={<SlidersHorizontal size={17} weight="bold" />}
+                                title="预设脚本"
+                                note="随活字盘预设"
+                                onClick={() => setScope('preset')}
                             />
                             <ScopeCard
                                 active={scope === 'scoped'}
@@ -314,6 +359,24 @@ const RegexApp: React.FC = () => {
                             />
                         </div>
                     </Entry>
+
+                    {scope === 'preset' && (
+                        <Entry mark="♡" title="选择预设" note="这里管理 SillyTavern PRESET 作用域正则；只有活字盘启用且选中该预设时生效。">
+                            <div className="flex flex-wrap gap-2">
+                                {presets.map(p => (
+                                    <StickerChip
+                                        key={p.id}
+                                        active={presetId === p.id}
+                                        onClick={() => setPresetId(p.id)}
+                                        tone="blue"
+                                    >
+                                        {p.name}
+                                    </StickerChip>
+                                ))}
+                                {presets.length === 0 && <span className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>暂无预设，请先到活字盘新建或导入。</span>}
+                            </div>
+                        </Entry>
+                    )}
 
                     {scope === 'scoped' && (
                         <Entry mark="♡" title="选择角色" note="随 SillyTavern 角色卡导入的正则，也会出现在对应角色这里。">
@@ -368,8 +431,10 @@ const RegexApp: React.FC = () => {
                     {scripts.length === 0 ? (
                         <div className="py-8 text-center">
                             <BracketsCurly size={36} weight="thin" className="mx-auto mb-3" style={{ color: PAPER_TONES.inkFaint }} />
-                            <div className="text-[13px] font-bold" style={{ color: PAPER_TONES.ink }}>暂无正则脚本</div>
-                            <p className="mt-1 text-[10px] leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>新建脚本或导入 JSON 后，会显示在这里。</p>
+                            <div className="text-[13px] font-bold" style={{ color: PAPER_TONES.ink }}>{scope === 'preset' && !preset ? '未选择预设' : '暂无正则脚本'}</div>
+                            <p className="mt-1 text-[10px] leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>
+                                {scope === 'preset' && !preset ? '请先选择一个活字盘预设，再管理随预设生效的正则脚本。' : '新建脚本或导入 JSON 后，会显示在这里。'}
+                            </p>
                         </div>
                     ) : (
                         scripts.map((script) => {
@@ -413,6 +478,7 @@ const RegexApp: React.FC = () => {
             <div className="absolute bottom-0 inset-x-0 z-20 px-3 pt-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 14px)', background: 'linear-gradient(180deg, transparent, rgba(250,250,250,0.96) 36%, #fafafa)' }}>
                 <button
                     onClick={handleNewScript}
+                    disabled={scope === 'preset' && !preset}
                     className="w-full rounded-full py-3 text-[13px] font-bold active:scale-[0.98] transition-transform"
                     style={{ background: ROSE, color: '#fff', boxShadow: '0 10px 22px -14px rgba(122,90,114,0.45)', ...CUTE_STACK }}
                 >
@@ -442,7 +508,7 @@ const RegexApp: React.FC = () => {
                     script={editing}
                     isNew={editingIsNew}
                     userName={userProfile?.name || 'User'}
-                    charName={scope === 'scoped' ? (scopedChar?.name || '') : (characters[0]?.name || 'Char')}
+                    charName={scope === 'scoped' ? (scopedChar?.name || '') : scope === 'preset' ? (preset?.name || 'Preset') : (characters[0]?.name || 'Char')}
                     onChange={setEditing}
                     onSave={() => void handleSaveEditing()}
                     onClose={() => setEditing(null)}

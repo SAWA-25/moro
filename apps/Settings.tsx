@@ -54,56 +54,56 @@ const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
 // 这里设为 false 只是把设置页里的入口隐藏掉，想恢复改回 true 即可。
 const SHOW_PROACTIVE_PUSH_ACCEL_UI = false;
 
-// ── 文具盒 / 拍立得设计 token：奶油纸、石墨字、牛皮纸胶带、尺子蓝 ─────────
-const INK = '#303238';
-const INK_SOFT = '#7d827d';
-const ROSE = '#6f91a8';
-const ROSE_DARK = '#47677a';
-const PAPER = '#fffaf0';
-const LINE = '#ddd0ba';
-const CARD_BORDER = '#e7dfd0';
-const CARD_SHADOW = '0 1px 2px rgba(48,50,56,0.04), 0 14px 30px -24px rgba(48,50,56,0.24)';
+// ── 文具盒 / 轻拍立得设计 token：浅米纸、石墨字、雾蓝点缀 ─────────
+const INK = '#2f3437';
+const INK_SOFT = '#8a918d';
+const ROSE = '#7fa8b3';
+const ROSE_DARK = '#577782';
+const PAPER = '#fffdf8';
+const LINE = '#e7e1d6';
+const CARD_BORDER = '#eee9df';
+const CARD_SHADOW = '0 1px 2px rgba(31,35,38,0.04), 0 18px 42px -34px rgba(31,35,38,0.36)';
 const AUX_MODELS_STORAGE_KEY = 'os_aux_available_models';
-/** 轻量贴纸按钮：牛皮纸描边 + 奶油纸底 */
-const STICKER = 'border border-[#ddd0ba] rounded-full bg-[#fffaf0] text-[#47677a] shadow-[0_1px_2px_rgba(48,50,56,0.10)] press-soft';
-/** 主按钮：尺子蓝胶囊按钮 */
-const INK_BTN = 'bg-[#6f91a8] text-white border border-[#ddd0ba] rounded-full shadow-[0_8px_16px_-12px_rgba(48,50,56,0.42)] press-soft';
+/** 轻量按钮：白色照片纸底 + 极淡边线 */
+const STICKER = 'border border-[#e7e1d6] rounded-full bg-white/90 text-[#577782] shadow-[0_1px_2px_rgba(31,35,38,0.05)] press-soft';
+/** 主按钮：低饱和雾蓝胶囊 */
+const INK_BTN = 'bg-[#7fa8b3] text-white border border-[#d8e5e7] rounded-full shadow-[0_10px_18px_-16px_rgba(31,35,38,0.42)] press-soft';
 /** 柔和旁注字体 */
 const HAND_CN: React.CSSProperties = { fontFamily: "'LXGW WenKai', 'ZCOOL XiaoWei', 'Noto Serif SC', serif" };
-/** 页面底纹：纸张暖底 + 低饱和便签色块，像真正铺开的文具盒。 */
+/** 页面底纹：极浅纸底 + 一点雾蓝光斑，保留空气感。 */
 const DOT_BG: React.CSSProperties = {
     background:
-        'radial-gradient(circle at 10% 0%, rgba(216,192,151,0.24), transparent 30%), radial-gradient(circle at 92% 14%, rgba(111,145,168,0.18), transparent 28%), linear-gradient(180deg, #f7f3ea 0%, #fffaf0 48%, #f4efe4 100%)',
+        'radial-gradient(circle at 12% 0%, rgba(196,185,160,0.16), transparent 32%), radial-gradient(circle at 92% 14%, rgba(127,168,179,0.14), transparent 30%), linear-gradient(180deg, #f6f6f2 0%, #fbfaf6 52%, #f5f3ed 100%)',
 };
-/** 输入框：奶油纸底 + 牛皮纸描边 */
-const FIELD = 'w-full px-3 py-2 bg-[#fffaf0] border border-[#ddd0ba] rounded-[14px] text-sm text-[#303238] caret-[#6f91a8] focus:outline-none focus:border-[#6f91a8] focus:shadow-[0_8px_18px_-16px_rgba(48,50,56,0.32)] transition-all placeholder:text-[#a8a293]';
+/** 输入框：白纸底 + 轻边线 */
+const FIELD = 'w-full px-3 py-2 bg-white border border-[#e7e1d6] rounded-[14px] text-sm text-[#2f3437] caret-[#7fa8b3] focus:outline-none focus:border-[#9dbbc2] focus:shadow-[0_8px_18px_-18px_rgba(31,35,38,0.28)] transition-all placeholder:text-[#aab0ac]';
 /** 小标签（字段名） */
-const LABEL = 'label-mono text-[9px] text-[#7d827d] block mb-1';
+const LABEL = 'label-mono text-[9px] text-[#8a918d] block mb-1';
 
 const POLAROID_SCOPE_CSS = `
-.settings-polaroid [class*="text-[#26242a]"], .settings-polaroid [class*="text-[#5a3140]"] { color: #303238 !important; }
-.settings-polaroid [class*="text-[#26242a]/"], .settings-polaroid [class*="text-[#8f6b7b]"] { color: #62685f !important; }
-.settings-polaroid [class*="text-[#a892a3]"] { color: #7d827d !important; }
-.settings-polaroid [class*="text-[#9c5e74]"] { color: #47677a !important; }
-.settings-polaroid [class*="bg-[#1c1b1a]"], .settings-polaroid [class*="bg-[#d8a5b7]"] { background-color: #6f91a8 !important; }
-.settings-polaroid [class*="bg-[#1c1b1a]/"], .settings-polaroid [class*="bg-[#d8a5b7]/"] { background-color: rgba(111,145,168,0.12) !important; }
-.settings-polaroid [class*="bg-[#fff4f7]"] { background-color: #f3ead8 !important; }
-.settings-polaroid [class*="bg-[#fffdfa]"] { background-color: #fffaf0 !important; }
-.settings-polaroid [class*="border-[#1c1b1a]"], .settings-polaroid [class*="border-[#eed6df]"] { border-color: #ddd0ba !important; }
-.settings-polaroid [class*="border-[#1c1b1a]/"], .settings-polaroid [class*="border-[#eed6df]/"] { border-color: rgba(221,208,186,0.9) !important; }
-.settings-polaroid [class*="decoration-[#1c1b1a]"], .settings-polaroid [class*="decoration-[#d8a5b7]"] { text-decoration-color: rgba(111,145,168,0.9) !important; }
-.settings-polaroid .border-black\\/10 { border-color: #e7dfd0 !important; }
+.settings-polaroid [class*="text-[#26242a]"], .settings-polaroid [class*="text-[#5a3140]"] { color: #2f3437 !important; }
+.settings-polaroid [class*="text-[#26242a]/"], .settings-polaroid [class*="text-[#8f6b7b]"] { color: #69716d !important; }
+.settings-polaroid [class*="text-[#a892a3]"] { color: #8a918d !important; }
+.settings-polaroid [class*="text-[#9c5e74]"] { color: #577782 !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]"], .settings-polaroid [class*="bg-[#d8a5b7]"] { background-color: #7fa8b3 !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]/"], .settings-polaroid [class*="bg-[#d8a5b7]/"] { background-color: rgba(127,168,179,0.10) !important; }
+.settings-polaroid [class*="bg-[#fff4f7]"] { background-color: #f3f7f6 !important; }
+.settings-polaroid [class*="bg-[#fffdfa]"] { background-color: #fffdf8 !important; }
+.settings-polaroid [class*="border-[#1c1b1a]"], .settings-polaroid [class*="border-[#eed6df]"] { border-color: #e7e1d6 !important; }
+.settings-polaroid [class*="border-[#1c1b1a]/"], .settings-polaroid [class*="border-[#eed6df]/"] { border-color: rgba(231,225,214,0.9) !important; }
+.settings-polaroid [class*="decoration-[#1c1b1a]"], .settings-polaroid [class*="decoration-[#d8a5b7]"] { text-decoration-color: rgba(127,168,179,0.85) !important; }
+.settings-polaroid .border-black\\/10 { border-color: #eee9df !important; }
 .settings-polaroid .border-dashed { border-style: solid !important; }
 .settings-polaroid .border-2 { border-width: 1px !important; }
-.settings-polaroid code { background-color: #f3ead8 !important; color: #47677a !important; border-radius: 7px; }
-.settings-polaroid input[type="range"] { accent-color: #6f91a8; }
+.settings-polaroid code { background-color: #f3f7f6 !important; color: #577782 !important; border-radius: 7px; }
+.settings-polaroid input[type="range"] { accent-color: #7fa8b3; }
 `;
 
 /** 一截半透明拍立得胶带 */
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
     <div
         aria-hidden
-        className={`pointer-events-none absolute h-4 w-16 rounded-full bg-[#fff4f7]/85 border border-[#eed6df]/80 shadow-[0_1px_2px_rgba(122,90,114,0.10)] backdrop-blur-[1px] ${className || ''}`}
+        className={`pointer-events-none absolute h-3 w-16 rounded-full bg-white/55 border border-[#eee9df]/80 shadow-[0_1px_2px_rgba(31,35,38,0.04)] backdrop-blur-[1px] ${className || ''}`}
     />
 );
 
@@ -119,9 +119,9 @@ const PaperSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-            <div className="absolute inset-0 bg-[#2d1f27]/35 backdrop-blur-[2px]" onClick={onClose} />
+            <div className="absolute inset-0 bg-[#2f3437]/28 backdrop-blur-[2px]" onClick={onClose} />
             <div
-                className="relative w-full max-w-sm bg-white border border-[#eed6df] rounded-[22px] shadow-[0_1px_2px_rgba(38,38,38,0.04),0_18px_42px_-24px_rgba(122,90,114,0.42)] animate-slide-up overflow-hidden"
+                className="relative w-full max-w-sm bg-white border border-[#e7e1d6] rounded-[22px] shadow-[0_1px_2px_rgba(31,35,38,0.04),0_18px_42px_-30px_rgba(31,35,38,0.30)] animate-slide-up overflow-hidden"
                 style={{ background: `linear-gradient(180deg, #ffffff 0%, ${PAPER} 100%)` }}
             >
                 <Tape className="-top-2 left-1/2 -translate-x-1/2" />
@@ -133,9 +133,9 @@ const PaperSheet: React.FC<{
                     <X size={14} weight="bold" color={INK} />
                 </button>
                 <div className="px-5 pt-6 pb-2">
-                    <div className="label-mono text-[9px] text-[#a892a3]">{tag}</div>
-                    <h3 className="text-lg font-black text-[#5a3140] tracking-wide mt-0.5">{title}</h3>
-                    <div className="h-[3px] w-14 rounded-full bg-[#d8a5b7] mt-1.5" />
+                    <div className="label-mono text-[9px] text-[#8a918d]">{tag}</div>
+                    <h3 className="text-lg font-black text-[#2f3437] tracking-wide mt-0.5">{title}</h3>
+                    <div className="h-[3px] w-14 rounded-full bg-[#7fa8b3] mt-1.5" />
                 </div>
                 <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
                 {footer && <div className="px-5 pb-5 pt-2 flex gap-3">{footer}</div>}
@@ -155,16 +155,16 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?
         disabled={disabled}
         className={`relative w-[52px] h-[28px] rounded-full shrink-0 transition-all duration-300 active:scale-95 ${disabled ? 'opacity-50' : ''}`}
         style={{
-            background: on ? ROSE : '#f8f4f6',
+            background: on ? ROSE : '#eef2f0',
             border: `1px solid ${LINE}`,
-            boxShadow: on ? '0 8px 16px -12px rgba(122,90,114,0.42)' : 'inset 0 1px 2px rgba(122,90,114,0.08)',
+            boxShadow: on ? '0 8px 16px -14px rgba(31,35,38,0.36)' : 'inset 0 1px 2px rgba(31,35,38,0.06)',
         }}
     >
         <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ left: 8, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>
-        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ right: 7, color: '#d8c2cd', opacity: on ? 0 : 1 }}>off</span>
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ right: 7, color: '#aab0ac', opacity: on ? 0 : 1 }}>off</span>
         <span
             className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] rounded-full bg-white transition-all duration-300 pointer-events-none"
-            style={{ left: on ? 27 : 3, boxShadow: '0 2px 6px rgba(122,90,114,0.24)' }}
+            style={{ left: on ? 27 : 3, boxShadow: '0 2px 6px rgba(31,35,38,0.18)' }}
         />
     </button>
 );
@@ -182,12 +182,12 @@ const SectionCard: React.FC<{
         <Tape className="-top-2 left-6" />
         <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
-                <div className="label-mono text-[9px] text-[#a892a3]">{tag}</div>
-                <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">{title}</h2>
+                <div className="label-mono text-[9px] text-[#8a918d]">{tag}</div>
+                <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">{title}</h2>
             </div>
             {right}
         </div>
-        {hand && <p className="text-[11px] text-[#a96f84] mb-3 leading-relaxed" style={HAND_CN}>{hand}</p>}
+        {hand && <p className="text-[11px] text-[#69716d] mb-3 leading-relaxed" style={HAND_CN}>{hand}</p>}
         {children}
     </section>
 );
@@ -195,7 +195,7 @@ const SectionCard: React.FC<{
 const InfoNote: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
     <div
         className={`rounded-[14px] px-3 py-2.5 text-[11px] leading-relaxed ${className || ''}`}
-        style={{ color: '#8f6b7b', background: '#fff4f7', border: '1px solid #eed6df' }}
+        style={{ color: '#69716d', background: '#f3f7f6', border: '1px solid #dce8ea' }}
     >
         {children}
     </div>
@@ -205,8 +205,8 @@ const StatusBadge: React.FC<{ active: boolean; activeText: string; inactiveText:
     <span
         className="shrink-0 label-mono text-[9px] px-2 py-1 rounded-full"
         style={{
-            color: active ? '#ffffff' : '#a892a3',
-            background: active ? ROSE : '#fffdfa',
+            color: active ? '#ffffff' : '#8a918d',
+            background: active ? ROSE : '#fffdf8',
             border: `1px solid ${LINE}`,
         }}
     >
@@ -231,10 +231,10 @@ const ModelSelectButton: React.FC<{ model: string; placeholder: string; onClick:
 );
 
 const StatusTile: React.FC<{ label: string; value: string; detail?: string; active?: boolean }> = ({ label, value, detail, active }) => (
-    <div className={`min-w-0 rounded-[16px] border px-3 py-2.5 ${active ? 'border-[#eed6df] bg-[#fff4f7] text-[#5a3140]' : 'border-[#ededed] bg-[#fffdfa] text-[#8f6b7b]'}`}>
-        <div className={`label-mono text-[8px] ${active ? 'text-[#a96f84]' : 'text-[#a892a3]'}`}>{label}</div>
+    <div className={`min-w-0 rounded-[16px] border px-3 py-2.5 ${active ? 'border-[#dce8ea] bg-[#f3f7f6] text-[#2f3437]' : 'border-[#eee9df] bg-white/80 text-[#69716d]'}`}>
+        <div className={`label-mono text-[8px] ${active ? 'text-[#577782]' : 'text-[#8a918d]'}`}>{label}</div>
         <div className="text-[12px] font-black truncate mt-0.5">{value}</div>
-        {detail && <div className={`text-[9px] mt-0.5 truncate ${active ? 'text-[#a96f84]' : 'text-[#a892a3]'}`}>{detail}</div>}
+        {detail && <div className={`text-[9px] mt-0.5 truncate ${active ? 'text-[#69716d]' : 'text-[#8a918d]'}`}>{detail}</div>}
     </div>
 );
 
@@ -252,12 +252,12 @@ const SettingsGroup: React.FC<{ id: string; eyebrow: string; title: string; desc
     <section id={id} className="scroll-mt-28 space-y-3">
         <div className="flex items-end justify-between gap-3 px-1">
             <div className="min-w-0">
-                <div className="label-mono text-[8px] text-[#a892a3]">{eyebrow}</div>
-                <h2 className="text-lg font-black text-[#5a3140] tracking-wide">{title}</h2>
+                <div className="label-mono text-[8px] text-[#8a918d]">{eyebrow}</div>
+                <h2 className="text-lg font-black text-[#2f3437] tracking-wide">{title}</h2>
             </div>
-            <p className="hidden sm:block text-[11px] text-[#8f6b7b] leading-snug max-w-[16rem] text-right">{desc}</p>
+            <p className="hidden sm:block text-[11px] text-[#69716d] leading-snug max-w-[16rem] text-right">{desc}</p>
         </div>
-        <p className="sm:hidden text-[11px] text-[#8f6b7b] leading-snug px-1">{desc}</p>
+        <p className="sm:hidden text-[11px] text-[#69716d] leading-snug px-1">{desc}</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
             {children}
         </div>
@@ -266,8 +266,8 @@ const SettingsGroup: React.FC<{ id: string; eyebrow: string; title: string; desc
 
 const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label, value, bad }) => (
     <div className="flex items-start justify-between gap-3">
-        <span className="text-[#8f6b7b] shrink-0">{label}</span>
-        <span className={`text-right ${bad ? 'text-[#9c5e74] font-bold underline decoration-wavy decoration-[#d8a5b7]/70' : 'text-[#5a3140]/80'}`}>{value}</span>
+        <span className="text-[#69716d] shrink-0">{label}</span>
+        <span className={`text-right ${bad ? 'text-[#577782] font-bold underline decoration-wavy decoration-[#7fa8b3]/70' : 'text-[#2f3437]/80'}`}>{value}</span>
     </div>
 );
 
@@ -1137,19 +1137,19 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="settings-polaroid h-full w-full bg-[#fafafa] flex flex-col relative text-[#5a3140]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+    <div className="settings-polaroid h-full w-full bg-[#f6f6f2] flex flex-col relative text-[#2f3437]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
       <style>{POLAROID_SCOPE_CSS}</style>
 
       {/* GLOBAL PROGRESS OVERLAY */}
       {sysOperation.status === 'processing' && (
-          <div className="absolute inset-0 z-50 bg-[#2d1f27]/40 backdrop-blur-[2px] flex items-center justify-center animate-fade-in">
-              <div className="relative bg-white border border-[#eed6df] rounded-[22px] p-6 flex flex-col items-center gap-4 w-64" style={{ ...DOT_BG, boxShadow: CARD_SHADOW }}>
+          <div className="absolute inset-0 z-50 bg-[#2f3437]/34 backdrop-blur-[2px] flex items-center justify-center animate-fade-in">
+              <div className="relative bg-white border border-[#e7e1d6] rounded-[22px] p-6 flex flex-col items-center gap-4 w-64" style={{ ...DOT_BG, boxShadow: CARD_SHADOW }}>
                   <Tape className="-top-2 left-1/2 -translate-x-1/2" />
-                  <div className="w-12 h-12 border-4 border-[#eed6df] border-t-[#d8a5b7] rounded-full animate-spin"></div>
-                  <div className="text-sm font-bold text-[#5a3140] text-center leading-relaxed whitespace-pre-wrap break-words max-w-full">{sysOperation.message}</div>
+                  <div className="w-12 h-12 border-4 border-[#e7e1d6] border-t-[#7fa8b3] rounded-full animate-spin"></div>
+                  <div className="text-sm font-bold text-[#2f3437] text-center leading-relaxed whitespace-pre-wrap break-words max-w-full">{sysOperation.message}</div>
                   {sysOperation.progress > 0 && (
-                      <div className="w-full h-2 bg-white border border-[#eed6df] rounded-full overflow-hidden">
-                          <div className="h-full bg-[#d8a5b7] transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
+                      <div className="w-full h-2 bg-white border border-[#e7e1d6] rounded-full overflow-hidden">
+                          <div className="h-full bg-[#7fa8b3] transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
                       </div>
                   )}
               </div>
@@ -1157,7 +1157,7 @@ const Settings: React.FC = () => {
       )}
 
       {/* 顶栏 */}
-      <div className="shrink-0 z-10 sticky top-0 px-4 pt-3 pb-3 bg-white/95 backdrop-blur-sm border-b border-[#ededed]">
+      <div className="shrink-0 z-10 sticky top-0 px-4 pt-3 pb-3 bg-white/88 backdrop-blur-md border-b border-[#eee9df]">
         <div className="flex items-center gap-3">
             <button
                 onClick={closeApp}
@@ -1171,10 +1171,10 @@ const Settings: React.FC = () => {
             </button>
             <div className="flex-1 min-w-0 relative">
                 <Tape className="-top-4 left-6 w-12" />
-                <div className="label-mono text-[8px] text-[#a892a3]">SETTINGS · SYSTEM CONFIG</div>
+                <div className="label-mono text-[8px] text-[#8a918d]">SETTINGS · SYSTEM CONFIG</div>
                 <div className="flex items-baseline gap-2">
-                    <h1 className="text-2xl font-black tracking-[0.08em] text-[#5a3140]">文具盒</h1>
-                    <span className="text-sm text-[#a96f84] truncate" style={HAND_CN}>设置、接口、备份、通知</span>
+                    <h1 className="text-2xl font-black tracking-[0.08em] text-[#2f3437]">文具盒</h1>
+                    <span className="text-sm text-[#69716d] truncate" style={HAND_CN}>设置、接口、备份、通知</span>
                 </div>
             </div>
         </div>
@@ -1182,13 +1182,13 @@ const Settings: React.FC = () => {
 
       <div className="flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
 
-        <section className="relative overflow-hidden bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+        <section className="relative overflow-hidden bg-white/92 border border-[#eee9df] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
             <Tape className="-top-2 left-8" />
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                 <div>
-                    <div className="label-mono text-[8px] text-[#a892a3]">SETTINGS OVERVIEW</div>
-                    <h2 className="text-lg font-black text-[#5a3140] tracking-wide">配置总览</h2>
-                    <p className="text-[11px] text-[#8f6b7b] mt-1 leading-relaxed">查看关键状态，并快速跳到对应配置区。</p>
+                    <div className="label-mono text-[8px] text-[#8a918d]">SETTINGS OVERVIEW</div>
+                    <h2 className="text-lg font-black text-[#2f3437] tracking-wide">配置总览</h2>
+                    <p className="text-[11px] text-[#69716d] mt-1 leading-relaxed">查看关键状态，并快速跳到对应配置区。</p>
                 </div>
                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                     <JumpButton label="基础" target="settings-basic" onJump={jumpToSettingsGroup} />
@@ -1535,7 +1535,7 @@ const Settings: React.FC = () => {
                         <button
                             onClick={() => fetchModels('main', localUrl, localKey, localModel, setLocalModel, setStatusMsg)}
                             disabled={loadingModelTarget !== null}
-                            className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2 disabled:opacity-50"
+                            className="text-[10px] text-[#577782] font-black underline underline-offset-2 disabled:opacity-50"
                         >
                             {loadingModelTarget === 'main' ? '正在拉取…' : availableModels.length ? `刷新模型（${availableModels.length}）` : '拉取模型'}
                         </button>
@@ -1632,7 +1632,7 @@ const Settings: React.FC = () => {
                 <div className="group">
                     <div className="flex items-center justify-between mb-1">
                         <label className={LABEL}>BASE URL · 接口地址</label>
-                        <button onClick={handleCopyMainToAux} className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2">复制主 API</button>
+                        <button onClick={handleCopyMainToAux} className="text-[10px] text-[#577782] font-black underline underline-offset-2">复制主 API</button>
                     </div>
                     <input type="text" value={localAuxUrl} onChange={(e) => setLocalAuxUrl(e.target.value)} placeholder="https://your-api.example.com/v1" className={`${FIELD} font-mono`} />
                 </div>
@@ -1648,13 +1648,13 @@ const Settings: React.FC = () => {
                         <button
                             onClick={() => fetchModels('aux', localAuxUrl, localAuxKey, localAuxModel, setLocalAuxModel, setAuxStatusMsg)}
                             disabled={loadingModelTarget !== null}
-                            className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2 disabled:opacity-50"
+                            className="text-[10px] text-[#577782] font-black underline underline-offset-2 disabled:opacity-50"
                         >
                             {loadingModelTarget === 'aux' ? '正在拉取…' : auxAvailableModels.length ? `刷新模型（${auxAvailableModels.length}）` : '拉取模型'}
                         </button>
                     </div>
                     <ModelSelectButton model={localAuxModel} placeholder="选择或手动输入模型" onClick={() => openModelPicker('aux')} />
-                    <p className="text-[10px] text-[#8f6b7b] mt-1">建议使用响应快、成本低的模型；主聊天质量不受影响。</p>
+                    <p className="text-[10px] text-[#69716d] mt-1">建议使用响应快、成本低的模型；主聊天质量不受影响。</p>
                 </div>
 
                 <button onClick={handleSaveAuxApi} className={`w-full py-3 font-black mt-2 ${INK_BTN}`}>
@@ -1671,17 +1671,17 @@ const Settings: React.FC = () => {
             style={{ boxShadow: CARD_SHADOW }}
         >
             <Tape className="-top-2 left-6" />
-            <div className="p-2 border border-[#eed6df] rounded-[14px] shrink-0 bg-[#fffdfa]">
+            <div className="p-2 border border-[#e7e1d6] rounded-[14px] shrink-0 bg-white">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke={INK} className="w-4 h-4">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
                 </svg>
             </div>
             <div className="flex-1 min-w-0">
-                <div className="label-mono text-[9px] text-[#a892a3]">API LOG</div>
-                <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">API 调用记录</h2>
-                <p className="text-[11px] text-[#8f6b7b] mt-0.5">最近 5 天：时间、接口、应用、角色、用途。</p>
+                <div className="label-mono text-[9px] text-[#8a918d]">API LOG</div>
+                <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">API 调用记录</h2>
+                <p className="text-[11px] text-[#69716d] mt-0.5">最近 5 天：时间、接口、应用、角色、用途。</p>
             </div>
-            <span className="text-[#a892a3] text-sm shrink-0">→</span>
+            <span className="text-[#8a918d] text-sm shrink-0">→</span>
             </button>
 
             {/* 其他 API — 非 LLM 类（语音、写歌等），不会跟随 API 预设切换 */}
@@ -1857,12 +1857,12 @@ const Settings: React.FC = () => {
             <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                    <div className="label-mono text-[9px] text-[#a892a3]">NOTIFICATION</div>
-                    <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">系统通知</h2>
+                    <div className="label-mono text-[9px] text-[#8a918d]">NOTIFICATION</div>
+                    <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">系统通知</h2>
                 </div>
                 <StatusBadge active={notifyPerm === 'granted'} activeText="已允许" inactiveText={notifyPerm === 'denied' ? '被拒绝' : '未授权'} />
             </div>
-            <p className="text-[11px] text-[#a96f84] mb-3 leading-relaxed" style={HAND_CN}>聊天生成完成后发送系统通知。</p>
+            <p className="text-[11px] text-[#69716d] mb-3 leading-relaxed" style={HAND_CN}>聊天生成完成后发送系统通知。</p>
 
             {notifyPerm !== 'granted' && (
                 <button
@@ -1879,17 +1879,17 @@ const Settings: React.FC = () => {
                 </button>
             )}
 
-            <div className="flex items-center justify-between border border-[#eed6df] bg-[#fffdfa] rounded-[14px] px-3 py-2.5 gap-3">
+            <div className="flex items-center justify-between border border-[#e7e1d6] bg-white rounded-[14px] px-3 py-2.5 gap-3">
                 <div className="min-w-0">
-                    <p className="text-[11px] text-[#5a3140] font-bold">后台回复通知</p>
-                    <p className="text-[10px] text-[#8f6b7b] leading-snug">普通聊天发出后切后台，回复完成时尝试进入系统通知栏。生成期间靠 keep-alive 保活。</p>
+                    <p className="text-[11px] text-[#2f3437] font-bold">后台回复通知</p>
+                    <p className="text-[10px] text-[#69716d] leading-snug">普通聊天发出后切后台，回复完成时尝试进入系统通知栏。生成期间靠 keep-alive 保活。</p>
                 </div>
                 <InkSwitch
                     on={bgReplyNotify}
                     onChange={(v) => { setBgReplyNotifyState(v); setBackgroundReplyNotify(v); }}
                 />
             </div>
-            <p className="text-[10px] text-[#8f6b7b] mt-2 leading-relaxed">
+            <p className="text-[10px] text-[#69716d] mt-2 leading-relaxed">
                 网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。
             </p>
             </section>
@@ -1902,13 +1902,13 @@ const Settings: React.FC = () => {
             <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                    <div className="label-mono text-[9px] text-[#a892a3]">WEB PUSH KEY</div>
-                    <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">推送凭据（VAPID）</h2>
+                    <div className="label-mono text-[9px] text-[#8a918d]">WEB PUSH KEY</div>
+                    <h2 className="text-base font-black text-[#2f3437] tracking-wide leading-tight">推送凭据（VAPID）</h2>
                 </div>
                 <StatusBadge active={isPushVapidReady()} activeText="已配置" inactiveText="未配置" />
             </div>
-            <p className="text-[11px] text-[#a96f84] mb-2 leading-relaxed" style={HAND_CN}>配置 Web Push 使用的 VAPID 密钥。</p>
-            <p className="text-xs text-[#8f6b7b] mb-3 leading-relaxed">
+            <p className="text-[11px] text-[#69716d] mb-2 leading-relaxed" style={HAND_CN}>配置 Web Push 使用的 VAPID 密钥。</p>
+            <p className="text-xs text-[#69716d] mb-3 leading-relaxed">
                 Proactive Push 和 Instant Push <b>共用同一份 VAPID 密钥对</b>。两边 key 不一致时会反复 unsubscribe 抢同一个 pushManager 订阅 ——
                 "推送成功但收不到"的常见原因。
             </p>
@@ -2424,10 +2424,10 @@ const Settings: React.FC = () => {
                         </div>
                     )}
                     {commonPrefix && (
-                        <div className="text-[10px] text-[#8f6b7b] px-1 flex items-center gap-1 flex-wrap">
+                        <div className="text-[10px] text-[#69716d] px-1 flex items-center gap-1 flex-wrap">
                             <span>公共前缀:</span>
                             <code className="font-mono px-1.5 py-0.5 break-all">{commonPrefix}</code>
-                            <span className="text-[#a892a3]">(下方已弱化显示)</span>
+                            <span className="text-[#8a918d]">(下方已弱化显示)</span>
                         </div>
                     )}
                     <div className="max-h-[40vh] overflow-y-auto no-scrollbar space-y-2">
@@ -2441,12 +2441,12 @@ const Settings: React.FC = () => {
                                     title={m}
                                     className="w-full text-left px-4 py-3 text-sm font-mono flex justify-between items-start gap-2 rounded-[14px] transition-all"
                                     style={selected
-                                        ? { color: '#fff', background: ROSE, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -14px rgba(122,90,114,0.45)' }
-                                        : { color: '#5a3140', background: '#fffdfa', border: `1px solid ${LINE}` }}
+                                        ? { color: '#fff', background: ROSE, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -14px rgba(48,50,56,0.45)' }
+                                        : { color: '#2f3437', background: '#fffdf8', border: `1px solid ${LINE}` }}
                                 >
                                     <span className="break-all min-w-0 flex-1 leading-relaxed">
                                         {commonPrefix && suffix !== m && (
-                                            <span className={selected ? 'text-white/60 font-normal' : 'text-[#a892a3] font-normal'}>{commonPrefix}</span>
+                                            <span className={selected ? 'text-white/60 font-normal' : 'text-[#8a918d] font-normal'}>{commonPrefix}</span>
                                         )}
                                         <span>{suffix}</span>
                                     </span>
@@ -2454,7 +2454,7 @@ const Settings: React.FC = () => {
                                 </button>
                             );
                         }) : (
-                            <div className="text-center text-[#a892a3] py-8 text-xs">
+                            <div className="text-center text-[#8a918d] py-8 text-xs">
                                 {total === 0
                                     ? `当前没有已拉取的${modelPickerTarget === 'aux' ? '副 API' : '主 API'}模型，可手动输入或先点“拉取模型”`
                                     : `没有找到 “${modelFilter}”`}

@@ -26,7 +26,7 @@ function describeNow(d: Date): string {
 
 function personaBrief(char: CharacterProfile): string {
   const parts: string[] = [];
-  const desc = (char.description || '').trim();
+  const desc = (char.systemPrompt || '').trim();
   if (desc) parts.push(`人设：${desc.slice(0, 1000)}`);
   const wv = (char.worldview || '').trim();
   if (wv) parts.push(`世界观：${wv.slice(0, 300)}`);

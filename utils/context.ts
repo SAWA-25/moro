@@ -177,9 +177,6 @@ export const ContextBuilder = {
         // 1. 核心身份 (Identity)
         context += `### 你的身份 (Character)\n`;
         context += `- 名字: ${char.name}\n`;
-        // Change: Explicitly label description as User Note to avoid literal interpretation
-        context += `- 用户备注/爱称 (User Note/Nickname): ${char.description || '无'}\n`;
-        context += coreText.identityNote;
         context += `- 核心性格/指令:\n${char.systemPrompt || '你是一个温柔、拟人化的AI伴侣。'}\n\n`;
 
         // 1b. 自我领悟词条 (Self Insights) — 消化过程中反刍产生的常驻自我认知

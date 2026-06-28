@@ -1,19 +1,13 @@
 /**
- * 登场人物 —— 角色档案管理（原「神经链接」），黑白拼贴手账风界面。
- *
- * 词汇对照（数据结构不变，只换了说法）：
- *  - 名册 = 角色列表；名帖 = 一位角色（CharacterProfile）
- *  - 底稿 = 设定页（性格底稿/核心指令、TA 的世界、台词样张、开场白）
- *  - 往事 = 记忆页；日账 = 每日记忆碎片；月签 = 月度核心记忆（refinedMemories）
- *  - 收名帖 / 拓名帖 = 导入 / 导出角色卡；送离 = 删除角色
- * 功能与旧版完全一致：ST/Moro 卡导入导出、头像上传/URL、音色、批量总结、
- * 记忆导入清洗、月度精炼、深链接返回等逻辑原样保留。
+ * 登场人物：角色资料管理。
+ * 功能与旧版一致：ST/Moro 卡导入导出、头像上传/URL、音色、批量总结、
+ * 旧文本导入、月度核心记忆生成、深链接返回等逻辑原样保留。
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { AppID, CharacterProfile, CharacterExportData, MemoryFragment } from '../types';
 import {
-    Waveform, VinylRecord, UserPlus, TrayArrowDown, TrayArrowUp, PaperPlaneTilt, X,
+    Waveform, VinylRecord, UserPlus, TrayArrowDown, TrayArrowUp, PaperPlaneTilt, X, Binoculars,
 } from '@phosphor-icons/react';
 import { processImage } from '../utils/file';
 import { Capacitor } from '@capacitor/core';
@@ -32,38 +26,48 @@ import { generateLifeProfile } from '../utils/lifeProfile';
 import { generateAppearanceTags } from '../utils/appearanceTags';
 import { resolveAuxApi } from '../utils/auxApi';
 import { extractCardJsonFromPng, parseSillyTavernCard, convertSTCardToCharacter, ParsedSTCard } from '../utils/sillyTavernCard';
-import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
+import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 
-// ── 轻量拍立得设计 token（对齐絮语聊天设置） ───────────
-const INK = PAPER_TONES.ink;
-const ROSE = '#d8a5b7';
-const ROSE_DARK = '#9c5e74';
-const BORDER = '#eed6df';
-const CARD_SHADOW = '0 1px 2px rgba(122,90,114,0.08), 0 14px 30px -24px rgba(122,90,114,0.30)';
-const STICKER = 'border border-[#eed6df] rounded-full bg-[#fffdfa] text-[#9c5e74] shadow-[0_1px_2px_rgba(122,90,114,0.10)] press-soft';
-const INK_BTN = 'bg-[#d8a5b7] text-white border border-[#eed6df] rounded-full shadow-[0_8px_16px_-12px_rgba(122,90,114,0.42)] press-soft';
-const HAND_CN: React.CSSProperties = CUTE_STACK;
+// ── 剪影集专属胶片资料册色板：冷雾白 + 鼠尾草绿 + 胶片灰 ──
+const INK = '#2f3432';
+const ROSE = '#6f8f82';
+const ROSE_DARK = '#405f56';
+const BORDER = '#dfe7e1';
+const CARD_SHADOW = '0 1px 2px rgba(47,64,60,0.08), 0 14px 30px -24px rgba(47,64,60,0.34)';
+const STICKER = 'border border-[#dfe7e1] rounded-full bg-[#fbfcf8] text-[#405f56] shadow-[0_1px_2px_rgba(47,64,60,0.10)] press-soft';
+const INK_BTN = 'bg-[#6f8f82] text-white border border-[#dfe7e1] rounded-full shadow-[0_8px_16px_-12px_rgba(47,64,60,0.44)] press-soft';
 const DOT_BG: React.CSSProperties = {
-    background: '#fafafa',
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(216,165,183,0.14) 1px, transparent 0)',
-    backgroundSize: '18px 18px',
+    background: '#f5f7f4',
 };
-const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(216,165,183,0.18) 23px, rgba(216,165,183,0.18) 24px)',
-    lineHeight: '24px',
-};
-const LINE_INPUT = 'w-full px-3 py-2 text-[13px] outline-none rounded-[14px] bg-[#fffdfa] border border-[#eed6df] text-[#3d2f3d] placeholder:text-[#cfb8c4] focus:border-[#d8a5b7]';
-const AREA_INPUT = 'w-full bg-white border border-[#eed6df] rounded-[14px] px-3 py-2 text-xs resize-none outline-none focus:border-[#d8a5b7] placeholder:text-[#cfb8c4]';
-const NOTE_TEXT = { ...CUTE_STACK, color: PAPER_TONES.inkSoft };
+const LINE_INPUT = 'w-full px-3 py-2 text-[13px] outline-none rounded-[14px] bg-[#fbfcf8] border border-[#dfe7e1] text-[#2f3432] placeholder:text-[#9baaa4] focus:border-[#6f8f82]';
+const AREA_INPUT = 'w-full bg-white border border-[#dfe7e1] rounded-[14px] px-3 py-2 text-xs resize-none outline-none focus:border-[#6f8f82] placeholder:text-[#9baaa4]';
+const NOTE_TEXT = { color: PAPER_TONES.inkSoft };
 
-const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div
-        aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 rounded-[4px] bg-[#f6dce6]/75 border-x border-dashed border-[#eed6df] shadow-sm backdrop-blur-[1px] ${className || ''}`}
-    />
+const isGeneratedLetterAvatar = (src?: string) => {
+    if (!src?.startsWith('data:image/svg+xml')) return false;
+    let decoded = src;
+    try { decoded = decodeURIComponent(src); } catch {}
+    return decoded.includes('<text') && decoded.includes('font-size="50"');
+};
+
+const usablePhoto = (src?: string) => (src && !isGeneratedLetterAvatar(src) ? src : '');
+
+const CharacterPlaceholder: React.FC = () => (
+    <div className="w-full h-full flex items-center justify-center bg-[#eef5ef]">
+        <div className="w-[68%] h-[72%] rounded-[14px] border" style={{ borderColor: '#d5e1da', background: 'rgba(255,255,255,0.30)' }} />
+    </div>
 );
 
-/** 浅色设置弹层：与絮语聊天设置的卡片语言保持一致 */
+const MiniPhotoAction: React.FC<{ type: 'new' | 'import' }> = ({ type }) => (
+    <div className="relative w-9 h-9 shrink-0">
+        <div className="absolute left-1 top-1 w-7 h-8 rounded-[6px] bg-white border rotate-[-8deg]" style={{ borderColor: BORDER }} />
+        <div className="absolute left-3 top-0 w-7 h-8 rounded-[6px] bg-[#eef5ef] border rotate-[6deg] flex items-center justify-center" style={{ borderColor: BORDER }}>
+            {type === 'new' ? <UserPlus size={13} weight="bold" color={ROSE_DARK} /> : <TrayArrowDown size={13} weight="bold" color={ROSE_DARK} />}
+        </div>
+    </div>
+);
+
+/** 浅色设置弹层：使用剪影集资料册卡片语言 */
 const PaperSheet: React.FC<{
     open: boolean;
     tag: string;
@@ -75,9 +79,8 @@ const PaperSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-            <div className="absolute inset-0 bg-[#3d2f3d]/30 backdrop-blur-[2px]" onClick={onClose} />
-            <div className="relative w-full max-w-sm bg-white border border-[#ededed] rounded-[18px] animate-slide-up" style={{ boxShadow: CARD_SHADOW }}>
-                <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-2deg]" />
+            <div className="absolute inset-0 bg-[#1f2a27]/28 backdrop-blur-[2px]" onClick={onClose} />
+            <div className="relative w-full max-w-sm bg-white border border-[#e6ece8] rounded-[18px] animate-slide-up" style={{ boxShadow: CARD_SHADOW }}>
                 <button
                     onClick={onClose}
                     className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center ${STICKER}`}
@@ -87,7 +90,7 @@ const PaperSheet: React.FC<{
                 </button>
                 <div className="px-5 pt-6 pb-2">
                     <div className="text-[9px] tracking-[0.18em] uppercase" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{tag}</div>
-                    <h3 className="text-lg font-black mt-0.5" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{title}</h3>
+                    <h3 className="text-lg font-black mt-0.5" style={{ color: INK }}>{title}</h3>
                     <div className="h-[3px] w-14 rounded-full mt-1.5" style={{ background: ROSE }} />
                 </div>
                 <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
@@ -97,39 +100,42 @@ const PaperSheet: React.FC<{
     );
 };
 
-/** 角色列表项：拍立得头像 + 名字 + 简介 */
+/** 角色照片卡：点击对应拍立得进入该角色资料 */
 const CharacterCard: React.FC<{
     char: CharacterProfile;
-    tilt: string;
     onClick: () => void;
     onDelete: (e: React.MouseEvent) => void;
-}> = ({ char, tilt, onClick, onDelete }) => (
-    <div
-        onClick={onClick}
-        className="relative bg-white border rounded-[18px] pl-3.5 pr-3 py-3 flex items-center gap-3 cursor-pointer transition-all active:scale-[0.99] hover:border-[#d8a5b7]"
-        style={{ rotate: tilt, borderColor: '#ededed', boxShadow: CARD_SHADOW }}
-    >
-        <div className="relative shrink-0">
-            <div className="bg-white p-1 pb-2 rounded-[10px]" style={{ border: '1px solid #f0e2e7', boxShadow: '0 8px 18px -16px rgba(122,90,114,0.32)' }}>
-                <img src={char.avatar} className="w-11 h-11 object-cover rounded-[6px]" alt={char.name} />
-            </div>
-        </div>
-        <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-black truncate" style={{ color: PAPER_TONES.ink }}>{char.name}</h3>
-            <p className="text-[11px] truncate mt-0.5" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>
-                {char.description || '暂无角色简介'}
-            </p>
-        </div>
+}> = ({ char, onClick, onDelete }) => {
+    const photo = usablePhoto(char.avatar);
+    return (
         <button
-            onClick={onDelete}
-            className="shrink-0 p-1.5 rounded-full bg-[#fffdfa] text-[#a892a3] hover:text-[#9c5e74] active:scale-90 transition-all"
-            style={{ border: `1px solid ${BORDER}` }}
-            title="删除角色"
+            onClick={onClick}
+            className="relative bg-white border rounded-[16px] p-2 pb-3 text-left transition-all active:scale-[0.98] hover:border-[#6f8f82]"
+            style={{ borderColor: '#e6ece8', boxShadow: CARD_SHADOW }}
         >
-            <X size={12} weight="bold" />
+            <div className="aspect-[4/5] rounded-[11px] overflow-hidden bg-[#eef5ef]">
+                {photo ? <img src={photo} className="w-full h-full object-cover" alt={char.name} /> : <CharacterPlaceholder />}
+            </div>
+            <div className="pt-2 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-black truncate" style={{ color: INK }}>{char.name}</h3>
+                    <span className="text-[8px] rounded-full px-1.5 py-0.5 shrink-0" style={{ ...MONO_STACK, color: ROSE_DARK, background: '#eef5ef', border: `1px solid ${BORDER}` }}>{(char.memories || []).length}</span>
+                </div>
+                <p className="text-[11px] truncate mt-0.5" style={{ color: PAPER_TONES.inkSoft }}>
+                    {char.description || '暂无列表备注'}
+                </p>
+            </div>
+            <button
+                onClick={onDelete}
+                className="absolute top-3 right-3 p-1.5 rounded-full bg-white/88 text-[#8da099] hover:text-[#405f56] active:scale-90 transition-all"
+                style={{ border: `1px solid ${BORDER}` }}
+                title="删除角色"
+            >
+                <X size={12} weight="bold" />
+            </button>
         </button>
-    </div>
-);
+    );
+};
 
 /** onExit：剪影集（PersonaHubApp）嵌入时返回封面页；不传则关闭 App 回桌面（旧行为） */
 const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
@@ -143,6 +149,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   const [detailTab, setDetailTab] = useState<'identity' | 'memory'>('identity');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CharacterProfile | null>(null);
+  const [search, setSearch] = useState('');
   const [isCompressing, setIsCompressing] = useState(false);
   // 头像 URL 输入的 draft, 不逐字 commit 到 formData.avatar —— 否则每输入一个字符,
   // 所有引用 char.avatar 的 <img> 都会拿到不完整字符串当相对路径请求根目录,
@@ -198,14 +205,29 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               voice_cloning: result.voice_cloning,
               voice_generation: result.voice_generation,
           });
-          addToast(`唱片柜翻好了：现货 ${result.system_voice.length} / 复刻 ${result.voice_cloning.length} / 文生 ${result.voice_generation.length}`, 'success');
+          addToast(`音色列表已加载：系统 ${result.system_voice.length} / 复刻 ${result.voice_cloning.length} / 文生 ${result.voice_generation.length}`, 'success');
       } catch (e: any) {
           console.error('[MiniMax Voice] load failed', e);
-          addToast(e?.message || '翻唱片柜失败（MiniMax 音色拉取）', 'error');
+          addToast(e?.message || 'MiniMax 音色列表加载失败', 'error');
       } finally {
           setIsLoadingVoices(false);
       }
   };
+
+  const visibleCharacters = useMemo(() => {
+      const q = search.trim().toLowerCase();
+      if (!q) return characters;
+      return characters.filter(char => {
+          const blob = [
+              char.name,
+              char.description,
+              char.systemPrompt,
+              char.worldview,
+              char.appearanceTags,
+          ].filter(Boolean).join('\n').toLowerCase();
+          return blob.includes(q);
+      });
+  }, [characters, search]);
 
   const applyVoiceToCharacter = (voice: MiniMaxVoiceItem, source: 'system' | 'voice_cloning' | 'voice_generation') => {
       if (!formData) return;
@@ -217,7 +239,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           model: formData.voiceProfile?.model || 'speech-2.8-hd',
           notes: formData.voiceProfile?.notes || '',
       });
-      addToast(`这张唱片放上去了：${voice.voice_name || voice.voice_id}`, 'success');
+      addToast(`音色已应用：${voice.voice_name || voice.voice_id}`, 'success');
   };
 
   // Load archive prompts from localStorage (shared with ChatApp)
@@ -473,18 +495,18 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           if (editingIdRef.current === targetId) {
               // Still on same page
               handleChange('refinedMemories', { ...(formData.refinedMemories || {}), [key]: summary });
-              addToast(`${year} 年 ${month} 月的月签凝好了`, 'success');
+              addToast(`${year} 年 ${month} 月核心记忆已生成`, 'success');
           } else {
               // Switched page - Save to DB directly
               const currentRefined = characters.find(c => c.id === targetId)?.refinedMemories || {};
               updateCharacter(targetId, { refinedMemories: { ...currentRefined, [key]: summary } });
-              addToast('后台凝缩完成：月签已存回原角色', 'success');
+              addToast('后台生成完成：核心记忆已保存到角色', 'success');
           }
       } catch (e: any) { addToast(`凝缩失败: ${e.message}`, 'error'); }
   };
 
-  const handleDeleteMemories = (ids: string[]) => { if (!formData) return; handleChange('memories', (formData.memories || []).filter(m => !ids.includes(m.id))); addToast(`撕掉了 ${ids.length} 条日账`, 'success'); };
-  const handleUpdateMemory = (id: string, newSummary: string) => { if (!formData) return; handleChange('memories', (formData.memories || []).map(m => m.id === id ? { ...m, summary: newSummary } : m)); addToast('这条日账改好了', 'success'); };
+  const handleDeleteMemories = (ids: string[]) => { if (!formData) return; handleChange('memories', (formData.memories || []).filter(m => !ids.includes(m.id))); addToast(`已删除 ${ids.length} 条记忆`, 'success'); };
+  const handleUpdateMemory = (id: string, newSummary: string) => { if (!formData) return; handleChange('memories', (formData.memories || []).map(m => m.id === id ? { ...m, summary: newSummary } : m)); addToast('记忆内容已更新', 'success'); };
 
   /**
    * 按指定日期强制重新总结：读原始聊天记录（忽略 hideBeforeMessageId），LLM 总结，
@@ -507,7 +529,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
               return key === dateStr;
           });
-          if (dayMsgs.length === 0) { addToast(`${dateStr} 这天没有消息可誊`, 'info'); return; }
+          if (dayMsgs.length === 0) { addToast(`${dateStr} 没有可生成记忆的消息`, 'info'); return; }
 
           const timeFmt = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
           const rawLog = dayMsgs
@@ -552,9 +574,9 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               const curKept = currentMems.filter(m => !(m.date === dateStr && (m.mood === 'archive' || !m.mood)));
               updateCharacter(targetId, { memories: [...curKept, newFrag] });
           }
-          addToast(`${dateStr} 这天已重誊一遍`, 'success');
+          addToast(`${dateStr} 的记忆已重新生成`, 'success');
       } catch (e: any) {
-          addToast(`重誊失败: ${e.message || '未知错误'}`, 'error');
+          addToast(`重新生成失败: ${e.message || '未知错误'}`, 'error');
       }
   };
 
@@ -563,7 +585,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       if (!formData) return;
       const key = `${year}-${month}`;
       handleChange('refinedMemories', { ...(formData.refinedMemories || {}), [key]: newContent });
-      addToast('月签改好了', 'success');
+      addToast('核心记忆已更新', 'success');
   };
 
   const handleDeleteRefinedMemory = (year: string, month: string) => {
@@ -572,10 +594,10 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       const newRefined = { ...formData.refinedMemories };
       delete newRefined[key];
       handleChange('refinedMemories', newRefined);
-      addToast('月签撕掉了', 'success');
+      addToast('核心记忆已删除', 'success');
   };
 
-  const handleExportPreview = () => { if (!formData) return; const mems = formData.memories as any[]; if (!mems || mems.length === 0) { addToast('往事栏还空着，没东西可拓', 'info'); return; } const sortedMemories = [...mems].sort((a, b) => a.date.localeCompare(b.date)); let text = `【角色档案】\nName: ${formData.name}\nExported: ${new Date().toLocaleString()}\n\n`; if (formData.refinedMemories) { text += `=== 核心记忆 ===\n`; Object.entries(formData.refinedMemories).sort().forEach(([k, v]) => { text += `[${k}]: ${v}\n`; }); text += `\n=== 详细日志 ===\n`; } let currentYear = '', currentMonth = ''; sortedMemories.forEach(mem => { const match = mem.date.match(/(\d{4})[-/年](\d{1,2})/); if (match) { const y = match[1], m = match[2]; if (y !== currentYear) { text += `\n[ ${y}年 ]\n`; currentYear = y; currentMonth = ''; } if (m !== currentMonth) { text += `\n-- ${parseInt(m)}月 --\n\n`; currentMonth = m; } } text += `${mem.date} ${mem.mood ? `(#${mem.mood})` : ''}\n${mem.summary}\n\n--------------------------\n\n`; }); setExportText(text); setShowExportModal(true); navigator.clipboard.writeText(text).then(() => addToast('全文已自动抄进剪贴板', 'info')).catch(() => {}); };
+  const handleExportPreview = () => { if (!formData) return; const mems = formData.memories as any[]; if (!mems || mems.length === 0) { addToast('暂无可导出的记忆', 'info'); return; } const sortedMemories = [...mems].sort((a, b) => a.date.localeCompare(b.date)); let text = `【角色档案】\nName: ${formData.name}\nExported: ${new Date().toLocaleString()}\n\n`; if (formData.refinedMemories) { text += `=== 核心记忆 ===\n`; Object.entries(formData.refinedMemories).sort().forEach(([k, v]) => { text += `[${k}]: ${v}\n`; }); text += `\n=== 详细日志 ===\n`; } let currentYear = '', currentMonth = ''; sortedMemories.forEach(mem => { const match = mem.date.match(/(\d{4})[-/年](\d{1,2})/); if (match) { const y = match[1], m = match[2]; if (y !== currentYear) { text += `\n[ ${y}年 ]\n`; currentYear = y; currentMonth = ''; } if (m !== currentMonth) { text += `\n-- ${parseInt(m)}月 --\n\n`; currentMonth = m; } } text += `${mem.date} ${mem.mood ? `(#${mem.mood})` : ''}\n${mem.summary}\n\n--------------------------\n\n`; }); setExportText(text); setShowExportModal(true); navigator.clipboard.writeText(text).then(() => addToast('记忆文本已复制到剪贴板', 'info')).catch(() => {}); };
   const handleNativeShare = async () => { if(!exportText) return; if (Capacitor.isNativePlatform()) { try { const fileName = `${formData?.name || 'character'}_memories.txt`; await Filesystem.writeFile({ path: fileName, data: exportText, directory: Directory.Cache, encoding: Encoding.UTF8 }); const uri = await Filesystem.getUri({ directory: Directory.Cache, path: fileName }); await Share.share({ title: '记忆档案', files: [uri.uri] }); } catch(e: any) { console.error("Native share failed", e); addToast('分享组件调起失败，请直接复制文本', 'error'); } } };
   const handleWebFileDownload = () => { const fileName = `${formData?.name || 'character'}_memories.txt`; const blob = new Blob([exportText], { type: 'text/plain' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); addToast('浏览器开始下载了', 'success'); };
 
@@ -585,7 +607,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
       const targetId = formData.id; // LOCK ID
       setIsProcessingMemory(true);
-      setImportStatus('稿子送去清洗了，稍等…');
+      setImportStatus('正在分析旧文本，请稍等…');
 
       try {
           const prompt = `Task: Convert this text log into a JSON array. Format: [{ "date": "YYYY-MM-DD", "summary": "...", "mood": "..." }] Text: ${importText.substring(0, 8000)}`;
@@ -606,15 +628,15 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
               if (editingIdRef.current === targetId) {
                   handleChange('memories', [...(formData.memories || []), ...newMems]);
                   setShowImportModal(false);
-                  addToast(`${newMems.length} 条外稿清洗完毕，已入册`, 'success');
+                  addToast(`${newMems.length} 条记忆已导入`, 'success');
               } else {
                   // Background update
                   const currentMems = characters.find(c => c.id === targetId)?.memories || [];
                   updateCharacter(targetId, { memories: [...currentMems, ...newMems] });
-                  addToast('后台清洗完成：外稿已存回原角色', 'success');
+                  addToast('后台导入完成：记忆已保存到角色', 'success');
               }
           } else { throw new Error('结构错误'); }
-      } catch (e: any) { setImportStatus(`错误: ${e.message || '未知错误'}`); addToast('外稿清洗失败', 'error'); } finally { setIsProcessingMemory(false); }
+      } catch (e: any) { setImportStatus(`错误: ${e.message || '未知错误'}`); addToast('旧文本导入失败', 'error'); } finally { setIsProcessingMemory(false); }
   };
 
   const handleBatchSummarize = async () => {
@@ -702,10 +724,10 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             const toastLevel: 'success' | 'info' | 'error' =
                 okCount === 0 ? 'error' : okCount < totalDays ? 'info' : 'success';
             const toastMsg = okCount === 0
-                ? `成批誊写失败：${totalDays} 天全都没写成（查查 API / 模型）`
+                ? `批量生成失败：${totalDays} 天全部失败（请检查 API / 模型）`
                 : okCount < totalDays
-                    ? `成批誊写完成：${okCount}/${totalDays} 天写成（有几天没成）`
-                    : `成批誊写完成：${okCount} 条日账已入册`;
+                    ? `批量生成完成：${okCount}/${totalDays} 天成功`
+                    : `批量生成完成：${okCount} 条记忆已保存`;
 
             if (editingIdRef.current === targetId) {
                 if (okCount > 0) handleChange('memories', [...(formData.memories || []), ...newMemories]);
@@ -730,7 +752,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
             setBatchProgress(`Error: ${e.message}`);
             setIsBatchProcessing(false);
             setShowBatchModal(false);
-            addToast(`成批誊写失败: ${e.message}`, 'error');
+            addToast(`批量生成失败: ${e.message}`, 'error');
         }
     };
 
@@ -738,7 +760,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       if (deleteConfirmTarget) {
           deleteCharacter(deleteConfirmTarget);
           setDeleteConfirmTarget(null);
-          addToast('名帖撕下了，TA 已离场', 'success');
+          addToast('角色已删除', 'success');
       }
   };
 
@@ -823,7 +845,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          addToast('名帖拓好，已开始下载', 'success');
+          addToast('角色卡已导出', 'success');
   };
 
   /**
@@ -865,7 +887,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       const regexSuffix = result.regexScripts.length > 0
           ? `，随卡正则 ${result.regexScripts.length} 条也收了`
           : '';
-      addToast(`SillyTavern 角色 ${newChar.name} 已入册${wbSuffix}${regexSuffix}`, 'success');
+      addToast(`SillyTavern 角色 ${newChar.name} 已导入${wbSuffix}${regexSuffix}`, 'success');
   };
 
   const handleImportCard = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -950,8 +972,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       // addCharacter() 还会额外创建一个空白 New Character 留在列表里。改走 importCharacter。
       await importCharacter(newChar);
 
-      const wbToastSuffix = importedWbCount > 0 ? `，随帖收进 ${importedWbCount} 卷剪报` : '';
-      addToast(`角色 ${newChar.name} 已入册${wbToastSuffix}`, 'success');
+      const wbToastSuffix = importedWbCount > 0 ? `，同步导入 ${importedWbCount} 条世界书` : '';
+      addToast(`角色 ${newChar.name} 已导入${wbToastSuffix}`, 'success');
   };
 
   // ── 渲染 ────────────────────────────────────────────────
@@ -960,11 +982,11 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
   );
 
   return (
-    <div className="h-full w-full text-[#3d2f3d] relative" style={DOT_BG}>
+    <div className="h-full w-full text-[#2f3432] relative" style={DOT_BG}>
        {view === 'list' ? (
            <div className="flex flex-col h-full animate-fade-in" style={{ paddingTop: 'var(--safe-top)' }}>
                {/* 顶栏 */}
-               <div className="relative shrink-0 px-4 pt-3 pb-3 bg-[#fafafa]/95 backdrop-blur border-b border-[#ededed]">
+               <div className="relative shrink-0 px-4 pt-3 pb-3 bg-[#f5f7f4]/95 backdrop-blur border-b border-[#e6ece8]">
                    <div className="flex items-center gap-3">
                        <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 flex items-center gap-1 ${STICKER}`} title="返回剪影集">
                            <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
@@ -975,8 +997,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                        <div className="flex-1 min-w-0 relative">
                            <div className="text-[8px] tracking-[0.18em] uppercase" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>CHARACTER LIST</div>
                            <div className="flex items-baseline gap-2">
-                               <h1 className="text-2xl font-black tracking-normal" style={CUTE_STACK}>登场人物</h1>
-                               <span className="text-sm truncate" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>管理角色资料、头像和记忆</span>
+                               <h1 className="text-2xl font-black tracking-normal">登场人物</h1>
+                               <span className="text-sm truncate" style={{ color: PAPER_TONES.inkSoft }}>选择照片进入角色资料</span>
                            </div>
                        </div>
                        <div className="shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center select-none bg-white" style={{ border: `1px solid ${BORDER}`, color: PAPER_TONES.ink }}>
@@ -986,13 +1008,48 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    </div>
                </div>
 
-               {/* 角色列表 */}
-               <div className="flex-1 overflow-y-auto px-4 py-4 pb-20 no-scrollbar flex flex-col gap-3">
-                   {characters.map((char, i) => (
+               {/* 角色照片墙 */}
+               <div className="flex-1 overflow-y-auto px-4 py-4 pb-20 no-scrollbar">
+                   <div className="flex items-center gap-2 bg-white border rounded-[14px] px-3 mb-3" style={{ borderColor: BORDER }}>
+                       <Binoculars size={15} color={INK} className="shrink-0 opacity-70" />
+                       <input
+                           value={search}
+                           onChange={(e) => setSearch(e.target.value)}
+                           placeholder="搜索角色名称、列表备注或设定"
+                           className="flex-1 bg-transparent py-2 text-xs outline-none placeholder:text-[#8fa5ae]"
+                       />
+                   </div>
+                   <div className="grid grid-cols-2 gap-3 mb-3">
+                       <button
+                           onClick={addCharacter}
+                           className="bg-white border rounded-[16px] px-3 py-2.5 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                           style={{ borderColor: BORDER, boxShadow: '0 1px 2px rgba(47,64,60,0.06)' }}
+                       >
+                           <MiniPhotoAction type="new" />
+                           <div className="min-w-0">
+                               <div className="text-xs font-black" style={{ color: INK }}>新建角色</div>
+                               <div className="text-[10px] truncate" style={{ color: PAPER_TONES.inkSoft }}>空白角色卡</div>
+                           </div>
+                       </button>
+                       <button
+                           onClick={() => cardImportRef.current?.click()}
+                           className="bg-white border rounded-[16px] px-3 py-2.5 flex items-center gap-3 text-left active:scale-[0.99] transition-all"
+                           style={{ borderColor: BORDER, boxShadow: '0 1px 2px rgba(47,64,60,0.06)' }}
+                           title="导入角色卡（Moro JSON / SillyTavern PNG·JSON）"
+                       >
+                           <MiniPhotoAction type="import" />
+                           <div className="min-w-0">
+                               <div className="text-xs font-black" style={{ color: INK }}>导入角色卡</div>
+                               <div className="text-[10px] truncate" style={{ color: PAPER_TONES.inkSoft }}>JSON / PNG</div>
+                           </div>
+                       </button>
+                       <input type="file" ref={cardImportRef} className="hidden" accept=".json,.png,image/png,application/json" onChange={handleImportCard} />
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+                   {visibleCharacters.map((char) => (
                        <CharacterCard
                            key={char.id}
                            char={char}
-                           tilt={i % 2 === 0 ? '-0.35deg' : '0.35deg'}
                            onClick={() => { setEditingId(char.id); setView('detail'); }}
                            onDelete={(e) => {
                                e.stopPropagation();
@@ -1000,30 +1057,15 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            }}
                        />
                    ))}
-                   {/* 新建 / 导入 */}
-                   <div className="flex gap-3 shrink-0">
-                       <button
-                           onClick={addCharacter}
-                           className="flex-1 py-4 border border-dashed bg-white/80 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rounded-[18px] hover:bg-[#fff4f7]"
-                           style={{ borderColor: BORDER, color: ROSE_DARK }}
-                       >
-                           <UserPlus size={15} weight="bold" />
-                           <span className="text-[11px] font-black">新建角色</span>
-                       </button>
-                       <button
-                           onClick={() => cardImportRef.current?.click()}
-                           className="flex-1 py-4 border border-dashed bg-white/80 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 rounded-[18px] hover:bg-[#fff4f7]"
-                           style={{ borderColor: BORDER, color: ROSE_DARK }}
-                           title="导入角色卡（Moro JSON / SillyTavern PNG·JSON）"
-                       >
-                           <TrayArrowDown size={15} weight="bold" />
-                           <span className="text-[11px] font-black">导入角色卡</span>
-                       </button>
-                       <input type="file" ref={cardImportRef} className="hidden" accept=".json,.png,image/png,application/json" onChange={handleImportCard} />
                    </div>
                    {characters.length === 0 && (
-                       <p className="text-center text-sm pt-2" style={{ ...CUTE_STACK, color: PAPER_TONES.inkFaint }}>
+                       <p className="text-center text-sm pt-2" style={{ color: PAPER_TONES.inkFaint }}>
                            还没有角色。可以新建角色，或导入 Moro / SillyTavern 角色卡。
+                       </p>
+                   )}
+                   {characters.length > 0 && visibleCharacters.length === 0 && (
+                       <p className="text-center text-sm pt-2" style={{ color: PAPER_TONES.inkFaint }}>
+                           没找到匹配角色。换个名称、备注或设定关键词试试。
                        </p>
                    )}
                </div>
@@ -1031,7 +1073,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
        ) : formData && (
            <div className="flex flex-col h-full animate-fade-in relative" style={{ paddingTop: 'var(--safe-top)' }}>
                {/* 角色详情页头 */}
-               <div className="relative shrink-0 px-4 pt-3 pb-0 bg-[#fafafa]/95 z-40 sticky top-0 backdrop-blur border-b border-[#ededed]">
+               <div className="relative shrink-0 px-4 pt-3 pb-0 bg-[#f5f7f4]/95 z-40 sticky top-0 backdrop-blur border-b border-[#e6ece8]">
                    <div className="flex items-center gap-3 mb-3">
                        <button onClick={handleBack} className={`shrink-0 px-2.5 py-2 flex items-center gap-1 ${STICKER}`}>
                            <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
@@ -1041,7 +1083,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                        </button>
                        <div className="flex-1 min-w-0">
                            <div className="text-[8px] tracking-[0.18em] uppercase" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>EDIT CHARACTER</div>
-                           <div className="text-sm font-black truncate" style={CUTE_STACK}>{formData.name || '未命名角色'}</div>
+                           <div className="text-sm font-black truncate">{formData.name || '未命名角色'}</div>
                        </div>
                        <button
                            onClick={() => { setActiveCharacterId(formData.id); openApp(AppID.Chat); }}
@@ -1061,8 +1103,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                onClick={() => setDetailTab(tab)}
                                className="px-4 py-2 rounded-full flex flex-col items-center transition-colors"
                                style={detailTab === tab
-                                   ? { background: '#fff4f7', border: `1px solid ${BORDER}`, color: PAPER_TONES.ink, boxShadow: '0 6px 14px -12px rgba(122,90,114,0.35)' }
-                                   : { background: '#fffdfa', border: `1px solid ${BORDER}`, color: PAPER_TONES.inkFaint }}
+                                   ? { background: '#eef5ef', border: `1px solid ${BORDER}`, color: INK, boxShadow: '0 6px 14px -12px rgba(47,64,60,0.35)' }
+                                   : { background: '#fbfcf8', border: `1px solid ${BORDER}`, color: PAPER_TONES.inkFaint }}
                            >
                                <span className="text-[7px] opacity-60" style={MONO_STACK}>{en}</span>
                                <span className="text-[11px] font-black leading-tight">{cn}</span>
@@ -1074,16 +1116,16 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                <div className="flex-1 overflow-y-auto p-4 no-scrollbar pb-10">
                    {detailTab === 'identity' && (
                        <div className="space-y-6 animate-fade-in">
-                           {/* 拍立得 + 名字 / 印象 / 图片链接 */}
+                           {/* 头像 + 名字 / 列表备注 / 图片链接 */}
                            <div className="flex items-start gap-4">
                                <div
-                                   className="shrink-0 bg-white border border-[#f0e2e7] rounded-[10px] p-1.5 pb-4 cursor-pointer relative group"
-                                   style={{ boxShadow: '0 8px 18px -16px rgba(122,90,114,0.32)' }}
+                                   className="shrink-0 bg-white border border-[#dfe7e1] rounded-[16px] p-1.5 cursor-pointer relative group"
+                                   style={{ boxShadow: '0 8px 18px -16px rgba(47,64,60,0.30)' }}
                                    onClick={() => fileInputRef.current?.click()}
                                    title="上传头像"
                                >
-                                   <img src={formData.avatar} className={`w-20 h-20 object-cover rounded-[6px] group-hover:opacity-75 transition-opacity ${isCompressing ? 'opacity-50 blur-sm' : ''}`} alt="角色头像" />
-                                   <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 text-[10px] whitespace-nowrap" style={{ ...CUTE_STACK, color: PAPER_TONES.inkSoft }}>上传头像</span>
+                                   <img src={formData.avatar} className={`w-20 h-20 object-cover rounded-[12px] group-hover:opacity-75 transition-opacity ${isCompressing ? 'opacity-50 blur-sm' : ''}`} alt="角色头像" />
+                                   <span className="absolute inset-x-2 bottom-2 rounded-full bg-white/88 text-[9px] text-center py-0.5" style={{ color: ROSE_DARK }}>上传</span>
                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                                </div>
                                <div className="flex-1 min-w-0 space-y-3">
@@ -1092,8 +1134,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        <input value={formData.name} onChange={(e) => handleChange('name', e.target.value)} className={`${LINE_INPUT} text-lg font-black`} placeholder="填写角色名称" />
                                    </div>
                                    <div>
-                                       {fieldLabel('角色简介', 'SUMMARY')}
-                                       <input value={formData.description} onChange={(e) => handleChange('description', e.target.value)} className={LINE_INPUT} placeholder="用于列表和聊天上下文的简短说明" />
+                                       {fieldLabel('列表备注', 'LIST NOTE')}
+                                       <input value={formData.description} onChange={(e) => handleChange('description', e.target.value)} className={LINE_INPUT} placeholder="仅用于剪影集列表展示，不发送给 AI" />
                                    </div>
                                    {/* 头像 URL 入口: 与左侧上传文件平级. 走 draft -> 失焦/回车 commit,
                                        避免逐字 commit 导致所有引用 char.avatar 的 <img> 在打字时疯狂
@@ -1141,7 +1183,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                    <button
                                        onClick={handleGenerateAppearanceTags}
                                        disabled={isGeneratingTags}
-                                       className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] disabled:opacity-60 ${formData.appearanceTags ? STICKER : INK_BTN}`}
+                                       className={`px-2.5 py-1 text-[10px] font-black disabled:opacity-60 ${formData.appearanceTags ? STICKER : INK_BTN}`}
                                    >
                                        {isGeneratingTags ? '提炼中…' : (formData.appearanceTags ? '↻ 重新生成' : '✨ 一键生成')}
                                    </button>
@@ -1159,14 +1201,14 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
 
                            <div>
                                {fieldLabel('核心设定（角色指令）', 'SCRIPT')}
-                               <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className={`${AREA_INPUT} h-40`} style={RULED_BG} placeholder="填写角色身份、性格、行为规则和对话边界" />
+                               <textarea value={formData.systemPrompt} onChange={(e) => handleChange('systemPrompt', e.target.value)} className={`${AREA_INPUT} h-40`} placeholder="填写角色身份、性格、行为规则和对话边界" />
                                <p className="text-[12px] mt-1.5 leading-relaxed" style={NOTE_TEXT}>
                                    支持 {'{{user}}'} / {'{{char}}'} 以及 {'<user>'} / {'<char>'} 宏；启用活字盘预设时对应 Char Description 占位。
                                </p>
                            </div>
 
                            {/* 柔顺奉养（Soft Devotion Chat）：开启后角色共情能力大幅提升 */}
-                           <div className="p-3 rounded-[18px] bg-white" style={{ border: '1px solid #ededed', boxShadow: CARD_SHADOW }}>
+                           <div className="p-3 rounded-[18px] bg-white" style={{ border: '1px solid #e6ece8', boxShadow: CARD_SHADOW }}>
                                <div className="flex items-start justify-between gap-3">
                                    <div className="min-w-0">
                                        <div className="text-[8px] tracking-[0.16em] uppercase mb-1.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>高共情聊天 / SOFT DEVOTION CHAT</div>
@@ -1180,9 +1222,9 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        onClick={() => handleChange('softDevotionChatEnabled', !formData.softDevotionChatEnabled)}
                                        className="relative w-[52px] h-[28px] shrink-0 rounded-full transition-all active:scale-95"
                                        style={{
-                                           background: formData.softDevotionChatEnabled ? ROSE : '#f8f4f6',
+                                           background: formData.softDevotionChatEnabled ? ROSE : '#eef2ee',
                                            border: `1px solid ${BORDER}`,
-                                           boxShadow: formData.softDevotionChatEnabled ? '0 8px 16px -12px rgba(122,90,114,0.42)' : 'inset 0 1px 2px rgba(122,90,114,0.08)',
+                                           boxShadow: formData.softDevotionChatEnabled ? '0 8px 16px -12px rgba(47,64,60,0.42)' : 'inset 0 1px 2px rgba(47,64,60,0.08)',
                                        }}
                                        title="高共情聊天"
                                    >
@@ -1190,7 +1232,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...MONO_STACK, right: 7, color: '#d8c2cd', opacity: formData.softDevotionChatEnabled ? 0 : 1 }}>off</span>
                                        <span
                                            className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] rounded-full bg-white transition-all duration-300"
-                                           style={{ left: formData.softDevotionChatEnabled ? 27 : 3, boxShadow: '0 2px 6px rgba(122,90,114,0.24)' }}
+                                           style={{ left: formData.softDevotionChatEnabled ? 27 : 3, boxShadow: '0 2px 6px rgba(47,64,60,0.24)' }}
                                        />
                                    </button>
                                </div>
@@ -1202,7 +1244,6 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                     value={formData.worldview || ''}
                                     onChange={(e) => handleChange('worldview', e.target.value)}
                                     className={`${AREA_INPUT} h-24`}
-                                    style={RULED_BG}
                                     placeholder="填写角色所在世界、背景规则或重要常识"
                                 />
                            </div>
@@ -1210,40 +1251,38 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                            {/* 生活侧写：帮 TA 更了解自己的生活速写（副 API 生成，可手动改） */}
                            <div>
                                <div className="flex items-center justify-between mb-1.5">
-                                   {fieldLabel('生活侧写（TA 更懂自己）', 'LIFE SKETCH')}
+                                   {fieldLabel('生活侧写', 'LIFE PROFILE')}
                                    <button
                                        onClick={handleGenerateLifeProfile}
                                        disabled={isGeneratingLifeProfile}
-                                       className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] disabled:opacity-60 ${formData.lifeProfile?.content ? STICKER : INK_BTN}`}
+                                       className={`px-2.5 py-1 text-[10px] font-black disabled:opacity-60 ${formData.lifeProfile?.content ? STICKER : INK_BTN}`}
                                    >
-                                       {isGeneratingLifeProfile ? '执笔中…' : (formData.lifeProfile?.content ? '↻ 重新写一份' : '✎ 写一份侧写')}
+                                       {isGeneratingLifeProfile ? '生成中…' : (formData.lifeProfile?.content ? '重新生成' : '生成侧写')}
                                    </button>
                                </div>
                                <textarea
                                     value={formData.lifeProfile?.content || ''}
                                     onChange={(e) => handleChange('lifeProfile', { content: e.target.value, generatedAt: formData.lifeProfile?.generatedAt || Date.now(), edited: true })}
-                                    className="w-full h-44 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
-                                    style={RULED_BG}
-                                    placeholder="点右上「写一份侧写」，让 TA 照着人设和记忆把自己写下来——日常节奏、习惯癖好、在意的事、和你相处的样子…（也可以直接手写）"
+                                    className={`${AREA_INPUT} h-44`}
+                                    placeholder="记录角色的日常节奏、习惯、在意事项和相处方式；可生成后手动修改"
                                 />
-                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                   ✎ 这份侧写会像「内在认知」一样垫进 TA 的设定里，帮 TA 更稳地"像自己"。用副 API 跑（没开就走主线），改完自动存。
+                               <p className="text-[12px] mt-1.5 leading-relaxed" style={NOTE_TEXT}>
+                                   会作为角色自我认知补充进上下文，帮助长期对话更稳定。生成时优先使用副 API。
                                </p>
                            </div>
 
                            {/* 对话示例（mes_example）—— SillyTavern 语义：说话风格示例，独立于角色描述。
                                未启用预设时作为「对话示例」块注入；启用预设时落在 dialogueExamples 占位 */}
                            <div>
-                               {fieldLabel('台词样张（对话示例）', 'SAMPLE LINES')}
+                               {fieldLabel('对话示例', 'SAMPLE LINES')}
                                <textarea
                                     value={formData.mesExample || ''}
                                     onChange={(e) => handleChange('mesExample', e.target.value || undefined)}
-                                    className="w-full h-32 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
-                                    style={RULED_BG}
+                                    className={`${AREA_INPUT} h-32`}
                                     placeholder={'<START>\n{{user}}: 在画什么？\n{{char}}: 在画云。'}
                                 />
-                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                   ✎ TA 说话腔调的参考样张，不会和底稿混在一起。多段样张用 &lt;START&gt; 隔开（同酒馆惯例）；开着活字盘（预设）时对应 Chat Examples 占位。
+                               <p className="text-[12px] mt-1.5 leading-relaxed" style={NOTE_TEXT}>
+                                   用来约束角色说话方式。多段示例用 &lt;START&gt; 分隔；启用活字盘预设时对应 Chat Examples 占位。
                                </p>
                            </div>
 
@@ -1254,39 +1293,39 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                <textarea
                                     value={formData.firstMes || ''}
                                     onChange={(e) => handleChange('firstMes', e.target.value)}
-                                    className="w-full h-24 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
-                                    style={RULED_BG}
+                                    className={`${AREA_INPUT} h-24`}
                                     placeholder="新聊天里 TA 先开口的那句话（{{user}} / {{char}} 宏照常可用）…"
                                 />
-                               <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                   ✎ 走进空聊天时，可以在这句和下面的备稿之间左右翻，挑一句开场（同酒馆的开场白 swipe）。留白就不出选择器。
+                               <p className="text-[12px] mt-1.5 leading-relaxed" style={NOTE_TEXT}>
+                                   新聊天为空时显示。支持多个备选开场，进入聊天后可切换选择。
                                </p>
                            </div>
 
                            <div>
                                <div className="flex items-center justify-between mb-1.5">
-                                   <label className="label-mono text-[8px] text-[#26242a]/45 block">备用开场 / SPARE OPENERS</label>
+                                   {fieldLabel('备选开场', 'SPARE OPENERS')}
                                    <button
                                        onClick={() => handleChange('alternateGreetings', [...(formData.alternateGreetings || []), ''])}
-                                       className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] ${STICKER}`}
-                                   >＋ 再备一稿</button>
+                                       className={`px-2.5 py-1 text-[10px] font-black ${STICKER}`}
+                                   >新增开场</button>
                                </div>
                                {(formData.alternateGreetings || []).length === 0 && (
-                                   <p className="text-[12px] text-[#26242a]/45 pl-1" style={HAND_CN}>还没有备稿。点「＋ 再备一稿」，给同一位 TA 多备几种开局。</p>
+                                   <p className="text-[12px] pl-1" style={{ color: PAPER_TONES.inkFaint }}>暂无备选开场。点击「新增开场」添加更多开局文本。</p>
                                )}
                                <div className="space-y-3">
                                    {(formData.alternateGreetings || []).map((greeting, idx) => (
-                                       <div key={idx} className="relative border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
+                                       <div key={idx} className="relative border-l-2 border-dashed border-[#dfe7e1] pl-3">
                                            <div className="flex items-center justify-between mb-1">
-                                               <span className="label-mono text-[8px] text-[#26242a]/45">第 {idx + 1} 稿</span>
+                                               <span className="text-[8px]" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>备选 {idx + 1}</span>
                                                <button
                                                    onClick={() => {
                                                        const next = (formData.alternateGreetings || []).filter((_, i) => i !== idx);
                                                        handleChange('alternateGreetings', next.length > 0 ? next : undefined);
                                                    }}
-                                                   className="text-[10px] font-black text-[#26242a]/50 hover:text-[#26242a] px-1.5 line-through decoration-2"
-                                                   title="撕掉这一稿"
-                                               >撕掉</button>
+                                                   className="text-[10px] font-black px-1.5"
+                                                   style={{ color: ROSE_DARK }}
+                                                   title="删除这个开场"
+                                               >删除</button>
                                            </div>
                                            <textarea
                                                value={greeting}
@@ -1295,37 +1334,35 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                                    next[idx] = e.target.value;
                                                    handleChange('alternateGreetings', next);
                                                }}
-                                               className="w-full h-20 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a]"
-                                               style={RULED_BG}
-                                               placeholder={`备用开场第 ${idx + 1} 稿…`}
+                                               className={`${AREA_INPUT} h-20`}
+                                               placeholder={`备选开场 ${idx + 1}`}
                                            />
                                        </div>
                                    ))}
                                </div>
                            </div>
 
-                           {/* 嗓音唱片（MiniMax 音色） */}
-                           <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-3">
-                               <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
+                           {/* 语音设置（MiniMax 音色） */}
+                           <div className="relative bg-white rounded-[18px] p-4 space-y-3" style={{ border: '1px solid #e6ece8', boxShadow: CARD_SHADOW }}>
                                <div className="flex items-center justify-between flex-wrap gap-2">
-                                   <label className="label-mono text-[8px] text-[#26242a]/45 flex items-center gap-1"><VinylRecord size={12} weight="bold" /> 嗓音唱片（MINIMAX VOICE）</label>
+                                   <label className="text-[8px] tracking-[0.16em] uppercase flex items-center gap-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}><VinylRecord size={12} weight="bold" /> 语音设置（MINIMAX VOICE）</label>
                                    <div className="flex gap-2">
                                        <button
                                            onClick={() => { setActiveCharacterId(formData.id); openApp(AppID.VoiceDesigner); }}
-                                           className={`px-2.5 py-1 text-[10px] font-black flex items-center gap-1 rotate-[-1deg] ${STICKER}`}
+                                           className={`px-2.5 py-1 text-[10px] font-black flex items-center gap-1 ${STICKER}`}
                                        >
-                                           <Waveform size={11} weight="bold" /> 去捏嗓音
+                                           <Waveform size={11} weight="bold" /> 打开音色设计
                                        </button>
                                        <button
                                            onClick={handleLoadMiniMaxVoices}
-                                           className={`px-2.5 py-1 text-[10px] font-black rotate-[1deg] disabled:opacity-40 ${STICKER}`}
+                                           className={`px-2.5 py-1 text-[10px] font-black disabled:opacity-40 ${STICKER}`}
                                            disabled={isLoadingVoices}
                                        >
-                                           {isLoadingVoices ? '翻柜中…' : '翻翻唱片柜'}
+                                           {isLoadingVoices ? '加载中…' : '加载音色列表'}
                                        </button>
                                    </div>
                                </div>
-                               <p className="text-[12px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>✎ 手里有 voice_id 就直接填，不用翻柜。配好后聊天和 TTS 都直接读这张唱片。</p>
+                               <p className="text-[12px] leading-relaxed" style={NOTE_TEXT}>可直接填写 voice_id；配置后聊天朗读和 TTS 会使用该音色。</p>
 
                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                    <input
@@ -1338,7 +1375,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                            model: formData.voiceProfile?.model || 'speech-2.8-hd',
                                            notes: formData.voiceProfile?.notes || '',
                                        })}
-                                       className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
+                                       className={LINE_INPUT}
                                        placeholder="voice_id（可直接贴）"
                                    />
                                    <input
@@ -1351,7 +1388,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                            model: e.target.value,
                                            notes: formData.voiceProfile?.notes || '',
                                        })}
-                                       className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
+                                       className={LINE_INPUT}
                                        placeholder="TTS 模型（默认 speech-2.8-hd）"
                                    />
                                </div>
@@ -1359,24 +1396,25 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                {(voiceOptions.system.length + voiceOptions.voice_cloning.length + voiceOptions.voice_generation.length) > 0 && (
                                    <div className="space-y-2 pt-1">
                                        {([
-                                           ['system', '柜里现货（系统音色）'],
-                                           ['voice_cloning', '复刻盘（复刻音色）'],
-                                           ['voice_generation', '文生盘（文生音色）'],
+                                           ['system', '系统音色'],
+                                           ['voice_cloning', '复刻音色'],
+                                           ['voice_generation', '文生音色'],
                                        ] as const).map(([source, label]) => {
                                            const list = voiceOptions[source];
                                            if (!list.length) return null;
                                            return (
                                                <div key={source}>
-                                                   <div className="label-mono text-[8px] text-[#26242a]/45 mb-1">{label}</div>
+                                                   <div className="text-[8px] mb-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{label}</div>
                                                    <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                                                        {list.slice(0, 50).map((v) => (
                                                            <button
                                                                key={`${source}-${v.voice_id}`}
                                                                onClick={() => applyVoiceToCharacter(v, source)}
-                                                               className="w-full text-left px-2 py-1 text-xs border border-[#1c1b1a]/35 bg-white hover:border-[#1c1b1a] transition-colors"
+                                                               className="w-full text-left px-2 py-1 text-xs border bg-white hover:border-[#6f8f82] transition-colors rounded-[10px]"
+                                                               style={{ borderColor: BORDER }}
                                                            >
                                                                <div className="font-black truncate">{v.voice_name || '未命名音色'}</div>
-                                                               <div className="label-mono text-[8px] text-[#26242a]/40 truncate">{v.voice_id}</div>
+                                                               <div className="text-[8px] truncate" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{v.voice_id}</div>
                                                            </button>
                                                        ))}
                                                    </div>
@@ -1387,16 +1425,16 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                                )}
                            </div>
 
-                           {/* 拓名帖（导出角色卡） */}
+                           {/* 导出角色卡 */}
                            <div className="pt-2 pb-2">
                                <button
                                    onClick={handleExportCard}
-                                   className={`w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 rotate-[-0.3deg] ${INK_BTN}`}
+                                   className={`w-full py-3.5 text-xs font-black flex items-center justify-center gap-2 ${INK_BTN}`}
                                >
                                    <TrayArrowUp size={15} weight="bold" />
-                                   拓一份名帖带走（分享 / 导出）
+                                   导出角色卡
                                </button>
-                               <p className="text-[12px] text-[#26242a]/45 text-center mt-2" style={HAND_CN}>拓出去的名帖不带往事和聊天记录。</p>
+                               <p className="text-[12px] text-center mt-2" style={{ color: PAPER_TONES.inkFaint }}>导出的角色卡不包含记忆档案和聊天记录。</p>
                            </div>
                        </div>
                    )}
@@ -1404,9 +1442,9 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    {detailTab === 'memory' && (
                        <div className="space-y-4 animate-fade-in">
                            <div className="flex justify-center gap-2 mb-4 flex-wrap">
-                               <button onClick={() => setShowBatchModal(true)} className={`px-3.5 py-2 text-[10px] font-black rotate-[-0.8deg] ${STICKER}`}>成批誊写（可指定日期）</button>
-                               <button onClick={() => setShowImportModal(true)} className={`px-3.5 py-2 text-[10px] font-black rotate-[0.6deg] ${STICKER}`}>外稿清洗入册</button>
-                               <button onClick={handleExportPreview} className={`px-3.5 py-2 text-[10px] font-black rotate-[-0.4deg] ${STICKER}`}>拓一份往事</button>
+                               <button onClick={() => setShowBatchModal(true)} className={`px-3.5 py-2 text-[10px] font-black ${STICKER}`}>批量生成记忆</button>
+                               <button onClick={() => setShowImportModal(true)} className={`px-3.5 py-2 text-[10px] font-black ${STICKER}`}>导入旧文本</button>
+                               <button onClick={handleExportPreview} className={`px-3.5 py-2 text-[10px] font-black ${STICKER}`}>导出记忆文本</button>
                            </div>
                            <MemoryArchivist
                                memories={formData.memories || []}
@@ -1430,80 +1468,85 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
            </div>
        )}
 
-       {/* ── 外稿清洗入册 ── */}
+       {/* ── 导入旧文本 ── */}
        <PaperSheet
            open={showImportModal}
-           tag="LAUNDRY / 外稿清洗"
-           title="把乱稿洗成日账"
+           tag="IMPORT / 旧文本导入"
+           title="导入旧文本为记忆"
            onClose={() => setShowImportModal(false)}
            footer={<>
-               <button onClick={() => setShowImportModal(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>先不洗</button>
+               <button onClick={() => setShowImportModal(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>取消</button>
                <button onClick={handleImportMemories} disabled={isProcessingMemory} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-2 disabled:opacity-60 ${INK_BTN}`}>
                    {isProcessingMemory && <div className="w-3.5 h-3.5 border-2 border-[#f7f5ef]/30 border-t-[#f7f5ef] rounded-full animate-spin"></div>}
-                   {isProcessingMemory ? '清洗中…' : '开始清洗'}
+                   {isProcessingMemory ? '导入中…' : '开始导入'}
                </button>
            </>}
        >
            <div className="space-y-3">
-               <p className="text-[13px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>把乱七八糟的旧文本贴进来，AI 会洗成一条条带日期的日账，自动归进往事栏。</p>
-               {importStatus && <div className="text-xs font-black border-l-2 border-[#1c1b1a] pl-2">{importStatus}</div>}
-               <textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder="把原稿贴在这里…" className="w-full h-32 bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25" />
+               <p className="text-[13px] leading-relaxed" style={NOTE_TEXT}>粘贴旧聊天记录或摘要，AI 会整理为带日期的记忆条目并保存到当前角色。</p>
+               {importStatus && <div className="text-xs font-black border-l-2 pl-2" style={{ borderColor: ROSE, color: PAPER_TONES.ink }}>{importStatus}</div>}
+               <textarea value={importText} onChange={e => setImportText(e.target.value)} placeholder="粘贴要导入的旧文本" className={`${AREA_INPUT} h-32`} />
            </div>
        </PaperSheet>
 
-       {/* ── 成批誊写 ── */}
+       {/* ── 批量生成 ── */}
        <PaperSheet
            open={showBatchModal}
-           tag="BATCH / 按天成批"
-           title="成批誊写往事"
+           tag="BATCH / 批量生成"
+           title="从聊天记录生成记忆"
            onClose={() => { setShowBatchModal(false); setShowPromptEditor(false); }}
            footer={
                isBatchProcessing ? (
-                   <div className="w-full py-2.5 border-2 border-dashed border-[#1c1b1a]/60 text-xs font-black text-center flex items-center justify-center gap-2">
-                       <div className="w-3.5 h-3.5 border border-black/10 rounded-xl border-t-transparent rounded-full animate-spin"></div>
+                   <div className="w-full py-2.5 border border-dashed text-xs font-black text-center flex items-center justify-center gap-2 rounded-[14px]" style={{ borderColor: BORDER, color: PAPER_TONES.ink }}>
+                       <div className="w-3.5 h-3.5 border border-[#dfe7e1] border-t-transparent rounded-full animate-spin"></div>
                        {batchProgress}
                    </div>
                ) : (
-                   <button onClick={handleBatchSummarize} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>开始誊写</button>
+                   <button onClick={handleBatchSummarize} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>开始生成</button>
                )
            }
        >
            <div className="space-y-3">
-               <p className="text-[13px] text-[#26242a]/55 leading-relaxed" style={HAND_CN}>翻遍全部聊天记录，按天用选好的口吻把往事誊进册子。</p>
+               <p className="text-[13px] leading-relaxed" style={NOTE_TEXT}>按日期读取聊天记录，并使用所选模板生成记忆摘要。</p>
                {/* Prompt Selection */}
-               <div className="border-2 border-dashed border-[#1c1b1a]/40 p-3">
-                   <label className="label-mono text-[8px] text-[#26242a]/45 mb-2 block">挑一种誊写口吻</label>
+               <div className="border border-dashed rounded-[16px] p-3" style={{ borderColor: BORDER }}>
+                   <label className="text-[8px] tracking-[0.16em] uppercase mb-2 block" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>选择记忆生成模板</label>
                    <div className="flex flex-col gap-2">
                        {archivePrompts.map(p => (
-                           <div key={p.id} onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('chat_active_archive_prompt_id', p.id); }} className={`px-3 py-2 border-2 cursor-pointer flex items-center justify-between transition-colors ${selectedPromptId === p.id ? 'border-[#1c1b1a] bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/30 bg-white/60'}`}>
+                           <div
+                               key={p.id}
+                               onClick={() => { setSelectedPromptId(p.id); localStorage.setItem('chat_active_archive_prompt_id', p.id); }}
+                               className="px-3 py-2 border cursor-pointer flex items-center justify-between transition-colors rounded-[14px] bg-white"
+                               style={selectedPromptId === p.id ? { borderColor: ROSE, boxShadow: CARD_SHADOW } : { borderColor: BORDER, color: PAPER_TONES.inkSoft }}
+                           >
                                <span className="text-xs font-black">{selectedPromptId === p.id ? '◉ ' : '○ '}{p.name}</span>
                                <div className="flex gap-1.5">
-                                   <button onClick={(e) => { e.stopPropagation(); setEditingPrompt(p); setShowPromptEditor(true); }} className="label-mono text-[8px] px-2 py-0.5 border border-[#1c1b1a]/40 hover:border-[#1c1b1a]">翻开</button>
+                                   <button onClick={(e) => { e.stopPropagation(); setEditingPrompt(p); setShowPromptEditor(true); }} className="text-[8px] px-2 py-0.5 border rounded-full" style={{ ...MONO_STACK, borderColor: BORDER, color: ROSE_DARK }}>查看</button>
                                    {!p.id.startsWith('preset_') && (
-                                       <button onClick={(e) => { e.stopPropagation(); const next = archivePrompts.filter(ap => ap.id !== p.id); setArchivePrompts(next); localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(ap => !ap.id.startsWith('preset_')))); if (selectedPromptId === p.id) setSelectedPromptId('preset_rational'); }} className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 hover:border-[#1c1b1a] line-through">撕</button>
+                                       <button onClick={(e) => { e.stopPropagation(); const next = archivePrompts.filter(ap => ap.id !== p.id); setArchivePrompts(next); localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(ap => !ap.id.startsWith('preset_')))); if (selectedPromptId === p.id) setSelectedPromptId('preset_rational'); }} className="text-[8px] px-1.5 py-0.5 border rounded-full" style={{ ...MONO_STACK, borderColor: BORDER, color: '#b36a5e' }}>删除</button>
                                    )}
                                </div>
                            </div>
                        ))}
                    </div>
-                   <button onClick={() => { const newP = { id: `custom_${Date.now()}`, name: '新自定义口吻', content: DEFAULT_ARCHIVE_PROMPTS[0].content }; setEditingPrompt(newP); setShowPromptEditor(true); }} className="mt-2 w-full py-1.5 text-[10px] font-black border-2 border-dashed border-[#1c1b1a]/50 hover:border-[#1c1b1a] transition-colors">＋ 写一种自己的口吻</button>
+                   <button onClick={() => { const newP = { id: `custom_${Date.now()}`, name: '新自定义模板', content: DEFAULT_ARCHIVE_PROMPTS[0].content }; setEditingPrompt(newP); setShowPromptEditor(true); }} className="mt-2 w-full py-1.5 text-[10px] font-black border border-dashed rounded-full transition-colors" style={{ borderColor: BORDER, color: ROSE_DARK }}>新增自定义模板</button>
                </div>
                {/* Date Range */}
                <div className="flex gap-2">
-                   <div className="flex-1"><label className="label-mono text-[8px] text-[#26242a]/45 block mb-1">从哪天起（可选）</label><input type="date" value={batchRange.start} onChange={e => setBatchRange({...batchRange, start: e.target.value})} className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
-                   <div className="flex-1"><label className="label-mono text-[8px] text-[#26242a]/45 block mb-1">到哪天止（可选）</label><input type="date" value={batchRange.end} onChange={e => setBatchRange({...batchRange, end: e.target.value})} className="w-full bg-white border border-black/10 rounded-xl/50 px-3 py-2 text-xs outline-none focus:border-[#1c1b1a]" /></div>
+                   <div className="flex-1"><label className="text-[8px] block mb-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>开始日期（可选）</label><input type="date" value={batchRange.start} onChange={e => setBatchRange({...batchRange, start: e.target.value})} className={LINE_INPUT} /></div>
+                   <div className="flex-1"><label className="text-[8px] block mb-1" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>结束日期（可选）</label><input type="date" value={batchRange.end} onChange={e => setBatchRange({...batchRange, end: e.target.value})} className={LINE_INPUT} /></div>
                </div>
-               <div className="text-[10px] text-[#26242a]/55 border border-dashed border-[#1c1b1a]/40 p-2.5 leading-relaxed">
-                   口吻里可用的变量: <code>{'${dateStr}'}</code>, <code>{'${char.name}'}</code>, <code>{'${userProfile.name}'}</code>, <code>{'${rawLog}'}</code>
+               <div className="text-[10px] border border-dashed rounded-[14px] p-2.5 leading-relaxed" style={{ borderColor: BORDER, color: PAPER_TONES.inkSoft }}>
+                   模板可用变量: <code>{'${dateStr}'}</code>, <code>{'${char.name}'}</code>, <code>{'${userProfile.name}'}</code>, <code>{'${rawLog}'}</code>
                </div>
            </div>
        </PaperSheet>
 
-       {/* ── 口吻编辑 ── */}
+       {/* ── 模板编辑 ── */}
        <PaperSheet
            open={showPromptEditor}
-           tag="TONE / 誊写口吻"
-           title={editingPrompt?.id.startsWith('preset_') ? '翻看这种口吻' : '修这种口吻'}
+           tag="TEMPLATE / 生成模板"
+           title={editingPrompt?.id.startsWith('preset_') ? '查看模板' : '编辑模板'}
            onClose={() => setShowPromptEditor(false)}
            footer={!editingPrompt?.id.startsWith('preset_') ? (
                <button onClick={() => {
@@ -1515,8 +1558,8 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(p => !p.id.startsWith('preset_'))));
                    localStorage.setItem('chat_active_archive_prompt_id', editingPrompt.id);
                    setShowPromptEditor(false);
-                   addToast('这种口吻记下了', 'success');
-               }} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>记下来</button>
+                   addToast('模板已保存', 'success');
+               }} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>保存模板</button>
            ) : (
                <button onClick={() => {
                    if (!editingPrompt) return;
@@ -1527,70 +1570,70 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
                    localStorage.setItem('chat_archive_prompts', JSON.stringify(next.filter(p => !p.id.startsWith('preset_'))));
                    localStorage.setItem('chat_active_archive_prompt_id', editingPrompt.id);
                    setShowPromptEditor(false);
-                   addToast('这种口吻记下了', 'success');
-               }} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>就用这种</button>
+                   addToast('模板已选中', 'success');
+               }} className={`w-full py-2.5 text-xs font-black ${INK_BTN}`}>使用这个模板</button>
            )}
        >
            <div className="space-y-3">
                <input
                    value={editingPrompt?.name || ''}
                    onChange={e => setEditingPrompt(prev => prev ? {...prev, name: e.target.value} : null)}
-                   placeholder="口吻名字"
-                   className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-sm font-black outline-none focus:border-dashed read-only:border-[#1c1b1a]/30 read-only:text-[#26242a]/55"
+                   placeholder="模板名称"
+                   className={`${LINE_INPUT} text-sm font-black read-only:text-[#8da099]`}
                    readOnly={editingPrompt?.id.startsWith('preset_')}
                />
                <textarea
                    value={editingPrompt?.content || ''}
                    onChange={e => setEditingPrompt(prev => prev ? {...prev, content: e.target.value} : null)}
-                   className="w-full h-64 bg-white border border-black/10 rounded-xl/60 p-3 text-xs font-mono resize-none outline-none focus:border-[#1c1b1a] leading-relaxed read-only:border-[#1c1b1a]/30 read-only:text-[#26242a]/55"
-                   placeholder="把誊写口吻写在这里…"
+                   className={`${AREA_INPUT} h-64 font-mono leading-relaxed read-only:text-[#8da099]`}
+                   placeholder="填写记忆生成模板"
                    readOnly={editingPrompt?.id.startsWith('preset_')}
                />
                {editingPrompt?.id.startsWith('preset_') && (
-                   <p className="text-[12px] text-[#26242a]/45 text-center" style={HAND_CN}>自带的口吻只能翻看，改不了。</p>
+                   <p className="text-[12px] text-center" style={{ color: PAPER_TONES.inkFaint }}>系统模板只能查看，不能编辑。</p>
                )}
            </div>
        </PaperSheet>
 
-       {/* ── 拓往事（文本导出） ── */}
+       {/* ── 记忆导出 ── */}
        <PaperSheet
            open={showExportModal}
-           tag="RUBBING / 拓本"
-           title="往事拓本"
+           tag="EXPORT / 记忆导出"
+           title="导出记忆文本"
            onClose={() => setShowExportModal(false)}
            footer={<div className="flex gap-2 w-full">
-               <button onClick={() => { navigator.clipboard.writeText(exportText); addToast('抄好了', 'success'); }} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>抄全文</button>
+               <button onClick={() => { navigator.clipboard.writeText(exportText); addToast('已复制全文', 'success'); }} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>复制全文</button>
                {Capacitor.isNativePlatform() ? (
                    <button onClick={handleNativeShare} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 ${INK_BTN}`}>
-                       <TrayArrowUp size={13} weight="bold" />递出去
+                       <TrayArrowUp size={13} weight="bold" />分享
                    </button>
                ) : (
                    <button onClick={handleWebFileDownload} className={`flex-1 py-2.5 text-xs font-black flex items-center justify-center gap-1.5 ${INK_BTN}`}>
-                       <TrayArrowDown size={13} weight="bold" />存成文件
+                       <TrayArrowDown size={13} weight="bold" />下载文件
                    </button>
                )}
            </div>}
        >
-           <div className="border-2 border-dashed border-[#1c1b1a]/40 p-3 space-y-2">
-               <div className="text-[12px] text-[#26242a]/55" style={HAND_CN}>全文已自动抄进剪贴板；递不出去就直接手动抄。</div>
-               <textarea value={exportText} readOnly className="w-full h-40 bg-transparent border-none text-[10px] font-mono text-[#26242a]/70 resize-none focus:ring-0 leading-relaxed select-all" onClick={(e) => e.currentTarget.select()} />
+           <div className="border border-dashed rounded-[16px] p-3 space-y-2" style={{ borderColor: BORDER }}>
+               <div className="text-[12px]" style={NOTE_TEXT}>文本已自动复制到剪贴板，也可以在这里手动复制或下载。</div>
+               <textarea value={exportText} readOnly className="w-full h-40 bg-transparent border-none text-[10px] font-mono text-[#2f3432]/70 resize-none focus:ring-0 leading-relaxed select-all" onClick={(e) => e.currentTarget.select()} />
            </div>
        </PaperSheet>
 
-       {/* ── 送离确认 ── */}
+       {/* ── 删除确认 ── */}
        <PaperSheet
            open={!!deleteConfirmTarget}
-           tag="EXIT STAGE / 不可复原"
-           title="送 TA 离场？"
+           tag="DELETE / 不可复原"
+           title="删除角色？"
            onClose={() => setDeleteConfirmTarget(null)}
            footer={<div className="flex gap-2 w-full">
-               <button onClick={() => setDeleteConfirmTarget(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
-               <button onClick={confirmDeleteCharacter} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>送离！</button>
+               <button onClick={() => setDeleteConfirmTarget(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>取消</button>
+               <button onClick={confirmDeleteCharacter} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>确认删除</button>
            </div>}
        >
-           <p className="text-sm text-[#26242a]/70 text-center leading-relaxed py-2">
-               这一撕，TA 的名帖、往事和这段关系都没了。<br />
-               <span className="text-xs font-black">撕下去就拼不回来了。</span>
+           <p className="text-sm text-center leading-relaxed py-2" style={{ color: PAPER_TONES.inkSoft }}>
+               删除后，这个角色的资料、记忆档案和关系数据都会移除。<br />
+               <span className="text-xs font-black">此操作无法撤销。</span>
            </p>
        </PaperSheet>
     </div>

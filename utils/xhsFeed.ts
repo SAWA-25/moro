@@ -152,7 +152,7 @@ const pickPosterChars = (characters: CharacterProfile[], max = 4): CharacterProf
 
 const buildFeedSystemPrompt = (chars: CharacterProfile[], userProfile: UserProfile): string => {
     const charLines = chars.map((c, i) => {
-        const persona = (c.description || c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300);
+        const persona = (c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300);
         const handle = c.socialProfile?.handle ? `（账号名也可用 ${c.socialProfile.handle}）` : '';
         return `${i + 1}. 「${c.name}」${handle}：${persona || '（无人设描述）'}`;
     }).join('\n');
@@ -259,7 +259,7 @@ export const generateAuthorReply = async (
     authorChar?: CharacterProfile,
 ): Promise<XhsFeedComment> => {
     const personaLine = authorChar
-        ? `你是「${authorChar.name}」，人设：${(authorChar.description || authorChar.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300)}。评论者「${userProfile.name}」是你认识的人，按你们的关系和你的口吻回复。`
+        ? `你是「${authorChar.name}」，人设：${(authorChar.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 300)}。评论者「${userProfile.name}」是你认识的人，按你们的关系和你的口吻回复。`
         : `你是小红书博主「${post.author}」，按这篇帖子的口吻回复评论。评论者是陌生网友。`;
     const raw = await callLlm(
         apiConfig,

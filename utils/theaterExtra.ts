@@ -80,7 +80,7 @@ export async function genCharAnswer(args: {
     // ⚠️ 角色作答被截断显示半句（见 docs/divination-and-faux 同款坑）：推理模型先在 <think> 里耗预算，
     // 800 token 常只够吐半句正文。给足预算并在被长度截断时自动续写写完，避免「回答显示不全」。
     return (await chat(api, [
-        { role: 'system', content: extraQuizAnswerSys({ charName: char.name, topic, description: char.description || '', userName }) },
+        { role: 'system', content: extraQuizAnswerSys({ charName: char.name, topic, description: char.systemPrompt || '', userName }) },
         { role: 'user', content: extraQuizAnswerUser({ charName: char.name, question }) },
     ], { temperature: 0.9, maxTokens: 1200, continueRounds: 3, signal })) || '……（TA 没说话）';
 }
@@ -93,7 +93,7 @@ export async function genExtraPiece(args: {
 }): Promise<string> {
     const { api, kind, char, userProfile, prompt, signal } = args;
     const userName = (userProfile?.name || '').trim() || '我';
-    const { sys, user } = extraPiecePrompt({ kind, charName: char.name, description: char.description || '', prompt, userName });
+    const { sys, user } = extraPiecePrompt({ kind, charName: char.name, description: char.systemPrompt || '', prompt, userName });
     // 番外指令常要求「不少于 5000/10000 字」的长篇——大幅放宽 max_tokens，并在被长度截断时自动续写写完。
     return (await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 1.0, maxTokens: 4096, continueRounds: 5, signal })) || '（这次没生成出来，换个说法再试试）';
 }
@@ -118,7 +118,7 @@ export async function genFauxPiece(args: {
 }): Promise<FauxResult> {
     const { api, kind, char, userProfile, keyword, signal } = args;
     const userName = (userProfile?.name || '').trim() || '我';
-    const { sys, user } = extraFauxPrompt({ kind, charName: char.name, description: char.description || '', userName, userBio: userProfile?.bio || '', keyword });
+    const { sys, user } = extraFauxPrompt({ kind, charName: char.name, description: char.systemPrompt || '', userName, userBio: userProfile?.bio || '', keyword });
     const raw = await chat(api, [{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.95, maxTokens: 2600, signal });
     const data = extractJson(raw);
     return { kind, data: data ?? null, fallbackText: raw || '（这次没生成出来，换个关键词再试试）' };

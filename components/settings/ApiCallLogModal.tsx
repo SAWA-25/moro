@@ -115,7 +115,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                 <div className="flex gap-2 w-full">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-3 bg-[#fffdfa] border border-[#eed6df] text-[#9c5e74] font-bold rounded-2xl active:scale-95 transition-transform"
+                        className="flex-1 py-3 bg-white border border-[#e7e1d6] text-[#577782] font-bold rounded-2xl active:scale-95 transition-transform"
                     >
                         关闭
                     </button>
@@ -129,8 +129,8 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                 </div>
             }
         >
-            <p className="text-[11px] text-[#8f6b7b] mb-3 leading-relaxed px-1">
-                记录最近 <span className="font-semibold text-[#5a3140]">5 天</span>的聊天补全和模型列表请求。数据只保存在本地，用来定位接口、应用、用途和错误原因。
+            <p className="text-[11px] text-[#69716d] mb-3 leading-relaxed px-1">
+                记录最近 <span className="font-semibold text-[#2f3437]">5 天</span>的聊天补全和模型列表请求。数据只保存在本地，用来定位接口、应用、用途和错误原因。
             </p>
 
             {entries.length > 0 && (
@@ -143,9 +143,9 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
             )}
 
             {loading ? (
-                <div className="py-10 text-center text-sm text-[#a892a3]">加载中…</div>
+                <div className="py-10 text-center text-sm text-[#8a918d]">加载中…</div>
             ) : entries.length === 0 ? (
-                <div className="py-10 text-center text-sm text-[#a892a3]">
+                <div className="py-10 text-center text-sm text-[#8a918d]">
                     暂无调用记录。<br />
                     <span className="text-[11px]">测试连接、拉取模型或发起聊天后，这里会显示接口记录。</span>
                 </div>
@@ -163,21 +163,21 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                             <div
                                 key={e.id}
                                 className={`rounded-[22px] border p-3 shadow-[0_10px_24px_-22px_rgba(90,49,64,0.35)] ${
-                                    e.ok ? 'bg-[#fffdfa] border-[#eed6df]' : 'bg-rose-50/80 border-rose-200'
+                                    e.ok ? 'bg-white border-[#e7e1d6]' : 'bg-rose-50/80 border-rose-200'
                                 }`}
                             >
                                 <div className="flex flex-wrap items-start justify-between gap-2">
                                     <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
-                                            <span className="text-[#a892a3]">{day}</span>
-                                            <span className="font-mono text-[#8f6b7b]">{time}</span>
+                                            <span className="text-[#8a918d]">{day}</span>
+                                            <span className="font-mono text-[#69716d]">{time}</span>
                                             <Badge>{apiRoleLabel(e.apiRole)}</Badge>
                                             <Badge>{endpointLabel(e.endpoint)}</Badge>
                                         </div>
-                                        <div className="mt-1 text-sm font-black text-[#5a3140] truncate">
+                                        <div className="mt-1 text-sm font-black text-[#2f3437] truncate">
                                             {e.appName || '未知 App'} · {e.purpose || '未标注用途'}
                                         </div>
-                                        <div className="mt-1 text-[11px] text-[#8f6b7b] truncate">
+                                        <div className="mt-1 text-[11px] text-[#69716d] truncate">
                                             {e.presetName || e.baseUrl || '未知 API'}{e.charName ? ` · ${e.charName}` : ''}
                                         </div>
                                     </div>
@@ -191,7 +191,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                         >
                                             {statusText(e)}
                                         </div>
-                                        <div className="mt-1 text-[10px] text-[#a892a3]">{fmtDuration(e.durationMs)}</div>
+                                        <div className="mt-1 text-[10px] text-[#8a918d]">{fmtDuration(e.durationMs)}</div>
                                     </div>
                                 </div>
 
@@ -212,7 +212,7 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
                                     <button
                                         type="button"
                                         onClick={() => setExpandedId(expanded ? null : e.id)}
-                                        className="mt-3 w-full py-2 rounded-2xl border border-[#eed6df] bg-white/70 text-[11px] font-black text-[#9c5e74] active:scale-[0.99] transition-transform"
+                                        className="mt-3 w-full py-2 rounded-2xl border border-[#e7e1d6] bg-white/80 text-[11px] font-black text-[#577782] active:scale-[0.99] transition-transform"
                                     >
                                         {expanded ? '收起详情' : e.ok ? '查看详情' : '查看报错'}
                                     </button>
@@ -237,39 +237,39 @@ const ApiCallLogModal: React.FC<ApiCallLogModalProps> = ({ isOpen, onClose }) =>
 };
 
 const StatCard: React.FC<{ label: string; value: string; sub: string; danger?: boolean }> = ({ label, value, sub, danger }) => (
-    <div className={`rounded-[18px] border px-3 py-2 ${danger ? 'bg-rose-50 border-rose-200' : 'bg-[#fffdfa] border-[#eed6df]'}`}>
-        <div className="text-[10px] text-[#a892a3]">{label}</div>
-        <div className={`text-sm font-black ${danger ? 'text-rose-600' : 'text-[#5a3140]'}`}>{value}</div>
-        <div className="text-[9px] text-[#8f6b7b] truncate">{sub}</div>
+    <div className={`rounded-[18px] border px-3 py-2 ${danger ? 'bg-rose-50 border-rose-200' : 'bg-white border-[#e7e1d6]'}`}>
+        <div className="text-[10px] text-[#8a918d]">{label}</div>
+        <div className={`text-sm font-black ${danger ? 'text-rose-600' : 'text-[#2f3437]'}`}>{value}</div>
+        <div className="text-[9px] text-[#69716d] truncate">{sub}</div>
     </div>
 );
 
 const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <span className="px-2 py-0.5 rounded-full bg-[#f8edf1] text-[#9c5e74] border border-[#eed6df]">
+    <span className="px-2 py-0.5 rounded-full bg-[#f3f7f6] text-[#577782] border border-[#dce8ea]">
         {children}
     </span>
 );
 
 const Field: React.FC<{ label: string; value?: string; mono?: boolean }> = ({ label, value, mono }) => (
     <div className="flex items-baseline gap-1.5 min-w-0">
-        <span className="text-[10px] text-[#a892a3] shrink-0">{label}</span>
-        <span className={`truncate text-[#5a3140] ${mono ? 'font-mono' : ''}`} title={value || ''}>
+        <span className="text-[10px] text-[#8a918d] shrink-0">{label}</span>
+        <span className={`truncate text-[#2f3437] ${mono ? 'font-mono' : ''}`} title={value || ''}>
             {value && value.trim() ? value : '—'}
         </span>
     </div>
 );
 
 const DetailLine: React.FC<{ label: string; value?: string; mono?: boolean }> = ({ label, value, mono }) => (
-    <div className="rounded-2xl bg-white/80 border border-[#eed6df] px-3 py-2 text-[11px]">
-        <div className="text-[10px] font-black text-[#a892a3]">{label}</div>
-        <div className={`mt-0.5 text-[#5a3140] break-all ${mono ? 'font-mono' : ''}`}>{value || '—'}</div>
+    <div className="rounded-2xl bg-white/80 border border-[#e7e1d6] px-3 py-2 text-[11px]">
+        <div className="text-[10px] font-black text-[#8a918d]">{label}</div>
+        <div className={`mt-0.5 text-[#2f3437] break-all ${mono ? 'font-mono' : ''}`}>{value || '—'}</div>
     </div>
 );
 
 const DetailBlock: React.FC<{ label: string; value: string; mono?: boolean; danger?: boolean }> = ({ label, value, mono, danger }) => (
-    <div className={`rounded-2xl border px-3 py-2 ${danger ? 'bg-rose-50 border-rose-200' : 'bg-white/80 border-[#eed6df]'}`}>
-        <div className={`text-[10px] font-black ${danger ? 'text-rose-500' : 'text-[#a892a3]'}`}>{label}</div>
-        <pre className={`mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed ${danger ? 'text-rose-700' : 'text-[#5a3140]'} ${mono ? 'font-mono' : 'font-sans'}`}>
+    <div className={`rounded-2xl border px-3 py-2 ${danger ? 'bg-rose-50 border-rose-200' : 'bg-white/80 border-[#e7e1d6]'}`}>
+        <div className={`text-[10px] font-black ${danger ? 'text-rose-500' : 'text-[#8a918d]'}`}>{label}</div>
+        <pre className={`mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed ${danger ? 'text-rose-700' : 'text-[#2f3437]'} ${mono ? 'font-mono' : 'font-sans'}`}>
             {value}
         </pre>
     </div>

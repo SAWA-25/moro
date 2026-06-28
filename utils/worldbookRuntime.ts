@@ -5,9 +5,9 @@
  * 1. ContextBuilder 是纯静态工具，拿不到 React 状态里的全量世界书——
  *    这里用模块级注册表存一份镜像，由 OSContext 在 worldbooks / 整书开关
  *    变化时调用 sync() 刷新。
- * 2. 局部 / 全局作用域 + SillyTavern 式插入位置的统一解析：
- *    - 局部（scope='local'，默认）：仅当角色挂载（char.mountedWorldbooks）后注入
- *    - 全局（scope='global'）：任意消息都注入，无需挂载
+ * 2. 整本世界书作用域 + SillyTavern 式条目激活的统一解析：
+ *    - 局部书（默认）：需角色/会话挂载这本书后，书内条目才参与注入
+ *    - 全局书：所有角色/会话都能使用这本书，仍按每条条目的常驻/关键词设置决定是否注入
  *    - 两者都尊重条目开关（wb.enabled）与整书开关（按 category，存 localStorage）
  *    - 同一位置内先写局部、再写全局，各自按 order 升序（小的在前，同 ST 净效果）
  *
@@ -20,6 +20,8 @@ import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
 
 export const GROUP_TOGGLES_KEY = 'worldbook_group_toggles';
+export const GROUP_SCOPES_KEY = 'worldbook_group_scopes';
+export type WorldbookGroupScope = 'local' | 'global';
 
 /**
  * 未填分组时的默认分组名。必须与世界书 App / 聊天设置面板展示用的兜底一致 ——
@@ -56,6 +58,7 @@ const DEFAULT_ORDER = 100;
 
 let liveBooks: Worldbook[] = [];
 let groupToggles: Record<string, boolean> = {};
+let groupScopes: Record<string, WorldbookGroupScope> = {};
 
 /**
  * 关键词扫描上下文（ST 世界书关键词激活移植）。
@@ -93,12 +96,34 @@ export const saveGroupTogglesToStorage = (toggles: Record<string, boolean>) => {
     } catch { /* 存储满等场景静默失败，开关只影响本次会话 */ }
 };
 
-const normalizeEntry = (wb: Worldbook): ResolvedWbEntry => ({
+export const loadGroupScopesFromStorage = (): Record<string, WorldbookGroupScope> => {
+    try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(GROUP_SCOPES_KEY) : null;
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') return parsed;
+        }
+    } catch { /* 损坏的 JSON 当作默认局部 */ }
+    return {};
+};
+
+export const saveGroupScopesToStorage = (scopes: Record<string, WorldbookGroupScope>) => {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(GROUP_SCOPES_KEY, JSON.stringify(scopes));
+        }
+    } catch { /* 存储满等场景静默失败，开关只影响本次会话 */ }
+};
+
+const makeBookKey = (category: string | undefined, title: string) =>
+    `${category || DEFAULT_WB_CATEGORY}\u0000${title}`;
+
+const normalizeEntry = (wb: Worldbook, scope: WorldbookGroupScope = 'local'): ResolvedWbEntry => ({
     id: wb.id,
     title: wb.title,
     content: wb.content,
     category: wb.category || DEFAULT_WB_CATEGORY,
-    scope: wb.scope === 'global' ? 'global' : 'local',
+    scope,
     position: wb.position || 'after_char',
     depth: typeof wb.depth === 'number' && wb.depth >= 0 ? wb.depth : DEFAULT_DEPTH,
     order: typeof wb.order === 'number' ? wb.order : DEFAULT_ORDER,
@@ -106,14 +131,24 @@ const normalizeEntry = (wb: Worldbook): ResolvedWbEntry => ({
 
 export const WorldbookRuntime = {
     /** OSContext 在 worldbooks / 整书开关变化时调用，保持镜像最新 */
-    sync(books: Worldbook[], toggles: Record<string, boolean>) {
+    sync(books: Worldbook[], toggles: Record<string, boolean>, scopes: Record<string, WorldbookGroupScope> = {}) {
         liveBooks = books;
         groupToggles = toggles;
+        groupScopes = scopes;
     },
 
     /** 整书开关：undefined 视为开（向后兼容） */
     isBookEnabled(category: string): boolean {
         return groupToggles[category || DEFAULT_WB_CATEGORY] !== false;
+    },
+
+    /** 整本作用域：undefined 视为局部（需挂载） */
+    getBookScope(category: string): WorldbookGroupScope {
+        return groupScopes[category || DEFAULT_WB_CATEGORY] === 'global' ? 'global' : 'local';
+    },
+
+    isBookGlobal(category: string): boolean {
+        return WorldbookRuntime.getBookScope(category) === 'global';
     },
 
     /** 条目是否生效 = 条目开关 && 整书开关 */
@@ -132,9 +167,9 @@ export const WorldbookRuntime = {
     },
 
     /**
-     * 关键词激活判定（ST 绿灯条目语义）：
+     * 条目激活判定（贴近 ST：constant 常驻，非 constant 看 key）：
      * - activation 缺省 / 'always' → 恒真（常驻）
-     * - 'keyword' → 扫最近 scanDepth 条消息，任一主关键词命中即激活；
+     * - activation='keyword' → 扫最近 scanDepth 条消息，任一主关键词命中即激活；
      *   selective=true 且有二级词时需同时命中任一二级词。
      *   无扫描上下文 / 无关键词 → 不激活。
      */
@@ -159,11 +194,11 @@ export const WorldbookRuntime = {
     /**
      * 解析某个角色当前生效的世界书条目。
      *
-     * local：char.mountedWorldbooks 逐条对照注册表——
-     *   - 注册表里有 live 记录：用 live 的内容与设置；scope 已切到 global 的
+     * local：局部书中，角色已挂载的分组。逐条对照注册表——
+     *   - 注册表里有 live 记录：用 live 的内容与设置；整本已切到 global 的
      *     跳过（由 global 侧统一收录，避免重复）；条目/整书开关关掉的跳过
      *   - 注册表里没有（书已删 / 卡片自带快照）：按挂载快照原样生效（向后兼容）
-     * global：注册表里所有 scope='global' 且生效的条目，无需挂载。
+     * global：注册表里所有「整本作用域 = global」且生效的条目，无需挂载。
      */
     resolveForChar(
         char: CharacterProfile,
@@ -175,7 +210,7 @@ export const WorldbookRuntime = {
         // 「分组 + 标题」找回 live 记录 —— 否则条目开关对这类挂载永远不生效
         const liveByKey = new Map<string, Worldbook>();
         for (const b of liveBooks) {
-            const key = `${b.category || DEFAULT_WB_CATEGORY} ${b.title}`;
+            const key = makeBookKey(b.category, b.title);
             if (!liveByKey.has(key)) liveByKey.set(key, b);
         }
         const seen = new Set<string>();
@@ -185,14 +220,14 @@ export const WorldbookRuntime = {
             if (!mounted.id || seen.has(mounted.id)) continue;
             if (skipIds?.has(mounted.id)) continue;
             const live = liveById.get(mounted.id)
-                ?? liveByKey.get(`${mounted.category || DEFAULT_WB_CATEGORY} ${mounted.title}`);
+                ?? liveByKey.get(makeBookKey(mounted.category, mounted.title));
             if (live) {
                 if (live.id !== mounted.id && (seen.has(live.id) || skipIds?.has(live.id))) continue;
-                if (live.scope === 'global') continue;          // 全局侧统一收录
+                if (WorldbookRuntime.isBookGlobal(live.category || DEFAULT_WB_CATEGORY)) continue; // 全局侧统一收录
                 if (!WorldbookRuntime.isEntryActive(live)) continue;
                 if (!WorldbookRuntime.isEntryTriggered(live)) continue;  // 关键词条目按扫描结果决定
                 if (!live.content?.trim()) continue;
-                local.push(normalizeEntry(live));
+                local.push(normalizeEntry(live, 'local'));
                 seen.add(live.id);
             } else {
                 // 没有 live 记录的挂载快照：按快照原样生效，但尊重快照自带的
@@ -205,7 +240,7 @@ export const WorldbookRuntime = {
                     category: mounted.category || DEFAULT_WB_CATEGORY,
                     createdAt: 0,
                     updatedAt: 0,
-                } as Worldbook));
+                } as Worldbook, 'local'));
             }
             seen.add(mounted.id);
         }
@@ -217,18 +252,18 @@ export const WorldbookRuntime = {
         for (const mounted of (char.mountedWorldbooks || [])) {
             if (!mounted.id) continue;
             const live = liveById.get(mounted.id)
-                ?? liveByKey.get(`${mounted.category || DEFAULT_WB_CATEGORY} ${mounted.title}`);
+                ?? liveByKey.get(makeBookKey(mounted.category, mounted.title));
             mountedCategories.add((live?.category ?? mounted.category) || DEFAULT_WB_CATEGORY);
         }
         if (mountedCategories.size > 0) {
             for (const wb of liveBooks) {
-                if (wb.scope === 'global') continue;          // 全局侧统一收录
+                if (WorldbookRuntime.isBookGlobal(wb.category || DEFAULT_WB_CATEGORY)) continue; // 全局侧统一收录
                 if (!mountedCategories.has(wb.category || DEFAULT_WB_CATEGORY)) continue;
                 if (seen.has(wb.id) || skipIds?.has(wb.id)) continue;
                 if (!WorldbookRuntime.isEntryActive(wb)) continue;
                 if (!WorldbookRuntime.isEntryTriggered(wb)) continue;
                 if (!wb.content?.trim()) continue;
-                local.push(normalizeEntry(wb));
+                local.push(normalizeEntry(wb, 'local'));
                 seen.add(wb.id);
             }
         }
@@ -236,13 +271,13 @@ export const WorldbookRuntime = {
         // 人设世界书（额外分组）：分组下未挂载的局部条目也注入，开关/关键词语义不变
         if (extraCategories) {
             for (const wb of liveBooks) {
-                if (wb.scope === 'global') continue;          // 全局侧本来就会收录
+                if (WorldbookRuntime.isBookGlobal(wb.category || DEFAULT_WB_CATEGORY)) continue; // 全局侧本来就会收录
                 if (!extraCategories.has(wb.category || DEFAULT_WB_CATEGORY)) continue;
                 if (seen.has(wb.id) || skipIds?.has(wb.id)) continue;
                 if (!WorldbookRuntime.isEntryActive(wb)) continue;
                 if (!WorldbookRuntime.isEntryTriggered(wb)) continue;
                 if (!wb.content?.trim()) continue;
-                local.push(normalizeEntry(wb));
+                local.push(normalizeEntry(wb, 'local'));
                 seen.add(wb.id);
             }
         }
@@ -251,12 +286,12 @@ export const WorldbookRuntime = {
         const global: ResolvedWbEntry[] = [];
         if (!opts.skipGlobal) {
             for (const wb of liveBooks) {
-                if (wb.scope !== 'global') continue;
+                if (!WorldbookRuntime.isBookGlobal(wb.category || DEFAULT_WB_CATEGORY)) continue;
                 if (seen.has(wb.id) || skipIds?.has(wb.id)) continue;
                 if (!WorldbookRuntime.isEntryActive(wb)) continue;
                 if (!WorldbookRuntime.isEntryTriggered(wb)) continue;
                 if (!wb.content?.trim()) continue;
-                global.push(normalizeEntry(wb));
+                global.push(normalizeEntry(wb, 'global'));
                 seen.add(wb.id);
             }
             global.sort((a, b) => a.order - b.order);
@@ -342,12 +377,12 @@ export const WorldbookRuntime = {
     /** 群聊共享场景块用：全局条目渲染一次（局部条目仍在各角色块/共享挂载块里） */
     buildGlobalSharedBlock(skipIds?: Set<string>): string {
         const entries = liveBooks
-            .filter(wb => wb.scope === 'global'
+            .filter(wb => WorldbookRuntime.isBookGlobal(wb.category || DEFAULT_WB_CATEGORY)
                 && !skipIds?.has(wb.id)
                 && WorldbookRuntime.isEntryActive(wb)
                 && WorldbookRuntime.isEntryTriggered(wb)
                 && !!wb.content?.trim())
-            .map(normalizeEntry)
+            .map(wb => normalizeEntry(wb, 'global'))
             .sort((a, b) => a.order - b.order);
         return renderScopedBlocks([], entries, '', '### 全局扩展设定 (Global Worldbooks)');
     },

@@ -176,7 +176,7 @@ const ForumApp: React.FC = () => {
     useEffect(() => { if (loaded) { try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch { /* ignore */ } } }, [meta, loaded]);
     useEffect(() => { if (loaded) { try { localStorage.setItem(NOTIF_KEY, JSON.stringify(notifs)); } catch { /* ignore */ } } }, [notifs, loaded]);
 
-    const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, persona: (c as any).description as string | undefined })), [characters]);
+    const charBriefs = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, persona: c.systemPrompt || undefined })), [characters]);
     const charLite = useMemo(() => characters.map(c => ({ id: c.id, name: c.name, avatar: c.convoSettings?.charAvatarOverride || c.avatar })), [characters]);
 
     const api = () => resolveAuxApi(auxApiConfig, apiConfig);
@@ -325,7 +325,7 @@ const ForumApp: React.FC = () => {
         const c = characters[Math.floor(Math.random() * characters.length)];
         let decided: { boardId: string; title: string; body: string } | null = null;
         try {
-            const { system, user } = buildCharThreadPrompt({ id: c.id, name: c.name, persona: (c as any).description });
+            const { system, user } = buildCharThreadPrompt({ id: c.id, name: c.name, persona: c.systemPrompt });
             const out = await llmComplete(api(), [
                 { role: 'system', content: system }, { role: 'user', content: user },
             ], { temperature: 0.95, maxTokens: 300 });

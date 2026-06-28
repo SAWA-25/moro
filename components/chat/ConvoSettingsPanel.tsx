@@ -217,7 +217,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         categories, emojiCounts, onSaveCategoryVisibility,
         onBgUpload, onRemoveBg, onOpenSchedule, onOpenTabloid,
     } = props;
-    const { updateCharacter, groups, worldbooks, characters, apiConfig, auxApiConfig, addToast, openApp, userProfile } = useOS();
+    const { updateCharacter, groups, worldbooks, worldbookGroupScopes, characters, apiConfig, auxApiConfig, addToast, openApp, userProfile } = useOS();
 
     const cs: ConvoSettings = char.convoSettings || {};
     const updateConvo = (patch: Partial<ConvoSettings>) => {
@@ -318,7 +318,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
         if (!apiConfig.apiKey) { addToast('先去「文具盒」配置好聊天 API', 'error'); return; }
         setMemoGenerating(true);
         try {
-            const persona = (char.systemPrompt || char.description || '').slice(0, 800);
+            const persona = (char.systemPrompt || '').slice(0, 800);
             const prompt = `你是「${char.name}」。请根据你的人设，写 3~4 条你自己手机备忘录里会有的内容（待办、随手记、藏起来的小心事、清单等，要贴合你的性格与生活，简短自然）。\n\n你的人设：${persona}\n\n只输出 JSON 字符串数组，例如：["明天记得交房租","想给 TA 买生日礼物，纠结选什么","健身：周一三五"]`;
             const res = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
@@ -347,8 +347,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     };
 
     // ── 世界书：按 category 分组（与世界书 App 联动，整本挂载/卸载） ──
-    // 「卷册」= 一个 category 分组；全局卷（scope=global 的条目）自动注入所有会话，
-    // 此处只选局部卷。绑定数据仍存 char.mountedWorldbooks（条目快照，注入时以注册表实况覆盖）。
+    // 「卷册」= 一个 category 分组；整本全局的书由运行时自动提供给所有会话。
+    // 此处只选局部书。绑定数据仍存 char.mountedWorldbooks（条目快照，注入时以注册表实况覆盖）。
     const WB_BIND_LIMIT = 8;
     const [wbSearch, setWbSearch] = useState('');
     const [wbListOpen, setWbListOpen] = useState(false);
@@ -367,10 +367,10 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
     // （旧版要求「全部条目都在挂载列表」，世界书 App 里新增一条就会让开关显示成
     //   未挂载、而注入仍在进行，开关与实际状态脱节。）
     const categoryMounted = (books: typeof worldbooks) => books.length > 0 && books.some(b => mountedIds.has(b.id));
-    // 局部卷册：分组里至少有一条 scope 为 local（缺省即 local）的条目
+    // 局部世界书：整本作用域为 local（默认），需要在这里挂载到当前角色/会话
     const localCategories = useMemo(
-        () => bookCategories.filter(([, books]) => books.some(b => (b.scope || 'local') === 'local')),
-        [bookCategories]
+        () => bookCategories.filter(([category]) => worldbookGroupScopes[category] !== 'global'),
+        [bookCategories, worldbookGroupScopes]
     );
     const mountedLocalCount = localCategories.filter(([, books]) => categoryMounted(books)).length;
     const toggleBookCategory = (category: string, books: typeof worldbooks) => {
@@ -1042,7 +1042,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                 <Page no="07" title="世界书挂载" en="Worldbooks" tape="blue" pattern="star" paper="mint">
                     <Entry
                         mark="❃" title="已挂载分组"
-                        note={`全局分组会自动注入；这里选择本会话专用的局部分组，最多挂载 ${WB_BIND_LIMIT} 个。每条设定的开关和作用域在「剪报夹」App 调整。`}
+                        note={`全局世界书所有角色可用；这里选择本会话专用的局部世界书，最多挂载 ${WB_BIND_LIMIT} 个。整本作用域与条目触发方式在「剪报夹」App 调整。`}
                         side={<PinButton onClick={clearMountedWorldbooks}>全部取下</PinButton>}
                     >
                         <div className="text-[10px] mb-2.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkSoft }}>

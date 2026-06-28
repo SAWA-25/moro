@@ -36,7 +36,7 @@ export const generateSocialProfile = async (
 ): Promise<GeneratedSocialProfile> => {
     const persona = [
         `名字: ${char.name}`,
-        char.description ? `人设描述: ${String(char.description).slice(0, 800)}` : '',
+        char.systemPrompt ? `核心设定: ${String(char.systemPrompt).slice(0, 800)}` : '',
         char.worldview ? `世界观: ${String(char.worldview).slice(0, 300)}` : '',
         char.socialProfile?.bio ? `已有签名(供参考语气): ${char.socialProfile.bio}` : '',
     ].filter(Boolean).join('\n');

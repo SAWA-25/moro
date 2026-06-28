@@ -989,7 +989,7 @@ ${previousGuestbook}
             const avg = rv.length ? (rv.reduce((s, r) => s + r.rating, 0) / rv.length).toFixed(1) : '—';
             const charNote = (name: string) => {
                 const c = characters.find(ch => ch.name === name);
-                return c ? `（熟人，人设：${(c.description || '').replace(/\s+/g, ' ').slice(0, 60)}）` : '（普通顾客）';
+                return c ? `（熟人，人设：${(c.systemPrompt || '').replace(/\s+/g, ' ').slice(0, 60)}）` : '（普通顾客）';
             };
             const list = batch.map(r => ({ id: r.id, 顾客: r.authorName + (r.isNpc ? '' : charNote(r.authorName)), 点的: r.productName || '咖啡', 初评分: r.rating }));
             const prompt = `你在为一家叫「${shopName}」的虚拟咖啡馆生成顾客点评。店铺等级 Lv.${shopLevel}，当前口碑均分 ${avg}。本轮卖出：${soldProductNames.join('、') || '咖啡'}。

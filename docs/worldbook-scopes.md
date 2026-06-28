@@ -1,10 +1,8 @@
 # 世界书：开关 / 作用域 / 插入位置
 
 世界书的「一本书」= 一个分组（`Worldbook.category`）。每条 `Worldbook` 记录是书里的一个**条目**。
-桌面入口现名「**剪报夹**」（黑白拼贴手账风 UI）。界面词对照：剪报 = 条目、
-卷册 = 分组（一卷 = 一本书）、钉死 = 常驻（ST 蓝灯）、暗号 = 关键词触发
-（ST 绿灯）、随卷出场 / 满世界跟着 = 局部 / 全局、整卷封存 = 整书开关关闭、
-暗号演练台 = 关键词扫描测试。聊天手帐里的挂载页对应改名「剪报夹页」。
+桌面入口现名「**剪报夹**」（Ins / 拍立得风 UI）。界面使用功能性命名：世界书 = 分组，
+条目 = 可注入的一段设定；条目激活方式分为常驻（ST constant / 蓝灯）与关键词（ST key / 绿灯）。
 SillyTavern 角色卡导入时：`character_book` 的书名（无书名则 `{角色名} 的世界书`）作为分组，每个 lorebook entry 是一条条目（原始 ST 设置完整保留在 `stData`）。
 
 ## 三层开关
@@ -12,11 +10,12 @@ SillyTavern 角色卡导入时：`character_book` 的书名（无书名则 `{角
 | 开关 | 存哪 | 语义 |
 |------|------|------|
 | 条目开关 `wb.enabled` | worldbooks store | `false` = 任何场景都不注入。`undefined` 视为开（向后兼容） |
-| 整书开关 | localStorage `worldbook_group_toggles`（按 category）| `false` = 整本书的所有条目（含全局条目）暂停注入 |
-| 作用域 `wb.scope` | worldbooks store | `'local'`（默认）需角色挂载；`'global'` 任意消息都注入、无需挂载 |
+| 整书开关 | localStorage `worldbook_group_toggles`（按 category）| `false` = 整本书的所有条目暂停注入 |
+| 整本作用域 | localStorage `worldbook_group_scopes`（按 category） | `local` / 未记录 = 需要绑定到角色或会话；`global` = 所有角色都可使用这本书 |
 
-- **局部**：仅当在「聊天设置 → 绑定世界书」里挂载（`char.mountedWorldbooks`）后才随系统提示注入。挂载按**整本书**操作（同分组条目一起挂/卸），注入时逐条对照 live 记录过滤开关与作用域。（原神经链接/角色设置里的「扩展设定」挂载入口已移除，聊天设置是唯一入口。）
-- **全局**：注册表里所有 `scope='global'` 且生效的条目，任何角色任何消息都带上。
+- **局部书**：仅当在「聊天设置 → 世界书挂载」里绑定（`char.mountedWorldbooks`）后才随系统提示注入。绑定按**整本书**操作（同分组条目一起挂/卸），注入时逐条对照 live 记录过滤条目开关、整书开关与关键词激活。
+- **全局书**：整本作用域为 `global` 的分组对所有角色可用，无需绑定；书内条目仍各自按常驻 / 关键词规则决定是否注入。
+- **整本作用域不会批量修改条目**：切换一本书的全局 / 局部只改变这本书的可用范围，不会把书内条目改成全局、常驻或关键词。
 - **两者同时生效时，系统提示先写局部绑定、再写全局**（每个插入位置内都遵守此序）。
 - 挂载快照在 live 记录存在时永远以 live 内容/设置为准；live 记录被删（或卡片自带快照）时按快照原样生效（旧行为）。
 - **整本挂载实况同步**：挂载记录的语义是「绑定整本书（分组）」。`resolveForChar` 会按挂载条目推导出已绑定的分组，把该分组下**后来新增的 live 条目**也一并注入（仍尊重条目/整书开关与关键词激活）——世界书 App 里的增删改与聊天注入实时一致。
@@ -44,7 +43,7 @@ ST 的作者注释 / 示例消息锚点（2/3/5/6/7）导入时降级为 `after_
 ## 数据流
 
 ```
-OSContext (worldbooks state + 整书开关 state)
+OSContext (worldbooks state + 整书开关 state + 整本作用域 state)
    └─ useEffect → WorldbookRuntime.sync()      // 模块级注册表镜像
         ├─ ContextBuilder.buildCoreContext     // beforeChar / afterChar 分段
         ├─ ContextBuilder.buildGroupSharedScene// 共享挂载块 + 全局块（一次）

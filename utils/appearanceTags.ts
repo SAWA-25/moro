@@ -17,12 +17,11 @@ export interface AppearanceApiConfig {
 }
 
 /**
- * 把角色人设 + 绑定世界书拼成一段「外貌素材」喂给 prompt（纯函数，便于单测）。
+ * 把角色核心设定 + 绑定世界书拼成一段「外貌素材」喂给 prompt（纯函数，便于单测）。
  * 只取已启用（enabled !== false）的挂载世界书，单条与总量都做截断防止 prompt 过长。
  */
 export function buildAppearanceSourceText(char: CharacterProfile, perBookLimit = 600, totalLimit = 4000): string {
     const personaParts = [
-        char.description ? `名片印象：${char.description}` : '',
         char.systemPrompt ? `核心设定：\n${char.systemPrompt}` : '',
         char.worldview ? `世界观/背景：\n${char.worldview}` : '',
     ].filter(Boolean);

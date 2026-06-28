@@ -507,7 +507,6 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 
     const personaBlock = useMemo(() => [
         `名字: ${char.name}`,
-        char.description ? `备注: ${String(char.description).slice(0, 200)}` : '',
         char.systemPrompt ? `人设: ${String(char.systemPrompt).slice(0, 1500)}` : '',
     ].filter(Boolean).join('\n'), [char]);
 

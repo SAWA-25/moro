@@ -21,7 +21,7 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
 
 | 文件 | 职责 |
 |------|------|
-| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除）、随字版的正则补丁（新增/编辑/启停/拆除，复用 `components/regex/RegexEditor.tsx` 缝纫台） |
+| `apps/PresetApp.tsx` | UI：预设条（新建/导入/导出/重命名/另存为/删除）、生成参数滑条、提示词管理器（拖拽/开关/编辑/插入/移除） |
 | `utils/presets.ts` | 导入导出（含 `extensions.regex_scripts` 解析/写回）、运行时组装（`applyPresetToMessages`）、采样参数（`getPresetGenParams`）、`PresetRuntime` 开关读写、`refreshPresetRegexCache`（预热预设正则缓存） |
 | `utils/presets.test.ts` | 导入映射 / 组装语义（含 @Depth 注入次序）/ 预设自带正则往返的单测 |
 | `types.ts` | `TavernPreset`（含 `regexScripts`）/ `PresetPrompt` / `PresetPromptOrderCharacter`（字段名与 ST 对齐，snake_case） |
@@ -93,16 +93,16 @@ UI 文案与功能术语对照（数据结构 / ST 语义不变，只换了说�
   `utils/regex/store.ts` 维持一份模块级 `presetCache`（`setPresetRegexScripts` 写、
   `getPresetRegexScripts` 读、`collectRegexScripts` 合并）。缓存刷新三处：App 启动
   （`refreshPresetRegexCache`，OSContext）、每次发送（`buildChatRequestPayload` 复用
-  已 await 的激活预设，免再读库）、活字盘里选预设 / 开关印坊 / 改动正则（即时反映到
+  已 await 的激活预设，免再读库）、活字盘里选预设 / 开关印坊、补丁铺里编辑预设脚本（即时反映到
   聊天与气泡渲染；靠内容指纹去重，避免每条消息都触发显示层重渲染）。
-- **管理**：活字盘激活字版下方的「随字版的补丁」区可逐条**新增 / 编辑 / 启停 / 拆除**
-  （点一条即打开与补丁铺同一套缝纫台 `components/regex/RegexEditor.tsx`；只动这副字版，
-  不碰补丁铺里的通用补丁）。改动经 `mutateActive` 落库并触发 `setPresetRegexScripts`，
+- **管理**：补丁铺的「预设脚本」作用域可逐条**新增 / 编辑 / 启停 / 拆除**
+  （点一条即打开 `components/regex/RegexEditor.tsx`；只动选中的活字盘预设，
+  不碰补丁铺里的全局脚本或角色脚本）。改动写回 `preset.regexScripts` 并触发 `refreshPresetRegexCache`，
   即时反映到聊天与气泡渲染（见下「运行时缓存」与刷新指纹）。没有 ST 的「预设脚本需授权」
   弹窗 —— 随预设导入直接生效（与角色卡正则「随卡直接生效」一致）。
 - **改了就生效**：`utils/regex/store.ts` 的缓存刷新指纹（`presetCacheSignature`）覆盖
   **全部影响执行/显示的字段**（placement / markdownOnly / promptOnly / trimStrings /
-  substituteRegex / 深度 / runOnEdit，而非只看 find/replace）—— 否则在活字盘里只改
+  substituteRegex / 深度 / runOnEdit，而非只看 find/replace）—— 否则在补丁铺里只改
   placement、只勾「只改显示」等会因指纹不变被早退跳过，出现「编辑了却不替换」。
 - **往返**：`exportTavernPreset` 把 `preset.regexScripts` 写回
   `extensions.regex_scripts`（权威源，覆盖 raw 里可能过期的副本；清空后连旧副本一并

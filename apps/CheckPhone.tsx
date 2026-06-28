@@ -311,7 +311,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
 
     const awarenessFallback = (action: string): { caught: boolean; shouldEnd: boolean; reply: string } => {
         if (!targetChar) return { caught: false, shouldEnd: false, reply: '' };
-        const profileText = `${targetChar.name} ${targetChar.description || ''} ${targetChar.systemPrompt || ''}`.toLowerCase();
+        const profileText = `${targetChar.name} ${targetChar.systemPrompt || ''}`.toLowerCase();
         let score = 0.32;
         if (/(敏感|警惕|多疑|占有|控制|侦探|杀手|黑客|安全|边界|洁癖|细节|反侦察)/i.test(profileText)) score += 0.28;
         if (/(迟钝|大条|粗心|天然|信任|温柔|随和)/i.test(profileText)) score -= 0.16;
@@ -625,7 +625,6 @@ ${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的
         try {
             const persona = [
                 `名字: ${targetChar.name}`,
-                targetChar.description ? `备注: ${String(targetChar.description).slice(0, 200)}` : '',
                 targetChar.systemPrompt ? `人设: ${String(targetChar.systemPrompt).slice(0, 800)}` : '',
             ].filter(Boolean).join('\n');
             const prompt = `根据下面这个角色的人设，为 TA 的手机设计一套贴人设的"桌面皮肤"。
