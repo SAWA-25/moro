@@ -54,45 +54,49 @@ const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
 // 这里设为 false 只是把设置页里的入口隐藏掉，想恢复改回 true 即可。
 const SHOW_PROACTIVE_PUSH_ACCEL_UI = false;
 
-// ── ins / 拍立得设计 token（对齐絮语私聊设置面板） ─────────────────
-const INK = '#5a3140';
-const INK_SOFT = '#a892a3';
-const ROSE = '#d8a5b7';
-const ROSE_DARK = '#9c5e74';
-const PAPER = '#fffdfa';
-const LINE = '#eed6df';
-const CARD_BORDER = '#ededed';
-const CARD_SHADOW = '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)';
+// ── 文具盒 / 拍立得设计 token：奶油纸、石墨字、牛皮纸胶带、尺子蓝 ─────────
+const INK = '#303238';
+const INK_SOFT = '#7d827d';
+const ROSE = '#6f91a8';
+const ROSE_DARK = '#47677a';
+const PAPER = '#fffaf0';
+const LINE = '#ddd0ba';
+const CARD_BORDER = '#e7dfd0';
+const CARD_SHADOW = '0 1px 2px rgba(48,50,56,0.04), 0 14px 30px -24px rgba(48,50,56,0.24)';
 const AUX_MODELS_STORAGE_KEY = 'os_aux_available_models';
-/** 轻量贴纸按钮：淡玫瑰描边 + 胶片纸底 */
-const STICKER = 'border border-[#eed6df] rounded-full bg-[#fffdfa] text-[#9c5e74] shadow-[0_1px_2px_rgba(122,90,114,0.10)] press-soft';
-/** 主按钮：玫瑰色胶囊按钮 */
-const INK_BTN = 'bg-[#d8a5b7] text-white border border-[#eed6df] rounded-full shadow-[0_8px_16px_-12px_rgba(122,90,114,0.42)] press-soft';
+/** 轻量贴纸按钮：牛皮纸描边 + 奶油纸底 */
+const STICKER = 'border border-[#ddd0ba] rounded-full bg-[#fffaf0] text-[#47677a] shadow-[0_1px_2px_rgba(48,50,56,0.10)] press-soft';
+/** 主按钮：尺子蓝胶囊按钮 */
+const INK_BTN = 'bg-[#6f91a8] text-white border border-[#ddd0ba] rounded-full shadow-[0_8px_16px_-12px_rgba(48,50,56,0.42)] press-soft';
 /** 柔和旁注字体 */
 const HAND_CN: React.CSSProperties = { fontFamily: "'LXGW WenKai', 'ZCOOL XiaoWei', 'Noto Serif SC', serif" };
-/** 页面底纹：轻微暖白渐变，保持和絮语设置同一淡色系 */
+/** 页面底纹：纸张暖底 + 低饱和便签色块，像真正铺开的文具盒。 */
 const DOT_BG: React.CSSProperties = {
     background:
-        'radial-gradient(circle at 12% 0%, rgba(216,165,183,0.16), transparent 30%), radial-gradient(circle at 90% 18%, rgba(255,244,247,0.9), transparent 28%), linear-gradient(180deg, #fafafa 0%, #fff9fb 48%, #fafafa 100%)',
+        'radial-gradient(circle at 10% 0%, rgba(216,192,151,0.24), transparent 30%), radial-gradient(circle at 92% 14%, rgba(111,145,168,0.18), transparent 28%), linear-gradient(180deg, #f7f3ea 0%, #fffaf0 48%, #f4efe4 100%)',
 };
-/** 输入框：胶片纸底 + 淡玫瑰描边 */
-const FIELD = 'w-full px-3 py-2 bg-[#fffdfa] border border-[#eed6df] rounded-[14px] text-sm text-[#5a3140] caret-[#d8a5b7] focus:outline-none focus:border-[#d8a5b7] focus:shadow-[0_8px_18px_-16px_rgba(122,90,114,0.32)] transition-all placeholder:text-[#cfb8c4]';
+/** 输入框：奶油纸底 + 牛皮纸描边 */
+const FIELD = 'w-full px-3 py-2 bg-[#fffaf0] border border-[#ddd0ba] rounded-[14px] text-sm text-[#303238] caret-[#6f91a8] focus:outline-none focus:border-[#6f91a8] focus:shadow-[0_8px_18px_-16px_rgba(48,50,56,0.32)] transition-all placeholder:text-[#a8a293]';
 /** 小标签（字段名） */
-const LABEL = 'label-mono text-[9px] text-[#a892a3] block mb-1';
+const LABEL = 'label-mono text-[9px] text-[#7d827d] block mb-1';
 
 const POLAROID_SCOPE_CSS = `
-.settings-polaroid [class*="text-[#26242a]"] { color: #5a3140 !important; }
-.settings-polaroid [class*="text-[#26242a]/"] { color: #8f6b7b !important; }
-.settings-polaroid [class*="bg-[#1c1b1a]"] { background-color: #d8a5b7 !important; }
-.settings-polaroid [class*="bg-[#1c1b1a]/"] { background-color: rgba(216,165,183,0.12) !important; }
-.settings-polaroid [class*="border-[#1c1b1a]"] { border-color: #eed6df !important; }
-.settings-polaroid [class*="border-[#1c1b1a]/"] { border-color: rgba(238,214,223,0.9) !important; }
-.settings-polaroid [class*="decoration-[#1c1b1a]"] { text-decoration-color: rgba(216,165,183,0.9) !important; }
-.settings-polaroid .border-black\\/10 { border-color: #ededed !important; }
+.settings-polaroid [class*="text-[#26242a]"], .settings-polaroid [class*="text-[#5a3140]"] { color: #303238 !important; }
+.settings-polaroid [class*="text-[#26242a]/"], .settings-polaroid [class*="text-[#8f6b7b]"] { color: #62685f !important; }
+.settings-polaroid [class*="text-[#a892a3]"] { color: #7d827d !important; }
+.settings-polaroid [class*="text-[#9c5e74]"] { color: #47677a !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]"], .settings-polaroid [class*="bg-[#d8a5b7]"] { background-color: #6f91a8 !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]/"], .settings-polaroid [class*="bg-[#d8a5b7]/"] { background-color: rgba(111,145,168,0.12) !important; }
+.settings-polaroid [class*="bg-[#fff4f7]"] { background-color: #f3ead8 !important; }
+.settings-polaroid [class*="bg-[#fffdfa]"] { background-color: #fffaf0 !important; }
+.settings-polaroid [class*="border-[#1c1b1a]"], .settings-polaroid [class*="border-[#eed6df]"] { border-color: #ddd0ba !important; }
+.settings-polaroid [class*="border-[#1c1b1a]/"], .settings-polaroid [class*="border-[#eed6df]/"] { border-color: rgba(221,208,186,0.9) !important; }
+.settings-polaroid [class*="decoration-[#1c1b1a]"], .settings-polaroid [class*="decoration-[#d8a5b7]"] { text-decoration-color: rgba(111,145,168,0.9) !important; }
+.settings-polaroid .border-black\\/10 { border-color: #e7dfd0 !important; }
 .settings-polaroid .border-dashed { border-style: solid !important; }
 .settings-polaroid .border-2 { border-width: 1px !important; }
-.settings-polaroid code { background-color: #fff4f7 !important; color: #9c5e74 !important; border-radius: 7px; }
-.settings-polaroid input[type="range"] { accent-color: #d8a5b7; }
+.settings-polaroid code { background-color: #f3ead8 !important; color: #47677a !important; border-radius: 7px; }
+.settings-polaroid input[type="range"] { accent-color: #6f91a8; }
 `;
 
 /** 一截半透明拍立得胶带 */

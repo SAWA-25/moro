@@ -1,5 +1,5 @@
 /**
- * 剪报夹 —— 世界书（Lorebook）管理，黑白拼贴手账风界面。
+ * 剪报夹 —— 世界书（Lorebook）管理，Ins / Polaroid 风界面。
  *
  * 一条 Worldbook 记录是一条世界书条目；category 分组是一整本世界书。
  * 支持条目/整书开关、局部/全局作用域、插入位置（含 @Depth）、顺序、
@@ -8,26 +8,36 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { Worldbook, WorldbookPosition } from '../types';
-import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key, UploadSimple } from '@phosphor-icons/react';
+import { Scissors, NotePencil, Trash, NewspaperClipping, Key, UploadSimple, BookOpen, Stack, GlobeSimple } from '@phosphor-icons/react';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
 import { DEFAULT_WB_CATEGORY } from '../utils/worldbookRuntime';
+import {
+    InsShell,
+    InsHeader,
+    InsScroll,
+    InsCard,
+    InsButton,
+    IconCircle,
+    Polaroid,
+    Chip,
+    InsEmpty,
+    InsDialog,
+    SectionLabel,
+    accent,
+    INK,
+    INK_SOFT,
+    HAIRLINE,
+} from '../components/ui/insKit';
 
-// ── ins 风设计 token（剪报夹 = indigo 强调） ─────────────
-const INK = '#26242a';
-const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
-const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_PATTERN = 'radial-gradient(120% 80% at 50% -10%, rgba(99,102,241,0.06), transparent 60%)';
-const DOT_BG: React.CSSProperties = { background: DOT_PATTERN };
-const MODAL_BG: React.CSSProperties = { backgroundColor: '#fff', backgroundImage: DOT_PATTERN };
-const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(38,36,42,0.08) 23px, rgba(38,36,42,0.08) 24px)',
-    lineHeight: '24px',
+const AC = 'indigo' as const;
+const A = accent(AC);
+const FIELD_STYLE: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.92)',
+    border: `1px solid ${HAIRLINE}`,
+    borderRadius: 18,
+    color: INK,
+    boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)',
 };
-
-const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
-        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
-);
 
 const POSITION_OPTIONS: { value: WorldbookPosition; label: string }[] = [
     { value: 'before_char', label: '角色卡之前（↑CHAR）' },
@@ -46,9 +56,51 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?
         onClick={(e) => { e.stopPropagation(); onChange(!on); }}
         title={title}
         className="relative w-11 h-6 rounded-full shrink-0 transition-colors press-soft"
-        style={{ background: on ? '#6366f1' : '#dcd9d3' }}
+        style={{ background: on ? A.solid : '#dedbd4' }}
     >
         <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow" style={{ left: on ? 'calc(100% - 1.375rem)' : '0.125rem' }} />
+    </button>
+);
+
+const FieldLabel: React.FC<{ children: React.ReactNode; en?: string; className?: string }> = ({ children, en, className = '' }) => (
+    <label className={`mb-2 flex items-center gap-2 text-[12px] font-extrabold ${className}`} style={{ color: INK }}>
+        <span className="h-2 w-2 rounded-full" style={{ background: A.solid }} />
+        <span>{children}</span>
+        {en && <span className="text-[8px] tracking-[0.28em] uppercase" style={{ fontFamily: 'var(--font-label)', color: INK_SOFT }}>{en}</span>}
+    </label>
+);
+
+const TextInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className = '', style, ...props }) => (
+    <input
+        {...props}
+        className={`w-full px-4 py-3 text-sm outline-none placeholder:text-slate-400 ${className}`}
+        style={{ ...FIELD_STYLE, ...style }}
+    />
+);
+
+const TextArea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> = ({ className = '', style, ...props }) => (
+    <textarea
+        {...props}
+        className={`w-full px-4 py-3 text-sm leading-relaxed outline-none resize-none placeholder:text-slate-400 ${className}`}
+        style={{ ...FIELD_STYLE, ...style }}
+    />
+);
+
+const StatPill: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+    <div className="rounded-2xl px-3 py-2 text-center" style={{ background: A.soft, color: A.ink }}>
+        <div className="text-[15px] font-black leading-none">{value}</div>
+        <div className="mt-1 text-[9px] font-bold opacity-70">{label}</div>
+    </div>
+);
+
+const ToggleChoice: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode; icon?: React.ReactNode }> = ({ active, onClick, children, icon }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="flex-1 rounded-full px-3 py-2.5 text-[11px] font-extrabold press-soft inline-flex items-center justify-center gap-1.5"
+        style={active ? { background: A.solid, color: '#fff', boxShadow: `0 12px 24px -14px ${A.solid}` } : { background: '#fff', color: INK_SOFT, border: `1px solid ${HAIRLINE}` }}
+    >
+        {icon}{children}
     </button>
 );
 
@@ -126,11 +178,18 @@ const WorldbookApp: React.FC = () => {
         return groups;
     }, [worldbooks]);
 
+    const groupedEntries = useMemo(() => Object.entries(groupedBooks).sort(([a], [b]) => a.localeCompare(b, 'zh-Hans-CN')), [groupedBooks]);
+    const activeCategory = expandedCategory && groupedBooks[expandedCategory] ? expandedCategory : (groupedEntries[0]?.[0] || null);
+    const activeBooks = activeCategory ? (groupedBooks[activeCategory] || []) : [];
+    const activeBookEnabled = activeCategory ? worldbookGroupToggles[activeCategory] !== false : true;
+    const enabledEntryCount = worldbooks.filter(wb => wb.enabled !== false).length;
+    const globalEntryCount = worldbooks.filter(wb => wb.scope === 'global').length;
+
     const handleCreate = () => {
         setEditingBook(null);
         setTempTitle('');
         setTempContent('');
-        setTempCategory(''); // Default empty
+        setTempCategory(activeCategory || '');
         setTempEnabled(true);
         setTempScope('local');
         setTempPosition('after_char');
