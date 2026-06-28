@@ -40,7 +40,7 @@ import ChatInputArea from '../components/chat/ChatInputArea';
 import ConvoSettingsPanel from '../components/chat/ConvoSettingsPanel';
 import TabloidModal from '../components/chat/TabloidModal';
 import ChatModals from '../components/chat/ChatModals';
-import Modal, { ScrapBtn, ScrapRowBtn, ScrapNote, INK, INK_SOFT } from '../components/chat/ScrapModal';
+import Modal, { ScrapBtn, ScrapRowBtn, ScrapNote, ScrapInput, ScrapTextarea, ScrapChip, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import JournalSheet, { SealBtn, LinedInput, LinedArea, NoteStrip } from '../components/chat/JournalSheet';
 import { MONO_STACK, SERIF_STACK, CUTE_STACK } from '../components/handbook/paper';
 import { PhoneSlash } from '@phosphor-icons/react';
@@ -79,6 +79,59 @@ const clipForPreview = (text: string, limit = 160) => {
     const clean = (text || '').replace(/\s+/g, ' ').trim();
     return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
 };
+
+const makePhoneLockCode = () => String(Math.floor(1000 + Math.random() * 9000));
+
+const PHONE_LOCK_PRESETS = {
+    miss: {
+        label: '想你锁',
+        hint: '让 TA 在锁屏上哄你一句再解',
+        note: (userName: string) => `${userName} 把你的手机锁住了。先说一句想我，再试着解开。`,
+        questions: (userName: string) => [
+            `今天有没有想 ${userName}？`,
+            `如果现在只能发一句话给 ${userName}，你会发什么？`,
+            `你觉得 ${userName} 最吃你哪一套？`,
+        ],
+    },
+    night: {
+        label: '晚安锁',
+        hint: '适合异地恋睡前小闹钟',
+        note: (userName: string) => `${userName} 给你上了晚安锁。乖乖报备，解开就去休息。`,
+        questions: (userName: string) => [
+            '现在几点了，还不睡的理由是什么？',
+            `给 ${userName} 留一句晚安。`,
+            '明天醒来第一件想做什么？',
+        ],
+    },
+    focus: {
+        label: '专注锁',
+        hint: '像远程陪伴学习/工作小锁',
+        note: (userName: string) => `${userName} 暂时锁住了你的手机。先把注意力收回来，再解锁。`,
+        questions: (_userName: string) => [
+            '你现在最该先做完哪件事？',
+            '手机放下后，你准备专注多久？',
+            '给自己一句别分心的提醒。',
+        ],
+    },
+} as const;
+
+type PhoneLockPresetId = keyof typeof PHONE_LOCK_PRESETS;
+type PhoneLockPhase = 'setup' | 'review' | 'unlocked' | 'denied';
+
+interface PhoneLockAttempt {
+    passcodeInput: string;
+    answers: string[];
+    wantsUnlock: boolean;
+    reply: string;
+    mood: string;
+}
+
+interface PhoneLockChatLine {
+    id: string;
+    speaker: 'user' | 'char' | 'system';
+    text: string;
+    at: number;
+}
 
 const messageKindLabel = (m: Message): string => {
     if (m.type === 'image') return '图片';
@@ -358,7 +411,7 @@ const Chat: React.FC = () => {
     // 被角色拉黑后重新发送好友验证
     const [showFriendVerify, setShowFriendVerify] = useState(false);
 
-    // ── 查手机（双向）──
+    // ── 查岗（双向）──
     // 用户查角色手机：+ 号面板入口，内嵌 CheckPhone（原桌面独立 App）
     const [showCheckPhone, setShowCheckPhone] = useState(false);
     // 相机：用 TA 的手机拍下此刻给 TA 看（+ 号面板「拍张照」）
@@ -412,6 +465,18 @@ const Chat: React.FC = () => {
     // ── 系统命令 modal：用户以系统身份下达最高优先级指令 ──
     const [showSystemCmdModal, setShowSystemCmdModal] = useState(false);
     const [systemCmdInput, setSystemCmdInput] = useState('');
+
+    // ── 锁机：回形针里的独立情侣互动。用户远程锁住 TA 的手机，输入/答题由角色完成。──
+    const [showPhoneLockModal, setShowPhoneLockModal] = useState(false);
+    const [phoneLockPreset, setPhoneLockPreset] = useState<PhoneLockPresetId>('miss');
+    const [phoneLockNote, setPhoneLockNote] = useState('');
+    const [phoneLockCode, setPhoneLockCode] = useState(() => makePhoneLockCode());
+    const [phoneLockAttempt, setPhoneLockAttempt] = useState<PhoneLockAttempt | null>(null);
+    const [phoneLockRunning, setPhoneLockRunning] = useState(false);
+    const [phoneLockPhase, setPhoneLockPhase] = useState<PhoneLockPhase>('setup');
+    const [phoneLockChat, setPhoneLockChat] = useState<PhoneLockChatLine[]>([]);
+    const [phoneLockChatInput, setPhoneLockChatInput] = useState('');
+    const [phoneLockChatBusy, setPhoneLockChatBusy] = useState(false);
 
     // Archive Prompts State
     const [archivePrompts, setArchivePrompts] = useState<{id: string, name: string, content: string}[]>(DEFAULT_ARCHIVE_PROMPTS);
@@ -1541,7 +1606,7 @@ const Chat: React.FC = () => {
         }
     };
 
-    // 查手机·把翻到的内容塞进剧情：从 CheckPhone 里点「拿去对峙」时，关掉查手机浮层并以
+    // 查岗·把翻到的内容塞进剧情：从 CheckPhone 里点「拿去对峙」时，关掉查岗浮层并以
     // 用户口吻把这条证据抛进聊天，触发角色当场解释 / 狡辩 / 评价（content 已在 CheckPhone 侧框好）。
     const handlePhoneConfront = (text: string) => {
         if (!text?.trim()) return;
@@ -1773,10 +1838,10 @@ ${recent || '（你们相处了很久）'}
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isTyping]);
 
-    // 查手机结束：记录已由覆盖层落库进上下文，这里刷新消息并让角色主动发消息收尾
+    // 查岗结束：记录已由覆盖层落库进上下文，这里刷新消息并让角色主动发消息收尾
     const handleCharPhoneCheckEnd = (exitMode: 'consent' | 'questions' | 'forced' | 'finished') => {
         setCharPhoneCheckActive(false);
-        // 查手机刚结束：刷新冷却时间戳，避免下一轮（概率路径或残留指令）立刻又发起查手机。
+        // 查岗刚结束：刷新冷却时间戳，避免下一轮（概率路径或残留指令）立刻又发起查岗。
         try { if (char?.id) localStorage.setItem(`moro_char_phone_check_last_${char.id}`, String(Date.now())); } catch { /* ignore */ }
         void reloadMessages(visibleCountRef.current);
         addToast(exitMode === 'forced' ? `你抢回了手机，${char?.name} 好像有话要说…` : `${char?.name} 把手机还给了你`, 'info');
@@ -1939,7 +2004,7 @@ ${recent || '（你们相处了很久）'}
             setShowOfflineMode(false);
         }
         setShowCheckPhone(false);
-        // 查手机 pending 兜底：系统命令触发时用户不在本聊天页的情况
+        // 查岗 pending 兜底：系统命令触发时用户不在本聊天页的情况
         setCharPhoneCheckActive(consumePhoneCheckPending(activeCharacterId));
     }, [activeCharacterId]);
 
@@ -2127,6 +2192,178 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         triggerAI(messages);
     };
 
+    const runPhoneLock = async () => {
+        if (!char || phoneLockRunning) return;
+        const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
+        const userName = userProfile.name || '我';
+        const passcode = (phoneLockCode.replace(/\D/g, '').slice(0, 6) || makePhoneLockCode());
+        const note = phoneLockNote.trim() || preset.note(userName);
+        const questions = preset.questions(userName);
+        setPhoneLockCode(passcode);
+        setPhoneLockAttempt(null);
+        setPhoneLockRunning(true);
+
+        const fallback: PhoneLockAttempt = {
+            passcodeInput: passcode,
+            answers: questions.map(q => q.includes('晚安') ? '晚安，别担心，我会好好休息。' : q.includes('专注') || q.includes('做完') ? '我先把眼前最该做的事做完。' : `想你，也想被你这样管一下。`),
+            wantsUnlock: true,
+            reply: `你还真把我手机锁了啊……我填完了，能不能放我出来？下次要锁之前，至少让我先看你一眼。`,
+            mood: '有点被逗到，也有点心软',
+        };
+
+        let attempt = fallback;
+        try {
+            const lockApi = resolveAuxApi(auxApiConfig, apiConfig);
+            if (lockApi.baseUrl && lockApi.apiKey) {
+                const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+                const recent = messages.slice(-30).map(m => formatMessageWithTime(m, char.name, userName, formatTime)).join('\n');
+                const prompt = `${context}
+
+### [最近聊天]
+${recent || '（你们还没怎么聊过）'}
+
+### [Task: 情侣锁机互动]
+${userName} 通过聊天回形针里的「锁机」功能，远程锁住了你的手机。这个功能参考异地恋情侣 App 的远程锁屏 / 锁屏小组件：对方发起后，你的屏幕被一张只属于你们的锁屏卡覆盖，你需要在自己那边输入口令或回答问题来尝试解锁。
+
+锁屏模式：${preset.label}（${preset.hint}）
+锁屏留言：${note}
+系统校验口令：${passcode}
+三道锁屏问题：
+${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+请以「${char.name}」的人设，生成你在自己手机锁屏上实际输入的内容。注意：
+- passcodeInput 是你在口令框里输入的数字；你可以猜对，也可以因为闹脾气/不知道/故意撒娇而输错。
+- answers 是你在三个答案框里输入的文字，不是 ${userName} 来写。
+- wantsUnlock 表示你是否正在请求 ${userName} 放行解锁。真正能不能解开，由锁机方 ${userName} 决定。
+- reply 是你提交口令和答案后，在锁屏实时对话框里对 ${userName} 说的一句话（30-120字），要像真实反应，不要复述系统说明。
+
+只输出 JSON，不要 markdown：
+{"passcodeInput":"四到六位数字或空串","answers":["回答1","回答2","回答3"],"wantsUnlock":true或false,"reply":"...","mood":"一句话心情"}`;
+                const res = await fetch(`${lockApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${lockApi.apiKey}` },
+                    body: JSON.stringify({ model: lockApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.92 }),
+                });
+                if (!res.ok) throw new Error(`API ${res.status}`);
+                let raw = (extractContent(await safeResponseJson(res)) || '').trim();
+                raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+                if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
+                const parsed = JSON.parse(raw);
+                attempt = {
+                    passcodeInput: typeof parsed.passcodeInput === 'string' ? parsed.passcodeInput.replace(/[^\d]/g, '').slice(0, 6) : '',
+                    answers: Array.isArray(parsed.answers) ? parsed.answers.slice(0, 3).map((a: any) => String(a || '').slice(0, 120)) : fallback.answers,
+                    wantsUnlock: parsed.wantsUnlock ?? parsed.unlocked ?? true,
+                    reply: typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim().slice(0, 220) : fallback.reply,
+                    mood: typeof parsed.mood === 'string' && parsed.mood.trim() ? parsed.mood.trim().slice(0, 80) : fallback.mood,
+                };
+                while (attempt.answers.length < 3) attempt.answers.push('');
+            }
+        } catch (e) {
+            console.warn('[Chat] phone lock failed, using fallback:', e);
+        }
+
+        setPhoneLockAttempt(attempt);
+        setPhoneLockPhase('review');
+        setPhoneLockChat(prev => [
+            ...prev,
+            { id: `sys-${Date.now()}`, speaker: 'system', text: `${char.name} 已提交口令和三道题，等待你决定是否解锁。`, at: Date.now() },
+            { id: `char-${Date.now()}`, speaker: 'char', text: attempt.reply, at: Date.now() },
+        ]);
+        setPhoneLockRunning(false);
+    };
+
+    const sendPhoneLockChat = async () => {
+        if (!char || phoneLockChatBusy) return;
+        const text = phoneLockChatInput.trim();
+        if (!text) return;
+        const userName = userProfile.name || '我';
+        const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
+        const note = phoneLockNote.trim() || preset.note(userName);
+        const questions = preset.questions(userName);
+        const nextUserLine: PhoneLockChatLine = { id: `user-${Date.now()}`, speaker: 'user', text, at: Date.now() };
+        const history = [...phoneLockChat, nextUserLine];
+        setPhoneLockChat(history);
+        setPhoneLockChatInput('');
+        setPhoneLockChatBusy(true);
+
+        let reply = phoneLockPhase === 'review'
+            ? '我还在锁屏这里等你决定呢。你要继续问也行，但别真把我晾太久。'
+            : '我看见了。你先别急着关，我在这边听你说。';
+        try {
+            const chatApi = resolveAuxApi(auxApiConfig, apiConfig);
+            if (chatApi.baseUrl && chatApi.apiKey) {
+                const context = ContextBuilder.buildCoreContext(char, userProfile, true);
+                const prompt = `${context}
+
+### [Task: 锁机实时对话]
+${userName} 正在通过「锁机」远程锁住你的手机。你在自己的锁屏界面里，能看到锁屏留言、口令框、三道题和一块实时对话框。
+
+锁屏模式：${preset.label}
+锁屏留言：${note}
+口令：${phoneLockCode}
+三道题：
+${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+${phoneLockAttempt ? `你刚才提交的口令：${phoneLockAttempt.passcodeInput || '（没输）'}\n你刚才写的答案：${phoneLockAttempt.answers.map((a, i) => `${i + 1}. ${a || '（空）'}`).join(' / ')}\n现在状态：等待 ${userName} 决定是否解锁。` : '你还没提交口令和答案。'}
+
+### [锁机对话框历史]
+${history.map(line => `${line.speaker === 'user' ? userName : line.speaker === 'char' ? char.name : '系统'}：${line.text}`).join('\n')}
+
+请以「${char.name}」第一人称回复锁机对话框里的最新一句。只输出一句自然回复，不要旁白，不要 JSON，30-100字。`;
+                const res = await fetch(`${chatApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${chatApi.apiKey}` },
+                    body: JSON.stringify({ model: chatApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.9 }),
+                });
+                if (!res.ok) throw new Error(`API ${res.status}`);
+                reply = (extractContent(await safeResponseJson(res)) || '').replace(/```/g, '').trim().slice(0, 180) || reply;
+            }
+        } catch (e) {
+            console.warn('[Chat] phone lock chat failed:', e);
+        } finally {
+            setPhoneLockChat(prev => [...prev, { id: `char-${Date.now()}`, speaker: 'char', text: reply, at: Date.now() }]);
+            setPhoneLockChatBusy(false);
+        }
+    };
+
+    const decidePhoneLock = async (allow: boolean) => {
+        if (!char || !phoneLockAttempt || phoneLockRunning) return;
+        const userName = userProfile.name || '我';
+        const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
+        const note = phoneLockNote.trim() || preset.note(userName);
+        const questions = preset.questions(userName);
+        const decisionText = allow ? `${userName} 允许 ${char.name} 解锁。` : `${userName} 选择继续锁住 ${char.name} 的手机。`;
+        const finalReply = allow
+            ? (phoneLockAttempt.reply || '终于放我出来了。')
+            : '你还不放我出去啊……那你至少继续陪我说话，别把我一个人锁在这里。';
+        setPhoneLockPhase(allow ? 'unlocked' : 'denied');
+        setPhoneLockChat(prev => [...prev, { id: `decision-${Date.now()}`, speaker: 'system', text: decisionText, at: Date.now() }]);
+        try {
+            const transcript = phoneLockChat
+                .map(line => `${line.speaker === 'user' ? userName : line.speaker === 'char' ? char.name : '系统'}：${line.text}`)
+                .join('\n');
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'system',
+                type: 'text',
+                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n${char.name} 在锁屏上输入口令：「${phoneLockAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${phoneLockAttempt.answers[i] || '（空）'}`).join('\n')}\n锁机实时对话：\n${transcript || '（没有额外对话）'}\n锁机方决定：${allow ? '允许解锁' : '继续锁住'}。\n${char.name} 当时的心情：${phoneLockAttempt.mood}`,
+                metadata: { phoneLock: true, phoneLockPreset, phoneLockUnlocked: allow },
+            } as any);
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'assistant',
+                type: 'text',
+                content: finalReply,
+                metadata: { phoneLockReply: true, phoneLockUnlocked: allow },
+            } as any);
+            await reloadMessages(visibleCountRef.current);
+            addToast(allow ? `你放行了，${char.name} 解锁成功` : `你继续锁住了 ${char.name}`, allow ? 'success' : 'info');
+        } catch (e) {
+            console.warn('[Chat] save phone lock decision failed:', e);
+            addToast('锁机决定保存失败', 'error');
+        }
+    };
+
     // 离线自主生活·回看横幅：进入角色时算「未看过的离线事件」数；并实时接收补齐事件。
     useEffect(() => {
         if (!activeCharacterId) { setLifeRecapBanner(0); return; }
@@ -2207,6 +2444,17 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 break;
             }
             case 'check-phone': setShowPanel('none'); setShowCheckPhone(true); break;
+            case 'phone-lock':
+                setShowPanel('none');
+                setPhoneLockAttempt(null);
+                setPhoneLockRunning(false);
+                setPhoneLockPhase('setup');
+                setPhoneLockChat([]);
+                setPhoneLockChatInput('');
+                setPhoneLockChatBusy(false);
+                setPhoneLockCode(prev => prev || makePhoneLockCode());
+                setShowPhoneLockModal(true);
+                break;
             case 'camera': setShowPanel('none'); setShowCamera(true); break;
             case 'recenter': setShowPanel('none'); handleRecenter(); break;
             case 'location': setShowPanel('none'); setShowLocationModal(true); break;
@@ -4294,6 +4542,197 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 </div>
              )}
 
+             {/* 锁机：回形针独立情侣互动。用户发起锁屏，角色在 TA 自己手机上输入口令/答案。 */}
+             {showPhoneLockModal && char && (() => {
+                const userName = userProfile.name || '我';
+                const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
+                const questions = preset.questions(userName);
+                const notePreview = phoneLockNote.trim() || preset.note(userName);
+                return (
+                    <Modal
+                        isOpen={showPhoneLockModal}
+                        title="锁机"
+                        en="Remote Lock"
+                        icon={<span className="text-[18px] leading-none">LOCK</span>}
+                        maxWidth={390}
+                        onClose={() => { if (!phoneLockRunning) setShowPhoneLockModal(false); }}
+                        footer={<>
+                            <ScrapBtn variant="paper" onClick={() => setShowPhoneLockModal(false)} disabled={phoneLockRunning}>收起</ScrapBtn>
+                            {phoneLockAttempt && phoneLockPhase !== 'unlocked' ? (
+                                <>
+                                    <ScrapBtn variant="danger" onClick={() => { void decidePhoneLock(false); }} disabled={phoneLockRunning}>继续锁住</ScrapBtn>
+                                    <ScrapBtn onClick={() => { void decidePhoneLock(true); }} disabled={phoneLockRunning}>允许解锁</ScrapBtn>
+                                </>
+                            ) : (
+                                <ScrapBtn onClick={() => { void runPhoneLock(); }} disabled={phoneLockRunning || phoneLockPhase === 'unlocked'} icon={<span className="text-[12px]">↗</span>}>
+                                    {phoneLockRunning ? `${char.name} 正在输入...` : phoneLockPhase === 'unlocked' ? '已解锁' : '锁住 TA'}
+                                </ScrapBtn>
+                            )}
+                        </>}
+                    >
+                        <div className="space-y-4">
+                            <div className="rounded-[28px] overflow-hidden border" style={{ background: '#1f140b', borderColor: 'rgba(255,255,255,0.12)', color: '#fff7ec', boxShadow: '0 18px 38px -26px rgba(0,0,0,0.75)' }}>
+                                <div className="px-5 pt-6 pb-5 text-center">
+                                    <div className="mx-auto w-[74px] h-[74px] rounded-[24px] bg-white flex items-center justify-center mb-4 shadow-lg overflow-hidden">
+                                        <img src={char.avatar} alt="" className="w-full h-full object-cover" />
+                                    </div>
+                                    <div className="text-[28px] leading-tight font-black">{char.name} 的手机</div>
+                                    <div className="mt-2 text-[18px] font-black opacity-80">{phoneLockAttempt ? 1 : 0}</div>
+                                    <div className="mt-2 text-[11px] opacity-65 tracking-[0.18em] uppercase">Couple Remote Lock</div>
+                                    <div className="mt-4 inline-flex px-3 py-1.5 rounded-full text-[12px] font-black" style={{ background: '#d94b65', color: '#fff' }}>
+                                        {phoneLockPhase === 'unlocked'
+                                            ? '锁机方已允许解锁'
+                                            : phoneLockPhase === 'denied'
+                                              ? '锁机方继续锁住'
+                                              : phoneLockAttempt?.passcodeInput && phoneLockAttempt.passcodeInput !== phoneLockCode
+                                                ? '有 1 次口令输错痕迹'
+                                                : phoneLockRunning ? 'TA 正在尝试解锁' : phoneLockAttempt ? '等待锁机方审核' : '等待 TA 输入'}
+                                    </div>
+                                </div>
+                                <div className="mx-4 mb-4 rounded-[26px] border p-4 space-y-3" style={{ borderColor: 'rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.12)' }}>
+                                    <div>
+                                        <div className="text-[11px] font-black opacity-70 mb-2">锁屏留言</div>
+                                        <div className="text-[13px] leading-relaxed">{notePreview}</div>
+                                    </div>
+                                    <div className="h-px" style={{ background: 'rgba(255,255,255,0.12)' }} />
+                                    <div>
+                                        <div className="text-[11px] font-black opacity-70 mb-2">口令框</div>
+                                        <div className="flex gap-2">
+                                            <div className="flex-1 px-3 py-3 rounded-2xl bg-white text-slate-900 text-[14px] font-black tracking-[0.18em]">
+                                                {phoneLockAttempt ? (phoneLockAttempt.passcodeInput || '未输入') : phoneLockRunning ? '输入中...' : '待输入'}
+                                            </div>
+                                            <div className="px-4 py-3 rounded-2xl bg-white text-slate-900 text-[13px] font-black">
+                                                {phoneLockPhase === 'unlocked' ? '已解' : '解锁'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="h-px" style={{ background: 'rgba(255,255,255,0.12)' }} />
+                                    <div>
+                                        <div className="text-[11px] font-black opacity-70 mb-2">回答三道题</div>
+                                        <div className="space-y-2">
+                                            {questions.map((q, i) => (
+                                                <div key={i}>
+                                                    <div className="text-[12px] opacity-85 mb-1">{i + 1}. {q}</div>
+                                                    <div className="px-3 py-2.5 rounded-2xl bg-white text-slate-900 text-[12px] min-h-[38px] leading-relaxed">
+                                                        {phoneLockAttempt ? (phoneLockAttempt.answers[i] || '（空）') : phoneLockRunning ? 'TA 正在写...' : '待 TA 输入'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <div className="w-full py-3 rounded-2xl bg-white text-slate-900 text-[13px] font-black text-center">
+                                                {phoneLockPhase === 'unlocked'
+                                                    ? '已允许解锁'
+                                                    : phoneLockAttempt
+                                                        ? '交卷已提交 · 等待审核'
+                                                        : phoneLockRunning ? 'TA 正在交卷...' : '交卷解锁'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-[22px] p-3 space-y-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
+                                <div className="flex items-center justify-between">
+                                    <div className="text-[12px] font-black" style={{ color: INK }}>实时对话框</div>
+                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{phoneLockChatBusy ? `${char.name} 正在回复...` : '锁屏内通信'}</div>
+                                </div>
+                                <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5 pr-1">
+                                    {phoneLockChat.length === 0 && (
+                                        <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                            锁住后，TA 可以在这里跟你说话。TA 提交答案后，由你决定是否解锁。
+                                        </div>
+                                    )}
+                                    {phoneLockChat.map(line => (
+                                        <div key={line.id} className={`flex ${line.speaker === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div
+                                                className="max-w-[82%] px-3 py-2 rounded-2xl text-[12px] leading-relaxed"
+                                                style={line.speaker === 'system'
+                                                    ? { background: '#f5edf1', color: INK_SOFT, border: '1px dashed #eed6df' }
+                                                    : line.speaker === 'user'
+                                                        ? { background: '#d8a5b7', color: '#fff' }
+                                                        : { background: '#fff', color: INK, border: '1px solid #eed6df' }}
+                                            >
+                                                {line.text}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        value={phoneLockChatInput}
+                                        onChange={e => setPhoneLockChatInput(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                void sendPhoneLockChat();
+                                            }
+                                        }}
+                                        placeholder={phoneLockAttempt ? '跟 TA 说一句...' : '先锁住 TA，再开始对话'}
+                                        disabled={!phoneLockAttempt || phoneLockChatBusy || phoneLockPhase === 'unlocked'}
+                                        className="flex-1 min-w-0 px-3 py-2 rounded-2xl text-[12px] outline-none disabled:opacity-50"
+                                        style={{ background: '#fff', border: '1px solid #eed6df', color: INK }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => { void sendPhoneLockChat(); }}
+                                        disabled={!phoneLockAttempt || !phoneLockChatInput.trim() || phoneLockChatBusy || phoneLockPhase === 'unlocked'}
+                                        className="shrink-0 px-3 rounded-2xl text-[12px] font-black active:scale-95 disabled:opacity-40"
+                                        style={{ background: '#5a3140', color: '#fff' }}
+                                    >
+                                        发送
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex flex-wrap gap-2">
+                                    {(Object.entries(PHONE_LOCK_PRESETS) as [PhoneLockPresetId, typeof PHONE_LOCK_PRESETS[PhoneLockPresetId]][]).map(([id, p]) => (
+                                        <ScrapChip key={id} selected={phoneLockPreset === id} onClick={() => { setPhoneLockPreset(id); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}>
+                                            {p.label}
+                                        </ScrapChip>
+                                    ))}
+                                </div>
+                                <ScrapNote>{preset.hint}。像异地恋情侣 App 的远程锁屏小组件：你发起锁屏，TA 在自己的手机上输入。</ScrapNote>
+                            </div>
+
+                            <div className="space-y-2">
+                                <ScrapTextarea
+                                    rows={3}
+                                    value={phoneLockNote}
+                                    onChange={e => { setPhoneLockNote(e.target.value); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
+                                    placeholder={preset.note(userName)}
+                                />
+                                <div className="flex gap-2">
+                                    <ScrapInput
+                                        value={phoneLockCode}
+                                        onChange={e => { setPhoneLockCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
+                                        inputMode="numeric"
+                                        placeholder="口令"
+                                        center
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => { setPhoneLockCode(makePhoneLockCode()); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
+                                        className="shrink-0 px-3 rounded-2xl text-[12px] font-black active:scale-95"
+                                        style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK }}
+                                    >
+                                        换口令
+                                    </button>
+                                </div>
+                                {phoneLockAttempt && (
+                                    <div className="rounded-2xl px-3 py-2.5 text-[12px] leading-relaxed" style={{ background: phoneLockPhase === 'unlocked' ? '#f0fff6' : '#fff5f7', border: `1px solid ${phoneLockPhase === 'unlocked' ? '#bfe9cf' : '#f1c6d1'}`, color: INK }}>
+                                        {phoneLockPhase === 'unlocked'
+                                            ? `${char.name} 已经被你放行。`
+                                            : phoneLockPhase === 'denied'
+                                              ? `${char.name} 还被你锁着。`
+                                              : `${char.name} 正在等你审核。`}{phoneLockAttempt.wantsUnlock ? 'TA 想解锁。' : 'TA 暂时没有服软求解锁。'} TA 说：{phoneLockAttempt.reply}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </Modal>
+                );
+             })()}
+
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
              <JournalSheet
                 open={showSystemCmdModal} title="系统指令" en="System Command" sub="发送一条最高优先级的聊天指令"
@@ -5659,7 +6098,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 </div>
             )}
 
-            {/* 查手机（用户 → 角色）：+ 号面板入口，内嵌原 CheckPhone */}
+            {/* 查岗（用户 → 角色）：+ 号面板入口，内嵌原 CheckPhone */}
             {showCheckPhone && char && (
                 <div className="absolute inset-0 z-[410]">
                     <CheckPhone initialCharId={char.id} onExit={() => setShowCheckPhone(false)} onConfront={handlePhoneConfront} />
@@ -5675,7 +6114,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             )}
 
-            {/* 查手机（角色 → 用户）：界面变成用户桌面，角色自己翻看 + 想法框 */}
+            {/* 查岗（角色 → 用户）：界面变成用户桌面，角色自己翻看 + 想法框 */}
             {charPhoneCheckActive && char && (
                 <CharPhoneCheckOverlay
                     char={char}

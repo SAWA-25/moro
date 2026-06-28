@@ -4350,7 +4350,7 @@ ${attachedImagesNote}
                             <div className="drawer-tag col-span-2"><span>群 里 一 起</span></div>
                             {strip(<PhoneOutgoing size={20} weight="bold" />, '拨过去', '发起群聊电话', () => void startGroupVoiceCall())}
                             {strip(<HandHeart size={20} weight="bold" />, '赴个约', '单独线下窗口', () => { setShowActions(false); setShowGroupOfflineMode(true); })}
-                            {strip(<Detective size={20} weight="bold" />, '成员手机', '选择一位群友查看手机', () => openMemberPicker('check-phone', '看谁的手机？'))}
+                            {strip(<Detective size={20} weight="bold" />, '成员查岗', '选择一位群友查看手机', () => openMemberPicker('check-phone', '查谁的岗？'))}
                             {strip(<EnvelopeOpen size={20} weight="bold" />, '成员主动消息', '选择一位群友设置主动消息', () => openMemberPicker('proactive', '设置谁主动消息？'))}
                             {strip(<Scroll size={20} weight="bold" />, '成员日常', '选择一位群友看离线日常', () => openMemberPicker('life-recap', '看谁的日常？'))}
 

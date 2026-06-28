@@ -1312,14 +1312,14 @@ const MessageItem = React.memo(({
             );
         }
 
-        // 长篇系统叙述（如「查手机记录」）：胶囊药丸（rounded-full + 单行）撑不下整段文字，
+        // 长篇系统叙述（如「查岗记录」）：胶囊药丸（rounded-full + 单行）撑不下整段文字，
         // 会溢出白框。这类内容改用左对齐的可读卡片，保留换行、自动换行、限定宽度。
-        // 阈值放在「胶囊单行能稳稳容下」附近：超过约 24 字 / 含换行 / 查手机长记录都走可读卡片，
+        // 阈值放在「胶囊单行能稳稳容下」附近：超过约 24 字 / 含换行 / 查岗长记录都走可读卡片，
         // 避免被胶囊截断丢字（短通知仍是居中小药丸）。
         const isLongNarration = !!m.metadata?.charPhoneCheck || displayText.length > 24 || displayText.includes('\n');
         if (isLongNarration) {
             const tagMatch = displayText.match(/^\[([^\]]+)\]\s*/);
-            const tag = m.metadata?.charPhoneCheck ? '查手机记录' : (tagMatch ? tagMatch[1] : '系统记录');
+            const tag = m.metadata?.charPhoneCheck ? '查岗记录' : (tagMatch ? tagMatch[1] : '系统记录');
             const body = tagMatch ? displayText.slice(tagMatch[0].length) : displayText;
             return (
                 <div className={`flex items-start w-full ${selectionMode ? 'pl-8' : ''} animate-fade-in relative transition-[padding] duration-300`}>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneProfile } from '../types';
+import { CharacterProfile, PhoneEvidence, PhoneCustomApp, PhoneProfile, SocialPost } from '../types';
 import { ContextBuilder } from '../utils/context';
 import Modal from '../components/os/Modal';
 import { safeResponseJson } from '../utils/safeApi';
@@ -95,7 +95,7 @@ interface CheckPhoneProps {
 
 const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfront }) => {
     const { closeApp, characters, activeCharacterId, updateCharacter, apiConfig, auxApiConfig, addToast, userProfile } = useOS();
-    // 查手机（生成 TA 的手机内容）属「聊天以外」的功能：走副 API（未配置时回退主 API）
+    // 查岗（生成 TA 的手机内容）属「聊天以外」的功能：走副 API（未配置时回退主 API）
     const auxApi = { ...apiConfig, ...resolveAuxApi(auxApiConfig, apiConfig) };
     const [view, setView] = useState<'select' | 'phone'>(initialCharId ? 'phone' : 'select');
     // activeAppId: 'home' | 'chat_detail' | 'app_id'
@@ -115,6 +115,10 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const [newAppIcon, setNewAppIcon] = useState('App');
     const [newAppColor, setNewAppColor] = useState('#3b82f6');
     const [newAppPrompt, setNewAppPrompt] = useState('');
+    const [chatReplyText, setChatReplyText] = useState('');
+    const [showMomentComposer, setShowMomentComposer] = useState(false);
+    const [momentText, setMomentText] = useState('');
+    const [intrusionNotice, setIntrusionNotice] = useState<{ title: string; body: string; shouldExit?: boolean } | null>(null);
 
     // Debug Toggle
     const [showDebug, setShowDebug] = useState(false);
@@ -246,6 +250,152 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         setNewAppName('');
         setNewAppPrompt('');
         addToast(`已安装 ${newAppName}`, 'success');
+    };
+
+    const awarenessFallback = (action: string): { caught: boolean; shouldEnd: boolean; reply: string } => {
+        if (!targetChar) return { caught: false, shouldEnd: false, reply: '' };
+        const profileText = `${targetChar.name} ${targetChar.description || ''} ${targetChar.systemPrompt || ''}`.toLowerCase();
+        let score = 0.32;
+        if (/(敏感|警惕|多疑|占有|控制|侦探|杀手|黑客|安全|边界|洁癖|细节|反侦察)/i.test(profileText)) score += 0.28;
+        if (/(迟钝|大条|粗心|天然|信任|温柔|随和)/i.test(profileText)) score -= 0.16;
+        if (action.includes('发动态')) score += 0.12;
+        const caught = Math.random() < Math.max(0.08, Math.min(0.82, score));
+        return {
+            caught,
+            shouldEnd: caught && Math.random() < 0.68,
+            reply: caught
+                ? `你是不是动了我的手机？这个痕迹太明显了。`
+                : `（暂时没有察觉。）`,
+        };
+    };
+
+    const judgeIntrusion = async (action: string, detail: string) => {
+        if (!targetChar) return;
+        let result = awarenessFallback(action);
+        if (auxApi.apiKey && auxApi.baseUrl) {
+            try {
+                const context = ContextBuilder.buildCoreContext(targetChar, userProfile, true);
+                const prompt = `${context}
+
+### [Task: 角色是否察觉手机被动过]
+${userProfile.name || '用户'} 正在查岗并翻看「${targetChar.name}」的手机，刚刚做了一个越界操作：
+- 操作：${action}
+- 内容：${detail}
+
+请按「${targetChar.name}」的人设、警觉度、占有欲、边界感、对 ${userProfile.name || '用户'} 的信任程度，判断 TA 是否会察觉，以及是否会立刻结束这次查岗。
+只输出 JSON，不要 markdown：
+{"caught": true或false, "shouldEnd": true或false, "reply": "如果察觉，TA 此刻说的一句话；没察觉则写一句很短的旁白"}`;
+                const res = await fetch(`${auxApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auxApi.apiKey}` },
+                    body: JSON.stringify({ model: auxApi.model, messages: [{ role: 'user', content: prompt }], temperature: 0.85 }),
+                });
+                if (res.ok) {
+                    let raw = (await safeResponseJson(res)).choices?.[0]?.message?.content || '';
+                    raw = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    const s = raw.indexOf('{'); const e = raw.lastIndexOf('}');
+                    if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
+                    const obj = JSON.parse(raw);
+                    result = {
+                        caught: !!obj.caught,
+                        shouldEnd: !!obj.shouldEnd,
+                        reply: typeof obj.reply === 'string' && obj.reply.trim() ? obj.reply.trim().slice(0, 120) : result.reply,
+                    };
+                }
+            } catch {
+                // fallback above is good enough for offline / parse failures
+            }
+        }
+
+        if (result.caught) {
+            await DB.saveMessage({
+                charId: targetChar.id,
+                role: 'system',
+                type: 'text',
+                content: `[查岗察觉] ${targetChar.name} 察觉到 ${userProfile.name || '用户'} 在查岗时动了 TA 的手机：${action}（${detail}）。${result.shouldEnd ? 'TA 决定立刻结束这次查岗。' : 'TA 暂时没有结束，但已经记住了。'}TA 当时说：「${result.reply}」`,
+                metadata: { phoneIntrusionCaught: true },
+            } as any);
+            setIntrusionNotice({ title: `${targetChar.name} 察觉了`, body: result.reply, shouldExit: result.shouldEnd });
+        } else {
+            setIntrusionNotice({ title: '暂时没被发现', body: result.reply || `${targetChar.name} 还没察觉手机被动过。` });
+        }
+    };
+
+    const handleSendAsCharacter = async () => {
+        if (!targetChar || !selectedChatRecord) return;
+        const text = chatReplyText.trim();
+        if (!text) return;
+        const updatedRecord = {
+            ...selectedChatRecord,
+            detail: `${selectedChatRecord.detail.trim()}\n我: ${text}`,
+            timestamp: Date.now(),
+        };
+        setSelectedChatRecord(updatedRecord);
+        setChatReplyText('');
+        const allRecords = targetChar.phoneState?.records || [];
+        const updatedRecords = allRecords.map(r => r.id === updatedRecord.id ? updatedRecord : r);
+        await updateCharacter(targetChar.id, {
+            phoneState: { ...targetChar.phoneState, records: updatedRecords },
+        });
+        await DB.saveMessage({
+            charId: targetChar.id,
+            role: 'system',
+            type: 'text',
+            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，冒用 ${targetChar.name} 的名义给「${selectedChatRecord.title}」发了一条消息：「${text}」。这件事可能会被 ${targetChar.name} 察觉。`,
+            metadata: { userSentAsCharacter: true },
+        } as any);
+        await judgeIntrusion('冒用 TA 的名义给联系人发消息', `给「${selectedChatRecord.title}」发：「${text}」`);
+    };
+
+    const handlePostMomentAsCharacter = async () => {
+        if (!targetChar) return;
+        const text = momentText.trim();
+        if (!text) return;
+        const post: SocialPost = {
+            id: `phone-check-moment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            authorName: targetChar.name,
+            authorAvatar: targetChar.avatar,
+            title: '',
+            content: text,
+            images: [],
+            likes: 0,
+            isCollected: false,
+            isLiked: false,
+            comments: [],
+            timestamp: Date.now(),
+            tags: ['查岗代发'],
+            authorType: 'character',
+            authorCharId: targetChar.id,
+            likedBy: [],
+            repostOf: null,
+            visibility: 'public',
+        };
+        await DB.saveSocialPost(post);
+        const newRecord: PhoneEvidence = {
+            id: `rec-${Date.now()}-${Math.random()}`,
+            type: 'social',
+            title: '刚刚 · 此刻',
+            detail: text,
+            timestamp: Date.now(),
+            value: '已发布',
+        };
+        await updateCharacter(targetChar.id, {
+            phoneState: {
+                ...targetChar.phoneState,
+                records: [...(targetChar.phoneState?.records || []), newRecord],
+            },
+        });
+        await DB.saveMessage({
+            charId: targetChar.id,
+            role: 'system',
+            type: 'text',
+            content: `[查岗记录] ${userProfile.name || '用户'} 翻看 ${targetChar.name} 的手机时，用 ${targetChar.name} 的此刻发布了一条动态：「${text}」。这件事可能会被 ${targetChar.name} 察觉。`,
+            metadata: { userPostedMomentAsCharacter: true, momentPostId: post.id },
+        } as any);
+        setMomentText('');
+        setShowMomentComposer(false);
+        addToast('已用 TA 的此刻发出', 'success');
+        await judgeIntrusion('用 TA 的此刻发动态', text);
     };
 
     // Calculate Time Gap - Duplicated logic from other apps for consistent experience
@@ -629,24 +779,44 @@ Format:
             </div>
 
             {/* 底部按钮 - 关键修复：移除复杂的 env() 计算，使用固定 padding */}
-            <div className="shrink-0 w-full p-4 bg-[#f7f7f7] border-t border-gray-200 flex gap-2">
-                <button
-                    onClick={handleContinueChat}
-                    disabled={isLoading}
-                    className="flex-1 py-3 bg-white border border-gray-300 rounded-xl text-sm font-bold text-slate-600 shadow-sm active:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-                >
-                    {isLoading ? '对方正在输入...' : '偷看后续 / 拱火'}
-                </button>
+            <div className="shrink-0 w-full p-4 bg-[#f7f7f7] border-t border-gray-200 space-y-2">
                 {onConfront && (
-                    <button
-                        onClick={() => confrontWith(selectedChatRecord)}
-                        disabled={isLoading}
-                        className="shrink-0 px-4 py-3 rounded-xl text-sm font-bold text-white shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"
-                        style={{ background: '#e26b84' }}
-                    >
-                        <Quotes size={14} weight="fill" /> 拿去对峙
-                    </button>
+                    <div className="flex gap-2">
+                        <input
+                            value={chatReplyText}
+                            onChange={e => setChatReplyText(e.target.value)}
+                            placeholder={`冒用 ${targetChar.name} 的名义发一条...`}
+                            className="flex-1 min-w-0 px-3 py-2.5 bg-white border border-gray-300 rounded-xl text-[12px] outline-none focus:border-emerald-300"
+                            disabled={isLoading}
+                        />
+                        <button
+                            onClick={handleSendAsCharacter}
+                            disabled={isLoading || !chatReplyText.trim()}
+                            className="shrink-0 px-3 py-2.5 rounded-xl text-[12px] font-bold text-white bg-emerald-500 shadow-sm active:scale-95 transition-transform disabled:opacity-45"
+                        >
+                            代发
+                        </button>
+                    </div>
                 )}
+                <div className="flex gap-2">
+                    <button
+                        onClick={handleContinueChat}
+                        disabled={isLoading}
+                        className="flex-1 py-3 bg-white border border-gray-300 rounded-xl text-sm font-bold text-slate-600 shadow-sm active:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? '对方正在输入...' : '偷看后续 / 拱火'}
+                    </button>
+                    {onConfront && (
+                        <button
+                            onClick={() => confrontWith(selectedChatRecord)}
+                            disabled={isLoading}
+                            className="shrink-0 px-4 py-3 rounded-xl text-sm font-bold text-white shadow-sm active:scale-95 transition-transform flex items-center justify-center gap-1.5"
+                            style={{ background: '#e26b84' }}
+                        >
+                            <Quotes size={14} weight="fill" /> 拿去对峙
+                        </button>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -702,7 +872,15 @@ Format:
 
         return (
             <div className="absolute inset-0 w-full h-full flex flex-col bg-slate-50 z-10">
-                {renderHeader(appName, () => setActiveAppId('home'))}
+                {renderHeader(appName, () => setActiveAppId('home'), appId === 'social' && onConfront ? (
+                    <button
+                        onClick={() => setShowMomentComposer(true)}
+                        className="px-2.5 py-1.5 rounded-full text-[11px] font-bold text-white active:scale-95 transition-transform"
+                        style={{ background: tint }}
+                    >
+                        代发
+                    </button>
+                ) : undefined)}
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar pb-24 overscroll-contain">
                     {list.length === 0 && (
@@ -912,6 +1090,49 @@ Format:
                     return null;
                 })()
             )}
+
+            <Modal
+                isOpen={showMomentComposer}
+                title={`用 ${targetChar?.name || 'TA'} 的此刻发动态`}
+                onClose={() => setShowMomentComposer(false)}
+                footer={
+                    <button onClick={handlePostMomentAsCharacter} disabled={!momentText.trim()} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70 disabled:opacity-40">
+                        发布到此刻
+                    </button>
+                }
+            >
+                <textarea
+                    value={momentText}
+                    onChange={e => setMomentText(e.target.value)}
+                    placeholder="这条动态会以 TA 的名义公开发出。"
+                    className="w-full h-28 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm resize-none outline-none focus:border-pink-300"
+                />
+                <p className="text-[10px] text-slate-400 mt-2">越界操作可能被 TA 察觉，敏感、警惕或占有欲强的角色更容易当场结束查岗。</p>
+            </Modal>
+
+            <Modal
+                isOpen={!!intrusionNotice}
+                title={intrusionNotice?.title || ''}
+                onClose={() => {
+                    const shouldExit = intrusionNotice?.shouldExit;
+                    setIntrusionNotice(null);
+                    if (shouldExit) handleExitPhone();
+                }}
+                footer={
+                    <button
+                        onClick={() => {
+                            const shouldExit = intrusionNotice?.shouldExit;
+                            setIntrusionNotice(null);
+                            if (shouldExit) handleExitPhone();
+                        }}
+                        className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70"
+                    >
+                        {intrusionNotice?.shouldExit ? '结束查岗' : '知道了'}
+                    </button>
+                }
+            >
+                <div className="text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{intrusionNotice?.body}</div>
+            </Modal>
 
             {/* Create App Modal */}
             <Modal isOpen={showCreateModal} title="安装自定义 App" onClose={() => setShowCreateModal(false)} footer={<button onClick={handleCreateCustomApp} className="w-full py-3 bg-[#2b2933] text-white font-bold rounded-2xl shadow-lg shadow-slate-300/70">安装到桌面</button>}>

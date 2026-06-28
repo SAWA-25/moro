@@ -829,7 +829,7 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                         />
                     </Entry>
 
-                    <Entry mark="☘" title="TA 的城市" note="给 TA 一座城：真实城市会接入真实天气，本地小吃/外卖也按真实情况来（查手机能看到 TA 点的真实外卖）；架空城市可挑个原型，按虚拟程度借用真实风物。">
+                    <Entry mark="☘" title="TA 的城市" note="给 TA 一座城：真实城市会接入真实天气，本地小吃/外卖也按真实情况来（查岗能看到 TA 点的真实外卖）；架空城市可挑个原型，按虚拟程度借用真实风物。">
                         {(() => {
                             const city = char.cityConfig;
                             const mode = city?.mode;
@@ -981,8 +981,8 @@ const ConvoSettingsPanel: React.FC<ConvoSettingsPanelProps> = (props) => {
                     </Entry>
 
                     <Entry
-                        mark="☘" title="把手机借给 TA 玩"
-                        note="TA 会不定期主动拿走你的手机翻一翻（屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人）。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢。关着的话 TA 不会动你手机。"
+                        mark="☘" title="允许 TA 查岗"
+                        note="TA 会不定期主动拿走你的手机翻一翻（屏幕会变成你的桌面，TA 一边翻一边冒想法，甚至替你回消息、拉黑别人、锁住手机）。想中途拿回来，要么 TA 点头，要么答对 TA 出的三道题，要么硬抢；被锁住时还可以向 TA 要口令。关着的话 TA 不会动你手机。"
                         side={<CandyToggle on={!!cs.allowPhoneBrowse} onToggle={() => updateConvo({ allowPhoneBrowse: !cs.allowPhoneBrowse })} />}
                     />
 

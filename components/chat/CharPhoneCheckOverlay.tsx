@@ -12,7 +12,7 @@ import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 import { isDevDebugAvailable } from '../../utils/devDebug';
 
 /**
- * 角色查用户手机（反向查手机）。
+ * 角色查岗用户手机（反向查岗）。
  *
  * 会话设置「允许 char 看手机」开启时，角色会在聊天间隙主动拿走用户的手机翻看：
  * 界面变成用户的桌面，由 AI 生成的"浏览脚本"驱动角色一步步点开 App（仿真人查
@@ -75,7 +75,7 @@ interface LocationSnap {
 }
 
 interface CharPhoneCheckOverlayProps {
-    char: CharacterProfile;            // 正在查手机的角色
+    char: CharacterProfile;            // 正在查岗的角色
     userProfile: UserProfile;
     characters: CharacterProfile[];    // 全部联系人（含 char 自己）
     apiConfig: { baseUrl: string; apiKey: string; model: string };
@@ -651,7 +651,7 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                     : '（没有明确地区线索，只能从聊天语境判断）';
 
                 const prompt = `### 任务
-你在扮演角色「${char.name}」。此刻 TA 拿到了 ${userProfile.name}（TA 的聊天对象/亲密的人）的手机，正在翻看。请按 TA 的人设生成一份"查手机浏览脚本"。
+你在扮演角色「${char.name}」。此刻 TA 拿到了 ${userProfile.name}（TA 的聊天对象/亲密的人）的手机，正在查岗翻看。请按 TA 的人设生成一份"查岗浏览脚本"。
 
 ### 你的人设
 ${personaBlock}
@@ -724,7 +724,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                 setPhase('browsing');
             } catch (e: any) {
                 if (cancelled) return;
-                addToast(`查手机启动失败：${e?.message || e}`, 'error');
+                addToast(`查岗启动失败：${e?.message || e}`, 'error');
                 onEnd('forced');
             }
         })();
@@ -823,7 +823,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
     }, [stepIdx, phase, currentStep]);
 
     // 「点开 App」动画：每步开始时先回到桌面、高亮目标图标 TAP_MS 后再进入页面，
-    // 仿照真人查手机（参考桌面远程画面）逐个点开 App 的节奏
+    // 仿照真人查岗（参考桌面远程画面）逐个点开 App 的节奏
     useEffect(() => {
         if (phase !== 'browsing' || !currentStep || currentStep.app === 'home') { setOpening(null); return; }
         // 连续两步都在聊天 App 内（chat-list → chat-thread）不回桌面，直接页内切换
@@ -867,7 +867,7 @@ endHint：一句话，描述 ${char.name} 翻完手机后的整体心情（用�
                 charId: char.id,
                 role: 'system',
                 type: 'text',
-                content: `[查手机记录] 刚才 ${char.name} 拿走了 ${userProfile.name} 的手机翻看。\n${char.name} 的浏览过程与内心想法：\n${browsed || '（刚拿到就被打断了）'}${ops}\n${exitDesc}${extra ? `\n${extra}` : ''}${script?.endHint ? `\n${char.name} 此刻的心情基调：${script.endHint}` : ''}\n（这段经历你们双方都知情，接下来请 ${char.name} 主动就刚才看到的内容发消息。）`,
+                content: `[查岗记录] 刚才 ${char.name} 拿走了 ${userProfile.name} 的手机翻看。\n${char.name} 的浏览过程与内心想法：\n${browsed || '（刚拿到就被打断了）'}${ops}\n${exitDesc}${extra ? `\n${extra}` : ''}${script?.endHint ? `\n${char.name} 此刻的心情基调：${script.endHint}` : ''}\n（这段经历你们双方都知情，接下来请 ${char.name} 主动就刚才看到的内容发消息。）`,
                 metadata: { charPhoneCheck: true },
             } as any);
         } catch (e) {
@@ -1444,7 +1444,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                         {phase === 'loading' ? `${char.name} 拿走了你的手机…` : `${char.name} 正在看你的手机`}
                     </span>
                 </div>
-                {phase !== 'loading' && !endedRef.current && (
+                {phase === 'browsing' && !endedRef.current && (
                     <button
                         onClick={() => { setExitOpen(true); setExitTab('menu'); setConsentReply(''); setJudgeComment(''); }}
                         className="pointer-events-auto shrink-0 px-3 py-2 rounded-full bg-white/90 text-slate-700 text-[11px] font-bold border border-white/70 shadow-[0_12px_24px_-14px_rgba(0,0,0,0.8)] active:scale-95 transition-all backdrop-blur-xl"

@@ -781,8 +781,12 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             </ActionStrip>
 
                             {/* 翻翻手机：查看当前角色的手机（原桌面独立 App 并入此处） */}
-                            <ActionStrip label="翻翻手机" hint="偷偷看一眼 TA 的屏幕" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
+                            <ActionStrip label="查岗" hint="偷偷看一眼 TA 的屏幕" dark={isDiscordStyle} onClick={() => onPanelAction('check-phone')}>
                                 <Detective className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="锁机" hint="远程锁住 TA 的屏幕，看 TA 怎么解" dark={isDiscordStyle} onClick={() => onPanelAction('phone-lock')}>
+                                <Lock className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             {/* 拍张照：用 TA 的手机拍一张此刻寄给 TA 看，一起讨论 */}
