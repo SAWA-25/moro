@@ -22,48 +22,49 @@ import {
 } from '../utils/presets';
 import { setPresetRegexScripts } from '../utils/regex/store';
 import type { PresetPrompt, PresetPromptOrderEntry, TavernPreset } from '../types';
-import {
-    InsSheet, accent,
-} from '../components/ui/insKit';
+import { InsSheet } from '../components/ui/insKit';
+import { MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
 import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
     List, Placeholder, ArrowElbowDownRight, Eject, StackPlus,
     SlidersHorizontal, LinkSimple, FileText,
 } from '@phosphor-icons/react';
 
-const AC = 'typepress' as const;
-const PRESS = accent(AC);
-const INK = '#252338';
-const INS_SOFT = '#716d80';
-const CANVAS_BG = 'linear-gradient(155deg, #eef4ff 0%, #f7f1e8 48%, #ecf8f4 100%)';
-const PAPER = '#fffdf8';
-const LINE = 'rgba(37,35,56,0.10)';
-const ACTIVE_TONE = { solid: '#16826f', soft: '#e3f4ef', ink: '#0d5c50' };
-const COPPER_TONE = { solid: '#b86b2d', soft: '#fff0de', ink: '#7a4219' };
-const WARN_TONE = { solid: '#c2582f', soft: '#fff1e8', ink: '#8a351c' };
+const PRESS = { solid: '#4f9dc3', soft: '#eef8fc', ink: '#165f79' };
+const INK = '#263447';
+const INS_SOFT = '#67768a';
+const CANVAS_BG =
+    'radial-gradient(90% 54% at 50% -18%, rgba(79,157,195,0.18), transparent 68%),' +
+    'linear-gradient(180deg, #f6fbff 0%, #fffdf8 52%, #f4faf7 100%)';
+const PAPER = '#fffefa';
+const LINE = 'rgba(70,111,135,0.16)';
+const ACTIVE_TONE = { solid: '#4f9f82', soft: '#effaf5', ink: '#276653' };
+const COPPER_TONE = { solid: '#d7a64f', soft: '#fff7e6', ink: '#7a5b1f' };
+const WARN_TONE = { solid: '#d96f77', soft: '#fff1f2', ink: '#9b3f48' };
 const RULED_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(37,35,56,0.08) 23px, rgba(37,35,56,0.08) 24px)',
+    backgroundImage: 'repeating-linear-gradient(transparent, transparent 23px, rgba(79,157,195,0.12) 23px, rgba(79,157,195,0.12) 24px)',
     lineHeight: '24px',
 };
 /** 斜纹（AI 口吻章的底纹） */
 const HATCH_BG: React.CSSProperties = {
-    backgroundImage: 'repeating-linear-gradient(45deg, rgba(22,130,111,0.17) 0 2px, transparent 2px 5px)',
+    backgroundImage: 'repeating-linear-gradient(45deg, rgba(79,159,130,0.18) 0 2px, transparent 2px 5px)',
 };
 
 const FIELD_STYLE: React.CSSProperties = {
-    background: 'rgba(255,253,248,0.96)',
+    background: PAPER,
     border: `1px solid ${LINE}`,
-    borderRadius: 16,
+    borderRadius: 14,
     color: INK,
-    boxShadow: 'inset 0 1px 2px rgba(37,35,56,0.04)',
+    caretColor: PRESS.solid,
+    boxShadow: 'inset 0 1px 2px rgba(38,52,71,0.04)',
 };
 
 const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: () => void; status?: string }> = ({ title, en, sub, onBack, status }) => (
-    <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: 'rgba(255,253,248,0.96)', borderBottom: `1px solid ${LINE}` }}>
+    <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ paddingTop: 'calc(var(--safe-top) + 12px)', background: '#ffffff', borderBottom: '1px solid #ededed' }}>
         <button
             onClick={onBack}
-            className="w-9 h-9 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0"
-            style={{ background: PAPER, color: PRESS.solid, border: `1px solid ${LINE}`, boxShadow: '0 1px 3px rgba(37,35,56,0.16)' }}
+            className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
+            style={{ color: PRESS.ink, border: '1px solid #e3edf2', boxShadow: '0 1px 3px rgba(38,52,71,0.14)' }}
             aria-label="返回"
         >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-[18px] h-[18px]">
@@ -72,13 +73,13 @@ const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: (
         </button>
         <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
-                <span className="text-[16px] font-bold leading-tight" style={{ color: INK }}>{title}</span>
-                <span className="text-[8.5px] tracking-[0.24em] select-none uppercase" style={{ color: PRESS.solid, fontFamily: 'var(--font-label)' }}>{en}</span>
+                <span className="text-[16px] font-bold leading-tight" style={{ ...CUTE_STACK, color: INK }}>{title}</span>
+                <span className="text-[8.5px] tracking-[0.24em] select-none uppercase" style={{ ...MONO_STACK, color: PRESS.solid }}>{en}</span>
             </div>
             {sub && <div className="text-[10px] truncate mt-0.5" style={{ color: INS_SOFT }}>{sub}</div>}
         </div>
         {status && (
-            <span className="text-[10px] select-none shrink-0 px-2 py-1 rounded-full" style={{ color: ACTIVE_TONE.ink, background: ACTIVE_TONE.soft, border: `1px solid ${ACTIVE_TONE.solid}30` }}>
+            <span className="text-[10px] select-none shrink-0 px-2 py-1 rounded-full" style={{ color: PRESS.ink, background: PRESS.soft, border: `1px solid ${LINE}` }}>
                 {status}
             </span>
         )}
@@ -86,22 +87,23 @@ const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: (
 );
 
 const Page: React.FC<{ title: string; en: string; children: React.ReactNode }> = ({ title, en, children }) => (
-    <section className="relative rounded-[18px]" style={{ background: 'rgba(255,253,248,0.96)', border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(37,35,56,0.04), 0 14px 30px -24px rgba(37,35,56,0.24)' }}>
+    <section className="relative overflow-hidden rounded-[18px] bg-white" style={{ border: `1px solid ${LINE}`, boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,52,71,0.26)' }}>
+        <span aria-hidden className="absolute left-4 top-0 h-[3px] w-16 rounded-b-full" style={{ background: `linear-gradient(90deg, ${PRESS.solid}, ${COPPER_TONE.solid})` }} />
         <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
-            <span className="text-[15px] font-bold leading-tight" style={{ color: INK }}>{title}</span>
-            <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ color: INS_SOFT, fontFamily: 'var(--font-label)' }}>{en}</span>
+            <span className="text-[15px] font-bold leading-tight" style={{ ...CUTE_STACK, color: INK }}>{title}</span>
+            <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...MONO_STACK, color: INS_SOFT }}>{en}</span>
         </div>
         <div className="px-4 pb-5 pt-1">{children}</div>
     </section>
 );
 
-const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode }> = ({ mark = '•', title, note, side, children }) => (
-    <div className="py-3 border-b last:border-b-0" style={{ borderColor: `${PRESS.solid}22` }}>
+const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode }> = ({ mark = 'TYPE', title, note, side, children }) => (
+    <div className="py-3 border-b last:border-b-0" style={{ borderColor: 'rgba(70,111,135,0.14)' }}>
         <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] leading-none font-bold" style={{ color: PRESS.solid, fontFamily: 'var(--font-label)' }}>{mark}</span>
-                    <span className="text-[12.5px] font-bold" style={{ color: INK }}>{title}</span>
+                    <span className="text-[8px] leading-none font-bold tracking-[0.18em]" style={{ ...MONO_STACK, color: PRESS.solid }}>{mark}</span>
+                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>{title}</span>
                 </div>
                 {note && <p className="text-[10px] mt-1 leading-relaxed" style={{ color: INS_SOFT }}>{note}</p>}
             </div>
@@ -123,6 +125,7 @@ const PressChip: React.FC<{ active?: boolean; children: React.ReactNode; onClick
                 color: active ? palette.ink : INS_SOFT,
                 border: `1px solid ${active ? `${palette.solid}42` : LINE}`,
                 boxShadow: active ? `0 6px 14px -12px ${palette.solid}` : 'none',
+                ...CUTE_STACK,
             }}
         >
             {children}
@@ -141,15 +144,85 @@ const PressButton: React.FC<{ children: React.ReactNode; onClick?: () => void; i
             className={`inline-flex items-center justify-center gap-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform disabled:opacity-40 disabled:active:scale-100 ${className}`}
             style={{
                 background: soft ? PAPER : palette.soft,
-                color: soft ? INS_SOFT : palette.ink,
+                color: soft ? PRESS.ink : palette.ink,
                 border: `1px solid ${soft ? LINE : `${palette.solid}3b`}`,
-                boxShadow: '0 1px 2px rgba(37,35,56,0.07)',
+                boxShadow: '0 1px 2px rgba(38,52,71,0.08)',
+                ...CUTE_STACK,
             }}
         >
             {icon}{children}
         </button>
     );
 };
+
+const StatTile: React.FC<{ label: string; value: React.ReactNode; tone?: 'press' | 'active' | 'copper' | 'plain' }> = ({ label, value, tone = 'plain' }) => {
+    const palette = tone === 'active' ? ACTIVE_TONE : tone === 'copper' ? COPPER_TONE : tone === 'press' ? PRESS : { solid: '#cfd9df', soft: '#ffffff', ink: INS_SOFT };
+    return (
+        <div
+            className="min-w-0 rounded-[14px] px-3 py-2"
+            style={{ background: palette.soft, border: `1px solid ${palette.solid}30`, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}
+        >
+            <div className="text-[8px] tracking-[0.22em] uppercase truncate" style={{ ...MONO_STACK, color: palette.ink }}>{label}</div>
+            <div className="text-[16px] font-black truncate mt-0.5" style={{ color: palette.ink }}>{value}</div>
+        </div>
+    );
+};
+
+const HeroPlate: React.FC<{ activeName: string; enabled: boolean; presetCount: number; enabledEntries: number; totalEntries: number; totalTokens: number; markerEntries: number; onToggle: (v: boolean) => void }> = ({
+    activeName, enabled, presetCount, enabledEntries, totalEntries, totalTokens, markerEntries, onToggle,
+}) => (
+    <section
+        className="relative overflow-hidden rounded-[24px] p-4"
+        style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.96), rgba(238,248,252,0.96))',
+            border: `1px solid ${LINE}`,
+            boxShadow: '0 20px 48px -30px rgba(38,52,71,0.42)',
+        }}
+    >
+        <div
+            aria-hidden
+            className="absolute right-[-28px] top-[-30px] w-28 h-28 rounded-full"
+            style={{ border: '14px solid rgba(79,157,195,0.12)' }}
+        />
+        <div
+            aria-hidden
+            className="absolute left-4 bottom-3 right-4 h-px"
+            style={{ background: 'linear-gradient(90deg, transparent, rgba(79,157,195,0.22), transparent)' }}
+        />
+        <div className="relative flex items-start gap-3">
+            <div className="shrink-0 bg-white p-1.5 pb-3 rounded-[10px]" style={{ boxShadow: '0 14px 28px -18px rgba(38,52,71,0.42)', border: '1px solid rgba(70,111,135,0.12)' }}>
+                <div
+                    className="w-16 h-16 rounded-[5px] flex flex-col items-center justify-center"
+                    style={{
+                        background: 'linear-gradient(135deg, #eef8fc 0%, #fff7e6 100%)',
+                        border: `1px solid ${LINE}`,
+                    }}
+                >
+                    <span className="text-[8px] tracking-[0.3em]" style={{ ...MONO_STACK, color: PRESS.ink }}>TYPE</span>
+                    <span className="text-[30px] leading-none font-black" style={{ color: INK }}>字</span>
+                </div>
+                <div className="text-[9px] font-bold text-center mt-1 truncate max-w-16" style={{ ...CUTE_STACK, color: INS_SOFT }}>活字盘</div>
+            </div>
+            <div className="min-w-0 flex-1 pt-1">
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[9px] tracking-[0.28em] uppercase shrink-0" style={{ ...MONO_STACK, color: PRESS.solid }}>CURRENT PLATE</span>
+                    <span className="h-px flex-1" style={{ background: 'rgba(70,111,135,0.16)' }} />
+                </div>
+                <div className="text-[19px] font-black truncate mt-1" style={{ ...CUTE_STACK, color: INK }}>{activeName}</div>
+                <div className="text-[10.5px] leading-relaxed mt-1" style={{ color: INS_SOFT }}>
+                    {enabled ? '这块字盘正在接管聊天提示词顺序、marker 与随预设正则。' : '当前只在整理字盘，聊天仍走 Moro 默认提示词组装。'}
+                </div>
+            </div>
+            <InkSwitch on={enabled} onChange={onToggle} />
+        </div>
+        <div className="relative grid grid-cols-4 gap-2 mt-4">
+            <StatTile tone="press" label="Presets" value={presetCount} />
+            <StatTile tone="active" label="Enabled" value={`${enabledEntries}/${totalEntries}`} />
+            <StatTile tone="copper" label="Tokens" value={`≈${totalTokens}`} />
+            <StatTile label="Markers" value={markerEntries} />
+        </div>
+    </section>
+);
 
 // ---------------------------------------------------------------------------
 // 小部件
@@ -158,10 +231,10 @@ const PressButton: React.FC<{ children: React.ReactNode; onClick?: () => void; i
 const VoiceStamp: React.FC<{ role?: string }> = ({ role }) => {
     const r = role || 'system';
     if (r === 'assistant') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ ...HATCH_BG, backgroundColor: ACTIVE_TONE.soft, border: `1px solid ${ACTIVE_TONE.solid}3f`, color: ACTIVE_TONE.ink }}>assistant</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ ...HATCH_BG, backgroundColor: ACTIVE_TONE.soft, border: `1px solid ${ACTIVE_TONE.solid}55`, color: ACTIVE_TONE.ink }}>assistant</span>;
     }
     if (r === 'user') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: COPPER_TONE.soft, border: `1px solid ${COPPER_TONE.solid}3f`, color: COPPER_TONE.ink }}>user</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: COPPER_TONE.soft, border: `1px solid ${COPPER_TONE.solid}55`, color: COPPER_TONE.ink }}>user</span>;
     }
     return <span className="label-mono text-[8px] px-1.5 py-0.5 text-white rounded-full shrink-0" style={{ background: PRESS.solid }}>system</span>;
 };
@@ -174,15 +247,15 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (v: boolean) => void; small?:
         className={`relative ${small ? 'w-[42px] h-[24px]' : 'w-[52px] h-[28px]'} rounded-full shrink-0 transition-all duration-300 active:scale-95`}
         style={{
             background: on ? ACTIVE_TONE.solid : '#f6f2ed',
-            border: `1px solid ${on ? `${ACTIVE_TONE.solid}30` : LINE}`,
-            boxShadow: on ? `0 8px 16px -12px ${ACTIVE_TONE.solid}` : 'inset 0 1px 2px rgba(37,35,56,0.08)',
+            border: on ? `1px solid ${ACTIVE_TONE.solid}40` : `1px solid ${LINE}`,
+            boxShadow: on ? '0 8px 16px -12px rgba(79,159,130,0.48)' : 'inset 0 1px 2px rgba(38,52,71,0.08)',
         }}
     >
-        {!small && <span className="absolute top-1/2 -translate-y-1/2 left-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0, fontFamily: 'var(--font-label)' }}>ON</span>}
-        {!small && <span className="absolute top-1/2 -translate-y-1/2 right-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ color: '#b4aaa0', opacity: on ? 0 : 1, fontFamily: 'var(--font-label)' }}>off</span>}
+        {!small && <span className="absolute top-1/2 -translate-y-1/2 left-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ ...MONO_STACK, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>}
+        {!small && <span className="absolute top-1/2 -translate-y-1/2 right-2 text-[8px] font-bold transition-opacity pointer-events-none" style={{ ...MONO_STACK, color: '#a8b5bf', opacity: on ? 0 : 1 }}>off</span>}
         <span
             className={`absolute top-1/2 -translate-y-1/2 ${small ? 'w-[18px] h-[18px]' : 'w-[22px] h-[22px]'} rounded-full bg-white transition-all duration-300`}
-            style={{ left: on ? (small ? 20 : 27) : 3, boxShadow: '0 2px 6px rgba(37,35,56,0.22)' }}
+            style={{ left: on ? (small ? 20 : 27) : 3, boxShadow: '0 2px 6px rgba(38,52,71,0.24)' }}
         />
     </button>
 );
@@ -202,7 +275,7 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
     return (
         <div>
             <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-extrabold" style={{ color: INK }}>{label}</span>
+                <span className="text-[11px] font-extrabold" style={{ ...CUTE_STACK, color: INK }}>{label}</span>
                 <input
                     type="number"
                     value={v}
@@ -211,7 +284,7 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                     step={step}
                     onChange={e => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(n); }}
                     className="w-20 text-right text-xs font-mono px-2 py-1 outline-none focus:ring-2"
-                    style={{ ...FIELD_STYLE, ['--tw-ring-color' as any]: `${PRESS.solid}24` }}
+                    style={{ ...FIELD_STYLE, ['--tw-ring-color' as any]: 'rgba(216,165,183,0.22)' }}
                 />
             </div>
             <input
@@ -270,7 +343,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                 status={isMarker ? '只读' : '待保存'}
             />
 
-            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-5 pb-10 space-y-6">
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-10 space-y-8">
                 <Page title="基础信息" en="Name">
                     <Entry mark="ID" title="提示词名称" note={isMarker ? '系统占位名称用于在列表中识别，内容由发送流程自动填充。' : '名称只影响管理界面，不会直接写入发送内容。'}>
                     <input
@@ -286,7 +359,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                 {isMarker ? (
                     <Page title="自动内容" en="System Slot">
                         <Entry mark="SYS" title="发送时填充" note={markerHint || '发送时由系统自动填充内容，这里只能调整它在提示词列表中的位置和开关。'}>
-                            <div className="rounded-[14px] px-3 py-2.5 text-[11px] leading-relaxed" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${PRESS.solid}26` }}>
+                            <div className="rounded-[14px] px-3 py-2.5 text-[11px] leading-relaxed" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${LINE}` }}>
                                 该条目属于内置 marker，不需要手动编辑正文。
                             </div>
                         </Entry>
@@ -296,7 +369,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                         <Page title="注入规则" en="Runtime">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>消息角色</label>
+                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ ...CUTE_STACK, color: INK }}>消息角色</label>
                                     <div className="relative">
                                         <select
                                             value={role}
@@ -312,7 +385,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>注入位置</label>
+                                    <label className="text-[11px] font-bold mb-1.5 block" style={{ ...CUTE_STACK, color: INK }}>注入位置</label>
                                     <div className="relative">
                                         <select
                                             value={position}
@@ -331,7 +404,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                             {position === INJECTION_POSITION.ABSOLUTE && (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>@Depth 深度</label>
+                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ ...CUTE_STACK, color: INK }}>@Depth 深度</label>
                                         <input
                                             type="number" min={0} max={9999} value={depth}
                                             onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setDepth(Math.max(0, n)); }}
@@ -340,7 +413,7 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ color: INK }}>同深度排序</label>
+                                        <label className="text-[11px] font-bold mb-1.5 block" style={{ ...CUTE_STACK, color: INK }}>同深度排序</label>
                                         <input
                                             type="number" min={0} max={9999} value={order}
                                             onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setOrder(n); }}
@@ -354,15 +427,15 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
 
                         <Page title="提示词内容" en="Content">
                             <div className="flex items-end justify-between mb-2">
-                                <span className="text-[12.5px] font-bold" style={{ color: INK }}>正文</span>
+                                <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: INK }}>正文</span>
                                 <span className="label-mono text-[8px]" style={{ color: INS_SOFT }}>≈ {estimateTokens(content)} tokens</span>
                             </div>
                             <textarea
                                 value={content}
                                 onChange={e => setContent(e.target.value)}
                                 placeholder="支持 {{char}} / {{user}} / {{date}} / {{time}} 等宏"
-                                className="w-full h-72 px-4 py-3 text-xs leading-6 resize-none outline-none placeholder:text-slate-400"
-                                style={{ ...FIELD_STYLE, ...RULED_BG }}
+                                className="w-full h-72 px-4 py-3 text-xs leading-6 resize-none outline-none placeholder:text-[#cfb8c4]"
+                                style={{ ...FIELD_STYLE, ...RULED_BG, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}
                             />
                         </Page>
 
@@ -705,27 +778,24 @@ const PresetApp: React.FC = () => {
                 status="自动保存"
             />
 
-            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-5 pb-12 space-y-6">
-                <Page title="当前预设" en="Active Preset">
-                    <Entry
-                        mark="ON"
-                        title={enabled ? '预设已启用' : '预设未启用'}
-                        note={enabled ? '聊天请求会使用当前选中的提示词顺序、marker 和随预设正则。' : '聊天请求仍使用 Moro 默认提示词组装，下面的预设配置暂不接管。'}
-                        side={<InkSwitch on={enabled} onChange={toggleEnabled} />}
-                    >
-                        <div className="flex flex-wrap gap-2">
-                            <PressChip active tone="press">{presets.length} 个预设</PressChip>
-                            <PressChip active tone="active">{enabledEntriesCount}/{orderEntries.length} 条启用</PressChip>
-                            <PressChip tone="plain">约 {totalTokens} tokens</PressChip>
-                            <PressChip tone="plain">{markerEntriesCount} 个 marker</PressChip>
-                        </div>
-                    </Entry>
+            <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
+                <HeroPlate
+                    activeName={loaded ? active?.name || '未选择预设' : '正在读取本地预设'}
+                    enabled={enabled}
+                    presetCount={presets.length}
+                    enabledEntries={enabledEntriesCount}
+                    totalEntries={orderEntries.length}
+                    totalTokens={totalTokens}
+                    markerEntries={markerEntriesCount}
+                    onToggle={toggleEnabled}
+                />
 
-                    <Entry mark="SET" title="预设文件" note="新建、导入、复制后会自动选中；所有修改都会写入本地 IndexedDB。">
+                <Page title="字盘文件" en="Preset Library">
+                    <Entry mark="LIB" title="预设文件" note="新建、导入、复制后会自动选中；所有修改都会写入本地 IndexedDB。">
 
                     {loaded && presets.length === 0 ? (
                         <div className="py-2 space-y-3 text-center">
-                            <div className="text-[13px] font-bold" style={{ color: INK }}>暂无预设</div>
+                            <div className="text-[13px] font-bold" style={{ ...CUTE_STACK, color: INK }}>暂无预设</div>
                             <div className="grid grid-cols-2 gap-2">
                                 <PressButton onClick={handleNewPreset} className="py-2.5" icon={<PenNib size={14} weight="bold" />}>新建默认预设</PressButton>
                                 <PressButton onClick={() => fileInputRef.current?.click()} tone="plain" className="py-2.5" icon={<TrayArrowDown size={14} weight="bold" />}>导入 JSON</PressButton>
@@ -773,7 +843,7 @@ const PresetApp: React.FC = () => {
                     <>
                         <Page title="API 与采样" en="Model Route">
                             <Entry mark="API" title="API 方案" note="绑定后，切换到这个预设时会同步套用对应的连接配置。" side={<LinkSimple size={18} weight="bold" style={{ color: PRESS.solid }} />}>
-                                <div className="rounded-[14px] px-3 py-2.5 text-[11px] font-mono mb-2.5" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${PRESS.solid}20` }}>
+                                <div className="rounded-[14px] px-3 py-2.5 text-[11px] font-mono mb-2.5" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}>
                                     {apiConfig.model || '未设置模型'}{apiHost ? ` @ ${apiHost}` : ''}
                                 </div>
                                 <div className="relative">
@@ -812,7 +882,7 @@ const PresetApp: React.FC = () => {
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between rounded-[14px] px-3 py-2.5" style={{ background: COPPER_TONE.soft, border: `1px solid ${COPPER_TONE.solid}24` }}>
                                             <div>
-                                                <p className="text-[11px] font-bold" style={{ color: COPPER_TONE.ink }}>采样参数随请求下发</p>
+                                                <p className="text-[11px] font-bold" style={{ ...CUTE_STACK, color: COPPER_TONE.ink }}>采样参数随请求下发</p>
                                                 <p className="text-[10px] mt-0.5" style={{ color: COPPER_TONE.ink, opacity: 0.72 }}>关闭后使用全局 API 配置。</p>
                                             </div>
                                             <InkSwitch on={applySampling} onChange={toggleSampling} small />
@@ -825,7 +895,7 @@ const PresetApp: React.FC = () => {
                                         <SliderRow label="Repetition Penalty" value={active.repetition_penalty} fallback={1} min={0} max={3} step={0.01} onChange={v => mutateActive(d => { d.repetition_penalty = v; })} />
                                         <div className="grid grid-cols-2 gap-3">
                                             <div>
-                                                <label className="text-[11px] font-bold mb-1 block" style={{ color: INK }}>上下文 tokens</label>
+                                                <label className="text-[11px] font-bold mb-1 block" style={{ ...CUTE_STACK, color: INK }}>上下文 tokens</label>
                                                 <input
                                                     type="number"
                                                     value={active.openai_max_context ?? 4095}
@@ -835,7 +905,7 @@ const PresetApp: React.FC = () => {
                                                 />
                                             </div>
                                             <div>
-                                                <label className="text-[11px] font-bold mb-1 block" style={{ color: INK }}>回复 tokens</label>
+                                                <label className="text-[11px] font-bold mb-1 block" style={{ ...CUTE_STACK, color: INK }}>回复 tokens</label>
                                                 <input
                                                     type="number"
                                                     value={active.openai_max_tokens ?? 8000}
@@ -851,7 +921,7 @@ const PresetApp: React.FC = () => {
                         </Page>
 
                         <Page title="提示词列表" en="Prompt Order">
-                            <Entry mark="ORD" title="发送顺序" note="拖动左侧列表图标排序；关闭某条后，它不会进入本次聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
+                            <Entry mark="SORT" title="发送顺序" note="拖动左侧列表图标排序；关闭某条后，它不会进入本次聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
                                 <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
                                     {orderEntries.map((entry, idx) => {
                                         const prompt = promptById.get(entry.identifier);
@@ -864,16 +934,21 @@ const PresetApp: React.FC = () => {
                                             <div
                                                 key={entry.identifier}
                                                 ref={el => { rowRefs.current[idx] = el; }}
-                                                className={`flex items-center gap-2 rounded-[14px] px-2.5 py-2.5 transition-all ${entry.enabled ? '' : 'opacity-50'}`}
+                                                className={`relative overflow-hidden flex items-center gap-2 rounded-[14px] px-2.5 py-2.5 transition-all ${entry.enabled ? '' : 'opacity-50'}`}
                                                 style={{
                                                     background: dragIdx === idx ? PRESS.soft : PAPER,
-                                                    border: `1px solid ${dragIdx === idx ? PRESS.solid : LINE}`,
-                                                    boxShadow: dragIdx === idx ? `0 14px 30px -18px ${PRESS.solid}` : '0 1px 2px rgba(37,35,56,0.04)',
+                                                    border: dragIdx === idx ? `1px solid ${PRESS.solid}` : `1px solid ${LINE}`,
+                                                    boxShadow: dragIdx === idx ? '0 14px 30px -18px rgba(79,157,195,0.52)' : '0 8px 18px -16px rgba(38,52,71,0.24)',
                                                 }}
                                             >
+                                                <span
+                                                    aria-hidden
+                                                    className="absolute left-0 top-0 bottom-0 w-1"
+                                                    style={{ background: isMarker ? PRESS.solid : isAbsolute ? COPPER_TONE.solid : ACTIVE_TONE.solid }}
+                                                />
                                                 <div
                                                     onPointerDown={onDragPointerDown(idx)}
-                                                    className="p-1 cursor-grab touch-none shrink-0"
+                                                    className="ml-1 p-1 cursor-grab touch-none shrink-0"
                                                     style={{ color: INS_SOFT }}
                                                     title="拖动排序"
                                                 >
@@ -883,7 +958,7 @@ const PresetApp: React.FC = () => {
                                                     <div className="flex items-center gap-1.5">
                                                         {isMarker && <Placeholder size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
                                                         {isAbsolute && <ArrowElbowDownRight size={13} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
-                                                        <span className={`text-sm font-bold truncate ${entry.enabled ? '' : 'line-through decoration-2'}`} style={{ color: INK }}>{prompt.name}</span>
+                                                        <span className={`text-sm font-bold truncate ${entry.enabled ? '' : 'line-through decoration-2'}`} style={{ ...CUTE_STACK, color: INK }}>{prompt.name}</span>
                                                         {isAbsolute && <span className="label-mono text-[8px] shrink-0" style={{ color: INS_SOFT }}>@{prompt.injection_depth ?? 4}</span>}
                                                     </div>
                                                     <div className="flex items-center gap-1.5 mt-1 min-w-0">
@@ -943,10 +1018,10 @@ const PresetApp: React.FC = () => {
                             key={p.identifier}
                             onClick={() => handleInsertExisting(p.identifier)}
                             className="w-full flex items-center gap-2 px-3 py-3 text-left rounded-2xl active:scale-[0.98] transition-transform"
-                            style={{ background: PAPER, border: `1px solid ${LINE}`, color: INK }}
+                            style={{ background: PAPER, border: `1px solid ${LINE}`, color: INK, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}
                         >
                             {p.marker ? <Placeholder size={14} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} /> : <FileText size={14} weight="bold" className="shrink-0" style={{ color: PRESS.solid }} />}
-                            <span className="text-sm font-extrabold truncate flex-1">{p.name}</span>
+                            <span className="text-sm font-extrabold truncate flex-1" style={CUTE_STACK}>{p.name}</span>
                             <VoiceStamp role={p.role} />
                         </button>
                     ))}
