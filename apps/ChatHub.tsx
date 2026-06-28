@@ -2260,7 +2260,15 @@ ${logText.substring(0, 10000)}
             count = Math.min(count, groupChars.length);
             if (totalCents < count) { addToast(`至少 ¥${(count / 100).toFixed(2)} 才够分 ${count} 份`, 'error'); return; }
 
-            adjustUserBalance(-amt);
+            adjustUserBalance(-amt, {
+                note: `${activeGroup.name || '群聊'} 拼手气红包`,
+                category: 'transfer',
+                kind: 'group-redpacket-out',
+                sourceApp: '聊天',
+                sourceId: activeGroup.id,
+                relatedEntityId: activeGroup.id,
+                createdBy: 'user',
+            });
             // 二倍均值法拆分 + 随机挑 count 名成员当场抢
             const shareCents = splitRedPacket(totalCents, count);
             const grabbers = shuffle(groupChars).slice(0, count);
@@ -2282,7 +2290,15 @@ ${logText.substring(0, 10000)}
 
         const password = transferPassword.trim();
         if (transferRpType === 'password' && !password) { addToast('写一句口令吧', 'info'); return; }
-        adjustUserBalance(-amt);
+        adjustUserBalance(-amt, {
+            note: transferRpType === 'password' ? `${activeGroup.name || '群聊'} 口令红包` : `${activeGroup.name || '群聊'} 红包`,
+            category: 'transfer',
+            kind: transferRpType === 'password' ? 'group-password-redpacket-out' : 'group-redpacket-out',
+            sourceApp: '聊天',
+            sourceId: activeGroup.id,
+            relatedEntityId: activeGroup.id,
+            createdBy: 'user',
+        });
         await DB.saveMessage({
             charId: 'user',
             groupId: activeGroup.id,
@@ -2357,7 +2373,15 @@ ${logText.substring(0, 10000)}
         if (!activeGroup || msg.id == null) return;
         const share = ((msg.metadata as any)?.shares || []).find((s: any) => s.id === shareId);
         if (!share || share.paid) return;
-        adjustUserBalance(+share.amount);
+        adjustUserBalance(+share.amount, {
+            note: `${activeGroup.name || '群聊'} 收到 ${share.name} 的 AA 款`,
+            category: 'transfer',
+            kind: 'group-collect-in',
+            sourceApp: '聊天',
+            sourceId: msg.id != null ? String(msg.id) : activeGroup.id,
+            relatedEntityId: activeGroup.id,
+            createdBy: 'character',
+        });
         await DB.updateMessageMetadata(msg.id, (prev: any) => ({
             ...prev,
             shares: (prev?.shares || []).map((s: any) => s.id === shareId ? { ...s, paid: true, paidAt: Date.now() } : s),
@@ -2373,7 +2397,15 @@ ${logText.substring(0, 10000)}
         const unpaid = ((msg.metadata as any)?.shares || []).filter((s: any) => !s.paid);
         if (unpaid.length === 0) return;
         const sum = Math.round(unpaid.reduce((a: number, s: any) => a + s.amount, 0) * 100) / 100;
-        adjustUserBalance(+sum);
+        adjustUserBalance(+sum, {
+            note: `${activeGroup.name || '群聊'} 一键收齐 AA 款`,
+            category: 'transfer',
+            kind: 'group-collect-in',
+            sourceApp: '聊天',
+            sourceId: msg.id != null ? String(msg.id) : activeGroup.id,
+            relatedEntityId: activeGroup.id,
+            createdBy: 'character',
+        });
         await DB.updateMessageMetadata(msg.id, (prev: any) => ({
             ...prev,
             shares: (prev?.shares || []).map((s: any) => s.paid ? s : { ...s, paid: true, paidAt: Date.now() }),

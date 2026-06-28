@@ -1514,8 +1514,34 @@ export interface BankTransaction {
     dateStr: string; // YYYY-MM-DD
     /** 进账 / 支出。默认 expense（兼容旧数据） */
     type?: 'income' | 'expense';
+    /** 自动流水来源，如生活拟 / 心意铺 / 饭票 / 聊天。 */
+    sourceApp?: string;
+    /** 来源业务 id，如订单 id、岗位 id、股票代码。 */
+    sourceId?: string;
+    /** 更细的资金流类型：salary / shop / stock / loan / company / shopping 等。 */
+    kind?: string;
+    /** 是否由钱包变动自动生成。 */
+    auto?: boolean;
+    /** 这笔变动后的钱包余额。 */
+    balanceAfter?: number;
+    /** 创建者：user 手动 / system 自动 / character 角色侧生成。 */
+    createdBy?: 'user' | 'system' | 'character';
+    /** 关联实体 id，如公司 id、贷款 id、持仓代码。 */
+    relatedEntityId?: string;
     /** 角色对这笔现实账目的点评（AI 生成，一笔一条） */
     charComment?: { charId: string; charName: string; text: string; ts: number };
+}
+
+export interface AdjustBalanceMeta {
+    note?: string;
+    category?: string;
+    sourceApp?: string;
+    sourceId?: string;
+    kind?: string;
+    relatedEntityId?: string;
+    createdBy?: 'user' | 'system' | 'character';
+    /** false = 只改余额，不自动生成生活拟流水。 */
+    ledger?: boolean;
 }
 
 /** 账本里一条评论（用户 ↔ 角色互评） */
@@ -1699,9 +1725,177 @@ export interface BankShopState {
     weather?: { id: string; until: number };
 }
 
+export type BankJobPayCycle = 'daily' | 'monthly';
+export type BankJobApplicationStatus = 'hired' | 'trial' | 'rejected' | 'scammed';
+export type BankJobApplicationStage = 'submitted' | 'screening' | 'assessment' | 'interview' | 'offer' | 'hired' | 'trial' | 'rejected' | 'scammed';
+export type BankLoanChannel = 'bank' | 'formal' | 'shady';
+
+export interface BankBusinessTemplate {
+    id: string;
+    name: string;
+    icon: string;
+    vibe: string;
+    customerGroups: string[];
+    margin: number;
+    risk: 1 | 2 | 3 | 4 | 5;
+    products: { id: string; name: string; price: number; cost: number; appeal: number }[];
+    events: string[];
+}
+
+export interface BankLifeShopProduct {
+    id: string;
+    name: string;
+    price: number;
+    cost: number;
+    stock: number;
+    appeal: number;
+}
+
+export interface BankJobPosting {
+    id: string;
+    category: string;
+    title: string;
+    employer: string;
+    salaryMin: number;
+    salaryMax: number;
+    payCycle: BankJobPayCycle;
+    payDay?: number;
+    intensity: number; // 1-5
+    requirements: string[];
+    benefits: string[];
+    riskTags: string[];
+    description: string;
+    black?: boolean;
+    successBias?: number;
+}
+
+export interface BankJobEmployment extends BankJobPosting {
+    startedAt: string;
+    accruedWage: number;
+    daysWorked: number;
+    trialUntil?: string;
+}
+
+export interface BankJobApplication {
+    id: string;
+    postingId: string;
+    title: string;
+    employer: string;
+    status: BankJobApplicationStatus;
+    stage?: BankJobApplicationStage;
+    score?: number;
+    questions?: { id: string; question: string; answer?: string; score?: number }[];
+    offerSalary?: number;
+    riskNote?: string;
+    dateStr: string;
+    message: string;
+}
+
+export interface BankPendingWage {
+    id: string;
+    title: string;
+    employer: string;
+    amount: number;
+    payDate: string;
+    note: string;
+}
+
+export interface BankStockQuote {
+    symbol: string;
+    name: string;
+    industry: string;
+    price: number;
+    previousPrice: number;
+    changePct: number;
+    trend: 'up' | 'flat' | 'down';
+    risk: 1 | 2 | 3 | 4 | 5;
+    news: string;
+    eventTags?: string[];
+    history?: { dateStr: string; open: number; high: number; low: number; close: number; volume: number }[];
+    intraday?: { time: string; price: number; volume: number }[];
+}
+
+export interface BankStockHolding {
+    symbol: string;
+    shares: number;
+    avgCost: number;
+}
+
+export interface BankCompanyState {
+    id: string;
+    name: string;
+    direction: string;
+    cash: number;
+    reputation: number;
+    employees: number;
+    stress: number;
+    cumulativeProfit: number;
+    foundedAt: string;
+    cashflow?: { dateStr: string; revenue: number; cost: number; profit: number; note: string }[];
+    orders?: { id: string; title: string; client: string; value: number; difficulty: number; status: 'open' | 'active' | 'done' | 'lost' }[];
+    risks?: string[];
+    pendingIssue?: {
+        id: string;
+        title: string;
+        description: string;
+        kind?: 'order' | 'employee' | 'marketing' | 'tax' | 'risk' | 'cashflow';
+        options: { id: string; label: string; cashDelta: number; reputationDelta: number; stressDelta: number; employeeDelta?: number; orderId?: string }[];
+    };
+}
+
+export interface BankLoan {
+    id: string;
+    channel: BankLoanChannel;
+    productName?: string;
+    principal: number;
+    outstanding: number;
+    interestDue: number;
+    dailyRate: number;
+    borrowedAt: string;
+    dueDate: string;
+    overdueDays: number;
+    note: string;
+    reviewStatus?: 'approved' | 'rejected' | 'manual';
+    contractTerms?: string[];
+    repaymentPlan?: { dueDate: string; amount: number; status: 'pending' | 'paid' | 'overdue' }[];
+}
+
+export interface BankLifeEvent {
+    id: string;
+    dateStr: string;
+    title: string;
+    detail: string;
+    tone?: 'good' | 'warn' | 'bad' | 'info';
+    amount?: number;
+}
+
+export interface BankLifeState {
+    version: number;
+    dateStr: string;
+    shopUnlocked: boolean;
+    shopBusinessType?: string;
+    shopBusinessName?: string;
+    shopProducts?: BankLifeShopProduct[];
+    shopCustomers?: string[];
+    shopEvents?: BankLifeEvent[];
+    currentJob?: BankJobEmployment;
+    jobHistory: BankJobApplication[];
+    pendingWages: BankPendingWage[];
+    fatigue: number;
+    reputation: number;
+    experience: Record<string, number>;
+    stockMarket: BankStockQuote[];
+    holdings: Record<string, BankStockHolding>;
+    watchlist: string[];
+    company?: BankCompanyState;
+    loans: BankLoan[];
+    events: BankLifeEvent[];
+}
+
 export interface BankFullState {
     config: BankConfig;
     shop: BankShopState;
+    life?: BankLifeState;
     goals: SavingsGoal[];
     firedStaff?: ShopStaff[]; // Fired staff pool: can rehire or permanently delete
     todaySpent: number;

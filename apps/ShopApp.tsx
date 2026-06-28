@@ -210,7 +210,13 @@ const ShopApp: React.FC = () => {
     // 申请退款（仅自己支付且未收货的订单）：退回钱包（+返还所用金币）+ 标记 refundedAt
     const requestRefund = (order: ShopOrder) => {
         if (order.paidBy !== 'self' || order.receivedAt || order.refundedAt) return;
-        adjustUserBalance(order.total);
+        adjustUserBalance(order.total, {
+            note: `心意铺退款 ${order.id}`,
+            category: 'refund',
+            kind: 'shop-refund',
+            sourceApp: '心意铺',
+            sourceId: order.id,
+        });
         const refundCoins = order.coinDiscount ? yuanToCoins(order.coinDiscount) : 0;
         updateUserProfile({
             shopOrders: (userProfile.shopOrders || []).map(o => o.id === order.id ? { ...o, refundedAt: Date.now() } : o),
@@ -244,7 +250,13 @@ const ShopApp: React.FC = () => {
         const unit = priceOverride != null ? priceOverride : item.price;
         const cost = Math.round(unit * qty * 100) / 100;
         if (balance < cost) { addToast('钱包不够啦，去存钱罐攒点', 'error'); return; }
-        adjustUserBalance(-cost);
+        adjustUserBalance(-cost, {
+            note: `心意铺下单 ${item.name}`,
+            category: 'shopping',
+            kind: 'shop-purchase',
+            sourceApp: '心意铺',
+            sourceId: item.id,
+        });
         placeOrder([{ item: priceOverride != null ? { ...item, price: unit } : item, qty }], 'self');
         addToast(`已下单 ${item.emoji}${item.name}${qty > 1 ? `×${qty}` : ''}，正在寄出`, 'success');
         setTab('my'); setSub('orders'); setOrderFilter('toReceive');
@@ -292,7 +304,12 @@ const ShopApp: React.FC = () => {
         const coinDiscount = useCoins ? coinsToYuan(coins, afterCoupon) : 0;
         const payable = Math.round((afterCoupon - coinDiscount) * 100) / 100;
         if (balance < payable) { addToast('钱包不够，先去存钱罐攒点', 'error'); return; }
-        adjustUserBalance(-payable);
+        adjustUserBalance(-payable, {
+            note: `心意铺购物车结算 ${lines.length}件`,
+            category: 'shopping',
+            kind: 'shop-checkout',
+            sourceApp: '心意铺',
+        });
         if (coinDiscount > 0) updateUserProfile({ shopCoins: Math.max(0, coins - yuanToCoins(coinDiscount)) });
         const order = makeOrder(lines, 'self');
         order.total = payable;
@@ -362,7 +379,14 @@ const ShopApp: React.FC = () => {
         if (items.length === 0) return;
         const total = cartTotal(char.shopCart);
         if (balance < total) { addToast('钱包不够替 TA 付呢', 'error'); return; }
-        adjustUserBalance(-total);
+        adjustUserBalance(-total, {
+            note: `代付 ${char.name} 心意铺购物车`,
+            category: 'shopping',
+            kind: 'shop-char-cart',
+            sourceApp: '心意铺',
+            sourceId: char.id,
+            relatedEntityId: char.id,
+        });
         const charReceipts = items.map(it => makeReceipt(it, 'char', 'buy', 'self', char.name, `${userProfile.name || '我'}代付`));
         const userReceipts = items.map(it => makeReceipt(it, 'user', 'gift', char.id, char.name, '代付'));
         updateCharacter(char.id, { shopCart: [], shopReceipts: [...charReceipts, ...(char.shopReceipts || [])] });

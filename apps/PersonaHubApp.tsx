@@ -3,6 +3,7 @@ import { useOS } from '../context/OSContext';
 import Character from './Character';
 import PersonaApp from './PersonaApp';
 import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
+import { CaretLeft } from '@phosphor-icons/react';
 
 /**
  * 剪影集：角色资料与用户身份的统一入口。
@@ -12,7 +13,6 @@ import { PAPER_TONES, MONO_STACK } from '../components/handbook/paper';
 const INK = '#2f3432';
 const CARD = 'bg-white press-soft';
 const CARD_STYLE: React.CSSProperties = { borderRadius: 18, border: '1px solid #e6ece8', boxShadow: '0 1px 2px rgba(47,64,60,0.08), 0 14px 30px -24px rgba(47,64,60,0.34)' };
-const STICKER = 'rounded-full bg-[#fbfcf8] press-soft border border-[#dfe7e1] shadow-[0_1px_2px_rgba(47,64,60,0.10)]';
 const DOT_BG: React.CSSProperties = {
     background: '#f5f7f4',
 };
@@ -112,15 +112,13 @@ const PersonaHubApp: React.FC = () => {
             <div className="relative flex items-center px-4 pt-3 pb-2 shrink-0 bg-[#f5f7f4]/95 backdrop-blur border-b border-[#e6ece8]">
                 <button
                     onClick={closeApp}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-[10px] font-black ${STICKER}`}
-                    style={{ color: '#405f56' }}
+                    className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                    style={{ color: '#405f56', border: '1px solid #dfe7e1', boxShadow: '0 1px 3px rgba(47,64,60,0.14)' }}
+                    aria-label="返回"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-                    </svg>
-                    回桌面
+                    <CaretLeft size={18} weight="bold" />
                 </button>
-                <div className="absolute left-1/2 -translate-x-1/2 text-center select-none">
+                <div className="min-w-0 text-left select-none">
                     <div className="text-[9px] tracking-[0.18em] uppercase" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>PROFILE CENTER</div>
                     <div className="text-[11px] mt-0.5" style={{ color: PAPER_TONES.inkSoft }}>资料管理</div>
                 </div>

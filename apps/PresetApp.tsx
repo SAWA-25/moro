@@ -27,7 +27,7 @@ import { MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
 import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
     List, Placeholder, ArrowElbowDownRight, Eject, StackPlus,
-    SlidersHorizontal, LinkSimple, FileText,
+    SlidersHorizontal, LinkSimple, FileText, MagnifyingGlass, PushPinSimple, XCircle, CaretDown,
 } from '@phosphor-icons/react';
 
 const PRESS = { solid: '#4f9dc3', soft: '#eef8fc', ink: '#165f79' };
@@ -57,6 +57,26 @@ const FIELD_STYLE: React.CSSProperties = {
     color: INK,
     caretColor: PRESS.solid,
     boxShadow: 'inset 0 1px 2px rgba(38,52,71,0.04)',
+};
+
+const PINNED_PRESETS_KEY = 'os_preset_pinned_ids';
+
+const readPinnedPresetIds = (): string[] => {
+    try {
+        if (typeof localStorage === 'undefined') return [];
+        const raw = localStorage.getItem(PINNED_PRESETS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+    } catch {
+        return [];
+    }
+};
+
+const savePinnedPresetIds = (ids: string[]) => {
+    try {
+        if (typeof localStorage === 'undefined') return;
+        localStorage.setItem(PINNED_PRESETS_KEY, JSON.stringify(ids));
+    } catch { /* ignore */ }
 };
 
 const PanelHeader: React.FC<{ title: string; en: string; sub?: string; onBack: () => void; status?: string }> = ({ title, en, sub, onBack, status }) => (
@@ -181,11 +201,6 @@ const HeroPlate: React.FC<{ activeName: string; enabled: boolean; presetCount: n
     >
         <div
             aria-hidden
-            className="absolute right-[-28px] top-[-30px] w-28 h-28 rounded-full"
-            style={{ border: '14px solid rgba(79,157,195,0.12)' }}
-        />
-        <div
-            aria-hidden
             className="absolute left-4 bottom-3 right-4 h-px"
             style={{ background: 'linear-gradient(90deg, transparent, rgba(79,157,195,0.22), transparent)' }}
         />
@@ -198,8 +213,7 @@ const HeroPlate: React.FC<{ activeName: string; enabled: boolean; presetCount: n
                         border: `1px solid ${LINE}`,
                     }}
                 >
-                    <span className="text-[8px] tracking-[0.3em]" style={{ ...MONO_STACK, color: PRESS.ink }}>TYPE</span>
-                    <span className="text-[30px] leading-none font-black" style={{ color: INK }}>字</span>
+                    <Stamp size={32} weight="duotone" style={{ color: INK }} />
                 </div>
                 <div className="text-[9px] font-bold text-center mt-1 truncate max-w-16" style={{ ...CUTE_STACK, color: INS_SOFT }}>活字盘</div>
             </div>
@@ -463,6 +477,8 @@ const PresetApp: React.FC = () => {
     const [showParams, setShowParams] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showInsert, setShowInsert] = useState(false);
+    const [presetSearch, setPresetSearch] = useState('');
+    const [pinnedPresetIds, setPinnedPresetIds] = useState<string[]>(() => readPinnedPresetIds());
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // 拖拽排序状态
@@ -561,6 +577,11 @@ const PresetApp: React.FC = () => {
         DB.deletePreset(id).catch(() => addToast('预设删除失败', 'error'));
         const rest = presets.filter(p => p.id !== id);
         setPresets(rest);
+        setPinnedPresetIds(prev => {
+            const next = prev.filter(pinId => pinId !== id);
+            if (next.length !== prev.length) savePinnedPresetIds(next);
+            return next;
+        });
         const nextId = rest[0]?.id ?? null;
         setActiveId(nextId);
         PresetRuntime.setActiveId(nextId);
@@ -761,6 +782,32 @@ const PresetApp: React.FC = () => {
         if (!active?.moroApiPresetId) return null;
         return apiPresets.find(ap => ap.id === active.moroApiPresetId) || null;
     }, [active?.moroApiPresetId, apiPresets]);
+    const pinnedPresetSet = useMemo(() => new Set(pinnedPresetIds), [pinnedPresetIds]);
+    const sortedPresets = useMemo(() => {
+        return [...presets].sort((a, b) => {
+            const pinnedDelta = Number(pinnedPresetSet.has(b.id)) - Number(pinnedPresetSet.has(a.id));
+            if (pinnedDelta !== 0) return pinnedDelta;
+            return a.createdAt - b.createdAt;
+        });
+    }, [presets, pinnedPresetSet]);
+    const filteredPresets = useMemo(() => {
+        const q = presetSearch.trim().toLowerCase();
+        if (!q) return sortedPresets;
+        return sortedPresets.filter(p => p.name.toLowerCase().includes(q));
+    }, [presetSearch, sortedPresets]);
+    const activePinned = !!activeId && pinnedPresetSet.has(activeId);
+    const selectOptions = useMemo(() => {
+        if (!active || filteredPresets.some(p => p.id === active.id)) return filteredPresets;
+        return [active, ...filteredPresets];
+    }, [active, filteredPresets]);
+    const togglePinnedPreset = () => {
+        if (!activeId) return;
+        setPinnedPresetIds(prev => {
+            const next = prev.includes(activeId) ? prev.filter(id => id !== activeId) : [activeId, ...prev];
+            savePinnedPresetIds(next);
+            return next;
+        });
+    };
     const apiHost = useMemo(() => {
         if (!apiConfig.baseUrl) return '';
         try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; }
@@ -803,18 +850,78 @@ const PresetApp: React.FC = () => {
                         </div>
                     ) : (
                         <>
-                            <div className="relative">
-                                <select
-                                    value={activeId ?? ''}
-                                    onChange={e => selectPreset(e.target.value)}
-                                    className="w-full appearance-none px-4 py-3 text-sm font-extrabold outline-none"
-                                    style={FIELD_STYLE}
-                                >
-                                    {presets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
-                                <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none">▾</span>
+                            <div className="space-y-2">
+                                <div className="relative">
+                                    <MagnifyingGlass
+                                        size={15}
+                                        weight="bold"
+                                        className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                                        style={{ color: INS_SOFT }}
+                                    />
+                                    <input
+                                        value={presetSearch}
+                                        onChange={e => setPresetSearch(e.target.value)}
+                                        placeholder="搜索预设名称"
+                                        className="w-full pl-9 pr-9 py-3 text-[12px] font-bold outline-none"
+                                        style={FIELD_STYLE}
+                                    />
+                                    {presetSearch && (
+                                        <button
+                                            onClick={() => setPresetSearch('')}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 active:scale-90 transition-transform"
+                                            style={{ color: INS_SOFT }}
+                                            aria-label="清空搜索"
+                                            title="清空搜索"
+                                        >
+                                            <XCircle size={15} weight="bold" />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <div className="relative min-w-0">
+                                        <select
+                                            value={activeId ?? ''}
+                                            onChange={e => selectPreset(e.target.value)}
+                                            className="w-full appearance-none px-4 py-3 pr-9 text-sm font-extrabold outline-none"
+                                            style={FIELD_STYLE}
+                                        >
+                                            {selectOptions.map(p => (
+                                                <option key={p.id} value={p.id}>
+                                                    {pinnedPresetSet.has(p.id) ? '置顶 · ' : ''}{p.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <CaretDown
+                                            aria-hidden
+                                            size={14}
+                                            weight="bold"
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                                            style={{ color: INS_SOFT }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={togglePinnedPreset}
+                                        disabled={!active}
+                                        className="w-12 rounded-[14px] flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+                                        style={{
+                                            background: activePinned ? COPPER_TONE.soft : PAPER,
+                                            color: activePinned ? COPPER_TONE.ink : INS_SOFT,
+                                            border: `1px solid ${activePinned ? `${COPPER_TONE.solid}55` : LINE}`,
+                                            boxShadow: activePinned ? `0 8px 18px -16px ${COPPER_TONE.solid}` : '0 8px 18px -16px rgba(38,52,71,0.24)',
+                                        }}
+                                        aria-label={activePinned ? '取消置顶当前预设' : '置顶当前预设'}
+                                        title={activePinned ? '取消置顶当前预设' : '置顶当前预设'}
+                                    >
+                                        <PushPinSimple size={17} weight={activePinned ? 'fill' : 'bold'} />
+                                    </button>
+                                </div>
+                                {presetSearch && filteredPresets.length === 0 && (
+                                    <div className="text-[10px] px-1" style={{ color: INS_SOFT }}>
+                                        没找到匹配项，当前预设仍保留在下拉框里。
+                                    </div>
+                                )}
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-3 gap-2 mt-3">
                                 {[
                                     { icon: PenNib, label: '新建', fn: handleNewPreset, tone: 'press' as const },
                                     { icon: TrayArrowDown, label: '导入', fn: () => fileInputRef.current?.click(), tone: 'press' as const },
@@ -941,14 +1048,9 @@ const PresetApp: React.FC = () => {
                                                     boxShadow: dragIdx === idx ? '0 14px 30px -18px rgba(79,157,195,0.52)' : '0 8px 18px -16px rgba(38,52,71,0.24)',
                                                 }}
                                             >
-                                                <span
-                                                    aria-hidden
-                                                    className="absolute left-0 top-0 bottom-0 w-1"
-                                                    style={{ background: isMarker ? PRESS.solid : isAbsolute ? COPPER_TONE.solid : ACTIVE_TONE.solid }}
-                                                />
                                                 <div
                                                     onPointerDown={onDragPointerDown(idx)}
-                                                    className="ml-1 p-1 cursor-grab touch-none shrink-0"
+                                                    className="p-1 cursor-grab touch-none shrink-0"
                                                     style={{ color: INS_SOFT }}
                                                     title="拖动排序"
                                                 >

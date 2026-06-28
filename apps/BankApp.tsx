@@ -1,8 +1,8 @@
-
+﻿
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankJobApplication, BankStockQuote } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -15,8 +15,43 @@ import { BusinessResultModal, ReviewsOverlay, RegularsOverlay, BusinessResult } 
 import { SHOP_RECIPES, INITIAL_DOLLHOUSE, NPC_CUSTOMERS, buildReviewText, buildMishapText, recipePrice, restockBatchCost, STARTING_STOCK, RESTOCK_BATCH, STOCK_CAP, DAILY_STOCK_FLOOR, MAX_SHOP_LEVEL, shopUpgradeCost, shopLevelBonusPct, shopLevelExtraCustomers, shopLevelPassiveMult, REGULAR_VISITS, VIP_VISITS, MAX_REGULARS, idleRatePerHour, IDLE_CAP_HOURS, getWeatherDef, rollWeatherId, WEATHER_DURATION_MS } from '../components/bank/BankGameConstants';
 import { processImage } from '../utils/file';
 import { ContextBuilder } from '../utils/context';
-import { Coffee, ClipboardText, ChartBar, Coin, Target, UserCircle, BookOpen, Lightning, Storefront } from '@phosphor-icons/react';
-import { paperTexture, WashiTape, TapeLabel, Postmark, PaperNote, PaperClip, HAND_FONT, tinyRotate } from './almanac/handbookKit';
+import { HAND_FONT } from './almanac/handbookKit';
+import {
+    PAGE_BG,
+    PaperCard,
+    SectionTag,
+    ScrapButton,
+    INK,
+    INK_SOFT,
+} from './ui/insScrapKit';
+import {
+    BANK_LIFE_VERSION,
+    BUSINESS_TEMPLATES,
+    COMPANY_DIRECTIONS,
+    COMPANY_FOUND_COST,
+    JOB_CATEGORIES,
+    JOB_POSTINGS,
+    LOAN_PRODUCTS,
+    SHOP_UNLOCK_COST,
+    advanceJobApplicationStage,
+    advanceBankLifeDay,
+    applyCompanyIssue,
+    applyForJob,
+    borrowLoan,
+    buyStock,
+    channelLabel,
+    foundCompany,
+    getJobsByCategory,
+    leaveJob,
+    loanTotal,
+    migrateBankLifeState,
+    movingAverage,
+    openLifeShop,
+    repayLoan,
+    sellStock,
+    startJobApplication,
+    stockMarketValue,
+} from '../utils/bankLife';
 
 const INITIAL_STATE: BankFullState = {
     config: {
@@ -48,6 +83,21 @@ const INITIAL_STATE: BankFullState = {
         stock: { 'recipe-coffee-001': STARTING_STOCK },
         activeVisitor: undefined,
         guestbook: [] // New
+    },
+    life: {
+        version: BANK_LIFE_VERSION,
+        dateStr: new Date().toISOString().split('T')[0],
+        shopUnlocked: false,
+        jobHistory: [],
+        pendingWages: [],
+        fatigue: 0,
+        reputation: 50,
+        experience: {},
+        stockMarket: [],
+        holdings: {},
+        watchlist: [],
+        loans: [],
+        events: [],
     },
     goals: [],
     todaySpent: 0,
@@ -99,7 +149,35 @@ const ensureWeather = (shop: { weather?: { id: string; until: number } }, now: n
 };
 
 // 手账风弹窗壳 + 输入样式（替代共享 Modal，统一拼贴手账观感）
-const hbInputStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, color: '#5b4636', boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.2)' };
+const hbInputStyle: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: 16,
+    color: INK,
+    border: '1px solid rgba(43,41,51,0.07)',
+    boxShadow: 'inset 0 1px 2px rgba(43,41,51,0.04)',
+};
+const CleanBadge: React.FC<{ children: React.ReactNode; tone?: 'default' | 'green' | 'red' | 'blue' | 'amber'; className?: string }> = ({ children, tone = 'default', className = '' }) => {
+    const styles: Record<string, React.CSSProperties> = {
+        default: { background: '#f5f3ef', color: INK_SOFT },
+        green: { background: '#dcfce7', color: '#15803d' },
+        red: { background: '#ffe4e6', color: '#be123c' },
+        blue: { background: '#e0f2fe', color: '#0369a1' },
+        amber: { background: '#fef3c7', color: '#92400e' },
+    };
+    return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${className}`} style={styles[tone]}>{children}</span>;
+};
+
+const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="text-[11px] font-extrabold mb-1.5" style={{ color: INK_SOFT }}>{children}</div>
+);
+
+const cleanCardStyle: React.CSSProperties = {
+    background: '#fff',
+    border: '1px solid rgba(43,41,51,0.06)',
+    borderRadius: 20,
+    boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 16px 34px -26px rgba(38,38,38,0.28)',
+};
+
 const HbModal: React.FC<{
     open: boolean; onClose: () => void; title: string; sub?: string;
     tapeColor?: string; rotate?: number; footer?: React.ReactNode; children: React.ReactNode;
@@ -107,13 +185,11 @@ const HbModal: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6" onClick={onClose}>
-            <div className="absolute inset-0 bg-black/45 animate-fade-in" />
-            <div className="relative w-full max-w-sm animate-slide-up flex flex-col" style={{ background: '#fffdf7', borderRadius: 18, boxShadow: '0 16px 40px rgba(96,66,40,0.34)', transform: `rotate(${rotate}deg)`, maxHeight: '86vh' }} onClick={e => e.stopPropagation()}>
-                <WashiTape className="-top-2 left-10" color={tapeColor} rotate={-12} width={80} />
-                <WashiTape className="-top-2 right-10" color={tapeColor} rotate={10} width={80} />
+            <div className="absolute inset-0 bg-black/40 animate-fade-in" style={{ backdropFilter: 'blur(6px)' }} />
+            <div className="relative w-full max-w-sm animate-slide-up flex flex-col" style={{ background: '#fff', borderRadius: 28, boxShadow: '0 34px 80px -32px rgba(20,18,16,0.58)', maxHeight: '86vh' }} onClick={e => e.stopPropagation()}>
                 <div className="p-6 overflow-y-auto no-scrollbar">
-                    <div className="text-[22px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>{title}</div>
-                    {sub && <div className="text-[11px] mt-0.5 mb-4" style={{ color: '#a98e6f' }}>{sub}</div>}
+                    <div className="text-[22px] font-black" style={{ fontFamily: HAND_FONT, color: INK }}>{title}</div>
+                    {sub && <div className="text-[11px] mt-0.5 mb-4" style={{ color: INK_SOFT }}>{sub}</div>}
                     {!sub && <div className="mb-4" />}
                     {children}
                 </div>
@@ -137,8 +213,8 @@ const BankApp: React.FC = () => {
     const stateRef = useRef<BankFullState>(INITIAL_STATE);
     const dollhouseRef = useRef<DollhouseState>(INITIAL_DOLLHOUSE);
     
-    // Tabs: 'game' (Shop) | 'manage' (Menu) | 'report' (Finance)
-    const [activeTab, setActiveTab] = useState<'game' | 'manage' | 'report'>('game');
+    const [activeTab, setActiveTab] = useState<'life' | 'jobs' | 'shop' | 'invest' | 'company' | 'loans' | 'report'>('life');
+    const [shopView, setShopView] = useState<'game' | 'manage'>('game');
     
     // UI Modals
     const [showAddTxModal, setShowAddTxModal] = useState(false);
@@ -161,6 +237,22 @@ const BankApp: React.FC = () => {
     const [reportView, setReportView] = useState<'analytics' | 'ledger'>('analytics');
     const [goalName, setGoalName] = useState('');
     const [goalTarget, setGoalTarget] = useState('');
+    const [jobCategory, setJobCategory] = useState('全部');
+    const [stockBudget, setStockBudget] = useState<Record<string, string>>({});
+    const [stockSellShares, setStockSellShares] = useState<Record<string, string>>({});
+    const [companyName, setCompanyName] = useState('');
+    const [companyDirection, setCompanyDirection] = useState(COMPANY_DIRECTIONS[0]);
+    const [loanAmount, setLoanAmount] = useState('5000');
+    const [loanChannel, setLoanChannel] = useState<BankLoanChannel>('bank');
+    const [loanRepayAmount, setLoanRepayAmount] = useState<Record<string, string>>({});
+    const [selectedBusinessType, setSelectedBusinessType] = useState(BUSINESS_TEMPLATES[0]?.id || 'drinks');
+    const [newShopName, setNewShopName] = useState('');
+    const [selectedJobId, setSelectedJobId] = useState<string>(JOB_POSTINGS[0]?.id || '');
+    const [selectedApplicationId, setSelectedApplicationId] = useState<string>('');
+    const [interviewAnswer, setInterviewAnswer] = useState('');
+    const [selectedStockSymbol, setSelectedStockSymbol] = useState('MORO');
+    const [marketView, setMarketView] = useState<'all' | 'watch' | 'gainers' | 'losers'>('all');
+    const [selectedLoanId, setSelectedLoanId] = useState('');
 
     // Staff Edit Form
     const [editingStaff, setEditingStaff] = useState<ShopStaff | null>(null);
@@ -172,6 +264,24 @@ const BankApp: React.FC = () => {
     // Load Data
     useEffect(() => {
         loadData();
+    }, []);
+
+    useEffect(() => {
+        const onAutoTx = (e: Event) => {
+            const tx = (e as CustomEvent<BankTransaction>).detail;
+            if (!tx?.id) return;
+            setTransactions(prev => prev.some(x => x.id === tx.id) ? prev : [tx, ...prev].sort((a, b) => b.timestamp - a.timestamp));
+            if (tx.dateStr === new Date().toISOString().split('T')[0] && tx.type === 'expense') {
+                setState(prev => {
+                    const next = { ...prev, todaySpent: (prev.todaySpent || 0) + tx.amount };
+                    stateRef.current = next;
+                    void DB.saveBankState(next);
+                    return next;
+                });
+            }
+        };
+        window.addEventListener('moro-bank-transaction-added', onAutoTx as EventListener);
+        return () => window.removeEventListener('moro-bank-transaction-added', onAutoTx as EventListener);
     }, []);
 
     // 挂机营业额累计 + 天气轮换：每 30s 折算待收金币、到点换天气（仅在有变化时落库）
@@ -237,7 +347,7 @@ const BankApp: React.FC = () => {
         const savedState = await DB.getBankState();
         const txs = await DB.getAllTransactions();
 
-        let currentState = savedState || INITIAL_STATE;
+        let currentState = migrateBankLifeState(savedState || INITIAL_STATE);
 
         // Migration: Ensure Shop structure exists
         if (!currentState.shop) {
@@ -428,7 +538,7 @@ const BankApp: React.FC = () => {
         }
 
         const todayTx = txs.filter(t => t.dateStr === today);
-        const spent = todayTx.reduce((sum, t) => sum + t.amount, 0);
+        const spent = todayTx.reduce((sum, t) => sum + (t.type === 'income' ? 0 : t.amount), 0);
         const appeal = calculateAppeal(currentState.shop.staff.length, currentState.shop.unlockedRecipes);
 
         // 挂机营业额 + 天气：先定天气（影响挂机产出），再按离店时长折算待收金币
@@ -615,7 +725,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(-cost);
+        adjustUserBalance(-cost, { note: `${r.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '生活拟', sourceId: recipeId });
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
     };
 
@@ -637,7 +747,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(-cost);
+        adjustUserBalance(-cost, { note: `店铺升级 Lv.${level + 1}`, category: 'shop', kind: 'shop-upgrade', sourceApp: '生活拟' });
         addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
     };
 
@@ -651,7 +761,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(amount);
+        adjustUserBalance(amount, { note: '领取挂机营业额', category: 'shop', kind: 'shop-idle', sourceApp: '生活拟' });
         addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}`, 'success');
     };
 
@@ -952,6 +1062,168 @@ ${previousGuestbook}
         addToast('设置已保存', 'success');
     };
 
+    const updateLifeState = async (updater: (life: NonNullable<BankFullState['life']>) => NonNullable<BankFullState['life']>) => {
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            return { ...withLife, life: updater(withLife.life!) };
+        });
+    };
+
+    const handleAdvanceLifeDay = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = advanceBankLifeDay(cur.life!);
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        for (const ev of result.ledgerEvents) {
+            adjustUserBalance(ev.amount, { note: ev.note, category: ev.category, kind: ev.kind, sourceApp: '生活拟', sourceId: ev.sourceId });
+        }
+        addToast(result.balanceDelta > 0 ? `来到 ${result.life.dateStr}，入账 ¥${result.balanceDelta}` : `来到 ${result.life.dateStr}`, 'success');
+    };
+
+    const handleApplyJob = async (posting: BankJobPosting) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = applyForJob(cur.life!, posting, userProfile.balance || 0);
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        if (result.balanceDelta !== 0) {
+            adjustUserBalance(result.balanceDelta, { note: `${posting.title} 求职踩坑`, category: 'job', kind: 'job-risk', sourceApp: '生活拟', sourceId: posting.id });
+        }
+        addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+    };
+
+    const handleStartJobApplication = async (posting: BankJobPosting) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = startJobApplication(cur.life!, posting);
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        setSelectedApplicationId(result.application.id);
+        addToast('简历已投出', 'success');
+    };
+
+    const handleAdvanceJobApplication = async (applicationId: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = advanceJobApplicationStage(cur.life!, applicationId, interviewAnswer, userProfile.balance || 0);
+        if (!result.application) return;
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        if (result.balanceDelta !== 0) {
+            adjustUserBalance(result.balanceDelta, { note: `${result.application.title} 求职损失`, category: 'job', kind: 'job-risk', sourceApp: '生活拟', sourceId: result.application.postingId });
+        }
+        setSelectedApplicationId(result.application.id);
+        setInterviewAnswer('');
+        addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+    };
+
+    const handleLeaveJob = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        if (!cur.life?.currentJob) return;
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: leaveJob(migrateBankLifeState(prev).life!) }));
+        addToast('已离职，未结工资会按发薪日补发', 'info');
+    };
+
+    const handleUnlockLifeShop = async () => {
+        const wallet = Math.round(userProfile.balance || 0);
+        if (wallet < SHOP_UNLOCK_COST) { addToast(`开店至少需要 ¥${SHOP_UNLOCK_COST}`, 'error'); return; }
+        const tpl = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
+        const shopName = newShopName.trim() || `${tpl.name}`;
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            return {
+                ...withLife,
+                life: openLifeShop(withLife.life!, tpl.id, shopName),
+                shop: { ...withLife.shop, shopName },
+            };
+        });
+        adjustUserBalance(-SHOP_UNLOCK_COST, { note: '生活拟开店启动金', category: 'shop', kind: 'shop-open', sourceApp: '生活拟' });
+        addToast(`${shopName} 准备开张`, 'success');
+    };
+
+    const handleBuyStock = async (symbol: string) => {
+        const amount = Number(stockBudget[symbol]);
+        if (!Number.isFinite(amount) || amount <= 0) { addToast('请输入买入金额', 'error'); return; }
+        if ((userProfile.balance || 0) < amount) { addToast('钱包不够买入', 'error'); return; }
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = buyStock(cur.life!, symbol, amount);
+        if (result.cost <= 0) { addToast('金额太小，买不了一份', 'info'); return; }
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        adjustUserBalance(-result.cost, { note: `买入 ${symbol}`, category: 'stock', kind: 'stock-buy', sourceApp: '生活拟', sourceId: symbol, relatedEntityId: symbol });
+        setStockBudget(prev => ({ ...prev, [symbol]: '' }));
+        addToast(`买入 ${symbol} ${result.shares} 股`, 'success');
+    };
+
+    const handleSellStock = async (symbol: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const own = cur.life?.holdings[symbol]?.shares || 0;
+        const input = stockSellShares[symbol]?.trim();
+        const shares = input ? Number(input) : own;
+        if (!Number.isFinite(shares) || shares <= 0) { addToast('请输入卖出份额', 'error'); return; }
+        const result = sellStock(cur.life!, symbol, shares);
+        if (result.revenue <= 0) { addToast('没有可卖持仓', 'info'); return; }
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        adjustUserBalance(result.revenue, { note: `卖出 ${symbol}`, category: 'stock', kind: 'stock-sell', sourceApp: '生活拟', sourceId: symbol, relatedEntityId: symbol });
+        setStockSellShares(prev => ({ ...prev, [symbol]: '' }));
+        addToast(`卖出 ${symbol}，到账 ¥${result.revenue}`, 'success');
+    };
+
+    const handleToggleWatchlist = async (symbol: string) => {
+        await updateLifeState(life => {
+            const exists = life.watchlist.includes(symbol);
+            return { ...life, watchlist: exists ? life.watchlist.filter(s => s !== symbol) : [symbol, ...life.watchlist] };
+        });
+    };
+
+    const handleFoundCompany = async () => {
+        if ((userProfile.balance || 0) < COMPANY_FOUND_COST) { addToast(`开公司至少需要 ¥${COMPANY_FOUND_COST}`, 'error'); return; }
+        const cur = migrateBankLifeState(stateRef.current);
+        if (cur.life?.company) { addToast('已经有公司啦', 'info'); return; }
+        const nextLife = foundCompany(cur.life!, companyName, companyDirection);
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+        adjustUserBalance(-COMPANY_FOUND_COST, { note: `创办${companyName || companyDirection}`, category: 'company', kind: 'company-found', sourceApp: '生活拟' });
+        addToast('公司成立，第一笔启动资金已转入公司', 'success');
+    };
+
+    const handleCompanyIssue = async (optionId: string) => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const beforeCash = cur.life?.company?.cash || 0;
+        const nextLife = applyCompanyIssue(cur.life!, optionId);
+        const afterCash = nextLife.company?.cash || beforeCash;
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+        addToast(afterCash >= beforeCash ? '事务处理完成，公司现金增加' : '事务处理完成，公司现金减少', 'success');
+    };
+
+    const handleCompanyDividend = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const company = cur.life?.company;
+        if (!company || company.cash <= COMPANY_FOUND_COST) { addToast('公司暂时没有可分红利润', 'info'); return; }
+        const amount = Math.floor((company.cash - COMPANY_FOUND_COST) * 0.35);
+        if (amount <= 0) return;
+        const nextLife = { ...cur.life!, company: { ...company, cash: company.cash - amount, cumulativeProfit: company.cumulativeProfit - amount } };
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+        adjustUserBalance(amount, { note: `${company.name} 分红`, category: 'company', kind: 'company-dividend', sourceApp: '生活拟', sourceId: company.id });
+        addToast(`公司分红到账 ¥${amount}`, 'success');
+    };
+
+    const handleBorrowLoan = async () => {
+        const amount = Math.round(Number(loanAmount));
+        if (!Number.isFinite(amount) || amount <= 0) { addToast('请输入借款金额', 'error'); return; }
+        const product = LOAN_PRODUCTS[loanChannel];
+        if (amount < product.min || amount > product.max) { addToast(`${product.name} 可借 ¥${product.min}-${product.max}`, 'error'); return; }
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = borrowLoan(cur.life!, loanChannel, amount);
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        adjustUserBalance(amount, { note: result.loan.note, category: 'loan', kind: 'loan-borrow', sourceApp: '生活拟', sourceId: result.loan.id });
+        addToast(`${result.loan.note} ¥${amount} 到账`, loanChannel === 'shady' ? 'info' : 'success');
+    };
+
+    const handleRepayLoan = async (loanId: string) => {
+        const amount = Math.round(Number(loanRepayAmount[loanId]));
+        if (!Number.isFinite(amount) || amount <= 0) { addToast('请输入还款金额', 'error'); return; }
+        if ((userProfile.balance || 0) < amount) { addToast('钱包不够还这笔', 'error'); return; }
+        const cur = migrateBankLifeState(stateRef.current);
+        const result = repayLoan(cur.life!, loanId, amount);
+        if (result.paid <= 0) return;
+        await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        adjustUserBalance(-result.paid, { note: '贷款还款', category: 'loan', kind: 'loan-repay', sourceApp: '生活拟', sourceId: loanId });
+        setLoanRepayAmount(prev => ({ ...prev, [loanId]: '' }));
+        addToast(`已还款 ¥${result.paid}`, 'success');
+    };
+
     // --- Goals ---
     const handleAddGoal = async () => {
         if (!goalName || !goalTarget) return;
@@ -1196,7 +1468,7 @@ ${JSON.stringify(list, null, 2)}
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(total);
+        adjustUserBalance(total, { note: '店铺营业收入', category: 'shop', kind: 'shop-business', sourceApp: '生活拟' });
 
         for (const ev of loyaltyEvents.filter(e => e.tier === 'vip')) {
             addToast(`👑 ${ev.name} 成了你店里的 VIP！`, 'success');
@@ -1228,243 +1500,515 @@ ${JSON.stringify(list, null, 2)}
     const lowStockCount = state.shop.unlockedRecipes.reduce(
         (n, id) => n + ((state.shop.stock?.[id] ?? 0) <= LOW_STOCK_THRESHOLD ? 1 : 0), 0);
     const hasLowStock = lowStockCount > 0;
+    const life = migrateBankLifeState(state).life!;
+    const stockValue = stockMarketValue(life);
+    const debtValue = loanTotal(life);
+    const netWorth = Math.round((userProfile.balance || 0) + stockValue + (life.company?.cash || 0) - debtValue);
 
-    return (
-        <div className="h-full w-full flex flex-col relative overflow-hidden" style={paperTexture('kraft')}>
-            <div aria-hidden className="pointer-events-none absolute inset-0 z-0" style={{ boxShadow: 'inset 0 0 90px rgba(96,66,40,0.13)' }} />
+    const cardStyle: React.CSSProperties = { background: '#fff', borderRadius: 22, border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -28px rgba(38,38,38,0.30)' };
+    const smallBtn = (bg: string, color = '#fff'): React.CSSProperties => ({ background: bg, color, borderRadius: 999, fontFamily: HAND_FONT, boxShadow: bg === '#fff' || bg.startsWith('#f') ? '0 8px 18px -14px rgba(38,38,38,0.35)' : '0 12px 24px -14px rgba(38,38,38,0.48)' });
+    const chipStyle = (active = false): React.CSSProperties => ({
+        background: active ? INK : '#fff',
+        color: active ? '#fff' : INK_SOFT,
+        border: '1px solid rgba(43,41,51,0.08)',
+        boxShadow: active ? '0 10px 20px -14px rgba(43,41,51,0.65)' : '0 6px 16px -14px rgba(43,41,51,0.35)',
+        borderRadius: 999,
+    });
+    const statTiles = [
+        { label: '钱包', value: `¥${Math.round(userProfile.balance || 0)}`, color: '#16a34a' },
+        { label: '净资产', value: `¥${netWorth}`, color: INK },
+        { label: '股票市值', value: `¥${Math.round(stockValue)}`, color: '#0284c7' },
+        { label: '负债', value: `¥${Math.round(debtValue)}`, color: '#e11d48' },
+    ];
+    const fmt = (n: number) => `¥${Math.round(n)}`;
+    const selectedBusiness = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
+    const selectedJob = JOB_POSTINGS.find(j => j.id === selectedJobId) || getJobsByCategory(jobCategory)[0] || JOB_POSTINGS[0];
+    const selectedApplication = selectedApplicationId
+        ? life.jobHistory.find(a => a.id === selectedApplicationId)
+        : life.jobHistory[0];
+    const selectedStock = life.stockMarket.find(s => s.symbol === selectedStockSymbol) || life.stockMarket[0];
+    const selectedLoan = selectedLoanId ? life.loans.find(l => l.id === selectedLoanId) : life.loans[0];
 
-            {/* 顶栏：手账封面条 */}
-            <div className="relative shrink-0 z-[50] px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3">
-                <WashiTape className="top-0 left-12" color="rgba(231,196,120,0.7)" rotate={-10} width={78} height={18} />
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                        <button
-                            onClick={closeApp}
-                            className="px-3 py-1.5 text-[12px] font-bold active:scale-95 transition-transform"
-                            style={{ background: '#fffdf7', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-1.5deg)', color: '#7a5c44' }}
-                        >
-                            ← 合上
-                        </button>
-                        <div className="flex flex-col" style={{ fontFamily: HAND_FONT }}>
-                            <span className="text-[10px] tracking-[0.22em]" style={{ color: '#a98e6f' }}>存钱罐 · 小本生意</span>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[19px] font-black leading-none" style={{ color: '#5b4636' }}>{state.shop.actionPoints}</span>
-                                <span className="text-[10px]" style={{ color: '#a98e6f' }}>AP</span>
-                                <span style={{ color: '#cbb89a' }}>·</span>
-                                <span className="text-[19px] font-black leading-none" style={{ color: '#5a8a52' }}>¥{Math.round(userProfile.balance || 0)}</span>
-                                <span className="text-[10px]" style={{ color: '#a98e6f' }}>钱包</span>
-                            </div>
+    const renderStockChart = (quote: BankStockQuote) => {
+        const candles = (quote.history || []).slice(-28);
+        if (!candles.length) return <div className="h-[174px] rounded-[18px]" style={{ background: '#faf8f5' }} />;
+        const width = 320;
+        const height = 174;
+        const top = 12;
+        const bottom = 42;
+        const priceMax = Math.max(...candles.map(c => c.high));
+        const priceMin = Math.min(...candles.map(c => c.low));
+        const volMax = Math.max(...candles.map(c => c.volume), 1);
+        const scaleY = (price: number) => top + (priceMax - price) / Math.max(0.01, priceMax - priceMin) * (height - bottom - top);
+        const closes = candles.map(c => c.close);
+        const ma5 = movingAverage(closes, 5);
+        const ma10 = movingAverage(closes, 10);
+        const step = width / candles.length;
+        const linePath = (values: number[]) => values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${Math.round(i * step + step / 2)} ${Math.round(scaleY(v))}`).join(' ');
+        return (
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-[174px] rounded-[18px]" style={{ background: '#fbfaf8' }} role="img" aria-label={`${quote.name} K线`}>
+                {[0, 1, 2].map(i => <line key={i} x1="0" x2={width} y1={top + i * 42} y2={top + i * 42} stroke="rgba(43,41,51,0.06)" />)}
+                {candles.map((c, i) => {
+                    const x = i * step + step / 2;
+                    const up = c.close >= c.open;
+                    const y1 = scaleY(Math.max(c.open, c.close));
+                    const y2 = scaleY(Math.min(c.open, c.close));
+                    const volH = Math.max(3, c.volume / volMax * 30);
+                    return (
+                        <g key={c.dateStr}>
+                            <rect x={x - step * 0.26} y={height - volH - 5} width={Math.max(2, step * 0.52)} height={volH} rx="1.5" fill={up ? 'rgba(225,29,72,0.22)' : 'rgba(22,163,74,0.22)'} />
+                            <line x1={x} x2={x} y1={scaleY(c.high)} y2={scaleY(c.low)} stroke={up ? '#e11d48' : '#16a34a'} strokeWidth="1.2" />
+                            <rect x={x - step * 0.22} y={Math.min(y1, y2)} width={Math.max(2, step * 0.44)} height={Math.max(2, Math.abs(y2 - y1))} rx="1.5" fill={up ? '#e11d48' : '#16a34a'} />
+                        </g>
+                    );
+                })}
+                <path d={linePath(ma5)} fill="none" stroke="#2563eb" strokeWidth="1.6" strokeLinecap="round" />
+                <path d={linePath(ma10)} fill="none" stroke="#f59e0b" strokeWidth="1.6" strokeLinecap="round" />
+                <text x="10" y="20" fontSize="10" fill="#2563eb" fontWeight="700">MA5</text>
+                <text x="48" y="20" fontSize="10" fill="#f59e0b" fontWeight="700">MA10</text>
+                <text x={width - 74} y="20" fontSize="10" fill={quote.changePct >= 0 ? '#e11d48' : '#16a34a'} fontWeight="800">{quote.changePct >= 0 ? '+' : ''}{quote.changePct}%</text>
+            </svg>
+        );
+    };
+
+    const renderLifeHome = () => (
+        <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+            <PaperCard className="p-4 overflow-hidden">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-[10px] tracking-[0.28em] uppercase" style={{ color: '#f43f5e', fontFamily: 'var(--font-label)' }}>Life Sim</div>
+                        <div className="text-[34px] font-black leading-none mt-1" style={{ color: INK, fontFamily: HAND_FONT }}>{life.dateStr.slice(5)}</div>
+                        <div className="mt-2 text-[12px] leading-relaxed truncate" style={{ color: INK_SOFT }}>
+                            {life.currentJob ? `${life.currentJob.title} · ${life.currentJob.employer}` : '自由安排的一天'}
                         </div>
                     </div>
+                    <div className="w-16 h-16 rounded-[20px] flex items-center justify-center text-[28px] shrink-0" style={{ background: '#faf8f5', border: '1px solid rgba(43,41,51,0.06)' }}>¥</div>
+                </div>
+                <ScrapButton onClick={handleAdvanceLifeDay} className="mt-4 w-full py-2.5 text-[13px]">下一天</ScrapButton>
+            </PaperCard>
 
-                    <div className="flex items-center gap-1.5">
+            <div className="grid grid-cols-2 gap-2.5">
+                {statTiles.map(s => (
+                    <PaperCard key={s.label} className="px-3 py-3">
+                        <div className="text-[10px] font-bold" style={{ color: INK_SOFT }}>{s.label}</div>
+                        <div className="text-[22px] font-black leading-tight mt-0.5 truncate" style={{ color: s.color, fontFamily: HAND_FONT }}>{s.value}</div>
+                    </PaperCard>
+                ))}
+            </div>
+
+            <PaperCard className="p-4">
+                <SectionTag en="status">今日看板</SectionTag>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]" style={{ color: '#4a4750' }}>
+                    <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>店铺：{life.shopUnlocked ? `${life.shopBusinessName || state.shop.shopName} · Lv.${state.shop.shopLevel}` : '还没开张'}</div>
+                    <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>公司：{life.company ? life.company.name : '尚未创业'}</div>
+                    <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>贷款：{life.loans.length} 笔</div>
+                    <div className="rounded-2xl px-3 py-2" style={{ background: '#faf8f5' }}>持仓：{Object.keys(life.holdings).length} 只</div>
+                </div>
+                <div className="mt-3">
+                    <div className="flex items-center justify-between text-[11px] font-bold" style={{ color: INK_SOFT }}><span>疲劳</span><span>{life.fatigue}/100</span></div>
+                    <div className="mt-1 h-2 rounded-full overflow-hidden" style={{ background: '#efece7' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, life.fatigue)}%`, background: life.fatigue > 70 ? '#f43f5e' : '#22c55e' }} />
+                    </div>
+                </div>
+            </PaperCard>
+
+            <PaperCard className="p-4">
+                <SectionTag en="today">今日事件</SectionTag>
+                <div className="space-y-2.5 mt-3">
+                    {life.events.slice(0, 6).map(ev => (
+                        <div key={ev.id} className="flex items-start gap-2 text-[12px]">
+                            <span className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] shrink-0" style={{ background: ev.tone === 'good' ? '#dcfce7' : ev.tone === 'bad' ? '#ffe4e6' : ev.tone === 'warn' ? '#fef3c7' : '#f1f5f9', color: ev.tone === 'good' ? '#15803d' : ev.tone === 'bad' ? '#be123c' : ev.tone === 'warn' ? '#92400e' : INK_SOFT }}>{ev.tone === 'good' ? '✓' : ev.tone === 'bad' ? '!' : ev.tone === 'warn' ? '△' : '·'}</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold truncate" style={{ color: INK }}>{ev.title} <span className="font-normal" style={{ color: INK_SOFT }}>{ev.dateStr}</span></div>
+                                <div className="leading-relaxed" style={{ color: '#5a5660' }}>{ev.detail}</div>
+                            </div>
+                            {ev.amount !== undefined && <span className="font-black shrink-0" style={{ color: ev.amount >= 0 ? '#16a34a' : '#e11d48' }}>{ev.amount >= 0 ? '+' : '-'}¥{Math.abs(ev.amount)}</span>}
+                        </div>
+                    ))}
+                </div>
+            </PaperCard>
+
+            <PaperCard className="p-4">
+                <SectionTag en="ledger">最近流水</SectionTag>
+                <div className="mt-2">
+                    {transactions.slice(0, 5).map(tx => (
+                        <div key={tx.id} className="flex items-center justify-between py-2 text-[12px] border-b last:border-0" style={{ borderColor: 'rgba(43,41,51,0.06)' }}>
+                            <span className="truncate pr-2">{tx.note}<span style={{ color: INK_SOFT }}> · {tx.sourceApp || '手动'}</span></span>
+                            <span className="font-black shrink-0" style={{ color: tx.type === 'income' ? '#16a34a' : '#e11d48' }}>{tx.type === 'income' ? '+' : '-'}¥{tx.amount}</span>
+                        </div>
+                    ))}
+                </div>
+            </PaperCard>
+        </div>
+    );
+
+    const renderJobs = () => {
+        const jobs = getJobsByCategory(jobCategory);
+        const applicationStageLabel: Record<string, string> = {
+            submitted: '已投递',
+            screening: '简历筛选',
+            assessment: '笔试 / 试岗',
+            interview: '面试问答',
+            offer: 'Offer',
+            hired: '已入职',
+            trial: '试用中',
+            rejected: '未通过',
+            scammed: '踩坑',
+        };
+        return (
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+                {life.currentJob && (
+                    <PaperCard className="p-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <CleanBadge tone="green">当前在职</CleanBadge>
+                                <div className="text-[18px] font-black mt-1 truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.currentJob.title}</div>
+                                <div className="text-[12px]" style={{ color: INK_SOFT }}>{life.currentJob.employer} · 已工作 {life.currentJob.daysWorked} 天 · 待发 ¥{Math.round(life.currentJob.accruedWage)}</div>
+                            </div>
+                            <ScrapButton onClick={handleLeaveJob} variant="ghost" className="px-3 py-2 text-[12px]">离职</ScrapButton>
+                        </div>
+                    </PaperCard>
+                )}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                    {JOB_CATEGORIES.map(c => (
+                        <button key={c} onClick={() => { setJobCategory(c); const first = getJobsByCategory(c)[0]; if (first) setSelectedJobId(first.id); }} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(jobCategory === c)}>{c}</button>
+                    ))}
+                </div>
+                <div className="grid grid-cols-[0.9fr_1.1fr] gap-3 max-[420px]:grid-cols-1">
+                    <div className="space-y-2.5">
+                        {jobs.map(job => (
+                            <button key={job.id} onClick={() => setSelectedJobId(job.id)} className="w-full text-left p-3 press-soft" style={{ ...cleanCardStyle, borderColor: selectedJob?.id === job.id ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="text-[14px] font-black truncate" style={{ color: INK }}>{job.title}</div>
+                                        <div className="text-[10px] truncate" style={{ color: INK_SOFT }}>{job.employer}</div>
+                                    </div>
+                                    {job.black && <CleanBadge tone="red">谨慎</CleanBadge>}
+                                </div>
+                                <div className="mt-2 text-[12px] font-black" style={{ color: '#16a34a' }}>¥{job.salaryMin}-{job.salaryMax}{job.payCycle === 'daily' ? '/天' : '/月'}</div>
+                            </button>
+                        ))}
+                    </div>
+                    {selectedJob && (
+                        <PaperCard className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-[20px] font-black leading-tight" style={{ color: INK, fontFamily: HAND_FONT }}>{selectedJob.title}</div>
+                                    <div className="text-[12px] mt-1" style={{ color: INK_SOFT }}>{selectedJob.employer} · {selectedJob.category} · {selectedJob.payCycle === 'daily' ? '日结' : `${selectedJob.payDay}号发薪`}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <div className="text-[16px] font-black" style={{ color: '#16a34a' }}>¥{selectedJob.salaryMin}-{selectedJob.salaryMax}</div>
+                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{selectedJob.payCycle === 'daily' ? '每天' : '每月'}</div>
+                                </div>
+                            </div>
+                            <p className="text-[12px] leading-relaxed" style={{ color: '#4a4750' }}>{selectedJob.description}</p>
+                            <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="rounded-2xl p-3" style={{ background: '#faf8f5' }}><b>强度</b><div>{selectedJob.intensity}/5</div></div>
+                                <div className="rounded-2xl p-3" style={{ background: '#faf8f5' }}><b>结算</b><div>{selectedJob.payCycle === 'daily' ? '当天到账' : `${selectedJob.payDay}号`}</div></div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                {[...selectedJob.requirements, ...selectedJob.benefits, ...selectedJob.riskTags].map(tag => <CleanBadge key={tag} tone={selectedJob.riskTags.includes(tag) ? 'amber' : 'default'}>{tag}</CleanBadge>)}
+                            </div>
+                            <button onClick={() => handleStartJobApplication(selectedJob)} className="w-full py-2.5 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn(selectedJob.black ? '#f43f5e' : INK)}>
+                                投递简历
+                            </button>
+                        </PaperCard>
+                    )}
+                </div>
+                {selectedApplication && (
+                    <PaperCard className="p-4 space-y-3">
+                        <SectionTag en="interview">求职进展</SectionTag>
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="font-black text-[16px] truncate" style={{ color: INK }}>{selectedApplication.title}</div>
+                                <div className="text-[12px]" style={{ color: INK_SOFT }}>{selectedApplication.employer} · {applicationStageLabel[selectedApplication.stage || selectedApplication.status] || selectedApplication.status}</div>
+                            </div>
+                            <CleanBadge tone={selectedApplication.status === 'scammed' ? 'red' : selectedApplication.status === 'hired' ? 'green' : 'blue'}>评分 {selectedApplication.score || 0}</CleanBadge>
+                        </div>
+                        <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{selectedApplication.message}</div>
+                        {(selectedApplication.questions || []).slice(0, 3).map(q => (
+                            <div key={q.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#fff', border: '1px solid rgba(43,41,51,0.06)' }}>
+                                <div className="font-bold" style={{ color: INK }}>{q.question}</div>
+                                {q.answer && <div className="mt-1" style={{ color: INK_SOFT }}>{q.answer}</div>}
+                            </div>
+                        ))}
+                        {(['assessment', 'interview'].includes(selectedApplication.stage || '')) && (
+                            <textarea value={interviewAnswer} onChange={e => setInterviewAnswer(e.target.value)} rows={3} placeholder="写下面试回答或试岗表现" className="w-full px-3 py-2 text-[12px] outline-none resize-none" style={hbInputStyle} />
+                        )}
+                        {!['hired', 'trial', 'rejected', 'scammed'].includes(selectedApplication.stage || selectedApplication.status) && (
+                            <button onClick={() => handleAdvanceJobApplication(selectedApplication.id)} className="w-full py-2.5 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>
+                                {selectedApplication.stage === 'offer' ? '接受 Offer' : selectedApplication.stage === 'submitted' ? '查看筛选' : selectedApplication.stage === 'screening' ? '进入下一步' : '提交回答'}
+                            </button>
+                        )}
+                    </PaperCard>
+                )}
+            </div>
+        );
+    };
+
+    const renderInvest = () => {
+        const market = [...life.stockMarket].filter(q => marketView === 'watch' ? life.watchlist.includes(q.symbol) : true);
+        const sorted = marketView === 'gainers' ? market.sort((a, b) => b.changePct - a.changePct) : marketView === 'losers' ? market.sort((a, b) => a.changePct - b.changePct) : market;
+        const q = selectedStock || sorted[0];
+        const hold = q ? life.holdings[q.symbol] : undefined;
+        const pnl = q && hold ? Math.round((q.price - hold.avgCost) * hold.shares) : 0;
+        return (
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-3">
+                <PaperCard className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                        <div>
+                            <SectionTag en="market">行情</SectionTag>
+                            <div className="mt-2 text-[24px] font-black" style={{ color: INK, fontFamily: HAND_FONT }}>¥{Math.round(stockValue)}</div>
+                            <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓总市值</div>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1.5 max-w-[180px]">
+                            {(['all', 'watch', 'gainers', 'losers'] as const).map(k => <button key={k} onClick={() => setMarketView(k)} className="px-2.5 py-1.5 text-[11px] font-bold press-soft" style={chipStyle(marketView === k)}>{k === 'all' ? '全部' : k === 'watch' ? '自选' : k === 'gainers' ? '涨幅' : '跌幅'}</button>)}
+                        </div>
+                    </div>
+                </PaperCard>
+                {q && (
+                    <PaperCard className="p-4 space-y-3">
+                        <div className="flex justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[20px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{q.name} <span className="text-[11px]" style={{ color: INK_SOFT }}>{q.symbol}</span></div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>{q.industry} · 风险 {q.risk}/5</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <div className="text-[20px] font-black" style={{ color: q.changePct >= 0 ? '#e11d48' : '#16a34a' }}>¥{q.price}</div>
+                                <div className="text-[11px]" style={{ color: q.changePct >= 0 ? '#e11d48' : '#16a34a' }}>{q.changePct >= 0 ? '+' : ''}{q.changePct}%</div>
+                            </div>
+                        </div>
+                        {renderStockChart(q)}
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.intraday?.at(-1)?.time || '15:00'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>分时</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.history?.at(-1)?.volume.toLocaleString() || 0}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>成交量</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{life.watchlist.includes(q.symbol) ? '已加' : '未加'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>自选</div></div>
+                        </div>
+                        <p className="text-[12px] rounded-2xl px-3 py-2" style={{ color: '#4a4750', background: '#faf8f5' }}>{q.news}</p>
+                        <div className="flex flex-wrap gap-1.5">{(q.eventTags || []).map(tag => <CleanBadge key={tag} tone="blue">{tag}</CleanBadge>)}</div>
+                        {hold && <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓 {hold.shares} 股 · 成本 ¥{hold.avgCost} · 浮盈亏 <b style={{ color: pnl >= 0 ? '#e11d48' : '#16a34a' }}>{pnl >= 0 ? '+' : ''}¥{pnl}</b></div>}
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="flex gap-1.5">
+                                <input type="number" value={stockBudget[q.symbol] || ''} onChange={e => setStockBudget(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="买入金额" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                                <button onClick={() => handleBuyStock(q.symbol)} className="px-3 text-[12px] font-black" style={smallBtn('#f43f5e')}>买</button>
+                            </div>
+                            <div className="flex gap-1.5">
+                                <input type="number" value={stockSellShares[q.symbol] || ''} onChange={e => setStockSellShares(prev => ({ ...prev, [q.symbol]: e.target.value }))} placeholder="卖出股数" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                                <button onClick={() => handleSellStock(q.symbol)} className="px-3 text-[12px] font-black" style={smallBtn('#16a34a')}>卖</button>
+                            </div>
+                        </div>
+                        <button onClick={() => handleToggleWatchlist(q.symbol)} className="w-full py-2 text-[12px] font-black" style={chipStyle(false)}>{life.watchlist.includes(q.symbol) ? '移出自选' : '加入自选'}</button>
+                    </PaperCard>
+                )}
+                <div className="grid gap-2">
+                    {sorted.map(item => (
+                        <button key={item.symbol} onClick={() => setSelectedStockSymbol(item.symbol)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: q?.symbol === item.symbol ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                            <div className="flex justify-between gap-3">
+                                <div className="min-w-0"><div className="font-black truncate" style={{ color: INK }}>{item.name}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>{item.symbol} · {item.industry}</div></div>
+                                <div className="text-right shrink-0"><div className="font-black">¥{item.price}</div><div className="text-[11px]" style={{ color: item.changePct >= 0 ? '#e11d48' : '#16a34a' }}>{item.changePct >= 0 ? '+' : ''}{item.changePct}%</div></div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    const renderCompany = () => (
+        <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+            {!life.company ? (
+                <PaperCard className="p-4 space-y-3">
+                    <SectionTag en="startup">开一家公司</SectionTag>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div><FieldLabel>公司昵称</FieldLabel><input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="比如：月光社" className="w-full px-3 py-2 outline-none" style={hbInputStyle} /></div>
+                        <div><FieldLabel>启动资金</FieldLabel><div className="px-3 py-2 text-[14px] font-black" style={hbInputStyle}>¥{COMPANY_FOUND_COST}</div></div>
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                        {COMPANY_DIRECTIONS.map(d => <button key={d} onClick={() => setCompanyDirection(d)} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(companyDirection === d)}>{d}</button>)}
+                    </div>
+                    <button onClick={handleFoundCompany} className="w-full py-2.5 text-[14px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>投入 ¥{COMPANY_FOUND_COST}</button>
+                </PaperCard>
+            ) : (
+                <>
+                    <PaperCard className="p-4">
+                        <div className="flex justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[20px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>{life.company.name}</div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>{life.company.direction} · 员工 {life.company.employees}</div>
+                            </div>
+                            <button onClick={handleCompanyDividend} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>分红</button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[15px] font-black">¥{Math.round(life.company.cash)}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>现金</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[15px] font-black">{life.company.reputation}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>声誉</div></div>
+                            <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[15px] font-black">{life.company.stress}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>压力</div></div>
+                        </div>
+                    </PaperCard>
+                    {life.company.pendingIssue && (
+                        <PaperCard className="p-4 space-y-3">
+                            <SectionTag en={life.company.pendingIssue.kind || 'issue'}>{life.company.pendingIssue.title}</SectionTag>
+                            <p className="text-[12px] leading-relaxed" style={{ color: '#4a4750' }}>{life.company.pendingIssue.description}</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {life.company.pendingIssue.options.map(opt => <button key={opt.id} onClick={() => handleCompanyIssue(opt.id)} className="py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn(opt.cashDelta >= 0 ? '#16a34a' : '#f43f5e')}>{opt.label}</button>)}
+                            </div>
+                        </PaperCard>
+                    )}
+                    <PaperCard className="p-4">
+                        <SectionTag en="orders">订单池</SectionTag>
+                        <div className="space-y-2 mt-3">
+                            {(life.company.orders || []).slice(0, 5).map(order => (
+                                <div key={order.id} className="rounded-2xl px-3 py-2 text-[12px] flex justify-between gap-2" style={{ background: '#faf8f5' }}>
+                                    <div className="min-w-0"><b className="truncate block">{order.title}</b><span style={{ color: INK_SOFT }}>{order.client} · 难度 {order.difficulty}/5</span></div>
+                                    <div className="text-right shrink-0"><b>¥{order.value}</b><div style={{ color: INK_SOFT }}>{order.status}</div></div>
+                                </div>
+                            ))}
+                            {!(life.company.orders || []).length && <div className="text-[12px] rounded-2xl p-3" style={{ background: '#faf8f5', color: INK_SOFT }}>今天先把手头事理顺，订单会慢慢找上门。</div>}
+                        </div>
+                    </PaperCard>
+                    <PaperCard className="p-4">
+                        <SectionTag en="cashflow">现金流</SectionTag>
+                        <div className="space-y-2 mt-3">
+                            {(life.company.cashflow || []).slice(0, 5).map((flow, idx) => (
+                                <div key={`${flow.dateStr}-${idx}`} className="flex justify-between gap-2 text-[12px] border-b last:border-0 py-2" style={{ borderColor: 'rgba(43,41,51,0.06)' }}>
+                                    <span className="truncate">{flow.note} · {flow.dateStr}</span>
+                                    <b style={{ color: flow.profit >= 0 ? '#16a34a' : '#e11d48' }}>{flow.profit >= 0 ? '+' : '-'}¥{Math.abs(flow.profit)}</b>
+                                </div>
+                            ))}
+                        </div>
+                    </PaperCard>
+                </>
+            )}
+        </div>
+    );
+
+    const renderLoans = () => {
+        const product = LOAN_PRODUCTS[loanChannel];
+        return (
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3.5 pt-3 pb-4 space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                    {(['bank', 'formal', 'shady'] as BankLoanChannel[]).map(ch => {
+                        const p = LOAN_PRODUCTS[ch];
+                        return <button key={ch} onClick={() => setLoanChannel(ch)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: loanChannel === ch ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                            <div className="text-[13px] font-black truncate" style={{ color: INK }}>{channelLabel(ch)}</div>
+                            <div className="text-[10px]" style={{ color: INK_SOFT }}>{p.dailyRate < 0.001 ? '低息' : p.dailyRate < 0.002 ? '灵活' : '高风险'}</div>
+                        </button>;
+                    })}
+                </div>
+                <PaperCard className="p-4 space-y-3">
+                    <SectionTag en="contract">{product.name}</SectionTag>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">¥{product.min}-{product.max}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>额度</div></div>
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{(product.dailyRate * 100).toFixed(3)}%</div><div className="text-[10px]" style={{ color: INK_SOFT }}>日息</div></div>
+                        <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{product.days}天</div><div className="text-[10px]" style={{ color: INK_SOFT }}>期限</div></div>
+                    </div>
+                    <div className="rounded-2xl px-3 py-2 text-[12px]" style={{ background: '#faf8f5', color: '#4a4750' }}>{product.review}</div>
+                    <div className="flex flex-wrap gap-1.5">{product.terms.map(term => <CleanBadge key={term} tone={loanChannel === 'shady' ? 'red' : 'default'}>{term}</CleanBadge>)}</div>
+                    <div className="flex gap-2">
+                        <input type="number" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="flex-1 px-3 py-2 outline-none" style={hbInputStyle} />
+                        <button onClick={handleBorrowLoan} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>申请</button>
+                    </div>
+                </PaperCard>
+                {selectedLoan && (
+                    <PaperCard className="p-4 space-y-3">
+                        <SectionTag en="repay">还款计划</SectionTag>
+                        <div className="flex justify-between gap-3">
+                            <div>
+                                <div className="font-black" style={{ color: INK }}>{selectedLoan.note}</div>
+                                <div className="text-[11px]" style={{ color: INK_SOFT }}>到期 {selectedLoan.dueDate} · 逾期 {selectedLoan.overdueDays} 天</div>
+                            </div>
+                            <div className="text-right"><div className="font-black" style={{ color: '#e11d48' }}>{fmt(selectedLoan.outstanding + selectedLoan.interestDue)}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>含息 {fmt(selectedLoan.interestDue)}</div></div>
+                        </div>
+                        {(selectedLoan.repaymentPlan || []).map((p, idx) => (
+                            <div key={`${p.dueDate}-${idx}`} className="rounded-2xl px-3 py-2 flex justify-between text-[12px]" style={{ background: '#faf8f5' }}>
+                                <span>{p.dueDate}</span><span>{fmt(p.amount)} · {p.status === 'paid' ? '已还' : p.status === 'overdue' ? '逾期' : '待还'}</span>
+                            </div>
+                        ))}
+                        <div className="flex gap-2">
+                            <input type="number" value={loanRepayAmount[selectedLoan.id] || ''} onChange={e => setLoanRepayAmount(prev => ({ ...prev, [selectedLoan.id]: e.target.value }))} placeholder="还款金额" className="flex-1 px-3 py-2 outline-none" style={hbInputStyle} />
+                            <button onClick={() => handleRepayLoan(selectedLoan.id)} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>还款</button>
+                        </div>
+                    </PaperCard>
+                )}
+                <div className="grid gap-2">
+                    {life.loans.map(loan => (
+                        <button key={loan.id} onClick={() => setSelectedLoanId(loan.id)} className="p-3 text-left press-soft" style={{ ...cleanCardStyle, borderColor: selectedLoan?.id === loan.id ? '#f43f5e' : 'rgba(43,41,51,0.06)' }}>
+                            <div className="flex justify-between gap-3 text-[12px]">
+                                <div className="min-w-0"><b className="truncate block">{loan.note}</b><span style={{ color: INK_SOFT }}>{channelLabel(loan.channel)} · {loan.dueDate}</span></div>
+                                <b className="shrink-0" style={{ color: '#e11d48' }}>{fmt(loan.outstanding + loan.interestDue)}</b>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAGE_BG, color: INK }}>
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-64 z-0" style={{ background: 'radial-gradient(120% 90% at 50% -28%, rgba(244,63,94,0.10), transparent 70%)' }} />
+
+            <div className="relative shrink-0 z-[50] px-3.5 pt-[calc(env(safe-area-inset-top)+0.65rem)] pb-2.5">
+                <div className="flex items-center gap-2.5 rounded-[26px] bg-white px-2.5 py-2.5" style={{ border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 18px 40px -28px rgba(38,38,38,0.35)' }}>
+                        <button
+                            onClick={closeApp}
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-[18px] font-bold active:scale-90 transition-transform shrink-0"
+                            style={{ background: '#faf8f5', color: INK, border: '1px solid rgba(43,41,51,0.06)' }}
+                        >
+                            ‹
+                        </button>
+                        <Stamp color="rose" size={40}><span className="text-[18px] font-black">¥</span></Stamp>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>生活拟</span>
+                                <span className="text-[8px] tracking-[0.28em] uppercase shrink-0" style={{ color: '#f43f5e', fontFamily: 'var(--font-label)' }}>life gram</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 min-w-0 text-[10.5px]" style={{ color: INK_SOFT }}>
+                                <span>{life.dateStr}</span>
+                                <span>·</span>
+                                <span className="truncate">钱包 ¥{Math.round(userProfile.balance || 0)}</span>
+                                <span>·</span>
+                                <span className="truncate">净资产 ¥{netWorth}</span>
+                            </div>
+                        </div>
                         <button
                             onClick={() => setShowTutorial(true)}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-black active:scale-90 transition-transform"
-                            style={{ background: '#fffdf7', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', color: '#a98e6f' }}
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black active:scale-90 transition-transform shrink-0"
+                            style={{ background: '#faf8f5', color: INK_SOFT, border: '1px solid rgba(43,41,51,0.06)' }}
                         >
                             ?
                         </button>
                         <button
                             onClick={handleOperate}
-                            className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform inline-flex items-center gap-1"
-                            style={{ background: '#dfeccd', color: '#4a6b3c', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(1deg)', fontFamily: HAND_FONT }}
+                            disabled={!life.shopUnlocked}
+                            className="hidden sm:inline-flex px-3 py-2 text-[12px] font-black active:scale-95 transition-transform items-center gap-1 disabled:opacity-50"
+                            style={smallBtn(life.shopUnlocked ? '#16a34a' : '#e5e7eb', life.shopUnlocked ? '#fff' : INK_SOFT)}
                         >
-                            💰 营业
+                            营业
                         </button>
                         <button
                             onClick={() => setShowAddTxModal(true)}
-                            className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform inline-flex items-center gap-1"
-                            style={{ background: '#f6ddc9', color: '#a85a3c', boxShadow: '0 2px 6px rgba(96,66,40,0.18)', transform: 'rotate(-1deg)', fontFamily: HAND_FONT }}
+                            className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform inline-flex items-center gap-1 shrink-0"
+                            style={smallBtn('#f43f5e')}
                         >
-                            ✎ 记账
+                            记账
                         </button>
-                    </div>
                 </div>
-                <div aria-hidden className="absolute left-0 right-0 bottom-0 h-[3px]" style={{ background: 'repeating-linear-gradient(90deg, #d8c7a8 0 6px, transparent 6px 12px)' }} />
             </div>
 
             {/* Main Content Area */}
             <div className="flex-1 overflow-hidden relative z-10 flex flex-col">
-                
-                {/* 1. Game View (Dollhouse) */}
-                {activeTab === 'game' && (
-                    <>
-                    {isBankDataLoaded ? (
-                    <BankDollhouse
-                        shopState={state.shop}
-                        dollhouseState={dollhouseState}
-                        onDollhouseChange={async (updater) => { await persistDollhouseUpdate(updater); }}
-                        characters={characters}
-                        userProfile={userProfile}
-                        apiConfig={auxApi}
-                        updateState={async (updater) => {
-                            const nextState = { ...stateRef.current, shop: updater(stateRef.current.shop) };
-                            stateRef.current = nextState;
-                            setState(nextState);
-                            await DB.saveBankState(nextState);
-                        }}
-                        onStaffClick={handleOpenStaffEdit}
-                        onOpenGuestbook={() => setShowGuestbook(true)}
-                        onWipeCounter={handleWipeCounter}
-                    />
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-sm text-[#8A5A3D]">加载咖啡店中...</div>
-                    )}
-                    {/* 口碑入口 */}
-                    {(() => {
-                        const rv = state.shop.reviews || [];
-                        const avg = rv.length ? Math.round((rv.reduce((s, r) => s + r.rating, 0) / rv.length) * 10) / 10 : 0;
-                        return (
-                            <button onClick={() => setShowReviews(true)} className="absolute left-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }}>
-                                <span className="text-sm">⭐</span>
-                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{avg || '口碑'}</span>
-                                <span className="text-[10px]" style={{ color: '#A1887F' }}>{rv.length ? `${rv.length} 评价` : '看看'}</span>
-                            </button>
-                        );
-                    })()}
-                    {/* 常客名册入口 */}
-                    {(() => {
-                        const regs = Object.values(state.shop.regulars || {});
-                        const vipN = regs.filter(r => r.visits >= VIP_VISITS).length;
-                        const regN = regs.filter(r => r.visits >= REGULAR_VISITS).length;
-                        return (
-                            <button onClick={() => setShowRegulars(true)} className="absolute left-3 bottom-[60px] z-40 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-all" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }}>
-                                <span className="text-sm">👑</span>
-                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{regN || '常客'}</span>
-                                <span className="text-[10px]" style={{ color: '#A1887F' }}>{vipN > 0 ? `${vipN} VIP` : '名册'}</span>
-                            </button>
-                        );
-                    })()}
-                    {/* 挂机营业额：攒下的待收金币，点击收进钱包 */}
-                    {(() => {
-                        const pending = Math.floor(state.shop.pendingRevenue || 0);
-                        if (pending < 1) return null;
-                        const full = pending >= idleCapNow(state.shop);
-                        return (
-                            <button onClick={handleCollectIdle} className="absolute left-1/2 -translate-x-1/2 bottom-[60px] z-40 flex items-center gap-1.5 px-3.5 py-2 rounded-full active:scale-95 transition-transform animate-bounce" style={{ background: 'linear-gradient(135deg,#ffe08a,#f3b24a)', boxShadow: '0 6px 16px rgba(220,160,40,0.45)' }}>
-                                <span className="text-sm">💰</span>
-                                <span className="text-[13px] font-black" style={{ color: '#7a5212' }}>收 {state.config.currencySymbol}{pending}</span>
-                                {full && <span className="text-[9px] font-bold px-1 py-0.5 rounded-full" style={{ background: '#fff6e0', color: '#b9772a' }}>满</span>}
-                            </button>
-                        );
-                    })()}
-                    {/* 天气/事件 */}
-                    {(() => {
-                        const w = getWeatherDef(state.shop.weather?.id);
-                        return (
-                            <div className="absolute right-3 bottom-3 z-40 flex items-center gap-1.5 px-3 py-2 rounded-full" style={{ background: 'rgba(255,253,247,0.95)', boxShadow: '0 4px 14px rgba(96,66,40,0.25)' }} title={w.note}>
-                                <span className="text-sm">{w.emoji}</span>
-                                <span className="text-[12px] font-black" style={{ color: '#8D6E63' }}>{w.label}</span>
-                            </div>
-                        );
-                    })()}
-                    </>
-                )}
-
-                {/* 2. Management Menu */}
-                {activeTab === 'manage' && (
-                    <div className="flex-1 overflow-y-auto no-scrollbar p-4">
-                        {/* Budget Config at Top */}
-                        <div className="relative p-4 mb-4 flex justify-between items-center" style={{ background: '#fffdf7', borderRadius: 14, boxShadow: '0 4px 12px rgba(96,66,40,0.14)', transform: 'rotate(-0.6deg)' }}>
-                            <WashiTape className="-top-2 left-8" color="rgba(231,196,120,0.7)" rotate={-10} width={64} />
-                            <div>
-                                <h3 className="text-[15px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>每日预算线</h3>
-                                <p className="text-[10px]" style={{ color: '#a98e6f' }}>记账支出超过它，会轻轻提醒你一下</p>
-                            </div>
-                            <div className="flex items-center gap-1 px-2.5 py-1.5" style={{ background: '#fff', borderRadius: 10, boxShadow: 'inset 0 0 0 1px rgba(150,110,70,0.2)' }}>
-                                <span className="text-xs" style={{ color: '#a98e6f' }}>{state.config.currencySymbol}</span>
-                                <input
-                                    type="number"
-                                    value={state.config.dailyBudget}
-                                    onChange={(e) => {
-                                        const value = e.target.value;
-                                        if (value === '') return;
-                                        handleConfigUpdate({ dailyBudget: Number(value) });
-                                    }}
-                                    className="w-16 text-right bg-transparent border-none text-lg font-black outline-none p-0"
-                                    style={{ color: '#b1543f', fontFamily: HAND_FONT }}
-                                />
-                            </div>
-                        </div>
-
-                        {/* 店铺等级：花钱包的钱升级，提升客流 / 档次溢价 / 过夜分红 */}
-                        {(() => {
-                            const lv = state.shop.shopLevel || 1;
-                            const maxed = lv >= MAX_SHOP_LEVEL;
-                            const upCost = shopUpgradeCost(lv);
-                            const afford = Math.round(userProfile.balance || 0) >= upCost;
-                            const sym = state.config.currencySymbol;
-                            const chips = [`客流 +${shopLevelExtraCustomers(lv)}/轮`, `档次 +${shopLevelBonusPct(lv)}%`, `分红 ×${shopLevelPassiveMult(lv).toFixed(2)}`];
-                            return (
-                                <div className="relative p-4 mb-4" style={{ background: '#fffdf7', borderRadius: 14, boxShadow: '0 4px 12px rgba(96,66,40,0.14)', transform: 'rotate(0.5deg)' }}>
-                                    <WashiTape className="-top-2 right-8" color="rgba(158,201,163,0.7)" rotate={10} width={64} />
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex items-center gap-2.5">
-                                            <div className="w-11 h-11 rounded-xl flex flex-col items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg,#ffe0a3,#f3b24a)', boxShadow: '0 2px 6px rgba(150,110,40,0.3)' }}>
-                                                <span className="text-[8px] font-black leading-none text-white/90">Lv</span>
-                                                <span className="text-[18px] font-black leading-none text-white">{lv}</span>
-                                            </div>
-                                            <div>
-                                                <h3 className="text-[15px] font-black" style={{ fontFamily: HAND_FONT, color: '#5b4636' }}>店铺等级</h3>
-                                                <p className="text-[10px]" style={{ color: '#a98e6f' }}>升级提升客流、收入档次与过夜分红</p>
-                                            </div>
-                                        </div>
-                                        {maxed ? (
-                                            <span className="text-[11px] font-bold px-3 py-2 rounded-full" style={{ background: '#efe2cd', color: '#a98e6f' }}>已满级 ✦</span>
-                                        ) : (
-                                            <button onClick={handleUpgradeShop} disabled={!afford} className="text-[12px] font-black px-3.5 py-2 rounded-full active:scale-95 transition-all disabled:opacity-40" style={{ background: '#5a8a52', color: '#fff7ef', fontFamily: HAND_FONT }} title={afford ? '从钱包扣钱升级' : '钱包余额不够'}>
-                                                升级 · {sym}{upCost}
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5 mt-3">
-                                        {chips.map((c, i) => (
-                                            <span key={i} className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: '#f3ead7', color: '#8a6f50' }}>{c}</span>
-                                        ))}
-                                    </div>
-                                    {!maxed && (
-                                        <p className="text-[10px] mt-2" style={{ color: '#a98e6f' }}>升到 Lv.{lv + 1}：客流 +{shopLevelExtraCustomers(lv + 1)}/轮 · 档次 +{shopLevelBonusPct(lv + 1)}%</p>
-                                    )}
-                                </div>
-                            );
-                        })()}
-
-                        <BankGameMenu
-                            state={state}
-                            characters={characters}
-                            walletBalance={Math.round(userProfile.balance || 0)}
-                            onUnlockRecipe={handleUnlockRecipe}
-                            onRestock={handleRestock}
-                            onHireStaff={handleHireStaff}
-                            onStaffRest={handleStaffRest}
-                            onFireStaff={handleFireStaff}
-                            onRehireStaff={handleRehireStaff}
-                            onDeleteFiredStaff={handleDeleteFiredStaff}
-                            onUpdateConfig={handleConfigUpdate}
-                            onAddGoal={() => setShowGoalModal(true)}
-                            onDeleteGoal={async (id) => {
-                                await persistStateUpdate(prev => ({
-                                    ...prev,
-                                    goals: prev.goals.filter(g => g.id !== id)
-                                }));
-                            }}
-                            onEditStaff={handleOpenStaffEdit}
-                        />
-                    </div>
-                )}
-
-                {/* 3. Analytics Report */}
+                {activeTab === 'life' && renderLifeHome()}
+                {activeTab === 'jobs' && renderJobs()}
+                {activeTab === 'shop' && renderShop()}
+                {activeTab === 'invest' && renderInvest()}
+                {activeTab === 'company' && renderCompany()}
+                {activeTab === 'loans' && renderLoans()}
                 {activeTab === 'report' && (
                     <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
-                        {/* 子视图切换：分析 / 互评账本 —— 两枚纸签 */}
-                        <div className="flex gap-2.5 px-4 pt-3 shrink-0">
-                            {([['analytics', '📊 账目分析'], ['ledger', '💬 互评账本']] as const).map(([k, label], i) => (
+                        <div className="flex gap-2 px-3.5 pt-3 shrink-0">
+                            {([['analytics', '账目分析'], ['ledger', '互评账本']] as const).map(([k, label]) => (
                                 <button key={k} onClick={() => setReportView(k)} className="flex-1 py-2 text-[13px] font-black active:scale-95 transition-transform"
-                                    style={{ fontFamily: HAND_FONT, borderRadius: '8px 11px 7px 10px', transform: `rotate(${i === 0 ? -1 : 1}deg)`,
-                                        ...(reportView === k
-                                            ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' }
-                                            : { background: '#efe2cd', color: '#a98e6f' }) }}>
+                                    style={chipStyle(reportView === k)}>
                                     {label}
                                 </button>
                             ))}
@@ -1492,7 +2036,6 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                 )}
             </div>
-
             {/* Premium Guestbook Overlay */}
             {showGuestbook && (
                 <div className="absolute inset-0 z-[100] flex flex-col animate-slide-up" style={{ background: 'linear-gradient(180deg, #FDF6E3 0%, #FFF8E1 100%)' }}>
@@ -1613,34 +2156,23 @@ ${JSON.stringify(list, null, 2)}
                 </div>
             )}
 
-            {/* 底部书签栏：三枚纸签 */}
-            <div className="shrink-0 z-30 pb-safe px-4 pt-1.5 pb-2 relative">
-                <div aria-hidden className="absolute left-0 right-0 top-0 h-[3px]" style={{ background: 'repeating-linear-gradient(90deg, #d8c7a8 0 6px, transparent 6px 12px)' }} />
-                <div className="flex items-end justify-around gap-2 pt-1.5">
+            <div className="shrink-0 z-30 px-2.5 pt-2 relative" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 10px)' }}>
+                <div className="grid grid-cols-7 gap-1 rounded-[26px] bg-white p-1.5" style={{ border: '1px solid rgba(43,41,51,0.06)', boxShadow: '0 -8px 30px -24px rgba(38,38,38,0.45), 0 1px 2px rgba(38,38,38,0.04)' }}>
                     {[
-                        { key: 'game', label: '店铺', emoji: '🏠', tip: '看店' },
-                        { key: 'manage', label: '经营', emoji: '📋', tip: '打理' },
-                        { key: 'report', label: '账本', emoji: '📖', tip: '记账' }
+                        { key: 'life', label: '人生', emoji: '📆' },
+                        { key: 'jobs', label: '求职', emoji: '💼' },
+                        { key: 'shop', label: '经营', emoji: '🏠' },
+                        { key: 'invest', label: '投资', emoji: '📈' },
+                        { key: 'company', label: '公司', emoji: '🏢' },
+                        { key: 'loans', label: '借款', emoji: '💳' },
+                        { key: 'report', label: '账本', emoji: '📖' },
                     ].map((tab, i) => {
                         const on = activeTab === tab.key;
                         return (
-                            <button
-                                key={tab.key}
-                                onClick={() => setActiveTab(tab.key as any)}
-                                className="relative flex-1 flex flex-col items-center justify-center py-2 active:scale-95 transition-transform"
-                                style={{
-                                    background: on ? '#fffdf7' : 'transparent',
-                                    boxShadow: on ? '0 4px 12px rgba(96,66,40,0.2)' : 'none',
-                                    transform: `rotate(${[-1.5, 0.8, -0.6][i]}deg) translateY(${on ? -3 : 0}px)`,
-                                    borderRadius: '8px 10px 7px 11px',
-                                }}
-                            >
-                                {tab.key === 'manage' && hasLowStock && (
-                                    <span aria-hidden className="absolute w-2 h-2 rounded-full animate-pulse" style={{ top: 5, left: 'calc(50% + 8px)', background: '#e5484d', boxShadow: '0 0 0 2px #fffdf7' }} />
-                                )}
-                                <span className="text-[19px] leading-none mb-0.5" style={{ filter: on ? 'none' : 'grayscale(0.4) opacity(0.7)' }}>{tab.emoji}</span>
-                                <span className="text-[13px] font-black leading-none" style={{ fontFamily: HAND_FONT, color: on ? '#5b4636' : '#a98e6f' }}>{tab.label}</span>
-                                {on && <span className="text-[8px] mt-0.5" style={{ color: '#b1543f' }}>· {tab.tip} ·</span>}
+                            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className="relative flex flex-col items-center justify-center min-w-0 py-1.5 active:scale-95 transition-transform" style={{ background: on ? INK : 'transparent', color: on ? '#fff' : INK_SOFT, borderRadius: 18 }}>
+                                {tab.key === 'shop' && hasLowStock && life.shopUnlocked && <span aria-hidden className="absolute w-2 h-2 rounded-full animate-pulse" style={{ top: 5, right: 8, background: '#f43f5e', boxShadow: '0 0 0 2px #fff' }} />}
+                                <span className="text-[15px] leading-none mb-0.5" style={{ filter: on ? 'none' : 'grayscale(0.25) opacity(0.75)' }}>{tab.emoji}</span>
+                                <span className="text-[9.5px] font-black leading-none truncate max-w-full" style={{ fontFamily: HAND_FONT }}>{tab.label}</span>
                             </button>
                         );
                     })}
@@ -1782,3 +2314,4 @@ ${JSON.stringify(list, null, 2)}
 };
 
 export default BankApp;
+

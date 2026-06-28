@@ -1715,7 +1715,15 @@ const Chat: React.FC = () => {
         if (!m) return;
         const amt = Math.abs(parseFloat(String(m.metadata?.amount))) || 0;
         setClaimTarget(null);
-        if (amt > 0) adjustUserBalance(+amt); // 收到的钱进入用户钱包余额
+        if (amt > 0) adjustUserBalance(+amt, {
+            note: `${char?.name || '角色'}发来的${m.metadata?.kind === 'redpacket' ? '红包' : '转账'}`,
+            category: 'transfer',
+            kind: m.metadata?.kind === 'redpacket' ? 'chat-redpacket-in' : 'chat-transfer-in',
+            sourceApp: '聊天',
+            sourceId: m.id != null ? String(m.id) : char?.id,
+            relatedEntityId: char?.id,
+            createdBy: 'character',
+        }); // 收到的钱进入用户钱包余额
         await DB.updateMessageMetadata(m.id, (prev: any) => ({ ...(prev || {}), status: 'claimed', claimedAt: Date.now() }));
         await reloadMessages(visibleCountRef.current);
         addToast(`收下了 ¥${Math.round(amt)} · 已进入钱包`, 'success');
@@ -5382,7 +5390,15 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     }
                     const pw = transferPassword.trim();
                     const isPw = transferMode === 'redpacket' && !!pw;
-                    adjustUserBalance(-amt);
+                    adjustUserBalance(-amt, {
+                        note: transferMode === 'redpacket' ? `发给 ${char.name} 的红包` : `转给 ${char.name} 的零花钱`,
+                        category: 'transfer',
+                        kind: transferMode === 'redpacket' ? 'chat-redpacket-out' : 'chat-transfer-out',
+                        sourceApp: '聊天',
+                        sourceId: char.id,
+                        relatedEntityId: char.id,
+                        createdBy: 'user',
+                    });
                     handleSendText(
                         isPw ? `[口令红包]` : transferMode === 'redpacket' ? `[红包]` : `[转账]`,
                         'transfer',

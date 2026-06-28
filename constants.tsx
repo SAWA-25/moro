@@ -17,7 +17,7 @@ import {
   GameController,
   NewspaperClipping,
   PenNib,
-  PiggyBank,
+  ChartLineUp,
   Compass,
   Camera,
   Sparkle,
@@ -71,7 +71,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Game: ({ className }) => <GameController className={className} weight="bold" />,
   Worldbook: ({ className }) => <NewspaperClipping className={className} weight="bold" />,
   Novel: ({ className }) => <PenNib className={className} weight="bold" />,
-  Bank: ({ className }) => <PiggyBank className={className} weight="bold" />,
+  Bank: ({ className }) => <ChartLineUp className={className} weight="bold" />,
   XhsFreeRoam: ({ className }) => <Compass className={className} weight="bold" />,
   XhsStock: ({ className }) => <Camera className={className} weight="bold" />,
   SpecialMoments: ({ className }) => <Sparkle className={className} weight="bold" />,
@@ -126,7 +126,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   // { id: AppID.Browser, name: '浏览器', icon: 'Browser', color: 'blue' }, // Hidden
   // 见面已并入聊天 App：聊天界面底部 + 号面板 →「见面」（用户主动发起线下模式）
   // { id: AppID.Date, name: '见面', icon: 'Date', color: 'pink' },
-  { id: AppID.Bank, name: '存钱罐', icon: 'Bank', color: 'lime' }, // Hidden
+  { id: AppID.Bank, name: '生活拟', icon: 'Bank', color: 'rose' }, // Hidden
   { id: AppID.Journal, name: '日记', icon: 'Journal', color: 'amber' },
   // { id: AppID.Handbook, name: '手账', icon: 'Handbook', color: 'fuchsia' }, // Hidden temporarily, pending update
   // 原「朋友圈」独立 App 改造为小红书（朋友圈仍在聊天 App 的「朋友圈」标签页）

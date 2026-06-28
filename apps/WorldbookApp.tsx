@@ -589,7 +589,6 @@ const WorldbookApp: React.FC = () => {
         const open = previewBookId === book.id;
         const disabled = book.enabled === false;
         const isKeywordEntry = book.activation === 'keyword';
-        const accentColor = isKeywordEntry ? MARK.solid : SECONDARY.solid;
         return (
             <div
                 key={book.id}
@@ -602,12 +601,11 @@ const WorldbookApp: React.FC = () => {
                     animationDelay: `${Math.min(index, 10) * 28}ms`,
                 }}
             >
-                <div className="absolute inset-y-0 left-0 w-1.5" style={{ background: accentColor }} />
                 <div
                     className="absolute bottom-0 right-0 top-0 w-12 opacity-55"
                     style={{ background: `linear-gradient(90deg, transparent, ${isKeywordEntry ? MARK.soft : SECONDARY.soft})` }}
                 />
-                <div className="flex items-stretch gap-3 p-3 pl-4">
+                <div className="flex items-stretch gap-3 p-3">
                     <div
                         className="flex w-10 shrink-0 flex-col items-center justify-center rounded-[6px]"
                         style={{ background: disabled ? '#f0f1f5' : (isKeywordEntry ? MARK.soft : SECONDARY.soft), color: disabled ? '#9b9daa' : (isKeywordEntry ? MARK.ink : SECONDARY.ink) }}
@@ -730,7 +728,7 @@ const WorldbookApp: React.FC = () => {
                 </div>
 
                 {expanded && (
-                    <div className="ml-4 space-y-3 border-l-2 border-dashed pl-4 animate-fade-in" style={{ borderColor: PAPER.rule }}>
+                    <div className="space-y-3 animate-fade-in">
                         <div className="rounded-[8px] bg-white p-3" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
@@ -837,7 +835,6 @@ const WorldbookApp: React.FC = () => {
                                 }}
                                 title={category}
                             >
-                                <span className="absolute inset-y-1.5 left-1 w-px opacity-35" style={{ background: theme.label }} />
                                 <span className="absolute inset-x-1 top-1 h-1 rounded-[2px] opacity-35" style={{ background: theme.label }} />
                                 <span
                                     className="mt-1 overflow-hidden text-[10px] font-bold leading-none"

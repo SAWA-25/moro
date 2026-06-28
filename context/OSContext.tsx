@@ -1,7 +1,8 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
+import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent, AdjustBalanceMeta } from '../types';
 import { DB } from '../utils/db';
+import { createAutoBankTransaction } from '../utils/bankLedger';
 import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupScopesFromStorage, loadGroupTogglesFromStorage, saveGroupScopesToStorage, saveGroupTogglesToStorage, type WorldbookGroupScope } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
@@ -281,7 +282,7 @@ interface OSContextType {
   userProfile: UserProfile;
   updateUserProfile: (updates: Partial<UserProfile>) => void;
   /** 钱包余额增减（并发安全：基于上一份 state 累加，自动持久化）。返回更新后的余额。 */
-  adjustUserBalance: (delta: number) => number;
+  adjustUserBalance: (delta: number, meta?: AdjustBalanceMeta) => number;
 
   availableModels: string[];
   setAvailableModels: (models: string[]) => void;
@@ -3002,7 +3003,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   // userBalanceRef 跟随已提交余额，保证同一 tick 内多次调用累加一致；函数式 setState 才是真值来源。
   const userBalanceRef = useRef(0);
   useEffect(() => { userBalanceRef.current = userProfile.balance || 0; }, [userProfile.balance]);
-  const adjustUserBalance = (delta: number): number => {
+  const adjustUserBalance = (delta: number, meta: AdjustBalanceMeta = {}): number => {
     const next = Math.max(0, Math.round((userBalanceRef.current + delta) * 100) / 100);
     userBalanceRef.current = next;
     setUserProfile(prev => {
@@ -3011,6 +3012,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       DB.saveUserProfile(np);
       return np;
     });
+    const tx = createAutoBankTransaction(delta, next, meta);
+    if (tx) {
+      void DB.saveTransaction(tx);
+      window.dispatchEvent(new CustomEvent('moro-bank-transaction-added', { detail: tx }));
+    }
     return next;
   };
   const addCustomTheme = async (theme: ChatTheme) => { setCustomThemes(prev => { const exists = prev.find(t => t.id === theme.id); if (exists) return prev.map(t => t.id === theme.id ? theme : t); return [...prev, theme]; }); await DB.saveTheme(theme); };

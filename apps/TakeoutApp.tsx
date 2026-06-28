@@ -450,7 +450,13 @@ const TakeoutApp: React.FC = () => {
         const charId = recipient !== 'me' ? recipient : (payer !== 'me' ? payer : undefined);
         const roll = rollOrderIssues(activeStore, cartItems, cartSubtotal, activeStore.deliveryFee);
 
-        if (payByMe) adjustUserBalance(-total);
+        if (payByMe) adjustUserBalance(-total, {
+            note: `饭票下单 ${activeStore.name}`,
+            category: 'food',
+            kind: 'takeout-order',
+            sourceApp: '饭票',
+            sourceId: activeStore.id,
+        });
 
         const base: TakeoutOrder = {
             id: genId('order'),
@@ -476,7 +482,13 @@ const TakeoutApp: React.FC = () => {
 
         let order: TakeoutOrder;
         if (roll.forceCancel) {
-            if (payByMe) adjustUserBalance(total);
+            if (payByMe) adjustUserBalance(total, {
+                note: `饭票退款 ${activeStore.name}`,
+                category: 'refund',
+                kind: 'takeout-refund',
+                sourceApp: '饭票',
+                sourceId: base.id,
+            });
             order = {
                 ...base,
                 status: 'cancelled',
@@ -534,7 +546,13 @@ const TakeoutApp: React.FC = () => {
         if (!hasOpenIssues(order)) return;
         const { refund, outcome, supportMessages } = resolveComplaint(order);
         const credited = order.payer === 'me' ? refund : 0;
-        if (credited > 0) adjustUserBalance(credited);
+        if (credited > 0) adjustUserBalance(credited, {
+            note: `饭票申诉退款 ${order.storeName}`,
+            category: 'refund',
+            kind: 'takeout-complaint-refund',
+            sourceApp: '饭票',
+            sourceId: order.id,
+        });
         const next: TakeoutOrder = {
             ...order,
             chat: [...order.chat, ...supportMessages],
