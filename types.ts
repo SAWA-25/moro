@@ -827,6 +827,47 @@ export interface PhoneEvidence {
     value?: string;
 }
 
+export interface PhoneLockQuestion {
+    id: string;
+    text: string;
+}
+
+export interface PhoneLockSubmission {
+    passcodeInput?: string;
+    answers?: string[];
+    reply?: string;
+    mood?: string;
+}
+
+export interface PhoneLockAttemptRecord {
+    at: number;
+    passcodeInput: string;
+    answers: string[];
+    result: 'passcode' | 'question' | 'both' | 'none';
+    completedQuestionId?: string;
+    reply?: string;
+    mood?: string;
+}
+
+export interface PhoneLockState {
+    id: string;
+    active: boolean;
+    createdAt: number;
+    unlockedAt?: number;
+    unlockedBy?: 'passcode' | 'question' | 'both';
+    ownerUserName: string;
+    charName: string;
+    /** 黑屏锁机上方系统提示：留言播完后仍只显示这张锁屏。 */
+    message: string;
+    /** 用户留给角色看的锁屏留言。 */
+    note: string;
+    /** 用户设置的口令答案；角色根据提示答对即可解锁。 */
+    passcode: string;
+    /** 用户完全自定义的题目；角色完成任意一题即可解锁。 */
+    questions: PhoneLockQuestion[];
+    attempts: PhoneLockAttemptRecord[];
+}
+
 /**
  * 查岗·角色专属手机皮肤（每个角色一套，让"翻 TA 手机"的桌面千人千面）。
  * 主要由 char.id 确定性派生（配色/排版），可选地用 LLM 生成一份更贴人设的「手机侧写」
@@ -1938,6 +1979,8 @@ export interface CharacterProfile {
       customApps?: PhoneCustomApp[];
       /** 角色专属手机皮肤（确定性派生 + 可选 LLM 装点，详见 PhoneProfile） */
       profile?: PhoneProfile;
+      /** 用户通过絮语「锁机」远程锁住角色手机；角色完成口令或任意题目后自动解锁。 */
+      lock?: PhoneLockState;
   };
 
   voiceProfile?: {

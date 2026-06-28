@@ -8,6 +8,7 @@ import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildPhoneCityHint } from '../utils/charCity';
+import { isPhoneLocked } from '../utils/phoneLock';
 import {
     User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
     NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
@@ -129,6 +130,7 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const records = targetChar?.phoneState?.records || [];
     const customApps = targetChar?.phoneState?.customApps || [];
     const phoneProfile: PhoneProfile = targetChar?.phoneState?.profile || {};
+    const activePhoneLock = isPhoneLocked(targetChar?.phoneState?.lock) ? targetChar?.phoneState?.lock : null;
 
     // 角色专属手机皮肤：确定性配色 + 可选 LLM 装点覆盖
     const theme = useMemo<PhoneTheme>(() => {
@@ -956,6 +958,48 @@ Format:
     const renderDesktop = () => {
         const hasBg = !!targetChar?.dateBackground;
         const clock = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+        if (activePhoneLock) {
+            const firstQuestion = activePhoneLock.questions[0]?.text || '完成任意一道题目即可解锁';
+            return (
+                <div className="absolute inset-0 flex flex-col overflow-hidden" style={{ background: '#202124', color: '#f7f7f7' }}>
+                    <div className="h-10 px-6 pt-3 flex items-center justify-between text-[12px] font-semibold tabular-nums opacity-85">
+                        <span>{clock}</span>
+                        <span className="tracking-[0.16em]">5G 60%</span>
+                    </div>
+                    <button
+                        onClick={handleExitPhone}
+                        className="absolute right-4 top-12 z-10 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95"
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+                    >
+                        离开
+                    </button>
+                    <div className="px-6 pt-12 text-center">
+                        {targetChar?.avatar && <img src={targetChar.avatar} className="mx-auto w-16 h-16 rounded-2xl object-cover ring-1 ring-white/15 shadow-xl" alt="" />}
+                        <div className="mt-4 text-[24px] font-black">{targetChar?.name}</div>
+                        <div className="mt-3 text-[16px] tracking-[0.28em] opacity-60">手机已锁住</div>
+                    </div>
+                    <div className="flex-1 flex flex-col justify-center px-8 pb-16">
+                        <div className="text-center text-[24px] leading-[1.65] font-serif font-bold whitespace-pre-wrap">
+                            {activePhoneLock.note || activePhoneLock.message}
+                        </div>
+                        <div className="mt-10 space-y-3">
+                            <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                <div className="text-[11px] opacity-55 mb-1">解锁口令</div>
+                                <div className="text-[16px] font-black tracking-[0.2em] opacity-65">等待 TA 输入</div>
+                            </div>
+                            <div className="rounded-2xl px-4 py-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                                <div className="text-[11px] opacity-55 mb-1">第 1 题</div>
+                                <div className="text-[14px] leading-relaxed">{firstQuestion}</div>
+                            </div>
+                            <div className="py-3 rounded-2xl text-center text-[13px] font-black" style={{ background: '#f5f5f5', color: '#202124' }}>
+                                口令正确或任意题完成后自动解锁
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         return (
             <div className="absolute inset-0 flex flex-col z-0 overflow-hidden" style={{ background: theme.grad }}>

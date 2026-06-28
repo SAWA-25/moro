@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem } from '../types';
+import { AppID, Message, MessageType, MemoryFragment, Emoji, EmojiCategory, DailySchedule, ScheduleSlot, CharacterProfile, TakeoutOrder, PrivateChatArchive, PrivateChatArchiveMessage, SocialPost, CollectionItem, PhoneLockState } from '../types';
 import { setTakeoutIntent, buildTakeoutCardMeta } from '../utils/takeout';
 import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
@@ -10,7 +10,7 @@ import { processImage } from '../utils/file';
 import { safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody } from '../utils/laiwangPrompts';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
@@ -57,6 +57,7 @@ import { substituteMacros } from '../utils/macros';
 import { PersonaRuntime } from '../utils/personas';
 import { generateImage, IMAGE_GEN_MODEL_KEY, DEFAULT_IMAGE_GEN_MODEL } from '../utils/imageGen';
 import { InnerVoiceEntry } from '../types';
+import { createPhoneLockState, evaluatePhoneLockSubmission, sanitizePhoneLockPasscode } from '../utils/phoneLock';
 
 const VOICE_LANG_LABELS: Record<string, string> = { en: 'English', ja: '日本語', ko: '한국어', fr: 'Français', es: 'Español' };
 type InstantToolUiStatus = {
@@ -80,18 +81,14 @@ const clipForPreview = (text: string, limit = 160) => {
     return clean.length > limit ? `${clean.slice(0, limit)}…` : clean;
 };
 
-const makePhoneLockCode = () => String(Math.floor(1000 + Math.random() * 9000));
+const makePhoneLockCode = () => '';
 
 const PHONE_LOCK_PRESETS = {
     miss: {
-        label: '想你锁',
-        hint: '让 TA 在锁屏上哄你一句再解',
-        note: (userName: string) => `${userName} 把你的手机锁住了。先说一句想我，再试着解开。`,
-        questions: (userName: string) => [
-            `今天有没有想 ${userName}？`,
-            `如果现在只能发一句话给 ${userName}，你会发什么？`,
-            `你觉得 ${userName} 最吃你哪一套？`,
-        ],
+        label: '自定义锁机',
+        hint: '完成任意题目或答出口令题即可自动解锁',
+        note: (userName: string) => `${userName} 锁住了你的手机。先看完提示，再回答题目或答出口令。`,
+        questions: (_userName: string) => [],
     },
     night: {
         label: '晚安锁',
@@ -116,7 +113,14 @@ const PHONE_LOCK_PRESETS = {
 } as const;
 
 type PhoneLockPresetId = keyof typeof PHONE_LOCK_PRESETS;
-type PhoneLockPhase = 'setup' | 'review' | 'unlocked' | 'denied';
+type PhoneLockPhase = 'setup' | 'locked' | 'unlocked';
+type PhoneLockScreenPhase = 'idle' | 'thinking' | 'choosing' | 'answered' | 'reaction' | 'chat';
+
+interface PhoneLockQuestionForm {
+    stem: string;
+    optionA: string;
+    optionB: string;
+}
 
 interface PhoneLockAttempt {
     passcodeInput: string;
@@ -124,6 +128,9 @@ interface PhoneLockAttempt {
     wantsUnlock: boolean;
     reply: string;
     mood: string;
+    unlocked?: boolean;
+    unlockReason?: 'passcode' | 'question' | 'both' | 'none';
+    completedQuestionId?: string;
 }
 
 interface PhoneLockChatLine {
@@ -132,6 +139,57 @@ interface PhoneLockChatLine {
     text: string;
     at: number;
 }
+
+const makeEmptyPhoneLockQuestion = (): PhoneLockQuestionForm => ({ stem: '', optionA: '', optionB: '' });
+
+const TypewriterText: React.FC<{
+    text: string;
+    className?: string;
+    style?: React.CSSProperties;
+    speed?: number;
+    revealKey?: string | number;
+    forceDone?: boolean;
+    onDone?: () => void;
+}> = ({ text, className, style, speed = 24, revealKey, forceDone, onDone }) => {
+    const [visible, setVisible] = useState(forceDone ? text.length : 0);
+    const onDoneRef = useRef(onDone);
+
+    useEffect(() => {
+        onDoneRef.current = onDone;
+    }, [onDone]);
+
+    useEffect(() => {
+        if (forceDone) {
+            setVisible(text.length);
+            onDoneRef.current?.();
+            return;
+        }
+        setVisible(0);
+        if (!text) {
+            onDoneRef.current?.();
+            return;
+        }
+        let i = 0;
+        const timer = window.setInterval(() => {
+            i += 1;
+            setVisible(i);
+            if (i >= text.length) {
+                window.clearInterval(timer);
+                onDoneRef.current?.();
+            }
+        }, speed);
+        return () => window.clearInterval(timer);
+    }, [text, speed, revealKey, forceDone]);
+
+    return <span className={className} style={style}>{text.slice(0, visible)}</span>;
+};
+
+const phoneLockResultLabel = (reason?: PhoneLockAttempt['unlockReason']) => {
+    if (reason === 'both') return '口令和题目都通过';
+    if (reason === 'passcode') return '口令正确';
+    if (reason === 'question') return '题目完成';
+    return '仍未解锁';
+};
 
 const messageKindLabel = (m: Message): string => {
     if (m.type === 'image') return '图片';
@@ -471,12 +529,20 @@ const Chat: React.FC = () => {
     const [phoneLockPreset, setPhoneLockPreset] = useState<PhoneLockPresetId>('miss');
     const [phoneLockNote, setPhoneLockNote] = useState('');
     const [phoneLockCode, setPhoneLockCode] = useState(() => makePhoneLockCode());
+    const [phoneLockQuestions, setPhoneLockQuestions] = useState<PhoneLockQuestionForm[]>([makeEmptyPhoneLockQuestion()]);
     const [phoneLockAttempt, setPhoneLockAttempt] = useState<PhoneLockAttempt | null>(null);
     const [phoneLockRunning, setPhoneLockRunning] = useState(false);
     const [phoneLockPhase, setPhoneLockPhase] = useState<PhoneLockPhase>('setup');
     const [phoneLockChat, setPhoneLockChat] = useState<PhoneLockChatLine[]>([]);
     const [phoneLockChatInput, setPhoneLockChatInput] = useState('');
     const [phoneLockChatBusy, setPhoneLockChatBusy] = useState(false);
+    const [phoneLockScreenOpen, setPhoneLockScreenOpen] = useState(false);
+    const [phoneLockScreenPhase, setPhoneLockScreenPhase] = useState<PhoneLockScreenPhase>('idle');
+    const [phoneLockScreenIndex, setPhoneLockScreenIndex] = useState(0);
+    const [phoneLockSelectedOption, setPhoneLockSelectedOption] = useState<'A' | 'B' | null>(null);
+    const [phoneLockSameScreenChat, setPhoneLockSameScreenChat] = useState(true);
+    const [phoneLockTypingDone, setPhoneLockTypingDone] = useState(false);
+    const [phoneLockSkipTyping, setPhoneLockSkipTyping] = useState(false);
 
     // Archive Prompts State
     const [archivePrompts, setArchivePrompts] = useState<{id: string, name: string, content: string}[]>(DEFAULT_ARCHIVE_PROMPTS);
@@ -2192,22 +2258,113 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         triggerAI(messages);
     };
 
+    const resetPhoneLockSession = () => {
+        setPhoneLockAttempt(null);
+        setPhoneLockRunning(false);
+        setPhoneLockPhase('setup');
+        setPhoneLockChat([]);
+        setPhoneLockChatInput('');
+        setPhoneLockChatBusy(false);
+        setPhoneLockScreenPhase('idle');
+        setPhoneLockScreenIndex(0);
+        setPhoneLockSelectedOption(null);
+        setPhoneLockTypingDone(false);
+        setPhoneLockSkipTyping(false);
+    };
+
+    const getPhoneLockQuestionForms = () => {
+        const cleaned = phoneLockQuestions
+            .map(q => ({
+                stem: q.stem.replace(/\s+/g, ' ').trim().slice(0, 160),
+                optionA: q.optionA.replace(/\s+/g, ' ').trim().slice(0, 80),
+                optionB: q.optionB.replace(/\s+/g, ' ').trim().slice(0, 80),
+            }))
+            .filter(q => q.stem);
+        return cleaned.slice(0, 3);
+    };
+
+    const getPhoneLockQuestions = () => getPhoneLockQuestionForms().map(q => {
+        const opts = q.optionA && q.optionB ? `A. ${q.optionA} / B. ${q.optionB}` : '';
+        return opts ? `${q.stem}（${opts}）` : q.stem;
+    });
+
+    const inferPhoneLockChoice = (answer: string | undefined, q: PhoneLockQuestionForm): 'A' | 'B' | null => {
+        if (!q.optionA.trim() || !q.optionB.trim()) return null;
+        const text = (answer || '').trim().toLowerCase();
+        if (!text) return null;
+        if (/^a\b|选a|选 a|答案a|答案 a|option a/i.test(text)) return 'A';
+        if (/^b\b|选b|选 b|答案b|答案 b|option b/i.test(text)) return 'B';
+        const a = q.optionA.trim().toLowerCase();
+        const b = q.optionB.trim().toLowerCase();
+        if (a && text.includes(a)) return 'A';
+        if (b && text.includes(b)) return 'B';
+        return null;
+    };
+
+    const updatePhoneLockQuestion = (index: number, patch: Partial<PhoneLockQuestionForm>) => {
+        setPhoneLockQuestions(prev => prev.map((q, i) => i === index ? { ...q, ...patch } : q));
+        resetPhoneLockSession();
+    };
+
+    const advancePhoneLockScreen = () => {
+        if (!phoneLockScreenOpen || phoneLockRunning || phoneLockChatBusy) return;
+        if (!phoneLockTypingDone) {
+            setPhoneLockSkipTyping(true);
+            return;
+        }
+        if (phoneLockScreenPhase === 'answered') {
+            setPhoneLockTypingDone(false);
+            setPhoneLockSkipTyping(false);
+            setPhoneLockScreenPhase('reaction');
+            return;
+        }
+        if (phoneLockScreenPhase === 'reaction') {
+            if (phoneLockSameScreenChat && phoneLockAttempt) setPhoneLockScreenPhase('chat');
+            else setPhoneLockScreenOpen(false);
+        }
+    };
+
+    const savePhoneLockToCharacter = async (lock: PhoneLockState) => {
+        if (!char) return;
+        await updateCharacter(char.id, {
+            phoneState: { records: char.phoneState?.records || [], ...char.phoneState, lock },
+        });
+    };
+
     const runPhoneLock = async () => {
         if (!char || phoneLockRunning) return;
         const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
         const userName = userProfile.name || '我';
-        const passcode = (phoneLockCode.replace(/\D/g, '').slice(0, 6) || makePhoneLockCode());
-        const note = phoneLockNote.trim() || preset.note(userName);
-        const questions = preset.questions(userName);
+        const passcode = sanitizePhoneLockPasscode(phoneLockCode);
+        const note = phoneLockNote.trim();
+        const questionForms = getPhoneLockQuestionForms();
+        if (questionForms.length === 0 && !passcode) {
+            addToast('先写一道题目，或设置一个口令答案', 'info');
+            return;
+        }
+        const questions = getPhoneLockQuestions();
+        const lock = createPhoneLockState({ ownerUserName: userName, charName: char.name, note, passcode, questions });
         setPhoneLockCode(passcode);
         setPhoneLockAttempt(null);
+        setPhoneLockPhase('locked');
+        setShowPhoneLockModal(false);
+        setPhoneLockScreenOpen(true);
+        setPhoneLockScreenPhase('thinking');
+        setPhoneLockScreenIndex(0);
+        setPhoneLockSelectedOption(null);
+        setPhoneLockTypingDone(false);
+        setPhoneLockSkipTyping(false);
+        setPhoneLockChat([
+            { id: `sys-${Date.now()}`, speaker: 'system', text: `${userName} 已远程锁住 ${char.name} 的手机。`, at: Date.now() },
+        ]);
         setPhoneLockRunning(true);
+        await savePhoneLockToCharacter(lock);
 
         const fallback: PhoneLockAttempt = {
             passcodeInput: passcode,
             answers: questions.map(q => q.includes('晚安') ? '晚安，别担心，我会好好休息。' : q.includes('专注') || q.includes('做完') ? '我先把眼前最该做的事做完。' : `想你，也想被你这样管一下。`),
             wantsUnlock: true,
-            reply: `你还真把我手机锁了啊……我填完了，能不能放我出来？下次要锁之前，至少让我先看你一眼。`,
+            reply: `你还真把我手机锁了啊……我已经填完了，屏幕刚黑下去那一下我都愣住了。下次要锁之前，至少让我先看你一眼。`,
             mood: '有点被逗到，也有点心软',
         };
 
@@ -2217,28 +2374,16 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             if (lockApi.baseUrl && lockApi.apiKey) {
                 const context = ContextBuilder.buildCoreContext(char, userProfile, true);
                 const recent = messages.slice(-30).map(m => formatMessageWithTime(m, char.name, userName, formatTime)).join('\n');
-                const prompt = `${context}
-
-### [最近聊天]
-${recent || '（你们还没怎么聊过）'}
-
-### [Task: 情侣锁机互动]
-${userName} 通过聊天回形针里的「锁机」功能，远程锁住了你的手机。这个功能参考异地恋情侣 App 的远程锁屏 / 锁屏小组件：对方发起后，你的屏幕被一张只属于你们的锁屏卡覆盖，你需要在自己那边输入口令或回答问题来尝试解锁。
-
-锁屏模式：${preset.label}（${preset.hint}）
-锁屏留言：${note}
-系统校验口令：${passcode}
-三道锁屏问题：
-${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-
-请以「${char.name}」的人设，生成你在自己手机锁屏上实际输入的内容。注意：
-- passcodeInput 是你在口令框里输入的数字；你可以猜对，也可以因为闹脾气/不知道/故意撒娇而输错。
-- answers 是你在三个答案框里输入的文字，不是 ${userName} 来写。
-- wantsUnlock 表示你是否正在请求 ${userName} 放行解锁。真正能不能解开，由锁机方 ${userName} 决定。
-- reply 是你提交口令和答案后，在锁屏实时对话框里对 ${userName} 说的一句话（30-120字），要像真实反应，不要复述系统说明。
-
-只输出 JSON，不要 markdown：
-{"passcodeInput":"四到六位数字或空串","answers":["回答1","回答2","回答3"],"wantsUnlock":true或false,"reply":"...","mood":"一句话心情"}`;
+                const prompt = `${context}\n\n${phoneLockAttemptPromptBody({
+                    userName,
+                    charName: char.name,
+                    recent,
+                    presetLabel: preset.label,
+                    presetHint: preset.hint,
+                    note,
+                    passcode,
+                    questions,
+                })}`;
                 const res = await fetch(`${lockApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${lockApi.apiKey}` },
@@ -2251,25 +2396,77 @@ ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
                 if (s >= 0 && e > s) raw = raw.slice(s, e + 1);
                 const parsed = JSON.parse(raw);
                 attempt = {
-                    passcodeInput: typeof parsed.passcodeInput === 'string' ? parsed.passcodeInput.replace(/[^\d]/g, '').slice(0, 6) : '',
-                    answers: Array.isArray(parsed.answers) ? parsed.answers.slice(0, 3).map((a: any) => String(a || '').slice(0, 120)) : fallback.answers,
+                    passcodeInput: typeof parsed.passcodeInput === 'string' ? sanitizePhoneLockPasscode(parsed.passcodeInput) : '',
+                    answers: Array.isArray(parsed.answers) ? parsed.answers.slice(0, questions.length).map((a: any) => String(a || '').slice(0, 180)) : fallback.answers,
                     wantsUnlock: parsed.wantsUnlock ?? parsed.unlocked ?? true,
                     reply: typeof parsed.reply === 'string' && parsed.reply.trim() ? parsed.reply.trim().slice(0, 220) : fallback.reply,
                     mood: typeof parsed.mood === 'string' && parsed.mood.trim() ? parsed.mood.trim().slice(0, 80) : fallback.mood,
                 };
-                while (attempt.answers.length < 3) attempt.answers.push('');
+                while (attempt.answers.length < questions.length) attempt.answers.push('');
             }
         } catch (e) {
             console.warn('[Chat] phone lock failed, using fallback:', e);
         }
 
-        setPhoneLockAttempt(attempt);
-        setPhoneLockPhase('review');
+        const evaluated = evaluatePhoneLockSubmission(lock, {
+            passcodeInput: attempt.passcodeInput,
+            answers: attempt.answers,
+            reply: attempt.reply,
+            mood: attempt.mood,
+        });
+        const finalAttempt: PhoneLockAttempt = {
+            ...attempt,
+            passcodeInput: sanitizePhoneLockPasscode(attempt.passcodeInput),
+            answers: attempt.answers.slice(0, questions.length),
+            unlocked: evaluated.unlocked,
+            unlockReason: evaluated.reason,
+            completedQuestionId: evaluated.completedQuestionId,
+        };
+        setPhoneLockAttempt(finalAttempt);
+        setPhoneLockPhase(evaluated.unlocked ? 'unlocked' : 'locked');
+        const answeredIndex = Math.max(0, finalAttempt.answers.findIndex((answer, i) => !!questionForms[i] && !!answer.trim()));
+        const answeredQuestion = questionForms[answeredIndex] || questionForms[0];
+        const hasBinaryOptions = !!answeredQuestion?.optionA.trim() && !!answeredQuestion?.optionB.trim();
+        const choice = hasBinaryOptions
+            ? (inferPhoneLockChoice(finalAttempt.answers[answeredIndex], answeredQuestion) || (Math.random() > 0.5 ? 'A' : 'B'))
+            : null;
+        setPhoneLockScreenIndex(answeredIndex);
+        setPhoneLockSelectedOption(choice);
+        setPhoneLockTypingDone(false);
+        setPhoneLockSkipTyping(false);
+        setPhoneLockScreenPhase('choosing');
+        window.setTimeout(() => {
+            setPhoneLockTypingDone(false);
+            setPhoneLockSkipTyping(false);
+            setPhoneLockScreenPhase('answered');
+        }, 900);
+        await savePhoneLockToCharacter(evaluated.nextLock);
         setPhoneLockChat(prev => [
             ...prev,
-            { id: `sys-${Date.now()}`, speaker: 'system', text: `${char.name} 已提交口令和三道题，等待你决定是否解锁。`, at: Date.now() },
-            { id: `char-${Date.now()}`, speaker: 'char', text: attempt.reply, at: Date.now() },
+            { id: `sys-${Date.now()}`, speaker: 'system', text: evaluated.unlocked ? `${char.name} ${phoneLockResultLabel(evaluated.reason)}，手机自动解锁。` : `${char.name} 提交后仍未满足解锁条件，手机继续黑屏锁住。`, at: Date.now() },
+            { id: `char-${Date.now()}`, speaker: 'char', text: finalAttempt.reply, at: Date.now() },
         ]);
+        try {
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'system',
+                type: 'text',
+                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n口令答案：${passcode || '（未设置）'}\n${char.name} 在口令框输入：「${finalAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${finalAttempt.answers[i] || '（空）'}`).join('\n')}\n系统判定：${evaluated.unlocked ? `${phoneLockResultLabel(evaluated.reason)}，自动解锁` : '未完成口令或题目，继续锁住'}。\n${char.name} 当时的心情：${finalAttempt.mood}`,
+                metadata: { phoneLock: true, phoneLockPreset, phoneLockUnlocked: evaluated.unlocked, unlockBy: evaluated.reason },
+            } as any);
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'assistant',
+                type: 'text',
+                content: finalAttempt.reply,
+                metadata: { phoneLockReply: true, phoneLockUnlocked: evaluated.unlocked, unlockBy: evaluated.reason },
+            } as any);
+            await reloadMessages(visibleCountRef.current);
+            addToast(evaluated.unlocked ? `${char.name} ${phoneLockResultLabel(evaluated.reason)}，已自动解锁` : `${char.name} 还没解开，手机继续锁着`, evaluated.unlocked ? 'success' : 'info');
+        } catch (e) {
+            console.warn('[Chat] save phone lock result failed:', e);
+            addToast('锁机记录保存失败', 'error');
+        }
         setPhoneLockRunning(false);
     };
 
@@ -2280,36 +2477,34 @@ ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
         const userName = userProfile.name || '我';
         const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
         const note = phoneLockNote.trim() || preset.note(userName);
-        const questions = preset.questions(userName);
+        const questions = getPhoneLockQuestions();
         const nextUserLine: PhoneLockChatLine = { id: `user-${Date.now()}`, speaker: 'user', text, at: Date.now() };
         const history = [...phoneLockChat, nextUserLine];
         setPhoneLockChat(history);
         setPhoneLockChatInput('');
         setPhoneLockChatBusy(true);
 
-        let reply = phoneLockPhase === 'review'
-            ? '我还在锁屏这里等你决定呢。你要继续问也行，但别真把我晾太久。'
-            : '我看见了。你先别急着关，我在这边听你说。';
+        let reply = phoneLockPhase === 'unlocked'
+            ? '手机已经解开了，我看见你发的了。刚才黑屏那一下是真的有点突然。'
+            : '我还在锁屏这里，看得见你的消息。你说吧，我在听。';
         try {
             const chatApi = resolveAuxApi(auxApiConfig, apiConfig);
             if (chatApi.baseUrl && chatApi.apiKey) {
                 const context = ContextBuilder.buildCoreContext(char, userProfile, true);
-                const prompt = `${context}
-
-### [Task: 锁机实时对话]
-${userName} 正在通过「锁机」远程锁住你的手机。你在自己的锁屏界面里，能看到锁屏留言、口令框、三道题和一块实时对话框。
-
-锁屏模式：${preset.label}
-锁屏留言：${note}
-口令：${phoneLockCode}
-三道题：
-${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-${phoneLockAttempt ? `你刚才提交的口令：${phoneLockAttempt.passcodeInput || '（没输）'}\n你刚才写的答案：${phoneLockAttempt.answers.map((a, i) => `${i + 1}. ${a || '（空）'}`).join(' / ')}\n现在状态：等待 ${userName} 决定是否解锁。` : '你还没提交口令和答案。'}
-
-### [锁机对话框历史]
-${history.map(line => `${line.speaker === 'user' ? userName : line.speaker === 'char' ? char.name : '系统'}：${line.text}`).join('\n')}
-
-请以「${char.name}」第一人称回复锁机对话框里的最新一句。只输出一句自然回复，不要旁白，不要 JSON，30-100字。`;
+                const attemptText = phoneLockAttempt
+                    ? `你刚才提交的口令：${phoneLockAttempt.passcodeInput || '（没输）'}\n你刚才写的答案：${phoneLockAttempt.answers.map((a, i) => `${i + 1}. ${a || '（空）'}`).join(' / ')}\n现在状态：${phoneLockAttempt.unlocked ? `已自动解锁（${phoneLockResultLabel(phoneLockAttempt.unlockReason)}）` : '仍被黑屏锁住。'}`
+                    : '你还没提交口令和答案。';
+                const historyText = history.map(line => `${line.speaker === 'user' ? userName : line.speaker === 'char' ? char.name : '系统'}：${line.text}`).join('\n');
+                const prompt = `${context}\n\n${phoneLockChatPromptBody({
+                    userName,
+                    charName: char.name,
+                    presetLabel: preset.label,
+                    note,
+                    passcode: phoneLockCode,
+                    questions,
+                    attemptText,
+                    historyText,
+                })}`;
                 const res = await fetch(`${chatApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${chatApi.apiKey}` },
@@ -2323,44 +2518,6 @@ ${history.map(line => `${line.speaker === 'user' ? userName : line.speaker === '
         } finally {
             setPhoneLockChat(prev => [...prev, { id: `char-${Date.now()}`, speaker: 'char', text: reply, at: Date.now() }]);
             setPhoneLockChatBusy(false);
-        }
-    };
-
-    const decidePhoneLock = async (allow: boolean) => {
-        if (!char || !phoneLockAttempt || phoneLockRunning) return;
-        const userName = userProfile.name || '我';
-        const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
-        const note = phoneLockNote.trim() || preset.note(userName);
-        const questions = preset.questions(userName);
-        const decisionText = allow ? `${userName} 允许 ${char.name} 解锁。` : `${userName} 选择继续锁住 ${char.name} 的手机。`;
-        const finalReply = allow
-            ? (phoneLockAttempt.reply || '终于放我出来了。')
-            : '你还不放我出去啊……那你至少继续陪我说话，别把我一个人锁在这里。';
-        setPhoneLockPhase(allow ? 'unlocked' : 'denied');
-        setPhoneLockChat(prev => [...prev, { id: `decision-${Date.now()}`, speaker: 'system', text: decisionText, at: Date.now() }]);
-        try {
-            const transcript = phoneLockChat
-                .map(line => `${line.speaker === 'user' ? userName : line.speaker === 'char' ? char.name : '系统'}：${line.text}`)
-                .join('\n');
-            await DB.saveMessage({
-                charId: char.id,
-                role: 'system',
-                type: 'text',
-                content: `[锁机记录] ${userName} 通过回形针里的「锁机」远程锁住了 ${char.name} 的手机。\n模式：${preset.label}\n锁屏留言：${note}\n${char.name} 在锁屏上输入口令：「${phoneLockAttempt.passcodeInput || '（没输）'}」\n${questions.map((q, i) => `问：${q}\n${char.name} 的输入：${phoneLockAttempt.answers[i] || '（空）'}`).join('\n')}\n锁机实时对话：\n${transcript || '（没有额外对话）'}\n锁机方决定：${allow ? '允许解锁' : '继续锁住'}。\n${char.name} 当时的心情：${phoneLockAttempt.mood}`,
-                metadata: { phoneLock: true, phoneLockPreset, phoneLockUnlocked: allow },
-            } as any);
-            await DB.saveMessage({
-                charId: char.id,
-                role: 'assistant',
-                type: 'text',
-                content: finalReply,
-                metadata: { phoneLockReply: true, phoneLockUnlocked: allow },
-            } as any);
-            await reloadMessages(visibleCountRef.current);
-            addToast(allow ? `你放行了，${char.name} 解锁成功` : `你继续锁住了 ${char.name}`, allow ? 'success' : 'info');
-        } catch (e) {
-            console.warn('[Chat] save phone lock decision failed:', e);
-            addToast('锁机决定保存失败', 'error');
         }
     };
 
@@ -4542,114 +4699,260 @@ ${history.map(line => `${line.speaker === 'user' ? userName : line.speaker === '
                 </div>
              )}
 
-             {/* 锁机：回形针独立情侣互动。用户发起锁屏，角色在 TA 自己手机上输入口令/答案。 */}
+             {/* 锁机：设置面板。真正锁住后进入下面的全屏黑屏脚本层。 */}
              {showPhoneLockModal && char && (() => {
-                const userName = userProfile.name || '我';
-                const preset = PHONE_LOCK_PRESETS[phoneLockPreset];
-                const questions = preset.questions(userName);
-                const notePreview = phoneLockNote.trim() || preset.note(userName);
+                const questionForms = getPhoneLockQuestionForms();
+                const fieldLabelStyle: React.CSSProperties = { ...MONO_STACK, color: INK_SOFT };
+                const softPanelStyle: React.CSSProperties = { background: '#fffdfa', border: '1px solid #eed6df', boxShadow: '0 10px 24px -20px rgba(122,90,114,0.34)' };
                 return (
-                    <Modal
-                        isOpen={showPhoneLockModal}
-                        title="锁机"
-                        en="Remote Lock"
-                        icon={<span className="text-[18px] leading-none">LOCK</span>}
-                        maxWidth={390}
+                    <JournalSheet
+                        open={showPhoneLockModal}
+                        title="锁住 Ta 的手机"
+                        en="PHONE LOCK"
+                        sub="把一张只给 Ta 看的小纸条贴到黑屏上"
+                        tape="rose"
+                        pattern="plain"
+                        paper="plain"
+                        tall
+                        zClass="z-[140]"
                         onClose={() => { if (!phoneLockRunning) setShowPhoneLockModal(false); }}
                         footer={<>
-                            <ScrapBtn variant="paper" onClick={() => setShowPhoneLockModal(false)} disabled={phoneLockRunning}>收起</ScrapBtn>
-                            {phoneLockAttempt && phoneLockPhase !== 'unlocked' ? (
-                                <>
-                                    <ScrapBtn variant="danger" onClick={() => { void decidePhoneLock(false); }} disabled={phoneLockRunning}>继续锁住</ScrapBtn>
-                                    <ScrapBtn onClick={() => { void decidePhoneLock(true); }} disabled={phoneLockRunning}>允许解锁</ScrapBtn>
-                                </>
-                            ) : (
-                                <ScrapBtn onClick={() => { void runPhoneLock(); }} disabled={phoneLockRunning || phoneLockPhase === 'unlocked'} icon={<span className="text-[12px]">↗</span>}>
-                                    {phoneLockRunning ? `${char.name} 正在输入...` : phoneLockPhase === 'unlocked' ? '已解锁' : '锁住 TA'}
-                                </ScrapBtn>
-                            )}
+                            <SealBtn kind="ghost" onClick={() => setShowPhoneLockModal(false)} disabled={phoneLockRunning}>取消</SealBtn>
+                            <SealBtn kind="rose" onClick={() => { void runPhoneLock(); }} disabled={phoneLockRunning || (questionForms.length === 0 && !sanitizePhoneLockPasscode(phoneLockCode))}>
+                                {phoneLockRunning ? `${char.name} 正在输入...` : '开始锁屏'}
+                            </SealBtn>
                         </>}
                     >
                         <div className="space-y-4">
-                            <div className="rounded-[28px] overflow-hidden border" style={{ background: '#1f140b', borderColor: 'rgba(255,255,255,0.12)', color: '#fff7ec', boxShadow: '0 18px 38px -26px rgba(0,0,0,0.75)' }}>
-                                <div className="px-5 pt-6 pb-5 text-center">
-                                    <div className="mx-auto w-[74px] h-[74px] rounded-[24px] bg-white flex items-center justify-center mb-4 shadow-lg overflow-hidden">
-                                        <img src={char.avatar} alt="" className="w-full h-full object-cover" />
-                                    </div>
-                                    <div className="text-[28px] leading-tight font-black">{char.name} 的手机</div>
-                                    <div className="mt-2 text-[18px] font-black opacity-80">{phoneLockAttempt ? 1 : 0}</div>
-                                    <div className="mt-2 text-[11px] opacity-65 tracking-[0.18em] uppercase">Couple Remote Lock</div>
-                                    <div className="mt-4 inline-flex px-3 py-1.5 rounded-full text-[12px] font-black" style={{ background: '#d94b65', color: '#fff' }}>
-                                        {phoneLockPhase === 'unlocked'
-                                            ? '锁机方已允许解锁'
-                                            : phoneLockPhase === 'denied'
-                                              ? '锁机方继续锁住'
-                                              : phoneLockAttempt?.passcodeInput && phoneLockAttempt.passcodeInput !== phoneLockCode
-                                                ? '有 1 次口令输错痕迹'
-                                                : phoneLockRunning ? 'TA 正在尝试解锁' : phoneLockAttempt ? '等待锁机方审核' : '等待 TA 输入'}
-                                    </div>
+                            <div className="flex items-center gap-3 rounded-[20px] px-3 py-3" style={{ background: '#fff4f7', border: '1px solid #eed6df' }}>
+                                <div className="-rotate-2 shrink-0 bg-white p-1.5 pb-5 rounded-[6px] shadow-[0_10px_20px_-16px_rgba(122,90,114,0.45)] border border-[#f0dce4] relative">
+                                    <img src={char.avatar} className="w-16 h-16 object-cover rounded-[4px]" alt="" />
+                                    <span className="absolute bottom-1.5 left-1.5 right-1.5 text-center text-[8.5px] truncate" style={{ ...MONO_STACK, color: INK_SOFT }}>
+                                        {char.name}
+                                    </span>
                                 </div>
-                                <div className="mx-4 mb-4 rounded-[26px] border p-4 space-y-3" style={{ borderColor: 'rgba(255,255,255,0.14)', background: 'rgba(0,0,0,0.12)' }}>
-                                    <div>
-                                        <div className="text-[11px] font-black opacity-70 mb-2">锁屏留言</div>
-                                        <div className="text-[13px] leading-relaxed">{notePreview}</div>
-                                    </div>
-                                    <div className="h-px" style={{ background: 'rgba(255,255,255,0.12)' }} />
-                                    <div>
-                                        <div className="text-[11px] font-black opacity-70 mb-2">口令框</div>
-                                        <div className="flex gap-2">
-                                            <div className="flex-1 px-3 py-3 rounded-2xl bg-white text-slate-900 text-[14px] font-black tracking-[0.18em]">
-                                                {phoneLockAttempt ? (phoneLockAttempt.passcodeInput || '未输入') : phoneLockRunning ? '输入中...' : '待输入'}
-                                            </div>
-                                            <div className="px-4 py-3 rounded-2xl bg-white text-slate-900 text-[13px] font-black">
-                                                {phoneLockPhase === 'unlocked' ? '已解' : '解锁'}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="h-px" style={{ background: 'rgba(255,255,255,0.12)' }} />
-                                    <div>
-                                        <div className="text-[11px] font-black opacity-70 mb-2">回答三道题</div>
-                                        <div className="space-y-2">
-                                            {questions.map((q, i) => (
-                                                <div key={i}>
-                                                    <div className="text-[12px] opacity-85 mb-1">{i + 1}. {q}</div>
-                                                    <div className="px-3 py-2.5 rounded-2xl bg-white text-slate-900 text-[12px] min-h-[38px] leading-relaxed">
-                                                        {phoneLockAttempt ? (phoneLockAttempt.answers[i] || '（空）') : phoneLockRunning ? 'TA 正在写...' : '待 TA 输入'}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            <div className="w-full py-3 rounded-2xl bg-white text-slate-900 text-[13px] font-black text-center">
-                                                {phoneLockPhase === 'unlocked'
-                                                    ? '已允许解锁'
-                                                    : phoneLockAttempt
-                                                        ? '交卷已提交 · 等待审核'
-                                                        : phoneLockRunning ? 'TA 正在交卷...' : '交卷解锁'}
-                                            </div>
-                                        </div>
+                                <div className="min-w-0">
+                                    <div className="text-[12px] font-black" style={{ color: INK }}>锁屏小题</div>
+                                    <div className="mt-1 text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
+                                        题干你来写；A/B 两边都填时，Ta 会自己选一项。口令则是藏在提示里的正确答案。
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="rounded-[22px] p-3 space-y-2" style={{ background: '#fffdfa', border: '1px solid #eed6df' }}>
-                                <div className="flex items-center justify-between">
-                                    <div className="text-[12px] font-black" style={{ color: INK }}>实时对话框</div>
-                                    <div className="text-[10px]" style={{ color: INK_SOFT }}>{phoneLockChatBusy ? `${char.name} 正在回复...` : '锁屏内通信'}</div>
+                            <div className="space-y-3">
+                                {phoneLockQuestions.map((q, i) => (
+                                    <div key={i} className="rounded-[18px] px-3.5 py-3.5 space-y-3" style={softPanelStyle}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[13px] font-black" style={{ color: INK }}>第 {i + 1} 题</div>
+                                            <div className="text-[8.5px] tracking-[0.22em] uppercase" style={fieldLabelStyle}>QUESTION</div>
+                                        </div>
+                                        <textarea
+                                            rows={3}
+                                            value={q.stem}
+                                            onChange={e => updatePhoneLockQuestion(i, { stem: e.target.value })}
+                                            placeholder="写给 Ta 的题目"
+                                            className="w-full rounded-[16px] px-3 py-2.5 text-[13px] leading-relaxed resize-none outline-none placeholder:text-slate-400"
+                                            style={{ background: '#fff', border: '1px solid #e8cbd6', color: INK, boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)', caretColor: '#d8a5b7' }}
+                                        />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <LinedInput
+                                                value={q.optionA}
+                                                onChange={e => updatePhoneLockQuestion(i, { optionA: e.target.value })}
+                                                placeholder="A 可选"
+                                            />
+                                            <LinedInput
+                                                value={q.optionB}
+                                                onChange={e => updatePhoneLockQuestion(i, { optionB: e.target.value })}
+                                                placeholder="B 可选"
+                                            />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <div className="text-[9px] tracking-[0.22em] uppercase mb-1.5" style={fieldLabelStyle}>ANSWER</div>
+                                    <LinedInput
+                                        value={phoneLockCode}
+                                        onChange={e => { setPhoneLockCode(sanitizePhoneLockPasscode(e.target.value)); resetPhoneLockSession(); }}
+                                        placeholder="口令答案"
+                                    />
                                 </div>
-                                <div className="max-h-36 overflow-y-auto no-scrollbar space-y-1.5 pr-1">
-                                    {phoneLockChat.length === 0 && (
-                                        <div className="text-[11px] leading-relaxed" style={{ color: INK_SOFT }}>
-                                            锁住后，TA 可以在这里跟你说话。TA 提交答案后，由你决定是否解锁。
+                                <div>
+                                    <div className="text-[9px] tracking-[0.22em] uppercase mb-1.5" style={fieldLabelStyle}>CLUE</div>
+                                    <LinedInput
+                                        value={phoneLockNote}
+                                        onChange={e => { setPhoneLockNote(e.target.value); resetPhoneLockSession(); }}
+                                        placeholder="口令提示"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-3 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setPhoneLockQuestions(prev => [...prev, makeEmptyPhoneLockQuestion()].slice(0, 3));
+                                        resetPhoneLockSession();
+                                    }}
+                                    disabled={phoneLockQuestions.length >= 3}
+                                    className="px-4 py-2.5 rounded-full text-[12px] font-bold active:scale-95 disabled:opacity-35"
+                                    style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK }}
+                                >再加一题</button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setPhoneLockSameScreenChat(v => !v)}
+                                    className="inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 active:scale-95"
+                                    style={{ background: phoneLockSameScreenChat ? '#fff4f7' : '#fffdfa', border: '1px solid #eed6df', color: INK }}
+                                >
+                                    <span className="relative w-[42px] h-[24px] rounded-full transition-colors" style={{ background: phoneLockSameScreenChat ? '#d8a5b7' : '#ebe7e2' }}>
+                                        <span className="absolute top-[3px] w-[18px] h-[18px] rounded-full bg-white transition-all" style={{ left: phoneLockSameScreenChat ? 21 : 3, boxShadow: '0 2px 6px rgba(38,38,38,0.18)' }} />
+                                    </span>
+                                    <span className="text-[12px] font-black">题后同屏聊</span>
+                                </button>
+                            </div>
+                        </div>
+                    </JournalSheet>
+                );
+             })()}
+
+             {/* 锁机：全屏黑屏脚本层。角色自行选题，用户点屏继续；等待回应时可直接同屏输入。 */}
+             {phoneLockScreenOpen && char && (() => {
+                const questionForms = getPhoneLockQuestionForms();
+                const currentQuestion = questionForms[Math.min(phoneLockScreenIndex, questionForms.length - 1)] || questionForms[0];
+                const currentAnswer = phoneLockAttempt?.answers[phoneLockScreenIndex] || '';
+                const isChatMode = phoneLockScreenPhase === 'chat';
+                const hasBinaryOptions = !!currentQuestion?.optionA.trim() && !!currentQuestion?.optionB.trim();
+                const questionCount = Math.max(questionForms.length, 1);
+                const questionProgress = `第 ${Math.min(phoneLockScreenIndex + 1, questionCount)} / ${questionCount} 题`;
+                const passcodeAnswer = phoneLockAttempt?.passcodeInput || '';
+                const isPasscodeOnly = !!phoneLockAttempt && (phoneLockAttempt.unlockReason === 'passcode') && !currentAnswer.trim();
+                const typewriterKey = `${phoneLockScreenPhase}-${phoneLockScreenIndex}-${phoneLockSelectedOption || 'free'}-${phoneLockAttempt?.reply || ''}`;
+                const markTypingDone = () => setPhoneLockTypingDone(true);
+                const statusText = phoneLockRunning
+                    ? 'ta 在选...'
+                    : phoneLockScreenPhase === 'reaction'
+                        ? '说完了'
+                        : phoneLockScreenPhase === 'chat'
+                            ? '同屏聊'
+                            : phoneLockAttempt
+                                ? '说完了'
+                                : 'ta 在看...';
+                const optionStyle = (key: 'A' | 'B'): React.CSSProperties => ({
+                    background: phoneLockSelectedOption === key ? 'rgba(238,229,132,0.12)' : 'rgba(255,255,255,0.025)',
+                    border: `1px solid ${phoneLockSelectedOption === key ? 'rgba(238,229,132,0.34)' : 'rgba(255,255,255,0.045)'}`,
+                    color: phoneLockSelectedOption === key ? '#fff' : 'rgba(255,255,255,0.72)',
+                    boxShadow: phoneLockSelectedOption === key ? '0 18px 38px -30px rgba(238,229,132,0.55)' : undefined,
+                });
+                return (
+                    <div
+                        className="fixed inset-0 z-[150] flex flex-col animate-fade-in"
+                        style={{ background: '#202124', color: '#f5f5f5' }}
+                        onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('[data-phone-lock-chat]')) return;
+                            advancePhoneLockScreen();
+                        }}
+                    >
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setPhoneLockScreenOpen(false); }}
+                            className="absolute right-5 top-5 z-[2] px-4 py-2 rounded-full text-[12px] font-bold"
+                            style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff' }}
+                        >结束</button>
+
+                        <div className="pt-16 text-center shrink-0">
+                            <img src={char.avatar} className="mx-auto w-16 h-16 rounded-2xl object-cover ring-1 ring-white/10 shadow-xl" alt="" />
+                            <div className="mt-3 text-[24px] font-black leading-tight">{char.name}</div>
+                            <div className="mt-2 text-[17px] tracking-[0.22em] text-white/45">{statusText}</div>
+                            {!isChatMode && (
+                                <div className="mt-4 text-[16px] tracking-[0.24em] text-white/42">{questionProgress}</div>
+                            )}
+                        </div>
+
+                        <div className="flex-1 flex flex-col justify-center px-8 pb-24">
+                            {phoneLockScreenPhase === 'reaction' || isChatMode ? (
+                                <div className="text-center">
+                                    {isPasscodeOnly ? (
+                                        <div className="mx-auto max-w-[340px] rounded-[24px] px-5 py-5 text-left" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(238,229,132,0.18)' }}>
+                                            <div className="text-[11px] tracking-[0.22em] uppercase mb-2" style={{ color: '#d6cc7a' }}>口令提示</div>
+                                            <div className="text-[24px] leading-snug font-serif text-white">
+                                                <TypewriterText text={phoneLockNote.trim() || '没有提示，只能凭直觉猜。'} revealKey={`${typewriterKey}-clue`} forceDone={phoneLockSkipTyping} speed={28} />
+                                            </div>
+                                            <div className="mt-5 text-[11px] tracking-[0.22em] uppercase mb-2" style={{ color: 'rgba(255,255,255,0.48)' }}>TA 输入</div>
+                                            <div className="text-[34px] leading-tight font-serif font-bold text-white">
+                                                <TypewriterText text={passcodeAnswer || '（空）'} revealKey={`${typewriterKey}-pass`} forceDone={phoneLockSkipTyping} speed={30} onDone={markTypingDone} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-[40px] leading-tight font-serif font-bold tracking-wide">
+                                            <TypewriterText
+                                                text={phoneLockSelectedOption && hasBinaryOptions ? `${phoneLockSelectedOption}. ${phoneLockSelectedOption === 'A' ? currentQuestion.optionA : currentQuestion.optionB}` : (currentAnswer || phoneLockResultLabel(phoneLockAttempt?.unlockReason))}
+                                                revealKey={`${typewriterKey}-answer`}
+                                                forceDone={phoneLockSkipTyping}
+                                                speed={30}
+                                            />
                                         </div>
                                     )}
-                                    {phoneLockChat.map(line => (
+                                    <div className="mt-8 text-[18px] leading-[1.8] text-white/68 whitespace-pre-wrap">
+                                        <TypewriterText
+                                            text={phoneLockAttempt?.reply || '整屏回应已打完。点一下屏幕继续，进入同屏聊。'}
+                                            revealKey={`${typewriterKey}-reply`}
+                                            forceDone={phoneLockSkipTyping}
+                                            speed={22}
+                                            onDone={markTypingDone}
+                                        />
+                                    </div>
+                                    {!isChatMode && (
+                                        <div className="mt-14 inline-flex px-5 py-3 rounded-2xl text-[13px] text-white/80" style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                            {phoneLockTypingDone ? '点一下屏幕继续' : '点一下跳过打字'}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-center">
+                                    <div className="text-[34px] sm:text-[40px] leading-[1.35] font-serif font-bold whitespace-pre-wrap">
+                                        <TypewriterText
+                                            text={currentQuestion?.stem || '锁屏题目'}
+                                            revealKey={`${typewriterKey}-question`}
+                                            forceDone={phoneLockSkipTyping}
+                                            speed={34}
+                                        />
+                                    </div>
+                                    {hasBinaryOptions ? (
+                                        <div className="mt-16 space-y-5 max-w-[300px] mx-auto">
+                                            <div className="min-h-20 rounded-2xl flex items-center justify-center px-5 py-5 text-[24px] font-black leading-snug" style={optionStyle('A')}>
+                                                <TypewriterText text={currentQuestion.optionA} revealKey={`${typewriterKey}-a`} forceDone={phoneLockSkipTyping} speed={24} />
+                                            </div>
+                                            <div className="min-h-20 rounded-2xl flex items-center justify-center px-5 py-5 text-[24px] font-black leading-snug" style={optionStyle('B')}>
+                                                <TypewriterText text={currentQuestion.optionB} revealKey={`${typewriterKey}-b`} forceDone={phoneLockSkipTyping} speed={24} onDone={markTypingDone} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="mt-14 max-w-[320px] mx-auto rounded-[22px] px-5 py-5 text-[20px] leading-[1.7] font-serif whitespace-pre-wrap" style={{ background: 'rgba(255,255,255,0.032)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.82)' }}>
+                                            <TypewriterText
+                                                text={phoneLockRunning ? `${char.name} 正在写答案...` : (currentAnswer || '等待 TA 写下答案')}
+                                                revealKey={`${typewriterKey}-free`}
+                                                forceDone={phoneLockSkipTyping}
+                                                speed={26}
+                                                onDone={markTypingDone}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {isChatMode && (
+                            <div data-phone-lock-chat className="absolute left-0 right-0 bottom-0 px-5 pb-5 pt-3" style={{ background: 'linear-gradient(180deg, transparent, rgba(32,33,36,0.96) 20%)' }}>
+                                <div className="max-h-40 overflow-y-auto no-scrollbar space-y-2 mb-3">
+                                    {phoneLockChat.filter(line => line.speaker !== 'system').map(line => (
                                         <div key={line.id} className={`flex ${line.speaker === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                            <div
-                                                className="max-w-[82%] px-3 py-2 rounded-2xl text-[12px] leading-relaxed"
-                                                style={line.speaker === 'system'
-                                                    ? { background: '#f5edf1', color: INK_SOFT, border: '1px dashed #eed6df' }
-                                                    : line.speaker === 'user'
-                                                        ? { background: '#d8a5b7', color: '#fff' }
-                                                        : { background: '#fff', color: INK, border: '1px solid #eed6df' }}
+                                            <div className="max-w-[82%] px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed"
+                                                style={line.speaker === 'user'
+                                                    ? { background: '#efe18a', color: '#202124' }
+                                                    : { background: 'rgba(255,255,255,0.055)', border: '1px solid rgba(255,255,255,0.07)', color: '#fff' }}
                                             >
                                                 {line.text}
                                             </div>
@@ -4666,72 +4969,25 @@ ${history.map(line => `${line.speaker === 'user' ? userName : line.speaker === '
                                                 void sendPhoneLockChat();
                                             }
                                         }}
-                                        placeholder={phoneLockAttempt ? '跟 TA 说一句...' : '先锁住 TA，再开始对话'}
-                                        disabled={!phoneLockAttempt || phoneLockChatBusy || phoneLockPhase === 'unlocked'}
-                                        className="flex-1 min-w-0 px-3 py-2 rounded-2xl text-[12px] outline-none disabled:opacity-50"
-                                        style={{ background: '#fff', border: '1px solid #eed6df', color: INK }}
+                                        placeholder={phoneLockChatBusy ? `${char.name} 正在回复...` : '直接在屏幕上回复 TA'}
+                                        disabled={phoneLockChatBusy}
+                                        className="flex-1 min-w-0 px-4 py-3 rounded-2xl text-[14px] outline-none disabled:opacity-50"
+                                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)', color: '#fff' }}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => { void sendPhoneLockChat(); }}
-                                        disabled={!phoneLockAttempt || !phoneLockChatInput.trim() || phoneLockChatBusy || phoneLockPhase === 'unlocked'}
-                                        className="shrink-0 px-3 rounded-2xl text-[12px] font-black active:scale-95 disabled:opacity-40"
-                                        style={{ background: '#5a3140', color: '#fff' }}
-                                    >
-                                        发送
-                                    </button>
+                                        disabled={!phoneLockChatInput.trim() || phoneLockChatBusy}
+                                        className="shrink-0 px-4 rounded-2xl text-[13px] font-black active:scale-95 disabled:opacity-40"
+                                        style={{ background: '#efe18a', color: '#202124' }}
+                                    >发送</button>
                                 </div>
                             </div>
-
-                            <div className="space-y-2">
-                                <div className="flex flex-wrap gap-2">
-                                    {(Object.entries(PHONE_LOCK_PRESETS) as [PhoneLockPresetId, typeof PHONE_LOCK_PRESETS[PhoneLockPresetId]][]).map(([id, p]) => (
-                                        <ScrapChip key={id} selected={phoneLockPreset === id} onClick={() => { setPhoneLockPreset(id); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}>
-                                            {p.label}
-                                        </ScrapChip>
-                                    ))}
-                                </div>
-                                <ScrapNote>{preset.hint}。像异地恋情侣 App 的远程锁屏小组件：你发起锁屏，TA 在自己的手机上输入。</ScrapNote>
-                            </div>
-
-                            <div className="space-y-2">
-                                <ScrapTextarea
-                                    rows={3}
-                                    value={phoneLockNote}
-                                    onChange={e => { setPhoneLockNote(e.target.value); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
-                                    placeholder={preset.note(userName)}
-                                />
-                                <div className="flex gap-2">
-                                    <ScrapInput
-                                        value={phoneLockCode}
-                                        onChange={e => { setPhoneLockCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
-                                        inputMode="numeric"
-                                        placeholder="口令"
-                                        center
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => { setPhoneLockCode(makePhoneLockCode()); setPhoneLockAttempt(null); setPhoneLockPhase('setup'); setPhoneLockChat([]); }}
-                                        className="shrink-0 px-3 rounded-2xl text-[12px] font-black active:scale-95"
-                                        style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK }}
-                                    >
-                                        换口令
-                                    </button>
-                                </div>
-                                {phoneLockAttempt && (
-                                    <div className="rounded-2xl px-3 py-2.5 text-[12px] leading-relaxed" style={{ background: phoneLockPhase === 'unlocked' ? '#f0fff6' : '#fff5f7', border: `1px solid ${phoneLockPhase === 'unlocked' ? '#bfe9cf' : '#f1c6d1'}`, color: INK }}>
-                                        {phoneLockPhase === 'unlocked'
-                                            ? `${char.name} 已经被你放行。`
-                                            : phoneLockPhase === 'denied'
-                                              ? `${char.name} 还被你锁着。`
-                                              : `${char.name} 正在等你审核。`}{phoneLockAttempt.wantsUnlock ? 'TA 想解锁。' : 'TA 暂时没有服软求解锁。'} TA 说：{phoneLockAttempt.reply}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </Modal>
+                        )}
+                    </div>
                 );
              })()}
+
 
              {/* 系统命令 Modal：用户以系统身份下达最高优先级指令 */}
              <JournalSheet

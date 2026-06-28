@@ -595,6 +595,70 @@ export function proposalResultHint(userName: string, accepted: boolean): string 
         : `[系统提示（非${userName}发言）：${userName} 这次婉拒了你的求婚（还没准备好）。请按你的人设真实反应——可以失落、可以体谅、可以故作轻松地打个圆场把气氛接住，但别强求、别道德绑架、也别瞬间就毫无波澜。心里多少是有点疼的，看你愿不愿意让 ta 看出来。]`;
 }
 
+export interface PhoneLockAttemptPromptParams {
+    userName: string;
+    charName: string;
+    recent: string;
+    presetLabel: string;
+    presetHint: string;
+    note: string;
+    passcode: string;
+    questions: string[];
+}
+
+/** 锁机：角色在自己黑屏锁机上输入口令 / 回答自定义题。调用方负责在前面拼 coreContext。 */
+export function phoneLockAttemptPromptBody(p: PhoneLockAttemptPromptParams): string {
+    return `### [最近聊天]
+${p.recent || '（你们还没怎么聊过）'}
+
+### [Task: 情侣锁机互动]
+${p.userName} 通过聊天回形针里的「锁机」功能，远程锁住了你的手机。这个功能参考异地恋情侣 App 的远程黑屏锁机：发起后，你自己的屏幕会完全变黑，只留下 ${p.userName} 的留言；留言结束后，除非你答出口令提示对应的正确答案，或者完成任意一道题目，否则手机不能解开。
+
+锁屏模式：${p.presetLabel}（${p.presetHint}）
+口令提示：${p.note || '（未设置）'}
+口令正确答案：${p.passcode || '（未设置）'}
+锁屏题目：
+${p.questions.map((q, i) => `${i + 1}. ${q}`).join('\n') || '（没有题目）'}
+
+请以「${p.charName}」的人设，生成你在自己黑屏锁机上实际输入的内容。注意：
+- passcodeInput 是你在口令框里输入的文字答案；你能看到「口令提示」，但不知道系统里的正确答案。你可以根据提示猜对，也可以因为不知道、闹脾气、故意撒娇而输错或留空。
+- answers 是你在题目框里输入的文字，不是 ${p.userName} 来写。题目完全由 ${p.userName} 自定义时，请认真贴着题目作答。
+- 只要 passcodeInput 和口令正确答案一致，或者 answers 里任意一道题有有效回答，系统就会自动解锁；${p.userName} 不再手动审核。
+- reply 是你提交后在锁屏实时对话框里对 ${p.userName} 说的一句话（30-120字），要像真实反应，不要复述系统说明。
+
+只输出 JSON，不要 markdown：
+{"passcodeInput":"口令答案或空串","answers":["回答1","回答2","回答3"],"wantsUnlock":true或false,"reply":"...","mood":"一句话心情"}`;
+}
+
+export interface PhoneLockChatPromptParams {
+    userName: string;
+    charName: string;
+    presetLabel: string;
+    note: string;
+    passcode: string;
+    questions: string[];
+    attemptText: string;
+    historyText: string;
+}
+
+/** 锁机：黑屏内实时对话框的角色回复。调用方负责在前面拼 coreContext。 */
+export function phoneLockChatPromptBody(p: PhoneLockChatPromptParams): string {
+    return `### [Task: 锁机实时对话]
+${p.userName} 正在通过「锁机」远程锁住你的手机。你在自己的黑屏锁机界面里，能看到锁屏留言、口令框、题目和一块实时对话框。
+
+锁屏模式：${p.presetLabel}
+口令提示：${p.note || '（未设置）'}
+口令正确答案：${p.passcode || '（未设置）'}
+题目：
+${p.questions.map((q, i) => `${i + 1}. ${q}`).join('\n') || '（没有题目）'}
+${p.attemptText}
+
+### [锁机对话框历史]
+${p.historyText || '（没有额外对话）'}
+
+请以「${p.charName}」第一人称回复锁机对话框里的最新一句。只输出一句自然回复，不要旁白，不要 JSON，30-100字。`;
+}
+
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║ [9] 偷看心声 (Inner Voice)                                                 ║
