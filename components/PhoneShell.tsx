@@ -101,6 +101,7 @@ const ShopApp = lazyApp(() => import('../apps/ShopApp'));
 const HaremApp = lazyApp(() => import('../apps/HaremApp'));
 const ForumApp = lazyApp(() => import('../apps/ForumApp'));
 const VideoCallApp = lazyApp(() => import('../apps/VideoCallApp'));
+const ManualApp = lazyApp(() => import('../apps/ManualApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
 const APP_PRELOAD_ORDER: PreloadableLazy[] = [
@@ -110,6 +111,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
+  ManualApp,
 ];
 
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
@@ -131,6 +133,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
   [AppID.Creative]: CreativeStudioApp, [AppID.Theater]: TheaterApp, [AppID.Almanac]: AlmanacApp,
   [AppID.Takeout]: TakeoutApp, [AppID.Shop]: ShopApp, [AppID.Harem]: HaremApp, [AppID.Forum]: ForumApp, [AppID.VideoCall]: VideoCallApp,
+  [AppID.Manual]: ManualApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -613,6 +616,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Harem: return <HaremApp />;
       case AppID.Forum: return <ForumApp />;
       case AppID.VideoCall: return <VideoCallApp />;
+      case AppID.Manual: return <ManualApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
       case AppID.XhsStock: return <XhsStockApp />;

@@ -1,11 +1,6 @@
 /**
- * 文具盒 —— 系统设置的黑白拼贴手账版（原「系统设置」，功能一比一保留）。
- *
- * 分区对照（只换了说法，逻辑/存储/handler 全部未动）：
- *  - 锁扣与暗码 = 锁屏与密码；整机装箱 = ZIP 备份与恢复；云上寄存 = 云端备份
- *  - 接线盒 = API 配置；接线流水 = API 调用记录；杂线匣 = 其他 API
- *  - 风向标 = 实时感知；邮戳凭据 = 推送凭据 (VAPID)
- *  - 飞鸽加急 = 主动消息 Push 加速；即时飞鸽 = Instant Push
+ * 文具盒 —— 系统设置入口。
+ * 统一管理基础设置、备份恢复、主/副 API、实时数据源与通知推送。
  */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
@@ -59,33 +54,56 @@ const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
 // 这里设为 false 只是把设置页里的入口隐藏掉，想恢复改回 true 即可。
 const SHOW_PROACTIVE_PUSH_ACCEL_UI = false;
 
-// ── 黑白手账设计 token（与扮相手账 / 剪报夹同一套语言） ─────────────
-const INK = '#1c1b1a';
-/** 贴纸按钮：硬描边 + 错位实心投影，按下时整张贴纸"按扁" */
-const STICKER = 'border border-black/10 rounded-xl bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft';
-/** 墨块按钮：实心墨色版贴纸 */
-const INK_BTN = 'bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft';
-/** 手写中文（手账旁注） */
-const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-/** 内页点纹 */
+// ── ins / 拍立得设计 token（对齐絮语私聊设置面板） ─────────────────
+const INK = '#5a3140';
+const INK_SOFT = '#a892a3';
+const ROSE = '#d8a5b7';
+const ROSE_DARK = '#9c5e74';
+const PAPER = '#fffdfa';
+const LINE = '#eed6df';
+const CARD_BORDER = '#ededed';
+const CARD_SHADOW = '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)';
+const AUX_MODELS_STORAGE_KEY = 'os_aux_available_models';
+/** 轻量贴纸按钮：淡玫瑰描边 + 胶片纸底 */
+const STICKER = 'border border-[#eed6df] rounded-full bg-[#fffdfa] text-[#9c5e74] shadow-[0_1px_2px_rgba(122,90,114,0.10)] press-soft';
+/** 主按钮：玫瑰色胶囊按钮 */
+const INK_BTN = 'bg-[#d8a5b7] text-white border border-[#eed6df] rounded-full shadow-[0_8px_16px_-12px_rgba(122,90,114,0.42)] press-soft';
+/** 柔和旁注字体 */
+const HAND_CN: React.CSSProperties = { fontFamily: "'LXGW WenKai', 'ZCOOL XiaoWei', 'Noto Serif SC', serif" };
+/** 页面底纹：轻微暖白渐变，保持和絮语设置同一淡色系 */
 const DOT_BG: React.CSSProperties = {
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
-    backgroundSize: '16px 16px',
+    background:
+        'radial-gradient(circle at 12% 0%, rgba(216,165,183,0.16), transparent 30%), radial-gradient(circle at 90% 18%, rgba(255,244,247,0.9), transparent 28%), linear-gradient(180deg, #fafafa 0%, #fff9fb 48%, #fafafa 100%)',
 };
-/** 输入框：白纸 + 黑描边 */
-const FIELD = 'w-full px-3 py-2 bg-white border border-black/10 rounded-xl text-sm text-[#26242a] focus:outline-none focus:shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] transition-all placeholder:text-[#26242a]/30';
+/** 输入框：胶片纸底 + 淡玫瑰描边 */
+const FIELD = 'w-full px-3 py-2 bg-[#fffdfa] border border-[#eed6df] rounded-[14px] text-sm text-[#5a3140] caret-[#d8a5b7] focus:outline-none focus:border-[#d8a5b7] focus:shadow-[0_8px_18px_-16px_rgba(122,90,114,0.32)] transition-all placeholder:text-[#cfb8c4]';
 /** 小标签（字段名） */
-const LABEL = 'label-mono text-[9px] text-[#26242a]/55 block mb-1';
+const LABEL = 'label-mono text-[9px] text-[#a892a3] block mb-1';
 
-/** 一截半透明和纸胶带 */
+const POLAROID_SCOPE_CSS = `
+.settings-polaroid [class*="text-[#26242a]"] { color: #5a3140 !important; }
+.settings-polaroid [class*="text-[#26242a]/"] { color: #8f6b7b !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]"] { background-color: #d8a5b7 !important; }
+.settings-polaroid [class*="bg-[#1c1b1a]/"] { background-color: rgba(216,165,183,0.12) !important; }
+.settings-polaroid [class*="border-[#1c1b1a]"] { border-color: #eed6df !important; }
+.settings-polaroid [class*="border-[#1c1b1a]/"] { border-color: rgba(238,214,223,0.9) !important; }
+.settings-polaroid [class*="decoration-[#1c1b1a]"] { text-decoration-color: rgba(216,165,183,0.9) !important; }
+.settings-polaroid .border-black\\/10 { border-color: #ededed !important; }
+.settings-polaroid .border-dashed { border-style: solid !important; }
+.settings-polaroid .border-2 { border-width: 1px !important; }
+.settings-polaroid code { background-color: #fff4f7 !important; color: #9c5e74 !important; border-radius: 7px; }
+.settings-polaroid input[type="range"] { accent-color: #d8a5b7; }
+`;
+
+/** 一截半透明拍立得胶带 */
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
     <div
         aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
+        className={`pointer-events-none absolute h-4 w-16 rounded-full bg-[#fff4f7]/85 border border-[#eed6df]/80 shadow-[0_1px_2px_rgba(122,90,114,0.10)] backdrop-blur-[1px] ${className || ''}`}
     />
 );
 
-/** 拼贴弹层：撕边纸卡 + 顶部胶带（替代通用 Modal，保持手账质感） */
+/** 拍立得弹层：白色相纸 + 柔和玫瑰描边 */
 const PaperSheet: React.FC<{
     open: boolean;
     tag: string;
@@ -97,20 +115,23 @@ const PaperSheet: React.FC<{
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-            <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
-                <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
+            <div className="absolute inset-0 bg-[#2d1f27]/35 backdrop-blur-[2px]" onClick={onClose} />
+            <div
+                className="relative w-full max-w-sm bg-white border border-[#eed6df] rounded-[22px] shadow-[0_1px_2px_rgba(38,38,38,0.04),0_18px_42px_-24px_rgba(122,90,114,0.42)] animate-slide-up overflow-hidden"
+                style={{ background: `linear-gradient(180deg, #ffffff 0%, ${PAPER} 100%)` }}
+            >
+                <Tape className="-top-2 left-1/2 -translate-x-1/2" />
                 <button
                     onClick={onClose}
-                    className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rounded-none rotate-[4deg] ${STICKER}`}
+                    className={`absolute top-3 right-3 w-8 h-8 flex items-center justify-center ${STICKER}`}
                     aria-label="关闭"
                 >
                     <X size={14} weight="bold" color={INK} />
                 </button>
                 <div className="px-5 pt-6 pb-2">
-                    <div className="label-mono text-[9px] text-[#26242a]/45">{tag}</div>
-                    <h3 className="text-lg font-black text-[#26242a] tracking-wide mt-0.5">{title}</h3>
-                    <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
+                    <div className="label-mono text-[9px] text-[#a892a3]">{tag}</div>
+                    <h3 className="text-lg font-black text-[#5a3140] tracking-wide mt-0.5">{title}</h3>
+                    <div className="h-[3px] w-14 rounded-full bg-[#d8a5b7] mt-1.5" />
                 </div>
                 <div className="px-5 py-3 max-h-[58vh] overflow-y-auto no-scrollbar">{children}</div>
                 {footer && <div className="px-5 pb-5 pt-2 flex gap-3">{footer}</div>}
@@ -119,7 +140,7 @@ const PaperSheet: React.FC<{
     );
 };
 
-/** 墨块开关：方形手账开关，黑=开 */
+/** 淡玫瑰开关：与絮语私聊设置一致的轻量 toggle */
 const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string; disabled?: boolean }> = ({ on, onChange, title, disabled }) => (
     <button
         type="button"
@@ -128,14 +149,23 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?
         onClick={(e) => { e.stopPropagation(); if (!disabled) onChange(!on); }}
         title={title}
         disabled={disabled}
-        className={`relative w-10 h-5 border border-black/10 rounded-xl shrink-0 transition-colors ${on ? 'bg-[#1c1b1a]' : 'bg-white'} ${disabled ? 'opacity-50' : ''}`}
+        className={`relative w-[52px] h-[28px] rounded-full shrink-0 transition-all duration-300 active:scale-95 ${disabled ? 'opacity-50' : ''}`}
+        style={{
+            background: on ? ROSE : '#f8f4f6',
+            border: `1px solid ${LINE}`,
+            boxShadow: on ? '0 8px 16px -12px rgba(122,90,114,0.42)' : 'inset 0 1px 2px rgba(122,90,114,0.08)',
+        }}
     >
-        {/* 开=墨块滑到右侧（黑底浅块）；关=空心滑块停在左侧（白底描边），不留墨迹 */}
-        <span className={`absolute top-0 bottom-0 w-4 transition-all pointer-events-none ${on ? 'right-0 bg-white' : 'left-0 bg-white border border-black/10 rounded-xl'}`} />
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ left: 8, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ right: 7, color: '#d8c2cd', opacity: on ? 0 : 1 }}>off</span>
+        <span
+            className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] rounded-full bg-white transition-all duration-300 pointer-events-none"
+            style={{ left: on ? 27 : 3, boxShadow: '0 2px 6px rgba(122,90,114,0.24)' }}
+        />
     </button>
 );
 
-/** 分区白卡：黑描边 + 错位实心投影 + 顶部胶带 + 微旋转 */
+/** 分区白卡：与絮语设置一致的 ins 白卡 + 拍立得轻贴纸 */
 const SectionCard: React.FC<{
     tag: string;
     title: string;
@@ -143,26 +173,64 @@ const SectionCard: React.FC<{
     hand?: string;
     rotate?: string;
     children: React.ReactNode;
-}> = ({ tag, title, right, hand, rotate, children }) => (
-    <section className={`relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 pt-5 ${rotate || ''}`}>
-        <Tape className="-top-2.5 left-6 rotate-[-3deg]" />
+}> = ({ tag, title, right, hand, children }) => (
+    <section className="relative bg-white rounded-[18px] p-4 pt-5" style={{ border: `1px solid ${CARD_BORDER}`, boxShadow: CARD_SHADOW }}>
+        <Tape className="-top-2 left-6" />
         <div className="flex items-start justify-between gap-2 mb-2">
             <div className="min-w-0">
-                <div className="label-mono text-[9px] text-[#26242a]/45">{tag}</div>
-                <h2 className="text-base font-black text-[#26242a] tracking-wide leading-tight">{title}</h2>
+                <div className="label-mono text-[9px] text-[#a892a3]">{tag}</div>
+                <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">{title}</h2>
             </div>
             {right}
         </div>
-        {hand && <p className="text-base text-[#26242a]/55 mb-2 leading-snug" style={HAND_CN}>✎ {hand}</p>}
+        {hand && <p className="text-[11px] text-[#a96f84] mb-3 leading-relaxed" style={HAND_CN}>{hand}</p>}
         {children}
     </section>
 );
 
+const InfoNote: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
+    <div
+        className={`rounded-[14px] px-3 py-2.5 text-[11px] leading-relaxed ${className || ''}`}
+        style={{ color: '#8f6b7b', background: '#fff4f7', border: '1px solid #eed6df' }}
+    >
+        {children}
+    </div>
+);
+
+const StatusBadge: React.FC<{ active: boolean; activeText: string; inactiveText: string }> = ({ active, activeText, inactiveText }) => (
+    <span
+        className="shrink-0 label-mono text-[9px] px-2 py-1 rounded-full"
+        style={{
+            color: active ? '#ffffff' : '#a892a3',
+            background: active ? ROSE : '#fffdfa',
+            border: `1px solid ${LINE}`,
+        }}
+    >
+        {active ? activeText : inactiveText}
+    </span>
+);
+
+const ModelSelectButton: React.FC<{ model: string; placeholder: string; onClick: () => void }> = ({ model, placeholder, onClick }) => (
+    <button
+        onClick={onClick}
+        title={model || placeholder}
+        className={`w-full px-4 py-3 text-sm flex justify-between items-center gap-2 relative ${STICKER}`}
+    >
+        <span
+            className="font-mono overflow-hidden whitespace-nowrap min-w-0 flex-1 text-left"
+            style={{ direction: 'rtl', textOverflow: 'ellipsis', color: model ? INK : INK_SOFT }}
+        >
+            <bdi style={{ direction: 'ltr' }}>{model || placeholder}</bdi>
+        </span>
+        <span className="flex-shrink-0 text-xs" style={{ color: INK_SOFT }}>选择</span>
+    </button>
+);
+
 const StatusTile: React.FC<{ label: string; value: string; detail?: string; active?: boolean }> = ({ label, value, detail, active }) => (
-    <div className={`min-w-0 border-2 px-3 py-2.5 ${active ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/30 bg-white text-[#26242a]'}`}>
-        <div className={`label-mono text-[8px] ${active ? 'text-white/55' : 'text-[#26242a]/45'}`}>{label}</div>
+    <div className={`min-w-0 rounded-[16px] border px-3 py-2.5 ${active ? 'border-[#eed6df] bg-[#fff4f7] text-[#5a3140]' : 'border-[#ededed] bg-[#fffdfa] text-[#8f6b7b]'}`}>
+        <div className={`label-mono text-[8px] ${active ? 'text-[#a96f84]' : 'text-[#a892a3]'}`}>{label}</div>
         <div className="text-[12px] font-black truncate mt-0.5">{value}</div>
-        {detail && <div className={`text-[9px] mt-0.5 truncate ${active ? 'text-white/55' : 'text-[#26242a]/45'}`}>{detail}</div>}
+        {detail && <div className={`text-[9px] mt-0.5 truncate ${active ? 'text-[#a96f84]' : 'text-[#a892a3]'}`}>{detail}</div>}
     </div>
 );
 
@@ -170,7 +238,7 @@ const JumpButton: React.FC<{ label: string; target: string; onJump: (target: str
     <button
         type="button"
         onClick={() => onJump(target)}
-        className={`px-3 py-2 text-[11px] font-black text-[#26242a] ${STICKER}`}
+        className={`px-3 py-2 text-[11px] font-black ${STICKER}`}
     >
         {label}
     </button>
@@ -180,12 +248,12 @@ const SettingsGroup: React.FC<{ id: string; eyebrow: string; title: string; desc
     <section id={id} className="scroll-mt-28 space-y-3">
         <div className="flex items-end justify-between gap-3 px-1">
             <div className="min-w-0">
-                <div className="label-mono text-[8px] text-[#26242a]/45">{eyebrow}</div>
-                <h2 className="text-lg font-black text-[#26242a] tracking-wide">{title}</h2>
+                <div className="label-mono text-[8px] text-[#a892a3]">{eyebrow}</div>
+                <h2 className="text-lg font-black text-[#5a3140] tracking-wide">{title}</h2>
             </div>
-            <p className="hidden sm:block text-[11px] text-[#26242a]/50 leading-snug max-w-[16rem] text-right">{desc}</p>
+            <p className="hidden sm:block text-[11px] text-[#8f6b7b] leading-snug max-w-[16rem] text-right">{desc}</p>
         </div>
-        <p className="sm:hidden text-[11px] text-[#26242a]/50 leading-snug px-1">{desc}</p>
+        <p className="sm:hidden text-[11px] text-[#8f6b7b] leading-snug px-1">{desc}</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
             {children}
         </div>
@@ -194,8 +262,8 @@ const SettingsGroup: React.FC<{ id: string; eyebrow: string; title: string; desc
 
 const DiagRow: React.FC<{ label: string; value: string; bad?: boolean }> = ({ label, value, bad }) => (
     <div className="flex items-start justify-between gap-3">
-        <span className="text-[#26242a]/50 shrink-0">{label}</span>
-        <span className={`text-right ${bad ? 'text-[#26242a] font-bold underline decoration-wavy decoration-[#1c1b1a]/50' : 'text-[#26242a]/80'}`}>{value}</span>
+        <span className="text-[#8f6b7b] shrink-0">{label}</span>
+        <span className={`text-right ${bad ? 'text-[#9c5e74] font-bold underline decoration-wavy decoration-[#d8a5b7]/70' : 'text-[#5a3140]/80'}`}>{value}</span>
     </div>
 );
 
@@ -280,6 +348,15 @@ const Settings: React.FC = () => {
   const [localAuxUrl, setLocalAuxUrl] = useState(auxApiConfig.baseUrl);
   const [localAuxKey, setLocalAuxKey] = useState(auxApiConfig.apiKey);
   const [localAuxModel, setLocalAuxModel] = useState(auxApiConfig.model);
+  const [auxAvailableModels, setAuxAvailableModels] = useState<string[]>(() => {
+      try {
+          const saved = localStorage.getItem(AUX_MODELS_STORAGE_KEY);
+          const parsed = saved ? JSON.parse(saved) : [];
+          return Array.isArray(parsed) ? parsed.filter((m): m is string => typeof m === 'string') : [];
+      } catch {
+          return [];
+      }
+  });
   const [auxStatusMsg, setAuxStatusMsg] = useState('');
   const [otherStatusMsg, setOtherStatusMsg] = useState('');
   // 高级设置（流式/温度）默认折叠 — 大多数用户不需要碰
@@ -409,8 +486,9 @@ const Settings: React.FC = () => {
 
   // 模型选择 Modal 的过滤 + 公共前缀（memo 掉，避免每次 Settings 重渲染都重算）
   const modelPickerView = useMemo(() => {
+      const sourceModels = modelPickerTarget === 'aux' ? auxAvailableModels : availableModels;
       const q = modelFilter.trim().toLowerCase();
-      const filtered = q ? availableModels.filter(m => m.toLowerCase().includes(q)) : availableModels;
+      const filtered = q ? sourceModels.filter(m => m.toLowerCase().includes(q)) : sourceModels;
       let commonPrefix = '';
       if (filtered.length >= 2) {
           let p = filtered[0];
@@ -425,8 +503,8 @@ const Settings: React.FC = () => {
           if (cut > 3) p = p.slice(0, cut + 1);
           if (p.length >= 4) commonPrefix = p;
       }
-      return { filtered, commonPrefix };
-  }, [modelFilter, availableModels]);
+      return { filtered, commonPrefix, total: sourceModels.length };
+  }, [modelFilter, availableModels, auxAvailableModels, modelPickerTarget]);
 
   const refreshPpDiag = useCallback(async () => {
       try { setPpDiag(await getPushDiagnostics()); } catch { /* ignore */ }
@@ -660,13 +738,21 @@ const Settings: React.FC = () => {
   ) => {
     if (!url.trim()) { setStatus('请先填写 Base URL'); return; }
     setLoadingModelTarget(target);
-    setStatus('正在拉取模型列表…');
+    setStatus(target === 'aux' ? '正在拉取副 API 模型…' : '正在拉取主 API 模型…');
     try {
         const baseUrl = url.trim().replace(/\/+$/, '');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (key.trim()) headers.Authorization = `Bearer ${key.trim()}`;
         const response = await fetch(`${baseUrl}/models`, {
             method: 'GET',
-            headers: { 'Authorization': `Bearer ${key.trim()}`, 'Content-Type': 'application/json' }
-        });
+            headers,
+            __moroMeta: {
+                appId: AppID.Settings,
+                appName: '文具盒',
+                purpose: target === 'aux' ? '拉取副 API 模型列表' : '拉取主 API 模型列表',
+                apiRole: target,
+            },
+        } as RequestInit & { __moroMeta?: unknown });
         if (!response.ok) throw new Error(`Status ${response.status}`);
         const data = await safeResponseJson(response);
         const list = data.data || data.models || [];
@@ -676,7 +762,12 @@ const Settings: React.FC = () => {
                     .map((m: any) => typeof m === 'string' ? m : m?.id)
                     .filter((m: any): m is string => typeof m === 'string' && !!m.trim())
             ));
-            setAvailableModels(models);
+            if (target === 'aux') {
+                setAuxAvailableModels(models);
+                localStorage.setItem(AUX_MODELS_STORAGE_KEY, JSON.stringify(models));
+            } else {
+                setAvailableModels(models);
+            }
             if (models.length > 0 && !models.includes(currentModel)) setModel(models[0]);
             setStatus(`已拉取 ${models.length} 个模型`);
             openModelPicker(target);
@@ -685,7 +776,7 @@ const Settings: React.FC = () => {
         }
     } catch (error: any) {
         console.error(error);
-        setStatus('拉取失败');
+        setStatus(`拉取失败：${error?.message || '请检查地址和密钥'}`);
     } finally {
         setLoadingModelTarget(null);
     }
@@ -1042,30 +1133,31 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full bg-[#f7f5f2] flex flex-col relative text-[#26242a]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+    <div className="settings-polaroid h-full w-full bg-[#fafafa] flex flex-col relative text-[#5a3140]" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
+      <style>{POLAROID_SCOPE_CSS}</style>
 
       {/* GLOBAL PROGRESS OVERLAY */}
       {sysOperation.status === 'processing' && (
-          <div className="absolute inset-0 z-50 bg-[#1c1b1a]/60 flex items-center justify-center animate-fade-in">
-              <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 flex flex-col items-center gap-4 w-64 rotate-[-0.6deg]" style={DOT_BG}>
-                  <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
-                  <div className="w-12 h-12 border-4 border-[#1c1b1a]/15 border-t-[#1c1b1a] rounded-full animate-spin"></div>
-                  <div className="text-sm font-bold text-[#26242a] text-center leading-relaxed whitespace-pre-wrap break-words max-w-full">{sysOperation.message}</div>
+          <div className="absolute inset-0 z-50 bg-[#2d1f27]/40 backdrop-blur-[2px] flex items-center justify-center animate-fade-in">
+              <div className="relative bg-white border border-[#eed6df] rounded-[22px] p-6 flex flex-col items-center gap-4 w-64" style={{ ...DOT_BG, boxShadow: CARD_SHADOW }}>
+                  <Tape className="-top-2 left-1/2 -translate-x-1/2" />
+                  <div className="w-12 h-12 border-4 border-[#eed6df] border-t-[#d8a5b7] rounded-full animate-spin"></div>
+                  <div className="text-sm font-bold text-[#5a3140] text-center leading-relaxed whitespace-pre-wrap break-words max-w-full">{sysOperation.message}</div>
                   {sysOperation.progress > 0 && (
-                      <div className="w-full h-2 bg-white border border-[#1c1b1a] overflow-hidden">
-                          <div className="h-full bg-[#1c1b1a] transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
+                      <div className="w-full h-2 bg-white border border-[#eed6df] rounded-full overflow-hidden">
+                          <div className="h-full bg-[#d8a5b7] transition-all duration-300" style={{ width: `${sysOperation.progress}%` }}></div>
                       </div>
                   )}
               </div>
           </div>
       )}
 
-      {/* ── 刊头 ── */}
-      <div className="shrink-0 z-10 sticky top-0 px-4 pt-3 pb-3 bg-[#f7f5f2]/95 backdrop-blur-sm border-b-2 border-dashed border-[#1c1b1a]/30">
+      {/* 顶栏 */}
+      <div className="shrink-0 z-10 sticky top-0 px-4 pt-3 pb-3 bg-white/95 backdrop-blur-sm border-b border-[#ededed]">
         <div className="flex items-center gap-3">
             <button
                 onClick={closeApp}
-                className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`}
+                className={`shrink-0 px-2.5 py-2 flex items-center gap-1 ${STICKER}`}
                 title="关闭设置"
             >
                 <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
@@ -1074,11 +1166,11 @@ const Settings: React.FC = () => {
                 <span className="text-[10px] font-black">返回</span>
             </button>
             <div className="flex-1 min-w-0 relative">
-                <Tape className="-top-4 left-6 rotate-[-5deg] w-12" />
-                <div className="label-mono text-[8px] text-[#26242a]/45">STATIONERY BOX — NUTS &amp; BOLTS</div>
+                <Tape className="-top-4 left-6 w-12" />
+                <div className="label-mono text-[8px] text-[#a892a3]">SETTINGS · SYSTEM CONFIG</div>
                 <div className="flex items-baseline gap-2">
-                    <h1 className="text-2xl font-black tracking-[0.08em]">文具盒</h1>
-                    <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>系统设置、API、备份与通知</span>
+                    <h1 className="text-2xl font-black tracking-[0.08em] text-[#5a3140]">文具盒</h1>
+                    <span className="text-sm text-[#a96f84] truncate" style={HAND_CN}>设置、接口、备份、通知</span>
                 </div>
             </div>
         </div>
@@ -1086,13 +1178,13 @@ const Settings: React.FC = () => {
 
       <div className="flex-1 overflow-y-auto p-5 space-y-8 no-scrollbar pb-20">
 
-        <section className="relative overflow-hidden bg-white border border-black/10 rounded-2xl shadow-[0_18px_40px_-24px_rgba(38,36,42,0.55)] p-4 pt-5">
-            <Tape className="-top-2.5 left-8 rotate-[-4deg]" />
+        <section className="relative overflow-hidden bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+            <Tape className="-top-2 left-8" />
             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                 <div>
-                    <div className="label-mono text-[8px] text-[#26242a]/45">SETTINGS OVERVIEW</div>
-                    <h2 className="text-lg font-black text-[#26242a] tracking-wide">配置总览</h2>
-                    <p className="text-[11px] text-[#26242a]/55 mt-1 leading-relaxed">常用状态集中展示；下方可直接跳到对应配置区。</p>
+                    <div className="label-mono text-[8px] text-[#a892a3]">SETTINGS OVERVIEW</div>
+                    <h2 className="text-lg font-black text-[#5a3140] tracking-wide">配置总览</h2>
+                    <p className="text-[11px] text-[#8f6b7b] mt-1 leading-relaxed">查看关键状态，并快速跳到对应配置区。</p>
                 </div>
                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                     <JumpButton label="基础" target="settings-basic" onJump={jumpToSettingsGroup} />
@@ -1102,8 +1194,8 @@ const Settings: React.FC = () => {
                 </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
-                <StatusTile label="MAIN API" value={localModel || '未选择模型'} detail={localUrl ? '已填写地址' : '未填写地址'} active={!!localUrl.trim() && !!localModel.trim()} />
-                <StatusTile label="AUX API" value={localAuxEnabled ? '已开启' : '已关闭'} detail={localAuxModel || '未选择模型'} active={localAuxEnabled && !!localAuxUrl.trim() && !!localAuxModel.trim()} />
+                <StatusTile label="MAIN API" value={localModel || '未选择模型'} detail={localUrl ? `${availableModels.length || 0} 个已缓存模型` : '未填写地址'} active={!!localUrl.trim() && !!localModel.trim()} />
+                <StatusTile label="AUX API" value={localAuxEnabled ? '已开启' : '已关闭'} detail={localAuxModel || `${auxAvailableModels.length || 0} 个已缓存模型`} active={localAuxEnabled && !!localAuxUrl.trim() && !!localAuxModel.trim()} />
                 <StatusTile label="BACKUP" value={cloudBackupConfig.enabled ? '云端已启用' : '仅本地'} detail={cloudBackupConfig.enabled ? (cloudBackupConfig.provider || 'cloud').toUpperCase() : '可导出 ZIP'} active={cloudBackupConfig.enabled} />
                 <StatusTile label="NOTIFY" value={notifyPerm === 'granted' ? '通知已授权' : notifyPerm === 'denied' ? '通知被拒绝' : '通知未授权'} detail={isPushVapidReady() ? 'VAPID 已配置' : 'VAPID 未配置'} active={notifyPerm === 'granted'} />
             </div>
@@ -1343,15 +1435,14 @@ const Settings: React.FC = () => {
             </SectionCard>
         </SettingsGroup>
 
-        <SettingsGroup id="settings-api" eyebrow="03 / API" title="模型与服务" desc="主 API、副 API、调用记录和非 LLM 服务配置。">
+        <SettingsGroup id="settings-api" eyebrow="03 / API" title="模型与服务" desc="主 API 负责聊天回复；副 API 负责日程、总结、生活侧写等辅助任务。">
             {/* 主 API 配置 */}
             <SectionCard
-            tag="MAIN API"
-            title="主 API 配置"
-            hand="配置主 API：地址、密钥、模型"
-            rotate="rotate-[0.5deg]"
+            tag="CHAT API"
+            title="主 API"
+            hand="用于私聊、群聊、电话等核心对话生成。"
             right={
-                <button onClick={() => setShowPresetModal(true)} className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 rotate-[2deg] ${STICKER}`}>
+                <button onClick={() => setShowPresetModal(true)} className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 ${STICKER}`}>
                     保存为预设
                 </button>
             }
@@ -1359,7 +1450,7 @@ const Settings: React.FC = () => {
             {/* Presets List */}
             {apiPresets.length > 0 && (
                 <div className="mb-4">
-                    <label className={LABEL}>API PRESETS · 已保存的 API 预设</label>
+                    <label className={LABEL}>PRESETS · 已保存接口</label>
                     <div className="flex gap-2 flex-wrap">
                         {apiPresets.map(preset => (
                             <div key={preset.id} className={`flex items-center pl-3 pr-1 py-1 ${STICKER}`}>
@@ -1373,14 +1464,14 @@ const Settings: React.FC = () => {
                 </div>
             )}
 
-            <div className="space-y-4">
+                <div className="space-y-4">
                 <div className="group">
-                    <label className={LABEL}>BASE URL</label>
+                    <label className={LABEL}>BASE URL · 接口地址</label>
                     <input type="text" value={localUrl} onChange={(e) => setLocalUrl(e.target.value)} placeholder="https://your-api.example.com/v1" className={`${FIELD} font-mono`} />
                 </div>
 
                 <div className="group">
-                    <label className={LABEL}>KEY</label>
+                    <label className={LABEL}>API KEY · 密钥</label>
                     <input type="password" value={localKey} onChange={(e) => setLocalKey(e.target.value)} placeholder="输入 API Key" className={`${FIELD} font-mono`} />
                 </div>
 
@@ -1434,31 +1525,19 @@ const Settings: React.FC = () => {
                     )}
                 </div>
 
-                <div className="pt-2">
+                    <div className="pt-2">
                      <div className="flex justify-between items-center mb-1.5 pl-1">
-                        <label className="label-mono text-[9px] text-[#26242a]/55">MODEL</label>
+                        <label className={LABEL}>MODEL · 聊天模型</label>
                         <button
                             onClick={() => fetchModels('main', localUrl, localKey, localModel, setLocalModel, setStatusMsg)}
                             disabled={loadingModelTarget !== null}
-                            className="text-[10px] text-[#26242a] font-black underline underline-offset-2 disabled:opacity-50"
+                            className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2 disabled:opacity-50"
                         >
-                            {loadingModelTarget === 'main' ? '正在拉取…' : '拉取模型'}
+                            {loadingModelTarget === 'main' ? '正在拉取…' : availableModels.length ? `刷新模型（${availableModels.length}）` : '拉取模型'}
                         </button>
                     </div>
 
-                    <button
-                        onClick={() => openModelPicker('main')}
-                        title={localModel || '选择模型'}
-                        className={`w-full px-4 py-3 text-sm text-[#26242a] flex justify-between items-center gap-2 relative ${STICKER}`}
-                    >
-                        <span
-                            className="font-mono overflow-hidden whitespace-nowrap min-w-0 flex-1 text-left"
-                            style={{ direction: 'rtl', textOverflow: 'ellipsis' }}
-                        >
-                            <bdi style={{ direction: 'ltr' }}>{localModel || '选择模型'}</bdi>
-                        </span>
-                        <span className="text-[#26242a]/60 flex-shrink-0 text-xs">▾</span>
-                    </button>
+                    <ModelSelectButton model={localModel} placeholder="选择或手动输入模型" onClick={() => openModelPicker('main')} />
                 </div>
 
                 <button onClick={handleSaveApi} className={`w-full py-3 font-black mt-2 ${INK_BTN}`}>
@@ -1480,7 +1559,13 @@ const Settings: React.FC = () => {
                                     max_tokens: 5,
                                     stream: localStream,
                                 }),
-                            });
+                                __moroMeta: {
+                                    appId: AppID.Settings,
+                                    appName: '文具盒',
+                                    purpose: '主 API 连接测试',
+                                    apiRole: 'main',
+                                },
+                            } as RequestInit & { __moroMeta?: unknown });
                             if (res.ok) {
                                 // 走 safeResponseJson —— 它能透明把 SSE 流响应拼成普通 chat/completion 结构
                                 const data = await safeResponseJson(res);
@@ -1519,72 +1604,53 @@ const Settings: React.FC = () => {
             {/* 副 API 配置 */}
             <SectionCard
             tag="AUX API"
-            title="副 API 配置"
-            hand="配置副 API：处理辅助任务"
-            rotate="rotate-[-0.4deg]"
+            title="副 API"
+            hand="用于聊天以外的后台任务，可选择更快或更便宜的模型。"
             right={
                 <button
                     onClick={() => { setLocalAuxEnabled(v => !v); }}
-                    className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 rotate-[2deg] ${localAuxEnabled ? INK_BTN : STICKER}`}
+                    className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 ${localAuxEnabled ? INK_BTN : STICKER}`}
                 >
                     {localAuxEnabled ? '已开启' : '已关闭'}
                 </button>
             }
         >
             <div className="space-y-4">
-                <p className="text-[12px] text-[#26242a]/60 leading-relaxed border-2 border-dashed border-[#1c1b1a]/30 px-3 py-2">
-                    开启后，<b>日程生成 / 日程协调 / 生活侧写</b>等辅助任务会优先使用副 API。未配置或关闭时自动回退到主 API。
-                </p>
+                <InfoNote>
+                    开启后，<b>日程生成、日程协调、生活侧写、部分工具生成</b>会优先使用副 API。关闭或未填完整时自动回退主 API。
+                </InfoNote>
 
                 <div className="flex items-center justify-between">
-                    <label className={LABEL}>AUX API</label>
-                    <button
-                        onClick={() => setLocalAuxEnabled(v => !v)}
-                        role="switch" aria-checked={localAuxEnabled}
-                        className={`px-4 py-1.5 text-[11px] font-black ${localAuxEnabled ? INK_BTN : STICKER}`}
-                    >
-                        {localAuxEnabled ? 'ON' : 'OFF'}
-                    </button>
+                    <label className={LABEL}>ENABLE · 启用副 API</label>
+                    <InkSwitch on={localAuxEnabled} onChange={() => setLocalAuxEnabled(v => !v)} />
                 </div>
 
                 <div className="group">
                     <div className="flex items-center justify-between mb-1">
-                        <label className={LABEL}>BASE URL</label>
-                        <button onClick={handleCopyMainToAux} className="text-[10px] text-[#26242a] font-black underline underline-offset-2">复制主 API</button>
+                        <label className={LABEL}>BASE URL · 接口地址</label>
+                        <button onClick={handleCopyMainToAux} className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2">复制主 API</button>
                     </div>
                     <input type="text" value={localAuxUrl} onChange={(e) => setLocalAuxUrl(e.target.value)} placeholder="https://your-api.example.com/v1" className={`${FIELD} font-mono`} />
                 </div>
 
                 <div className="group">
-                    <label className={LABEL}>KEY</label>
+                    <label className={LABEL}>API KEY · 密钥</label>
                     <input type="password" value={localAuxKey} onChange={(e) => setLocalAuxKey(e.target.value)} placeholder="输入 API Key" className={`${FIELD} font-mono`} />
                 </div>
 
                 <div className="group">
                     <div className="flex justify-between items-center mb-1.5">
-                        <label className={LABEL}>MODEL</label>
+                        <label className={LABEL}>MODEL · 辅助模型</label>
                         <button
                             onClick={() => fetchModels('aux', localAuxUrl, localAuxKey, localAuxModel, setLocalAuxModel, setAuxStatusMsg)}
                             disabled={loadingModelTarget !== null}
-                            className="text-[10px] text-[#26242a] font-black underline underline-offset-2 disabled:opacity-50"
+                            className="text-[10px] text-[#9c5e74] font-black underline underline-offset-2 disabled:opacity-50"
                         >
-                            {loadingModelTarget === 'aux' ? '正在拉取…' : '拉取模型'}
+                            {loadingModelTarget === 'aux' ? '正在拉取…' : auxAvailableModels.length ? `刷新模型（${auxAvailableModels.length}）` : '拉取模型'}
                         </button>
                     </div>
-                    <button
-                        onClick={() => openModelPicker('aux')}
-                        title={localAuxModel || '选择模型'}
-                        className={`w-full px-4 py-3 text-sm text-[#26242a] flex justify-between items-center gap-2 relative ${STICKER}`}
-                    >
-                        <span
-                            className="font-mono overflow-hidden whitespace-nowrap min-w-0 flex-1 text-left"
-                            style={{ direction: 'rtl', textOverflow: 'ellipsis' }}
-                        >
-                            <bdi style={{ direction: 'ltr' }}>{localAuxModel || '选择模型'}</bdi>
-                        </span>
-                        <span className="text-[#26242a]/60 flex-shrink-0 text-xs">▾</span>
-                    </button>
-                    <p className="text-[10px] text-[#26242a]/50 mt-1">建议优先使用更便宜或更快的模型处理辅助任务。</p>
+                    <ModelSelectButton model={localAuxModel} placeholder="选择或手动输入模型" onClick={() => openModelPicker('aux')} />
+                    <p className="text-[10px] text-[#8f6b7b] mt-1">建议使用响应快、成本低的模型；主聊天质量不受影响。</p>
                 </div>
 
                 <button onClick={handleSaveAuxApi} className={`w-full py-3 font-black mt-2 ${INK_BTN}`}>
@@ -1597,24 +1663,25 @@ const Settings: React.FC = () => {
             <button
             type="button"
             onClick={() => setShowApiCallLog(true)}
-            className="relative w-full bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft p-4 pt-5 flex items-center gap-3 text-left rotate-[-0.3deg]"
+            className="relative w-full bg-white border border-[#ededed] rounded-[18px] press-soft p-4 pt-5 flex items-center gap-3 text-left"
+            style={{ boxShadow: CARD_SHADOW }}
         >
-            <Tape className="-top-2.5 left-6 rotate-[2deg]" />
-            <div className="p-2 border border-black/10 rounded-xl shrink-0">
+            <Tape className="-top-2 left-6" />
+            <div className="p-2 border border-[#eed6df] rounded-[14px] shrink-0 bg-[#fffdfa]">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke={INK} className="w-4 h-4">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
                 </svg>
             </div>
             <div className="flex-1 min-w-0">
-                <div className="label-mono text-[9px] text-[#26242a]/45">CALL LEDGER</div>
-                <h2 className="text-base font-black text-[#26242a] tracking-wide leading-tight">API 调用记录</h2>
-                <p className="text-[11px] text-[#26242a]/55 mt-0.5">最近 5 天：时间 · API · App · 角色 · 用途</p>
+                <div className="label-mono text-[9px] text-[#a892a3]">API LOG</div>
+                <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">API 调用记录</h2>
+                <p className="text-[11px] text-[#8f6b7b] mt-0.5">最近 5 天：时间、接口、应用、角色、用途。</p>
             </div>
-            <span className="text-[#26242a]/50 text-sm shrink-0">→</span>
+            <span className="text-[#a892a3] text-sm shrink-0">→</span>
             </button>
 
             {/* 其他 API — 非 LLM 类（语音、写歌等），不会跟随 API 预设切换 */}
-            <SectionCard tag="OTHER API" title="其他 API" hand="配置语音、写歌等非 LLM 服务" rotate="rotate-[-0.5deg]">
+            <SectionCard tag="OTHER SERVICES" title="其他服务 API" hand="配置语音、写歌等非 LLM 服务。">
             <p className="text-[11px] text-[#26242a]/55 mb-4 leading-relaxed pl-1">
                 语音 / 写歌等非 LLM 类 API。这里的配置 <span className="font-bold text-[#26242a]">不会随 API 预设切换</span>，通常只需要配置一次。
             </p>
@@ -1748,7 +1815,7 @@ const Settings: React.FC = () => {
             hand="配置天气、新闻、时间与外部数据源"
             rotate="rotate-[0.4deg]"
             right={
-                <button onClick={() => setShowRealtimeModal(true)} className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 rotate-[2deg] ${STICKER}`}>
+                <button onClick={() => setShowRealtimeModal(true)} className={`shrink-0 text-[10px] font-black px-2.5 py-1.5 ${STICKER}`}>
                     配置
                 </button>
             }
@@ -1782,18 +1849,16 @@ const Settings: React.FC = () => {
             </SectionCard>
 
             {/* ───────── 系统通知 · 后台回复通知 ───────── */}
-            <section className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 pt-5 rotate-[0.3deg]">
-            <Tape className="-top-2.5 left-6 rotate-[-2deg]" />
+            <section className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+            <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                    <div className="label-mono text-[9px] text-[#26242a]/45">SYSTEM NOTIFY</div>
-                    <h2 className="text-base font-black text-[#26242a] tracking-wide leading-tight">系统通知</h2>
+                    <div className="label-mono text-[9px] text-[#a892a3]">NOTIFICATION</div>
+                    <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">系统通知</h2>
                 </div>
-                <span className={`shrink-0 label-mono text-[9px] px-2 py-1 border-2 rotate-[2deg] ${notifyPerm === 'granted' ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/50 text-[#26242a]/60'}`}>
-                    {notifyPerm === 'granted' ? '已允许' : notifyPerm === 'denied' ? '被拒绝' : '未授权'}
-                </span>
+                <StatusBadge active={notifyPerm === 'granted'} activeText="已允许" inactiveText={notifyPerm === 'denied' ? '被拒绝' : '未授权'} />
             </div>
-            <p className="text-base text-[#26242a]/55 mb-2 leading-snug" style={HAND_CN}>聊天生成完成后发送系统通知</p>
+            <p className="text-[11px] text-[#a96f84] mb-3 leading-relaxed" style={HAND_CN}>聊天生成完成后发送系统通知。</p>
 
             {notifyPerm !== 'granted' && (
                 <button
@@ -1810,17 +1875,17 @@ const Settings: React.FC = () => {
                 </button>
             )}
 
-            <div className="flex items-center justify-between border-2 border-dashed border-[#1c1b1a]/40 px-3 py-2.5 gap-3">
+            <div className="flex items-center justify-between border border-[#eed6df] bg-[#fffdfa] rounded-[14px] px-3 py-2.5 gap-3">
                 <div className="min-w-0">
-                    <p className="text-[11px] text-[#26242a] font-bold">后台回复通知</p>
-                    <p className="text-[10px] text-[#26242a]/50 leading-snug">普通聊天发出后切后台，回复完成时尝试进入系统通知栏。生成期间靠 keep-alive 保活，副 API / 日程 / 状态栏 / 心声 / 记忆照常跑，无需悬浮窗。</p>
+                    <p className="text-[11px] text-[#5a3140] font-bold">后台回复通知</p>
+                    <p className="text-[10px] text-[#8f6b7b] leading-snug">普通聊天发出后切后台，回复完成时尝试进入系统通知栏。生成期间靠 keep-alive 保活。</p>
                 </div>
                 <InkSwitch
                     on={bgReplyNotify}
                     onChange={(v) => { setBgReplyNotifyState(v); setBackgroundReplyNotify(v); }}
                 />
             </div>
-            <p className="text-[10px] text-[#26242a]/45 mt-2 leading-relaxed">
+            <p className="text-[10px] text-[#8f6b7b] mt-2 leading-relaxed">
                 网页版优先用浏览器系统通知；电脑版 Chrome / Edge 体验最好。想让浏览器完全关闭也能收，去下面的 Instant Push 配 worker。
             </p>
             </section>
@@ -1829,19 +1894,17 @@ const Settings: React.FC = () => {
             {/* VAPID 公私钥, 与 Proactive / Instant Push 共用一份 — 独立成块, 避免再被当成 */}
             {/* Instant Push 的子配置, 也避免两边 key 不一致互相抢同一个 pushManager 订阅. */}
             {/* vapidReadyTick: VAPID 弹窗关闭后 +1, 让本节点 re-render 重读 isPushVapidReady(). */}
-            <section data-vapid-tick={vapidReadyTick} className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 pt-5 rotate-[-0.4deg]">
-            <Tape className="-top-2.5 left-6 rotate-[-3deg]" />
+            <section data-vapid-tick={vapidReadyTick} className="relative bg-white border border-[#ededed] rounded-[18px] p-4 pt-5" style={{ boxShadow: CARD_SHADOW }}>
+            <Tape className="-top-2 left-6" />
             <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
-                    <div className="label-mono text-[9px] text-[#26242a]/45">PUSH KEY</div>
-                    <h2 className="text-base font-black text-[#26242a] tracking-wide leading-tight">推送凭据（VAPID）</h2>
+                    <div className="label-mono text-[9px] text-[#a892a3]">WEB PUSH KEY</div>
+                    <h2 className="text-base font-black text-[#5a3140] tracking-wide leading-tight">推送凭据（VAPID）</h2>
                 </div>
-                <span className={`shrink-0 label-mono text-[9px] px-2 py-1 border-2 rotate-[2deg] ${isPushVapidReady() ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/50 text-[#26242a]/60'}`}>
-                    {isPushVapidReady() ? '已配置' : '未配置'}
-                </span>
+                <StatusBadge active={isPushVapidReady()} activeText="已配置" inactiveText="未配置" />
             </div>
-            <p className="text-base text-[#26242a]/55 mb-2 leading-snug" style={HAND_CN}>配置 Web Push 使用的 VAPID 密钥</p>
-            <p className="text-xs text-[#26242a]/60 mb-3 leading-relaxed">
+            <p className="text-[11px] text-[#a96f84] mb-2 leading-relaxed" style={HAND_CN}>配置 Web Push 使用的 VAPID 密钥。</p>
+            <p className="text-xs text-[#8f6b7b] mb-3 leading-relaxed">
                 Proactive Push 和 Instant Push <b>共用同一份 VAPID 密钥对</b>。两边 key 不一致时会反复 unsubscribe 抢同一个 pushManager 订阅 ——
                 "推送成功但收不到"的常见原因。
             </p>
@@ -2315,9 +2378,9 @@ const Settings: React.FC = () => {
       </PaperSheet>
 
       {/* 模型选择 */}
-      <PaperSheet open={showModelModal} tag="MODEL PICK" title={modelPickerTarget === 'aux' ? '选择副 API 模型' : '选择主 API 模型'} onClose={() => setShowModelModal(false)}>
+      <PaperSheet open={showModelModal} tag="MODEL" title={modelPickerTarget === 'aux' ? '选择副 API 模型' : '选择主 API 模型'} onClose={() => setShowModelModal(false)}>
         {(() => {
-            const { filtered, commonPrefix } = modelPickerView;
+            const { filtered, commonPrefix, total } = modelPickerView;
             const currentModel = modelPickerTarget === 'aux' ? localAuxModel : localModel;
             const setCurrentModel = modelPickerTarget === 'aux' ? setLocalAuxModel : setLocalModel;
             return (
@@ -2337,13 +2400,13 @@ const Settings: React.FC = () => {
                             确定
                         </button>
                     </div>
-                    {availableModels.length > 0 && (
+                    {total > 0 && (
                         <div className="relative">
                             <input
                                 type="text"
                                 value={modelFilter}
                                 onChange={(e) => setModelFilter(e.target.value)}
-                                placeholder={`在 ${availableModels.length} 个模型中搜索`}
+                                placeholder={`在 ${total} 个模型中搜索`}
                                 className={`${FIELD} text-xs`}
                             />
                             {modelFilter && (
@@ -2357,10 +2420,10 @@ const Settings: React.FC = () => {
                         </div>
                     )}
                     {commonPrefix && (
-                        <div className="text-[10px] text-[#26242a]/55 px-1 flex items-center gap-1 flex-wrap">
+                        <div className="text-[10px] text-[#8f6b7b] px-1 flex items-center gap-1 flex-wrap">
                             <span>公共前缀:</span>
-                            <code className="font-mono bg-[#1c1b1a]/10 text-[#26242a]/70 px-1.5 py-0.5 break-all">{commonPrefix}</code>
-                            <span className="text-[#26242a]/40">(下方已弱化显示)</span>
+                            <code className="font-mono px-1.5 py-0.5 break-all">{commonPrefix}</code>
+                            <span className="text-[#a892a3]">(下方已弱化显示)</span>
                         </div>
                     )}
                     <div className="max-h-[40vh] overflow-y-auto no-scrollbar space-y-2">
@@ -2372,11 +2435,14 @@ const Settings: React.FC = () => {
                                     key={m}
                                     onClick={() => { setCurrentModel(m); setShowModelModal(false); }}
                                     title={m}
-                                    className={`w-full text-left px-4 py-3 text-sm font-mono flex justify-between items-start gap-2 border-2 ${selected ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white font-bold shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'border-[#1c1b1a]/25 bg-white text-[#26242a]/80 hover:border-[#1c1b1a]'}`}
+                                    className="w-full text-left px-4 py-3 text-sm font-mono flex justify-between items-start gap-2 rounded-[14px] transition-all"
+                                    style={selected
+                                        ? { color: '#fff', background: ROSE, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -14px rgba(122,90,114,0.45)' }
+                                        : { color: '#5a3140', background: '#fffdfa', border: `1px solid ${LINE}` }}
                                 >
                                     <span className="break-all min-w-0 flex-1 leading-relaxed">
                                         {commonPrefix && suffix !== m && (
-                                            <span className={selected ? 'text-white/50 font-normal' : 'text-[#26242a]/40 font-normal'}>{commonPrefix}</span>
+                                            <span className={selected ? 'text-white/60 font-normal' : 'text-[#a892a3] font-normal'}>{commonPrefix}</span>
                                         )}
                                         <span>{suffix}</span>
                                     </span>
@@ -2384,9 +2450,9 @@ const Settings: React.FC = () => {
                                 </button>
                             );
                         }) : (
-                            <div className="text-center text-[#26242a]/50 py-8 text-xs">
-                                {availableModels.length === 0
-                                    ? '当前没有已拉取的模型，可手动输入或先点“拉取模型”'
+                            <div className="text-center text-[#a892a3] py-8 text-xs">
+                                {total === 0
+                                    ? `当前没有已拉取的${modelPickerTarget === 'aux' ? '副 API' : '主 API'}模型，可手动输入或先点“拉取模型”`
                                     : `没有找到 “${modelFilter}”`}
                             </div>
                         )}

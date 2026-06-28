@@ -1,21 +1,8 @@
 /**
- * 活字盘 —— SillyTavern Chat Completion 预设管理器的 Moro 移植，黑白拼贴手账风界面。
+ * 活字盘 —— SillyTavern Chat Completion 预设管理器的 Moro 移植。
  *
- * 词汇对照（数据结构 / ST 语义不变，只换了说法）：
- *  - 字版 = 一份预设（TavernPreset）；排字架 = 提示词管理器（prompt_order）
- *  - 字条 = 一条提示词；占位铅块 = marker（系统占位，内容不可编辑）
- *  - 火候 = 生成/采样参数；开印 = 预设总开关
- *  - 新刻/收进/拓出/翻刻/销版 = 新建/导入/导出/另存为/删除
- *
- * 与 ST 对齐的交互（全部保留）：
- *  - 字版条：下拉选择 + 新刻 / 翻刻 / 改名 / 收进 / 拓出 / 销版
- *  - 火候：temperature / 惩罚 / top_p / top_k 等滑条 + 上下文 / 回复 token 数
- *  - 排字架：拖拽排序、逐条开关、编辑（名称 / 口吻 / 注入位置@深度 / 顺序 / 内容）、
- *    从架上取下（不销毁定义）、刻新字条、从字库捡回、token 估算
- *  - marker（Chat History / Char Description 等）为系统占位，内容不可编辑
- *
- * 与 ST 的差异：所有改动即时落库（Moro 是 local-first，没有 ST 的「设置区 vs 预设文件」
- * 双层结构，省去手动「更新预设」按钮）。
+ * 数据结构 / ST 语义保持不变：这里管理预设、提示词顺序、marker、采样参数和随预设正则。
+ * Moro 是 local-first，所有改动即时写入 IndexedDB，不需要额外保存按钮。
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -38,12 +25,18 @@ import { PLACEMENT_LABELS, createEmptyRegexScript, looksLikeWrapMisconfig } from
 import RegexEditor from '../components/regex/RegexEditor';
 import type { PresetPrompt, PresetPromptOrderEntry, RegexScriptData, TavernPreset } from '../types';
 import {
+    InsShell, InsHeader, InsScroll, InsCard, InsButton, IconCircle, Polaroid,
+    SectionLabel, Chip, InsSheet, accent, INK as INS_INK, INK_SOFT as INS_SOFT,
+} from '../components/ui/insKit';
+import {
     PenNib, TrayArrowDown, TrayArrowUp, NotePencil, Stamp, Trash,
     List, Placeholder, ArrowElbowDownRight, Eject, StackPlus, X, Scissors,
+    Power, SlidersHorizontal, LinkSimple, FileText, Sparkle, CheckCircle,
 } from '@phosphor-icons/react';
 
-// ── ins 风设计 token（活字盘 = sky 强调） ────
-const INK = '#26242a';
+const AC = 'sky' as const;
+const SKY = accent(AC);
+const INK = INS_INK;
 const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
 const INK_BTN = 'rounded-full bg-[#26242a] text-white press-soft shadow-[0_12px_24px_-12px_rgba(38,36,42,0.55)]';
 const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
@@ -57,6 +50,14 @@ const HATCH_BG: React.CSSProperties = {
     backgroundImage: 'repeating-linear-gradient(45deg, rgba(14,165,233,0.18) 0 2px, transparent 2px 5px)',
 };
 
+const FIELD_STYLE: React.CSSProperties = {
+    background: 'rgba(255,255,255,0.94)',
+    border: '1px solid rgba(0,0,0,0.06)',
+    borderRadius: 16,
+    color: INK,
+    boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)',
+};
+
 const Tape: React.FC<{ className?: string }> = ({ className }) => (
     <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
         style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
@@ -65,19 +66,18 @@ const Tape: React.FC<{ className?: string }> = ({ className }) => (
 // ---------------------------------------------------------------------------
 // 小部件
 
-/** 口吻章：旁白（系统）= 墨底 / 你（用户）= 描边 / TA（AI）= 斜纹 */
+/** role 标签 */
 const VoiceStamp: React.FC<{ role?: string }> = ({ role }) => {
     const r = role || 'system';
     if (r === 'assistant') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/60 text-[#26242a] shrink-0" style={HATCH_BG}>TA</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#0ea5e9]/30 text-[#075985] rounded-full shrink-0" style={HATCH_BG}>assistant</span>;
     }
     if (r === 'user') {
-        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] text-[#26242a] bg-white shrink-0">你</span>;
+        return <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#0ea5e9]/30 text-[#075985] bg-white rounded-full shrink-0">user</span>;
     }
-    return <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white shrink-0">旁白</span>;
+    return <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#0ea5e9] text-white rounded-full shrink-0">system</span>;
 };
 
-/** 墨块开关 */
 const InkSwitch: React.FC<{ on: boolean; onChange: (v: boolean) => void; small?: boolean }> = ({ on, onChange, small }) => (
     <button
         onClick={() => onChange(!on)}
@@ -103,7 +103,7 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
     return (
         <div>
             <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-black">{label}</span>
+                <span className="text-[11px] font-extrabold" style={{ color: INK }}>{label}</span>
                 <input
                     type="number"
                     value={v}
@@ -111,7 +111,8 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                     max={max}
                     step={step}
                     onChange={e => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(n); }}
-                    className="w-20 text-right text-xs font-mono bg-white border border-black/10 rounded-xl/50 px-2 py-1 outline-none focus:border-[#1c1b1a]"
+                    className="w-20 text-right text-xs font-mono px-2 py-1 outline-none focus:ring-2 focus:ring-sky-100"
+                    style={FIELD_STYLE}
                 />
             </div>
             <input
@@ -121,7 +122,7 @@ const SliderRow: React.FC<SliderRowProps> = ({ label, value, fallback, min, max,
                 max={max}
                 step={step}
                 onChange={e => onChange(parseFloat(e.target.value))}
-                className="w-full accent-[#1c1b1a]"
+                className="w-full accent-[#0ea5e9]"
             />
         </div>
     );
@@ -160,119 +161,129 @@ const PromptEditor: React.FC<PromptEditorProps> = ({ prompt, onSave, onDelete, o
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-[#f7f5f2] text-[#26242a] animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
-            <div className="relative flex items-center gap-3 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0">
-                <button onClick={onClose} className={`px-2.5 py-2 rotate-[-2deg] text-[10px] font-black ${STICKER}`}>
-                    ✕ 退回
-                </button>
-                <div className="flex-1 min-w-0">
-                    <div className="label-mono text-[8px] text-[#26242a]/45">{isMarker ? 'LEAD SLUG' : 'TYPE PIECE'}</div>
-                    <h2 className="text-lg font-black tracking-wide truncate">{isMarker ? '看看这枚占位铅块' : '修这枚字条'}</h2>
-                </div>
-                {!isMarker && (
-                    <button onClick={save} className={`px-4 py-2 text-xs font-black rotate-[1.5deg] ${INK_BTN}`}>排上</button>
-                )}
-            </div>
+        <div className="fixed inset-0 z-[100] flex flex-col animate-fade-in" style={{ background: '#f7f5f2', color: INK }}>
+            <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56" style={{ background: `radial-gradient(120% 90% at 50% -28%, ${SKY.soft}, transparent 70%)` }} />
+            <InsHeader
+                accent={AC}
+                title={isMarker ? '系统占位' : '编辑提示词'}
+                en={isMarker ? 'MARKER' : 'PROMPT'}
+                onBack={onClose}
+                right={!isMarker ? <InsButton onClick={save} accent={AC} className="px-4 py-2 text-[12px]">保存</InsButton> : undefined}
+            />
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
-                <div>
-                    <label className="label-mono text-[8px] text-[#26242a]/45 block">字条名 / LABEL</label>
+            <InsScroll className="p-4 space-y-4 pb-8">
+                <InsCard accent={AC} className="p-4 space-y-2">
+                    <SectionLabel en="NAME" accent={AC}>提示词名称</SectionLabel>
                     <input
                         value={name}
                         onChange={e => setName(e.target.value)}
                         disabled={isMarker}
-                        className="w-full bg-transparent border-b-2 border-[#1c1b1a] py-1.5 text-base font-black outline-none focus:border-dashed disabled:border-[#1c1b1a]/30 disabled:text-[#26242a]/45"
+                        className="w-full px-4 py-3 text-sm font-bold outline-none disabled:opacity-45"
+                        style={FIELD_STYLE}
                     />
-                </div>
+                </InsCard>
 
                 {isMarker ? (
-                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 text-xs leading-relaxed">
-                        <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
-                        <div className="flex items-center gap-1.5 font-black mb-1.5">
-                            <Placeholder size={14} weight="bold" /> 占位铅块（marker）
+                    <InsCard accent={AC} edge className="p-4 space-y-3">
+                        <SectionLabel en="SYSTEM SLOT" accent={AC}>自动插入内容</SectionLabel>
+                        <div className="flex items-start gap-3">
+                            <span className="mt-0.5 inline-flex w-9 h-9 rounded-full items-center justify-center shrink-0" style={{ background: SKY.soft, color: SKY.solid }}>
+                                <Placeholder size={18} weight="bold" />
+                            </span>
+                            <p className="text-[13px] leading-relaxed" style={{ color: INS_SOFT }}>
+                                {markerHint || '发送时由系统自动填充内容，这里只能调整它在提示词列表中的位置和开关。'}
+                            </p>
                         </div>
-                        <p className="text-[#26242a]/70">{markerHint || '这枚铅块在上机印刷（发送）时由系统自动填进内容，这里改不了。'}</p>
-                    </div>
+                    </InsCard>
                 ) : (
                     <>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">口吻 / VOICE</label>
-                                <div className="relative">
-                                    <select
-                                        value={role}
-                                        onChange={e => setRole(e.target.value as 'system' | 'user' | 'assistant')}
-                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
-                                    >
-                                        <option value="system">旁白（system）</option>
-                                        <option value="user">你（user）</option>
-                                        <option value="assistant">TA（assistant）</option>
-                                    </select>
-                                    <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">怎么排 / PLACEMENT</label>
-                                <div className="relative">
-                                    <select
-                                        value={position}
-                                        onChange={e => setPosition(parseInt(e.target.value, 10))}
-                                        className="w-full appearance-none bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
-                                    >
-                                        <option value={INJECTION_POSITION.RELATIVE}>跟着架上的顺序（相对）</option>
-                                        <option value={INJECTION_POSITION.ABSOLUTE}>插进对话 @深度（绝对）</option>
-                                    </select>
-                                    <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {position === INJECTION_POSITION.ABSOLUTE && (
-                            <div className="grid grid-cols-2 gap-3 border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
+                        <InsCard accent={AC} className="p-4 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">离末尾几层（深度）</label>
-                                    <input
-                                        type="number" min={0} max={9999} value={depth}
-                                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setDepth(Math.max(0, n)); }}
-                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
-                                    />
+                                    <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>消息角色</label>
+                                    <div className="relative">
+                                        <select
+                                            value={role}
+                                            onChange={e => setRole(e.target.value as 'system' | 'user' | 'assistant')}
+                                            className="w-full appearance-none px-3 py-3 text-xs font-bold outline-none"
+                                            style={FIELD_STYLE}
+                                        >
+                                            <option value="system">system · 系统提示</option>
+                                            <option value="user">user · 用户消息</option>
+                                            <option value="assistant">assistant · 助手消息</option>
+                                        </select>
+                                        <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
+                                    </div>
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1 block">同层先后（大的靠后）</label>
-                                    <input
-                                        type="number" min={0} max={9999} value={order}
-                                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setOrder(n); }}
-                                        className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-mono outline-none focus:border-[#1c1b1a]"
-                                    />
+                                    <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>注入位置</label>
+                                    <div className="relative">
+                                        <select
+                                            value={position}
+                                            onChange={e => setPosition(parseInt(e.target.value, 10))}
+                                            className="w-full appearance-none px-3 py-3 text-xs font-bold outline-none"
+                                            style={FIELD_STYLE}
+                                        >
+                                            <option value={INJECTION_POSITION.RELATIVE}>按列表顺序插入</option>
+                                            <option value={INJECTION_POSITION.ABSOLUTE}>按 @Depth 插入历史</option>
+                                        </select>
+                                        <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
+                                    </div>
                                 </div>
                             </div>
-                        )}
 
-                        <div>
-                            <div className="flex items-end justify-between mb-1">
-                                <label className="label-mono text-[8px] text-[#26242a]/45">字条内容 / TYPE</label>
-                                <span className="label-mono text-[8px] text-[#26242a]/35">墨量 ≈ {estimateTokens(content)} TK</span>
+                            {position === INJECTION_POSITION.ABSOLUTE && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>@Depth 深度</label>
+                                        <input
+                                            type="number" min={0} max={9999} value={depth}
+                                            onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setDepth(Math.max(0, n)); }}
+                                            className="w-full px-3 py-3 text-xs font-mono outline-none"
+                                            style={FIELD_STYLE}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-extrabold mb-1.5 block" style={{ color: INK }}>同深度排序</label>
+                                        <input
+                                            type="number" min={0} max={9999} value={order}
+                                            onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setOrder(n); }}
+                                            className="w-full px-3 py-3 text-xs font-mono outline-none"
+                                            style={FIELD_STYLE}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </InsCard>
+
+                        <InsCard accent={AC} className="p-4">
+                            <div className="flex items-end justify-between mb-2">
+                                <SectionLabel en="CONTENT" accent={AC}>提示词内容</SectionLabel>
+                                <span className="label-mono text-[8px]" style={{ color: INS_SOFT }}>≈ {estimateTokens(content)} tokens</span>
                             </div>
                             <textarea
                                 value={content}
                                 onChange={e => setContent(e.target.value)}
-                                placeholder="支持 {{char}} / {{user}} / {{date}} / {{time}} 宏"
-                                className="w-full h-64 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
-                                style={RULED_BG}
+                                placeholder="支持 {{char}} / {{user}} / {{date}} / {{time}} 等宏"
+                                className="w-full h-72 px-4 py-3 text-xs leading-6 resize-none outline-none placeholder:text-slate-400"
+                                style={{ ...FIELD_STYLE, ...RULED_BG }}
                             />
-                        </div>
+                        </InsCard>
 
                         {onDelete && (
-                            <button
+                            <InsButton
+                                variant="soft"
+                                accent="rose"
                                 onClick={onDelete}
-                                className={`w-full py-2.5 text-xs font-black line-through decoration-2 ${STICKER}`}
+                                className="w-full py-3 text-[13px]"
+                                icon={<Trash size={15} weight="bold" />}
                             >
-                                把这枚字条熔掉（从字版里彻底移除）
-                            </button>
+                                删除这条提示词
+                            </InsButton>
                         )}
                     </>
                 )}
-            </div>
+            </InsScroll>
         </div>
     );
 };
@@ -313,7 +324,7 @@ const PresetApp: React.FC = () => {
                     PresetRuntime.setActiveId(list[0].id);
                 }
             })
-            .catch(e => addToast(`字版箱打不开: ${e?.message || e}`, 'error'))
+            .catch(e => addToast(`预设列表读取失败: ${e?.message || e}`, 'error'))
             .finally(() => setLoaded(true));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -348,55 +359,55 @@ const PresetApp: React.FC = () => {
             const bound = apiPresets.find(ap => ap.id === preset.moroApiPresetId);
             if (bound) {
                 updateApiConfig(bound.config);
-                addToast(`接口已换线：「${bound.name}」`, 'info');
+                addToast(`已切换 API 方案：「${bound.name}」`, 'info');
             }
         }
     };
 
-    // ── 字版条操作 ──────────────────────────────────────
+    // ── 预设操作 ──────────────────────────────────────
     const handleNewPreset = () => {
-        const name = window.prompt('给新字版起个名', `字版 ${presets.length + 1}`);
+        const name = window.prompt('新建预设名称', `预设 ${presets.length + 1}`);
         if (name === null) return;
         const preset = createDefaultPreset(name.trim() || 'Default');
         setPresets(prev => [...prev, preset]);
-        DB.savePreset(preset).catch(() => addToast('没存上', 'error'));
+        DB.savePreset(preset).catch(() => addToast('预设保存失败', 'error'));
         selectPreset(preset.id);
-        addToast('新字版刻好了', 'success');
+        addToast('已新建预设', 'success');
     };
 
     const handleSaveAs = () => {
         if (!active) return;
-        const name = window.prompt('翻刻为', `${active.name} 翻刻`);
+        const name = window.prompt('复制为新预设', `${active.name} 副本`);
         if (name === null) return;
         const copy: TavernPreset = JSON.parse(JSON.stringify(active));
         copy.id = crypto.randomUUID();
-        copy.name = name.trim() || `${active.name} 翻刻`;
+        copy.name = name.trim() || `${active.name} 副本`;
         copy.createdAt = Date.now();
         copy.updatedAt = Date.now();
         setPresets(prev => [...prev, copy]);
-        DB.savePreset(copy).catch(() => addToast('没存上', 'error'));
+        DB.savePreset(copy).catch(() => addToast('预设保存失败', 'error'));
         selectPreset(copy.id);
-        addToast('翻刻好了', 'success');
+        addToast('已复制为新预设', 'success');
     };
 
     const handleRename = () => {
         if (!active) return;
-        const name = window.prompt('给字版改个名', active.name);
+        const name = window.prompt('重命名预设', active.name);
         if (name === null || !name.trim()) return;
         mutateActive(d => { d.name = name.trim(); });
     };
 
     const handleDelete = () => {
         if (!active) return;
-        if (!window.confirm(`销掉字版「${active.name}」？销了就拼不回来了。`)) return;
+        if (!window.confirm(`删除预设「${active.name}」？此操作不可撤销。`)) return;
         const id = active.id;
-        DB.deletePreset(id).catch(() => addToast('没销掉', 'error'));
+        DB.deletePreset(id).catch(() => addToast('预设删除失败', 'error'));
         const rest = presets.filter(p => p.id !== id);
         setPresets(rest);
         const nextId = rest[0]?.id ?? null;
         setActiveId(nextId);
         PresetRuntime.setActiveId(nextId);
-        addToast('已销版', 'success');
+        addToast('已删除预设', 'success');
     };
 
     const handleExport = () => {
@@ -424,10 +435,10 @@ const PresetApp: React.FC = () => {
             selectPreset(preset.id);
             const regexCount = preset.regexScripts?.length ?? 0;
             const regexNote = regexCount > 0 ? `，随带 ${regexCount} 条正则补丁` : '';
-            if (!enabled) addToast(`收进来了${regexNote}。不过印坊还歇着业，记得按右上角「开印」`, 'info');
-            else addToast(`已收进「${preset.name}」${regexNote}`, 'success');
+            if (!enabled) addToast(`已导入${regexNote}。当前未启用预设，请在右上角打开开关`, 'info');
+            else addToast(`已导入「${preset.name}」${regexNote}`, 'success');
         } catch (err: any) {
-            addToast(`收不进来: ${err?.message || err}`, 'error');
+            addToast(`导入失败: ${err?.message || err}`, 'error');
         }
     };
 
@@ -443,7 +454,7 @@ const PresetApp: React.FC = () => {
         PresetRuntime.setSamplingApplied(on);
     };
 
-    // ── 排字架 ──────────────────────────────────────────
+    // ── 提示词顺序 ──────────────────────────────────────
     const orderEntries: PresetPromptOrderEntry[] = useMemo(() => {
         if (!active) return [];
         const po = active.prompt_order.find(p => p.character_id === ORDER_CHAR_ID_SINGLE) || active.prompt_order[0];
@@ -454,7 +465,7 @@ const PresetApp: React.FC = () => {
 
     const mutateOrder = (fn: (order: PresetPromptOrderEntry[]) => void) => {
         mutateActive(d => {
-            // 单聊 / 群聊两份 order 同步改 —— Moro 的群聊走独立链路，保持两份一致最不意外
+            // 单聊 / 群聊两份 order 同步改：Moro 的群聊走独立链路，保持两份一致最不意外。
             for (const po of d.prompt_order) fn(po.order);
             if (d.prompt_order.length === 0) {
                 const order: PresetPromptOrderEntry[] = [];
@@ -482,7 +493,7 @@ const PresetApp: React.FC = () => {
         if (!active) return;
         const identifier = crypto.randomUUID();
         mutateActive(d => {
-            d.prompts.push({ identifier, name: '新字条', role: 'system', content: '', system_prompt: false });
+            d.prompts.push({ identifier, name: '新提示词', role: 'system', content: '', system_prompt: false });
             for (const po of d.prompt_order) po.order.push({ identifier, enabled: true });
         });
         setEditingId(identifier);
@@ -498,7 +509,7 @@ const PresetApp: React.FC = () => {
     };
 
     const handleDeletePrompt = (identifier: string) => {
-        if (!window.confirm('把这枚字条熔掉（从字版里彻底移除定义）？')) return;
+        if (!window.confirm('删除这条提示词？它会从当前预设中彻底移除。')) return;
         mutateActive(d => {
             d.prompts = d.prompts.filter(p => p.identifier !== identifier);
             for (const po of d.prompt_order) {
@@ -526,20 +537,19 @@ const PresetApp: React.FC = () => {
         });
     };
 
-    /** 「误配置一键修」：USER_INPUT + 看起来在包裹但没勾 promptOnly → 一键改成 promptOnly=true。
-     *  详见 utils/regex/engine.looksLikeWrapMisconfig 的启发式 */
+    /** 「误配置一键修」：USER_INPUT + 看起来在包裹但没勾 promptOnly → 一键改成 promptOnly=true。 */
     const fixPresetRegexWrap = (id: string) => {
         const target = (active?.regexScripts ?? []).find(s => s.id === id);
         if (!target) return;
-        if (!window.confirm(`把「${target.scriptName || '没名字的补丁'}」改成只动寄出的信？\n\n（勾上 promptOnly：包裹只在发给 LLM 时生效，聊天原文和气泡都不再被改写）`)) return;
+        if (!window.confirm(`把「${target.scriptName || '未命名补丁'}」改为只处理发送给 LLM 的内容？\n\n勾上 promptOnly 后，聊天原文和气泡显示不会被改写。`)) return;
         mutateActive(d => {
             d.regexScripts = (d.regexScripts ?? []).map(s => (s.id === id ? { ...s, promptOnly: true } : s));
         });
-        addToast('改好了：现在只动寄出的信', 'success');
+        addToast('已改为只处理发送内容', 'success');
     };
 
     const deletePresetRegex = (id: string) => {
-        if (!window.confirm('把这条随字版的正则补丁拆掉？（只动这副字版，不影响补丁铺里的通用补丁）')) return;
+        if (!window.confirm('删除这条随预设的正则补丁？不会影响补丁铺里的通用补丁。')) return;
         mutateActive(d => {
             d.regexScripts = (d.regexScripts ?? []).filter(s => s.id !== id);
         });
@@ -561,8 +571,8 @@ const PresetApp: React.FC = () => {
 
     const savePresetRegex = () => {
         if (!editingRegex) return;
-        if (!editingRegex.findRegex.trim()) { addToast('还没写要找的线头（查找正则不能为空）', 'error'); return; }
-        const named = { ...editingRegex, scriptName: editingRegex.scriptName.trim() || '没名字的补丁' };
+        if (!editingRegex.findRegex.trim()) { addToast('查找正则不能为空', 'error'); return; }
+        const named = { ...editingRegex, scriptName: editingRegex.scriptName.trim() || '未命名补丁' };
         mutateActive(d => {
             const list = d.regexScripts ?? [];
             d.regexScripts = list.some(s => s.id === named.id)
@@ -570,7 +580,7 @@ const PresetApp: React.FC = () => {
                 : [...list, named];
         });
         setEditingRegex(null);
-        addToast('补丁缝牢了', 'success');
+        addToast('正则补丁已保存', 'success');
     };
 
     // ── 拖拽排序（pointer events，手机 / 桌面通吃） ──────
@@ -619,7 +629,7 @@ const PresetApp: React.FC = () => {
         const current = presets.find(p => p.id === activeId);
         if (current) {
             const next = { ...current, updatedAt: Date.now() };
-            DB.savePreset(next).catch(() => addToast('没存上', 'error'));
+            DB.savePreset(next).catch(() => addToast('预设保存失败', 'error'));
         }
     };
 
@@ -639,6 +649,20 @@ const PresetApp: React.FC = () => {
         const attached = new Set(orderEntries.map(e => e.identifier));
         return active.prompts.filter(p => !attached.has(p.identifier));
     }, [active, orderEntries]);
+
+    const enabledEntriesCount = useMemo(() => orderEntries.filter(e => e.enabled).length, [orderEntries]);
+    const markerEntriesCount = useMemo(
+        () => orderEntries.filter(e => !!promptById.get(e.identifier)?.marker).length,
+        [orderEntries, promptById],
+    );
+    const activeApiPreset = useMemo(() => {
+        if (!active?.moroApiPresetId) return null;
+        return apiPresets.find(ap => ap.id === active.moroApiPresetId) || null;
+    }, [active?.moroApiPresetId, apiPresets]);
+    const apiHost = useMemo(() => {
+        if (!apiConfig.baseUrl) return '';
+        try { return new URL(apiConfig.baseUrl).host; } catch { return apiConfig.baseUrl; }
+    }, [apiConfig.baseUrl]);
 
     // ── 渲染 ────────────────────────────────────────────
     return (

@@ -782,51 +782,89 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
 
       // 1. Monkey Patch Fetch
       const originalFetch = window.fetch;
+      const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      const getFetchUrl = (resource: RequestInfo | URL): string => {
+          if (typeof resource === 'string') return resource;
+          if (resource instanceof URL) return resource.toString();
+          if (typeof Request !== 'undefined' && resource instanceof Request) return resource.url;
+          return String(resource);
+      };
+      const getFetchMethod = (resource: RequestInfo | URL, config?: RequestInit): string => {
+          const method = (config as any)?.method
+              || (typeof Request !== 'undefined' && resource instanceof Request ? resource.method : undefined)
+              || 'GET';
+          return String(method).toUpperCase();
+      };
+      const isTrackedApiUrl = (url: string): boolean => /\/(?:chat\/completions|models)(?:[/?#]|$)/i.test(url);
+      const parseJsonIfPossible = (text: string): any | undefined => {
+          try { return JSON.parse(text); } catch { return undefined; }
+      };
+      const invalidJsonMessage = (text: string, status: number): string | undefined => {
+          const trimmed = text.trimStart();
+          if (!trimmed || trimmed.startsWith('data:')) return undefined;
+          if (trimmed.startsWith('<')) {
+              const title = trimmed.match(/<title>(.*?)<\/title>/i)?.[1];
+              return `API 返回了 HTML 而非 JSON (HTTP ${status}): ${title || trimmed.slice(0, 160)}`;
+          }
+          return `API 返回了无效 JSON (HTTP ${status}): ${trimmed.slice(0, 200)}`;
+      };
       const patchedFetch = async (...args: [RequestInfo | URL, RequestInit?]) => {
           const [resource, config] = args;
-          
-          const urlStr = String(resource);
+          const urlStr = getFetchUrl(resource);
+          const method = getFetchMethod(resource, config);
+          const body = (config as any)?.body;
+          const meta = (config as any)?.__moroMeta;
+          const startedAt = nowMs();
           
           try {
               const response = await originalFetch(...args);
+              const durationMs = Math.round(nowMs() - startedAt);
+              const trackedApi = isTrackedApiUrl(urlStr);
 
-              // 「API 调用记录」统一记录入口：所有 /chat/completions（裸 fetch + safeFetchJson
-              // 内部 fetch 都会经过这里）都记一笔。meta 优先取调用方挂在 init 上的 __moroMeta
-              // （safeFetchJson 传的精确信息），裸 fetch 没有就由 recordApiCall 用环境兜底。
-              if (urlStr.includes('/chat/completions')) {
-                  const meta = (config as any)?.__moroMeta;
-                  const body = (config as any)?.body;
-                  const status = response.status;
-                  const ok = response.ok;
-                  // clone 出来异步读 usage，不阻塞调用方拿 response
-                  let usageClone: Response | null = null;
-                  try { usageClone = response.clone(); } catch { usageClone = null; }
-                  if (usageClone) {
-                      usageClone.text().then((t) => {
-                          let parsed: any = undefined;
-                          try { parsed = JSON.parse(t); } catch { /* 流式/非 JSON：无 usage，照样记 */ }
-                          recordApiCall({ url: urlStr, body, status, ok, response: parsed, meta });
-                      }).catch(() => recordApiCall({ url: urlStr, body, status, ok, meta }));
-                  } else {
-                      recordApiCall({ url: urlStr, body, status, ok, meta });
-                  }
-              }
+              // 「API 调用记录」统一记录入口：聊天补全与模型列表都在这里记录。
+              if (trackedApi) {
+                  const recordFromText = (text?: string) => {
+                      const parsed = text ? parseJsonIfPossible(text) : undefined;
+                      const parseError = response.ok && text ? invalidJsonMessage(text, response.status) : undefined;
+                      recordApiCall({
+                          url: urlStr,
+                          method,
+                          body,
+                          status: response.status,
+                          statusText: response.statusText,
+                          ok: response.ok && !parseError,
+                          response: parsed,
+                          responseText: text,
+                          errorMessage: parseError,
+                          durationMs,
+                          meta,
+                      });
+                  };
 
-              if (!response.ok) {
-                  // Only log if it's likely an API call (contains chat/completions or models)
-                  if (urlStr.includes('/chat/completions') || urlStr.includes('/models')) {
+                  if (!response.ok) {
                       try {
-                          const clone = response.clone();
-                          const text = await clone.text();
+                          const text = await response.clone().text();
+                          recordFromText(text);
                           setSystemLogs(prev => [{
                               id: `log-${Date.now()}`,
                               timestamp: Date.now(),
                               type: 'network',
                               source: 'API Request',
-                              message: `HTTP ${response.status} Error`,
+                              message: `HTTP ${response.status} ${response.statusText || 'Error'}`,
                               detail: `URL: ${urlStr}\nResponse: ${text.substring(0, 500)}`
                           }, ...prev.slice(0, 49)]); // Keep last 50
                       } catch (e) {
+                          recordApiCall({
+                              url: urlStr,
+                              method,
+                              body,
+                              status: response.status,
+                              statusText: response.statusText,
+                              ok: false,
+                              errorMessage: `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`,
+                              durationMs,
+                              meta,
+                          });
                           setSystemLogs(prev => [{
                               id: `log-${Date.now()}`,
                               timestamp: Date.now(),
@@ -836,13 +874,28 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               detail: `URL: ${urlStr}`
                           }, ...prev.slice(0, 49)]);
                       }
+                  } else {
+                      // 成功响应异步读取 clone，避免阻塞调用方消费原 response。
+                      try {
+                          response.clone().text().then(recordFromText).catch(() => recordFromText());
+                      } catch {
+                          recordFromText();
+                      }
                   }
               }
               return response;
           } catch (err: any) {
               // Network Failure
-              if (urlStr.includes('/chat/completions')) {
-                  recordApiCall({ url: urlStr, body: (config as any)?.body, ok: false, meta: (config as any)?.__moroMeta });
+              if (isTrackedApiUrl(urlStr)) {
+                  recordApiCall({
+                      url: urlStr,
+                      method,
+                      body,
+                      ok: false,
+                      errorMessage: err?.message || 'Fetch Failed',
+                      durationMs: Math.round(nowMs() - startedAt),
+                      meta,
+                  });
               }
               setSystemLogs(prev => [{
                   id: `log-${Date.now()}`,

@@ -13,37 +13,152 @@ import {
     exportRegexScriptsJson,
 } from '../utils/regex/store';
 import RegexEditor from '../components/regex/RegexEditor';
-import { Bandaids, Needle, TrayArrowDown, TrayArrowUp, X } from '@phosphor-icons/react';
+import { PAPER_TONES, MONO_STACK, CUTE_STACK } from '../components/handbook/paper';
+import {
+    BracketsCurly,
+    DownloadSimple,
+    Globe,
+    Plus,
+    Trash,
+    UploadSimple,
+    UserCircle,
+    WarningCircle,
+} from '@phosphor-icons/react';
 
-/**
- * 补丁铺（原「正则」App）— SillyTavern Regex 完整移植，黑白拼贴手账风界面。
- *
- * 词汇对照（数据结构 / ST 语义不变，只换了说法）：
- *  - 补丁 = 一条正则脚本（RegexScriptData）；缝补 = 执行替换
- *  - 满铺通用 = 全局作用域（localStorage）；只缝给 TA = 角色作用域（char.regexScripts）
- *  - 线头 = findRegex；缝上去的布 = replaceString；先剪掉的线头 = trimStrings
- *  - 补在哪些布上 = placement；试缝台 = 实时测试
- * 支持导入酒馆正则 JSON（单条 / 数组）、导出、启停、编辑、测试 —— 功能与旧版一致。
- */
+const ROSE = '#d8a5b7';
+const EDGE = '#eed6df';
 
-// ── ins 风设计 token（补丁铺 = teal 强调） ─────────────
-const INK = '#26242a';
-const STICKER = 'rounded-full bg-white press-soft border border-black/[0.05] shadow-[0_6px_16px_-8px_rgba(38,36,42,0.32)]';
-const INK_BTN = 'rounded-full bg-[#26242a] text-white press-soft shadow-[0_12px_24px_-12px_rgba(38,36,42,0.55)]';
-const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = { background: 'radial-gradient(120% 80% at 50% -10%, rgba(20,184,166,0.06), transparent 60%)' };
-
-const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div aria-hidden className={`pointer-events-none absolute h-5 w-16 ${className || ''}`}
-        style={{ background: 'rgba(255,255,255,0.75)', backgroundImage: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.4) 0 5px, transparent 5px 11px)', borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }} />
+const CandyToggle: React.FC<{ on: boolean; onToggle: () => void }> = ({ on, onToggle }) => (
+    <button
+        onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+        }}
+        role="switch"
+        aria-checked={on}
+        className="relative w-[52px] h-[28px] shrink-0 rounded-full transition-all duration-300 active:scale-95"
+        style={{
+            background: on ? ROSE : '#f8f4f6',
+            border: `1px solid ${EDGE}`,
+            boxShadow: on ? '0 8px 16px -12px rgba(122,90,114,0.42)' : 'inset 0 1px 2px rgba(122,90,114,0.08)',
+        }}
+    >
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...MONO_STACK, left: 8, color: 'rgba(255,255,255,0.92)', opacity: on ? 1 : 0 }}>ON</span>
+        <span className="absolute top-1/2 -translate-y-1/2 text-[8px] font-bold transition-opacity duration-300 pointer-events-none" style={{ ...MONO_STACK, right: 7, color: '#d8c2cd', opacity: on ? 0 : 1 }}>off</span>
+        <span
+            className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] rounded-full bg-white transition-all duration-300"
+            style={{ left: on ? 27 : 3, boxShadow: '0 2px 6px rgba(122,90,114,0.24)' }}
+        />
+    </button>
 );
 
-/** 开关：teal = 缝着（启用） */
-const InkSwitch: React.FC<{ on: boolean; onChange: () => void; title?: string }> = ({ on, onChange, title }) => (
-    <button onClick={onChange} title={title}
-        className="relative w-11 h-6 rounded-full shrink-0 transition-colors press-soft"
-        style={{ background: on ? '#14b8a6' : '#dcd9d3' }}>
-        <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all shadow" style={{ left: on ? 'calc(100% - 1.375rem)' : '0.125rem' }} />
+const StickerChip: React.FC<{
+    active: boolean;
+    onClick?: () => void;
+    children: React.ReactNode;
+    title?: string;
+    tone?: 'rose' | 'blue' | 'mint' | 'gold' | 'plain';
+}> = ({ active, onClick, children, title, tone = 'rose' }) => {
+    const palette = {
+        rose: { bg: '#fff4f7', ink: '#5a3140', edge: EDGE },
+        blue: { bg: '#f1f6fa', ink: '#4c6f82', edge: '#d8e6ee' },
+        mint: { bg: '#f6fbf8', ink: '#5f7f6d', edge: '#dbe9e2' },
+        gold: { bg: '#fff9df', ink: '#8a6a19', edge: '#eee2a7' },
+        plain: { bg: '#fffdfa', ink: '#7a5a72', edge: EDGE },
+    }[tone];
+    return (
+        <button
+            onClick={(e) => {
+                e.stopPropagation();
+                onClick?.();
+            }}
+            title={title}
+            className="px-3 py-1.5 text-[11px] font-bold rounded-full transition-all active:scale-95 max-w-full truncate"
+            style={{
+                background: active ? palette.bg : '#fffdfa',
+                color: active ? palette.ink : '#a892a3',
+                border: `1px solid ${active ? palette.edge : EDGE}`,
+                boxShadow: active ? '0 6px 14px -12px rgba(122,90,114,0.35)' : 'none',
+                ...CUTE_STACK,
+            }}
+        >
+            {children}
+        </button>
+    );
+};
+
+const PinButton: React.FC<{ onClick: () => void; children: React.ReactNode; disabled?: boolean; tone?: 'rose' | 'mint' | 'danger' }> = ({ onClick, children, disabled, tone = 'rose' }) => {
+    const styles: Record<string, React.CSSProperties> = {
+        rose: { background: '#fffdfa', border: `1px solid ${EDGE}`, color: '#9c5e74', boxShadow: '0 1px 2px rgba(122,90,114,0.10)' },
+        mint: { background: '#f6fbf8', border: '1px solid #dbe9e2', color: '#5f7f6d', boxShadow: '0 1px 2px rgba(122,90,114,0.08)' },
+        danger: { background: '#fff5f7', border: '1px solid #f1c6d1', color: '#d4536f', boxShadow: '0 1px 2px rgba(212,83,111,0.10)' },
+    };
+    return (
+        <button
+            onClick={(e) => {
+                e.stopPropagation();
+                onClick();
+            }}
+            disabled={disabled}
+            className="text-[11px] font-bold px-2.5 py-1 rounded-full active:scale-95 transition-transform whitespace-nowrap disabled:opacity-40"
+            style={{ ...styles[tone], ...CUTE_STACK }}
+        >
+            {children}
+        </button>
+    );
+};
+
+const Page: React.FC<{ title: string; en: string; children: React.ReactNode }> = ({ title, en, children }) => (
+    <section className="relative rounded-[18px] bg-white" style={{ border: '1px solid #ededed', boxShadow: '0 1px 2px rgba(38,38,38,0.04), 0 14px 30px -24px rgba(38,38,38,0.22)' }}>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-1">
+            <span className="text-[15px] font-bold leading-tight" style={{ color: PAPER_TONES.ink }}>{title}</span>
+            <span className="text-[8.5px] tracking-[0.22em] uppercase select-none shrink-0" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{en}</span>
+        </div>
+        <div className="px-4 pb-5 pt-1">{children}</div>
+    </section>
+);
+
+const Entry: React.FC<{ mark?: string; title: string; note?: string; side?: React.ReactNode; children?: React.ReactNode; onClick?: () => void }> = ({ mark = '✿', title, note, side, children, onClick }) => (
+    <div
+        onClick={onClick}
+        className={`py-3 border-b last:border-b-0 ${onClick ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''}`}
+        style={{ borderColor: 'rgba(216,165,183,0.35)' }}
+    >
+        <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] leading-none" style={{ color: PAPER_TONES.accentBlush }}>{mark}</span>
+                    <span className="text-[12.5px] font-bold" style={{ ...CUTE_STACK, color: PAPER_TONES.ink }}>{title}</span>
+                </div>
+                {note && <p className="text-[10px] mt-1 leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>{note}</p>}
+            </div>
+            {side && <div className="shrink-0 pt-0.5">{side}</div>}
+        </div>
+        {children && <div className="mt-2.5">{children}</div>}
+    </div>
+);
+
+const ScopeCard: React.FC<{
+    active: boolean;
+    icon: React.ReactNode;
+    title: string;
+    note: string;
+    onClick: () => void;
+}> = ({ active, icon, title, note, onClick }) => (
+    <button
+        onClick={onClick}
+        className="flex-1 min-w-0 text-left rounded-[16px] p-3 active:scale-[0.98] transition-transform"
+        style={{
+            background: active ? '#fff4f7' : '#fffdfa',
+            border: `1px solid ${active ? ROSE : EDGE}`,
+            boxShadow: active ? '0 10px 18px -16px rgba(122,90,114,0.38)' : 'none',
+        }}
+    >
+        <div className="flex items-center gap-2">
+            <span style={{ color: active ? '#9c5e74' : PAPER_TONES.inkFaint }}>{icon}</span>
+            <span className="text-[12px] font-bold truncate" style={{ ...CUTE_STACK, color: active ? '#5a3140' : PAPER_TONES.ink }}>{title}</span>
+        </div>
+        <div className="mt-1 text-[9.5px] leading-snug" style={{ color: PAPER_TONES.inkSoft }}>{note}</div>
     </button>
 );
 
@@ -64,6 +179,7 @@ const RegexApp: React.FC = () => {
     const scripts: RegexScriptData[] = scope === 'global'
         ? globalScripts
         : (scopedChar?.regexScripts || []);
+    const enabledCount = scripts.filter(s => !s.disabled).length;
 
     const persist = async (next: RegexScriptData[]) => {
         if (scope === 'global') {
@@ -74,39 +190,42 @@ const RegexApp: React.FC = () => {
         }
     };
 
+    const openEditor = (script: RegexScriptData) => {
+        setEditing({ ...script, trimStrings: [...script.trimStrings], placement: [...script.placement] });
+        setEditingIsNew(false);
+    };
+
     const handleToggle = (script: RegexScriptData) => {
         void persist(scripts.map(s => s.id === script.id ? { ...s, disabled: !s.disabled } : s));
     };
 
-    /** 「误配置一键修」：检测到 USER_INPUT + 看起来在包裹但没勾 promptOnly 时，
-     *  让用户一键把 promptOnly 设成 true（同 ST：只改寄给 LLM 的提示词，不动原文）。 */
     const handleFixWrapMisconfig = (script: RegexScriptData) => {
-        if (!window.confirm(`把「${script.scriptName || '没名字的补丁'}」改成只动寄出的信？\n\n（勾上 promptOnly：包裹只在发给 LLM 时生效，聊天原文和气泡都不再被改写）`)) return;
+        if (!window.confirm(`将「${script.scriptName || '未命名脚本'}」设置为仅提示词模式？\n\n启用后，它只会改写发送给 LLM 的提示词，不会改动聊天原文或气泡显示。`)) return;
         void persist(scripts.map(s => s.id === script.id ? { ...s, promptOnly: true } : s));
-        addToast('改好了：现在只动寄出的信', 'success');
+        addToast('已设置为仅提示词模式', 'success');
     };
 
     const handleDelete = (script: RegexScriptData) => {
         setConfirmDialog({
-            title: '拆掉这块补丁？',
-            message: `「${script.scriptName || '没名字的补丁'}」拆下来就缝不回去了。`,
+            title: '删除正则脚本？',
+            message: `「${script.scriptName || '未命名脚本'}」删除后无法恢复。`,
             onConfirm: () => {
                 void persist(scripts.filter(s => s.id !== script.id));
                 setConfirmDialog(null);
-                addToast('补丁拆掉了', 'success');
+                addToast('已删除正则脚本', 'success');
             },
         });
     };
 
     const handleSaveEditing = async () => {
         if (!editing) return;
-        if (!editing.findRegex.trim()) { addToast('还没写要找的线头（查找正则不能为空）', 'error'); return; }
-        if (scope === 'scoped' && !scopedChar) { addToast('先挑一位角色再缝', 'error'); return; }
-        const named = { ...editing, scriptName: editing.scriptName.trim() || '没名字的补丁' };
+        if (!editing.findRegex.trim()) { addToast('查找正则不能为空', 'error'); return; }
+        if (scope === 'scoped' && !scopedChar) { addToast('请先选择角色', 'error'); return; }
+        const named = { ...editing, scriptName: editing.scriptName.trim() || '未命名脚本' };
         const exists = scripts.some(s => s.id === named.id);
         await persist(exists ? scripts.map(s => s.id === named.id ? named : s) : [...scripts, named]);
         setEditing(null);
-        addToast('补丁缝牢了', 'success');
+        addToast('已保存正则脚本', 'success');
     };
 
     const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,13 +234,12 @@ const RegexApp: React.FC = () => {
         (async () => {
             try {
                 const imported = parseRegexImportJson(await file.text());
-                // 同 id 的脚本覆盖（重复导入不堆积），其余追加
                 const map = new Map(scripts.map(s => [s.id, s]));
                 imported.forEach(s => map.set(s.id, s));
                 await persist(Array.from(map.values()));
-                addToast(`收进 ${imported.length} 块补丁`, 'success');
+                addToast(`已导入 ${imported.length} 条正则脚本`, 'success');
             } catch (err: any) {
-                addToast(`收不进来：${err?.message || '不是有效的 JSON 文件'}`, 'error');
+                addToast(`导入失败：${err?.message || '不是有效的 JSON 文件'}`, 'error');
             } finally {
                 if (importRef.current) importRef.current.value = '';
             }
@@ -129,7 +247,7 @@ const RegexApp: React.FC = () => {
     };
 
     const handleExport = () => {
-        if (scripts.length === 0) { addToast('这边货架上没有补丁可装箱', 'info'); return; }
+        if (scripts.length === 0) { addToast('当前范围没有可导出的脚本', 'info'); return; }
         const blob = new Blob([exportRegexScriptsJson(scripts)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -139,176 +257,186 @@ const RegexApp: React.FC = () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        addToast('装箱带走了', 'success');
+        addToast('已导出 JSON', 'success');
+    };
+
+    const handleNewScript = () => {
+        if (scope === 'scoped' && !scopedChar) { addToast('请先选择角色', 'error'); return; }
+        setEditing(createEmptyRegexScript());
+        setEditingIsNew(true);
     };
 
     return (
-        <div className="h-full w-full relative overflow-hidden bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
-            {/* ── 拆补丁确认（撕边纸卡） ── */}
-            {confirmDialog && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmDialog(null)} />
-                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_24px_50px_-22px_rgba(38,36,42,0.5)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
-                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
-                        <button
-                            onClick={() => setConfirmDialog(null)}
-                            className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rotate-[4deg] ${STICKER}`}
-                            aria-label="合上"
-                        >
-                            <X size={14} weight="bold" color={INK} />
-                        </button>
-                        <div className="px-5 pt-6 pb-2">
-                            <div className="label-mono text-[9px] text-[#26242a]/45">UNPICK / 不可复原</div>
-                            <h3 className="text-lg font-black tracking-wide mt-0.5">{confirmDialog.title}</h3>
-                            <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
+        <div
+            className="absolute inset-0 z-[260] flex flex-col animate-fade-in"
+            style={{ paddingTop: 'var(--safe-top)', backgroundColor: '#fafafa' }}
+        >
+            <div className="shrink-0 flex items-center gap-3 px-3 py-3" style={{ background: '#ffffff', borderBottom: '1px solid #ededed' }}>
+                <button
+                    onClick={closeApp}
+                    className="w-9 h-9 rounded-full bg-white flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                    style={{ boxShadow: '0 1px 3px rgba(122,90,114,0.18)', border: '1px solid #ededed' }}
+                    aria-label="返回"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="#9c5e74" className="w-[18px] h-[18px]">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                    </svg>
+                </button>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-[16px] font-bold leading-tight" style={{ color: '#5a3140' }}>补丁铺</span>
+                        <span className="text-[8.5px] tracking-[0.24em] select-none" style={{ ...MONO_STACK, color: '#b07a8d' }}>REGEX SETTINGS</span>
+                    </div>
+                    <div className="text-[10px] truncate mt-0.5" style={{ color: '#a96f84' }}>
+                        {scope === 'global' ? '全局脚本' : scopedChar?.name || '角色脚本'} · 更改会自动保存
+                    </div>
+                </div>
+                <span className="text-[10px] select-none shrink-0 px-2 py-1 rounded-full" style={{ color: '#a96f84', background: '#fff4f7', border: `1px solid ${EDGE}` }}>已保存</span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-28 space-y-8">
+                <Page title="作用范围" en="Scope">
+                    <Entry mark="♡" title="脚本应用到哪里" note="全局脚本会作用于所有角色聊天；角色脚本只作用于当前选中的角色。">
+                        <div className="flex gap-2">
+                            <ScopeCard
+                                active={scope === 'global'}
+                                icon={<Globe size={17} weight="bold" />}
+                                title="全局脚本"
+                                note="所有角色聊天"
+                                onClick={() => setScope('global')}
+                            />
+                            <ScopeCard
+                                active={scope === 'scoped'}
+                                icon={<UserCircle size={17} weight="bold" />}
+                                title="角色脚本"
+                                note="只对一位角色"
+                                onClick={() => setScope('scoped')}
+                            />
                         </div>
-                        <div className="px-5 py-3 text-sm text-[#26242a]/70 leading-relaxed">{confirmDialog.message}</div>
-                        <div className="px-5 pb-5 pt-2 flex gap-3">
-                            <button onClick={() => setConfirmDialog(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
-                            <button onClick={confirmDialog.onConfirm} className={`flex-1 py-2.5 text-xs font-black ${INK_BTN}`}>拆！</button>
+                    </Entry>
+
+                    {scope === 'scoped' && (
+                        <Entry mark="♡" title="选择角色" note="随 SillyTavern 角色卡导入的正则，也会出现在对应角色这里。">
+                            <div className="flex flex-wrap gap-2">
+                                {characters.map(c => (
+                                    <StickerChip
+                                        key={c.id}
+                                        active={scopedCharId === c.id}
+                                        onClick={() => setScopedCharId(c.id)}
+                                        tone="rose"
+                                    >
+                                        {c.name}
+                                    </StickerChip>
+                                ))}
+                                {characters.length === 0 && <span className="text-[10px]" style={{ color: PAPER_TONES.inkFaint }}>暂无角色</span>}
+                            </div>
+                        </Entry>
+                    )}
+                </Page>
+
+                <Page title="脚本概览" en="Summary">
+                    <div className="grid grid-cols-3 gap-2 py-3 border-b" style={{ borderColor: 'rgba(216,165,183,0.35)' }}>
+                        {[
+                            ['总数', scripts.length],
+                            ['启用', enabledCount],
+                            ['停用', scripts.length - enabledCount],
+                        ].map(([label, value]) => (
+                            <div key={label} className="rounded-[14px] px-3 py-2.5 text-center" style={{ background: '#fffdfa', border: `1px solid ${EDGE}` }}>
+                                <div className="text-[18px] font-bold tabular-nums" style={{ color: '#5a3140' }}>{value}</div>
+                                <div className="text-[9px] mt-0.5" style={{ ...MONO_STACK, color: PAPER_TONES.inkFaint }}>{label}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <Entry
+                        mark="✦"
+                        title="导入 / 导出"
+                        note="支持 SillyTavern Regex JSON。导入时同 id 脚本会覆盖，避免重复堆积。"
+                    >
+                        <div className="flex gap-2">
+                            <PinButton onClick={() => importRef.current?.click()} tone="mint">
+                                <span className="inline-flex items-center gap-1"><UploadSimple size={13} weight="bold" />导入 JSON</span>
+                            </PinButton>
+                            <PinButton onClick={handleExport}>
+                                <span className="inline-flex items-center gap-1"><DownloadSimple size={13} weight="bold" />导出 JSON</span>
+                            </PinButton>
+                        </div>
+                    </Entry>
+                </Page>
+
+                <Page title="正则脚本" en="Scripts">
+                    {scripts.length === 0 ? (
+                        <div className="py-8 text-center">
+                            <BracketsCurly size={36} weight="thin" className="mx-auto mb-3" style={{ color: PAPER_TONES.inkFaint }} />
+                            <div className="text-[13px] font-bold" style={{ color: PAPER_TONES.ink }}>暂无正则脚本</div>
+                            <p className="mt-1 text-[10px] leading-relaxed" style={{ color: PAPER_TONES.inkSoft }}>新建脚本或导入 JSON 后，会显示在这里。</p>
+                        </div>
+                    ) : (
+                        scripts.map((script) => {
+                            const disabled = !!script.disabled;
+                            const mode = script.markdownOnly ? '仅显示层' : script.promptOnly ? '仅提示词' : '改写原文';
+                            return (
+                                <Entry
+                                    key={script.id}
+                                    mark={disabled ? '○' : '✿'}
+                                    title={script.scriptName || '未命名脚本'}
+                                    note={script.findRegex || '未填写查找正则'}
+                                    onClick={() => openEditor(script)}
+                                    side={<CandyToggle on={!disabled} onToggle={() => handleToggle(script)} />}
+                                >
+                                    <div className="flex flex-wrap gap-2">
+                                        <StickerChip active tone={script.promptOnly ? 'gold' : script.markdownOnly ? 'blue' : 'rose'}>{mode}</StickerChip>
+                                        {script.placement.map(p => PLACEMENT_LABELS[p] && (
+                                            <StickerChip key={p} active={false} tone="plain">{PLACEMENT_LABELS[p]}</StickerChip>
+                                        ))}
+                                        {(typeof script.minDepth === 'number' || typeof script.maxDepth === 'number') && (
+                                            <StickerChip active={false} tone="mint">深度 {script.minDepth ?? '∞'}~{script.maxDepth ?? '∞'}</StickerChip>
+                                        )}
+                                    </div>
+                                    <div className="mt-2.5 flex items-center gap-2">
+                                        {looksLikeWrapMisconfig(script) && (
+                                            <PinButton onClick={() => handleFixWrapMisconfig(script)} tone="mint">
+                                                <span className="inline-flex items-center gap-1"><WarningCircle size={13} weight="fill" />改为仅提示词</span>
+                                            </PinButton>
+                                        )}
+                                        <PinButton onClick={() => handleDelete(script)} tone="danger">
+                                            <span className="inline-flex items-center gap-1"><Trash size={13} weight="bold" />删除</span>
+                                        </PinButton>
+                                    </div>
+                                </Entry>
+                            );
+                        })
+                    )}
+                </Page>
+            </div>
+
+            <div className="absolute bottom-0 inset-x-0 z-20 px-3 pt-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 14px)', background: 'linear-gradient(180deg, transparent, rgba(250,250,250,0.96) 36%, #fafafa)' }}>
+                <button
+                    onClick={handleNewScript}
+                    className="w-full rounded-full py-3 text-[13px] font-bold active:scale-[0.98] transition-transform"
+                    style={{ background: ROSE, color: '#fff', boxShadow: '0 10px 22px -14px rgba(122,90,114,0.45)', ...CUTE_STACK }}
+                >
+                    <span className="inline-flex items-center gap-1.5"><Plus size={15} weight="bold" /> 新建正则脚本</span>
+                </button>
+            </div>
+
+            <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
+
+            {confirmDialog && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-5 animate-fade-in">
+                    <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmDialog(null)} />
+                    <div className="relative w-full max-w-sm rounded-[26px] bg-white px-6 pt-7 pb-6 text-center animate-pop-in" style={{ border: `1px solid ${EDGE}`, boxShadow: '0 30px 70px -34px rgba(38,38,38,0.58)' }}>
+                        <div className="text-[9px] tracking-[0.32em] uppercase mb-1.5" style={{ ...MONO_STACK, color: ROSE }}>DELETE SCRIPT</div>
+                        <h3 className="text-[18px] font-bold" style={{ color: '#5a3140' }}>{confirmDialog.title}</h3>
+                        <p className="text-[13px] leading-relaxed mt-3" style={{ color: PAPER_TONES.inkSoft }}>{confirmDialog.message}</p>
+                        <div className="flex gap-2.5 mt-5">
+                            <button onClick={() => setConfirmDialog(null)} className="flex-1 py-3 rounded-full text-[13px] font-bold active:scale-95" style={{ background: '#fffdfa', color: PAPER_TONES.inkSoft, border: `1px solid ${EDGE}` }}>取消</button>
+                            <button onClick={confirmDialog.onConfirm} className="flex-1 py-3 rounded-full text-[13px] font-bold active:scale-95" style={{ background: '#d4536f', color: '#fff' }}>删除</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ── 刊头 ── */}
-            <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
-                <div className="flex items-center gap-3">
-                    <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`} title="打烊关门">
-                        <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-                        </svg>
-                        <span className="text-[10px] font-black">打烊</span>
-                    </button>
-                    <div className="flex-1 min-w-0 relative">
-                        <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#26242a]/45">PATCH SHOP — REGEX TAILORING</div>
-                        <div className="flex items-baseline gap-2">
-                            <h1 className="text-2xl font-black tracking-[0.08em]">补丁铺</h1>
-                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>哪句话不顺眼，剪下来缝块补丁</span>
-                        </div>
-                    </div>
-                    <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
-                        <span className="text-base font-black leading-none">{scripts.length}</span>
-                        <span className="label-mono text-[7px] text-[#26242a]/55 leading-none mt-0.5">块</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* ── 货架（作用域切换） ── */}
-            <div className="px-4 pt-4 shrink-0 space-y-2">
-                <div className="flex gap-2">
-                    <button onClick={() => setScope('global')}
-                        className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${scope === 'global' ? 'bg-[#1c1b1a] text-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]' : 'bg-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]'}`}>
-                        满铺通用（全局）
-                    </button>
-                    <button onClick={() => setScope('scoped')}
-                        className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] ${scope === 'scoped' ? 'bg-[#1c1b1a] text-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]' : 'bg-white shadow-[0_8px_18px_-12px_rgba(38,36,42,0.4)]'}`}>
-                        只缝给 TA（角色）
-                    </button>
-                </div>
-                {scope === 'scoped' && (
-                    <div className="relative">
-                        <select value={scopedCharId} onChange={e => setScopedCharId(e.target.value)}
-                            className="w-full appearance-none px-3 py-2 bg-white border border-black/10 rounded-xl/60 text-xs font-bold outline-none focus:border-[#1c1b1a]">
-                            {characters.length === 0 && <option value="">（名册上还没有人）</option>}
-                            {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
-                    </div>
-                )}
-                <p className="text-[12px] text-[#26242a]/55 leading-relaxed px-1" style={HAND_CN}>
-                    {scope === 'global'
-                        ? '✎ 满铺通用的补丁缝在所有角色的聊天上。酒馆（SillyTavern）的正则 JSON 可以直接收进来。'
-                        : '✎ 这排货架上的补丁只缝给选中的这位。收 SillyTavern 角色卡时，卡里自带的正则（extensions.regex_scripts）会自动摆到这里。'}
-                </p>
-            </div>
-
-            {/* ── 补丁货架 ── */}
-            <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-3 pb-28">
-                {scripts.length === 0 && (
-                    <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 mt-4 rotate-[-0.6deg] text-center space-y-2">
-                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
-                        <Bandaids size={32} weight="bold" className="mx-auto text-[#26242a]/40" />
-                        <p className="text-lg" style={HAND_CN}>这排货架还空着。</p>
-                        <p className="text-xs text-[#26242a]/55 leading-relaxed">点右下角的缝针缝一块新的，或者把酒馆正则 JSON 收进来。</p>
-                    </div>
-                )}
-                {scripts.map((script, i) => (
-                    <div key={script.id}
-                        className={`relative bg-white border-2 px-3.5 py-3 transition-all ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'} ${script.disabled ? 'opacity-45 border-dashed border-[#1c1b1a]/40' : 'border-[#1c1b1a]/45 shadow-sm'}`}>
-                        {/* 补丁角的缝线 */}
-                        <span aria-hidden className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-[#1c1b1a]/60" />
-                        <span aria-hidden className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-[#1c1b1a]/60" />
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => { setEditing({ ...script, trimStrings: [...script.trimStrings], placement: [...script.placement] }); setEditingIsNew(false); }}
-                                className="flex-1 min-w-0 text-left">
-                                <div className={`text-sm font-black truncate ${script.disabled ? 'line-through decoration-2' : ''}`}>{script.scriptName || '没名字的补丁'}</div>
-                                <div className="label-mono text-[9px] text-[#26242a]/45 truncate mt-0.5">{script.findRegex}</div>
-                            </button>
-                            <InkSwitch on={!script.disabled} onChange={() => handleToggle(script)} title={script.disabled ? '这块补丁先拆线放着（点击缝上）' : '缝着呢（点击拆线放着）'} />
-                            <button onClick={() => handleDelete(script)}
-                                className="shrink-0 p-1.5 rotate-[2deg] border border-black/10 rounded-xl/30 bg-white text-[#26242a]/40 hover:border-[#1c1b1a] hover:text-[#26242a] active:scale-90 transition-all"
-                                title="拆掉这块补丁">
-                                <X size={12} weight="bold" />
-                            </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                            {script.placement.map(p => PLACEMENT_LABELS[p] && (
-                                <span key={p} className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/60">{PLACEMENT_LABELS[p]}</span>
-                            ))}
-                            {script.markdownOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[-1deg]">只改表面</span>}
-                            {script.promptOnly && <span className="label-mono text-[8px] px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[1deg]">只改寄出的信</span>}
-                            {(typeof script.minDepth === 'number' || typeof script.maxDepth === 'number') && (
-                                <span className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/60">
-                                    深度 {script.minDepth ?? '∞'}~{script.maxDepth ?? '∞'}
-                                </span>
-                            )}
-                            {looksLikeWrapMisconfig(script) && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleFixWrapMisconfig(script); }}
-                                    title="这条会改聊天原文（包裹会落库）。多半本意是只改寄给 LLM 的提示词——点这里一键改成「只改寄出的信」。"
-                                    className="label-mono text-[8px] px-1.5 py-0.5 border border-[#1c1b1a] bg-[#fff3a3] text-[#26242a] rotate-[-1.5deg] shadow-[1.5px_1.5px_0_#1c1b1a] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
-                                >
-                                    ⚠ 像在改原文？一键改成只动寄出的信
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ))}
-
-                {/* 收进 / 装箱：移到列表底部的装订台（原右上角按钮） */}
-                <div className="relative border border-black/10 rounded-xl/45 bg-white/55 p-3 rotate-[0.3deg] mt-4">
-                    <span className="absolute -top-2 left-3 px-1.5 bg-[#f7f5f2] label-mono text-[8px] text-[#26242a]/50">CRATE / 进出货</span>
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => importRef.current?.click()}
-                            className={`flex-1 py-2 text-[10px] font-black flex items-center justify-center gap-1.5 ${STICKER}`}
-                            title="把酒馆正则 JSON 收进这排货架">
-                            <TrayArrowDown size={13} weight="bold" /> 收一箱补丁
-                        </button>
-                        <button onClick={handleExport}
-                            className={`flex-1 py-2 text-[10px] font-black flex items-center justify-center gap-1.5 ${STICKER}`}
-                            title="把这排货架的补丁打包成 JSON 带走">
-                            <TrayArrowUp size={13} weight="bold" /> 装箱带走
-                        </button>
-                        <input ref={importRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImportFile} />
-                    </div>
-                </div>
-            </div>
-
-            {/* ── 缝一块新的：右下角缝针贴纸 ── */}
-            <button
-                onClick={() => {
-                    if (scope === 'scoped' && !scopedChar) { addToast('先挑一位角色再缝', 'error'); return; }
-                    setEditing(createEmptyRegexScript());
-                    setEditingIsNew(true);
-                }}
-                className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[3px_3px_0_rgba(28,27,26,0.35)] press-soft">
-                <Needle size={16} weight="bold" />
-                <span className="text-xs font-black">缝一块</span>
-            </button>
-
-            {/* ── 缝纫台（编辑器） ── */}
             {editing && (
                 <RegexEditor
                     script={editing}

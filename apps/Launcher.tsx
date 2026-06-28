@@ -413,6 +413,7 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         AppID.Forum,
         AppID.XhsFreeRoam,
         AppID.XhsStock,
+        AppID.Manual,
     ];
     pageThreeApps.forEach((id, index) => {
         placeApp(id, 2, index % PAGE_COLS, Math.floor(index / PAGE_COLS) * 2);

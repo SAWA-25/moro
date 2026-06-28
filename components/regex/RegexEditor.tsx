@@ -6,32 +6,12 @@ import {
     PLACEMENT_LABELS,
     runRegexScript,
 } from '../../utils/regex/engine';
+import { InsButton, SectionLabel, accent, INK, INK_SOFT } from '../ui/insKit';
+import { BracketsCurly, FloppyDisk, Play, X } from '@phosphor-icons/react';
 
-/**
- * 共用缝纫台（正则编辑器）——补丁铺（全局/角色作用域）与活字盘（随字版的预设作用域）
- * 共用同一个编辑弹层，避免两处各写一份。黑白拼贴手账风，与剪影集全家同一套设计语言。
- *
- * 词汇对照（数据结构 / ST 语义不变，只换了说法）：
- *  - 补丁 = 一条正则脚本（RegexScriptData）；线头 = findRegex；缝上去的布 = replaceString
- *  - 先剪掉的线头 = trimStrings；补在哪些布上 = placement；试缝台 = 实时测试
- */
-
-// ── 黑白手账设计 token（与剪影集全家同一套语言） ─────────────
-const INK = '#1c1b1a';
-const STICKER = 'border-2 border-[#1c1b1a] bg-white shadow-[2px_2px_0_#1c1b1a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
-const INK_BTN = 'bg-[#1c1b1a] text-[#f7f5ef] border-2 border-[#1c1b1a] shadow-[2px_2px_0_rgba(28,27,26,0.35)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all';
-const HAND_CN: React.CSSProperties = { fontFamily: "'Long Cang', 'Caveat', cursive" };
-const DOT_BG: React.CSSProperties = {
-    backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(28,27,26,0.10) 1px, transparent 0)',
-    backgroundSize: '16px 16px',
-};
-
-const Tape: React.FC<{ className?: string }> = ({ className }) => (
-    <div
-        aria-hidden
-        className={`pointer-events-none absolute h-5 w-16 bg-white/60 border-x border-dashed border-[#1c1b1a]/30 shadow-sm backdrop-blur-[1px] ${className || ''}`}
-    />
-);
+const AC = 'teal' as const;
+const A = accent(AC);
+const EDGE = 'rgba(0,0,0,0.06)';
 
 const PLACEMENT_OPTIONS = [
     regex_placement.USER_INPUT,
@@ -41,19 +21,53 @@ const PLACEMENT_OPTIONS = [
     regex_placement.REASONING,
 ];
 
+const RUN_MODE_OPTIONS = [
+    {
+        key: 'markdownOnly',
+        title: '仅显示层',
+        desc: '只影响聊天气泡渲染，不改消息原文。',
+    },
+    {
+        key: 'promptOnly',
+        title: '仅提示词',
+        desc: '只影响发送给 LLM 的提示词，不改聊天原文。',
+    },
+    {
+        key: 'runOnEdit',
+        title: '编辑消息时运行',
+        desc: '用户重新编辑消息时也执行这条脚本。',
+    },
+] as const;
+
 export interface RegexEditorProps {
     script: RegexScriptData;
     isNew: boolean;
     userName: string;
     charName: string;
-    /** 弹层标题左上角的小标（默认 NEW PATCH / RE-STITCH） */
+    /** 弹层标题左上角的小标（默认 NEW SCRIPT / EDIT SCRIPT） */
     eyebrow?: { neu: string; old: string };
     onChange: (s: RegexScriptData) => void;
     onSave: () => void;
     onClose: () => void;
 }
 
-/** 缝纫台（编辑器弹层） */
+const field = 'w-full px-4 py-3 bg-white text-[13px] outline-none transition-all placeholder:text-slate-400';
+const monoField = `${field} font-mono leading-relaxed`;
+const labelStyle: React.CSSProperties = { color: INK_SOFT, fontFamily: 'var(--font-label)' };
+
+const fieldBox: React.CSSProperties = {
+    border: `1px solid ${EDGE}`,
+    borderRadius: 16,
+    boxShadow: 'inset 0 1px 2px rgba(38,38,38,0.03)',
+};
+
+const FieldLabel: React.FC<{ children: React.ReactNode; hint?: string }> = ({ children, hint }) => (
+    <div className="mb-2">
+        <label className="block text-[10px] font-bold tracking-[0.18em] uppercase" style={labelStyle}>{children}</label>
+        {hint && <p className="mt-1 text-[11px] leading-snug" style={{ color: INK_SOFT }}>{hint}</p>}
+    </div>
+);
+
 const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, charName, eyebrow, onChange, onSave, onClose }) => {
     const [testInput, setTestInput] = useState('');
     const set = (patch: Partial<RegexScriptData>) => onChange({ ...script, ...patch });
@@ -69,112 +83,227 @@ const RegexEditor: React.FC<RegexEditorProps> = ({ script, isNew, userName, char
         try {
             return runRegexScript({ ...script, disabled: false }, testInput, { userName, charName });
         } catch (e: any) {
-            return `（这针下歪了：${e?.message || e}）`;
+            return `正则执行失败：${e?.message || e}`;
         }
     }, [testInput, script, userName, charName]);
 
-    const field = 'w-full px-3 py-2 bg-white border-2 border-[#1c1b1a]/60 text-xs outline-none focus:border-[#1c1b1a] transition-colors placeholder:text-[#1c1b1a]/25';
-    const label = 'label-mono text-[8px] text-[#1c1b1a]/45 mb-1 block';
-    const eb = eyebrow ?? { neu: 'NEW PATCH', old: 'RE-STITCH' };
+    const eb = eyebrow ?? { neu: 'NEW SCRIPT', old: 'EDIT SCRIPT' };
 
     return (
-        <div className="absolute inset-0 z-30 bg-[#1c1b1a]/45 flex items-end animate-fade-in" onClick={onClose}>
-            <div className="relative w-full max-h-[88%] bg-[#f7f5ef] border-t-2 border-x-2 border-[#1c1b1a] flex flex-col overflow-hidden animate-slide-up" style={DOT_BG} onClick={e => e.stopPropagation()}>
-                <Tape className="-top-0.5 left-1/2 -translate-x-1/2 rotate-[-3deg] z-10" />
-                <div className="px-5 py-4 flex items-center border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0 gap-2">
-                    <div className="flex-1 min-w-0">
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45">{isNew ? eb.neu : eb.old}</div>
-                        <span className="text-lg font-black tracking-wide">{isNew ? '缝一块新补丁' : '把这块补丁拆开重缝'}</span>
-                    </div>
-                    <button onClick={onClose} className={`px-3 py-1.5 text-[10px] font-black rotate-[-1deg] ${STICKER}`}>不缝了</button>
-                    <button onClick={onSave} className={`px-4 py-1.5 text-[10px] font-black rotate-[1deg] ${INK_BTN}`}>缝牢</button>
+        <div className="absolute inset-0 z-30 flex items-end justify-center animate-fade-in" onClick={onClose}>
+            <div className="absolute inset-0" style={{ background: 'rgba(28,26,24,0.42)', backdropFilter: 'blur(4px)' }} />
+            <div
+                className="relative w-full max-h-[90%] flex flex-col overflow-hidden animate-slide-up"
+                style={{
+                    maxWidth: 460,
+                    background: 'linear-gradient(180deg,#ffffff 0%,#fbfaf8 100%)',
+                    borderTopLeftRadius: 28,
+                    borderTopRightRadius: 28,
+                    boxShadow: '0 -22px 60px -24px rgba(20,18,16,0.45)',
+                    paddingBottom: 'max(env(safe-area-inset-bottom), 14px)',
+                }}
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex justify-center pt-3 shrink-0">
+                    <span className="w-10 h-1.5 rounded-full" style={{ background: '#e3e0da' }} />
                 </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-4 space-y-4 pb-10">
-                    <div>
-                        <label className={label}>补丁名 / LABEL</label>
-                        <input className={field} value={script.scriptName} placeholder="比如：拆掉括号里的动作描写"
-                            onChange={e => set({ scriptName: e.target.value })} />
+
+                <div className="px-5 pt-3 pb-3 flex items-center gap-3 shrink-0">
+                    <div className="p-2 rounded-2xl shrink-0" style={{ background: A.soft, color: A.ink }}>
+                        <BracketsCurly size={22} weight="bold" />
                     </div>
-                    <div>
-                        <label className={label}>要找的线头（findRegex）</label>
-                        <textarea className={`${field} h-20 resize-none font-mono`} value={script.findRegex}
-                            placeholder={'/pattern/gi 或裸 pattern'}
-                            onChange={e => set({ findRegex: e.target.value })} />
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[9px] tracking-[0.28em] uppercase" style={{ fontFamily: 'var(--font-label)', color: A.solid }}>
+                            {isNew ? eb.neu : eb.old}
+                        </div>
+                        <div className="text-[17px] font-extrabold truncate" style={{ color: INK }}>
+                            {isNew ? '新建正则脚本' : '编辑正则脚本'}
+                        </div>
                     </div>
-                    <div>
-                        <label className={label}>缝上去的布（replaceString）</label>
-                        <textarea className={`${field} h-20 resize-none font-mono`} value={script.replaceString}
-                            placeholder={'支持 $1 / $<name> 捕获组与 {{match}} 宏；留白 = 把找到的整段剪掉'}
-                            onChange={e => set({ replaceString: e.target.value })} />
-                    </div>
-                    <div>
-                        <label className={label}>先剪掉的线头（trimStrings，每行一条，从找到的片段里剪掉）</label>
-                        <textarea className={`${field} h-16 resize-none font-mono`} value={script.trimStrings.join('\n')}
-                            onChange={e => set({ trimStrings: e.target.value.split('\n').filter(s => s !== '') })} />
-                    </div>
-                    <div>
-                        <label className={label}>补在哪些布上（placement）</label>
+                    <button
+                        onClick={onClose}
+                        className="w-9 h-9 rounded-full flex items-center justify-center press-soft shrink-0"
+                        style={{ background: '#fff', color: INK, border: `1px solid ${EDGE}`, boxShadow: '0 8px 18px -16px rgba(38,38,38,0.4)' }}
+                        aria-label="关闭"
+                    >
+                        <X size={16} weight="bold" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-2 space-y-5">
+                    <section>
+                        <SectionLabel en="BASIC" accent={AC} className="mb-3">基础信息</SectionLabel>
+                        <div className="space-y-3">
+                            <div>
+                                <FieldLabel>脚本名称</FieldLabel>
+                                <input
+                                    className={field}
+                                    style={fieldBox}
+                                    value={script.scriptName}
+                                    placeholder="例如：隐藏状态栏标签"
+                                    onChange={e => set({ scriptName: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <FieldLabel hint="支持 /pattern/flags 或裸 pattern。">查找正则 findRegex</FieldLabel>
+                                <textarea
+                                    className={`${monoField} h-24 resize-none`}
+                                    style={fieldBox}
+                                    value={script.findRegex}
+                                    placeholder="/pattern/gi"
+                                    onChange={e => set({ findRegex: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <FieldLabel hint="支持 $1、$<name> 捕获组与 {{match}}。留空表示删除命中的内容。">替换内容 replaceString</FieldLabel>
+                                <textarea
+                                    className={`${monoField} h-24 resize-none`}
+                                    style={fieldBox}
+                                    value={script.replaceString}
+                                    placeholder="替换文本，或留空删除"
+                                    onChange={e => set({ replaceString: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <FieldLabel hint="每行一条；在命中片段内先移除这些文本，再执行替换。">预处理移除 trimStrings</FieldLabel>
+                                <textarea
+                                    className={`${monoField} h-20 resize-none`}
+                                    style={fieldBox}
+                                    value={script.trimStrings.join('\n')}
+                                    placeholder="可选"
+                                    onChange={e => set({ trimStrings: e.target.value.split('\n').filter(s => s !== '') })}
+                                />
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <SectionLabel en="WHERE" accent={AC} className="mb-3">运行位置</SectionLabel>
                         <div className="flex flex-wrap gap-2">
-                            {PLACEMENT_OPTIONS.map((p, i) => (
-                                <button key={p} onClick={() => togglePlacement(p)}
-                                    className={`px-3 py-1.5 text-[10px] font-black border-2 border-[#1c1b1a] transition-all ${i % 2 === 0 ? 'rotate-[-0.6deg]' : 'rotate-[0.6deg]'} ${script.placement.includes(p) ? 'bg-[#1c1b1a] text-[#f7f5ef] shadow-[2px_2px_0_rgba(28,27,26,0.35)]' : 'bg-white shadow-[2px_2px_0_#1c1b1a]'}`}>
-                                    {PLACEMENT_LABELS[p]}
-                                </button>
+                            {PLACEMENT_OPTIONS.map((p) => {
+                                const active = script.placement.includes(p);
+                                return (
+                                    <button
+                                        key={p}
+                                        onClick={() => togglePlacement(p)}
+                                        className="px-3 py-2 rounded-full text-[12px] font-bold press-soft"
+                                        style={active
+                                            ? { background: A.solid, color: '#fff', boxShadow: `0 10px 20px -14px ${A.solid}` }
+                                            : { background: '#fff', color: INK_SOFT, border: `1px solid ${EDGE}` }}
+                                    >
+                                        {PLACEMENT_LABELS[p]}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    <section>
+                        <SectionLabel en="MODE" accent={AC} className="mb-3">运行模式</SectionLabel>
+                        <div className="space-y-2">
+                            {RUN_MODE_OPTIONS.map(({ key, title, desc }) => (
+                                <label
+                                    key={key}
+                                    className="flex items-start gap-3 p-3 rounded-[18px] cursor-pointer press-soft"
+                                    style={{
+                                        background: script[key] ? A.soft : '#fff',
+                                        border: `1px solid ${script[key] ? A.solid + '55' : EDGE}`,
+                                    }}
+                                >
+                                    <span
+                                        className="mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center"
+                                        style={{ background: script[key] ? A.solid : '#f1eee9', color: '#fff' }}
+                                    >
+                                        {!!script[key] && <span className="text-[12px] leading-none">✓</span>}
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={!!script[key]}
+                                        onChange={e => set({ [key]: e.target.checked } as any)}
+                                        className="hidden"
+                                    />
+                                    <span className="min-w-0">
+                                        <span className="block text-[13px] font-extrabold" style={{ color: INK }}>{title}</span>
+                                        <span className="block text-[11px] leading-snug mt-0.5" style={{ color: INK_SOFT }}>{desc}</span>
+                                    </span>
+                                </label>
                             ))}
                         </div>
-                    </div>
-                    <div className="space-y-2.5 border-l-2 border-dashed border-[#1c1b1a]/40 pl-3">
-                        {([
-                            ['markdownOnly', '只改表面：动聊天显示，不动消息原文'],
-                            ['promptOnly', '只改寄出的信：动发给 LLM 的提示词'],
-                            ['runOnEdit', '改字的时候这针也跟着走（编辑消息时运行）'],
-                        ] as const).map(([key, text]) => (
-                            <label key={key} className="flex items-center gap-2.5 text-xs font-bold cursor-pointer">
-                                <span className={`w-4 h-4 border-2 border-[#1c1b1a] shrink-0 flex items-center justify-center ${script[key] ? 'bg-[#1c1b1a]' : 'bg-white'}`}>
-                                    {!!script[key] && <svg viewBox="0 0 24 24" fill="none" stroke="#f7f5ef" strokeWidth={4.5} className="w-2.5 h-2.5"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                                </span>
-                                <input type="checkbox" checked={!!script[key]} onChange={e => set({ [key]: e.target.checked } as any)} className="hidden" />
-                                {text}
-                            </label>
-                        ))}
-                    </div>
-                    <div>
-                        <label className={label}>线头里的宏怎么处理（{'{{user}}/{{char}}'}）</label>
-                        <div className="relative">
-                            <select className={`${field} appearance-none font-bold`} value={script.substituteRegex}
-                                onChange={e => set({ substituteRegex: Number(e.target.value) })}>
-                                <option value={substitute_find_regex.NONE}>原封不动（不替换）</option>
-                                <option value={substitute_find_regex.RAW}>替换成名字（原样）</option>
-                                <option value={substitute_find_regex.ESCAPED}>替换成名字并转义</option>
-                            </select>
-                            <span aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none">▾</span>
-                        </div>
-                    </div>
-                    <div className="flex gap-3">
-                        <div className="flex-1">
-                            <label className={label}>最浅缝到第几层（留空不限）</label>
-                            <input className={field} type="number" value={script.minDepth ?? ''}
-                                onChange={e => set({ minDepth: e.target.value === '' ? null : Number(e.target.value) })} />
-                        </div>
-                        <div className="flex-1">
-                            <label className={label}>最深缝到第几层（留空不限）</label>
-                            <input className={field} type="number" value={script.maxDepth ?? ''}
-                                onChange={e => set({ maxDepth: e.target.value === '' ? null : Number(e.target.value) })} />
-                        </div>
-                    </div>
-                    {/* 试缝台 */}
-                    <div className="relative bg-white border-2 border-[#1c1b1a] shadow-[3px_3px_0_#1c1b1a] p-3 space-y-2">
-                        <Tape className="-top-2.5 left-5 rotate-[-4deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#1c1b1a]/45 pt-1">试缝台 / FITTING</div>
-                        <textarea className="w-full px-3 py-2 bg-[#fbfaf6] border-2 border-[#1c1b1a]/40 text-xs h-16 resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#1c1b1a]/25"
-                            placeholder="丢一段布料（文本）进来，立刻看这块补丁缝完的样子" value={testInput}
-                            onChange={e => setTestInput(e.target.value)} />
-                        {testInput && (
-                            <div className="px-3 py-2 border-2 border-dashed border-[#1c1b1a]/50 text-xs whitespace-pre-wrap break-words min-h-[2rem]">
-                                {testOutput || <span className="text-[#1c1b1a]/35" style={HAND_CN}>（缝完一个字不剩）</span>}
+                    </section>
+
+                    <section>
+                        <SectionLabel en="ADVANCED" accent={AC} className="mb-3">高级设置</SectionLabel>
+                        <div className="space-y-3">
+                            <div>
+                                <FieldLabel hint="决定 findRegex 中的 {{user}} / {{char}} 是否替换为当前名字。">宏替换</FieldLabel>
+                                <div className="relative">
+                                    <select
+                                        className={`${field} appearance-none font-bold`}
+                                        style={fieldBox}
+                                        value={script.substituteRegex}
+                                        onChange={e => set({ substituteRegex: Number(e.target.value) })}
+                                    >
+                                        <option value={substitute_find_regex.NONE}>不替换宏</option>
+                                        <option value={substitute_find_regex.RAW}>替换成名字</option>
+                                        <option value={substitute_find_regex.ESCAPED}>替换成名字并正则转义</option>
+                                    </select>
+                                    <span aria-hidden className="absolute right-4 top-1/2 -translate-y-1/2 text-xs pointer-events-none" style={{ color: INK_SOFT }}>▾</span>
+                                </div>
                             </div>
-                        )}
-                    </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <FieldLabel>最小深度</FieldLabel>
+                                    <input
+                                        className={field}
+                                        style={fieldBox}
+                                        type="number"
+                                        value={script.minDepth ?? ''}
+                                        placeholder="不限"
+                                        onChange={e => set({ minDepth: e.target.value === '' ? null : Number(e.target.value) })}
+                                    />
+                                </div>
+                                <div>
+                                    <FieldLabel>最大深度</FieldLabel>
+                                    <input
+                                        className={field}
+                                        style={fieldBox}
+                                        type="number"
+                                        value={script.maxDepth ?? ''}
+                                        placeholder="不限"
+                                        onChange={e => set({ maxDepth: e.target.value === '' ? null : Number(e.target.value) })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="pb-3">
+                        <SectionLabel en="TEST" accent={AC} className="mb-3">实时测试</SectionLabel>
+                        <div className="rounded-[22px] bg-white p-3 space-y-3" style={{ border: `1px solid ${EDGE}`, boxShadow: '0 18px 40px -28px rgba(38,38,38,0.30)' }}>
+                            <textarea
+                                className={`${monoField} h-24 resize-none`}
+                                style={{ ...fieldBox, background: '#fbfaf8' }}
+                                placeholder="输入一段测试文本，查看替换结果"
+                                value={testInput}
+                                onChange={e => setTestInput(e.target.value)}
+                            />
+                            {testInput && (
+                                <div className="rounded-2xl px-3 py-3 min-h-[3rem] whitespace-pre-wrap break-words text-[12px] leading-relaxed" style={{ background: A.soft, color: A.ink }}>
+                                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-[0.18em] uppercase" style={{ fontFamily: 'var(--font-label)' }}>
+                                        <Play size={11} weight="fill" /> Output
+                                    </div>
+                                    {testOutput || <span style={{ color: INK_SOFT }}>结果为空</span>}
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                </div>
+
+                <div className="px-5 pt-3 pb-2 flex gap-2.5 shrink-0" style={{ borderTop: `1px solid ${EDGE}` }}>
+                    <InsButton variant="soft" accent="slate" onClick={onClose} className="flex-1 py-3 text-[13px]">取消</InsButton>
+                    <InsButton variant="solid" accent={AC} onClick={onSave} className="flex-1 py-3 text-[13px]" icon={<FloppyDisk size={15} weight="bold" />}>
+                        保存
+                    </InsButton>
                 </div>
             </div>
         </div>

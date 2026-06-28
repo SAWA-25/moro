@@ -48,6 +48,7 @@ import {
   CalendarHeart,
   Scissors,
   ForkKnife,
+  Question,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -98,6 +99,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Shop: ({ className }) => <ShoppingBagOpen className={className} weight="bold" />,
   Harem: ({ className }) => <Crown className={className} weight="bold" />,
   Forum: ({ className }) => <ChatsCircle className={className} weight="bold" />,
+  Manual: ({ className }) => <Question className={className} weight="bold" />,
 };
 
 // 顺序即默认桌面顺序：去掉 dock 应用后，前 8 个落在第一页（时钟 + 聊天卡下方）。
@@ -146,6 +148,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },
+  { id: AppID.Manual, name: '说明书', icon: 'Manual', color: 'amber' },
   { id: AppID.Settings, name: '文具盒', icon: 'Settings', color: 'slate' },
   { id: AppID.LifeSim, name: '街角', icon: 'LifeSim', color: 'purple' },
   { id: AppID.CharCreatorDev, name: '捏脸·开发', icon: 'CharCreatorDev', color: 'amber' }, // 仅开发模式显示（Launcher 过滤）
