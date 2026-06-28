@@ -48,6 +48,7 @@ import ProactiveSettingsModal from '../components/chat/ProactiveSettingsModal';
 import LifeRecapModal, { countUnseenCatchup, markLifeRecapSeen } from '../components/chat/LifeRecapModal';
 import ThinkingChainSettingsModal from '../components/chat/ThinkingChainSettingsModal';
 import FriendVerifyModal from '../components/chat/FriendVerifyModal';
+import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
 import { useChatAI } from '../hooks/useChatAI';
 import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
 import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
@@ -543,6 +544,10 @@ const Chat: React.FC = () => {
     const [phoneLockSameScreenChat, setPhoneLockSameScreenChat] = useState(true);
     const [phoneLockTypingDone, setPhoneLockTypingDone] = useState(false);
     const [phoneLockSkipTyping, setPhoneLockSkipTyping] = useState(false);
+    const [phoneLockExitSheetOpen, setPhoneLockExitSheetOpen] = useState(false);
+    const [phoneLockExitCode, setPhoneLockExitCode] = useState('');
+    const [phoneLockExitError, setPhoneLockExitError] = useState('');
+    const [phoneLockExitBusy, setPhoneLockExitBusy] = useState(false);
 
     // Archive Prompts State
     const [archivePrompts, setArchivePrompts] = useState<{id: string, name: string, content: string}[]>(DEFAULT_ARCHIVE_PROMPTS);
@@ -2270,6 +2275,10 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         setPhoneLockSelectedOption(null);
         setPhoneLockTypingDone(false);
         setPhoneLockSkipTyping(false);
+        setPhoneLockExitSheetOpen(false);
+        setPhoneLockExitCode('');
+        setPhoneLockExitError('');
+        setPhoneLockExitBusy(false);
     };
 
     const getPhoneLockQuestionForms = () => {
@@ -2329,6 +2338,79 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
         await updateCharacter(char.id, {
             phoneState: { records: char.phoneState?.records || [], ...char.phoneState, lock },
         });
+    };
+
+    const requestPhoneLockExit = () => {
+        if (phoneLockRunning || phoneLockChatBusy) {
+            addToast(`${char?.name || 'TA'} 还在输入，等一下再离开`, 'info');
+            return;
+        }
+        setPhoneLockExitCode('');
+        setPhoneLockExitError('');
+        setPhoneLockExitSheetOpen(true);
+    };
+
+    const cancelPhoneLockExit = () => {
+        if (phoneLockExitBusy) return;
+        setPhoneLockExitSheetOpen(false);
+        setPhoneLockExitCode('');
+        setPhoneLockExitError('');
+    };
+
+    const submitPhoneLockExit = async () => {
+        const liveChar = charRef.current;
+        const liveLock = liveChar?.phoneState?.lock;
+        if (!liveChar || !liveLock) {
+            setPhoneLockScreenOpen(false);
+            setPhoneLockExitSheetOpen(false);
+            return;
+        }
+        if (!liveLock.passcode) {
+            setPhoneLockExitError('这次没有设置口令答案，只能等 Ta 完成题目自动解锁。');
+            return;
+        }
+        const passcodeInput = sanitizePhoneLockPasscode(phoneLockExitCode);
+        if (!passcodeInput) {
+            setPhoneLockExitError('先代 Ta 输入口令。');
+            return;
+        }
+        setPhoneLockExitBusy(true);
+        setPhoneLockExitError('');
+        const evaluated = evaluatePhoneLockSubmission(liveLock, {
+            passcodeInput,
+            answers: [],
+            reply: `${liveChar.name} 由退出口令解锁离开。`,
+            mood: '想先回到密谈',
+        });
+        if (!evaluated.unlocked) {
+            setPhoneLockExitBusy(false);
+            setPhoneLockExitError('口令不对，Ta 还解不开。');
+            return;
+        }
+        const now = Date.now();
+        await updateCharacter(liveChar.id, {
+            phoneState: { records: liveChar.phoneState?.records || [], ...liveChar.phoneState, lock: evaluated.nextLock },
+        });
+        setPhoneLockAttempt(prev => ({
+            passcodeInput,
+            answers: prev?.answers || [],
+            wantsUnlock: true,
+            reply: prev?.reply || `${liveChar.name} 输对口令，锁屏退回密谈。`,
+            mood: prev?.mood || '终于松了口气',
+            unlocked: true,
+            unlockReason: evaluated.reason,
+            completedQuestionId: evaluated.completedQuestionId,
+        }));
+        setPhoneLockPhase('unlocked');
+        setPhoneLockChat(prev => [
+            ...prev,
+            { id: `sys-exit-${now}`, speaker: 'system', text: `${liveChar.name} 口令正确，解锁离开。`, at: now },
+        ]);
+        setPhoneLockExitBusy(false);
+        setPhoneLockExitSheetOpen(false);
+        setPhoneLockExitCode('');
+        setPhoneLockScreenOpen(false);
+        addToast(`${liveChar.name} 口令正确，已回到密谈`, 'success');
     };
 
     const runPhoneLock = async () => {
@@ -4851,16 +4933,17 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                         className="fixed inset-0 z-[150] flex flex-col animate-fade-in"
                         style={{ background: '#202124', color: '#f5f5f5' }}
                         onClick={(e) => {
+                            if ((e.target as HTMLElement).closest('[data-phone-lock-exit]')) return;
                             if ((e.target as HTMLElement).closest('[data-phone-lock-chat]')) return;
                             advancePhoneLockScreen();
                         }}
                     >
                         <button
                             type="button"
-                            onClick={(e) => { e.stopPropagation(); setPhoneLockScreenOpen(false); }}
+                            onClick={(e) => { e.stopPropagation(); requestPhoneLockExit(); }}
                             className="absolute right-5 top-5 z-[2] px-4 py-2 rounded-full text-[12px] font-bold"
                             style={{ background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.06)', color: '#fff' }}
-                        >结束</button>
+                        >试解锁</button>
 
                         <div className="pt-16 text-center shrink-0">
                             <img src={char.avatar} className="mx-auto w-16 h-16 rounded-2xl object-cover ring-1 ring-white/10 shadow-xl" alt="" />
@@ -4984,6 +5067,21 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                                 </div>
                             </div>
                         )}
+                        <PhoneLockExitUnlockSheet
+                            open={phoneLockExitSheetOpen}
+                            charName={char.name}
+                            clue={phoneLockNote.trim() || PHONE_LOCK_PRESETS[phoneLockPreset].note(userProfile.name || '我')}
+                            value={phoneLockExitCode}
+                            error={phoneLockExitError}
+                            disabledReason={!phoneLockCode ? '这次没有设置口令答案，只能等 Ta 完成题目自动解锁。' : undefined}
+                            busy={phoneLockExitBusy}
+                            onChange={(value) => {
+                                setPhoneLockExitCode(sanitizePhoneLockPasscode(value));
+                                setPhoneLockExitError('');
+                            }}
+                            onCancel={cancelPhoneLockExit}
+                            onSubmit={() => { void submitPhoneLockExit(); }}
+                        />
                     </div>
                 );
              })()}

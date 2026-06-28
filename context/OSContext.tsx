@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { APIConfig, AuxApiConfig, AppID, OSTheme, VirtualTime, CharacterProfile, ChatTheme, Toast, FullBackupData, UserProfile, ApiPreset, GroupProfile, SystemLog, Worldbook, NovelBook, SongSheet, Message, RealtimeConfig, AppearancePreset, CloudBackupConfig, CloudBackupFile, CharLifeEvent } from '../types';
 import { DB } from '../utils/db';
-import { WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
+import { DEFAULT_WB_CATEGORY, WorldbookRuntime, loadGroupTogglesFromStorage, saveGroupTogglesToStorage } from '../utils/worldbookRuntime';
 import { ProactiveChat } from '../utils/proactiveChat';
 import { mirrorProactiveSnapshots, reconcileProactiveFires } from '../utils/mirrorProactive';
 import { advanceLife, isAutonomousLifeEnabled, resolveLifeApi, buildAutonomousProactiveHint, catchUpOfflineLife, CATCHUP_MIN_GAP_MS } from '../utils/autonomousLife';
@@ -251,6 +251,7 @@ interface OSContextType {
   addWorldbook: (wb: Worldbook) => void;
   updateWorldbook: (id: string, updates: Partial<Worldbook>) => Promise<void>;
   deleteWorldbook: (id: string) => void;
+  deleteWorldbookCategory: (category: string) => Promise<void>;
   /** 整书开关（按分组/书名，false = 整书关闭；undefined = 开） */
   worldbookGroupToggles: Record<string, boolean>;
   setWorldbookGroupEnabled: (category: string, enabled: boolean) => void;
@@ -2847,6 +2848,39 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       addToast('世界书已删除 (同步移除角色挂载)', 'success');
   };
 
+  const deleteWorldbookCategory = async (category: string) => {
+      const normalizedCategory = category || DEFAULT_WB_CATEGORY;
+      const deletedBooks = worldbooks.filter(wb => (wb.category || DEFAULT_WB_CATEGORY) === normalizedCategory);
+      if (deletedBooks.length === 0) return;
+
+      const deletedIds = new Set(deletedBooks.map(wb => wb.id));
+      setWorldbooks(prev => prev.filter(wb => (wb.category || DEFAULT_WB_CATEGORY) !== normalizedCategory));
+      await Promise.all(deletedBooks.map(wb => DB.deleteWorldbook(wb.id)));
+
+      setWorldbookGroupToggles(prev => {
+          const next = { ...prev };
+          delete next[normalizedCategory];
+          saveGroupTogglesToStorage(next);
+          return next;
+      });
+
+      const updatedChars = characters.map(char => {
+          const mounted = char.mountedWorldbooks || [];
+          const newMounted = mounted.filter(m => {
+              const mountedCategory = m.category || DEFAULT_WB_CATEGORY;
+              return mountedCategory !== normalizedCategory && !deletedIds.has(m.id);
+          });
+          if (newMounted.length !== mounted.length) {
+              const newChar = { ...char, mountedWorldbooks: newMounted };
+              DB.saveCharacter(newChar);
+              return newChar;
+          }
+          return char;
+      });
+      setCharacters(updatedChars);
+      addToast(`已删除「${normalizedCategory}」及其中 ${deletedBooks.length} 条世界书条目`, 'success');
+  };
+
   // Novel Methods (New)
   const addNovel = async (novel: NovelBook) => {
       setNovels(prev => [novel, ...prev]);
@@ -4136,6 +4170,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     worldbookGroupToggles,
     setWorldbookGroupEnabled,
     deleteWorldbook,
+    deleteWorldbookCategory,
     novels,
     addNovel,
     updateNovel,

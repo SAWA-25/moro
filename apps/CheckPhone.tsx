@@ -8,7 +8,8 @@ import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
 import { buildPhoneCityHint } from '../utils/charCity';
-import { isPhoneLocked } from '../utils/phoneLock';
+import { evaluatePhoneLockSubmission, isPhoneLocked, sanitizePhoneLockPasscode } from '../utils/phoneLock';
+import PhoneLockExitUnlockSheet from '../components/chat/PhoneLockExitUnlockSheet';
 import {
     User, Phone, ChatCircleDots, ShoppingBag, Hamburger, CircleNotch, Wrench, Compass, GearSix, Tray, Plus, SignOut,
     NotePencil, Wallet, MusicNotes, ImageSquare, Heartbeat, CalendarBlank, GlobeHemisphereWest, MagicWand, Quotes,
@@ -120,6 +121,10 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
     const [showMomentComposer, setShowMomentComposer] = useState(false);
     const [momentText, setMomentText] = useState('');
     const [intrusionNotice, setIntrusionNotice] = useState<{ title: string; body: string; shouldExit?: boolean } | null>(null);
+    const [phoneLockExitOpen, setPhoneLockExitOpen] = useState(false);
+    const [phoneLockExitCode, setPhoneLockExitCode] = useState('');
+    const [phoneLockExitError, setPhoneLockExitError] = useState('');
+    const [phoneLockExitBusy, setPhoneLockExitBusy] = useState(false);
 
     // Debug Toggle
     const [showDebug, setShowDebug] = useState(false);
@@ -200,6 +205,56 @@ const CheckPhone: React.FC<CheckPhoneProps> = ({ initialCharId, onExit, onConfro
         setView('select');
         setTargetChar(null);
         setActiveAppId('home');
+    };
+
+    const requestPhoneLockExit = () => {
+        setPhoneLockExitCode('');
+        setPhoneLockExitError('');
+        setPhoneLockExitOpen(true);
+    };
+
+    const cancelPhoneLockExit = () => {
+        if (phoneLockExitBusy) return;
+        setPhoneLockExitOpen(false);
+        setPhoneLockExitCode('');
+        setPhoneLockExitError('');
+    };
+
+    const submitPhoneLockExit = async () => {
+        if (!targetChar || !activePhoneLock) {
+            handleExitPhone();
+            return;
+        }
+        if (!activePhoneLock.passcode) {
+            setPhoneLockExitError('这次没有设置口令答案，只能等 Ta 完成题目自动解锁。');
+            return;
+        }
+        const passcodeInput = sanitizePhoneLockPasscode(phoneLockExitCode);
+        if (!passcodeInput) {
+            setPhoneLockExitError('先代 Ta 输入口令。');
+            return;
+        }
+        setPhoneLockExitBusy(true);
+        setPhoneLockExitError('');
+        const evaluated = evaluatePhoneLockSubmission(activePhoneLock, {
+            passcodeInput,
+            answers: [],
+            reply: `${targetChar.name} 由退出口令解锁离开。`,
+            mood: '想先回到密谈',
+        });
+        if (!evaluated.unlocked) {
+            setPhoneLockExitBusy(false);
+            setPhoneLockExitError('口令不对，Ta 还解不开。');
+            return;
+        }
+        await updateCharacter(targetChar.id, {
+            phoneState: { records: targetChar.phoneState?.records || [], ...targetChar.phoneState, lock: evaluated.nextLock },
+        });
+        addToast(`${targetChar.name} 口令正确，已回到密谈`, 'success');
+        setPhoneLockExitBusy(false);
+        setPhoneLockExitOpen(false);
+        setPhoneLockExitCode('');
+        handleExitPhone();
     };
 
     const handleDeleteRecord = async (record: PhoneEvidence) => {
@@ -968,11 +1023,11 @@ Format:
                         <span className="tracking-[0.16em]">5G 60%</span>
                     </div>
                     <button
-                        onClick={handleExitPhone}
+                        onClick={requestPhoneLockExit}
                         className="absolute right-4 top-12 z-10 px-3 py-1.5 rounded-full text-[11px] font-bold active:scale-95"
                         style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
                     >
-                        离开
+                        试解锁
                     </button>
                     <div className="px-6 pt-12 text-center">
                         {targetChar?.avatar && <img src={targetChar.avatar} className="mx-auto w-16 h-16 rounded-2xl object-cover ring-1 ring-white/15 shadow-xl" alt="" />}
@@ -1134,6 +1189,22 @@ Format:
                     return null;
                 })()
             )}
+
+            <PhoneLockExitUnlockSheet
+                open={phoneLockExitOpen}
+                charName={targetChar?.name}
+                clue={activePhoneLock?.note || activePhoneLock?.message}
+                value={phoneLockExitCode}
+                error={phoneLockExitError}
+                disabledReason={activePhoneLock && !activePhoneLock.passcode ? '这次没有设置口令答案，只能等 Ta 完成题目自动解锁。' : undefined}
+                busy={phoneLockExitBusy}
+                onChange={(value) => {
+                    setPhoneLockExitCode(sanitizePhoneLockPasscode(value));
+                    setPhoneLockExitError('');
+                }}
+                onCancel={cancelPhoneLockExit}
+                onSubmit={() => { void submitPhoneLockExit(); }}
+            />
 
             <Modal
                 isOpen={showMomentComposer}

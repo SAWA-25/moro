@@ -1,19 +1,16 @@
 /**
  * 剪报夹 —— 世界书（Lorebook）管理，黑白拼贴手账风界面。
  *
- * 词汇对照（代码字段 / ST 语义不变，只换了说法）：
- *  - 剪报 = 一条世界书条目；卷册 = category 分组（同一卷 = 同一本书）
- *  - 钉死 = 常驻注入（ST 蓝灯 constant）；暗号 = 关键词触发（ST 绿灯）
- *  - 满世界跟着 = 全局 scope；随卷出场 = 局部 scope（需角色挂载）
- *  - 整卷封存 = 整书开关关闭
- * 功能与旧版完全一致：条目/整书开关、局部/全局、插入位置（含 @深度）、顺序、
- * 关键词激活（主/二级暗号、Selective、大小写、扫描深度、演练台）、ST 导入信息展示。
+ * 一条 Worldbook 记录是一条世界书条目；category 分组是一整本世界书。
+ * 支持条目/整书开关、局部/全局作用域、插入位置（含 @Depth）、顺序、
+ * 关键词触发、SillyTavern 导入信息展示，以及按整本世界书删除。
  */
 import React, { useState, useMemo, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { Worldbook, WorldbookPosition } from '../types';
 import { Scissors, NotePencil, Trash, NewspaperClipping, X, Key, UploadSimple } from '@phosphor-icons/react';
 import { importWorldbookFromFile } from '../utils/worldbookImport';
+import { DEFAULT_WB_CATEGORY } from '../utils/worldbookRuntime';
 
 // ── ins 风设计 token（剪报夹 = indigo 强调） ─────────────
 const INK = '#26242a';
@@ -33,15 +30,15 @@ const Tape: React.FC<{ className?: string }> = ({ className }) => (
 const POSITION_OPTIONS: { value: WorldbookPosition; label: string }[] = [
     { value: 'before_char', label: '角色卡之前（↑CHAR）' },
     { value: 'after_char', label: '角色卡之后（↓CHAR · 默认）' },
-    { value: 'depth_system', label: '夹进对话 · 旁白口吻（@深度）' },
-    { value: 'depth_user', label: '夹进对话 · 你的口吻（@深度）' },
-    { value: 'depth_assistant', label: '夹进对话 · TA 的口吻（@深度）' },
+    { value: 'depth_system', label: '插入聊天历史 · system（@Depth）' },
+    { value: 'depth_user', label: '插入聊天历史 · user（@Depth）' },
+    { value: 'depth_assistant', label: '插入聊天历史 · assistant（@Depth）' },
 ];
 
 const positionLabel = (p?: WorldbookPosition) =>
     POSITION_OPTIONS.find(o => o.value === (p || 'after_char'))?.label || '角色卡之后';
 
-/** 墨块开关（剪报/整卷共用）：方形手账开关，黑=开 */
+/** 条目/整书共用开关。 */
 const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?: string }> = ({ on, onChange, title }) => (
     <button
         onClick={(e) => { e.stopPropagation(); onChange(!on); }}
@@ -54,7 +51,7 @@ const InkSwitch: React.FC<{ on: boolean; onChange: (on: boolean) => void; title?
 );
 
 const WorldbookApp: React.FC = () => {
-    const { closeApp, worldbooks, addWorldbook, updateWorldbook, deleteWorldbook, addToast, worldbookGroupToggles, setWorldbookGroupEnabled } = useOS();
+    const { closeApp, worldbooks, addWorldbook, updateWorldbook, deleteWorldbook, deleteWorldbookCategory, addToast, worldbookGroupToggles, setWorldbookGroupEnabled } = useOS();
 
     // View State
     const [isEditing, setIsEditing] = useState(false);
@@ -71,16 +68,17 @@ const WorldbookApp: React.FC = () => {
     const [tempPosition, setTempPosition] = useState<WorldbookPosition>('after_char');
     const [tempDepth, setTempDepth] = useState(4);
     const [tempOrder, setTempOrder] = useState(100);
-    // 暗号出场（ST 绿灯条目移植）
+    // 关键词触发（ST 绿灯条目移植）
     const [tempActivation, setTempActivation] = useState<'always' | 'keyword'>('always');
     const [tempKeys, setTempKeys] = useState('');
     const [tempSecondaryKeys, setTempSecondaryKeys] = useState('');
     const [tempSelective, setTempSelective] = useState(false);
     const [tempCaseSensitive, setTempCaseSensitive] = useState(false);
     const [tempScanDepth, setTempScanDepth] = useState(4);
-    // 暗号演练台：粘贴一段聊天文本，实时演练本条剪报会不会出场
+    // 关键词测试：粘贴一段聊天文本，实时测试本条条目会不会注入。
     const [scanTestText, setScanTestText] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleteCategoryConfirm, setDeleteCategoryConfirm] = useState<{ category: string; count: number } | null>(null);
 
     const parseKeys = (raw: string): string[] =>
         raw.split(/[,，]/).map(s => s.trim()).filter(Boolean);
@@ -94,7 +92,7 @@ const WorldbookApp: React.FC = () => {
         const keys = parseKeys(tempKeys);
         const secondary = parseKeys(tempSecondaryKeys);
         if (!scanTestText.trim()) return null;
-        if (keys.length === 0) return { triggered: false, hitKeys: [], hitSecondary: [], reason: '还没留下任何可用的暗号' };
+        if (keys.length === 0) return { triggered: false, hitKeys: [], hitSecondary: [], reason: '请先填写主关键词' };
 
         const lines = scanTestText.replace(/\r\n/g, '\n').split('\n').filter(l => l.trim());
         const depth = Math.max(1, tempScanDepth || 4);
@@ -105,10 +103,10 @@ const WorldbookApp: React.FC = () => {
         const hitKeys = keys.filter(hit);
         const hitSecondary = secondary.filter(hit);
         if (hitKeys.length === 0) {
-            return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息里没对上任何暗号` };
+            return { triggered: false, hitKeys, hitSecondary, reason: `最近 ${Math.min(depth, lines.length)} 条消息未命中主关键词` };
         }
         if (tempSelective && secondary.length > 0 && hitSecondary.length === 0) {
-            return { triggered: false, hitKeys, hitSecondary, reason: '主暗号对上了，但二级暗号一个都没对上（开着「需同时对上二级暗号」）' };
+            return { triggered: false, hitKeys, hitSecondary, reason: '已命中主关键词，但未命中二级关键词' };
         }
         return { triggered: true, hitKeys, hitSecondary, reason: '' };
     }, [tempActivation, tempKeys, tempSecondaryKeys, tempSelective, tempCaseSensitive, tempScanDepth, scanTestText]);
@@ -116,10 +114,9 @@ const WorldbookApp: React.FC = () => {
     // Grouping Logic
     const groupedBooks = useMemo(() => {
         const groups: Record<string, Worldbook[]> = {};
-        const defaultCat = '未分类设定 (General)';
 
         worldbooks.forEach(wb => {
-            const cat = wb.category || defaultCat;
+            const cat = wb.category || DEFAULT_WB_CATEGORY;
             if (!groups[cat]) groups[cat] = [];
             groups[cat].push(wb);
         });
@@ -191,14 +188,14 @@ const WorldbookApp: React.FC = () => {
 
     const handleSave = async () => {
         if (!tempTitle.trim()) {
-            addToast('这条剪报还没有标题', 'error');
+            addToast('请填写条目标题', 'error');
             return;
         }
 
-        const category = tempCategory.trim() || '未分类设定 (General)';
+        const category = tempCategory.trim() || DEFAULT_WB_CATEGORY;
         const keys = parseKeys(tempKeys);
         if (tempActivation === 'keyword' && keys.length === 0) {
-            addToast('暗号出场模式至少要留一个暗号', 'error');
+            addToast('关键词触发模式至少需要 1 个主关键词', 'error');
             return;
         }
         const settings = {
@@ -222,7 +219,7 @@ const WorldbookApp: React.FC = () => {
                 category: category,
                 ...settings,
             });
-            addToast('贴牢了（已同步到相关角色）', 'success');
+            addToast('条目已保存，并同步相关角色挂载', 'success');
         } else {
             const newBook: Worldbook = {
                 id: `wb-${Date.now()}`,
@@ -234,7 +231,7 @@ const WorldbookApp: React.FC = () => {
                 ...settings,
             };
             addWorldbook(newBook);
-            addToast('新剪报已夹进卷里', 'success');
+            addToast('世界书条目已创建', 'success');
         }
         setIsEditing(false);
     };
@@ -248,11 +245,27 @@ const WorldbookApp: React.FC = () => {
     const confirmDelete = () => {
         if (editingBook) {
             deleteWorldbook(editingBook.id);
-            // Toast logic handled in Context
             setShowDeleteConfirm(false);
             setEditingBook(null);
             setIsEditing(false);
         }
+    };
+
+    const requestDeleteCategory = (e: React.MouseEvent, category: string, count: number) => {
+        e.stopPropagation();
+        setDeleteCategoryConfirm({ category, count });
+    };
+
+    const confirmDeleteCategory = async () => {
+        if (!deleteCategoryConfirm) return;
+        await deleteWorldbookCategory(deleteCategoryConfirm.category);
+        if (expandedCategory === deleteCategoryConfirm.category) setExpandedCategory(null);
+        if (editingBook && (editingBook.category || DEFAULT_WB_CATEGORY) === deleteCategoryConfirm.category) {
+            setEditingBook(null);
+            setIsEditing(false);
+        }
+        if (previewBookId) setPreviewBookId(null);
+        setDeleteCategoryConfirm(null);
     };
 
     const toggleCategory = (cat: string) => {
@@ -263,10 +276,10 @@ const WorldbookApp: React.FC = () => {
         setPreviewBookId(previewBookId === id ? null : id);
     };
 
-    // 出场方式小戳：钉死（常驻）= 实心，暗号 = 钥匙
+    // 触发方式标签：常驻（ST constant）或关键词触发。
     const triggerStamp = (book: Worldbook) => book.activation === 'keyword'
-        ? <span className="inline-flex items-center gap-0.5"><Key size={10} weight="bold" />暗号</span>
-        : <span>■ 钉死</span>;
+        ? <span className="inline-flex items-center gap-0.5"><Key size={10} weight="bold" />关键词</span>
+        : <span>常驻</span>;
 
     // ── 编辑页（全屏纸面） ────────────────────────────────
     if (isEditing) {
@@ -274,23 +287,23 @@ const WorldbookApp: React.FC = () => {
             <div className="h-full w-full bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
                 <div className="relative flex items-center gap-3 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30 shrink-0">
                     <button onClick={() => setIsEditing(false)} className={`px-2.5 py-2 rotate-[-2deg] text-[10px] font-black ${STICKER}`}>
-                        ✕ 不改了
+                        取消
                     </button>
                     <div className="flex-1 min-w-0">
-                        <div className="label-mono text-[8px] text-[#26242a]/45">{editingBook ? 'RE-CLIP' : 'NEW CLIP'}</div>
-                        <h2 className="text-lg font-black tracking-wide truncate">{editingBook ? '修剪这条剪报' : '新剪一条'}</h2>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">{editingBook ? 'EDIT ENTRY' : 'NEW ENTRY'}</div>
+                        <h2 className="text-lg font-black tracking-wide truncate">{editingBook ? '编辑世界书条目' : '新建世界书条目'}</h2>
                     </div>
                     <button
                         onClick={handleSave}
                         className="px-4 py-2 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft rotate-[1.5deg]"
                     >
-                        贴牢
+                        保存
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto no-scrollbar p-4 space-y-5">
                     <div>
-                        <label className="label-mono text-[8px] text-[#26242a]/45 block">剪报标题 / HEADLINE</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 block">条目标题 / TITLE</label>
                         <input
                             value={tempTitle}
                             onChange={e => setTempTitle(e.target.value)}
@@ -300,7 +313,7 @@ const WorldbookApp: React.FC = () => {
                     </div>
 
                     <div>
-                        <label className="label-mono text-[8px] text-[#26242a]/45 block">归入哪一卷 / VOLUME</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 block">所属世界书 / CATEGORY</label>
                         <input
                             value={tempCategory}
                             onChange={e => setTempCategory(e.target.value)}
@@ -313,44 +326,44 @@ const WorldbookApp: React.FC = () => {
                                 <option key={cat} value={cat} />
                             ))}
                         </datalist>
-                        <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>✎ 写同一个卷名就归进同一卷（同一卷 = 同一本世界书）。</p>
+                        <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>相同分类名会归入同一本世界书。</p>
                     </div>
 
-                    {/* 剪报级设置：开关 / 贴在哪里 / 位置 / 深度 / 顺序 */}
+                    {/* 条目级设置：开关 / 作用域 / 位置 / 深度 / 顺序 */}
                     <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-4 space-y-4">
                         <Tape className="-top-2.5 left-6 rotate-[-4deg]" />
                         <div className="flex items-center justify-between">
                             <div>
-                                <label className="text-[11px] font-black block">这条剪报的开关</label>
-                                <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>关掉之后，任何场合都不会被寄出去</p>
+                                <label className="text-[11px] font-black block">条目开关</label>
+                                <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>关闭后，这条条目不会注入任何聊天上下文。</p>
                             </div>
                             <InkSwitch on={tempEnabled} onChange={setTempEnabled} />
                         </div>
 
                         <div>
-                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">贴在哪里 / SCOPE</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">作用域 / SCOPE</label>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => setTempScope('local')}
                                     className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${tempScope === 'local' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
-                                    随卷出场（要挂载）
+                                    局部（需挂载）
                                 </button>
                                 <button
                                     onClick={() => setTempScope('global')}
                                     className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] ${tempScope === 'global' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
-                                    满世界跟着（全局）
+                                    全局（自动生效）
                                 </button>
                             </div>
                             <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                ✎ 随卷出场：要在「聊天手帐 → 剪报夹页」里夹上这一卷才寄出。满世界跟着：任何聊天都自动带上，不用挂载。两边同时有货时，先写随卷的、再写全局的。
+                                局部条目需要在聊天设置中挂载对应世界书后才会注入；全局条目会在所有聊天中自动注入。局部和全局同时生效时，局部内容排在全局内容前。
                             </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className={tempPosition.startsWith('depth_') ? '' : 'col-span-2'}>
-                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">插进信里的位置 / POSITION</label>
+                                <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">注入位置 / POSITION</label>
                                 <div className="relative">
                                     <select
                                         value={tempPosition}
@@ -366,7 +379,7 @@ const WorldbookApp: React.FC = () => {
                             </div>
                             {tempPosition.startsWith('depth_') && (
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">夹在第几层</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">Depth 值</label>
                                     <input
                                         type="number" min={0}
                                         value={tempDepth}
@@ -386,36 +399,36 @@ const WorldbookApp: React.FC = () => {
                                 className="w-full bg-white border border-black/10 rounded-xl/60 px-3 py-2 text-xs font-bold outline-none focus:border-[#1c1b1a]"
                             />
                             <p className="text-[12px] text-[#26242a]/55 mt-1 leading-relaxed" style={HAND_CN}>
-                                ✎ 同一个位置里，数字小的排前面（和 SillyTavern 最终生效顺序一致）。「夹进对话」= 以所选口吻插到聊天记录倒数第 N 条处（0 = 紧贴最末尾）。
+                                同一注入位置内，数字小的条目排在前面（与 SillyTavern 最终生效顺序一致）。@Depth 会把条目插入聊天历史倒数第 N 条处（0 = 最末尾）。
                             </p>
                         </div>
 
-                        {/* 出场方式（ST 蓝灯/绿灯移植） */}
+                        {/* 触发方式（ST 蓝灯/绿灯移植） */}
                         <div>
-                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">出场方式 / TRIGGER</label>
+                            <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">触发方式 / TRIGGER</label>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => setTempActivation('always')}
                                     className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[-0.5deg] ${tempActivation === 'always' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
-                                    ■ 钉死（每次都在）
+                                    常驻（每次注入）
                                 </button>
                                 <button
                                     onClick={() => setTempActivation('keyword')}
                                     className={`flex-1 py-2 text-[10px] font-black border border-black/10 rounded-xl transition-all rotate-[0.5deg] flex items-center justify-center gap-1 ${tempActivation === 'keyword' ? 'bg-[#1c1b1a] text-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]' : 'bg-white shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'}`}
                                 >
-                                    <Key size={11} weight="bold" /> 对上暗号才出场
+                                    <Key size={11} weight="bold" /> 关键词触发
                                 </button>
                             </div>
                             <p className="text-[12px] text-[#26242a]/55 mt-1.5 leading-relaxed" style={HAND_CN}>
-                                ✎ 钉死：开关开着就每次寄出（ST 蓝灯）。暗号：翻最近的聊天，提到暗号才出场（ST 绿灯）——大部头设定按需登场，省墨水（token）。
+                                常驻：开关开启时每次注入（ST 蓝灯）。关键词触发：扫描最近聊天消息，命中关键词后才注入（ST 绿灯），适合按需启用的大段设定。
                             </p>
                         </div>
 
                         {tempActivation === 'keyword' && (
                             <div className="space-y-3 border-2 border-dashed border-[#1c1b1a]/40 p-3">
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">触发暗号（逗号分隔，对上任何一个就出场）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">主关键词（逗号分隔，命中任意一个即可触发）</label>
                                     <input
                                         value={tempKeys}
                                         onChange={e => setTempKeys(e.target.value)}
@@ -424,7 +437,7 @@ const WorldbookApp: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">二级暗号（可选，逗号分隔）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">二级关键词（可选，逗号分隔）</label>
                                     <input
                                         value={tempSecondaryKeys}
                                         onChange={e => setTempSecondaryKeys(e.target.value)}
@@ -434,13 +447,13 @@ const WorldbookApp: React.FC = () => {
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <label className="text-[11px] font-black block">需同时对上二级暗号</label>
-                                        <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>开着：主暗号 + 任一二级暗号都对上才出场（Selective）</p>
+                                        <label className="text-[11px] font-black block">要求同时命中二级关键词</label>
+                                        <p className="text-[12px] text-[#26242a]/50 mt-0.5" style={HAND_CN}>开启后，需要主关键词 + 任一二级关键词同时命中（Selective）。</p>
                                     </div>
                                     <InkSwitch on={tempSelective} onChange={setTempSelective} />
                                 </div>
                                 <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-black">暗号分大小写</label>
+                                    <label className="text-[11px] font-black">关键词区分大小写</label>
                                     <InkSwitch on={tempCaseSensitive} onChange={setTempCaseSensitive} />
                                 </div>
                                 <div>
@@ -453,9 +466,9 @@ const WorldbookApp: React.FC = () => {
                                     />
                                 </div>
 
-                                {/* 暗号演练台：和聊天注入用同一套判定逻辑，编辑时即可演练 */}
+                                {/* 关键词测试：和聊天注入用同一套判定逻辑，编辑时即可验证。 */}
                                 <div className="pt-2 border-t border-dashed border-[#1c1b1a]/30">
-                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">暗号演练台（贴一段聊天进来，每行算一条消息）</label>
+                                    <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">关键词测试（每行视为一条消息）</label>
                                     <textarea
                                         value={scanTestText}
                                         onChange={e => setScanTestText(e.target.value)}
@@ -464,12 +477,12 @@ const WorldbookApp: React.FC = () => {
                                     />
                                     {scanTestResult && (
                                         <div className={`mt-2 px-3 py-2 text-[11px] leading-relaxed border-2 ${scanTestResult.triggered ? 'border-[#1c1b1a] bg-[#1c1b1a] text-white' : 'border-dashed border-[#1c1b1a]/60 bg-white'}`}>
-                                            <div className="font-black mb-0.5">{scanTestResult.triggered ? '✓ 会出场，剪报照常寄出' : '✗ 不会出场'}</div>
+                                            <div className="font-black mb-0.5">{scanTestResult.triggered ? '✓ 会注入该条目' : '✗ 不会注入该条目'}</div>
                                             {scanTestResult.hitKeys.length > 0 && (
-                                                <div>对上的暗号：{scanTestResult.hitKeys.join('、')}</div>
+                                                <div>命中的主关键词：{scanTestResult.hitKeys.join('、')}</div>
                                             )}
                                             {scanTestResult.hitSecondary.length > 0 && (
-                                                <div>对上的二级暗号：{scanTestResult.hitSecondary.join('、')}</div>
+                                                <div>命中的二级关键词：{scanTestResult.hitSecondary.join('、')}</div>
                                             )}
                                             {!scanTestResult.triggered && <div>{scanTestResult.reason}</div>}
                                         </div>
@@ -480,11 +493,11 @@ const WorldbookApp: React.FC = () => {
                     </div>
 
                     <div className="pb-6">
-                        <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">剪报内容 / CLIPPING</label>
+                        <label className="label-mono text-[8px] text-[#26242a]/45 mb-1.5 block">条目内容 / CONTENT</label>
                         <textarea
                             value={tempContent}
                             onChange={e => setTempContent(e.target.value)}
-                            placeholder="把设定誊在这里，Markdown 随便用…"
+                            placeholder="填写要注入聊天上下文的设定内容，可使用 Markdown。"
                             className="w-full h-72 bg-white border border-black/10 rounded-xl/60 px-3 py-0 text-xs resize-none outline-none focus:border-[#1c1b1a] placeholder:text-[#26242a]/25"
                             style={RULED_BG}
                         />
@@ -494,24 +507,24 @@ const WorldbookApp: React.FC = () => {
         );
     }
 
-    // ── 列表页（卷册 + 剪报） ─────────────────────────────
+    // ── 列表页（世界书 + 条目） ───────────────────────────
     return (
         <div className="h-full w-full relative overflow-hidden bg-[#f7f5f2] text-[#26242a] flex flex-col animate-fade-in" style={{ ...DOT_BG, paddingTop: 'var(--safe-top)' }}>
             {/* 刊头 */}
             <div className="relative shrink-0 px-4 pt-3 pb-3 border-b-2 border-dashed border-[#1c1b1a]/30">
                 <div className="flex items-center gap-3">
-                    <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`} title="合上剪报夹">
+                    <button onClick={closeApp} className={`shrink-0 px-2.5 py-2 rotate-[-2deg] flex items-center gap-1 ${STICKER}`} title="关闭剪报夹">
                         <svg viewBox="0 0 24 24" fill="none" stroke={INK} strokeWidth={2.5} className="w-3.5 h-3.5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
                         </svg>
-                        <span className="text-[10px] font-black">合上</span>
+                        <span className="text-[10px] font-black">返回</span>
                     </button>
                     <div className="flex-1 min-w-0 relative">
                         <Tape className="-top-4 left-8 rotate-[-5deg] w-12" />
-                        <div className="label-mono text-[8px] text-[#26242a]/45">CLIPPINGS BINDER — LOREBOOK</div>
+                        <div className="label-mono text-[8px] text-[#26242a]/45">WORLDBOOK MANAGER</div>
                         <div className="flex items-baseline gap-2">
                             <h1 className="text-2xl font-black tracking-[0.08em]">剪报夹</h1>
-                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>世界观、人物、暗号，都剪下来夹好</span>
+                            <span className="text-sm text-[#26242a]/55 truncate" style={HAND_CN}>管理世界书分组、条目开关、关键词触发和注入位置</span>
                         </div>
                     </div>
                     <div className="shrink-0 w-12 h-12 rounded-full border-2 border-dashed border-[#1c1b1a]/60 flex flex-col items-center justify-center rotate-[6deg] select-none">
@@ -521,14 +534,14 @@ const WorldbookApp: React.FC = () => {
                 </div>
             </div>
 
-            {/* 卷册列表 */}
+            {/* 世界书列表 */}
             <div className="flex-1 overflow-y-auto no-scrollbar p-4 pb-28 space-y-5">
                 {Object.keys(groupedBooks).length === 0 && (
                     <div className="relative bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] p-6 rotate-[-0.6deg] text-center space-y-2">
                         <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[2deg]" />
                         <NewspaperClipping size={36} weight="bold" className="mx-auto text-[#26242a]/40" />
-                        <p className="text-lg" style={HAND_CN}>夹子还是空的。</p>
-                        <p className="text-xs text-[#26242a]/55 leading-relaxed">点右下角的剪刀，把第一条设定剪下来贴进去。</p>
+                        <p className="text-lg" style={HAND_CN}>暂无世界书条目</p>
+                        <p className="text-xs text-[#26242a]/55 leading-relaxed">点击右下角“新建条目”，或导入 .json / .zip 世界书文件。</p>
                     </div>
                 )}
 
@@ -537,7 +550,7 @@ const WorldbookApp: React.FC = () => {
                     const open = expandedCategory === category;
                     return (
                         <div key={category} className={`animate-slide-up transition-opacity ${bookEnabled ? '' : 'opacity-55'}`}>
-                            {/* 卷脊（分组 = 一卷 = 一本世界书） */}
+                            {/* 世界书标题行（分组 = 一本世界书） */}
                             <div
                                 onClick={() => toggleCategory(category)}
                                 className={`relative bg-white border border-black/10 rounded-xl px-3 py-2.5 flex items-center gap-2 cursor-pointer select-none ${open ? 'shadow-none translate-x-[2px] translate-y-[2px]' : 'shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)]'} transition-all`}
@@ -545,22 +558,29 @@ const WorldbookApp: React.FC = () => {
                                 <span className={`text-sm font-black transition-transform inline-block ${open ? 'rotate-90' : ''}`}>▸</span>
                                 <h3 className="text-sm font-black truncate">{category}</h3>
                                 <span className="label-mono text-[8px] border border-[#1c1b1a]/50 px-1 py-0.5 shrink-0">{books.length} 条</span>
-                                {!bookEnabled && <span className="label-mono text-[8px] bg-[#1c1b1a] text-white px-1.5 py-0.5 rotate-[-2deg] shrink-0">整卷封存</span>}
+                                {!bookEnabled && <span className="label-mono text-[8px] bg-[#1c1b1a] text-white px-1.5 py-0.5 rotate-[-2deg] shrink-0">整书停用</span>}
                                 <div className="ml-auto flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                                    <span className="text-[11px] text-[#26242a]/50" style={HAND_CN}>整卷</span>
+                                    <button
+                                        onClick={(e) => requestDeleteCategory(e, category, books.length)}
+                                        className={`p-1.5 rotate-[2deg] ${STICKER}`}
+                                        title="删除整本世界书"
+                                    >
+                                        <Trash size={13} weight="bold" color={INK} />
+                                    </button>
+                                    <span className="text-[11px] text-[#26242a]/50" style={HAND_CN}>整书</span>
                                     <InkSwitch
                                         on={bookEnabled}
-                                        onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `《${category}》整卷已展开` : `《${category}》整卷已封存（所有剪报暂停寄出）`, 'info'); }}
-                                        title="封存后这一卷的所有剪报（包括全局的）都不再寄出"
+                                        onChange={(on) => { setWorldbookGroupEnabled(category, on); addToast(on ? `「${category}」已启用` : `「${category}」已停用（该书所有条目暂停注入）`, 'info'); }}
+                                        title="关闭后，这本世界书的所有条目（包括全局条目）都不会注入"
                                     />
                                 </div>
                             </div>
 
-                            {/* 卷里的剪报 */}
+                            {/* 世界书条目 */}
                             <div className={`space-y-3 pl-3 border-l-2 border-dashed border-[#1c1b1a]/30 ml-2 transition-all duration-300 overflow-hidden ${open ? 'max-h-[1000px] opacity-100 mt-3 pb-1' : 'max-h-0 opacity-0'}`}>
                                 {books.map((book, i) => (
                                     <div key={book.id} className={`relative bg-white border border-black/10 rounded-xl/45 shadow-sm ${i % 2 === 0 ? 'rotate-[-0.3deg]' : 'rotate-[0.3deg]'}`}>
-                                        {/* 剪报头 */}
+                                        {/* 条目头 */}
                                         <div
                                             onClick={() => togglePreview(book.id)}
                                             className="p-3 cursor-pointer flex items-start gap-2"
@@ -573,12 +593,12 @@ const WorldbookApp: React.FC = () => {
                                                             e.stopPropagation();
                                                             const next = book.scope === 'global' ? 'local' : 'global';
                                                             updateWorldbook(book.id, { scope: next });
-                                                            addToast(next === 'global' ? `「${book.title}」现在满世界跟着（所有聊天生效）` : `「${book.title}」收回卷里了（要挂载这一卷才出场）`, 'info');
+                                                            addToast(next === 'global' ? `「${book.title}」已设为全局条目` : `「${book.title}」已设为局部条目（需挂载世界书）`, 'info');
                                                         }}
-                                                        title="点一下在 随卷 / 全局 之间换"
+                                                        title="切换局部 / 全局作用域"
                                                         className={`label-mono text-[8px] px-1.5 py-0.5 border shrink-0 transition-colors ${book.scope === 'global' ? 'bg-[#1c1b1a] text-white border-[#1c1b1a]' : 'bg-white text-[#26242a]/70 border-[#1c1b1a]/50'}`}
                                                     >
-                                                        {book.scope === 'global' ? '全局' : '随卷'}
+                                                        {book.scope === 'global' ? '全局' : '局部'}
                                                     </button>
                                                 </div>
                                                 <div className="label-mono text-[8px] text-[#26242a]/45 truncate flex items-center gap-1.5">
@@ -587,7 +607,7 @@ const WorldbookApp: React.FC = () => {
                                                 </div>
                                                 {book.activation === 'keyword' && (book.keys?.length || 0) > 0 && (
                                                     <div className="text-[11px] text-[#26242a]/50 truncate mt-0.5" style={HAND_CN}>
-                                                        暗号：{book.keys!.slice(0, 3).join(' / ')}{book.keys!.length > 3 ? '…' : ''}
+                                                        关键词：{book.keys!.slice(0, 3).join(' / ')}{book.keys!.length > 3 ? '…' : ''}
                                                     </div>
                                                 )}
                                             </div>
@@ -596,26 +616,26 @@ const WorldbookApp: React.FC = () => {
                                                 <InkSwitch
                                                     on={book.enabled !== false}
                                                     onChange={(on) => updateWorldbook(book.id, { enabled: on })}
-                                                    title="这条剪报的开关"
+                                                    title="条目开关"
                                                 />
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleEdit(book); }}
                                                     className={`p-1.5 ${STICKER}`}
-                                                    title="修剪这条"
+                                                    title="编辑条目"
                                                 >
                                                     <NotePencil size={13} weight="bold" color={INK} />
                                                 </button>
                                                 <button
                                                     onClick={(e) => requestDelete(e, book)}
                                                     className={`p-1.5 rotate-[2deg] ${STICKER}`}
-                                                    title="把这条丢掉"
+                                                    title="删除条目"
                                                 >
                                                     <Trash size={13} weight="bold" color={INK} />
                                                 </button>
                                             </div>
                                         </div>
 
-                                        {/* 展开的剪报正文 */}
+                                        {/* 展开的条目正文 */}
                                         {previewBookId === book.id && (
                                             <div className="px-3 pb-3 pt-0 animate-fade-in">
                                                 <div className="border-t border-dashed border-[#1c1b1a]/30 mb-2.5" />
@@ -623,20 +643,20 @@ const WorldbookApp: React.FC = () => {
                                                     （新导入自动启用；旧导入条目在编辑器里保存一次即可接上） */}
                                                 {book.source === 'sillytavern' && (
                                                     <div className="mb-2.5 flex flex-wrap gap-1.5 label-mono text-[8px]">
-                                                        <span className="px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[-1deg]">ST 舶来</span>
+                                                        <span className="px-1.5 py-0.5 bg-[#1c1b1a] text-white rotate-[-1deg]">ST 导入</span>
                                                         {book.stData?.entry && (
                                                             <>
                                                                 <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">
-                                                                    {book.stData.entry.constant ? '■ 钉死 (constant)' : '⚿ 暗号出场'}
+                                                                    {book.stData.entry.constant ? '常驻 (constant)' : '关键词触发'}
                                                                 </span>
                                                                 {book.stData.entry.enabled === false && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a] bg-white line-through">原卡里就停用</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a] bg-white line-through">原卡停用</span>
                                                                 )}
                                                                 {(book.stData.entry.keys?.length || 0) > 0 && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">暗号: {book.stData.entry.keys!.join(', ')}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">关键词: {book.stData.entry.keys!.join(', ')}</span>
                                                                 )}
                                                                 {(book.stData.entry.secondaryKeys?.length || 0) > 0 && (
-                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">二级暗号: {book.stData.entry.secondaryKeys!.join(', ')}</span>
+                                                                    <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">二级关键词: {book.stData.entry.secondaryKeys!.join(', ')}</span>
                                                                 )}
                                                                 {book.stData.entry.insertionOrder !== undefined && (
                                                                     <span className="px-1.5 py-0.5 border border-[#1c1b1a]/40 text-[#26242a]/70">顺序: {book.stData.entry.insertionOrder}</span>
@@ -661,7 +681,7 @@ const WorldbookApp: React.FC = () => {
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-[#26242a]/75 leading-relaxed whitespace-pre-wrap select-text">
-                                                    {book.content || <span className="italic text-[#26242a]/35">这条还没写内容…</span>}
+                                                    {book.content || <span className="italic text-[#26242a]/35">该条目暂无内容</span>}
                                                 </p>
                                             </div>
                                         )}
@@ -673,7 +693,7 @@ const WorldbookApp: React.FC = () => {
                 })}
             </div>
 
-            {/* 导入世界书（.json / .zip）：剪刀按钮上方的贴纸 */}
+            {/* 导入世界书（.json / .zip）：新建按钮上方的贴纸 */}
             <input ref={fileInputRef} type="file" accept=".json,.zip,application/json,application/zip" className="hidden" onChange={handleImportFile} />
             <button
                 onClick={() => fileInputRef.current?.click()}
@@ -685,17 +705,17 @@ const WorldbookApp: React.FC = () => {
                 <span className="text-xs font-black">{importing ? '导入中…' : '导入'}</span>
             </button>
 
-            {/* 剪一条新的：右下角剪刀贴纸（替代原顶栏 + 号） */}
+            {/* 新建条目：右下角剪刀贴纸（替代原顶栏 + 号） */}
             <button
                 onClick={handleCreate}
                 className="absolute bottom-7 right-5 z-20 px-4 py-3 rotate-[-3deg] flex items-center gap-1.5 bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
-                title="剪一条新剪报"
+                title="新建世界书条目"
             >
                 <Scissors size={16} weight="bold" />
-                <span className="text-xs font-black">剪一条</span>
+                <span className="text-xs font-black">新建条目</span>
             </button>
 
-            {/* 丢弃确认（撕边纸卡） */}
+            {/* 删除条目确认 */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
                     <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
@@ -704,25 +724,60 @@ const WorldbookApp: React.FC = () => {
                         <button
                             onClick={() => setShowDeleteConfirm(false)}
                             className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rotate-[4deg] ${STICKER}`}
-                            aria-label="合上"
+                            aria-label="关闭"
                         >
                             <X size={14} weight="bold" color={INK} />
                         </button>
                         <div className="px-5 pt-6 pb-2">
-                            <div className="label-mono text-[9px] text-[#26242a]/45">DISCARD / 不可复原</div>
-                            <h3 className="text-lg font-black tracking-wide mt-0.5">把这条剪报丢掉？</h3>
+                            <div className="label-mono text-[9px] text-[#26242a]/45">DELETE ENTRY / 不可恢复</div>
+                            <h3 className="text-lg font-black tracking-wide mt-0.5">删除这条世界书条目？</h3>
                             <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
                         </div>
                         <div className="px-5 py-3 text-sm text-[#26242a]/70 leading-relaxed">
-                            「{editingBook?.title}」丢进废纸篓就找不回来了。
+                            「{editingBook?.title}」会从世界书库中删除，并同步移除相关角色挂载。
                         </div>
                         <div className="px-5 pb-5 pt-2 flex gap-3">
-                            <button onClick={() => setShowDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>还是留着</button>
+                            <button onClick={() => setShowDeleteConfirm(false)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>取消</button>
                             <button
                                 onClick={confirmDelete}
                                 className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
                             >
-                                丢掉！
+                                删除条目
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 删除整本世界书确认 */}
+            {deleteCategoryConfirm && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-5 animate-fade-in">
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteCategoryConfirm(null)} />
+                    <div className="relative w-full max-w-sm bg-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] rotate-[-0.4deg] animate-slide-up" style={DOT_BG}>
+                        <Tape className="-top-2.5 left-1/2 -translate-x-1/2 rotate-[-3deg]" />
+                        <button
+                            onClick={() => setDeleteCategoryConfirm(null)}
+                            className={`absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rotate-[4deg] ${STICKER}`}
+                            aria-label="关闭"
+                        >
+                            <X size={14} weight="bold" color={INK} />
+                        </button>
+                        <div className="px-5 pt-6 pb-2">
+                            <div className="label-mono text-[9px] text-[#26242a]/45">DELETE BOOK / 不可恢复</div>
+                            <h3 className="text-lg font-black tracking-wide mt-0.5">删除整本世界书？</h3>
+                            <div className="h-[3px] w-14 bg-[#1c1b1a] mt-1.5" />
+                        </div>
+                        <div className="px-5 py-3 text-sm text-[#26242a]/70 leading-relaxed space-y-2">
+                            <p>「{deleteCategoryConfirm.category}」中的 {deleteCategoryConfirm.count} 条条目都会被删除。</p>
+                            <p>该操作也会清理整书开关，并从相关角色挂载中移除这本世界书。</p>
+                        </div>
+                        <div className="px-5 pb-5 pt-2 flex gap-3">
+                            <button onClick={() => setDeleteCategoryConfirm(null)} className={`flex-1 py-2.5 text-xs font-black ${STICKER}`}>取消</button>
+                            <button
+                                onClick={confirmDeleteCategory}
+                                className="flex-1 py-2.5 text-xs font-black bg-[#1c1b1a] text-white border border-black/10 rounded-xl shadow-[0_12px_24px_-12px_rgba(38,36,42,0.45)] press-soft"
+                            >
+                                删除整本
                             </button>
                         </div>
                     </div>
