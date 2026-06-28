@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { BankFullState, ShopStaff, CharacterProfile } from '../../types';
-import { SHOP_RECIPES, AVAILABLE_STAFF, recipePrice, restockBatchCost, RESTOCK_BATCH, STOCK_CAP } from './BankGameConstants';
+import { AVAILABLE_STAFF } from './BankGameConstants';
 import BankAssetIcon from './BankAssetIcon';
 import { processImage } from '../../utils/file';
 import { UsersThree, Target, Sparkle, PawPrint, Link as LinkIcon, Camera, Check, Lightbulb, Confetti, Briefcase, CookingPot, HandWaving, Dog, Cat, Rabbit } from '@phosphor-icons/react';
@@ -28,7 +28,7 @@ const BankGameMenu: React.FC<Props> = ({
     state, characters = [], walletBalance = 0, onUnlockRecipe, onRestock, onHireStaff, onStaffRest, onFireStaff, onRehireStaff, onDeleteFiredStaff, onUpdateConfig,
     onAddGoal, onDeleteGoal, onEditStaff
 }) => {
-    const [tab, setTab] = useState<'staff' | 'menu' | 'goals'>('staff');
+    const [tab, setTab] = useState<'staff' | 'goals'>('staff');
     const [showCustomHire, setShowCustomHire] = useState(false);
 
     // Custom Hire Form
@@ -92,15 +92,11 @@ const BankGameMenu: React.FC<Props> = ({
         setAvatarMode('url');
     };
 
-    // 库存告急：有在售商品 ≤3 份时，给「商品」子标签也贴个小红点（与外层「经营」书签呼应）
-    const menuLowStock = state.shop.unlockedRecipes.some(id => (state.shop.stock?.[id] ?? 0) <= 3);
-
     return (
         <div className="space-y-5">
             <div className="flex gap-2">
                 {[
                     { key: 'staff', label: '员工' },
-                    { key: 'menu', label: '商品' },
                     { key: 'goals', label: '目标' }
                 ].map((t, i) => {
                     const on = tab === t.key;
@@ -112,10 +108,7 @@ const BankGameMenu: React.FC<Props> = ({
                             style={{ fontFamily: HAND_FONT, borderRadius: 999,
                                 ...(on ? { background: '#fffdf7', color: '#5b4636', boxShadow: '0 4px 12px rgba(96,66,40,0.18)' } : { background: '#efe2cd', color: '#a98e6f' }) }}
                         >
-                            {t.key === 'menu' && menuLowStock && (
-                                <span aria-hidden className="absolute w-2 h-2 rounded-full animate-pulse" style={{ top: 4, right: 6, background: '#e5484d', boxShadow: '0 0 0 2px #fffdf7' }} />
-                            )}
-                            {t.key === 'staff' ? <UsersThree size={15} weight="bold" /> : t.key === 'menu' ? <CookingPot size={15} weight="bold" /> : <Target size={15} weight="bold" />}
+                            {t.key === 'staff' ? <UsersThree size={15} weight="bold" /> : <Target size={15} weight="bold" />}
                             <span>{t.label}</span>
                         </button>
                     );
