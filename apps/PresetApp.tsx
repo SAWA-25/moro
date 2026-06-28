@@ -205,21 +205,21 @@ const HeroPlate: React.FC<{ activeName: string; enabled: boolean; presetCount: n
             </div>
             <div className="min-w-0 flex-1 pt-1">
                 <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[9px] tracking-[0.28em] uppercase shrink-0" style={{ ...MONO_STACK, color: PRESS.solid }}>CURRENT PLATE</span>
+                    <span className="text-[9px] tracking-[0.28em] uppercase shrink-0" style={{ ...MONO_STACK, color: PRESS.solid }}>当前预设</span>
                     <span className="h-px flex-1" style={{ background: 'rgba(70,111,135,0.16)' }} />
                 </div>
                 <div className="text-[19px] font-black truncate mt-1" style={{ ...CUTE_STACK, color: INK }}>{activeName}</div>
                 <div className="text-[10.5px] leading-relaxed mt-1" style={{ color: INS_SOFT }}>
-                    {enabled ? '这块字盘正在接管聊天提示词顺序、marker 与随预设正则。' : '当前只在整理字盘，聊天仍走 Moro 默认提示词组装。'}
+                    {enabled ? '当前预设已接管提示词顺序、marker 和随预设正则。' : '当前未启用预设，聊天仍使用默认提示词组装。'}
                 </div>
             </div>
             <InkSwitch on={enabled} onChange={onToggle} />
         </div>
         <div className="relative grid grid-cols-4 gap-2 mt-4">
-            <StatTile tone="press" label="Presets" value={presetCount} />
-            <StatTile tone="active" label="Enabled" value={`${enabledEntries}/${totalEntries}`} />
-            <StatTile tone="copper" label="Tokens" value={`≈${totalTokens}`} />
-            <StatTile label="Markers" value={markerEntries} />
+            <StatTile tone="press" label="预设数" value={presetCount} />
+            <StatTile tone="active" label="启用条目" value={`${enabledEntries}/${totalEntries}`} />
+            <StatTile tone="copper" label="预计 tokens" value={`≈${totalTokens}`} />
+            <StatTile label="占位符" value={markerEntries} />
         </div>
     </section>
 );
@@ -772,15 +772,15 @@ const PresetApp: React.FC = () => {
             <input type="file" ref={fileInputRef} className="hidden" accept=".json,application/json" onChange={handleImportFile} />
             <PanelHeader
                 title="活字盘"
-                en="PROMPT PRESETS"
-                sub={loaded ? `${active?.name || '未选择预设'} · 更改会自动保存` : '正在读取本地预设'}
+                en="PRESETS"
+                sub={loaded ? `当前预设：${active?.name || '未选择'} · 自动保存` : '正在读取预设'}
                 onBack={closeApp}
-                status="自动保存"
+                status="已保存"
             />
 
             <div className="relative z-10 flex-1 overflow-y-auto no-scrollbar px-3 pt-6 pb-12 space-y-8">
                 <HeroPlate
-                    activeName={loaded ? active?.name || '未选择预设' : '正在读取本地预设'}
+                    activeName={loaded ? active?.name || '未选择预设' : '正在读取预设'}
                     enabled={enabled}
                     presetCount={presets.length}
                     enabledEntries={enabledEntriesCount}
@@ -790,8 +790,8 @@ const PresetApp: React.FC = () => {
                     onToggle={toggleEnabled}
                 />
 
-                <Page title="字盘文件" en="Preset Library">
-                    <Entry mark="LIB" title="预设文件" note="新建、导入、复制后会自动选中；所有修改都会写入本地 IndexedDB。">
+                <Page title="预设管理" en="Library">
+                    <Entry mark="FILE" title="预设文件" note="新建、导入或复制后会自动选中；修改会保存到本地。">
 
                     {loaded && presets.length === 0 ? (
                         <div className="py-2 space-y-3 text-center">
@@ -841,7 +841,7 @@ const PresetApp: React.FC = () => {
 
                 {active && (
                     <>
-                        <Page title="API 与采样" en="Model Route">
+                        <Page title="连接与参数" en="API & Params">
                             <Entry mark="API" title="API 方案" note="绑定后，切换到这个预设时会同步套用对应的连接配置。" side={<LinkSimple size={18} weight="bold" style={{ color: PRESS.solid }} />}>
                                 <div className="rounded-[14px] px-3 py-2.5 text-[11px] font-mono mb-2.5" style={{ background: PRESS.soft, color: PRESS.ink, border: `1px solid ${LINE}`, boxShadow: '0 8px 18px -16px rgba(38,52,71,0.24)' }}>
                                     {apiConfig.model || '未设置模型'}{apiHost ? ` @ ${apiHost}` : ''}
@@ -920,8 +920,8 @@ const PresetApp: React.FC = () => {
                             </Entry>
                         </Page>
 
-                        <Page title="提示词列表" en="Prompt Order">
-                            <Entry mark="SORT" title="发送顺序" note="拖动左侧列表图标排序；关闭某条后，它不会进入本次聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
+                        <Page title="提示词顺序" en="Order">
+                            <Entry mark="ORDER" title="发送顺序" note="拖动左侧图标调整顺序；关闭条目后，该条不会写入聊天请求。" side={<PressChip tone="plain">≈ {totalTokens} tokens</PressChip>}>
                                 <div ref={listRef} className="space-y-2" onPointerMove={onDragPointerMove} onPointerUp={onDragPointerUp} onPointerCancel={onDragPointerUp}>
                                     {orderEntries.map((entry, idx) => {
                                         const prompt = promptById.get(entry.identifier);
