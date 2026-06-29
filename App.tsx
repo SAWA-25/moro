@@ -2,6 +2,7 @@
 import React from 'react';
 import { OSProvider } from './context/OSContext';
 import { MusicProvider } from './context/MusicContext';
+import { DesktopPetProvider } from './context/DesktopPetContext';
 import PhoneShell from './components/PhoneShell';
 import BuildBadge from './components/BuildBadge';
 import DevDebugPanel from './components/DevDebugPanel';
@@ -28,9 +29,11 @@ const App: React.FC = () => {
           style={{ transform: 'translateZ(0)' }}
         >
           <OSProvider>
-            <MusicProvider>
-              <PhoneShell />
-            </MusicProvider>
+            <DesktopPetProvider>
+              <MusicProvider>
+                <PhoneShell />
+              </MusicProvider>
+            </DesktopPetProvider>
           </OSProvider>
         </div>
       </div>

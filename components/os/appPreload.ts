@@ -44,6 +44,7 @@ const importers: Partial<Record<AppID, () => Promise<unknown>>> = {
   [AppID.SpecialMoments]: () => import('../ValentineEvent'),
   [AppID.VRWorld]: () => import('../../apps/VRWorldApp'),
   [AppID.CharCreatorDev]: () => import('../../apps/CharCreatorDevApp'),
+  [AppID.DesktopPet]: () => import('../../apps/DesktopPetApp'),
   [AppID.Manual]: () => import('../../apps/ManualApp'),
 };
 

@@ -1,0 +1,14 @@
+{
+    "pfp": "派蒙.png",
+    "modName": "原神物品包",
+    "intro": "由b站up栎咕咕带来的原神物品模组，可以喂给原神角色们",
+    "author":{
+        "name":"栎咕咕",
+        "pfp":"派蒙.png",
+        "frameColor":"#FFFFFF",
+        "links":{
+            "BiliBili":"14004864"
+        },
+        "infos":"原神角色桌宠系列作者"
+    }
+}

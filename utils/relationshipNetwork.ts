@@ -61,6 +61,184 @@ export function relationshipPairIds(pairKey: string): [string, string] | null {
   return m ? [m[1], m[2]] : null;
 }
 
+export function makeRelationshipNpcId(now = Date.now()): string {
+  return `npc_${now}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function makeRelationshipNpcStableId(ownerId: string, name: string): string {
+  const owner = hash(ownerId || 'owner').toString(36);
+  const target = hash(clean(name, 'npc', 80).toLowerCase()).toString(36);
+  return `npc_${owner}_${target}`;
+}
+
+export function relationshipNodeName(edge: RelationshipNetworkEdge, nodeId: string, fallback = '另一位角色'): string {
+  return clean(edge.nodeMeta?.[nodeId]?.name, fallback, 60);
+}
+
+export function getRelationshipPerspective(edge: RelationshipNetworkEdge, ownerId: string) {
+  const p = edge.perspectives?.[ownerId];
+  if (p?.targetId && p.label?.trim()) return p;
+  const targetId = edge.charIds.find(id => id !== ownerId) || '';
+  if (!targetId) return null;
+  return {
+    ownerId,
+    targetId,
+    label: edge.label,
+    note: edge.summary,
+    summary: edge.summary,
+    createdAt: edge.createdAt,
+    updatedAt: edge.updatedAt,
+  };
+}
+
+function relationshipScores(label: string, note = '') {
+  const text = `${label} ${note}`;
+  let intimacy = 48;
+  let tension = 18;
+  if (/恋人|爱人|伴侣|暧昧|知己|挚友|闺蜜|亲密/.test(text)) intimacy = 78;
+  else if (/朋友|同事|家人|熟人|同学|邻居/.test(text)) intimacy = 56;
+  else if (/对手|仇|冷战|死对头|敌|冲突|争/.test(text)) {
+    intimacy = 34;
+    tension = 66;
+  }
+  if (/冷战|吵|误会|敌|仇|竞争|对手|死对头/.test(text)) tension = Math.max(tension, 58);
+  return { intimacy: clamp(intimacy, 0, 100), tension: clamp(tension, 0, 100) };
+}
+
+export function buildManualRelationshipEdge(args: {
+  base?: RelationshipNetworkEdge;
+  owner: { id: string; name: string; avatar?: string };
+  target: { id: string; name: string; avatar?: string; kind: 'character' | 'npc'; description?: string };
+  label: string;
+  note?: string;
+  syncBothWays?: boolean;
+  now?: number;
+}): RelationshipNetworkEdge {
+  const now = args.now ?? Date.now();
+  const pairKey = relationshipPairKey(args.owner.id, args.target.id);
+  const label = clean(args.label, '关系待定', 40);
+  const note = clean(args.note, '', 600);
+  const scores = relationshipScores(label, note);
+  const base = args.base;
+  const existingPerspectives = { ...(base?.perspectives || {}) };
+  existingPerspectives[args.owner.id] = {
+    ownerId: args.owner.id,
+    targetId: args.target.id,
+    label,
+    note: note || undefined,
+    summary: note || `${args.owner.name} 眼里的 ${args.target.name} 是「${label}」。`,
+    createdAt: base?.perspectives?.[args.owner.id]?.createdAt || now,
+    updatedAt: now,
+  };
+  if (args.syncBothWays && args.target.kind === 'character' && !existingPerspectives[args.target.id]) {
+    existingPerspectives[args.target.id] = {
+      ownerId: args.target.id,
+      targetId: args.owner.id,
+      label,
+      note: note || undefined,
+      summary: note || `${args.target.name} 眼里的 ${args.owner.name} 也是「${label}」。`,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  return {
+    ...(base || {}),
+    id: pairKey,
+    pairKey,
+    charIds: [args.owner.id, args.target.id].sort() as [string, string],
+    nodeMeta: {
+      ...(base?.nodeMeta || {}),
+      [args.owner.id]: {
+        kind: 'character',
+        name: args.owner.name,
+        avatar: args.owner.avatar,
+        updatedAt: now,
+        createdAt: base?.nodeMeta?.[args.owner.id]?.createdAt || now,
+      },
+      [args.target.id]: {
+        kind: args.target.kind,
+        name: args.target.name,
+        avatar: args.target.avatar,
+        description: args.target.description,
+        updatedAt: now,
+        createdAt: base?.nodeMeta?.[args.target.id]?.createdAt || now,
+      },
+    },
+    perspectives: existingPerspectives,
+    label,
+    summary: note || base?.summary || `${args.owner.name} 与 ${args.target.name} 的关系被手动标记为「${label}」。`,
+    confidence: Math.max(base?.confidence ?? 0, 86),
+    intimacy: scores.intimacy,
+    tension: scores.tension,
+    signals: base?.signals || { intimacy: [], friction: [], conflict: [] },
+    source: 'manual',
+    createdAt: base?.createdAt || now,
+    updatedAt: now,
+    lastInteractionAt: base?.lastInteractionAt,
+  };
+}
+
+export async function maybeSummarizeRelationshipMessages(args: {
+  edge: RelationshipNetworkEdge;
+  messages: RelationshipNetworkMessage[];
+  settings: RelationshipNetworkAutoSettings;
+  api?: ResolvedApi | null;
+  names?: [string, string];
+  now?: number;
+}): Promise<RelationshipNetworkEdge> {
+  const settings = normalizeRelationshipNetworkSettings(args.settings, args.now ?? Date.now());
+  const messages = [...args.messages].sort((a, b) => a.createdAt - b.createdAt);
+  if (messages.length < settings.summaryCompressAfter || messages.length <= settings.summaryKeepRaw) return args.edge;
+  const older = messages.slice(0, Math.max(0, messages.length - settings.summaryKeepRaw));
+  if (older.length === 0) return args.edge;
+  const lastOlder = older[older.length - 1];
+  if (
+    args.edge.privateChatSummary
+    && args.edge.privateChatSummary.messageCount >= older.length
+    && args.edge.privateChatSummary.summarizedUntilAt >= lastOlder.createdAt
+  ) {
+    return args.edge;
+  }
+
+  const previous = args.edge.privateChatSummary?.text || '';
+  const names = args.names?.filter(Boolean).join(' 与 ') || relationshipNodeName(args.edge, args.edge.charIds[0], '角色 A') + ' 与 ' + relationshipNodeName(args.edge, args.edge.charIds[1], '角色 B');
+  const lines = older
+    .slice(-Math.min(older.length, settings.summaryCompressAfter))
+    .map(m => `${m.speakerName}：${m.content}`)
+    .join('\n');
+  let text = '';
+  if (args.api?.baseUrl && args.api.model) {
+    const prompt = `请把下面这段 Moro 关系网角色私聊压缩成滚动摘要，供后续私聊继续接上。保留：关系变化、未解决的误会/承诺、称呼习惯、最近话题和情绪余味。不要写分析标题，不要超过 260 字。
+
+参与者：${names}
+旧摘要：${previous || '暂无'}
+
+待压缩私聊：
+${lines}`;
+    try {
+      text = clean(await llmComplete(args.api, [{ role: 'user', content: prompt }], { temperature: 0.35, maxTokens: 420 }), '', 900);
+    } catch {
+      text = '';
+    }
+  }
+  if (!text) {
+    const tail = older.slice(-8).map(m => `${m.speakerName}提到「${clean(m.content, '', 60)}」`).join('；');
+    text = clean([previous, tail].filter(Boolean).join('；'), '这段私聊已压缩，保留最近原文继续衔接。', 900);
+  }
+  const now = args.now ?? Date.now();
+  return {
+    ...args.edge,
+    privateChatSummary: {
+      text,
+      messageCount: older.length,
+      summarizedUntilAt: lastOlder.createdAt,
+      updatedAt: now,
+    },
+    updatedAt: now,
+  };
+}
+
 export function makeDefaultRelationshipNetworkAutoSettings(now = Date.now()): RelationshipNetworkAutoSettings {
   return {
     id: 'settings',
@@ -69,6 +247,8 @@ export function makeDefaultRelationshipNetworkAutoSettings(now = Date.now()): Re
     intervalMinutes: 120,
     charCooldownMinutes: 180,
     pairCooldownMinutes: 360,
+    summaryCompressAfter: 72,
+    summaryKeepRaw: 36,
     nextRunAt: now + 120 * MINUTE,
     lastRunAtByChar: {},
     lastRunAtByPair: {},
@@ -91,12 +271,15 @@ export function normalizeRelationshipNetworkSettings(
     intervalMinutes: clamp(Math.round(Number(input?.intervalMinutes ?? base.intervalMinutes) || base.intervalMinutes), 5, 24 * 60),
     charCooldownMinutes: clamp(Math.round(Number(input?.charCooldownMinutes ?? base.charCooldownMinutes) || base.charCooldownMinutes), 5, 7 * 24 * 60),
     pairCooldownMinutes: clamp(Math.round(Number(input?.pairCooldownMinutes ?? base.pairCooldownMinutes) || base.pairCooldownMinutes), 5, 14 * 24 * 60),
+    summaryCompressAfter: clamp(Math.round(Number(input?.summaryCompressAfter ?? base.summaryCompressAfter) || base.summaryCompressAfter), 12, 400),
+    summaryKeepRaw: clamp(Math.round(Number(input?.summaryKeepRaw ?? base.summaryKeepRaw) || base.summaryKeepRaw), 6, 200),
     nextRunAt: Number.isFinite(Number(input?.nextRunAt)) ? Number(input!.nextRunAt) : base.nextRunAt,
     lastRunAtByChar: { ...(input?.lastRunAtByChar || {}) },
     lastRunAtByPair: { ...(input?.lastRunAtByPair || {}) },
     forwardedCountByPair: { ...(input?.forwardedCountByPair || {}) },
     updatedAt: Number.isFinite(Number(input?.updatedAt)) ? Number(input!.updatedAt) : now,
   };
+  next.summaryKeepRaw = Math.min(next.summaryKeepRaw, Math.max(6, next.summaryCompressAfter - 1));
   return next;
 }
 
@@ -110,6 +293,28 @@ function fallbackEdgeFor(a: CharacterProfile, b: CharacterProfile, now = Date.no
     id: pairKey,
     pairKey,
     charIds: [a.id, b.id].sort() as [string, string],
+    nodeMeta: {
+      [a.id]: { kind: 'character', name: a.name, avatar: a.avatar, createdAt: now, updatedAt: now },
+      [b.id]: { kind: 'character', name: b.name, avatar: b.avatar, createdAt: now, updatedAt: now },
+    },
+    perspectives: {
+      [a.id]: {
+        ownerId: a.id,
+        targetId: b.id,
+        label,
+        summary: `${a.name} 眼里的 ${b.name}：${label}。`,
+        createdAt: now,
+        updatedAt: now,
+      },
+      [b.id]: {
+        ownerId: b.id,
+        targetId: a.id,
+        label,
+        summary: `${b.name} 眼里的 ${a.name}：${label}。`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
     label,
     summary: `${a.name} 和 ${b.name} 的关系由各自人设与近期生活底色推断而来，适合继续通过互动慢慢显形。`,
     confidence: 42,
@@ -163,19 +368,85 @@ function charRelationshipBlock(char: CharacterProfile, userProfile: UserProfile)
 
 function normalizeEdgeFromAny(raw: any, characters: CharacterProfile[], now = Date.now()): RelationshipNetworkEdge | null {
   const ids = new Set(characters.map(c => c.id));
+  const byId = new Map(characters.map(c => [c.id, c]));
   const rawIds = Array.isArray(raw?.charIds) ? raw.charIds : [raw?.charAId, raw?.charBId];
   const pair = rawIds.map((v: unknown) => clean(v, '', 80)).filter((id: string) => ids.has(id)).slice(0, 2);
   if (pair.length !== 2 || pair[0] === pair[1]) return null;
   const pairKey = relationshipPairKey(pair[0], pair[1]);
+  const a = byId.get(pair[0]);
+  const b = byId.get(pair[1]);
+  const label = clean(raw?.label, '关系待定', 40);
+  const summary = clean(raw?.summary, 'AI 暂时只整理出了模糊关系，需要更多互动继续校准。', 600);
   return {
     id: pairKey,
     pairKey,
     charIds: [...pair].sort() as [string, string],
-    label: clean(raw?.label, '关系待定', 40),
-    summary: clean(raw?.summary, 'AI 暂时只整理出了模糊关系，需要更多互动继续校准。', 600),
+    nodeMeta: {
+      [pair[0]]: { kind: 'character', name: a?.name || pair[0], avatar: a?.avatar, createdAt: now, updatedAt: now },
+      [pair[1]]: { kind: 'character', name: b?.name || pair[1], avatar: b?.avatar, createdAt: now, updatedAt: now },
+    },
+    perspectives: {
+      [pair[0]]: { ownerId: pair[0], targetId: pair[1], label, summary, createdAt: now, updatedAt: now },
+      [pair[1]]: { ownerId: pair[1], targetId: pair[0], label, summary, createdAt: now, updatedAt: now },
+    },
+    label,
+    summary,
     confidence: clamp(Math.round(Number(raw?.confidence ?? 60) || 60), 0, 100),
     intimacy: clamp(Math.round(Number(raw?.intimacy ?? 45) || 45), 0, 100),
     tension: clamp(Math.round(Number(raw?.tension ?? 20) || 20), 0, 100),
+    signals: {
+      intimacy: arr(raw?.signals?.intimacy ?? raw?.intimacySignals, 8),
+      friction: arr(raw?.signals?.friction ?? raw?.frictionSignals, 8),
+      conflict: arr(raw?.signals?.conflict ?? raw?.conflictSignals, 8),
+    },
+    source: 'ai',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeNpcRelationFromAny(raw: any, characters: CharacterProfile[], now = Date.now()): RelationshipNetworkEdge | null {
+  const byId = new Map(characters.map(c => [c.id, c]));
+  const ownerId = clean(raw?.ownerId ?? raw?.charId ?? raw?.characterId, '', 80);
+  const owner = byId.get(ownerId);
+  if (!owner) return null;
+  const name = clean(raw?.name ?? raw?.npcName ?? raw?.targetName, '', 60);
+  if (!name) return null;
+  const targetId = makeRelationshipNpcStableId(owner.id, name);
+  const pairKey = relationshipPairKey(owner.id, targetId);
+  const label = clean(raw?.label ?? raw?.relation ?? raw?.relationship, '关系待定', 40);
+  const note = clean(raw?.summary ?? raw?.note ?? raw?.description, `${owner.name} 设定里出现的关系人物。`, 600);
+  const scores = relationshipScores(label, note);
+  return {
+    id: pairKey,
+    pairKey,
+    charIds: [owner.id, targetId].sort() as [string, string],
+    nodeMeta: {
+      [owner.id]: { kind: 'character', name: owner.name, avatar: owner.avatar, createdAt: now, updatedAt: now },
+      [targetId]: {
+        kind: 'npc',
+        name,
+        description: clean(raw?.description ?? raw?.identity ?? raw?.role, note, 220),
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    perspectives: {
+      [owner.id]: {
+        ownerId: owner.id,
+        targetId,
+        label,
+        note,
+        summary: note,
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    label,
+    summary: note,
+    confidence: clamp(Math.round(Number(raw?.confidence ?? 74) || 74), 0, 100),
+    intimacy: clamp(Math.round(Number(raw?.intimacy ?? scores.intimacy) || scores.intimacy), 0, 100),
+    tension: clamp(Math.round(Number(raw?.tension ?? scores.tension) || scores.tension), 0, 100),
     signals: {
       intimacy: arr(raw?.signals?.intimacy ?? raw?.intimacySignals, 8),
       friction: arr(raw?.signals?.friction ?? raw?.frictionSignals, 8),
@@ -193,18 +464,22 @@ export async function organizeRelationshipNetwork(args: {
   api?: ResolvedApi | null;
 }): Promise<RelationshipNetworkEdge[]> {
   const { characters, userProfile, api } = args;
-  if (characters.length < 2) return [];
+  if (characters.length < 1) return [];
   const now = Date.now();
   const fallback = buildRelationshipNetworkFallbackEdges(characters, now);
   if (!api?.baseUrl || !api.model) return fallback;
 
-  const prompt = `你是 Moro 的关系网整理器。请读取每个角色的人设、世界观、生活侧写、已绑定世界书的 live 解析摘要，整理角色与角色之间的关系。
+  const prompt = `你是 Moro 的关系网整理器。请读取每个角色的人设、世界观、生活侧写、已绑定世界书的 live 解析摘要，整理两类关系：
+1) 已存在角色之间的关系；
+2) 每个角色设定里明确存在或强烈暗示的人际关系人物（家人、旧友、上司、同事、组织成员、恋人/前任、宿敌、债主、师徒等），即使这些人不在角色档案里，也要作为 NPC 关系生成。
 
 要求：
 - 只输出 JSON，不要 Markdown。
-- 输出格式：{"edges":[{"charIds":["idA","idB"],"label":"短标签","summary":"关系摘要","confidence":0-100,"intimacy":0-100,"tension":0-100,"signals":{"intimacy":["..."],"friction":["..."],"conflict":["..."]}}]}
-- 每条关系必须是两个不同角色。可以输出你有把握的全部 pair；如果资料不足，也要给出保守推断。
+- 输出格式：{"edges":[{"charIds":["idA","idB"],"label":"短标签","summary":"关系摘要","confidence":0-100,"intimacy":0-100,"tension":0-100,"signals":{"intimacy":["..."],"friction":["..."],"conflict":["..."]}}],"npcRelations":[{"ownerId":"角色ID","name":"NPC姓名或称呼","label":"短关系","summary":"这个 NPC 与该角色的关系摘要","description":"NPC身份/一句介绍","confidence":0-100,"intimacy":0-100,"tension":0-100,"signals":{"intimacy":["..."],"friction":["..."],"conflict":["..."]}}]}
+- edges 每条关系必须是两个不同的已有角色。可以输出你有把握的全部 pair；如果资料不足，也要给出保守推断。
+- npcRelations 从每个角色自己的设定里提取，不要只输出已有角色之间的关系。没有明确姓名时，可用“父亲”“直属上司”“旧友”“追捕者”等稳定称呼作为 name；每个角色最多 6 个 NPC，优先重要且会影响发言的关系。
 - intimacy 表示亲密/互相在意，tension 表示张力/冲突/误解，confidence 表示你对推断的把握。
+- 不要把用户 ${userProfile.name || '用户'} 当作 NPC 关系生成。
 
 用户名：${userProfile.name || '用户'}
 
@@ -215,11 +490,16 @@ ${characters.map(c => `\n--- CHARACTER ---\n${charRelationshipBlock(c, userProfi
     const raw = await llmComplete(api, [{ role: 'user', content: prompt }], { temperature: 0.45, maxTokens: 2200 });
     const parsed = extractJson(raw);
     const rows = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.edges) ? parsed.edges : [];
+    const npcRows = Array.isArray(parsed?.npcRelations) ? parsed.npcRelations : [];
     const edges = rows
       .map((row: any) => normalizeEdgeFromAny(row, characters, now))
       .filter(Boolean) as RelationshipNetworkEdge[];
-    if (!edges.length) return fallback;
-    return edges;
+    const npcEdges = npcRows
+      .map((row: any) => normalizeNpcRelationFromAny(row, characters, now))
+      .filter(Boolean) as RelationshipNetworkEdge[];
+    const merged = [...edges, ...npcEdges];
+    if (!merged.length) return fallback;
+    return merged;
   } catch {
     return fallback;
   }
@@ -294,6 +574,9 @@ export async function generateCharPairInteraction(args: {
 
 关系摘要：
 ${edge ? `${edge.label}: ${edge.summary}\n亲密 ${edge.intimacy}/100，张力 ${edge.tension}/100` : '暂无'}
+
+已压缩的早期私聊摘要：
+${edge?.privateChatSummary?.text || '暂无'}
 
 最近私聊：
 ${recent}
@@ -493,11 +776,14 @@ export async function buildRelationshipNetworkContextBlock(charId: string, chara
     const nameById = new Map(allCharacters.map(c => [c.id, c.name]));
     const lines: string[] = [];
     for (const edge of edges) {
-      const otherId = edge.charIds.find(id => id !== charId) || '';
-      const otherName = nameById.get(otherId) || '另一位角色';
+      const perspective = getRelationshipPerspective(edge, charId);
+      const otherId = perspective?.targetId || edge.charIds.find(id => id !== charId) || '';
+      const otherName = edge.nodeMeta?.[otherId]?.name || nameById.get(otherId) || '另一位角色';
       const msgs = await DB.getRelationshipNetworkMessagesByPair(edge.pairKey, 3);
       const msgText = msgs.map(m => `${m.speakerName}: ${m.content}`).join(' / ');
-      lines.push(`- 与 ${otherName}：${edge.label}；${edge.summary}${msgText ? `；最近私聊：${msgText}` : ''}`);
+      const label = perspective?.label || edge.label;
+      const summary = perspective?.summary || perspective?.note || edge.summary;
+      lines.push(`- 与 ${otherName}：${label}；${summary}${msgText ? `；最近私聊：${msgText}` : ''}`);
     }
     return lines.length
       ? `### 关系网：你与其他角色的私下关系\n这些是后台关系网里你已经能知道的互动摘要。可以自然记得，但不要机械复述。\n${lines.join('\n')}\n`

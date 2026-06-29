@@ -24,7 +24,7 @@ import { safeFetchJson } from '../utils/safeApi';
 import { recordApiCall, setApiCallAmbientContext } from '../utils/apiCallLog';
 import { INSTALLED_APPS } from '../constants';
 import { normalizeCharacterDefaults } from '../utils/impression';
-import { createCharacterId } from '../utils/characterIdentity';
+import { createCharacterId, ensureCharacterModelId } from '../utils/characterIdentity';
 import { isScheduleFeatureOn } from '../utils/scheduleGenerator';
 import { evaluateEmotionBackground } from '../hooks/useChatAI';
 import { buildChatRequestPayload } from '../utils/chatRequestPayload';
@@ -39,6 +39,7 @@ import {
   chooseAutoRelationshipTargets,
   generateCharPairInteraction,
   markAutoRelationshipRun,
+  maybeSummarizeRelationshipMessages,
   mergeRelationshipEdge,
   normalizeRelationshipNetworkSettings,
   RELATIONSHIP_NETWORK_UPDATED_EVENT,
@@ -459,6 +460,7 @@ export const MORO_AVATARS = {
 
 const moroV2: CharacterProfile = {
   id: 'preset-moro-v2', // Unique ID to prevent duplication
+  modelId: 'preset-moro-v2',
   name: 'Moro',
   avatar: MORO_AVATARS.calm,
   description: 'AI助理 / 猫娘AI · 你最忠实的电子损友',
@@ -826,17 +828,20 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           return String(method).toUpperCase();
       };
       const isTrackedApiUrl = (url: string): boolean => /\/(?:chat\/completions|models)(?:[/?#]|$)/i.test(url);
+      const noisyExternalTextPattern = /google-analytics\.com|googletagmanager\.com|\b(?:www\.)?google\.com\/g\/collect(?:[/?#]|$)/i;
       const isNoisyExternalUrl = (url: string): boolean => {
           try {
               const parsed = new URL(url, window.location.href);
-              return /(^|\.)google-analytics\.com$|(^|\.)googletagmanager\.com$/i.test(parsed.hostname);
+              const hostname = parsed.hostname.toLowerCase();
+              if (/(^|\.)google-analytics\.com$|(^|\.)googletagmanager\.com$/.test(hostname)) return true;
+              return (hostname === 'google.com' || hostname === 'www.google.com') && parsed.pathname === '/g/collect';
           } catch {
-              return /google-analytics\.com|googletagmanager\.com/i.test(url);
+              return noisyExternalTextPattern.test(url);
           }
       };
       const isBenignConsoleError = (msg: string): boolean => {
           if (msg.includes('Warning:')) return true;
-          if (/google-analytics\.com|googletagmanager\.com/i.test(msg)) return true;
+          if (noisyExternalTextPattern.test(msg)) return true;
           if (/Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module/i.test(msg)) return true;
           if (/\b(Status|HTTP|API Error)\s*:?\s*(401|403)\b/i.test(msg)) return true;
           if (/(invalid_api_key|authentication_error|permission_denied)/i.test(msg)) return true;
@@ -1280,7 +1285,11 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
             }
         }
 
+        const charsMissingModelId = finalChars.some(c => !c.modelId);
         finalChars = finalChars.map(c => normalizeCharacterDefaults(c));
+        if (charsMissingModelId) {
+          await Promise.all(finalChars.map(c => DB.saveCharacter(c)));
+        }
 
         if (finalChars.length > 0) {
           setCharacters(finalChars);
@@ -1503,11 +1512,23 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const completed: Array<{ a: CharacterProfile; b: CharacterProfile; pairKey: string; forwarded?: boolean }> = [];
               let forwardedTotal = 0;
               for (const target of targets) {
-                  const recent = await DB.getRelationshipNetworkMessagesByPair(target.pairKey, 12).catch(() => []);
+                  const allMessages = await DB.getRelationshipNetworkMessagesByPair(target.pairKey).catch(() => []);
+                  const compactedEdge = target.edge
+                      ? await maybeSummarizeRelationshipMessages({
+                          edge: target.edge,
+                          messages: allMessages,
+                          settings,
+                          api,
+                          names: [target.a.name, target.b.name],
+                          now,
+                      })
+                      : target.edge;
+                  if (compactedEdge && compactedEdge !== target.edge) await DB.saveRelationshipNetworkEdge(compactedEdge);
+                  const recent = allMessages.slice(-settings.summaryKeepRaw);
                   const result = await generateCharPairInteraction({
                       a: target.a,
                       b: target.b,
-                      edge: target.edge,
+                      edge: compactedEdge || target.edge,
                       recentMessages: recent,
                       api,
                       userProfile: userProfileRef.current,
@@ -1515,7 +1536,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   });
                   if (result.messages.length === 0) continue;
                   await DB.saveRelationshipNetworkMessages(result.messages);
-                  const merged = mergeRelationshipEdge(target.edge, target.a, target.b, result.edgePatch, 'auto', now);
+                  const merged = mergeRelationshipEdge(compactedEdge || target.edge, target.a, target.b, result.edgePatch, 'auto', now);
                   await DB.saveRelationshipNetworkEdge(merged);
                   let forwarded = false;
                   if (result.forward?.shouldForward && result.forward.forwarderId) {
@@ -2894,8 +2915,9 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     // 时副 API 不会触发，所以这里默认 true 安全。
     // 注意：memoryPalaceEnabled 不在这里默认开 —— 那是用户在记忆宫殿 App 显式 opt-in
     // 的功能，自动开会替用户决策。
-    const newChar: CharacterProfile = {
-      id: createCharacterId('char'),
+    const newCharId = createCharacterId('char');
+    const newChar: CharacterProfile = ensureCharacterModelId({
+      id: newCharId,
       name,
       avatar: generateAvatar(name),
       description: '点击编辑设定...',
@@ -2905,7 +2927,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       emotionConfig: { enabled: true },
       // 新建即视为已加入「往来」：无需再去名册「添加好友」就能在往来直接开聊
       addedToChat: true,
-    };
+    });
     setCharacters(prev => [...prev, newChar]);
     setActiveCharacterId(newChar.id);
     await DB.saveCharacter(newChar);
@@ -2916,11 +2938,13 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const importCharacter = async (char: CharacterProfile) => {
     // 导入即视为已加入「往来」：强制置 true，导入后无需「添加好友」即可在往来直接开聊
     // （不沿用卡里可能带的 addedToChat:false，保证任何导入都直接出现在往来）
-    const withChat: CharacterProfile = normalizeCharacterDefaults({
+    const importedId = char.id || createCharacterId('import');
+    const withChat: CharacterProfile = normalizeCharacterDefaults(ensureCharacterModelId({
       ...char,
-      id: char.id || createCharacterId('import'),
+      id: importedId,
+      modelId: importedId,
       addedToChat: true,
-    } as CharacterProfile);
+    } as CharacterProfile));
     setCharacters(prev => [...prev.filter(c => c.id !== withChat.id), withChat]);
     setActiveCharacterId(withChat.id);
     await DB.saveCharacter(withChat);
@@ -2931,7 +2955,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const updateCharacter = async (id: string, updates: Partial<CharacterProfile>) => {
     const target = await new Promise<CharacterProfile | null>(resolve => {
       setCharacters(prev => {
-        const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c);
+        const updated = prev.map(c => c.id === id ? normalizeCharacterDefaults({ ...c, ...updates }) : c);
         resolve(updated.find(c => c.id === id) || null);
         return updated;
       });
@@ -3480,6 +3504,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               'xhs_activities', 'xhs_stock',
               'quizzes', 'guidebook', 'scheduled_messages', 'life_sim',
               'handbook', 'trackers', 'tracker_entries', 'hotnews_snapshots',
+              'desktop_pet',
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
               'daily_schedule', 'memory_batches',
               'pixel_home_assets', 'pixel_home_layouts',
@@ -3675,7 +3700,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           // Stores that never contain base64 image data — skip recursive traversal
           const noImageStores = new Set([
               'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
-              'bank_transactions', 'scheduled_messages', 'memory_batches', 'hotnews_snapshots'
+              'bank_transactions', 'scheduled_messages', 'memory_batches', 'hotnews_snapshots', 'desktop_pet'
           ]);
 
           // Chunked processObject for large arrays — yields to main thread every 200 items
@@ -3831,6 +3856,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   case 'trackers': backupData.trackers = processedData; break;
                   case 'tracker_entries': backupData.trackerEntries = processedData; break;
                   case 'hotnews_snapshots': backupData.hotNewsSnapshots = processedData; break;
+                  case 'desktop_pet': backupData.desktopPetState = Array.isArray(processedData) ? (processedData[0] || undefined) : (processedData || undefined); break;
                   case 'memory_nodes': backupData.memoryNodes = processedData; break;
                   case 'memory_vectors': backupData.memoryVectors = processedData; break;
                   case 'memory_links': backupData.memoryLinks = processedData; break;

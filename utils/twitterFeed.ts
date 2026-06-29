@@ -20,8 +20,18 @@ import { formatCharacterWithId, getCharacterModelId } from './characterIdentity'
 export const TWITTER_BATCH_SIZE = 12;
 export const TWITTER_MIN_BATCH_SIZE = 10;
 export const TWITTER_MAX_BATCH_SIZE = 24;
+export const TWITTER_PUBLIC_NPC_RATIO = 0.9;
 export const TWITTER_TRANSLATION_TARGET = 'zh-CN';
 export const TWITTER_TRANSLATION_TARGET_KEY = 'moro_twitter_translation_target_v1';
+
+type TwitterTimelineMode = 'public' | 'focused';
+
+interface TwitterTimelineOptions {
+    mode?: TwitterTimelineMode;
+}
+
+export const twitterPublicCharacterQuota = (count: number): number =>
+    Math.max(0, Math.floor(Math.max(0, count) * (1 - TWITTER_PUBLIC_NPC_RATIO) + 0.000001));
 
 export const normalizeTwitterLang = (lang?: string | null): string => {
     const raw = String(lang || '').trim();
@@ -546,6 +556,13 @@ const charBrief = (chars: CharacterProfile[]): string => chars.map(c => {
     return `- ${formatCharacterWithId(c)} charId="${id}" name="${c.name}" handle="${handle}" postingWeight=${weight} region="${region}" persona="${persona || 'no detailed persona'}"`;
 }).join('\n');
 
+const pickPublicPromptChars = (chars: CharacterProfile[], seed: string, count: number): CharacterProfile[] => {
+    if (!chars.length || count <= 0) return [];
+    return [...chars]
+        .sort((a, b) => hashString(`${seed}:${a.id || a.name}`) - hashString(`${seed}:${b.id || b.name}`))
+        .slice(0, count);
+};
+
 const languageMeta = [
     { language: 'zh-CN', country: '中国', sample: '中文' },
     { language: 'en', country: 'United States', sample: 'English' },
@@ -670,7 +687,7 @@ export const accountFromCharacter = (char: CharacterProfile): TwitterAccount => 
         recentStatus: recentStatusForChar(char),
         profileTabs: ['posts', 'replies', 'media', 'likes', 'quotes', 'about'],
         lastActiveAt: char.currentMood?.updatedAt || Date.now() - (seed % 36) * 3600000,
-        followed: true,
+        followed: false,
         updatedAt: Date.now(),
     };
 };
@@ -763,15 +780,30 @@ const deriveTopicsFromText = (text: string, limit = 4): string[] => {
     return out.slice(0, limit);
 };
 
-const buildTimelinePrompt = (chars: CharacterProfile[], user: UserProfile, existing: TwitterTweet[], accounts: TwitterAccount[] = []): string => {
+const buildTimelinePrompt = (
+    chars: CharacterProfile[],
+    user: UserProfile,
+    existing: TwitterTweet[],
+    accounts: TwitterAccount[] = [],
+    options: TwitterTimelineOptions = {},
+): string => {
+    const mode = options.mode || 'public';
+    const publicMode = mode === 'public';
+    const promptChars = publicMode
+        ? pickPublicPromptChars(chars, `${existing.length}:${existing[0]?.id || existing[0]?.createdAt || 'empty'}`, twitterPublicCharacterQuota(TWITTER_BATCH_SIZE))
+        : chars;
     const recent = existing.slice(0, 12).map(t => `- ${t.authorName} ${t.authorHandle} [${t.language || 'unknown'}]: ${t.content.slice(0, 120)}`).join('\n');
     const acct = accounts.slice(0, 20).map(a => `- ${a.displayName} ${a.handle} type=${a.authorType} lang=${a.language || ''} country=${a.country || ''} weight=${a.postingWeight || 1} bio="${(a.bio || '').slice(0, 120)}"`).join('\n');
     return `You generate a local, fictional X/Twitter timeline for a virtual phone app. Do not claim to fetch real X data.
 
-User: ${user.name} / ${user.bio || 'no bio'}
+${publicMode
+    ? 'The app owner is only a passive reader of this public timeline. Do not infer, mention, or react to their current mood, wake time, health, body, phone status, location, relationship state, or private activity. Do not address them as "you", "master", "owner", or by handle/name.'
+    : 'The app owner is only a reader of these top-level tweets. Do not infer, mention, or react to their current mood, wake time, health, body, phone status, location, relationship state, or private activity. Character tweets must show the character account\'s own public life and state, not messages to/about the app owner.'}
 
-Characters may post freely. Respect postingWeight as a soft activity probability, not a quota:
-${charBrief(chars) || '(no characters, use fictional NPCs)'}
+${publicMode
+    ? `Characters are rare familiar-account cameos. At least 90% of top-level posts must be from fictional NPC strangers. Use at most ${twitterPublicCharacterQuota(TWITTER_BATCH_SIZE)} character top-level post in this batch. Character posts must be about the character's own public life, opinion, work, hobbies, city, media, or small observations, never a message to or about the app owner.`
+    : 'Characters may post freely about themselves. Respect postingWeight as a soft activity probability, not a quota; do not write DM-style teases or posts aimed at the app owner.'}
+${charBrief(promptChars) || '(no characters, use fictional NPCs)'}
 
 Known accounts:
 ${acct || '(none yet)'}
@@ -781,8 +813,8 @@ ${recent || '(empty)'}
 
 Quality rules:
 1. Produce at least ${TWITTER_BATCH_SIZE} tweets and at most ${TWITTER_MAX_BATCH_SIZE}.
-2. Do not limit any single character. The same character may post, reply, quote, retweet, or DM-style tease several times.
-3. Mix character posts, international NPCs, replies, quote tweets, long posts, short takes, threads, real image/link/video/GIF cards, polls, mentions, and cross-language discussion.
+2. ${publicMode ? 'Keep top-level character posts within the stated cameo quota; fill the rest with varied NPC strangers. Replies may include characters only when natural, but do not make the public feed feel like a friends list.' : 'Do not limit any single character. The same character may post, reply, quote, or retweet several times, but every top-level character tweet should read like their own public account post.'}
+3. Mix ${publicMode ? 'international NPC strangers, a tiny number of character cameos,' : 'character posts, international NPCs,'} replies, quote tweets, long posts, short takes, threads, real image/link/video/GIF cards, polls, mentions, and cross-language discussion.
 4. Make each tweet concrete: a scene, opinion, conflict, joke, observation, useful detail, or emotional turn. Avoid empty generic "today is nice" filler.
 5. Include non-Chinese content. Use original language for English/Japanese/Korean/Spanish/French posts. Chinese is still allowed.
 6. Every item must include language, country, authorBio, authorLocation, authorVerified when plausible.
@@ -791,6 +823,7 @@ Quality rules:
 9. Polls should feel like real low-stakes timeline prompts, with 2-4 options. Link cards must include a real public https URL, title, description, and domain.
 10. Image/video/GIF media must include a real public https URL. If you only know the scene description and do not have a URL, put the description in mediaAlt instead of pretending there is an image.
 11. Never put implementation notes in user-facing fields: do not write "placeholder", "local virtual", "mock", "moro.local", or "generated card" in content, media text, link text, or poll text.
+12. The current time is only for plausible timestamps and global chatter. Do not turn it into "the user just woke up", "the user is tired", or similar user-state commentary.
 
 Return JSON array only:
 [{"authorType":"character|npc","charId":"optional character id","authorName":"display","authorHandle":"@handle","authorBio":"bio","authorLocation":"city","authorVerified":false,"language":"zh-CN|en|ja|ko|es|fr","country":"country","content":"full tweet","topics":["topic"],"mentions":["@handle"],"likes":12,"retweets":1,"quotes":0,"views":300,"media":[{"type":"image|video|gif|link-card|quote-card","alt":"visual description","title":"link title","description":"link/card summary","domain":"example.com","durationMs":42000}],"mediaAlt":"legacy optional image/card description","poll":{"question":"optional","options":[{"label":"A","votes":12},{"label":"B","votes":9}]},"sourceIndex":0,"quoteNote":"optional","threadId":"optional","threadIndex":0,"threadSize":3,"qualityTags":["scene","opinion"],"replies":[{"authorType":"character|npc","charId":"optional","authorName":"display","authorHandle":"@handle","language":"en","country":"country","content":"reply","likes":3}]}]`;
@@ -918,12 +951,23 @@ const fallbackLines = [
     { language: 'fr', country: 'France', text: 'Une bonne timeline ressemble a un cafe: des voix differentes, des silences, une phrase qui traverse la table et reste avec vous toute la journee.', topics: ['coffee break', 'global chatter'] },
 ];
 
-export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], _user?: UserProfile, count = TWITTER_BATCH_SIZE): TwitterTweet[] => {
+export const fallbackTwitterTweets = (
+    chars: CharacterProfile[] = [],
+    _user?: UserProfile,
+    count = TWITTER_BATCH_SIZE,
+    options: TwitterTimelineOptions = {},
+): TwitterTweet[] => {
     const now = Date.now();
     const target = Math.max(count, TWITTER_MIN_BATCH_SIZE);
+    const mode = options.mode || 'public';
+    const maxPublicChars = mode === 'public' ? twitterPublicCharacterQuota(target) : Number.POSITIVE_INFINITY;
+    let publicCharCount = 0;
     return Array.from({ length: target }).map((_, i) => {
-        const shouldUseChar = chars.length > 0 && i % 3 !== 1;
+        const shouldUseChar = chars.length > 0 && (mode === 'focused'
+            ? i % 3 !== 1
+            : publicCharCount < maxPublicChars && (i + 1) % 10 === 0);
         const char = shouldUseChar ? chars[(hashString(`${i}:${chars.length}`) + i) % chars.length] : undefined;
+        if (char) publicCharCount++;
         const npc = pick(npcPool, i);
         const line = char
             ? {
@@ -994,22 +1038,66 @@ export const fallbackTwitterTweets = (chars: CharacterProfile[] = [], _user?: Us
     });
 };
 
+export const enforceTwitterPublicMix = (
+    tweets: TwitterTweet[],
+    chars: CharacterProfile[] = [],
+    user?: UserProfile,
+    count = TWITTER_BATCH_SIZE,
+): TwitterTweet[] => {
+    const target = Math.max(count, TWITTER_MIN_BATCH_SIZE);
+    const maxChars = twitterPublicCharacterQuota(target);
+    let charCount = 0;
+    const accepted: TwitterTweet[] = [];
+    tweets.forEach(tweet => {
+        if (!tweet || tweet.authorType === 'user') return;
+        if (tweet.authorType === 'character') {
+            if (charCount >= maxChars) return;
+            charCount++;
+        }
+        accepted.push(tweet);
+    });
+    if (accepted.length < target) {
+        const fillers = fallbackTwitterTweets([], user, target - accepted.length, { mode: 'public' })
+            .slice(0, target - accepted.length);
+        accepted.push(...fillers);
+    }
+    return accepted.slice(0, Math.max(target, Math.min(TWITTER_MAX_BATCH_SIZE, accepted.length)));
+};
+
+export const buildTwitterForYouFeed = (tweets: TwitterTweet[], user?: UserProfile): TwitterTweet[] => {
+    const publicTweets = tweets.filter(t => t.authorType !== 'user');
+    const npcCount = publicTweets.filter(t => t.authorType !== 'character').length;
+    const maxChars = Math.floor(npcCount / 9);
+    let charCount = 0;
+    return tweets.filter(tweet => {
+        if (tweet.authorType === 'user') return true;
+        if (tweet.authorType !== 'character') return true;
+        if (charCount >= maxChars) return false;
+        charCount++;
+        return true;
+    });
+};
+
 export const generateTwitterTimeline = async (
     apiConfig: APIConfig,
     chars: CharacterProfile[],
     user: UserProfile,
     existing: TwitterTweet[] = [],
     accounts: TwitterAccount[] = [],
+    options: TwitterTimelineOptions = {},
 ): Promise<TwitterTweet[]> => {
+    const mode = options.mode || 'public';
     const raw = await callLlm(
         apiConfig,
-        buildTimelinePrompt(chars, user, existing, accounts),
+        buildTimelinePrompt(chars, user, existing, accounts, { mode }),
         `Current time: ${new Date().toLocaleString('zh-CN')}. Generate a fresh high-quality fictional X/Twitter batch with at least ${TWITTER_BATCH_SIZE} posts.`,
     );
     const arr = parseTwitterJsonLoose(raw);
     const tweets = materializeTwitterTweets(arr, chars, user, existing);
-    if (tweets.length >= TWITTER_MIN_BATCH_SIZE) return tweets;
-    return [...tweets, ...fallbackTwitterTweets(chars, user, TWITTER_BATCH_SIZE - tweets.length)];
+    if (mode === 'public') return enforceTwitterPublicMix(tweets, chars, user, TWITTER_BATCH_SIZE);
+    const accountPosts = tweets.filter(tweet => tweet.authorType !== 'user');
+    if (accountPosts.length >= TWITTER_MIN_BATCH_SIZE) return accountPosts;
+    return [...accountPosts, ...fallbackTwitterTweets(chars, user, TWITTER_BATCH_SIZE - accountPosts.length, { mode: 'focused' })];
 };
 
 export const generateTwitterSearchTweets = async (
@@ -1022,12 +1110,12 @@ export const generateTwitterSearchTweets = async (
 ): Promise<TwitterTweet[]> => {
     const raw = await callLlm(
         apiConfig,
-        `${buildTimelinePrompt(chars, user, existing, accounts)}\nSearch expansion mode: all generated posts must be relevant to the search query while still feeling like a natural timeline.`,
+        `${buildTimelinePrompt(chars, user, existing, accounts, { mode: 'public' })}\nSearch expansion mode: all generated posts must be relevant to the search query while still feeling like a natural public timeline dominated by NPC strangers.`,
         `Search query: "${query}". Generate 10-12 relevant fictional X/Twitter posts, include some accounts/users results and at least two languages.`,
         9000,
     );
-    const tweets = materializeTwitterTweets(parseTwitterJsonLoose(raw), chars, user, existing);
-    return tweets.length ? tweets : fallbackTwitterTweets(chars, user, TWITTER_BATCH_SIZE).map(t => ({ ...t, topics: Array.from(new Set([query.replace(/^#/, ''), ...t.topics])).slice(0, 5) }));
+    const tweets = enforceTwitterPublicMix(materializeTwitterTweets(parseTwitterJsonLoose(raw), chars, user, existing), chars, user, TWITTER_BATCH_SIZE);
+    return tweets.map(t => ({ ...t, topics: Array.from(new Set([query.replace(/^#/, ''), ...t.topics])).slice(0, 5) }));
 };
 
 export const buildTwitterTrends = (tweets: TwitterTweet[], limit = 8): TwitterTrend[] => {

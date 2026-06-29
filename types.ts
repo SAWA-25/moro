@@ -50,6 +50,7 @@ export enum AppID {
   Twitter = 'twitter', // 推特 — 本地 AI 生成的 X/Twitter 式时间线，角色/NPC 自由发推互动
   VideoCall = 'video_call', // 视频通话 — 聊天里发起的视频通话：角色侧用通话立绘，用户侧可自选开/关摄像头（只开一下就关），翻转镜头
   Xunji = 'xunji', // 循迹 — 角色 Screenlife 演出 + 异地恋式监视/报备模拟，local-first 落库
+  DesktopPet = 'desktop_pet', // 桌宠 — DyberPet 桌面宠物：喂食、摸摸、提醒和跨 App 悬浮
   Manual = 'manual', // 说明书 — 按 App 分类收纳用户可操作功能说明
 }
 
@@ -2376,6 +2377,29 @@ export interface RelationshipNetworkEdge {
   id: string;
   pairKey: string;
   charIds: [string, string];
+  nodeMeta?: Record<string, {
+    kind: 'character' | 'npc';
+    name: string;
+    avatar?: string;
+    description?: string;
+    createdAt?: number;
+    updatedAt?: number;
+  }>;
+  perspectives?: Record<string, {
+    ownerId: string;
+    targetId: string;
+    label: string;
+    note?: string;
+    summary?: string;
+    createdAt: number;
+    updatedAt: number;
+  }>;
+  privateChatSummary?: {
+    text: string;
+    messageCount: number;
+    summarizedUntilAt: number;
+    updatedAt: number;
+  };
   label: string;
   summary: string;
   confidence: number;
@@ -2420,6 +2444,8 @@ export interface RelationshipNetworkAutoSettings {
   intervalMinutes: number;
   charCooldownMinutes: number;
   pairCooldownMinutes: number;
+  summaryCompressAfter: number;
+  summaryKeepRaw: number;
   nextRunAt: number;
   lastRunAtByChar: Record<string, number>;
   lastRunAtByPair: Record<string, number>;
@@ -2482,6 +2508,8 @@ export interface CharMemo {
 
 export interface CharacterProfile {
   id: string;
+  /** 模型可见的稳定身份锚。旧数据缺省时由运行时补成 id；角色卡重复导入会生成新的本地锚，完整备份恢复会保留原锚。 */
+  modelId?: string;
   name: string;
   avatar: string;
   /** 剪影集列表备注：仅供界面展示与搜索，不注入任何 AI 提示词。 */
@@ -3203,7 +3231,7 @@ export interface GroupProfile {
     dissolvedAt?: number;
 }
 
-export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memories' | 'refinedMemories' | 'activeMemoryMonths'> {
+export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'modelId' | 'memories' | 'refinedMemories' | 'activeMemoryMonths'> {
     version: number;
     type: 'moro_character_card';
     embeddedTheme?: ChatTheme;
@@ -4327,6 +4355,54 @@ export interface Emoji {
     description?: string;
 }
 
+export interface DesktopPetRoleState {
+    hp: number;
+    fv: number;
+    lastFedAt?: number;
+    lastPattedAt?: number;
+}
+
+export interface DesktopPetReminder {
+    id: string;
+    title: string;
+    note?: string;
+    dueAt: number;
+    repeat: 'none' | 'daily';
+    enabled: boolean;
+    createdAt: number;
+    lastFiredAt?: number;
+}
+
+export interface DesktopPetTalkMessage {
+    id: string;
+    role: 'user' | 'pet' | 'system';
+    text: string;
+    createdAt: number;
+    source?: 'chat' | 'feed' | 'pat' | 'reminder' | 'idle';
+    itemId?: string;
+}
+
+export interface DesktopPetState {
+    id: 'main';
+    activeRoleId: string;
+    floatingEnabled: boolean;
+    overlay: {
+        x: number;
+        y: number;
+        scale: number;
+        dockSide?: 'none' | 'left' | 'right';
+    };
+    aiEnabled?: boolean;
+    fallSpeed?: number;
+    rolePrompts?: Record<string, string>;
+    dialogueLog?: DesktopPetTalkMessage[];
+    lastSpeech?: DesktopPetTalkMessage;
+    notificationsEnabled: boolean;
+    roleStates: Record<string, DesktopPetRoleState>;
+    reminders: DesktopPetReminder[];
+    updatedAt: number;
+}
+
 export interface FullBackupData {
     timestamp: number;
     version: number;
@@ -4383,6 +4459,7 @@ export interface FullBackupData {
     relationshipNetworkEdges?: RelationshipNetworkEdge[];
     relationshipNetworkMessages?: RelationshipNetworkMessage[];
     relationshipNetworkAutoSettings?: RelationshipNetworkAutoSettings[];
+    desktopPetState?: DesktopPetState;
 
     // Bank Data
     bankState?: BankFullState;

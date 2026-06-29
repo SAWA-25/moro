@@ -17,6 +17,7 @@ import {
     accountFromCharacter,
     appendTwitterDMMessage,
     buildTwitterAccounts,
+    buildTwitterForYouFeed,
     buildTwitterTrends,
     cacheTwitterContextSummary,
     createDMThread,
@@ -375,8 +376,8 @@ const TwitterApp: React.FC = () => {
         setBusy(true);
         try {
             const batch = apiReady
-                ? await generateTwitterTimeline(feedApi, char ? [char] : characters, userProfile, tweets, accounts)
-                : fallbackTwitterTweets(char ? [char] : characters, userProfile, TWITTER_BATCH_SIZE);
+                ? await generateTwitterTimeline(feedApi, char ? [char] : characters, userProfile, tweets, accounts, { mode: 'focused' })
+                : fallbackTwitterTweets(char ? [char] : characters, userProfile, TWITTER_BATCH_SIZE, { mode: 'focused' });
             await DB.saveTwitterTweets(batch);
             const nextAccounts = buildTwitterAccounts(char ? [char] : characters, userProfile, profile, accounts, batch);
             await DB.saveTwitterAccounts(nextAccounts);
@@ -736,9 +737,9 @@ const TwitterApp: React.FC = () => {
     const feedTweets = useMemo(() => {
         const followed = new Set(accounts.filter(a => a.followed || a.authorType === 'user').map(a => a.id));
         return mode === 'following'
-            ? tweets.filter(t => t.authorType === 'character' || t.authorType === 'user' || (t.accountId && followed.has(t.accountId)))
-            : tweets;
-    }, [tweets, accounts, mode]);
+            ? tweets.filter(t => t.authorType === 'user' || (t.accountId && followed.has(t.accountId)))
+            : buildTwitterForYouFeed(tweets, userProfile);
+    }, [tweets, accounts, mode, userProfile]);
 
     const searchResults = useMemo(
         () => searchTwitter(query, tweets, accounts, { language: langFilter || undefined, mediaOnly }),

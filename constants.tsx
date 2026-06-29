@@ -50,6 +50,7 @@ import {
   ForkKnife,
   Question,
   XLogo,
+  PawPrint,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -102,6 +103,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Harem: ({ className }) => <Crown className={className} weight="bold" />,
   Forum: ({ className }) => <ChatsCircle className={className} weight="bold" />,
   Twitter: ({ className }) => <XLogo className={className} weight="bold" />,
+  DesktopPet: ({ className }) => <PawPrint className={className} weight="fill" />,
   Manual: ({ className }) => <Question className={className} weight="bold" />,
 };
 
@@ -150,6 +152,7 @@ export const INSTALLED_APPS: AppConfig[] = [
   { id: AppID.Harem, name: '椒房记', icon: 'Harem', color: 'red' },
   { id: AppID.Forum, name: '茶话亭', icon: 'Forum', color: 'blue' },
   { id: AppID.Twitter, name: '推特', icon: 'Twitter', color: 'slate' },
+  { id: AppID.DesktopPet, name: '桌宠', icon: 'DesktopPet', color: 'emerald' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },

@@ -1,0 +1,5 @@
+DyberPet Genshin assets copied for local Moro desktop pet integration.
+Source: D:/Applications/DyberPet_GenshinImpact-main
+Copied: res/role/流浪者, res/role/纳西妲, res/items/Genshin
+Not copied: executables, packaged Python runtime, user data, chat logs, pet_data.json.
+Keep original upstream and game asset licensing in mind before redistributing.

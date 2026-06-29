@@ -769,7 +769,7 @@ const Character: React.FC<{ onExit?: () => void }> = ({ onExit }) => {
       if (!formData) return;
 
       const {
-          id, memories, refinedMemories, activeMemoryMonths, guidebookInsights,
+          id, modelId, memories, refinedMemories, activeMemoryMonths, guidebookInsights,
           ...cardProps
       } = formData;
 

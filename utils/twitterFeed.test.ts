@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
     TWITTER_BATCH_SIZE,
     TWITTER_MIN_BATCH_SIZE,
+    buildTwitterForYouFeed,
     appendTwitterDMMessage,
     buildTwitterAccounts,
     createDMThread,
     createTwitterSearchRecord,
+    enforceTwitterPublicMix,
     getTwitterTranslationText,
     fallbackTwitterTweets,
+    generateTwitterTimeline,
     inferCharPostingWeight,
     materializeTwitterReactions,
     materializeTwitterTweets,
@@ -15,6 +18,7 @@ import {
     parseTwitterJsonLoose,
     searchTwitter,
     translateTwitterTextLocal,
+    twitterPublicCharacterQuota,
     twitterTranslationLabel,
 } from './twitterFeed';
 import type { CharacterProfile, TwitterTweet, UserProfile } from '../types';
@@ -131,6 +135,13 @@ describe('fallbackTwitterTweets', () => {
         expect(fallbackTwitterTweets(chars, user).length).toBe(TWITTER_BATCH_SIZE);
     });
 
+    it('keeps public fallback dominated by NPC strangers', () => {
+        const tweets = fallbackTwitterTweets(chars, user);
+        const characterCount = tweets.filter(t => t.authorType === 'character').length;
+        expect(characterCount).toBeLessThanOrEqual(twitterPublicCharacterQuota(tweets.length));
+        expect(tweets.filter(t => t.authorType === 'npc').length).toBeGreaterThanOrEqual(tweets.length - characterCount);
+    });
+
     it('includes international virtual posts', () => {
         const tweets = fallbackTwitterTweets([], user);
         expect(tweets.some(t => t.language && t.language !== 'zh-CN')).toBe(true);
@@ -141,6 +152,89 @@ describe('fallbackTwitterTweets', () => {
         const tweets = fallbackTwitterTweets([], user);
         const imageTweet = tweets.find(t => t.media?.some(m => m.type === 'image'));
         expect(imageTweet?.media?.some(m => m.type === 'image' && /^https:\/\/picsum\.photos\//.test(m.url || ''))).toBe(true);
+    });
+});
+
+describe('public timeline mix enforcement', () => {
+    it('keeps only the allowed number of character posts and fills with NPCs', () => {
+        const raw = [
+            { authorType: 'character', charId: 'c1', authorName: '鏋楀', content: 'public character note one' },
+            { authorType: 'character', charId: 'c2', authorName: '闃块潚', content: 'public character note two' },
+            { authorType: 'character', charId: 'c1', authorName: '鏋楀', content: 'public character note three' },
+            { authorName: 'Noah Park', authorHandle: '@noah', language: 'en', country: 'Canada', content: 'NPC timeline note about design', topics: ['design'] },
+        ];
+        const mixed = enforceTwitterPublicMix(materializeTwitterTweets(raw, chars, user), chars, user, TWITTER_BATCH_SIZE);
+        expect(mixed).toHaveLength(TWITTER_BATCH_SIZE);
+        expect(mixed.filter(t => t.authorType === 'character')).toHaveLength(twitterPublicCharacterQuota(TWITTER_BATCH_SIZE));
+        expect(mixed.filter(t => t.authorType === 'npc').length).toBeGreaterThanOrEqual(TWITTER_BATCH_SIZE - twitterPublicCharacterQuota(TWITTER_BATCH_SIZE));
+    });
+
+    it('drops model-generated user-authored public posts without inspecting normal content', () => {
+        const raw = [
+            { authorType: 'user', authorName: 'User', content: 'I should not be generated into public refresh' },
+            { authorName: 'Moro', authorHandle: '@moro', content: '主人今天醒得好早，黑眼圈都出来了' },
+            { authorName: 'Watcher', authorHandle: '@watcher', content: '@User looks tired today' },
+            { authorName: 'Noah Park', authorHandle: '@noah', language: 'en', country: 'Canada', content: 'A normal stranger post about morning trains', topics: ['city'] },
+        ];
+        const mixed = enforceTwitterPublicMix(materializeTwitterTweets(raw, chars, user), chars, user, TWITTER_BATCH_SIZE);
+        expect(mixed.some(t => t.authorType === 'user')).toBe(false);
+        expect(mixed.some(t => /主人|@User/.test(t.content))).toBe(true);
+        expect(mixed.some(t => t.content.includes('normal stranger post'))).toBe(true);
+    });
+
+    it('limits legacy For You character density while preserving user posts', () => {
+        const raw = [
+            { authorType: 'character', charId: 'c1', authorName: '鏋楀', content: 'legacy character top one' },
+            { authorType: 'user', authorName: 'User', content: 'my own tweet stays visible' },
+            { authorType: 'character', charId: 'c2', authorName: '闃块潚', content: 'legacy character top two' },
+            ...Array.from({ length: 11 }).map((_, i) => ({
+                authorName: `NPC ${i}`,
+                authorHandle: `@npc_${i}`,
+                language: 'en',
+                country: 'US',
+                content: `legacy npc post ${i}`,
+                topics: ['npc'],
+            })),
+        ];
+        const feed = buildTwitterForYouFeed(materializeTwitterTweets(raw, chars, user), user);
+        expect(feed.some(t => t.authorType === 'user' && t.content.includes('my own tweet'))).toBe(true);
+        const firstPublicTen = feed.filter(t => t.authorType !== 'user').slice(0, 10);
+        expect(firstPublicTen.filter(t => t.authorType === 'character').length).toBeLessThanOrEqual(1);
+    });
+
+    it('uses prompt-only guidance for focused character timelines', async () => {
+        const originalFetch = globalThis.fetch;
+        let requestBody: any = null;
+        const payload = Array.from({ length: TWITTER_MIN_BATCH_SIZE }).map((_, i) => ({
+            authorType: 'character',
+            charId: 'c1',
+            authorName: '鏋楀',
+            content: i === 0 ? '主人今天醒得好早，像是没睡够' : `整理完书桌后的角色自己状态 ${i}`,
+        }));
+        globalThis.fetch = (async (_url, init) => {
+            requestBody = JSON.parse(String((init as RequestInit)?.body || '{}'));
+            return new Response(JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(payload) } }],
+            }), { status: 200 });
+        }) as typeof fetch;
+        try {
+            const tweets = await generateTwitterTimeline(
+                { baseUrl: 'https://api.example.test', apiKey: 'sk-test', model: 'test-model' } as any,
+                [chars[0]],
+                user,
+                [],
+                [],
+                { mode: 'focused' },
+            );
+            const systemPrompt = requestBody?.messages?.[0]?.content || '';
+            expect(systemPrompt).toContain('Character tweets must show the character account');
+            expect(systemPrompt).not.toContain('User: User');
+            expect(tweets.some(t => /主人|醒得好早/.test(t.content))).toBe(true);
+            expect(tweets.some(t => t.content.includes('整理完书桌'))).toBe(true);
+            expect(tweets).toHaveLength(TWITTER_MIN_BATCH_SIZE);
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
     });
 });
 

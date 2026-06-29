@@ -3,7 +3,7 @@ import type { CharacterProfile, UserProfile } from '../types';
 import { buildFeedSystemPrompt, resolveXhsAuthorCharacter } from './xhsFeed';
 
 const sameNameChars = [
-  { id: 'char-a', name: 'Same Name', systemPrompt: 'First persona.' },
+  { id: 'char-a', modelId: 'model-a', name: 'Same Name', systemPrompt: 'First persona.' },
   { id: 'char-b', name: 'Same Name', systemPrompt: 'Second persona.' },
 ] as CharacterProfile[];
 
@@ -13,9 +13,9 @@ describe('xhs character identity', () => {
   it('lists same-name posters with distinct charIds in the prompt', () => {
     const prompt = buildFeedSystemPrompt(sameNameChars, user);
 
-    expect(prompt).toContain('Same Name (ID: char-a)');
+    expect(prompt).toContain('Same Name (ID: model-a)');
     expect(prompt).toContain('Same Name (ID: char-b)');
-    expect(prompt).toContain('charId="char-a"');
+    expect(prompt).toContain('charId="model-a"');
     expect(prompt).toContain('charId="char-b"');
     expect(prompt).toContain('真正归属以 charId 为准');
   });
@@ -27,6 +27,15 @@ describe('xhs character identity', () => {
     );
 
     expect(matched?.id).toBe('char-b');
+  });
+
+  it('resolves by modelId when it differs from the storage id', () => {
+    const matched = resolveXhsAuthorCharacter(
+      { isCharacter: true, author: 'Same Name', charId: 'model-a' },
+      sameNameChars,
+    );
+
+    expect(matched?.id).toBe('char-a');
   });
 
   it('uses author name only as a fallback and prevents duplicate character authors', () => {

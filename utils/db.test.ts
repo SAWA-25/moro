@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { DB, openDB } from './db';
-import type { RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
+import type { CharacterProfile, RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage } from '../types';
 
 // fake-indexeddb 已通过 test-setup.ts 注入。这组用例锁住「单例连接复用」这条修复:
 // 修复前 openDB 每次调用都 indexedDB.open() 新开一条连接 (a !== b, 且每个 DB 操作
@@ -130,6 +130,26 @@ describe('openDB blocked-then-unblocked 不泄漏连接', () => {
   });
 });
 
+describe('character identity persistence', () => {
+  it('backfills modelId when saving and reading legacy character rows', async () => {
+    await DB.deleteDB();
+    const legacy = {
+      id: 'legacy-char',
+      name: 'Legacy',
+      avatar: '',
+      description: '',
+      systemPrompt: '',
+      memories: [],
+      contextLimit: 500,
+    } as CharacterProfile;
+
+    await DB.saveCharacter(legacy);
+
+    const chars = await DB.getAllCharacters();
+    expect(chars.find(c => c.id === 'legacy-char')?.modelId).toBe('legacy-char');
+  });
+});
+
 describe('relationship network stores', () => {
   it('saves and reads edges, pair messages, and auto settings', async () => {
     await DB.deleteDB();
@@ -159,6 +179,8 @@ describe('relationship network stores', () => {
       intervalMinutes: 30,
       charCooldownMinutes: 60,
       pairCooldownMinutes: 120,
+      summaryCompressAfter: 72,
+      summaryKeepRaw: 36,
       nextRunAt: 999,
       lastRunAtByChar: { a: 10 },
       lastRunAtByPair: { [pairKey]: 10 },

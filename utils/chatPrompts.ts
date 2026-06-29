@@ -15,6 +15,7 @@ import { applyRegexToText } from './regex/store';
 import { regex_placement } from './regex/engine';
 import { timeGapHint } from './laiwangPrompts';
 import { buildRecentLifeContextBlock } from './autonomousLife';
+import { formatCharacterWithId } from './characterIdentity';
 
 // 群活动注入专用：把一条群消息压成"适合塞进别人私聊背景"的短文本。
 // 关键：image 消息的 content 是 base64（群里发图走 processImage 压成 JPEG，单张几十 KB），
@@ -221,9 +222,15 @@ export const ChatPrompts = {
                 allGroupMsgs.sort((a, b) => a.timestamp - b.timestamp);
                 const recentGroupMsgs = allGroupMsgs;
                 if (recentGroupMsgs.length === 0) return '';
+                const allCharacters = await DB.getAllCharacters();
+                const charById = new Map(allCharacters.map(c => [c.id, c] as const));
                 const groupLogStr = recentGroupMsgs.map(m => {
                     const dateStr = new Date(m.timestamp).toLocaleString([], {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
-                    return `[${dateStr}] [Group: ${m.groupName}] ${m.role === 'user' ? userProfile.name : 'Member'}: ${summarizeGroupMsgContent(m)}`;
+                    const speakerChar = charById.get(m.charId || '');
+                    const speaker = m.role === 'user'
+                        ? userProfile.name
+                        : (speakerChar ? formatCharacterWithId(speakerChar) : 'Member');
+                    return `[${dateStr}] [Group: ${m.groupName}] ${speaker}: ${summarizeGroupMsgContent(m)}`;
                 }).join('\n');
                 return `\n### [Background Context: Recent Group Activities]\n(注意：你是以下群聊的成员...)\n${groupLogStr}\n`;
             } catch (e) {

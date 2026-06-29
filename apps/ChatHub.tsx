@@ -25,8 +25,9 @@ import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
 import { ambientSocialToCharacter, ensureAmbientSocialState, patchAmbientSocialEntry } from '../utils/ambientSocial';
-import { formatCharacterWithId } from '../utils/characterIdentity';
+import { formatCharacterWithId, getCharacterModelId } from '../utils/characterIdentity';
 import { FORUM_PENDING_CHAT_SHARE_KEY, normalizeForumSharePendingPayload } from '../utils/forum';
+import { llmComplete } from '../utils/llmComplete';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -166,6 +167,7 @@ const CONVO_HIDDEN_WINDOWS_KEY = 'moro_chathub_hidden_windows_v1';
 type ConvoKind = 'char' | 'group' | 'ambient';
 type ConvoHiddenWindows = Record<string, number>;
 type GroupMemberLensDraft = Record<string, Record<string, string>>;
+const MEMBER_LENS_MAX_LENGTH = 500;
 type ConvoListItem = {
     kind: ConvoKind;
     id: string;
@@ -200,6 +202,56 @@ const pruneGroupMemberLenses = (lenses: GroupProfile['memberLenses'] | undefined
 const groupMemberLensCount = (lenses: GroupProfile['memberLenses'] | undefined, memberIds: string[]): number =>
     Object.values(pruneGroupMemberLenses(lenses, memberIds)).reduce((sum, targets) => sum + Object.keys(targets).length, 0);
 
+const cleanGeneratedMemberLens = (value: unknown): string => String(value || '')
+    .replace(/```(?:json)?/gi, '')
+    .replace(/```/g, '')
+    .replace(/^["'“”]+|["'“”]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MEMBER_LENS_MAX_LENGTH);
+
+const parseGeneratedMemberLensMap = (raw: string, targetIds: string[]): Record<string, string> => {
+    const targetSet = new Set(targetIds);
+    const out: Record<string, string> = {};
+    const cleaned = String(raw || '').replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+    const jsonText = (() => {
+        const objStart = cleaned.indexOf('{');
+        const objEnd = cleaned.lastIndexOf('}');
+        if (objStart >= 0 && objEnd > objStart) return cleaned.slice(objStart, objEnd + 1);
+        const arrStart = cleaned.indexOf('[');
+        const arrEnd = cleaned.lastIndexOf(']');
+        if (arrStart >= 0 && arrEnd > arrStart) return cleaned.slice(arrStart, arrEnd + 1);
+        return cleaned;
+    })();
+
+    try {
+        const parsed = JSON.parse(jsonText);
+        const source = parsed?.relations || parsed?.lenses || parsed?.items || parsed;
+        if (Array.isArray(source)) {
+            source.forEach((item: any) => {
+                const id = String(item?.targetId || item?.charId || item?.id || '').trim();
+                if (!targetSet.has(id)) return;
+                const text = cleanGeneratedMemberLens(item?.text ?? item?.relation ?? item?.summary ?? item?.note);
+                if (text) out[id] = text;
+            });
+        } else if (source && typeof source === 'object') {
+            targetIds.forEach(id => {
+                const value = source[id];
+                const text = typeof value === 'string'
+                    ? cleanGeneratedMemberLens(value)
+                    : cleanGeneratedMemberLens(value?.text ?? value?.relation ?? value?.summary ?? value?.note);
+                if (text) out[id] = text;
+            });
+        }
+    } catch {
+        if (targetIds.length === 1) {
+            const text = cleanGeneratedMemberLens(cleaned);
+            if (text) out[targetIds[0]] = text;
+        }
+    }
+    return out;
+};
+
 const buildGroupMemberLensBlock = (
     group: GroupProfile,
     viewer: CharacterProfile,
@@ -218,6 +270,18 @@ const buildGroupMemberLensBlock = (
         .filter(Boolean);
     if (!lines.length) return '';
     return `[角色之间的关系 - 只供 ${displayName(viewer.id)} 自己参考]\n${lines.join('\n')}\n这些是“在你眼里别人是谁、彼此什么关系、有没有过节”的私密视角。只影响你的发言，不是群公告，也不是所有人都知道的事实；请用它调整称呼、熟稔度、避让、调侃或旧账感，不要照抄成设定说明。\n`;
+};
+
+const resolveGroupMemberStorageId = (
+    group: Pick<GroupProfile, 'members'>,
+    members: CharacterProfile[],
+    rawId: unknown,
+): string | undefined => {
+    const id = String(rawId || '').trim();
+    if (!id) return undefined;
+    if (group.members.includes(id)) return id;
+    const byModelId = members.find(member => getCharacterModelId(member) === id);
+    return byModelId && group.members.includes(byModelId.id) ? byModelId.id : undefined;
 };
 
 const loadHiddenConvoWindows = (): ConvoHiddenWindows => {
@@ -1063,6 +1127,7 @@ const ChatHub: React.FC = () => {
     const [tempSpecialCareNotify, setTempSpecialCareNotify] = useState(true);
     const [tempMemberLenses, setTempMemberLenses] = useState<GroupMemberLensDraft>({});
     const [tempLensViewerId, setTempLensViewerId] = useState<string | null>(null);
+    const [memberLensGeneratingKey, setMemberLensGeneratingKey] = useState<string | null>(null);
     const [tempReplyIndividually, setTempReplyIndividually] = useState(false);
     const [tempAutoContinueEnabled, setTempAutoContinueEnabled] = useState(false);
     const [tempAutoContinueRounds, setTempAutoContinueRounds] = useState(2);
@@ -1209,6 +1274,7 @@ const ChatHub: React.FC = () => {
         setTempSpecialCareNotify(group.specialCareNotify !== false);
         setTempMemberLenses(pruneGroupMemberLenses(group.memberLenses, group.members || []));
         setTempLensViewerId(group.members?.[0] || null);
+        setMemberLensGeneratingKey(null);
         setTempReplyIndividually(!!group.replyIndividually);
         setTempAutoContinueEnabled(!!group.autoContinueEnabled);
         setTempAutoContinueRounds(Math.max(1, Math.min(8, group.autoContinueRounds || 2)));
@@ -2140,6 +2206,100 @@ const ChatHub: React.FC = () => {
         const memberLenses = pruneGroupMemberLenses(tempMemberLenses, activeGroup.members);
         setTempMemberLenses(memberLenses);
         return applyGroupUpdate({ memberLenses });
+    };
+
+    const buildMemberLensGenerationPrompt = (group: GroupProfile, viewer: CharacterProfile, targets: CharacterProfile[]): string => {
+        const clip = (value: unknown, max = 700) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+        const charBrief = (char: CharacterProfile) => [
+            `- id: ${char.id}`,
+            `  群内称呼: ${displayNameOf(group, char.id)}`,
+            `  身份锚: ${formatCharacterWithId(char, displayNameOf(group, char.id))}`,
+            char.description ? `  简介: ${clip(char.description, 260)}` : '',
+            char.systemPrompt ? `  人设: ${clip(char.systemPrompt, 900)}` : '',
+            char.worldview ? `  世界观: ${clip(char.worldview, 500)}` : '',
+            char.relationship?.label ? `  和用户关系: ${char.relationship.label}` : '',
+        ].filter(Boolean).join('\n');
+        const recentLines = messages
+            .filter(m => m.type === 'text' || m.type === 'system')
+            .slice(-24)
+            .map(m => {
+                const sender = m.role === 'user'
+                    ? displayNameOf(group, 'user')
+                    : (m.role === 'system' ? '系统通知' : displayNameOf(group, m.charId));
+                return `${sender}: ${clip(m.content, 180)}`;
+            })
+            .filter(Boolean)
+            .join('\n');
+        const existing = tempMemberLenses[viewer.id] || {};
+        const existingLines = Object.entries(existing)
+            .map(([targetId, text]) => `- ${displayNameOf(group, viewer.id)} 眼里的 ${displayNameOf(group, targetId)}: ${text}`)
+            .join('\n');
+        const outputShape = JSON.stringify(Object.fromEntries(targets.map(target => [
+            target.id,
+            `${displayNameOf(group, viewer.id)}眼里的${displayNameOf(group, target.id)}关系备注`,
+        ])));
+
+        return `你是 Moro 群聊的「角色关系视角」补写助手。请为当前群聊补写私密关系备注。
+
+这些备注只给某个角色自己发言时参考，不是群公告，不会进入聊天记录。请写成该角色的主观视角：TA 眼里的对方是谁、熟不熟、亲近/防备/竞争/亏欠/旧账/暧昧等关系温度。资料不足时可以保守推断，但不要写成绝对事实。
+
+群聊：${group.name}
+用户：${userProfile.name || '用户'}
+当前视角角色：${displayNameOf(group, viewer.id)}（id: ${viewer.id}）
+
+群成员资料：
+${[viewer, ...targets].map(charBrief).join('\n\n')}
+
+当前已写备注（可参考，不要照抄成公告）：
+${existingLines || '暂无'}
+
+最近群聊片段：
+${recentLines || '暂无'}
+
+要求：
+- 只输出 JSON，不要 Markdown，不要解释。
+- JSON 的 key 必须使用目标角色 id，value 是 1-2 句中文备注，每条不超过 120 字。
+- 不要写「我是 AI」「系统提示」之类元叙事。
+- 不要把双方关系写成所有人都知道的公共设定，要带一点当前视角角色的偏见、熟稔度或边界感。
+
+输出格式示例：
+${outputShape}`;
+    };
+
+    const generateMemberLensDrafts = async (viewer: CharacterProfile, targets: CharacterProfile[]) => {
+        if (!activeGroup || !targets.length) return;
+        const group = activeGroup;
+        const targetIds = targets.map(target => target.id);
+        const key = targets.length === 1 ? `${viewer.id}:${targets[0].id}` : `${viewer.id}:all`;
+        const api = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!api.baseUrl?.trim() || !api.model?.trim()) {
+            addToast('请先在「文具盒」里配置 API', 'error');
+            return;
+        }
+        setMemberLensGeneratingKey(key);
+        try {
+            const raw = await llmComplete(
+                api,
+                [{ role: 'user', content: buildMemberLensGenerationPrompt(group, viewer, targets) }],
+                { temperature: 0.68, maxTokens: Math.min(2600, 650 + targets.length * 280) },
+            );
+            const generated = parseGeneratedMemberLensMap(raw, targetIds);
+            const entries = Object.entries(generated).filter(([, text]) => text.trim());
+            if (!entries.length) throw new Error('empty lens generation');
+            setTempMemberLenses(prev => {
+                const next: GroupMemberLensDraft = { ...prev, [viewer.id]: { ...(prev[viewer.id] || {}) } };
+                entries.forEach(([targetId, text]) => {
+                    next[viewer.id][targetId] = text;
+                });
+                return pruneGroupMemberLenses(next, group.members);
+            });
+            addToast(targets.length === 1 ? '已生成关系草稿，可继续修改' : `已补全 ${entries.length} 条关系草稿，可继续修改`, 'success');
+        } catch (err) {
+            console.warn('[GroupMemberLens] generate failed', err);
+            addToast('关系生成失败，请稍后再试', 'error');
+        } finally {
+            setMemberLensGeneratingKey(null);
+        }
     };
 
     const handleToggleGroupPinned = async () => {
@@ -3396,7 +3556,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
 - 被标记「禁言中」的成员不能发言。
 - 角色要像自己，不要平均分配台词；谁更可能说话由你判断。
 - 不要输出表情包指令、PRIVATE、投票、接龙、改名片等普通群聊指令。
-- 输出里的 charId 必须精确使用花名册中的成员ID，不要用角色名、群名片或自己编的ID。
+- 输出里的 charId 必须精确使用花名册中 "(ID: ...)" 里的角色ID，不要用角色名、群名片或自己编的ID。
 
 输出必须是 JSON Array，格式如下:
 [
@@ -3442,8 +3602,9 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
         const now = Date.now();
         const replies = parsed
             .map((action, idx) => {
-                const targetId = group.members.includes(action?.charId) && !isMuted(group, action.charId)
-                    ? action.charId
+                const resolvedCharId = resolveGroupMemberStorageId(group, groupMembers, action?.charId);
+                const targetId = resolvedCharId && !isMuted(group, resolvedCharId)
+                    ? resolvedCharId
                     : availableMembers[idx % availableMembers.length]?.id;
                 const member = characters.find(c => c.id === targetId);
                 const text = cleanGroupCallText(String(action?.content ?? action?.text ?? ''));
@@ -3534,11 +3695,10 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
             const c = characters.find(item => item.id === id);
             return {
                 id,
-                name: displayNameOf(activeGroup, id),
+                name: c ? formatCharacterWithId(c, displayNameOf(activeGroup, id)) : displayNameOf(activeGroup, id),
                 avatar: c?.avatar,
             };
         });
-        const names = activeGroup.members.map(id => displayNameOf(activeGroup, id)).filter(Boolean);
         const startedAt = Date.now();
         const sessionId = `group-call-${activeGroup.id}-${startedAt}`;
         const messageId = await DB.saveMessage({
@@ -3553,7 +3713,7 @@ ${mode === 'opening' ? '群语音刚接通。请让 1-3 位最可能先开口的
                 callDirection: 'outgoing',
                 callOutcome: 'active',
                 memberIds: activeGroup.members,
-                memberNames: names,
+                memberNames: callMembers.map(c => formatCharacterWithId(c, displayNameOf(activeGroup, c.id))),
                 memberAvatars: callMembers.map(c => c.avatar),
                 memberCount: activeGroup.members.length,
                 startedAt,
@@ -3878,7 +4038,10 @@ ${recentPrivate || '(暂无私聊)'}
                     const previews = Array.isArray(fp.repliesPreview)
                         ? fp.repliesPreview.slice(0, 4).map((r: any) => `${r.floor || '?'}楼 ${r.authorName || '茶客'}:${r.body || ''}`).join(' / ')
                         : '';
-                    const sharer = m.role === 'user' ? '用户' : (characters.find(c => c.id === m.charId)?.name || '群友');
+                    const sharerChar = characters.find(c => c.id === m.charId);
+                    const sharer = m.role === 'user'
+                        ? '用户'
+                        : (sharerChar ? formatCharacterWithId(sharerChar, displayNameOf(activeGroup, sharerChar.id)) : '群友');
                     content = `[茶话亭帖子分享 by ${sharer}] 板块:${fp.boardName || fp.boardId || '茶话亭'} 楼主:${fp.author?.name || '匿名茶客'} 标题:${fp.title || '未命名'} 正文:${fp.body || '无'} 热度:${stats.likes || 0}赞/${stats.floors || 0}楼${fp.tags?.length ? ` 标签:${fp.tags.map((t: string) => `#${t}`).join(' ')}` : ''}${previews ? ` 楼层预览:${previews}` : ''}`;
                 } else if (m.type === 'poll_card') {
                     // 群投票：把问题/带序号的选项/当前票数喂给导演，方便没投过的成员投票
@@ -4013,7 +4176,7 @@ ${attachedImagesNote}
 - 但参考"对话质量"——不要因为私聊状态就给出套路化反应。
 
 ### 输出格式 (JSON Array)
-每条消息的 "charId" 必须精确使用上方群成员花名册中的成员ID；不要用角色名、群名片、头衔或自己编造的ID。
+每条消息的 "charId" 必须精确使用上方群成员花名册中 "(ID: ...)" 里的角色ID；不要用角色名、群名片、头衔或自己编造的ID。
 [
   {
     "charId": "角色的ID",
@@ -4089,6 +4252,7 @@ ${attachedImagesNote}
                         usage.total += data.usage.total_tokens || 0;
                     }
                     const actionsForMember = parseGroupDirectorActions(data.choices?.[0]?.message?.content)
+                        .map(action => ({ ...action, charId: resolveGroupMemberStorageId(activeGroup, groupMembers, action.charId) || action.charId }))
                         .filter(action => action.charId === member.id)
                         .slice(0, 1);
                     collected.push(...actionsForMember);
@@ -4123,7 +4287,7 @@ ${attachedImagesNote}
             const todayCheckinKey = todayKey();
             const latestCheckinMsg = [...currentMsgs].reverse().find(m => m.type === 'checkin_card' && (m.metadata as any)?.date === todayCheckinKey);
             for (const action of actions) {
-                const targetId = activeGroup.members.find(id => id === action.charId);
+                const targetId = resolveGroupMemberStorageId(activeGroup, groupMembers, action.charId);
                 if (!targetId) continue;
                 // 防御：导演偶尔给「本轮沉默的成员」只返回 {charId} 而不带 content（或 content 非字符串）。
                 // 不归一化的话，下面对 action.content 调 .replace/.exec 会抛 TypeError，被外层 catch 吞掉，
@@ -5882,6 +6046,10 @@ ${attachedImagesNote}
                             .filter(Boolean) as CharacterProfile[];
                         const selectedViewer = memberList.find(member => member.id === tempLensViewerId) || memberList[0] || null;
                         const savedCount = activeGroup ? groupMemberLensCount(activeGroup.memberLenses, activeGroup.members) : 0;
+                        const lensTargets = selectedViewer ? memberList.filter(target => target.id !== selectedViewer.id) : [];
+                        const blankLensTargets = selectedViewer
+                            ? lensTargets.filter(target => !(tempMemberLenses[selectedViewer.id]?.[target.id] || '').trim())
+                            : [];
                         return (
                             <div className="pt-3 space-y-4">
                                 <ScrapDivider className="mb-3" />
@@ -5917,14 +6085,35 @@ ${attachedImagesNote}
 
                                         {selectedViewer && (
                                             <div className="space-y-3">
-                                                <div className="flex items-center justify-between gap-3">
-                                                    <ScrapLabel en="RELATIONS">写给 {displayNameOf(activeGroup, selectedViewer.id)} 自己看的</ScrapLabel>
-                                                    <span className="shrink-0 text-[9px] font-bold px-2 py-1 rounded-full" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK_SOFT }}>
-                                                        已存 {savedCount}
-                                                    </span>
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <ScrapLabel en="RELATIONS" className="mb-0 flex-1 min-w-0">写给 {displayNameOf(activeGroup, selectedViewer.id)} 自己看的</ScrapLabel>
+                                                        <span className="shrink-0 text-[9px] font-bold px-2 py-1 rounded-full" style={{ background: '#fffdfa', border: '1px solid #eed6df', color: INK_SOFT }}>
+                                                            已存 {savedCount}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <ScrapBtn
+                                                            variant="ghost"
+                                                            full={false}
+                                                            className="!py-2 !px-3 text-[11px] shrink-0"
+                                                            disabled={!!memberLensGeneratingKey}
+                                                            icon={<Lightbulb size={14} weight="bold" />}
+                                                            onClick={() => {
+                                                                if (!blankLensTargets.length) {
+                                                                    addToast('当前视角没有空白关系，单张卡片可重新生成', 'info');
+                                                                    return;
+                                                                }
+                                                                void generateMemberLensDrafts(selectedViewer, blankLensTargets);
+                                                            }}
+                                                        >
+                                                            {memberLensGeneratingKey === `${selectedViewer.id}:all` ? '生成中' : '补全空白'}
+                                                        </ScrapBtn>
+                                                        <ScrapNote className="flex-1">生成后仍可手改，再点底部保存。</ScrapNote>
+                                                    </div>
                                                 </div>
                                                 <div className="space-y-3">
-                                                    {memberList.filter(target => target.id !== selectedViewer.id).map(target => {
+                                                    {lensTargets.map(target => {
                                                         const value = tempMemberLenses[selectedViewer.id]?.[target.id] || '';
                                                         return (
                                                             <div
@@ -5940,6 +6129,16 @@ ${attachedImagesNote}
                                                                         </div>
                                                                         <div className="text-[9.5px] truncate" style={{ color: INK_SOFT }}>例：以前合作过，嘴上互怼但彼此认可；或：刚进群，还不熟。</div>
                                                                     </div>
+                                                                    <ScrapBtn
+                                                                        variant="ghost"
+                                                                        full={false}
+                                                                        className="!py-1.5 !px-2 text-[10px] shrink-0"
+                                                                        disabled={!!memberLensGeneratingKey}
+                                                                        icon={<Lightbulb size={12} weight="bold" />}
+                                                                        onClick={() => void generateMemberLensDrafts(selectedViewer, [target])}
+                                                                    >
+                                                                        {memberLensGeneratingKey === `${selectedViewer.id}:${target.id}` ? '生成中' : '生成'}
+                                                                    </ScrapBtn>
                                                                 </div>
                                                                 <ScrapTextarea
                                                                     value={value}

@@ -412,6 +412,7 @@ const buildDefaultDeskLayout = (items: DeskItem[], orderedKeys: string[]): Recor
         AppID.Shop,
         AppID.Harem,
         AppID.Forum,
+        AppID.DesktopPet,
         AppID.XhsFreeRoam,
         AppID.XhsStock,
         AppID.Manual,

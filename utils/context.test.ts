@@ -4,6 +4,7 @@ import { ContextBuilder } from './context';
 
 const char = {
   id: 'char-a',
+  modelId: 'model-a',
   name: 'Same Name',
   avatar: '',
   description: '',
@@ -22,8 +23,8 @@ describe('ContextBuilder character identity anchor', () => {
   it('includes the hidden character id in core context', () => {
     const context = ContextBuilder.buildCoreContext(char, user, false);
 
-    expect(context).toContain('角色ID: char-a');
-    expect(context).toContain('Same Name (ID: char-a)');
+    expect(context).toContain('角色ID: model-a');
+    expect(context).toContain('Same Name (ID: model-a)');
     expect(context).toContain('不要与其他角色合并');
     expect(context).toContain('日常对话里不要主动念给用户听');
   });
@@ -32,8 +33,8 @@ describe('ContextBuilder character identity anchor', () => {
     const context = ContextBuilder.buildRoleSettingsContext(char, { skipMemories: true });
 
     expect(context).toContain('Hidden Character ID');
-    expect(context).toContain('角色ID: char-a');
-    expect(context).toContain('Same Name (ID: char-a)');
+    expect(context).toContain('角色ID: model-a');
+    expect(context).toContain('Same Name (ID: model-a)');
     expect(context).toContain('不要与其他角色合并');
   });
 });

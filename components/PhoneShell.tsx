@@ -103,6 +103,7 @@ const HaremApp = lazyApp(() => import('../apps/HaremApp'));
 const ForumApp = lazyApp(() => import('../apps/ForumApp'));
 const TwitterApp = lazyApp(() => import('../apps/TwitterApp'));
 const VideoCallApp = lazyApp(() => import('../apps/VideoCallApp'));
+const DesktopPetApp = lazyApp(() => import('../apps/DesktopPetApp'));
 const ManualApp = lazyApp(() => import('../apps/ManualApp'));
 
 // 预取优先级：高频/常驻 App 先预热，其余随后；逐个在空闲时触发，避免与交互抢主线程/带宽。
@@ -113,7 +114,7 @@ const APP_PRELOAD_ORDER: PreloadableLazy[] = [
   VRWorldApp, LifeSimApp, SongwritingApp, GuidebookApp, HotNewsApp,
   XhsStockApp, XhsFreeRoamApp, BrowserApp, VoiceDesignerApp, ThemeMaker, QQBridge,
   SpecialMomentsApp, CharCreatorDevApp, CreativeStudioApp, TheaterApp, AlmanacApp,
-  XunjiApp, TwitterApp, ManualApp,
+  XunjiApp, TwitterApp, DesktopPetApp, ManualApp,
 ];
 
 // AppID → 懒加载组件，供「按下即预取」连 React.lazy 负载一起解析（消除切换瞬间露底色的闪烁）。
@@ -135,7 +136,7 @@ const APP_BY_ID: Partial<Record<AppID, PreloadableLazy>> = {
   [AppID.Presets]: PresetApp, [AppID.Personas]: PersonaHubApp, [AppID.Regex]: RegexApp,
   [AppID.Creative]: CreativeStudioApp, [AppID.Theater]: TheaterApp, [AppID.Almanac]: AlmanacApp,
   [AppID.Takeout]: TakeoutApp, [AppID.Xunji]: XunjiApp, [AppID.Shop]: ShopApp, [AppID.Harem]: HaremApp, [AppID.Forum]: ForumApp, [AppID.VideoCall]: VideoCallApp,
-  [AppID.Twitter]: TwitterApp, [AppID.Manual]: ManualApp,
+  [AppID.Twitter]: TwitterApp, [AppID.DesktopPet]: DesktopPetApp, [AppID.Manual]: ManualApp,
 };
 // 注入负载预热器：AppIcon 的 pointerdown → preloadApp(id) → 这里 warmLazy，连 React.lazy 负载一起解析。
 setAppPayloadWarmer((id: AppID) => { const c = APP_BY_ID[id]; if (c) warmLazy(c); });
@@ -155,6 +156,7 @@ import IncomingCallOverlay from './os/IncomingCallOverlay';
 import GlobalMiniPlayer from './os/GlobalMiniPlayer';
 import ErrorDialog from './os/ErrorDialog';
 import BootSequence from './os/BootSequence';
+import DesktopPetOverlay from './desktopPet/DesktopPetOverlay';
 import { setAppPayloadWarmer } from './os/appPreload';
 import { toWallpaperBackground } from '../utils/defaultWallpapers';
 
@@ -620,6 +622,7 @@ const PhoneShell: React.FC = () => {
       case AppID.Forum: return <ForumApp />;
       case AppID.Twitter: return <TwitterApp />;
       case AppID.VideoCall: return <VideoCallApp />;
+      case AppID.DesktopPet: return <DesktopPetApp />;
       case AppID.Manual: return <ManualApp />;
       case AppID.Novel: return <NovelApp />;
       case AppID.Bank: return <BankApp />;
@@ -725,6 +728,8 @@ const PhoneShell: React.FC = () => {
           {/* Overlays: 悬浮窗快捷菜单（可拖动悬浮球 → 常用 App 快捷入口；锁屏时隐藏，拼贴册可关） */}
           {theme.floatingQuickMenu !== false && !isLocked && <FloatingQuickMenu />}
 
+          <DesktopPetOverlay />
+
           {/* Overlays: 角色主动来电（[[CALL_USER]] 指令触发，接听跳电话 App） */}
           <IncomingCallOverlay />
 
@@ -761,13 +766,13 @@ const PhoneShell: React.FC = () => {
           <GlobalMiniPlayer />
 
           {/* Overlays: Toasts (Top) — 奶白胶囊手帐风：细描边 + 柔影 + 墨色小圆点 */}
-          <div className="absolute left-0 w-full flex flex-col items-center gap-2 pointer-events-none z-[60]" style={{ top: 'calc(var(--chrome-top) + 0.75rem)' }}>
+          <div className="absolute left-0 w-full px-4 flex flex-col items-center gap-2 pointer-events-none z-[60]" style={{ top: 'calc(var(--chrome-top) + 0.75rem)' }}>
               {toasts.map(toast => (
-                 <div key={toast.id} className="animate-fade-in bg-white/95 backdrop-blur-xl px-4 py-2.5 rounded-full shadow-[0_16px_32px_-16px_rgba(50,48,60,0.45)] border border-slate-100 flex items-center gap-2.5 max-w-[85%]">
-                     {toast.type === 'success' && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.7)' }}></span>}
-                     {toast.type === 'error' && <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(251,113,133,0.7)' }}></span>}
-                     {toast.type === 'info' && <span className="w-2 h-2 rounded-full bg-slate-800 shrink-0"></span>}
-                     <span className="text-xs font-bold text-slate-700 truncate leading-none">{toast.message}</span>
+                 <div key={toast.id} className="animate-fade-in bg-white/95 backdrop-blur-xl px-3.5 py-2.5 rounded-2xl shadow-[0_16px_32px_-16px_rgba(50,48,60,0.45)] border border-slate-100 flex items-start gap-2.5 max-w-full">
+                     {toast.type === 'success' && <span className="mt-1.5 w-2 h-2 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.7)' }}></span>}
+                     {toast.type === 'error' && <span className="mt-1.5 w-2 h-2 rounded-full bg-rose-400 shrink-0" style={{ boxShadow: '0 0 6px rgba(251,113,133,0.7)' }}></span>}
+                     {toast.type === 'info' && <span className="mt-1.5 w-2 h-2 rounded-full bg-slate-800 shrink-0"></span>}
+                     <span className="min-w-0 text-xs font-bold text-slate-700 whitespace-normal break-words leading-snug [overflow-wrap:anywhere]">{toast.message}</span>
                  </div>
               ))}
            </div>

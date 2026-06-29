@@ -12,8 +12,10 @@ import {
     XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings,
     RelationshipNetworkAutoSettings, RelationshipNetworkEdge, RelationshipNetworkMessage,
     TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession,
-    TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord
+    TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord,
+    DesktopPetState
 } from '../types';
+import { ensureCharacterModelId } from './characterIdentity';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 // Legacy physical IndexedDB name retained so existing local-first user data stays available.
@@ -94,6 +96,7 @@ const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话�
 const STORE_COLLECTION_ITEMS = 'collection_items'; // 岁时记·典藏馆收录条目（引用谈心/创作社/自习室/折子戏内容）
 const STORE_TAKEOUT_ORDERS = 'takeout_orders';     // 外卖 App 订单（含与骑手/商家的对话、配送进度）
 const STORE_DIVINATION_CARDS = 'divination_cards'; // 折子戏·占卜牌库（塔罗 0~77 / 雷诺曼 1~36 的导入图）
+const STORE_DESKTOP_PET = 'desktop_pet';           // 桌宠 App 状态（角色养成、悬浮窗、提醒）
 
 // API 调用记录：保留近 5 天，超期丢弃；再加一个硬上限防止异常情况撑爆
 // Message-store change event used by views that derive summaries from IndexedDB.
@@ -742,6 +745,7 @@ export const openDB = (): Promise<IDBDatabase> => {
           const dcStore = db.createObjectStore(STORE_DIVINATION_CARDS, { keyPath: 'id' });
           dcStore.createIndex('deck', 'deck', { unique: false });
       }
+      createStore(STORE_DESKTOP_PET, { keyPath: 'id' });
     };
   });
 
@@ -865,17 +869,18 @@ export const DB = {
       const transaction = db.transaction(STORE_CHARACTERS, 'readonly');
       const store = transaction.objectStore(STORE_CHARACTERS);
       const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
+      request.onsuccess = () => resolve(((request.result || []) as CharacterProfile[]).map(c => ensureCharacterModelId(c)));
       request.onerror = () => reject(request.error);
     });
   },
 
   saveCharacter: async (character: CharacterProfile): Promise<void> => {
     const db = await openDB();
+    const normalizedCharacter = ensureCharacterModelId(character);
     // 等事务真正提交再 resolve —— 否则调用方 await 后立刻重读 DB 会拿到旧值 (情绪 buff 落库竞态根因).
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_CHARACTERS, 'readwrite');
-      transaction.objectStore(STORE_CHARACTERS).put(character);
+      transaction.objectStore(STORE_CHARACTERS).put(normalizedCharacter);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error || new Error('saveCharacter aborted'));
@@ -3961,6 +3966,23 @@ export const DB = {
       transaction.objectStore(STORE_LIFE_SIM).clear();
   },
 
+  getDesktopPetState: async (): Promise<DesktopPetState | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_DESKTOP_PET)) return null;
+      return new Promise((resolve) => {
+          const transaction = db.transaction(STORE_DESKTOP_PET, 'readonly');
+          const request = transaction.objectStore(STORE_DESKTOP_PET).get('main');
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => resolve(null);
+      });
+  },
+
+  saveDesktopPetState: async (state: DesktopPetState): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_DESKTOP_PET, 'readwrite');
+      transaction.objectStore(STORE_DESKTOP_PET).put({ ...state, id: 'main' });
+  },
+
   removeLifeSimCharacterContext: async (charId: string): Promise<number> => {
       const state = await DB.getLifeSimState();
       if (!state) return 0;
@@ -4024,7 +4046,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas] = await Promise.all([
+      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas, desktopPetRecords] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -4080,6 +4102,7 @@ export const DB = {
           getAllFromStore(STORE_INNER_VOICES),
           getAllFromStore(STORE_LLM_PRESETS),
           getAllFromStore(STORE_PERSONAS),
+          getAllFromStore(STORE_DESKTOP_PET),
       ]);
 
       const [relationshipNetworkEdges, relationshipNetworkMessages, relationshipNetworkAutoSettings] = await Promise.all([
@@ -4135,6 +4158,7 @@ export const DB = {
           innerVoices,
           llmPresets,
           personas,
+          desktopPetState: desktopPetRecords[0] || undefined,
           relationshipNetworkEdges,
           relationshipNetworkMessages,
           relationshipNetworkAutoSettings,
@@ -4178,7 +4202,8 @@ export const DB = {
           'memory_nodes', 'memory_vectors', 'memory_links', 'topic_boxes', 'anticipations', 'event_boxes',
           'memory_batches', 'pixel_home_assets', 'pixel_home_layouts',
           STORE_PHONE_CALL_LOGS, STORE_EXCHANGE_DIARY, STORE_INNER_VOICES,
-          STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS
+          STORE_RELATIONSHIP_NETWORK_EDGES, STORE_RELATIONSHIP_NETWORK_MESSAGES, STORE_RELATIONSHIP_NETWORK_SETTINGS,
+          STORE_DESKTOP_PET
       ].filter(name => db.objectStoreNames.contains(name));
 
       const hasStore = (storeName: string) => availableStores.includes(storeName);
@@ -4282,6 +4307,7 @@ export const DB = {
           data.relationshipNetworkEdges !== undefined,
           data.relationshipNetworkMessages !== undefined,
           data.relationshipNetworkAutoSettings !== undefined,
+          data.desktopPetState !== undefined,
       ];
       const sectionTotal = Math.max(1, plannedSections.filter(Boolean).length);
       let sectionDone = 0;
@@ -4411,6 +4437,7 @@ export const DB = {
                       return media ? applyMediaToChar(c, media) : c;
                   });
               }
+              data.characters = data.characters.map(c => c ? ensureCharacterModelId(c) : c);
               await clearAndAdd(STORE_CHARACTERS, data.characters, '角色资料', true);
           } else if (data.mediaAssets && hasStore(STORE_CHARACTERS)) {
               await beforeWrite(data.mediaAssets, '角色媒体', true);
@@ -4419,7 +4446,7 @@ export const DB = {
               if (existingChars.length > 0) {
                   const updatedChars = existingChars.map(c => {
                       const media = mediaAssets.find(m => m.charId === c.id);
-                      return media ? applyMediaToChar(c, media) : c;
+                      return ensureCharacterModelId(media ? applyMediaToChar(c, media) : c);
                   });
                   await putItems(STORE_CHARACTERS, updatedChars, '角色资料', false);
               }
@@ -4505,6 +4532,14 @@ export const DB = {
           await clearAndAdd(STORE_RELATIONSHIP_NETWORK_SETTINGS, data.relationshipNetworkAutoSettings, '关系网后台设置', false);
           data.relationshipNetworkAutoSettings = undefined as any;
       }, data.relationshipNetworkAutoSettings?.length || 0);
+      await runSection('桌宠', data.desktopPetState !== undefined, async () => {
+          if (!hasStore(STORE_DESKTOP_PET)) return;
+          await withStore(STORE_DESKTOP_PET, store => {
+              store.clear();
+              if (data.desktopPetState) store.put({ ...data.desktopPetState, id: 'main' });
+          });
+          data.desktopPetState = undefined as any;
+      }, data.desktopPetState ? 1 : 0);
       await runSection('纪念日', data.anniversaries !== undefined, async () => {
           await clearAndAdd(STORE_ANNIVERSARIES, data.anniversaries, '纪念日', false);
           data.anniversaries = undefined as any;

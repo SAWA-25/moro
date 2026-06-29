@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useOS } from '../../context/OSContext';
 import Modal from './Modal';
+import { isDevDebugAvailable, subscribeDevDebugAvailability } from '../../utils/devDebug';
 
 // TypeScript definition for Web Battery API
 interface BatteryManager extends EventTarget {
@@ -20,6 +21,7 @@ const StatusBar: React.FC = () => {
   const [batteryLevel, setBatteryLevel] = useState<number>(100);
   const [isCharging, setIsCharging] = useState<boolean>(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [devDebugAvailable, setDevDebugAvailable] = useState(() => isDevDebugAvailable());
   
   // Format numbers to have leading zeros
   const format = (n: number) => n.toString().padStart(2, '0');
@@ -57,7 +59,13 @@ const StatusBar: React.FC = () => {
     initBattery();
   }, []);
 
-  const hasError = systemLogs.length > 0;
+  useEffect(() => subscribeDevDebugAvailability(setDevDebugAvailable), []);
+
+  useEffect(() => {
+    if (!devDebugAvailable) setShowLogModal(false);
+  }, [devDebugAvailable]);
+
+  const hasError = devDebugAvailable && systemLogs.length > 0;
 
   return (
     <>
