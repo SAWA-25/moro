@@ -5,6 +5,7 @@ import {
     BankJobApplicationStatus,
     BankJobEmployment,
     BankJobPosting,
+    BankLifeDailyPlanItem,
     BankLifeEvent,
     BankLifeState,
     BankLoan,
@@ -12,6 +13,9 @@ import {
     BankStockHolding,
     BankStockQuote,
     BankCompanyState,
+    BankLoanCreditProfile,
+    BankMarketPulse,
+    BankResumeProfile,
 } from '../types';
 
 export const BANK_LIFE_VERSION = 2;
@@ -37,6 +41,68 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
 
 const roundMoney = (n: number) => Math.round(n * 100) / 100;
 
+function weekDayOf(dateStr: string): number {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, (m || 1) - 1, d || 1)).getUTCDay();
+}
+
+function seasonOf(dateStr: string): BankLifeState['season'] {
+    const month = Number(dateStr.slice(5, 7));
+    if (month >= 3 && month <= 5) return 'spring';
+    if (month >= 6 && month <= 8) return 'summer';
+    if (month >= 9 && month <= 11) return 'autumn';
+    return 'winter';
+}
+
+function buildDailyPlan(life: Partial<BankLifeState> & { dateStr: string }): BankLifeDailyPlanItem[] {
+    const plan: BankLifeDailyPlanItem[] = [];
+    if (life.currentJob) {
+        plan.push({ id: 'plan-work', kind: 'work', label: '上班赚钱', detail: `${life.currentJob.employer} · ${life.currentJob.title}`, tone: 'info' });
+    } else {
+        plan.push({ id: 'plan-rest', kind: 'rest', label: '休整生活', detail: '今天没有固定班次，适合恢复精力或找新机会。', tone: 'good' });
+    }
+    if (life.shopUnlocked) plan.push({ id: 'plan-shop', kind: 'shop', label: '打理小店', detail: `${life.shopBusinessName || '小店'} 有货架和客群要照看。`, tone: 'info' });
+    if (life.company?.pendingIssue) plan.push({ id: 'plan-company', kind: 'company', label: '处理公司事务', detail: life.company.pendingIssue.title, tone: 'warn' });
+    const loan = life.loans?.find(l => l.outstanding + l.interestDue > 0);
+    if (loan) plan.push({ id: 'plan-loan', kind: 'loan', label: '关注还款', detail: `${loan.productName || loan.note} 到期日 ${loan.dueDate}`, tone: loan.overdueDays > 0 ? 'bad' : 'warn' });
+    if (life.stockMarket?.length) plan.push({ id: 'plan-invest', kind: 'invest', label: '查看行情', detail: '自选股行情每天刷新，可复盘持仓盈亏。', tone: 'info' });
+    return plan.slice(0, 5);
+}
+
+function defaultResume(dateStr: string): BankResumeProfile {
+    return {
+        name: '我',
+        headline: '正在探索人生拟机会',
+        expectedCategories: [],
+        skills: [],
+        experience: [],
+        education: '',
+        selfIntro: '希望找到适合当前生活节奏的机会。',
+        updatedAt: new Date(`${dateStr}T00:00:00Z`).getTime() || Date.now(),
+    };
+}
+
+function defaultCreditProfile(dateStr = todayStr()): BankLoanCreditProfile {
+    return {
+        score: 620,
+        incomeStability: 50,
+        debtPressure: 20,
+        repaymentHistory: 70,
+        riskLevel: 'medium',
+        reasons: ['暂无完整收入与还款记录，先按中等信用评估。'],
+        updatedAt: dateStr,
+    };
+}
+
+
+export function canUnlockLifeShop(balance: number): boolean {
+    return balance >= SHOP_UNLOCK_COST;
+}
+
+export function canFoundCompany(balance: number): boolean {
+    return balance >= COMPANY_FOUND_COST;
+}
+
 function seededNoise(seed: string): number {
     let h = 2166136261;
     for (let i = 0; i < seed.length; i++) {
@@ -50,7 +116,7 @@ export const JOB_CATEGORIES = [
     '全部', '服务业', '餐饮', '安保', '技术', '设计', '文职', '销售', '教育', '医疗辅助', '物流', '自由职业', '兼职', '灰色/黑心岗位',
 ];
 
-export const JOB_POSTINGS: BankJobPosting[] = [
+const RAW_JOB_POSTINGS: BankJobPosting[] = [
     { id: 'job-cleaner', category: '服务业', title: '写字楼保洁', employer: '星河物业', salaryMin: 4200, salaryMax: 5600, payCycle: 'monthly', payDay: 10, intensity: 3, requirements: ['细心', '能早起'], benefits: ['包工作餐', '稳定排班'], riskTags: ['早班'], description: '负责公共区域清洁和巡检，节奏稳定，适合先攒启动资金。', successBias: 0.22 },
     { id: 'job-waiter', category: '餐饮', title: '餐厅服务员', employer: '晚风小馆', salaryMin: 4800, salaryMax: 6800, payCycle: 'monthly', payDay: 15, intensity: 4, requirements: ['沟通', '能站班'], benefits: ['包餐', '小费机会'], riskTags: ['晚班', '高峰忙'], description: '负责点单、上菜和收台，忙起来很累，但现金流稳定。', successBias: 0.18 },
     { id: 'job-programmer', category: '技术', title: '前端程序员', employer: '蓝鲸云科', salaryMin: 15000, salaryMax: 26000, payCycle: 'monthly', payDay: 5, intensity: 4, requirements: ['React', 'TypeScript', '项目经验'], benefits: ['双休', '项目奖金'], riskTags: ['加班', '面试难'], description: '维护 Web 产品和内部工具，薪资高，面试门槛也高。', successBias: -0.08 },
@@ -65,6 +131,34 @@ export const JOB_POSTINGS: BankJobPosting[] = [
     { id: 'job-shady-deposit', category: '灰色/黑心岗位', title: '高薪试岗店员', employer: '金拱门外包部', salaryMin: 9000, salaryMax: 16000, payCycle: 'monthly', payDay: 28, intensity: 5, requirements: ['先交服装押金'], benefits: ['号称包过'], riskTags: ['押金', '无薪试岗', '拖欠'], description: '招聘页写得很好看，但细则里藏着押金和无薪试岗。', black: true, successBias: -0.22 },
     { id: 'job-shady-click', category: '灰色/黑心岗位', title: '居家数据标注', employer: '快赚互联', salaryMin: 300, salaryMax: 1200, payCycle: 'daily', intensity: 2, requirements: ['自备电脑', '先培训'], benefits: ['在家做'], riskTags: ['培训费', '结算不明'], description: '看似轻松，可能会被收培训费或拖延结算。', black: true, successBias: -0.18 },
 ];
+
+const JOB_DETAIL_PRESETS: Record<string, Partial<BankJobPosting>> = {
+    '服务业': { location: '本市 · 商务区', education: '不限', experienceRequired: '经验不限', workTime: '排班制', companySize: '100-499人', bossTitle: '招聘主管', tags: ['稳定', '包餐', '就近分配'] },
+    '餐饮': { location: '本市 · 餐饮街', education: '不限', experienceRequired: '经验不限', workTime: '早晚班轮换', companySize: '20-99人', bossTitle: '店长', tags: ['包餐', '小费', '晋升快'] },
+    '安保': { location: '本市 · 社区', education: '不限', experienceRequired: '经验不限', workTime: '两班倒', companySize: '500-999人', bossTitle: '项目经理', tags: ['住宿补贴', '稳定', '夜班'] },
+    '技术': { location: '本市 · 科技园', education: '本科', experienceRequired: '1-3年', workTime: '10:00-19:00', companySize: '100-499人', bossTitle: '技术负责人', tags: ['React', 'TypeScript', '双休'] },
+    '设计': { location: '本市 · 创意园', education: '大专', experienceRequired: '作品集优先', workTime: '弹性工作', companySize: '20-99人', bossTitle: '创意总监', tags: ['作品集', '弹性', '审美'] },
+    '文职': { location: '本市 · 写字楼', education: '大专', experienceRequired: '经验不限', workTime: '朝九晚六', companySize: '50-199人', bossTitle: '行政经理', tags: ['稳定', '双休', '表格'] },
+    '销售': { location: '本市 · 门店/外勤', education: '不限', experienceRequired: '经验不限', workTime: '弹性排班', companySize: '100-499人', bossTitle: '销售经理', tags: ['高提成', '客户资源', '抗压'] },
+    '教育': { location: '本市 · 社区校区', education: '大专', experienceRequired: '有辅导经验优先', workTime: '晚间/周末', companySize: '20-99人', bossTitle: '校区负责人', tags: ['日结', '耐心', '短时'] },
+    '医疗辅助': { location: '本市 · 医院周边', education: '不限', experienceRequired: '熟悉就医流程优先', workTime: '预约制', companySize: '20-99人', bossTitle: '服务主管', tags: ['日结', '陪诊', '情绪劳动'] },
+    '物流': { location: '本市 · 配送站', education: '不限', experienceRequired: '路线熟优先', workTime: '多劳多得', companySize: '1000人以上', bossTitle: '站长', tags: ['日结', '高强度', '接单自由'] },
+    '自由职业': { location: '远程/本市', education: '不限', experienceRequired: '案例优先', workTime: '项目制', companySize: '20-99人', bossTitle: '运营负责人', tags: ['日结', '灵活', '波动'] },
+    '灰色/黑心岗位': { location: '地址模糊', education: '不限', experienceRequired: '号称无门槛', workTime: '说法不一', companySize: '信息不透明', bossTitle: '招聘专员', tags: ['高风险', '押金风险', '条款不清'] },
+};
+
+function enrichJobPosting(job: BankJobPosting): BankJobPosting {
+    const preset = JOB_DETAIL_PRESETS[job.category] || JOB_DETAIL_PRESETS['服务业'];
+    return {
+        ...job,
+        ...preset,
+        tags: Array.from(new Set([...(preset.tags || []), ...job.requirements, ...job.benefits])).slice(0, 6),
+        bossName: job.black ? '匿名HR' : `${job.employer.slice(0, 1)}主管`,
+        companyIntro: `${job.employer} 正在招聘「${job.title}」，主要看重${job.requirements.join('、')}。${job.description}`,
+    };
+}
+
+export const JOB_POSTINGS: BankJobPosting[] = RAW_JOB_POSTINGS.map(enrichJobPosting);
 
 export const BUSINESS_TEMPLATES: BankBusinessTemplate[] = [
     {
@@ -251,7 +345,34 @@ function buildIntraday(symbol: string, price: number, dateStr = todayStr(), risk
 function withMarketDetail(q: Omit<BankStockQuote, 'history' | 'intraday' | 'eventTags'> & { eventTags?: string[] }): BankStockQuote {
     const history = buildStockHistory(q.symbol, q.price, q.risk);
     const last = history[history.length - 1];
-    return { ...q, price: last.close, previousPrice: history[history.length - 2]?.close || q.previousPrice, history, intraday: buildIntraday(q.symbol, last.close, last.dateStr, q.risk), eventTags: q.eventTags || [] };
+    return ensureQuoteDetail({ ...q, price: last.close, previousPrice: history[history.length - 2]?.close || q.previousPrice, history, intraday: buildIntraday(q.symbol, last.close, last.dateStr, q.risk), eventTags: q.eventTags || [] }, last.dateStr);
+}
+
+function ensureQuoteDetail(q: BankStockQuote, dateStr: string): BankStockQuote {
+    const history = q.history?.length ? q.history : buildStockHistory(q.symbol, q.price, q.risk, dateStr);
+    const last = history[history.length - 1];
+    const prev = history[history.length - 2];
+    const price = last?.close || q.price;
+    const previousPrice = prev?.close || q.previousPrice || price;
+    return {
+        ...q,
+        open: last?.open || q.open || price,
+        high: last?.high || q.high || price,
+        low: last?.low || q.low || price,
+        price,
+        previousPrice,
+        changePct: previousPrice ? Math.round(((price - previousPrice) / previousPrice) * 10000) / 100 : q.changePct,
+        marketCap: q.marketCap || Math.round(price * (80 + q.risk * 35) * 1000000),
+        pe: q.pe || roundMoney(12 + q.risk * 5 + seededNoise(`${q.symbol}:pe:${dateStr}`) * 18),
+        turnoverRate: q.turnoverRate || roundMoney(1.2 + q.risk * 0.65 + seededNoise(`${q.symbol}:turn:${dateStr}`) * 3.2),
+        bidAsk: q.bidAsk || { bid: roundMoney(price * 0.998), ask: roundMoney(price * 1.002), bidVolume: Math.round(800 + seededNoise(`${q.symbol}:bid:${dateStr}`) * 4600), askVolume: Math.round(800 + seededNoise(`${q.symbol}:ask:${dateStr}`) * 4600) },
+        newsList: q.newsList || [
+            { id: `${q.symbol}-${dateStr}-news`, title: q.news, source: 'Moro 财经', dateStr, tone: q.trend === 'down' ? 'warn' : q.trend === 'up' ? 'good' : 'info' },
+        ],
+        history,
+        intraday: q.intraday?.length ? q.intraday : buildIntraday(q.symbol, price, dateStr, q.risk),
+        eventTags: q.eventTags || [],
+    };
 }
 
 const BASE_STOCKS: BankStockQuote[] = [
@@ -265,9 +386,16 @@ const BASE_STOCKS: BankStockQuote[] = [
 
 export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = false): BankLifeState {
     const defaultBusiness = BUSINESS_TEMPLATES[0];
-    return {
+    const base: BankLifeState = {
         version: BANK_LIFE_VERSION,
         dateStr,
+        dayIndex: 1,
+        weekDay: weekDayOf(dateStr),
+        season: seasonOf(dateStr),
+        mood: 62,
+        energy: 70,
+        health: 88,
+        dailyPlan: [],
         shopUnlocked,
         shopBusinessType: shopUnlocked ? defaultBusiness.id : undefined,
         shopBusinessName: shopUnlocked ? defaultBusiness.name : undefined,
@@ -279,12 +407,20 @@ export function createDefaultBankLifeState(dateStr = todayStr(), shopUnlocked = 
         fatigue: 0,
         reputation: 50,
         experience: {},
-        stockMarket: BASE_STOCKS.map(s => ({ ...s })),
+        stockMarket: BASE_STOCKS.map(s => ensureQuoteDetail({ ...s }, dateStr)),
         holdings: {},
         watchlist: ['MORO', 'CAFE'],
         loans: [],
-        events: [{ id: genId('life'), dateStr, title: '生活拟启动', detail: '你的虚拟人生账本翻开了第一页。', tone: 'info' }],
+        events: [{ id: genId('life'), dateStr, title: '人生拟启动', detail: '你的虚拟人生账本翻开了第一页。', tone: 'info' }],
+        aiEvents: [],
+        resume: defaultResume(dateStr),
+        jobSearchSessions: [],
+        aiJobPostings: [],
+        marketPulses: [],
+        creditProfile: defaultCreditProfile(dateStr),
+        aiLastGeneratedAt: {},
     };
+    return { ...base, dailyPlan: buildDailyPlan(base) };
 }
 
 export function migrateBankLifeState(state: BankFullState): BankFullState {
@@ -305,6 +441,12 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             shopBusinessName: state.life.shopBusinessName || ((state.life.shopUnlocked || hasOldShopProgress) ? (state.shop?.shopName || '饮品店') : undefined),
             shopProducts: state.life.shopProducts?.length ? state.life.shopProducts : ((state.life.shopUnlocked || hasOldShopProgress) ? buildShopProducts('drinks') : []),
             shopCustomers: state.life.shopCustomers?.length ? state.life.shopCustomers : ((state.life.shopUnlocked || hasOldShopProgress) ? (BUSINESS_TEMPLATES.find(b => b.id === 'drinks')?.customerGroups || []) : []),
+            dayIndex: state.life.dayIndex || 1,
+            weekDay: typeof state.life.weekDay === 'number' ? state.life.weekDay : weekDayOf(state.life.dateStr || state.lastLoginDate || todayStr()),
+            season: state.life.season || seasonOf(state.life.dateStr || state.lastLoginDate || todayStr()),
+            mood: state.life.mood ?? 62,
+            energy: state.life.energy ?? 70,
+            health: state.life.health ?? 88,
             shopEvents: state.life.shopEvents || [],
             jobHistory: state.life.jobHistory || [],
             pendingWages: state.life.pendingWages || [],
@@ -314,9 +456,16 @@ export function migrateBankLifeState(state: BankFullState): BankFullState {
             watchlist: state.life.watchlist || ['MORO', 'CAFE'],
             loans: state.life.loans || [],
             events: state.life.events || [],
+            aiEvents: state.life.aiEvents || [],
+            resume: state.life.resume || defaultResume(state.life.dateStr || state.lastLoginDate || todayStr()),
+            jobSearchSessions: state.life.jobSearchSessions || [],
+            aiJobPostings: state.life.aiJobPostings || [],
+            marketPulses: state.life.marketPulses || [],
+            creditProfile: state.life.creditProfile || defaultCreditProfile(state.life.dateStr || state.lastLoginDate || todayStr()),
+            aiLastGeneratedAt: state.life.aiLastGeneratedAt || {},
         }
         : createDefaultBankLifeState(state.lastLoginDate || todayStr(), hasOldShopProgress);
-    return { ...state, life, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) };
+    return { ...state, life: { ...life, dailyPlan: buildDailyPlan(life) }, dataVersion: Math.max(state.dataVersion || 0, BANK_LIFE_VERSION) };
 }
 
 function buildShopProducts(businessTypeId: string) {
@@ -342,17 +491,7 @@ export function openLifeShop(life: BankLifeState, businessTypeId: string, shopNa
 function ensureMarketDetail(market: BankStockQuote[], dateStr: string): BankStockQuote[] {
     return market.map(q => {
         const base = BASE_STOCKS.find(s => s.symbol === q.symbol);
-        const history = q.history?.length ? q.history : buildStockHistory(q.symbol, q.price || base?.price || 10, q.risk || base?.risk || 3, dateStr);
-        const last = history[history.length - 1];
-        const prev = history[history.length - 2];
-        return {
-            ...q,
-            history,
-            intraday: q.intraday?.length ? q.intraday : buildIntraday(q.symbol, last?.close || q.price, dateStr, q.risk),
-            eventTags: q.eventTags || base?.eventTags || [],
-            price: q.price || last?.close || base?.price || 1,
-            previousPrice: q.previousPrice || prev?.close || q.price || base?.previousPrice || 1,
-        };
+        return ensureQuoteDetail({ ...(base || q), ...q, price: q.price || base?.price || 1, previousPrice: q.previousPrice || base?.previousPrice || q.price || 1, risk: q.risk || base?.risk || 3 }, dateStr);
     });
 }
 
@@ -379,6 +518,7 @@ function buildInterviewQuestions(posting: BankJobPosting, seedKey: string): NonN
 }
 
 export function startJobApplication(life: BankLifeState, posting: BankJobPosting): { life: BankLifeState; application: BankJobApplication } {
+    const at = `${life.dateStr} 09:00`;
     const app: BankJobApplication = {
         id: genId('jobapp'),
         postingId: posting.id,
@@ -389,6 +529,11 @@ export function startJobApplication(life: BankLifeState, posting: BankJobPosting
         score: 0,
         dateStr: life.dateStr,
         questions: buildInterviewQuestions(posting, `${life.dateStr}:${posting.id}:${life.jobHistory.length}`),
+        chatMessages: [
+            { role: 'boss', content: `你好，我是${posting.employer}的${posting.bossName || posting.bossTitle || '招聘负责人'}，这边在招「${posting.title}」。`, at },
+            { role: 'system', content: `${posting.location || '本市'} · ${posting.workTime || '排班制'} · ${posting.companySize || '规模未披露'}`, at },
+        ],
+        resumeSnapshot: life.resume,
         message: `简历已投给 ${posting.employer}，等待筛选。`,
     };
     return {
@@ -514,6 +659,41 @@ export function applyForJob(life: BankLifeState, posting: BankJobPosting, wallet
     return { life: next, application, balanceDelta };
 }
 
+
+export function updateResumeProfile(life: BankLifeState, updates: Partial<BankResumeProfile>): BankLifeState {
+    const current = life.resume || defaultResume(life.dateStr);
+    return {
+        ...life,
+        resume: {
+            ...current,
+            ...updates,
+            headline: String(updates.headline ?? current.headline).trim().slice(0, 80) || current.headline,
+            selfIntro: String(updates.selfIntro ?? current.selfIntro).trim().slice(0, 300) || current.selfIntro,
+            skills: (updates.skills || current.skills || []).map(s => String(s).trim()).filter(Boolean).slice(0, 12),
+            expectedCategories: (updates.expectedCategories || current.expectedCategories || []).map(s => String(s).trim()).filter(Boolean).slice(0, 6),
+            experience: (updates.experience || current.experience || []).slice(0, 8),
+            updatedAt: Date.now(),
+        },
+    };
+}
+
+export function mergeAiJobPostings(life: BankLifeState, jobs: BankJobPosting[], query: string, category: string): BankLifeState {
+    return {
+        ...life,
+        aiJobPostings: [...jobs, ...(life.aiJobPostings || [])].slice(0, 40),
+        jobSearchSessions: [{ id: genId('jobsearch'), query, category, filters: {}, generatedAt: life.dateStr, source: 'ai' as const }, ...(life.jobSearchSessions || [])].slice(0, 20),
+    };
+}
+
+export function appendJobChatMessage(life: BankLifeState, applicationId: string, message: { role: 'boss' | 'user' | 'system'; content: string; at: string }): BankLifeState {
+    return {
+        ...life,
+        jobHistory: life.jobHistory.map(app => app.id === applicationId
+            ? { ...app, chatMessages: [...(app.chatMessages || []), message].slice(-80) }
+            : app),
+    };
+}
+
 export function leaveJob(life: BankLifeState): BankLifeState {
     const job = life.currentJob;
     if (!job) return life;
@@ -552,7 +732,13 @@ export interface BankLifeAdvanceResult {
 
 export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
     const nextDate = addDays(life.dateStr, 1);
-    let next: BankLifeState = { ...life, dateStr: nextDate };
+    let next: BankLifeState = {
+        ...life,
+        dateStr: nextDate,
+        dayIndex: (life.dayIndex || 1) + 1,
+        weekDay: weekDayOf(nextDate),
+        season: seasonOf(nextDate),
+    };
     let balanceDelta = 0;
     const ledgerEvents: BankLifeAdvanceResult['ledgerEvents'] = [];
     const dayEvents: BankLifeEvent[] = [];
@@ -570,6 +756,9 @@ export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
             ...next,
             currentJob: updatedJob,
             fatigue: clamp(next.fatigue + job.intensity * 4, 0, 100),
+            energy: clamp(next.energy - job.intensity * 6, 0, 100),
+            mood: clamp(next.mood + (job.payCycle === 'daily' ? 1 : 0) - Math.max(0, job.intensity - 3), 0, 100),
+            health: clamp(next.health - (job.intensity >= 5 ? 2 : 0), 0, 100),
             experience: exp,
         };
         if (job.payCycle === 'daily') {
@@ -585,7 +774,13 @@ export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
             dayEvents.push({ id: genId('life'), dateStr: nextDate, title: '工资到账', detail: `${job.employer} 发了本月工资。`, tone: 'good', amount: paid });
         }
     } else {
-        next = { ...next, fatigue: clamp(next.fatigue - 8, 0, 100) };
+        next = {
+            ...next,
+            fatigue: clamp(next.fatigue - 8, 0, 100),
+            energy: clamp(next.energy + 12, 0, 100),
+            mood: clamp(next.mood + 3, 0, 100),
+            health: clamp(next.health + 1, 0, 100),
+        };
     }
 
     const remainingPending = [];
@@ -614,7 +809,7 @@ export function advanceBankLifeDay(life: BankLifeState): BankLifeAdvanceResult {
     if (dayEvents.length === 0) {
         dayEvents.push({ id: genId('life'), dateStr: nextDate, title: '平稳的一天', detail: '没有大事发生，生活继续往前滚动。', tone: 'info' });
     }
-    next = { ...next, events: [...dayEvents.reverse(), ...next.events].slice(0, 80) };
+    next = { ...next, dailyPlan: buildDailyPlan(next), events: [...dayEvents.reverse(), ...next.events].slice(0, 80) };
     return { life: next, balanceDelta: roundMoney(balanceDelta), ledgerEvents };
 }
 
@@ -810,9 +1005,19 @@ export function sellStock(life: BankLifeState, symbol: string, shares: number): 
 }
 
 export function foundCompany(life: BankLifeState, name: string, direction: string): BankLifeState {
+    const id = genId('company');
+    const companyName = name.trim() || `${direction}小公司`;
+    const starterOrder = {
+        id: genId('order'),
+        title: '开业首单',
+        client: '熟人介绍',
+        value: 3200,
+        difficulty: 2,
+        status: 'open' as const,
+    };
     const company: BankCompanyState = {
-        id: genId('company'),
-        name: name.trim() || `${direction}小公司`,
+        id,
+        name: companyName,
         direction,
         cash: COMPANY_FOUND_COST,
         reputation: 45,
@@ -821,9 +1026,10 @@ export function foundCompany(life: BankLifeState, name: string, direction: strin
         cumulativeProfit: 0,
         foundedAt: life.dateStr,
         cashflow: [],
-        orders: [],
+        orders: [starterOrder],
         risks: ['现金流', '获客', '交付'],
     };
+    company.pendingIssue = buildCompanyIssue(company, life.dateStr);
     return {
         ...life,
         company,
@@ -886,6 +1092,46 @@ export const LOAN_PRODUCTS: Record<BankLoanChannel, { name: string; min: number;
     },
 };
 
+
+export function applyMarketPulses(life: BankLifeState, pulses: BankMarketPulse[]): BankLifeState {
+    const quotes = life.stockMarket.map(q => {
+        const pulse = pulses.find(p => p.affectedSymbols.includes(q.symbol));
+        return pulse ? {
+            ...q,
+            aiReason: pulse.summary,
+            newsList: [{ id: pulse.id, title: pulse.headline, source: 'AI 市场脉冲', dateStr: pulse.dateStr, tone: pulse.sentiment === 'bearish' ? 'warn' as const : pulse.sentiment === 'bullish' ? 'good' as const : 'info' as const }, ...(q.newsList || [])].slice(0, 8),
+        } : q;
+    });
+    return { ...life, stockMarket: quotes, marketPulses: [...pulses, ...(life.marketPulses || [])].slice(0, 40) };
+}
+
+export function computeCreditProfile(life: BankLifeState): BankLoanCreditProfile {
+    const income = life.currentJob ? 25 : 0;
+    const debt = loanTotal(life);
+    const debtPressure = clamp(Math.round(debt / 1000), 0, 100);
+    const repaymentHistory = life.loans.some(l => l.overdueDays > 0) ? 35 : 75;
+    const score = clamp(580 + income - Math.round(debtPressure * 1.5) + Math.round((repaymentHistory - 50) * 0.8), 300, 850);
+    return {
+        score,
+        incomeStability: life.currentJob ? 70 : 35,
+        debtPressure,
+        repaymentHistory,
+        riskLevel: score >= 720 ? 'low' : score >= 620 ? 'medium' : score >= 500 ? 'high' : 'danger',
+        reasons: [life.currentJob ? '有当前工作收入记录' : '暂无稳定工作收入', debt > 0 ? `当前负债约 ¥${Math.round(debt)}` : '当前负债较低'],
+        updatedAt: life.dateStr,
+    };
+}
+
+export function buildLifeSuggestions(life: BankLifeState, walletBalance: number): { id: string; title: string; detail: string; tab: 'jobs' | 'shop' | 'invest' | 'company' | 'loans'; tone: 'good' | 'warn' | 'info' | 'bad' }[] {
+    const items: { id: string; title: string; detail: string; tab: 'jobs' | 'shop' | 'invest' | 'company' | 'loans'; tone: 'good' | 'warn' | 'info' | 'bad' }[] = [];
+    if (!life.currentJob) items.push({ id: 'find-job', title: '先找一份现金流', detail: '没有固定工作，求职能提供稳定工资。', tab: 'jobs', tone: 'info' });
+    if (!life.shopUnlocked) items.push({ id: 'open-shop', title: `还差 ¥${Math.max(0, SHOP_UNLOCK_COST - walletBalance)} 可开店`, detail: '小店是人生拟里的经营赚钱模式。', tab: 'shop', tone: walletBalance >= SHOP_UNLOCK_COST ? 'good' : 'warn' });
+    if (!life.company) items.push({ id: 'found-company', title: `公司启动金 ¥${COMPANY_FOUND_COST}`, detail: '资金充足后可选择方向创业。', tab: 'company', tone: walletBalance >= COMPANY_FOUND_COST ? 'good' : 'info' });
+    if (loanTotal(life) > 0) items.push({ id: 'repay-loan', title: '关注借款还款', detail: '逾期会提高风险和利息。', tab: 'loans', tone: 'warn' });
+    if (Object.keys(life.holdings).length > 0) items.push({ id: 'watch-market', title: '复盘持仓新闻', detail: '市场脉冲会影响虚拟个股情绪。', tab: 'invest', tone: 'info' });
+    return items.slice(0, 4);
+}
+
 function buildRepaymentPlan(amount: number, startDate: string, days: number) {
     const parts = days >= 80 ? 3 : days >= 40 ? 2 : 1;
     const step = Math.max(1, Math.floor(days / parts));
@@ -913,6 +1159,7 @@ export function borrowLoan(life: BankLifeState, channel: BankLoanChannel, amount
         reviewStatus: 'approved',
         contractTerms: product.terms,
         repaymentPlan: buildRepaymentPlan(amount, life.dateStr, product.days),
+        creditProfile: life.creditProfile,
     };
     return {
         loan,

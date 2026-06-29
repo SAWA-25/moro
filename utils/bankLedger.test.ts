@@ -7,7 +7,7 @@ describe('bankLedger', () => {
             note: '测试工资',
             category: 'job',
             kind: 'salary',
-            sourceApp: '生活拟',
+            sourceApp: '人生拟',
             sourceId: 'job_cleaner',
         }, { now: Date.UTC(2026, 5, 1), idSuffix: 'test' });
 
@@ -17,7 +17,7 @@ describe('bankLedger', () => {
             category: 'job',
             note: '测试工资',
             type: 'income',
-            sourceApp: '生活拟',
+            sourceApp: '人生拟',
             sourceId: 'job_cleaner',
             kind: 'salary',
             auto: true,
@@ -35,8 +35,20 @@ describe('bankLedger', () => {
             category: 'expense',
             note: '钱包支出',
             type: 'expense',
-            sourceApp: '生活拟',
+            sourceApp: '人生拟',
             balanceAfter: 30,
+        });
+    });
+
+    it('defaults automatic wallet ledger records to 人生拟 after the app rename', () => {
+        const tx = createAutoBankTransaction(6, 36, {}, { now: Date.UTC(2026, 5, 3), idSuffix: 'default-app' });
+
+        expect(tx).toMatchObject({
+            amount: 6,
+            note: '钱包进账',
+            type: 'income',
+            sourceApp: '人生拟',
+            balanceAfter: 36,
         });
     });
 

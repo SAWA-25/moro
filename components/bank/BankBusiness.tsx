@@ -4,7 +4,7 @@ import { HAND_FONT } from '../../apps/almanac/handbookKit';
 import { REGULAR_VISITS, VIP_VISITS, regularTier } from './BankGameConstants';
 
 /**
- * 生活拟 · 营业结算 & 口碑评价
+ * 人生拟 · 营业结算 & 口碑评价
  * ------------------------------------------------------------
  * BusinessResultModal —— 每轮「营业」后的逐单结算（卖了什么、小费、总收入、新评价）
  * ReviewsOverlay      —— 口碑墙：平均星级 + 全部顾客评价

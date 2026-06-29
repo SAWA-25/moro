@@ -7,7 +7,7 @@ import { injectMemoryPalace } from '../../utils/memoryPalace/pipeline';
 import { HAND_FONT, tinyRotate } from '../../apps/almanac/handbookKit';
 
 /**
- * 存钱罐 · 互评账本
+ * 人生拟 · 互评账本
  * ------------------------------------------------------------
  * 「记账」记录的是用户**现实**的金钱（进账/支出），与店铺经营的钱（钱包）完全独立。
  *  - 我的流水：用户每笔现实账目，角色可按人设点评（AI）

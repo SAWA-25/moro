@@ -204,7 +204,7 @@ const MANUAL_ENTRIES: ManualEntry[] = [
     ],
   },
   {
-    app: '生活拟',
+    app: '人生拟',
     en: 'Bank',
     category: 'daily',
     summary: '虚拟资产、攒钱目标和经营小游戏。',
@@ -517,9 +517,9 @@ const MANUAL_DESTINATIONS: Record<string, ManualDestination> = {
       '像素小家用于编辑像素角色、房间和素材库。',
     ],
   },
-  '生活拟': {
+  '人生拟': {
     appId: AppID.Bank,
-    path: ['桌面', '生活拟', '人生 / 求职 / 经营 / 投资 / 公司 / 借款 / 账本'],
+    path: ['桌面', '人生拟', '人生 / 求职 / 经营 / 投资 / 公司 / 借款 / 账本'],
     details: [
       '适合推进虚拟人生日期，求职、开店、投资、开公司和管理借款。',
       '钱包变动会自动沉淀到账本，商城、外卖、红包等消费也会留下来源。',

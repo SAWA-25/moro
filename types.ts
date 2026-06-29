@@ -1729,6 +1729,17 @@ export type BankJobPayCycle = 'daily' | 'monthly';
 export type BankJobApplicationStatus = 'hired' | 'trial' | 'rejected' | 'scammed';
 export type BankJobApplicationStage = 'submitted' | 'screening' | 'assessment' | 'interview' | 'offer' | 'hired' | 'trial' | 'rejected' | 'scammed';
 export type BankLoanChannel = 'bank' | 'formal' | 'shady';
+export type BankLifeSeason = 'spring' | 'summer' | 'autumn' | 'winter';
+export type BankLifePlanKind = 'work' | 'shop' | 'interview' | 'company' | 'loan' | 'invest' | 'rest';
+
+export interface BankLifeDailyPlanItem {
+    id: string;
+    kind: BankLifePlanKind;
+    label: string;
+    detail: string;
+    done?: boolean;
+    tone?: 'good' | 'warn' | 'bad' | 'info';
+}
 
 export interface BankBusinessTemplate {
     id: string;
@@ -1765,6 +1776,15 @@ export interface BankJobPosting {
     benefits: string[];
     riskTags: string[];
     description: string;
+    location?: string;
+    education?: string;
+    experienceRequired?: string;
+    workTime?: string;
+    companySize?: string;
+    tags?: string[];
+    bossName?: string;
+    bossTitle?: string;
+    companyIntro?: string;
     black?: boolean;
     successBias?: number;
 }
@@ -1787,6 +1807,9 @@ export interface BankJobApplication {
     questions?: { id: string; question: string; answer?: string; score?: number }[];
     offerSalary?: number;
     riskNote?: string;
+    chatMessages?: { role: 'boss' | 'user' | 'system'; content: string; at: string }[];
+    resumeSnapshot?: BankResumeProfile;
+    aiReview?: { score: number; strengths: string[]; weaknesses: string[]; suggestion: string };
     dateStr: string;
     message: string;
 }
@@ -1811,8 +1834,17 @@ export interface BankStockQuote {
     risk: 1 | 2 | 3 | 4 | 5;
     news: string;
     eventTags?: string[];
+    open?: number;
+    high?: number;
+    low?: number;
+    marketCap?: number;
+    pe?: number;
+    turnoverRate?: number;
+    bidAsk?: { bid: number; ask: number; bidVolume: number; askVolume: number };
+    newsList?: { id: string; title: string; source: string; dateStr: string; tone?: 'good' | 'warn' | 'bad' | 'info' }[];
     history?: { dateStr: string; open: number; high: number; low: number; close: number; volume: number }[];
     intraday?: { time: string; price: number; volume: number }[];
+    aiReason?: string;
 }
 
 export interface BankStockHolding {
@@ -1858,6 +1890,10 @@ export interface BankLoan {
     reviewStatus?: 'approved' | 'rejected' | 'manual';
     contractTerms?: string[];
     repaymentPlan?: { dueDate: string; amount: number; status: 'pending' | 'paid' | 'overdue' }[];
+    creditProfile?: BankLoanCreditProfile;
+    reviewReason?: string;
+    serviceFee?: number;
+    collectionRisk?: string;
 }
 
 export interface BankLifeEvent {
@@ -1869,9 +1905,69 @@ export interface BankLifeEvent {
     amount?: number;
 }
 
+export interface BankLifeAiEvent extends BankLifeEvent {
+    source?: 'ai' | 'system';
+    category?: 'daily' | 'career' | 'market' | 'company' | 'loan' | 'shop';
+    choices?: { id: string; label: string; effectHint: string }[];
+}
+
+export interface BankResumeProfile {
+    name: string;
+    headline: string;
+    expectedSalaryMin?: number;
+    expectedSalaryMax?: number;
+    expectedCategories: string[];
+    skills: string[];
+    experience: { id: string; title: string; company: string; detail: string }[];
+    education?: string;
+    selfIntro: string;
+    updatedAt: number;
+}
+
+export interface BankJobSearchSession {
+    id: string;
+    query: string;
+    category: string;
+    filters: {
+        salaryMin?: number;
+        payCycle?: BankJobPayCycle | 'any';
+        risk?: 'any' | 'safe' | 'high-risk';
+        location?: string;
+    };
+    generatedAt: string;
+    source: 'preset' | 'ai';
+}
+
+export interface BankMarketPulse {
+    id: string;
+    dateStr: string;
+    headline: string;
+    summary: string;
+    affectedSymbols: string[];
+    sentiment: 'bullish' | 'neutral' | 'bearish';
+    source: 'ai' | 'system';
+}
+
+export interface BankLoanCreditProfile {
+    score: number;
+    incomeStability: number;
+    debtPressure: number;
+    repaymentHistory: number;
+    riskLevel: 'low' | 'medium' | 'high' | 'danger';
+    reasons: string[];
+    updatedAt: string;
+}
+
 export interface BankLifeState {
     version: number;
     dateStr: string;
+    dayIndex: number;
+    weekDay: number;
+    season: BankLifeSeason;
+    mood: number;
+    energy: number;
+    health: number;
+    dailyPlan: BankLifeDailyPlanItem[];
     shopUnlocked: boolean;
     shopBusinessType?: string;
     shopBusinessName?: string;
@@ -1890,6 +1986,13 @@ export interface BankLifeState {
     company?: BankCompanyState;
     loans: BankLoan[];
     events: BankLifeEvent[];
+    aiEvents?: BankLifeAiEvent[];
+    resume?: BankResumeProfile;
+    jobSearchSessions?: BankJobSearchSession[];
+    aiJobPostings?: BankJobPosting[];
+    marketPulses?: BankMarketPulse[];
+    creditProfile?: BankLoanCreditProfile;
+    aiLastGeneratedAt?: Record<string, string>;
 }
 
 export interface BankFullState {

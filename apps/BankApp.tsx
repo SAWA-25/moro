@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote } from '../types';
+import { BankFullState, BankTransaction, SavingsGoal, ShopStaff, BankGuestbookItem, DollhouseState, ShopReview, ShopRegular, BankJobPosting, BankLoanChannel, BankStockQuote, BankResumeProfile } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import { resolveAuxApi } from '../utils/auxApi';
 import { injectMemoryPalace } from '../utils/memoryPalace/pipeline';
@@ -33,17 +33,23 @@ import {
     JOB_POSTINGS,
     LOAN_PRODUCTS,
     SHOP_UNLOCK_COST,
+    createDefaultBankLifeState,
     advanceJobApplicationStage,
     advanceBankLifeDay,
+    appendJobChatMessage,
+    applyMarketPulses,
     applyCompanyIssue,
     applyForJob,
     borrowLoan,
+    buildLifeSuggestions,
+    computeCreditProfile,
     buyStock,
     channelLabel,
     foundCompany,
     getJobsByCategory,
     leaveJob,
     loanTotal,
+    mergeAiJobPostings,
     migrateBankLifeState,
     movingAverage,
     openLifeShop,
@@ -51,7 +57,16 @@ import {
     sellStock,
     startJobApplication,
     stockMarketValue,
+    updateResumeProfile,
 } from '../utils/bankLife';
+import {
+    generateAiJobs,
+    generateAiLifeDay,
+    generateAiLoanReview,
+    generateAiMarketPulse,
+    generateAiRecruiterReply,
+    generateAiResumeReview,
+} from '../utils/bankLifeAi';
 
 const INITIAL_STATE: BankFullState = {
     config: {
@@ -84,21 +99,7 @@ const INITIAL_STATE: BankFullState = {
         activeVisitor: undefined,
         guestbook: [] // New
     },
-    life: {
-        version: BANK_LIFE_VERSION,
-        dateStr: new Date().toISOString().split('T')[0],
-        shopUnlocked: false,
-        jobHistory: [],
-        pendingWages: [],
-        fatigue: 0,
-        reputation: 50,
-        experience: {},
-        stockMarket: [],
-        holdings: {},
-        watchlist: [],
-        loans: [],
-        events: [],
-    },
+    life: createDefaultBankLifeState(new Date().toISOString().split('T')[0], false),
     goals: [],
     todaySpent: 0,
     lastLoginDate: new Date().toISOString().split('T')[0],
@@ -285,6 +286,9 @@ const BankApp: React.FC = () => {
     const [selectedJobId, setSelectedJobId] = useState<string>(JOB_POSTINGS[0]?.id || '');
     const [selectedApplicationId, setSelectedApplicationId] = useState<string>('');
     const [interviewAnswer, setInterviewAnswer] = useState('');
+    const [jobSearchQuery, setJobSearchQuery] = useState('');
+    const [aiBusy, setAiBusy] = useState<'day' | 'jobs' | 'resume' | 'recruiter' | 'market' | 'loan' | null>(null);
+    const [resumeDraft, setResumeDraft] = useState<Partial<BankResumeProfile>>({});
     const [selectedStockSymbol, setSelectedStockSymbol] = useState('MORO');
     const [marketView, setMarketView] = useState<'all' | 'watch' | 'gainers' | 'losers'>('all');
     const [selectedLoanId, setSelectedLoanId] = useState('');
@@ -759,7 +763,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(-cost, { note: `${r.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '生活拟', sourceId: recipeId });
+        adjustUserBalance(-cost, { note: `${r.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: recipeId });
         addToast(`${r.name} 进货 +${RESTOCK_BATCH}（花了 ${cur.config.currencySymbol}${cost}）`, 'success');
     };
 
@@ -783,7 +787,7 @@ const BankApp: React.FC = () => {
             shopEvents: [{ id: `shop-event-${Date.now()}`, dateStr: cur.life!.dateStr, title: '补了一批货', detail: `${product.name} 补货 +${batch}，货架又满起来了。`, tone: 'info' as const }, ...(cur.life!.shopEvents || [])].slice(0, 20),
         };
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
-        adjustUserBalance(-cost, { note: `${product.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '生活拟', sourceId: product.id });
+        adjustUserBalance(-cost, { note: `${product.name} 进货`, category: 'shop', kind: 'shop-restock', sourceApp: '人生拟', sourceId: product.id });
         addToast(`${product.name} 进货 +${batch}`, 'success');
     };
 
@@ -805,7 +809,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(-cost, { note: `店铺升级 Lv.${level + 1}`, category: 'shop', kind: 'shop-upgrade', sourceApp: '生活拟' });
+        adjustUserBalance(-cost, { note: `店铺升级 Lv.${level + 1}`, category: 'shop', kind: 'shop-upgrade', sourceApp: '人生拟' });
         addToast(`店铺升到 Lv.${level + 1}！客流更旺、档次更高`, 'success');
     };
 
@@ -819,7 +823,7 @@ const BankApp: React.FC = () => {
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(amount, { note: '领取挂机营业额', category: 'shop', kind: 'shop-idle', sourceApp: '生活拟' });
+        adjustUserBalance(amount, { note: '领取挂机营业额', category: 'shop', kind: 'shop-idle', sourceApp: '人生拟' });
         addToast(`收下挂机营业额 +${cur.config.currencySymbol}${amount}`, 'success');
     };
 
@@ -988,7 +992,7 @@ ${previousGuestbook}
                             charId: entry.charId,
                             role: 'system',
                             type: 'text',
-                            content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的生活拟小店，并表示："${entry.content}"]`,
+                            content: `[系统: ${entry.authorName} 拜访了${userProfile.name}的人生拟小店，并表示："${entry.content}"]`,
                         });
                         entry.systemMessageId = msgId;
                     } catch (e) {
@@ -1128,9 +1132,28 @@ ${previousGuestbook}
         const result = advanceBankLifeDay(cur.life!);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
         for (const ev of result.ledgerEvents) {
-            adjustUserBalance(ev.amount, { note: ev.note, category: ev.category, kind: ev.kind, sourceApp: '生活拟', sourceId: ev.sourceId });
+            adjustUserBalance(ev.amount, { note: ev.note, category: ev.category, kind: ev.kind, sourceApp: '人生拟', sourceId: ev.sourceId });
         }
         addToast(result.balanceDelta > 0 ? `来到 ${result.life.dateStr}，入账 ¥${result.balanceDelta}` : `来到 ${result.life.dateStr}`, 'success');
+        if (auxApi.model) {
+            setAiBusy('day');
+            void (async () => {
+                try {
+                    const [events, pulses] = await Promise.all([
+                        generateAiLifeDay(auxApi, result.life),
+                        generateAiMarketPulse(auxApi, result.life),
+                    ]);
+                    await persistStateUpdate(prev => {
+                        const withLife = migrateBankLifeState(prev);
+                        const baseLife = withLife.life!;
+                        const withEvents = { ...baseLife, aiEvents: [...events, ...(baseLife.aiEvents || [])].slice(0, 30), events: [...events, ...baseLife.events].slice(0, 80) };
+                        return { ...withLife, life: applyMarketPulses(withEvents, pulses) };
+                    });
+                } finally {
+                    setAiBusy(null);
+                }
+            })();
+        }
     };
 
     const handleApplyJob = async (posting: BankJobPosting) => {
@@ -1138,30 +1161,78 @@ ${previousGuestbook}
         const result = applyForJob(cur.life!, posting, userProfile.balance || 0);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
         if (result.balanceDelta !== 0) {
-            adjustUserBalance(result.balanceDelta, { note: `${posting.title} 求职踩坑`, category: 'job', kind: 'job-risk', sourceApp: '生活拟', sourceId: posting.id });
+            adjustUserBalance(result.balanceDelta, { note: `${posting.title} 求职踩坑`, category: 'job', kind: 'job-risk', sourceApp: '人生拟', sourceId: posting.id });
         }
         addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
     };
 
     const handleStartJobApplication = async (posting: BankJobPosting) => {
         const cur = migrateBankLifeState(stateRef.current);
+        setAiBusy('resume');
+        const aiReview = await generateAiResumeReview(auxApi, cur.life!, posting);
         const result = startJobApplication(cur.life!, posting);
+        result.application.aiReview = aiReview;
+        result.life.jobHistory = result.life.jobHistory.map(app => app.id === result.application.id ? { ...app, aiReview } : app);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
+        setAiBusy(null);
         setSelectedApplicationId(result.application.id);
         addToast('简历已投出', 'success');
     };
 
     const handleAdvanceJobApplication = async (applicationId: string) => {
         const cur = migrateBankLifeState(stateRef.current);
+        const current = cur.life?.jobHistory.find(app => app.id === applicationId);
+        if (current && interviewAnswer.trim() && auxApi.model) {
+            setAiBusy('recruiter');
+            const reply = await generateAiRecruiterReply(auxApi, cur.life!, current, interviewAnswer.trim());
+            await persistStateUpdate(prev => {
+                const withLife = migrateBankLifeState(prev);
+                let nextLife = appendJobChatMessage(withLife.life!, applicationId, { role: 'user', content: interviewAnswer.trim(), at: new Date().toLocaleString() });
+                nextLife = appendJobChatMessage(nextLife, applicationId, { role: 'boss', content: reply.content, at: new Date().toLocaleString() });
+                return { ...withLife, life: nextLife };
+            });
+            setAiBusy(null);
+        }
         const result = advanceJobApplicationStage(cur.life!, applicationId, interviewAnswer, userProfile.balance || 0);
         if (!result.application) return;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
         if (result.balanceDelta !== 0) {
-            adjustUserBalance(result.balanceDelta, { note: `${result.application.title} 求职损失`, category: 'job', kind: 'job-risk', sourceApp: '生活拟', sourceId: result.application.postingId });
+            adjustUserBalance(result.balanceDelta, { note: `${result.application.title} 求职损失`, category: 'job', kind: 'job-risk', sourceApp: '人生拟', sourceId: result.application.postingId });
         }
         setSelectedApplicationId(result.application.id);
         setInterviewAnswer('');
         addToast(result.application.message, result.application.status === 'hired' ? 'success' : result.application.status === 'scammed' ? 'error' : 'info');
+    };
+
+    const handleGenerateAiJobs = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        setAiBusy('jobs');
+        try {
+            const jobs = await generateAiJobs(auxApi, cur.life!, jobSearchQuery || jobCategory, jobCategory);
+            if (!jobs.length) { addToast('暂时没有生成新岗位，先看看本地岗位', 'info'); return; }
+            const nextLife = mergeAiJobPostings(cur.life!, jobs, jobSearchQuery || jobCategory, jobCategory);
+            await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
+            setSelectedJobId(jobs[0].id);
+            addToast(`AI 生成了 ${jobs.length} 个新岗位`, 'success');
+        } finally {
+            setAiBusy(null);
+        }
+    };
+
+    const handleSaveResume = async () => {
+        const cur = migrateBankLifeState(stateRef.current);
+        const updates: Partial<BankResumeProfile> = {
+            headline: resumeDraft.headline ?? cur.life?.resume?.headline,
+            selfIntro: resumeDraft.selfIntro ?? cur.life?.resume?.selfIntro,
+            skills: typeof resumeDraft.skills === 'string' ? String(resumeDraft.skills).split(/[，,]/).map(s => s.trim()).filter(Boolean) : resumeDraft.skills,
+            expectedCategories: typeof resumeDraft.expectedCategories === 'string' ? String(resumeDraft.expectedCategories).split(/[，,]/).map(s => s.trim()).filter(Boolean) : resumeDraft.expectedCategories,
+        };
+        await persistStateUpdate(prev => {
+            const withLife = migrateBankLifeState(prev);
+            return { ...withLife, life: updateResumeProfile(withLife.life!, updates) };
+        });
+        setResumeDraft({});
+        addToast('简历已更新', 'success');
     };
 
     const handleLeaveJob = async () => {
@@ -1184,7 +1255,7 @@ ${previousGuestbook}
                 shop: { ...withLife.shop, shopName },
             };
         });
-        adjustUserBalance(-SHOP_UNLOCK_COST, { note: '生活拟开店启动金', category: 'shop', kind: 'shop-open', sourceApp: '生活拟' });
+        adjustUserBalance(-SHOP_UNLOCK_COST, { note: '人生拟开店启动金', category: 'shop', kind: 'shop-open', sourceApp: '人生拟' });
         addToast(`${shopName} 准备开张`, 'success');
     };
 
@@ -1196,7 +1267,7 @@ ${previousGuestbook}
         const result = buyStock(cur.life!, symbol, amount);
         if (result.cost <= 0) { addToast('金额太小，买不了一份', 'info'); return; }
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        adjustUserBalance(-result.cost, { note: `买入 ${symbol}`, category: 'stock', kind: 'stock-buy', sourceApp: '生活拟', sourceId: symbol, relatedEntityId: symbol });
+        adjustUserBalance(-result.cost, { note: `买入 ${symbol}`, category: 'stock', kind: 'stock-buy', sourceApp: '人生拟', sourceId: symbol, relatedEntityId: symbol });
         setStockBudget(prev => ({ ...prev, [symbol]: '' }));
         addToast(`买入 ${symbol} ${result.shares} 股`, 'success');
     };
@@ -1210,7 +1281,7 @@ ${previousGuestbook}
         const result = sellStock(cur.life!, symbol, shares);
         if (result.revenue <= 0) { addToast('没有可卖持仓', 'info'); return; }
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        adjustUserBalance(result.revenue, { note: `卖出 ${symbol}`, category: 'stock', kind: 'stock-sell', sourceApp: '生活拟', sourceId: symbol, relatedEntityId: symbol });
+        adjustUserBalance(result.revenue, { note: `卖出 ${symbol}`, category: 'stock', kind: 'stock-sell', sourceApp: '人生拟', sourceId: symbol, relatedEntityId: symbol });
         setStockSellShares(prev => ({ ...prev, [symbol]: '' }));
         addToast(`卖出 ${symbol}，到账 ¥${result.revenue}`, 'success');
     };
@@ -1228,7 +1299,7 @@ ${previousGuestbook}
         if (cur.life?.company) { addToast('已经有公司啦', 'info'); return; }
         const nextLife = foundCompany(cur.life!, companyName, companyDirection);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
-        adjustUserBalance(-COMPANY_FOUND_COST, { note: `创办${companyName || companyDirection}`, category: 'company', kind: 'company-found', sourceApp: '生活拟' });
+        adjustUserBalance(-COMPANY_FOUND_COST, { note: `创办${companyName || companyDirection}`, category: 'company', kind: 'company-found', sourceApp: '人生拟' });
         addToast('公司成立，第一笔启动资金已转入公司', 'success');
     };
 
@@ -1249,7 +1320,7 @@ ${previousGuestbook}
         if (amount <= 0) return;
         const nextLife = { ...cur.life!, company: { ...company, cash: company.cash - amount, cumulativeProfit: company.cumulativeProfit - amount } };
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: nextLife }));
-        adjustUserBalance(amount, { note: `${company.name} 分红`, category: 'company', kind: 'company-dividend', sourceApp: '生活拟', sourceId: company.id });
+        adjustUserBalance(amount, { note: `${company.name} 分红`, category: 'company', kind: 'company-dividend', sourceApp: '人生拟', sourceId: company.id });
         addToast(`公司分红到账 ¥${amount}`, 'success');
     };
 
@@ -1259,10 +1330,25 @@ ${previousGuestbook}
         const product = LOAN_PRODUCTS[loanChannel];
         if (amount < product.min || amount > product.max) { addToast(`${product.name} 可借 ¥${product.min}-${product.max}`, 'error'); return; }
         const cur = migrateBankLifeState(stateRef.current);
-        const result = borrowLoan(cur.life!, loanChannel, amount);
+        setAiBusy('loan');
+        const creditProfile = computeCreditProfile(cur.life!);
+        const review = await generateAiLoanReview(auxApi, { ...cur.life!, creditProfile }, loanChannel, amount);
+        setAiBusy(null);
+        if (!review.approved || review.approvedAmount <= 0) {
+            await persistStateUpdate(prev => {
+                const withLife = migrateBankLifeState(prev);
+                return { ...withLife, life: { ...withLife.life!, creditProfile, events: [{ id: `loan-reject-${Date.now()}`, dateStr: withLife.life!.dateStr, title: '借款审核未通过', detail: review.reason, tone: 'warn' as const }, ...withLife.life!.events].slice(0, 80) } };
+            });
+            addToast(review.reason, 'error');
+            return;
+        }
+        const result = borrowLoan({ ...cur.life!, creditProfile }, loanChannel, review.approvedAmount);
+        result.loan.reviewReason = review.reason;
+        result.loan.contractTerms = [...(result.loan.contractTerms || []), ...review.warnings].slice(0, 8);
+        result.life.loans = result.life.loans.map(loan => loan.id === result.loan.id ? result.loan : loan);
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        adjustUserBalance(amount, { note: result.loan.note, category: 'loan', kind: 'loan-borrow', sourceApp: '生活拟', sourceId: result.loan.id });
-        addToast(`${result.loan.note} ¥${amount} 到账`, loanChannel === 'shady' ? 'info' : 'success');
+        adjustUserBalance(review.approvedAmount, { note: result.loan.note, category: 'loan', kind: 'loan-borrow', sourceApp: '人生拟', sourceId: result.loan.id });
+        addToast(`${result.loan.note} ¥${review.approvedAmount} 到账`, loanChannel === 'shady' ? 'info' : 'success');
     };
 
     const handleRepayLoan = async (loanId: string) => {
@@ -1273,7 +1359,7 @@ ${previousGuestbook}
         const result = repayLoan(cur.life!, loanId, amount);
         if (result.paid <= 0) return;
         await persistStateUpdate(prev => ({ ...migrateBankLifeState(prev), life: result.life }));
-        adjustUserBalance(-result.paid, { note: '贷款还款', category: 'loan', kind: 'loan-repay', sourceApp: '生活拟', sourceId: loanId });
+        adjustUserBalance(-result.paid, { note: '贷款还款', category: 'loan', kind: 'loan-repay', sourceApp: '人生拟', sourceId: loanId });
         setLoanRepayAmount(prev => ({ ...prev, [loanId]: '' }));
         addToast(`已还款 ¥${result.paid}`, 'success');
     };
@@ -1538,7 +1624,7 @@ ${JSON.stringify(list, null, 2)}
         stateRef.current = newState;
         setState(newState);
         await DB.saveBankState(newState);
-        adjustUserBalance(total, { note: '店铺营业收入', category: 'shop', kind: 'shop-business', sourceApp: '生活拟' });
+        adjustUserBalance(total, { note: '店铺营业收入', category: 'shop', kind: 'shop-business', sourceApp: '人生拟' });
 
         for (const ev of loyaltyEvents.filter(e => e.tier === 'vip')) {
             addToast(`👑 ${ev.name} 成了你店里的 VIP！`, 'success');
@@ -1592,7 +1678,10 @@ ${JSON.stringify(list, null, 2)}
     ];
     const fmt = (n: number) => `¥${Math.round(n)}`;
     const selectedBusiness = BUSINESS_TEMPLATES.find(b => b.id === selectedBusinessType) || BUSINESS_TEMPLATES[0];
-    const selectedJob = JOB_POSTINGS.find(j => j.id === selectedJobId) || getJobsByCategory(jobCategory)[0] || JOB_POSTINGS[0];
+    const allJobPostings = [...(life.aiJobPostings || []), ...JOB_POSTINGS];
+    const jobsForCategory = (category: string) => allJobPostings.filter(j => !category || category === '全部' || j.category === category);
+    const selectedJob = allJobPostings.find(j => j.id === selectedJobId) || jobsForCategory(jobCategory)[0] || allJobPostings[0];
+    const lifeSuggestions = buildLifeSuggestions(life, userProfile.balance || 0);
     const selectedApplication = selectedApplicationId
         ? life.jobHistory.find(a => a.id === selectedApplicationId)
         : life.jobHistory[0];
@@ -1654,7 +1743,7 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                     <div className="w-16 h-16 rounded-[20px] flex items-center justify-center text-[28px] shrink-0" style={{ background: '#faf8f5', border: '1px solid rgba(43,41,51,0.06)' }}>¥</div>
                 </div>
-                <ScrapButton onClick={handleAdvanceLifeDay} className="mt-4 w-full py-2.5 text-[13px]">下一天</ScrapButton>
+                <ScrapButton onClick={handleAdvanceLifeDay} className="mt-4 w-full py-2.5 text-[13px]">{aiBusy === 'day' ? 'AI 生成今日事件中…' : '下一天'}</ScrapButton>
             </PaperCard>
 
             <div className="grid grid-cols-2 gap-2.5">
@@ -1681,6 +1770,20 @@ ${JSON.stringify(list, null, 2)}
                     </div>
                 </div>
             </PaperCard>
+
+            {lifeSuggestions.length > 0 && (
+                <PaperCard className="p-4">
+                    <SectionTag en="coach">首页建议</SectionTag>
+                    <div className="mt-3 grid gap-2">
+                        {lifeSuggestions.map(s => (
+                            <button key={s.id} onClick={() => setActiveTab(s.tab)} className="text-left rounded-2xl px-3 py-2 press-soft" style={{ background: '#faf8f5', color: '#4a4750' }}>
+                                <div className="font-black" style={{ color: INK }}>{s.title}</div>
+                                <div className="text-[11px] mt-0.5">{s.detail}</div>
+                            </button>
+                        ))}
+                    </div>
+                </PaperCard>
+            )}
 
             <PaperCard className="p-4">
                 <SectionTag en="today">今日事件</SectionTag>
@@ -1713,7 +1816,7 @@ ${JSON.stringify(list, null, 2)}
     );
 
     const renderJobs = () => {
-        const jobs = getJobsByCategory(jobCategory);
+        const jobs = jobsForCategory(jobCategory);
         const applicationStageLabel: Record<string, string> = {
             submitted: '已投递',
             screening: '简历筛选',
@@ -1741,9 +1844,23 @@ ${JSON.stringify(list, null, 2)}
                 )}
                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                     {JOB_CATEGORIES.map(c => (
-                        <button key={c} onClick={() => { setJobCategory(c); const first = getJobsByCategory(c)[0]; if (first) setSelectedJobId(first.id); }} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(jobCategory === c)}>{c}</button>
+                        <button key={c} onClick={() => { setJobCategory(c); const first = jobsForCategory(c)[0]; if (first) setSelectedJobId(first.id); }} className="shrink-0 px-3 py-1.5 text-[12px] font-bold press-soft" style={chipStyle(jobCategory === c)}>{c}</button>
                     ))}
                 </div>
+                <PaperCard className="p-4 space-y-3">
+                    <SectionTag en="resume">我的简历</SectionTag>
+                    <div className="grid grid-cols-2 gap-2 max-[420px]:grid-cols-1">
+                        <input value={String(resumeDraft.headline ?? life.resume?.headline ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, headline: e.target.value }))} placeholder="一句话定位" className="px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                        <input value={Array.isArray(resumeDraft.skills) ? resumeDraft.skills.join('，') : String(resumeDraft.skills ?? life.resume?.skills?.join('，') ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, skills: e.target.value as any }))} placeholder="技能，用逗号分隔" className="px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                    </div>
+                    <textarea value={String(resumeDraft.selfIntro ?? life.resume?.selfIntro ?? '')} onChange={e => setResumeDraft(prev => ({ ...prev, selfIntro: e.target.value }))} rows={2} placeholder="自我介绍" className="w-full px-3 py-2 text-[12px] outline-none resize-none" style={hbInputStyle} />
+                    <div className="flex gap-2">
+                        <button onClick={handleSaveResume} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#16a34a')}>保存简历</button>
+                        <input value={jobSearchQuery} onChange={e => setJobSearchQuery(e.target.value)} placeholder="想找什么岗位？" className="min-w-0 flex-1 px-3 py-2 text-[12px] outline-none" style={hbInputStyle} />
+                        <button onClick={handleGenerateAiJobs} className="px-3 py-2 text-[12px] font-black active:scale-95 transition-transform" style={smallBtn('#8b5cf6')}>{aiBusy === 'jobs' ? '生成中…' : 'AI 找岗位'}</button>
+                    </div>
+                </PaperCard>
+
                 <div className="grid grid-cols-[0.9fr_1.1fr] gap-3 max-[420px]:grid-cols-1">
                     <div className="space-y-2.5">
                         {jobs.map(job => (
@@ -1796,6 +1913,18 @@ ${JSON.stringify(list, null, 2)}
                             <CleanBadge tone={selectedApplication.status === 'scammed' ? 'red' : selectedApplication.status === 'hired' ? 'green' : 'blue'}>评分 {selectedApplication.score || 0}</CleanBadge>
                         </div>
                         <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#faf8f5', color: '#4a4750' }}>{selectedApplication.message}</div>
+                        {selectedApplication.aiReview && (
+                            <div className="rounded-2xl p-3 text-[12px] leading-relaxed" style={{ background: '#f5f3ff', color: '#4c1d95' }}>
+                                <b>AI 简历匹配 {selectedApplication.aiReview.score} 分：</b>{selectedApplication.aiReview.suggestion}
+                            </div>
+                        )}
+                        {(selectedApplication.chatMessages || []).length > 0 && (
+                            <div className="space-y-1.5 rounded-2xl p-3" style={{ background: '#faf8f5' }}>
+                                {(selectedApplication.chatMessages || []).slice(-6).map((m, idx) => (
+                                    <div key={`${m.at}-${idx}`} className="text-[12px]" style={{ color: m.role === 'boss' ? INK : INK_SOFT }}><b>{m.role === 'boss' ? '招聘方' : m.role === 'user' ? '我' : '系统'}：</b>{m.content}</div>
+                                ))}
+                            </div>
+                        )}
                         {(selectedApplication.questions || []).slice(0, 3).map(q => (
                             <div key={q.id} className="rounded-2xl p-3 text-[12px]" style={{ background: '#fff', border: '1px solid rgba(43,41,51,0.06)' }}>
                                 <div className="font-bold" style={{ color: INK }}>{q.question}</div>
@@ -1854,7 +1983,10 @@ ${JSON.stringify(list, null, 2)}
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{q.history?.[q.history.length - 1]?.volume.toLocaleString() || 0}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>成交量</div></div>
                             <div className="rounded-2xl py-2" style={{ background: '#faf8f5' }}><div className="text-[13px] font-black">{life.watchlist.includes(q.symbol) ? '已加' : '未加'}</div><div className="text-[10px]" style={{ color: INK_SOFT }}>自选</div></div>
                         </div>
-                        <p className="text-[12px] rounded-2xl px-3 py-2" style={{ color: '#4a4750', background: '#faf8f5' }}>{q.news}</p>
+                        <p className="text-[12px] rounded-2xl px-3 py-2" style={{ color: '#4a4750', background: '#faf8f5' }}>{q.aiReason || q.news}</p>
+                        {(q.newsList || []).slice(0, 3).map(n => (
+                            <div key={n.id} className="text-[11px] rounded-2xl px-3 py-2" style={{ background: '#fff7ed', color: '#9a3412' }}><b>{n.source}：</b>{n.title}</div>
+                        ))}
                         <div className="flex flex-wrap gap-1.5">{(q.eventTags || []).map(tag => <CleanBadge key={tag} tone="blue">{tag}</CleanBadge>)}</div>
                         {hold && <div className="text-[11px]" style={{ color: INK_SOFT }}>持仓 {hold.shares} 股 · 成本 ¥{hold.avgCost} · 浮盈亏 <b style={{ color: pnl >= 0 ? '#e11d48' : '#16a34a' }}>{pnl >= 0 ? '+' : ''}¥{pnl}</b></div>}
                         <div className="grid grid-cols-2 gap-2">
@@ -1975,12 +2107,13 @@ ${JSON.stringify(list, null, 2)}
                     <div className="flex flex-wrap gap-1.5">{product.terms.map(term => <CleanBadge key={term} tone={loanChannel === 'shady' ? 'red' : 'default'}>{term}</CleanBadge>)}</div>
                     <div className="flex gap-2">
                         <input type="number" value={loanAmount} onChange={e => setLoanAmount(e.target.value)} className="flex-1 px-3 py-2 outline-none" style={hbInputStyle} />
-                        <button onClick={handleBorrowLoan} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>申请</button>
+                        <button onClick={handleBorrowLoan} className="px-4 text-[13px] font-black active:scale-95 transition-transform" style={smallBtn('#f43f5e')}>{aiBusy === 'loan' ? '审核中…' : '申请'}</button>
                     </div>
                 </PaperCard>
                 {selectedLoan && (
                     <PaperCard className="p-4 space-y-3">
                         <SectionTag en="repay">还款计划</SectionTag>
+                        {selectedLoan.reviewReason && <div className="rounded-2xl px-3 py-2 text-[12px]" style={{ background: '#f5f3ff', color: '#4c1d95' }}>审核意见：{selectedLoan.reviewReason}</div>}
                         <div className="flex justify-between gap-3">
                             <div>
                                 <div className="font-black" style={{ color: INK }}>{selectedLoan.note}</div>
@@ -2227,7 +2360,7 @@ ${JSON.stringify(list, null, 2)}
                         <span className="w-10 h-10 rounded-[14px] flex items-center justify-center text-[18px] font-black shrink-0" style={{ background: '#ffe4e6', color: '#be123c' }}>¥</span>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-baseline gap-2">
-                                <span className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>生活拟</span>
+                                <span className="text-[18px] font-black truncate" style={{ color: INK, fontFamily: HAND_FONT }}>人生拟</span>
                                 <span className="text-[8px] tracking-[0.28em] uppercase shrink-0" style={{ color: '#f43f5e', fontFamily: 'var(--font-label)' }}>life gram</span>
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5 min-w-0 text-[10.5px]" style={{ color: INK_SOFT }}>

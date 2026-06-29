@@ -21,7 +21,7 @@ export const createAutoBankTransaction = (
         timestamp: now,
         dateStr: new Date(now).toISOString().slice(0, 10),
         type,
-        sourceApp: meta.sourceApp || '生活拟',
+        sourceApp: meta.sourceApp || '人生拟',
         sourceId: meta.sourceId,
         kind: meta.kind,
         auto: true,
