@@ -29,6 +29,18 @@ import { PersonaRuntime, normalizePersonaPosition } from './personas';
 import { PERSONA_POSITION } from '../types';
 import { substituteMacros } from './macros';
 import { buildBlockPromptSection } from './blockSystem';
+import { DB } from './db';
+import { budgetChatMessages, estimateMessagesChars, isMainContextBudgetEnabled } from './contextBudget';
+import {
+    DEFAULT_XUNJI_REPORT_RULES,
+    buildXunjiChatContextBlock,
+    createDefaultXunjiSettings,
+    generateXunjiMonitorSnapshot,
+    generateXunjiReports,
+    generateXunjiScreenlifeRun,
+    notifyXunjiReports,
+    shouldAutoAdvanceXunji,
+} from './xunji';
 
 export interface UserListeningContext {
     songName: string;
@@ -266,6 +278,71 @@ export async function buildChatRequestPayload(input: BuildChatPayloadInput): Pro
         WorldbookRuntime.setExtraCategories(null);
     }
 
+    // ── 3.5 循迹联动：最新 Screenlife / 监视 / 报备进入絮语上下文 ──
+    try {
+        const savedSettings = await DB.getXunjiSettings();
+        const settings = savedSettings || createDefaultXunjiSettings(char.id);
+        if (settings.chatContextEnabled !== false) {
+            let [runs, snapshot, reports] = await Promise.all([
+                DB.getXunjiRuns(char.id, 1),
+                DB.getLatestXunjiSnapshot(char.id),
+                DB.getXunjiReports(char.id, 8),
+            ]);
+            const auto = shouldAutoAdvanceXunji({
+                settings,
+                charId: char.id,
+                latestRun: runs[0],
+                latestSnapshot: snapshot,
+            });
+            if (auto.shouldRun) {
+                const run = await generateXunjiScreenlifeRun({
+                    char,
+                    rangeStart: auto.rangeStart,
+                    rangeEnd: auto.rangeEnd,
+                    density: settings.defaultDensity || 'standard',
+                    writeBack: false,
+                    seed: `${char.id}_${auto.rangeStart}_${auto.rangeEnd}_chat_auto`,
+                });
+                const nextSnapshot = generateXunjiMonitorSnapshot({
+                    char,
+                    previous: snapshot,
+                    now: auto.rangeEnd,
+                    seed: `${char.id}_${auto.rangeEnd}_chat_auto`,
+                });
+                const nextReports = generateXunjiReports({
+                    char,
+                    snapshot: nextSnapshot,
+                    rules: { ...DEFAULT_XUNJI_REPORT_RULES, ...(settings.reportRules || {}) },
+                    now: auto.rangeEnd,
+                }).filter(item => item.timestamp >= auto.rangeStart - 2 * 60 * 1000 && item.timestamp <= auto.rangeEnd + 2 * 60 * 1000).slice(0, 4);
+                await Promise.all([
+                    DB.saveXunjiRun(run),
+                    DB.saveXunjiSnapshot(nextSnapshot),
+                    DB.saveXunjiReports(nextReports),
+                    DB.saveXunjiSettings({
+                        ...settings,
+                        activeCharId: settings.activeCharId || char.id,
+                        autoTraceLastAtByChar: { ...(settings.autoTraceLastAtByChar || {}), [char.id]: auto.rangeEnd },
+                    }),
+                ]);
+                notifyXunjiReports(nextReports, char);
+                runs = [run];
+                snapshot = nextSnapshot;
+                reports = [...nextReports, ...reports].sort((a, b) => b.timestamp - a.timestamp).slice(0, 8);
+            }
+            const block = buildXunjiChatContextBlock({
+                char,
+                userName: macroCtx.userName,
+                run: runs[0],
+                snapshot,
+                reports,
+            });
+            if (block) systemPrompt += `\n\n${block}`;
+        }
+    } catch (error) {
+        console.warn('[Xunji] chat context injection skipped:', error);
+    }
+
     // ── 4. 双语指令注入 ───────────────────────────────────
     const bilingualActive = !!(translationConfig?.enabled && translationConfig.sourceLang && translationConfig.targetLang);
     if (bilingualActive && translationConfig) {
@@ -442,6 +519,22 @@ ${emojiAssociationEnabled ? '- 表情包命令 [[SEND_EMOJI: ...]] 放在所有<
             substituteMacros(mesExampleBlock, macroCtx),
             substituteMacros(personaBlock, macroCtx),
         ].filter(s => s && s.trim()).join('\n\n');
+    }
+
+    const budgeted = budgetChatMessages(fullMessages, {
+        preserveFirst: true,
+        protectedTail: 14,
+        keepRecentImages: 1,
+        enabled: isMainContextBudgetEnabled(),
+    });
+    if (budgeted.removedMessages > 0 || budgeted.compactedMedia > 0 || budgeted.afterChars < budgeted.beforeChars) {
+        console.warn(
+            `[ContextBudget] chat payload ${budgeted.beforeChars}→${budgeted.afterChars} chars; ` +
+            `removedHistory=${budgeted.removedMessages}, compactedMedia=${budgeted.compactedMedia}`,
+        );
+        fullMessages = budgeted.messages;
+    } else if (estimateMessagesChars(fullMessages) > 300_000) {
+        console.log(`[ContextBudget] chat payload large but within budget: ${estimateMessagesChars(fullMessages)} chars`);
     }
 
     return {

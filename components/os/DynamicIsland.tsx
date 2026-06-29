@@ -4,6 +4,8 @@ import { DB } from '../../utils/db';
 import { AppID, CharacterProfile, TakeoutOrder } from '../../types';
 import { playRingtone } from '../../utils/ringtone';
 import { liveTakeoutStatus, STATUS_LABEL, etaText, pickActiveOrders, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
+import { cleanMessagePreview, getLatestPrivateMessage, getUnreadPrivateBubbles } from '../../utils/messageNotifications';
+import { XUNJI_REPORT_EVENT, type XunjiReportEventDetail } from '../../utils/xunji';
 
 /**
  * 灵动岛（Dynamic Island）：悬浮在状态栏中央的黑色胶囊。
@@ -11,32 +13,36 @@ import { liveTakeoutStatus, STATUS_LABEL, etaText, pickActiveOrders, TAKEOUT_UPD
  * - 点击 / 下滑胶囊展开通知面板：列出各角色的未读消息，点条目直达对应角色聊天。
  */
 
-const cleanPreview = (content: string, type?: string): string => {
-    const cleaned = (content || '').replace(/\[.*?\]/g, '').trim();
-    if (cleaned) return cleaned;
-    if (type === 'image') return '[图片]';
-    if (type === 'voice') return '[语音]';
-    return '[消息]';
-};
+type IslandNoticeKind = 'chat' | 'xunji';
+
+const xunjiNoticeKey = (charId?: string) => `xunji:${charId || 'global'}`;
 
 // 实时消息横幅：新消息到达时灵动岛展开展示「头像 + 角色名 + 消息内容」
 interface LiveNotice {
     id: string;
     charId: string;
+    sourceCharId?: string;
     charName: string;
     body: string;
     avatarUrl?: string;
     at: number;
+    count?: number;
+    kind?: IslandNoticeKind;
+    appId?: AppID;
+    sticky?: boolean;
     ringtone?: Parameters<typeof playRingtone>[0];
 }
 
 interface NoticeInboxItem {
     charId: string;
+    sourceCharId?: string;
     charName: string;
     avatarUrl?: string;
     preview: string;
     count: number;
     at: number;
+    kind?: IslandNoticeKind;
+    appId?: AppID;
     sticky?: boolean;
 }
 
@@ -74,11 +80,13 @@ const DynamicIsland: React.FC = () => {
             const prev = map.get(char.id);
             map.set(char.id, {
                 charId: char.id,
+                sourceCharId: char.id,
                 charName: char.name,
                 avatarUrl: char.avatar || prev?.avatarUrl,
                 preview: prev?.preview || previews[char.id] || '发来了新消息',
                 count: Math.max(count, prev?.count || 0),
                 at: prev?.at || 0,
+                kind: 'chat',
             });
         });
         return Array.from(map.values()).sort((a, b) => {
@@ -89,6 +97,9 @@ const DynamicIsland: React.FC = () => {
     }, [noticeInbox, unreadEntries, previews]);
 
     const totalUnread = unreadEntries.reduce((a, b) => a + b.count, 0);
+    const xunjiNoticeCount = mergedNoticeEntries
+        .filter(item => item.kind === 'xunji')
+        .reduce((sum, item) => sum + Math.max(1, item.count || 1), 0);
 
     // 记录每个角色最近一次弹过横幅的时间，供未读数兜底去重
     const lastShownRef = useRef<Record<string, number>>({});
@@ -103,31 +114,40 @@ const DynamicIsland: React.FC = () => {
 
     const pushNoticeInbox = React.useCallback((payload: {
         charId: string;
+        sourceCharId?: string;
         charName: string;
         body: string;
         count?: number;
         avatarUrl?: string;
         at?: number;
+        kind?: IslandNoticeKind;
+        appId?: AppID;
         sticky?: boolean;
     }) => {
-        const preview = cleanPreview(payload.body);
+        const preview = cleanMessagePreview(payload.body);
         if (!preview.trim()) return;
         setNoticeInbox(prev => {
             const prevItem = prev[payload.charId];
-            const nextCount = Math.max(
-                payload.count ?? 0,
-                unreadMessages[payload.charId] || 0,
-                (prevItem?.count || 0) + 1,
-            );
+            const isXunji = payload.kind === 'xunji';
+            const nextCount = isXunji
+                ? Math.max(1, (prevItem?.count || 0) + Math.max(1, payload.count ?? 1))
+                : Math.max(
+                    payload.count ?? 0,
+                    unreadMessages[payload.charId] || 0,
+                    (prevItem?.count || 0) + 1,
+                );
             return {
                 ...prev,
                 [payload.charId]: {
                     charId: payload.charId,
+                    sourceCharId: payload.sourceCharId || prevItem?.sourceCharId || payload.charId,
                     charName: payload.charName,
                     avatarUrl: payload.avatarUrl || prevItem?.avatarUrl,
                     preview,
                     count: nextCount,
                     at: payload.at || Date.now(),
+                    kind: payload.kind || prevItem?.kind || 'chat',
+                    appId: payload.appId || prevItem?.appId,
                     sticky: payload.sticky || prevItem?.sticky,
                 },
             };
@@ -140,10 +160,15 @@ const DynamicIsland: React.FC = () => {
         playRingtone(n.ringtone);
         pushNoticeInbox({
             charId: n.charId,
+            sourceCharId: n.sourceCharId,
             charName: n.charName,
             body: n.body,
             avatarUrl: n.avatarUrl,
             at: n.at,
+            count: n.count,
+            kind: n.kind,
+            appId: n.appId,
+            sticky: n.sticky,
         });
         noticeRef.current = n;
         setNotice(n);
@@ -187,7 +212,7 @@ const DynamicIsland: React.FC = () => {
             // detail.bodies = 本轮逐条消息正文数组（主动消息多气泡时逐条弹横幅）；
             // 没带 bodies 的旧事件退化为单条 body
             const bodies: string[] = (Array.isArray(d.bodies) && d.bodies.length ? d.bodies : [String(d.body)])
-                .map((b: any) => cleanPreview(String(b || '')))
+                .map((b: any) => cleanMessagePreview(String(b || '')))
                 .filter((b: string) => !!b.trim())
                 .slice(0, 8);
             const charName = d.charName || srcChar?.name || '';
@@ -212,7 +237,7 @@ const DynamicIsland: React.FC = () => {
             const srcChar = characters.find(c => c.id === d.charId);
             const cs = srcChar?.convoSettings;
             if (!cs?.specialCare || cs.specialCareNotify === false) return;
-            const body = cleanPreview(String(d.body || '发了一条此刻'));
+            const body = cleanMessagePreview(String(d.body || '发了一条此刻'));
             const charName = d.charName || srcChar?.name || '';
             pushNoticeInbox({
                 charId: d.charId,
@@ -232,13 +257,38 @@ const DynamicIsland: React.FC = () => {
                 ringtone: getNoticeRingtone(srcChar),
             });
         };
+        const onXunjiReport = (e: Event) => {
+            const d = ((e as CustomEvent<XunjiReportEventDetail>).detail || {}) as Partial<XunjiReportEventDetail>;
+            if (!d.charId || !String(d.title || d.body || '').trim()) return;
+            const srcChar = characters.find(c => c.id === d.charId);
+            const key = xunjiNoticeKey(d.charId);
+            const charName = d.charName || srcChar?.name || '';
+            const label = charName ? `循迹 · ${charName}` : '循迹';
+            const body = cleanMessagePreview(`${d.title || '事件提醒'}${d.body ? ` · ${d.body}` : ''}`);
+            const count = Math.max(1, Math.floor(Number(d.count)) || 1);
+            scheduleNotice({
+                charId: key,
+                sourceCharId: d.charId,
+                charName: label,
+                body,
+                count,
+                avatarUrl: srcChar?.avatar,
+                at: d.at || Date.now(),
+                kind: 'xunji',
+                appId: AppID.Xunji,
+                sticky: true,
+                ringtone: 'chime',
+            });
+        };
         window.addEventListener('proactive-message-sent', onIncoming);
         window.addEventListener('active-msg-received', onIncoming);
         window.addEventListener('character-moment-posted', onMomentPosted);
+        window.addEventListener(XUNJI_REPORT_EVENT, onXunjiReport);
         return () => {
             window.removeEventListener('proactive-message-sent', onIncoming);
             window.removeEventListener('active-msg-received', onIncoming);
             window.removeEventListener('character-moment-posted', onMomentPosted);
+            window.removeEventListener(XUNJI_REPORT_EVENT, onXunjiReport);
         };
     }, [characters, getNoticeRingtone, pushNoticeInbox, scheduleNotice]);
 
@@ -262,11 +312,8 @@ const DynamicIsland: React.FC = () => {
                 if (!char) continue;
                 let bodies: string[] = [];
                 try {
-                    const msgs = await DB.getMessagesByCharId(char.id);
-                    const visible = msgs.filter(m => m.role !== 'system');
-                    bodies = visible
-                        .slice(-Math.min(delta, 8))
-                        .map(m => cleanPreview(m.content, m.type as any));
+                    bodies = (await getUnreadPrivateBubbles(char.id, Math.min(delta, 8)))
+                        .map(m => cleanMessagePreview(m.content, m.type as any));
                 } catch { /* 预览失败不阻塞横幅 */ }
                 if (!bodies.length) bodies = ['发来了新消息'];
                 if (cancelled) return;
@@ -292,6 +339,10 @@ const DynamicIsland: React.FC = () => {
             let changed = false;
             const next: Record<string, NoticeInboxItem> = {};
             for (const [charId, item] of Object.entries(prev)) {
+                if (item.kind === 'xunji') {
+                    next[charId] = item;
+                    continue;
+                }
                 const unreadCount = unreadMessages[charId] || 0;
                 if (unreadCount <= 0 && !item.sticky) {
                     changed = true;
@@ -313,10 +364,8 @@ const DynamicIsland: React.FC = () => {
             const next: Record<string, string> = {};
             for (const { char } of unreadEntries) {
                 try {
-                    const msgs = await DB.getMessagesByCharId(char.id);
-                    const visible = msgs.filter(m => m.role !== 'system');
-                    const last = visible[visible.length - 1];
-                    if (last) next[char.id] = cleanPreview(last.content, last.type as any);
+                    const last = await getLatestPrivateMessage(char.id);
+                    if (last) next[char.id] = cleanMessagePreview(last.content, last.type as any);
                 } catch { /* 预览失败不阻塞面板 */ }
             }
             if (!cancelled) setPreviews(next);
@@ -355,9 +404,38 @@ const DynamicIsland: React.FC = () => {
         openApp(AppID.Chat);
     };
 
+    const jumpToXunji = (noticeKey?: string, sourceCharId?: string) => {
+        setExpanded(false);
+        if (sourceCharId) setActiveCharacterId(sourceCharId);
+        if (noticeKey) {
+            setNoticeInbox(prev => {
+                if (!prev[noticeKey]) return prev;
+                const next = { ...prev };
+                delete next[noticeKey];
+                return next;
+            });
+            setNoticeStack(prev => {
+                const next = prev.filter(q => q.charId !== noticeKey);
+                const latest = next[0] || null;
+                noticeRef.current = latest;
+                setNotice(latest);
+                return next;
+            });
+        }
+        openApp(AppID.Xunji);
+    };
+
+    const openNoticeTarget = (item: NoticeInboxItem | LiveNotice) => {
+        if (item.kind === 'xunji' || item.appId === AppID.Xunji) {
+            jumpToXunji(item.charId, item.sourceCharId);
+            return;
+        }
+        jumpToChat(item.charId);
+    };
+
     const noticeChar = notice ? characters.find(c => c.id === notice.charId) : null;
-    const noticeAvatar = noticeChar?.avatar || notice?.avatarUrl;
-    const noticeCount = notice ? (unreadMessages[notice.charId] || 0) : 0;
+    const noticeAvatar = notice?.avatarUrl || noticeChar?.avatar;
+    const noticeCount = notice ? (notice.kind === 'xunji' ? notice.count || 1 : unreadMessages[notice.charId] || 0) : 0;
 
     return (
         <>
@@ -384,15 +462,15 @@ const DynamicIsland: React.FC = () => {
                         // 横幅展示期间点击 = 直达该角色聊天（仿 iOS 通知横幅）。
                         // 同角色已经堆出的横幅一并丢弃（进聊天页即视为已读），其余角色保留。
                         if (notice) {
-                            const target = notice.charId;
+                            const current = notice;
                             setNoticeStack(prev => {
-                                const next = prev.filter(q => q.charId !== target);
+                                const next = prev.filter(q => q.charId !== current.charId);
                                 const latest = next[0] || null;
                                 noticeRef.current = latest;
                                 setNotice(latest);
                                 return next;
                             });
-                            jumpToChat(target);
+                            openNoticeTarget(current);
                             return;
                         }
                         // 灵动岛此刻正作为外卖 Live Activity 展示 → 点击进外卖 App（仍可下滑展开通知）
@@ -432,7 +510,9 @@ const DynamicIsland: React.FC = () => {
                             {noticeAvatar ? (
                                 <img src={noticeAvatar} className="w-[26px] h-[26px] rounded-full object-cover border border-white/30 shrink-0" alt="" />
                             ) : (
-                                <span className="w-[26px] h-[26px] rounded-full bg-white/15 shrink-0" />
+                                <span className="w-[26px] h-[26px] rounded-full bg-white/15 shrink-0 flex items-center justify-center text-[10px] font-black">
+                                    {notice.kind === 'xunji' ? '循' : ''}
+                                </span>
                             )}
                             <span className="flex flex-col items-start min-w-0 text-left leading-tight">
                                 <span className="flex items-center gap-1 min-w-0 max-w-[230px]">
@@ -468,6 +548,11 @@ const DynamicIsland: React.FC = () => {
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" style={{ boxShadow: '0 0 6px #34d399' }} />
                             <span className="text-[10px] font-bold whitespace-nowrap">{totalUnread > 99 ? '99+' : totalUnread} 条新消息</span>
                         </>
+                    ) : xunjiNoticeCount > 0 ? (
+                        <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-lime-400 animate-pulse shrink-0" style={{ boxShadow: '0 0 6px #a3e635' }} />
+                            <span className="text-[10px] font-bold whitespace-nowrap">循迹 {xunjiNoticeCount > 99 ? '99+' : xunjiNoticeCount} 条</span>
+                        </>
                     ) : (
                         <span className="w-1.5 h-1.5 rounded-full bg-white/35 shrink-0" />
                     )}
@@ -494,7 +579,9 @@ const DynamicIsland: React.FC = () => {
                         {mergedNoticeEntries.length > 0 && (
                             <button
                                 onClick={() => {
-                                    mergedNoticeEntries.forEach(item => clearUnread(item.charId));
+                                    mergedNoticeEntries.forEach(item => {
+                                        if (item.kind !== 'xunji') clearUnread(item.charId);
+                                    });
                                     setNoticeInbox({});
                                 }}
                                 className="text-[10px] font-bold opacity-60 hover:opacity-100 transition-opacity px-2 py-1 rounded-full active:scale-95"
@@ -511,10 +598,16 @@ const DynamicIsland: React.FC = () => {
                             {mergedNoticeEntries.map((item) => (
                                 <button
                                     key={item.charId}
-                                    onClick={() => jumpToChat(item.charId)}
+                                    onClick={() => openNoticeTarget(item)}
                                     className="w-full flex items-center gap-3 p-2.5 rounded-2xl hover:bg-white/10 active:scale-[0.98] transition-all text-left"
                                 >
-                                    <img src={item.avatarUrl || characters.find(c => c.id === item.charId)?.avatar} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/15" alt={item.charName} />
+                                    {item.avatarUrl || characters.find(c => c.id === item.charId)?.avatar ? (
+                                        <img src={item.avatarUrl || characters.find(c => c.id === item.charId)?.avatar} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/15" alt={item.charName} />
+                                    ) : (
+                                        <span className="w-10 h-10 rounded-xl shrink-0 border border-white/15 bg-white/10 flex items-center justify-center text-[13px] font-black">
+                                            {item.kind === 'xunji' ? '循' : item.charName.slice(0, 1)}
+                                        </span>
+                                    )}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs font-bold truncate">{item.charName}</span>

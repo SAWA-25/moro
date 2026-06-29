@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useOS } from '../../context/OSContext';
-import { DB } from '../../utils/db';
 import { AppID, Message } from '../../types';
 import { getLockPasscode, isLockPasscodeEnabled } from '../../utils/lockScreenSettings';
 import { recordUserUnlockFail, consumeCharUnlockReminders, CharUnlockReminder } from '../../utils/lockAttempts';
 import { toWallpaperBackground } from '../../utils/defaultWallpapers';
+import { getUnreadPrivateBubbles } from '../../utils/messageNotifications';
 
 /**
  * 锁屏：壁纸 + 大时钟 + 消息通知卡（仿 iPhone 锁屏：每条消息气泡一张卡片，
@@ -124,10 +124,7 @@ const LockScreen: React.FC = () => {
                 const perCharCap = Math.min(count || 1, 8);
                 let bubbles: Message[] = [];
                 try {
-                    const msgs = await DB.getRecentMessagesByCharId(charId, perCharCap + 8);
-                    bubbles = msgs
-                        .filter(m => m.role === 'assistant' && !m.metadata?.hidden)
-                        .slice(-perCharCap);
+                    bubbles = await getUnreadPrivateBubbles(charId, perCharCap);
                 } catch { /* 取不到就用占位文案 */ }
                 if (bubbles.length === 0) bubbles = [undefined as unknown as Message];
                 bubbles.forEach((m, i) => out.push({

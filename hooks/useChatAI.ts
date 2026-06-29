@@ -34,6 +34,7 @@ import { flattenContent } from '../utils/llmReasoning';
 import { ActiveMsgStore } from '../utils/activeMsgStore';
 import { applyEmotionEvalRaw } from '../utils/emotionApply';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
+import { budgetChatMessages, isAuxContextBudgetEnabled } from '../utils/contextBudget';
 
 // ─── 情绪评估（副API，fire & forget）───
 
@@ -290,7 +291,27 @@ export async function evaluateEmotionBackground(
     api: { baseUrl: string; apiKey: string; model: string }
 ): Promise<string | null> {
     try {
-        const prompt = buildEmotionEvalPrompt(charData, userProfile, mainSystemPrompt, apiMessages);
+        const budgetedContext = budgetChatMessages(
+            [{ role: 'system', content: mainSystemPrompt }, ...apiMessages],
+            {
+                maxChars: 260_000,
+                preserveFirst: true,
+                protectedTail: 12,
+                keepRecentImages: 0,
+                enabled: isAuxContextBudgetEnabled(),
+            },
+        );
+        if (budgetedContext.removedMessages > 0 || budgetedContext.compactedMedia > 0 || budgetedContext.afterChars < budgetedContext.beforeChars) {
+            console.warn(
+                `[ContextBudget] emotion eval ${budgetedContext.beforeChars}→${budgetedContext.afterChars} chars; ` +
+                `removedHistory=${budgetedContext.removedMessages}, compactedMedia=${budgetedContext.compactedMedia}`,
+            );
+        }
+        const evalSystemPrompt = typeof budgetedContext.messages[0]?.content === 'string'
+            ? budgetedContext.messages[0].content
+            : mainSystemPrompt;
+        const evalApiMessages = budgetedContext.messages.slice(1);
+        const prompt = buildEmotionEvalPrompt(charData, userProfile, evalSystemPrompt, evalApiMessages);
 
         const baseUrl = api.baseUrl.replace(/\/+$/, '');
         const headers = {

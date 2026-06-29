@@ -49,6 +49,7 @@ import {
   Scissors,
   ForkKnife,
   Question,
+  XLogo,
 } from '@phosphor-icons/react';
 
 // SVG 图标库 - Phosphor Icons
@@ -73,6 +74,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Novel: ({ className }) => <PenNib className={className} weight="bold" />,
   Bank: ({ className }) => <ChartLineUp className={className} weight="bold" />,
   XhsFreeRoam: ({ className }) => <Compass className={className} weight="bold" />,
+  Xunji: ({ className }) => <Compass className={className} weight="fill" />,
   XhsStock: ({ className }) => <Camera className={className} weight="bold" />,
   SpecialMoments: ({ className }) => <Sparkle className={className} weight="bold" />,
   Browser: ({ className }) => <GlobeSimple className={className} weight="bold" />,
@@ -99,6 +101,7 @@ export const Icons: Record<string, React.FC<{ className?: string }>> = {
   Shop: ({ className }) => <ShoppingBagOpen className={className} weight="bold" />,
   Harem: ({ className }) => <Crown className={className} weight="bold" />,
   Forum: ({ className }) => <ChatsCircle className={className} weight="bold" />,
+  Twitter: ({ className }) => <XLogo className={className} weight="bold" />,
   Manual: ({ className }) => <Question className={className} weight="bold" />,
 };
 
@@ -142,9 +145,11 @@ export const INSTALLED_APPS: AppConfig[] = [
   // 一个图标，封面页选「时光契约 / 特别时光」再进对应页（两个子模式各自保留玩法与名字）。
   { id: AppID.Almanac, name: '岁时记', icon: 'Almanac', color: 'pink' },
   { id: AppID.Takeout, name: '饭票', icon: 'Takeout', color: 'orange' },
+  { id: AppID.Xunji, name: '循迹', icon: 'Xunji', color: 'cyan' },
   { id: AppID.Shop, name: '心意铺', icon: 'Shop', color: 'rose' },
   { id: AppID.Harem, name: '椒房记', icon: 'Harem', color: 'red' },
   { id: AppID.Forum, name: '茶话亭', icon: 'Forum', color: 'blue' },
+  { id: AppID.Twitter, name: '推特', icon: 'Twitter', color: 'slate' },
   { id: AppID.XhsFreeRoam, name: '自由活动', icon: 'XhsFreeRoam', color: 'rose' },
   { id: AppID.XhsStock, name: '拾光图库', icon: 'XhsStock', color: 'red' },
   { id: AppID.Phone, name: '回声亭', icon: 'Phone', color: 'green' },

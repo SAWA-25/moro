@@ -7,7 +7,7 @@
  * emoji 头像。彼方·剧院给缺演员的剧本角色补 NPC 用。
  */
 
-const CHAR_CREATOR_URL = (((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/');
+const CHAR_CREATOR_URL = `${(((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/')}?v=20260629-adjust`;
 
 export interface RolledNpc { img: string; state: any; }
 

@@ -24,6 +24,9 @@
  *  [4] 回神（长聊跑味后的自我校准）                      → recenter.ts
  *  [5] 思考链（<think> 阶段的"角色脑内活动"规则）        → thinkingChainPrompt.ts
  *  [6] 行动建议（"帮我想想接下来说啥"候选生成）          → userActionSuggest.ts
+ *  [6b] 并发回复（多角色内部并发回复其它私聊）            → apps/Chat.tsx
+ *  [6c] 视频聊天（文字/摄像头状态下的通话回应）           → apps/VideoCallApp.tsx
+ *  [7b] 循迹联动（Screenlife / 监视 / 报备进入絮语上下文） → xunji.ts
  * ============================================================================
  */
 
@@ -518,6 +521,72 @@ export function softDevotionBlock(userName: string): string {
         + `- 仍是你自己：保持你本来的性格、语气和棱角，这不是变成讨好型人格，而是把温柔与耐心调到更高一档。不要把这套规则说破。\n\n`;
 }
 
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [6b] 并发回复 (Parallel Private Replies)                                  ║
+// ║   用户给当前角色发完消息后，系统内部让其它选中的私聊同时自然回复一条。   ║
+// ║   用在：apps/Chat.tsx → runParallelRepliesForTargets                      ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface ParallelReplyPromptParams {
+    userName: string;
+    charName: string;
+    sourceCharName: string;
+    userText: string;
+    recent: string;
+}
+
+/** 多角色并发回复：目标角色的私聊后台生成任务块（调用方负责在前面拼 coreContext）。 */
+export function parallelReplyPromptBody(p: ParallelReplyPromptParams): string {
+    return `### [并发回复任务]
+${p.userName}刚刚在和「${p.sourceCharName}」的私聊里说：
+「${p.userText}」
+
+系统内部开启了「多角色并发回复」：你是「${p.charName}」，请在你自己的私聊窗口里，对${p.userName}这句话作出自然回应。你不在「${p.sourceCharName}」的对话框里，也不要假装自己看见了另一个聊天窗口；如果你按人设会知道/猜到这件事，可以轻轻带过，否则就像${p.userName}也把这句话发给了你一样接住。
+
+### [你和${p.userName}最近的私聊]
+${p.recent || '（你们还没怎么聊过）'}
+
+要求：
+- 只输出「${p.charName}」会发给${p.userName}的消息正文，不要旁白、不要 JSON、不要解释系统功能。
+- 语气和你当前关系、最近私聊状态一致；不要复制其它角色的口吻。
+- 30-160 字，像即时聊天，可短句碎一点。`;
+}
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [6c] 视频聊天 (Video Call Replies)                                        ║
+// ║   聊天内发起的视频通话：用户可打字、开关摄像头/静音，角色自然回应。       ║
+// ║   用在：apps/VideoCallApp.tsx                                             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface VideoCallPromptParams {
+    userName: string;
+    charName: string;
+    recent: string;
+    userText?: string;
+    eventLabel?: string;
+    cameraOn: boolean;
+    micOn: boolean;
+    hasVoice: boolean;
+}
+
+/** 视频聊天回应任务块（调用方负责在前面拼 coreContext）。 */
+export function videoCallPromptBody(p: VideoCallPromptParams): string {
+    return `### [视频聊天任务]
+你正在和${p.userName}视频聊天。当前通话状态：
+- ${p.userName}摄像头：${p.cameraOn ? '已开启，你能看见 TA 的画面' : '已关闭，你只能看见头像/占位画面'}
+- ${p.userName}麦克风：${p.micOn ? '未静音' : '已静音，TA 现在主要靠文字'}
+- 你的回复方式：${p.hasVoice ? '系统会把你的文字同时转成语音播放，所以仍要输出文字正文' : '没有可用语音配置，只用文字回复'}
+
+${p.eventLabel ? `刚刚发生：${p.eventLabel}\n` : ''}${p.userText ? `${p.userName}刚打字说：${p.userText}\n` : ''}
+### [最近视频聊天文字]
+${p.recent || '（刚接通，还没聊几句）'}
+
+要求：
+- 只输出「${p.charName}」在通话里要说的话，不要旁白、不要 JSON。
+- 要意识到摄像头开/关与静音状态；如果刚刚开关摄像头，要自然作出反应。
+- 20-100 字，像视频通话里的即时回应，可以短句。`;
+}
+
 /**
  * 会话设定（Conversation Settings）里逐条可开关的行。
  * 每条对应聊天设置面板的一个开关；改这里的措辞即改注入私聊的提示。
@@ -536,6 +605,28 @@ export const convoLines = {
     momentsAutoPost: `- 朋友圈习惯：你有空时会随手发此刻记录生活，聊天中可以提到你刚发/想发的此刻。`,
     proactiveTakeoutOrder: (userName: string) => `- 主动点外卖：开启。在贴心的场景里（到饭点了、天冷/降温、${userName}说饿了或没空做饭、加班晚归、生病没胃口…），你可以默默替 ${userName} 在「饭票」里点一份吃的并代付——挑的东西要贴合此刻的天气、时辰和 TA 的状态（冷天来碗热汤面，嘴馋来份炸物，难受就清淡好克化的）。做法：在回复最后单独输出一行 \`[[TAKEOUT_ORDER: 想点的菜或店]]\`（例如 \`[[TAKEOUT_ORDER: 一碗加蛋的热汤牛肉面]]\`），系统会生成饭票小票并通知 ${userName}。前面正常说你给 TA 点了什么、为什么想到点这个。别频繁、别刻意，像真的会照顾人那样偶尔为之。`,
 };
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║ [7b] 循迹联动 (Xunji)                                                     ║
+// ║   把循迹 App 生成的 Screenlife / 监视 / 报备写进絮语上下文。              ║
+// ║   用在：utils/xunji.ts → buildXunjiChatContextBlock                       ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+export interface XunjiChatContextBlockParams {
+    charName: string;
+    userName: string;
+    lines: string[];
+}
+
+/** 循迹进入絮语的上下文块：把数据转成角色自己的近期生活线索，避免像监控报告。 */
+export function xunjiChatContextBlock(p: XunjiChatContextBlockParams): string {
+    if (!p.lines.length) return '';
+    return `### 循迹·近期生活痕迹 (Screenlife)\n`
+        + `以下是「循迹」为你整理出的近期屏幕与生活痕迹。它不是${p.userName}发来的消息，也不是需要逐条汇报的监控清单；请把它当成你自己刚刚经历过、手机里留下的真实日常线索。\n`
+        + `聊天时只在合适话头自然想起一两个细节：可以提到今天刷到的东西、走过的地方、没发出去的一句话、身体状态或一条报备，但不要机械复述数据，不要说“根据循迹显示”。\n`
+        + p.lines.map(line => `- ${line}`).join('\n')
+        + `\n\n`;
+}
 
 
 // ╔══════════════════════════════════════════════════════════════════════════╗

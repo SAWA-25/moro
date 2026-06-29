@@ -6,6 +6,7 @@ import { Message, ChatTheme, TakeoutOrder } from '../../types';
 import { tryParseLifeSimResetCard } from '../../utils/lifeSimChatCard';
 import { liveTakeoutStatus, STATUS_LABEL, etaText, TAKEOUT_UPDATED_EVENT } from '../../utils/takeout';
 import { DB } from '../../utils/db';
+import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 import McdCard from './McdCard';
 import { HtmlPreviewBlock, CssAppliedChip, MarkdownPreviewBlock } from './RichCodeBlock';
 import { splitByFences, isHtmlLang, isCssLang, isMarkdownLang, looksLikeHtmlFragment, extractRawHtmlChunk } from '../../utils/chatRichContent';
@@ -1283,6 +1284,7 @@ const MessageItem = React.memo(({
             const callMemo = String(m.metadata?.keepsakeLine || `“今天这通电话，我会记很久。” —— ${m.metadata?.characterName || charName}`);
             const memoTitle = m.metadata?.characterName || charName;
             const memoAvatar = m.metadata?.characterAvatar || charAvatar;
+            const callKind = m.metadata?.callMode === 'video' ? '视频' : '电话';
             const timeHint = durationSec <= 240 ? '差不多是一杯咖啡的时间' : '像听完一首喜欢的歌再多一点';
 
             return (
@@ -1299,7 +1301,7 @@ const MessageItem = React.memo(({
                             <div className="flex items-center gap-3">
                                 <img src={memoAvatar} alt={memoTitle} className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200/80" loading="lazy" decoding="async" />
                                 <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium text-slate-600 truncate">和 {memoTitle} 通了电话</div>
+                                    <div className="text-sm font-medium text-slate-600 truncate">和 {memoTitle} 通了{callKind}</div>
                                     <div className="text-xs text-slate-400 mt-0.5">{durationText} · {turnCount}轮对话</div>
                                 </div>
                             </div>
@@ -1827,6 +1829,47 @@ const MessageItem = React.memo(({
                     {/* Footer label */}
                     <div className="mt-2 pt-1.5 flex items-center gap-1 text-[9px] text-slate-300">
                         <span className="text-red-400 font-bold">小红书</span> <span>·</span> <span>{note.type === 'video' ? '视频' : '笔记'}{isUser ? '分享' : '推荐'}</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- Twitter Card Rendering (推特/X 转发卡片) ---
+    if (m.type === 'twitter_card' && m.metadata?.tweet) {
+        const tweet = m.metadata.tweet;
+        const translated = getTwitterTranslationText(tweet.translations, getTwitterLocalTargetLang());
+        return commonLayout(
+            <div className="w-72 rounded-2xl overflow-hidden bg-white border border-[#cfd9de] shadow-sm">
+                <div className="px-3.5 py-2.5 flex items-center gap-2 border-b border-[#eff3f4]">
+                    <div className="w-6 h-6 rounded-full bg-[#0f1419] text-white flex items-center justify-center text-[12px] font-black">X</div>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-black text-[#0f1419] truncate">{tweet.authorName || '推特用户'}</div>
+                        <div className="text-[10px] text-[#536471] truncate">{tweet.authorHandle || '@user'} · 转发的推文</div>
+                    </div>
+                </div>
+                <div className="px-3.5 py-3">
+                    <div className="text-[13px] leading-relaxed text-[#0f1419] whitespace-pre-wrap line-clamp-5">{tweet.content || '（无正文）'}</div>
+                    {translated && (
+                        <div className="mt-2 rounded-xl bg-[#f7f9f9] px-2.5 py-2">
+                            <div className="text-[9px] text-[#536471] mb-0.5">译文</div>
+                            <div className="text-[11px] leading-relaxed text-[#0f1419] line-clamp-3">{translated}</div>
+                        </div>
+                    )}
+                    {Array.isArray(tweet.topics) && tweet.topics.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                            {tweet.topics.slice(0, 3).map((t: string) => <span key={t} className="text-[11px] text-[#1d9bf0]">#{t}</span>)}
+                        </div>
+                    )}
+                    {tweet.sourceTweet && (
+                        <div className="mt-2 rounded-xl border border-[#cfd9de] px-2.5 py-2">
+                            <div className="text-[10px] text-[#536471] truncate">{tweet.sourceTweet.authorName} {tweet.sourceTweet.authorHandle}</div>
+                            <div className="text-[11px] text-[#0f1419] line-clamp-2">{tweet.sourceTweet.content}</div>
+                        </div>
+                    )}
+                    <div className="mt-3 pt-2 border-t border-[#eff3f4] flex items-center justify-between text-[10px] text-[#536471]">
+                        <span>推特{tweet.language ? ` · ${tweet.language}` : ''}{tweet.country ? ` · ${tweet.country}` : ''}</span>
+                        <span>💬 {tweet.replyCount || 0}　↻ {tweet.retweets || 0}　♡ {tweet.likes || 0}</span>
                     </div>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme } from '../../types';
+import { CharacterProfile, UserProfile, Message, SocialPost, GalleryImage, Anniversary, AppID, PhoneCallLog, Task, TakeoutOrder, OSTheme, TwitterTweet, TwitterDMThread } from '../../types';
 import { DB } from '../../utils/db';
 import { resolveCart, cartTotal, expandCart, makeOwnedItem, makeReceipt, formatPrice as fmtPrice } from '../../utils/shop';
 import { safeResponseJson, extractContent } from '../../utils/safeApi';
@@ -10,6 +10,7 @@ import { useOS } from '../../context/OSContext';
 import AppIcon from '../os/AppIcon';
 import { liveTakeoutStatus, STATUS_LABEL } from '../../utils/takeout';
 import { isDevDebugAvailable } from '../../utils/devDebug';
+import { getTwitterLocalTargetLang, getTwitterTranslationText } from '../../utils/twitterFeed';
 
 /**
  * 角色查岗用户手机（反向查岗）。
@@ -31,6 +32,7 @@ type StepApp =
     | 'chat-list'
     | 'chat-thread'
     | 'moments'
+    | 'twitter'
     | 'schedule'
     | 'gallery'
     | 'music'
@@ -93,6 +95,7 @@ const STEP_ICON: Record<Exclude<StepApp, 'home'>, string> = {
     'chat-list': 'Chat',
     'chat-thread': 'Chat',
     'moments': 'Social',
+    'twitter': 'Twitter',
     'schedule': 'Almanac',
     'gallery': 'Gallery',
     'music': 'Music',
@@ -109,6 +112,7 @@ const STEP_LABEL: Record<StepApp, string> = {
     'chat-list': '聊天列表',
     'chat-thread': '聊天记录',
     moments: '此刻',
+    twitter: '推特',
     schedule: '日程',
     gallery: '相册',
     music: '音乐',
@@ -474,6 +478,8 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
     const [actionLog, setActionLog] = useState<string[]>([]);
     // 手机里的真实数据快照（朋友圈 / 相册 / 纪念日）——角色翻到对应页面时展示
     const [moments, setMoments] = useState<SocialPost[]>([]);
+    const [twitterTweets, setTwitterTweets] = useState<TwitterTweet[]>([]);
+    const [twitterDMThreads, setTwitterDMThreads] = useState<TwitterDMThread[]>([]);
     const [galleryImgs, setGalleryImgs] = useState<GalleryImage[]>([]);
     const [annivs, setAnnivs] = useState<Anniversary[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -567,6 +573,8 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 
                 // 朋友圈 / 相册 / 纪念日真实快照：页面展示 + 喂给脚本生成（想法贴真实内容）
                 let momentsSnap: SocialPost[] = [];
+                let twitterSnap: TwitterTweet[] = [];
+                let twitterDMSnap: TwitterDMThread[] = [];
                 let gallerySnap: GalleryImage[] = [];
                 let annivSnap: Anniversary[] = [];
                 let taskSnap: Task[] = [];
@@ -578,6 +586,16 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                         .sort((a, b) => b.timestamp - a.timestamp)
                         .slice(0, 6);
                 } catch { /* 取不到不阻塞 */ }
+                try {
+                    twitterSnap = (await DB.getTwitterTweets())
+                        .sort((a, b) => b.createdAt - a.createdAt)
+                        .slice(0, 8);
+                } catch { /* ignore */ }
+                try {
+                    twitterDMSnap = (await DB.getTwitterDMThreads())
+                        .sort((a, b) => b.updatedAt - a.updatedAt)
+                        .slice(0, 4);
+                } catch { /* ignore */ }
                 try {
                     gallerySnap = (await DB.getGalleryImages())
                         .sort((a, b) => b.timestamp - a.timestamp)
@@ -601,6 +619,8 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
                 } catch { /* ignore */ }
                 if (cancelled) return;
                 setMoments(momentsSnap);
+                setTwitterTweets(twitterSnap);
+                setTwitterDMThreads(twitterDMSnap);
                 setGalleryImgs(gallerySnap);
                 setAnnivs(annivSnap);
                 setTasks(taskSnap);
@@ -621,6 +641,12 @@ const CharPhoneCheckOverlay: React.FC<CharPhoneCheckOverlayProps> = ({
 
                 const momentsBrief = momentsSnap
                     .map(p => `- ${p.authorName}：「${String(p.content || p.title || '').slice(0, 60)}」${p.location ? ` @${p.location}` : ''}${p.images?.length ? `（配图${p.images.length}张）` : ''}`)
+                    .join('\n');
+                const twitterBrief = twitterSnap
+                    .map(t => `- ${t.authorName} ${t.authorHandle}${t.language ? ` [${t.language}]` : ''}${t.country ? ` ${t.country}` : ''}：「${String(t.content || '').slice(0, 90)}」${t.topics?.length ? ` #${t.topics.slice(0, 3).join(' #')}` : ''}`)
+                    .join('\n');
+                const twitterDMBrief = twitterDMSnap
+                    .map(t => `- ${t.accountName} ${t.accountHandle}：${String(t.lastMessage || '').slice(0, 70)}${t.unreadCount ? `（未读${t.unreadCount}）` : ''}`)
                     .join('\n');
                 const annivBrief = annivSnap
                     .map(a => `- ${a.date} ${a.title}`)
@@ -664,6 +690,12 @@ ${excerpts.join('\n\n') || '（手机里几乎没有聊天记录）'}
 ### 朋友圈最近的动态
 ${momentsBrief || '（朋友圈没什么动态）'}
 
+### 推特最近的时间线
+${twitterBrief || '（推特时间线暂时空着）'}
+
+### 推特私信
+${twitterDMBrief || '（没有推特私信）'}
+
 ### 日程里记着的纪念日
 ${annivBrief || '（日程是空的）'}
 
@@ -694,10 +726,10 @@ ${resolveCart(userProfile.shopCart).length > 0
 生成 4~7 步浏览动作。第一步必须是 "home"（刚拿到手机看桌面）。可用的 app：
 - "home" 桌面
 - "chat-list" 聊天列表 / "chat-thread" 点开某人的对话（targetName 填上面列表里的名字）
-- "moments" 朋友圈 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
+- "moments" 朋友圈 / "twitter" 推特 / "schedule" 日程 / "gallery" 相册 / "music" 音乐
 - "phone" 电话记录 / "shop" 心意铺购物与购物车 / "takeout" 饭票外卖 / "wallet" 钱包收支 / "browser" 热点与浏览痕迹 / "map" 地区与位置线索
 每一步都要有 thought：${char.name} 看到当前页面时的真实想法（第一人称，30~80字，完全贴合人设——可以吃醋、好奇、欣慰、酸溜溜、占有欲，看到自己的对话框也会有感想）。
-翻到 moments / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。
+翻到 moments / twitter / schedule / gallery / phone / shop / takeout / wallet / browser / map 时，想法要针对上面给出的真实快照来写，不要凭空编造内容。twitter 里包含国际时间线和私信概况，看到外文推文时可以提到语言或翻译痕迹。
 chat-thread 步骤可以带 action：
 - {"type":"reply","content":"…"} 代替 ${userProfile.name} 回复对方（content 是以 ${userProfile.name} 口吻发出的内容）
 - {"type":"block"} 把这个联系人拉黑
@@ -1056,6 +1088,54 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
         </div>
     );
 
+    const renderTwitterApp = () => (
+        <div className="flex-1 overflow-hidden flex flex-col bg-white">
+            {screenHeader('推特', `${twitterTweets.length} 条最近推文 · ${twitterDMThreads.length} 个私信`)}
+            <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
+                {twitterTweets.length === 0 && <div className="text-center text-xs text-slate-400 pt-12">（推特时间线是空的）</div>}
+                {twitterDMThreads.length > 0 && (
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                        <div className="text-[10px] font-bold text-slate-400 mb-2">私信</div>
+                        <div className="space-y-2">
+                            {twitterDMThreads.map(t => (
+                                <div key={t.id} className="bg-white rounded-2xl px-3 py-2 border border-slate-100 flex gap-2">
+                                    {t.accountAvatar
+                                        ? <img src={t.accountAvatar} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
+                                        : <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-[12px] font-black shrink-0">{t.accountName.slice(0, 1)}</div>}
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-[12px] truncate"><b>{t.accountName}</b> <span className="text-slate-400">{t.accountHandle}</span></div>
+                                        <div className="text-[11px] text-slate-500 truncate">{t.lastMessage || '没有消息'}</div>
+                                    </div>
+                                    {t.unreadCount > 0 && <div className="w-4 h-4 rounded-full bg-sky-500 text-white text-[9px] font-bold flex items-center justify-center">{t.unreadCount}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {twitterTweets.map(t => (
+                    (() => {
+                        const translated = getTwitterTranslationText(t.translations, getTwitterLocalTargetLang());
+                        return (
+                            <div key={t.id} className="px-4 py-3 border-b border-slate-100 flex gap-3">
+                                {t.authorAvatar
+                                    ? <img src={t.authorAvatar} className="w-9 h-9 rounded-full object-cover shrink-0" alt="" />
+                                    : <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-[13px] font-black shrink-0">{t.authorName.slice(0, 1)}</div>}
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[12px] truncate"><b>{t.authorName}</b> <span className="text-slate-400">{t.authorHandle}</span></div>
+                                    {(t.language || t.country) && <div className="text-[10px] text-slate-400 mt-0.5 truncate">{[t.language, t.country].filter(Boolean).join(' · ')}</div>}
+                                    <div className="text-[12px] text-slate-700 leading-relaxed line-clamp-4 whitespace-pre-wrap mt-0.5">{t.content}</div>
+                                    {translated && <div className="text-[11px] text-slate-500 leading-relaxed line-clamp-2 mt-1 bg-slate-50 rounded-xl px-2 py-1">译文：{translated}</div>}
+                                    {t.topics?.length > 0 && <div className="text-[11px] text-sky-500 mt-1 truncate">#{t.topics.slice(0, 3).join(' #')}</div>}
+                                    <div className="text-[10px] text-slate-400 mt-1">💬 {t.replyCount || 0}　↻ {t.retweets || 0}　♡ {t.likes || 0}</div>
+                                </div>
+                            </div>
+                        );
+                    })()
+                ))}
+            </div>
+        </div>
+    );
+
     const renderMapApp = () => (
         <div className="flex-1 overflow-hidden flex flex-col bg-[#f8fafc]">
             {screenHeader('地区', '位置线索')}
@@ -1261,6 +1341,7 @@ ${qs.map((q, i) => `问题${i + 1}：${q}\nTA的回答：${answers[i]}`).join('\
                 </div>
             );
         }
+        if (app === 'twitter') return renderTwitterApp();
         if (app === 'schedule') {
             return (
                 <div className="flex-1 overflow-hidden flex flex-col">

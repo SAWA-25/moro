@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { DB } from '../utils/db';
-import { AppID, Message, GroupProfile, GroupChatRecord, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme } from '../types';
+import { AppID, Message, GroupProfile, GroupChatRecord, CharacterProfile, MessageType, ChatTheme, MemoryFragment, EmojiCategory, OSTheme, AmbientSocialEntry, AmbientSocialContact } from '../types';
 import { safeResponseJson } from '../utils/safeApi';
 import Modal, { ScrapBtn, ScrapInput, ScrapTextarea, ScrapLabel, ScrapNote, ScrapDivider, ScrapPickTile, ScrapChip, ScrapRowBtn, ScrapStamp, INK, INK_SOFT } from '../components/chat/ScrapModal';
 import { ContextBuilder } from '../utils/context';
@@ -24,6 +24,7 @@ import { splitRedPacket, bestLuckIndex, shuffle, yuanToCents, centsToYuan, build
 import { resolveAuxApi } from '../utils/auxApi';
 import { toggleReaction, REACTION_EMOJIS } from '../utils/messageReactions';
 import { stripFakeWithdrawNotice } from '../utils/messageWithdraw';
+import { ambientSocialToCharacter, ensureAmbientSocialState, patchAmbientSocialEntry } from '../utils/ambientSocial';
 
 const TWEMOJI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72';
 const twemojiUrl = (codepoint: string) => `${TWEMOJI_BASE}/${codepoint}.png`;
@@ -114,6 +115,40 @@ const groupBackgroundStyleFor = (
 
 const GROUP_SETTINGS_SERIF: React.CSSProperties = { fontFamily: 'Georgia, "Times New Roman", "Songti SC", serif' };
 const GROUP_SETTINGS_MONO: React.CSSProperties = { fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace' };
+const CONVO_SWIPE_ACTION_WIDTH = 216;
+const CONVO_HIDDEN_WINDOWS_KEY = 'moro_chathub_hidden_windows_v1';
+
+type ConvoKind = 'char' | 'group' | 'ambient';
+type ConvoHiddenWindows = Record<string, number>;
+type ConvoListItem = {
+    kind: ConvoKind;
+    id: string;
+    name: string;
+    avatar?: string;
+    last?: Message;
+    ambient?: AmbientSocialEntry;
+    dissolved?: boolean;
+    memberCount?: number;
+    starred?: boolean;
+    specialCareCount?: number;
+    /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
+    lifeStatus?: { activity: string; mood?: string };
+};
+
+const loadHiddenConvoWindows = (): ConvoHiddenWindows => {
+    try {
+        const raw = localStorage.getItem(CONVO_HIDDEN_WINDOWS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+};
+
+const saveHiddenConvoWindows = (value: ConvoHiddenWindows) => {
+    try { localStorage.setItem(CONVO_HIDDEN_WINDOWS_KEY, JSON.stringify(value)); } catch { /* ignore */ }
+};
 
 const GroupSettingsPage: React.FC<{ no: string; title: string; en: string; children: React.ReactNode }> = ({ no, title, en, children }) => (
     <section
@@ -133,6 +168,126 @@ const GroupSettingsPage: React.FC<{ no: string; title: string; en: string; child
         <div className="px-4 pb-5 pt-1">{children}</div>
     </section>
 );
+
+const SwipeConvoRow: React.FC<{
+    swipeKey: string;
+    openKey: string | null;
+    setOpenKey: (key: string | null) => void;
+    className?: string;
+    style?: React.CSSProperties;
+    onOpen: () => void;
+    actions: Array<{ label: string; tone: 'danger' | 'pin' | 'muted'; onClick: () => void | Promise<void> }>;
+    children: React.ReactNode;
+}> = ({ swipeKey, openKey, setOpenKey, className = '', style, onOpen, actions, children }) => {
+    const isOpen = openKey === swipeKey;
+    const [dragX, setDragX] = useState(0);
+    const startRef = useRef({ x: 0, y: 0 });
+    const draggingRef = useRef(false);
+    const swipedRef = useRef(false);
+
+    const close = () => {
+        setDragX(0);
+        if (isOpen) setOpenKey(null);
+    };
+
+    const visibleX = draggingRef.current ? dragX : (isOpen ? -CONVO_SWIPE_ACTION_WIDTH : 0);
+    const actionsVisible = isOpen || visibleX < -0.5;
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        if (e.button !== 0) return;
+        startRef.current = { x: e.clientX, y: e.clientY };
+        draggingRef.current = true;
+        swipedRef.current = false;
+        if (openKey && openKey !== swipeKey) setOpenKey(null);
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!draggingRef.current) return;
+        const dx = e.clientX - startRef.current.x;
+        const dy = e.clientY - startRef.current.y;
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        if (Math.abs(dy) > Math.abs(dx) * 1.2) return;
+        swipedRef.current = true;
+        const base = isOpen ? -CONVO_SWIPE_ACTION_WIDTH : 0;
+        const next = Math.max(-CONVO_SWIPE_ACTION_WIDTH, Math.min(0, base + dx));
+        setDragX(next);
+    };
+
+    const finishDrag = () => {
+        if (!draggingRef.current) return;
+        draggingRef.current = false;
+        if (swipedRef.current) {
+            setOpenKey(dragX < -54 ? swipeKey : null);
+        }
+        setDragX(0);
+        window.setTimeout(() => { swipedRef.current = false; }, 0);
+    };
+
+    const handleClick = (e: React.MouseEvent) => {
+        if (swipedRef.current) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if (isOpen) {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+            return;
+        }
+        onOpen();
+    };
+
+    const toneStyle = (tone: 'danger' | 'pin' | 'muted'): React.CSSProperties => {
+        if (tone === 'danger') return { background: '#ff6b81', color: '#fff' };
+        if (tone === 'pin') return { background: '#d8a5b7', color: '#fff' };
+        return { background: '#8aa1b4', color: '#fff' };
+    };
+
+    return (
+        <div className="relative overflow-hidden rounded-2xl anim-row-in" style={{ ...style, touchAction: 'pan-y' }}>
+            <div
+                className="absolute inset-y-0 right-0 flex overflow-hidden rounded-2xl"
+                style={{
+                    opacity: actionsVisible ? 1 : 0,
+                    pointerEvents: actionsVisible ? 'auto' : 'none',
+                    transition: draggingRef.current ? 'none' : 'opacity 120ms ease',
+                }}
+            >
+                {actions.map(action => (
+                    <button
+                        key={action.label}
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            void Promise.resolve(action.onClick()).finally(() => setOpenKey(null));
+                        }}
+                        className="w-[72px] h-full text-[12px] font-black active:brightness-95 transition"
+                        style={toneStyle(action.tone)}
+                    >
+                        {action.label}
+                    </button>
+                ))}
+            </div>
+            <div
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={finishDrag}
+                onPointerCancel={finishDrag}
+                onClick={handleClick}
+                className={className}
+                style={{
+                    transform: `translateX(${visibleX}px)`,
+                    transition: draggingRef.current ? 'none' : 'transform 180ms ease',
+                    willChange: 'transform',
+                }}
+            >
+                {children}
+            </div>
+        </div>
+    );
+};
 
 // --- Sub-Component: Group Message Bubble ---
 const GroupMessageItem = React.memo(({
@@ -723,7 +878,7 @@ const GroupMessageItem = React.memo(({
 // 聊天 App 整合枢纽：聊天列表（单聊+群聊混排）/ 联系人 / 朋友圈 三标签 + 群聊会话视图。
 // 单聊会话仍由 apps/Chat.tsx（AppID.Chat）承担，从这里深链进入、返回时回到本枢纽。
 const ChatHub: React.FC = () => {
-    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, virtualTime, adjustUserBalance, theme: osTheme } = useOS();
+    const { closeApp, openApp, groups, createGroup, deleteGroup, updateGroup, characters, importCharacter, updateCharacter, setActiveCharacterId, apiConfig, auxApiConfig, addToast, userProfile, updateUserProfile, virtualTime, adjustUserBalance, theme: osTheme, unreadMessages, clearUnread, markUnread } = useOS();
     const [view, setView] = useState<'list' | 'chat'>('list');
     const [hubTab, setHubTab] = useState<'chats' | 'contacts' | 'moments' | 'couple'>(() => {
         // 深链握手：角色主页「朋友圈」入口 → 聊天 App 朋友圈标签页（原独立朋友圈 App 已改造为小红书）
@@ -736,22 +891,13 @@ const ChatHub: React.FC = () => {
         return 'chats';
     });
     const [activeGroup, setActiveGroup] = useState<GroupProfile | null>(null);
+    const [quickConvoId, setQuickConvoId] = useState<string | null>(null);
     // 朋友圈内层页面（发布页等）的返回拦截：返回键先关内层页面，而不是退出 App 回桌面
     const momentsBackRef = useRef<(() => boolean) | null>(null);
     // 聊天列表：单聊 + 群聊混排（按最后一条消息时间倒序）
-    const [convos, setConvos] = useState<Array<{
-        kind: 'char' | 'group';
-        id: string;
-        name: string;
-        avatar?: string;
-        last?: Message;
-        dissolved?: boolean;
-        memberCount?: number;
-        starred?: boolean;
-        specialCareCount?: number;
-        /** 角色「此刻」的线下自主生活状态（最近一条生活事件，足够新才显示）—— 把线下生活带到列表里 */
-        lifeStatus?: { activity: string; mood?: string };
-    }>>([]);
+    const [convos, setConvos] = useState<ConvoListItem[]>([]);
+    const [hiddenConvoWindows, setHiddenConvoWindows] = useState<ConvoHiddenWindows>(() => loadHiddenConvoWindows());
+    const [ambientEntries, setAmbientEntries] = useState<AmbientSocialEntry[]>([]);
     // 成员资料页（点头像进入）
     const [profileMemberId, setProfileMemberId] = useState<string | null>(null);
     // 头衔编辑 / 禁言时长选择
@@ -931,6 +1077,16 @@ const ChatHub: React.FC = () => {
         }
     }, []);
 
+    useEffect(() => {
+        const next = ensureAmbientSocialState(userProfile, characters);
+        const activeEntries = next.entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId));
+        setAmbientEntries(activeEntries);
+        if (JSON.stringify(next) !== JSON.stringify(userProfile.ambientSocial || null)) {
+            updateUserProfile({ ambientSocial: next });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [characters.length, userProfile.name, userProfile.bio, userProfile.ambientSocial]);
+
     // Initial Load
     useEffect(() => {
         if (activeGroup) {
@@ -967,6 +1123,83 @@ const ChatHub: React.FC = () => {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         }
     }, [messages.length, activeGroup, showActions, showEmojiPicker, isTyping, selectionMode, jumpNonce]);
+
+    const convoKey = (kind: ConvoKind, id: string) => `${kind}:${id}`;
+    const hideConvoWindow = (kind: ConvoKind, id: string, hiddenAt = Date.now()) => {
+        const key = convoKey(kind, id);
+        setHiddenConvoWindows(prev => {
+            const next = { ...prev, [key]: hiddenAt };
+            saveHiddenConvoWindows(next);
+            return next;
+        });
+    };
+    const restoreConvoWindow = (kind: ConvoKind, id: string) => {
+        const key = convoKey(kind, id);
+        setHiddenConvoWindows(prev => {
+            if (!(key in prev)) return prev;
+            const next = { ...prev };
+            delete next[key];
+            saveHiddenConvoWindows(next);
+            return next;
+        });
+    };
+    const isConvoWindowHidden = (kind: ConvoKind, id: string, lastTs = 0): boolean => {
+        const hiddenAt = hiddenConvoWindows[convoKey(kind, id)];
+        return typeof hiddenAt === 'number' && hiddenAt >= lastTs;
+    };
+    const refreshConvoList = () => setConvos(prev => [...prev]);
+    const saveAmbientSocialEntry = (id: string, updates: Partial<AmbientSocialEntry>) => {
+        const next = patchAmbientSocialEntry(userProfile.ambientSocial, id, updates);
+        updateUserProfile({ ambientSocial: next });
+        setAmbientEntries(next.entries.filter(e => !e.hidden && !(e.kind === 'contact' && e.linkedCharId) && !(e.kind === 'group' && e.linkedGroupId)));
+    };
+    const handleToggleConvoPinned = async (kind: ConvoKind, id: string) => {
+        if (kind === 'char') {
+            const c = characters.find(item => item.id === id);
+            if (!c) return;
+            await updateCharacter(id, { starredFriend: !c.starredFriend } as any);
+            addToast(c.starredFriend ? '已取消置顶' : '已置顶会话', 'success');
+        } else if (kind === 'group') {
+            const g = groups.find(item => item.id === id);
+            if (!g) return;
+            await updateGroup(id, { pinned: !g.pinned });
+            addToast(g.pinned ? '已取消置顶' : '已置顶群聊', 'success');
+        } else {
+            const entry = ambientEntries.find(item => item.id === id);
+            if (!entry) return;
+            saveAmbientSocialEntry(id, { pinned: !entry.pinned } as Partial<AmbientSocialEntry>);
+            addToast(entry.pinned ? '已取消置顶' : '已置顶会话', 'success');
+        }
+        setQuickConvoId(null);
+    };
+    const handleMarkConvoUnread = (kind: ConvoKind, id: string) => {
+        if (kind === 'char') {
+            markUnread(id, 1);
+        } else if (kind === 'group') {
+            try { localStorage.setItem(`moro_group_unread_${id}`, '1'); } catch { /* ignore */ }
+            refreshConvoList();
+        } else {
+            saveAmbientSocialEntry(id, { unread: 1 } as Partial<AmbientSocialEntry>);
+        }
+        addToast('已标为未读', 'success');
+        setQuickConvoId(null);
+    };
+    const handleDeleteConvo = async (kind: ConvoKind, id: string) => {
+        if (kind === 'char') {
+            hideConvoWindow(kind, id);
+            clearUnread(id);
+            addToast('已从往来收起，会话记录仍在', 'success');
+        } else if (kind === 'group') {
+            hideConvoWindow(kind, id);
+            try { localStorage.removeItem(`moro_group_unread_${id}`); } catch { /* ignore */ }
+            addToast('已从往来收起，群聊仍在名册', 'success');
+        } else {
+            saveAmbientSocialEntry(id, { hidden: true, unread: 0 } as Partial<AmbientSocialEntry>);
+            addToast('已从往来里收起', 'success');
+        }
+        setQuickConvoId(null);
+        refreshConvoList();
+    };
 
     useEffect(() => {
         if (!groupCall) {
@@ -1164,8 +1397,166 @@ const ChatHub: React.FC = () => {
         if (target && !(target as any).addedToChat) {
             void updateCharacter(charId, { addedToChat: true } as any);
         }
+        restoreConvoWindow('char', charId);
+        clearUnread(charId);
         setActiveCharacterId(charId);
         openApp(AppID.Chat);
+    };
+
+    /** 进入群聊：从名册打开时也会把被收起的往来窗口恢复回来 */
+    const openGroupChat = (group: GroupProfile) => {
+        restoreConvoWindow('group', group.id);
+        try { localStorage.removeItem(`moro_group_unread_${group.id}`); } catch { /* ignore */ }
+        setActiveGroup(group);
+        setView('chat');
+    };
+
+    const isSyncedAmbientPreview = (msg: Message, entryId: string): boolean => (
+        msg.metadata?.source === 'ambient_social'
+        && msg.metadata?.ambientEntryId === entryId
+        && msg.metadata?.syncedFromPreview
+    );
+
+    const syncAmbientPrivatePreviewMessage = async (entry: AmbientSocialContact, charId: string): Promise<boolean> => {
+        const content = entry.lastMessage.trim();
+        if (!content) return false;
+        const existing = await DB.getMessagesByCharId(charId, true);
+        if (existing.some(msg => isSyncedAmbientPreview(msg, entry.id))) return false;
+        await DB.saveMessage({
+            charId,
+            role: 'assistant',
+            type: 'text',
+            content,
+            timestamp: entry.lastAt,
+            metadata: {
+                source: 'ambient_social',
+                ambientEntryId: entry.id,
+                ambientEntryName: entry.name,
+                syncedFromPreview: true,
+            },
+        } as any);
+        markUnread(charId, Math.max(1, entry.unread || 1));
+        return true;
+    };
+
+    const splitAmbientGroupPreview = (raw: string): { speakerName?: string; content: string } => {
+        const text = raw.trim();
+        const match = text.match(/^([^:：]{1,24})[:：]\s*(.+)$/);
+        if (!match) return { content: text };
+        return { speakerName: match[1].trim(), content: match[2].trim() || text };
+    };
+
+    const syncAmbientGroupPreviewMessage = async (
+        entry: Extract<AmbientSocialEntry, { kind: 'group' }>,
+        group: GroupProfile,
+        memberNameById = new Map<string, string>(),
+    ): Promise<boolean> => {
+        const parsed = splitAmbientGroupPreview(entry.lastMessage);
+        if (!parsed.content) return false;
+        const existing = await DB.getGroupMessages(group.id);
+        if (existing.some(msg => isSyncedAmbientPreview(msg, entry.id))) return false;
+
+        const normalizedSpeaker = parsed.speakerName?.trim();
+        const speakerId = normalizedSpeaker
+            ? group.members.find(mid => {
+                const candidates = [
+                    group.memberNicknames?.[mid],
+                    memberNameById.get(mid),
+                    mid === 'user' ? (userProfile.name || '我') : characters.find(c => c.id === mid)?.name,
+                ].map(name => name?.trim()).filter(Boolean);
+                return candidates.includes(normalizedSpeaker);
+            })
+            : undefined;
+        const fallbackId = group.members.find(mid => mid !== 'user') || group.members[0] || 'system';
+        const charId = speakerId || fallbackId;
+
+        await DB.saveMessage({
+            charId,
+            groupId: group.id,
+            role: charId === 'system' ? 'system' : 'assistant',
+            type: 'text',
+            content: parsed.content,
+            timestamp: entry.lastAt,
+            metadata: {
+                source: 'ambient_social',
+                ambientEntryId: entry.id,
+                ambientEntryName: entry.name,
+                syncedFromPreview: true,
+                rawPreview: entry.lastMessage,
+                speakerName: normalizedSpeaker,
+            },
+        } as any);
+        return true;
+    };
+
+    const openAmbientContact = async (entry: AmbientSocialContact) => {
+        if (entry.linkedCharId && characters.some(c => c.id === entry.linkedCharId)) {
+            await syncAmbientPrivatePreviewMessage(entry, entry.linkedCharId);
+            saveAmbientSocialEntry(entry.id, { unread: 0 } as Partial<AmbientSocialEntry>);
+            openPrivateChat(entry.linkedCharId);
+            return;
+        }
+        const existing = characters.find(c => c.name === entry.name);
+        const char = existing || ambientSocialToCharacter(entry, userProfile.name || '我');
+        if (!existing) await importCharacter(char);
+        await syncAmbientPrivatePreviewMessage(entry, char.id);
+        saveAmbientSocialEntry(entry.id, { linkedCharId: char.id, unread: 0 } as Partial<AmbientSocialEntry>);
+        addToast(`${entry.name} 已加入名册`, 'success');
+        openPrivateChat(char.id);
+    };
+
+    const openAmbientGroup = async (entry: Extract<AmbientSocialEntry, { kind: 'group' }>) => {
+        if (entry.linkedGroupId) {
+            const existingGroup = groups.find(g => g.id === entry.linkedGroupId);
+            if (existingGroup) {
+                await syncAmbientGroupPreviewMessage(entry, existingGroup);
+                saveAmbientSocialEntry(entry.id, { unread: 0 } as Partial<AmbientSocialEntry>);
+                openGroupChat(existingGroup);
+                return;
+            }
+        }
+        const memberIds: string[] = [];
+        const memberNameById = new Map<string, string>();
+        for (const name of entry.memberNames.slice(0, 5)) {
+            const existing = characters.find(c => c.name === name);
+            if (existing) {
+                memberIds.push(existing.id);
+                memberNameById.set(existing.id, existing.name);
+                continue;
+            }
+            const shadowContact: AmbientSocialContact = {
+                id: `${entry.id}-${name}`,
+                kind: 'contact',
+                name,
+                relation: 'friend',
+                relationLabel: '熟人',
+                avatar: entry.avatar,
+                note: `和${entry.name}有关的人，有自己的日常和社交节奏。`,
+                lastMessage: entry.lastMessage,
+                lastAt: entry.lastAt,
+                createdAt: entry.createdAt,
+            };
+            const char = ambientSocialToCharacter(shadowContact, userProfile.name || '我');
+            await importCharacter(char);
+            memberIds.push(char.id);
+            memberNameById.set(char.id, char.name);
+        }
+        if (memberIds.length < 2) {
+            addToast('这个群暂时还凑不齐人', 'info');
+            return;
+        }
+        const group = await createGroup(entry.name, memberIds, { ownerId: 'user' });
+        await syncAmbientGroupPreviewMessage(entry, group, memberNameById);
+        saveAmbientSocialEntry(entry.id, { linkedGroupId: group.id, unread: 0 } as Partial<AmbientSocialEntry>);
+        await postGroupNotice(group.id, `你把「${entry.name}」接进了絮语`);
+        addToast(`${entry.name} 已加入群聊`, 'success');
+        openGroupChat(group);
+    };
+
+    const openAmbientEntry = (entry?: AmbientSocialEntry) => {
+        if (!entry) return;
+        if (entry.kind === 'contact') void openAmbientContact(entry);
+        else void openAmbientGroup(entry);
     };
 
     // --- 聊天列表（单聊 + 群聊混排）---
@@ -1176,9 +1567,11 @@ const ChatHub: React.FC = () => {
             const items: typeof convos = [];
             for (const g of groups) {
                 const { messages: last } = await DB.getRecentGroupMessagesWithCount(g.id, 1);
+                const lastMsg = last[last.length - 1];
+                if (isConvoWindowHidden('group', g.id, lastMsg?.timestamp || 0)) continue;
                 items.push({
                     kind: 'group', id: g.id, name: g.name, avatar: g.avatar,
-                    last: last[last.length - 1],
+                    last: lastMsg,
                     dissolved: !!g.dissolved,
                     memberCount: g.members.length,
                     starred: !!g.pinned,
@@ -1193,6 +1586,8 @@ const ChatHub: React.FC = () => {
                 // 没聊过、且未加入往来的角色去「名册」页找；新建/导入或打开过私聊的角色
                 // （addedToChat）即使还没说过话也直接出现在往来，省去「先添加好友」一步
                 if (lastMsgs.length === 0 && !(c as any).addedToChat) continue;
+                const lastMsg = lastMsgs[lastMsgs.length - 1];
+                if (isConvoWindowHidden('char', c.id, lastMsg?.timestamp || 0)) continue;
                 // 角色开了自主生活：把 TA「此刻」正在过的日子（最近一条生活事件，够新）带进列表
                 let lifeStatus: { activity: string; mood?: string } | undefined;
                 if (isAutonomousLifeEnabled(c)) {
@@ -1209,9 +1604,34 @@ const ChatHub: React.FC = () => {
                     kind: 'char', id: c.id,
                     name: c.convoSettings?.remarkName?.trim() || c.name,
                     avatar: c.convoSettings?.charAvatarOverride || c.avatar,
-                    last: lastMsgs[lastMsgs.length - 1],
+                    last: lastMsg,
                     starred: !!c.starredFriend,
                     lifeStatus,
+                });
+            }
+            for (const entry of ambientEntries) {
+                const linked = entry.kind === 'contact'
+                    ? !!entry.linkedCharId
+                    : !!entry.linkedGroupId;
+                if (entry.hidden || linked) continue;
+                if (isConvoWindowHidden('ambient', entry.id, entry.lastAt)) continue;
+                items.push({
+                    kind: 'ambient',
+                    id: entry.id,
+                    name: entry.name,
+                    avatar: entry.avatar,
+                    ambient: entry,
+                    memberCount: entry.kind === 'group' ? entry.memberNames.length : undefined,
+                    starred: !!entry.pinned,
+                    last: {
+                        id: 0,
+                        charId: entry.id,
+                        role: 'assistant',
+                        type: 'text',
+                        content: entry.lastMessage,
+                        timestamp: entry.lastAt,
+                        metadata: { source: 'ambient_social' },
+                    },
                 });
             }
             // 星标置顶：先按星标（星标的排前面），同组内再按最后一条消息时间倒序。
@@ -1222,7 +1642,7 @@ const ChatHub: React.FC = () => {
             if (!cancelled) setConvos(items);
         })();
         return () => { cancelled = true; };
-    }, [view, groups, characters]);
+    }, [view, groups, characters, ambientEntries, hiddenConvoWindows]);
 
     /** 聊天列表里一条消息的预览文本 */
     const previewOf = (m?: Message): string => {
@@ -2215,7 +2635,9 @@ ${logText.substring(0, 10000)}
         }
         setInput('');
 
-        // NOTE: No auto-trigger. User must click lightning button.
+        if (type === 'text' || type === 'voice' || type === 'image') {
+            void triggerDirector(updatedMsgs);
+        }
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3730,11 +4152,19 @@ ${attachedImagesNote}
                             if (cv.kind === 'group') {
                                 const g = groups.find(x => x.id === cv.id);
                                 return (
-                                    <div
+                                    <SwipeConvoRow
                                         key={`g-${cv.id}`}
-                                        onClick={() => { if (g) { setActiveGroup(g); setView('chat'); } }}
+                                        swipeKey={convoKey('group', cv.id)}
+                                        openKey={quickConvoId}
+                                        setOpenKey={setQuickConvoId}
+                                        onOpen={() => { if (g) openGroupChat(g); }}
                                         style={{ animationDelay: enterDelay }}
-                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.dissolved ? 'opacity-70' : ''} ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.dissolved ? 'opacity-70' : ''} ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
+                                        actions={[
+                                            { label: '删除', tone: 'danger', onClick: () => handleDeleteConvo('group', cv.id) },
+                                            { label: cv.starred ? '取消置顶' : '置顶', tone: 'pin', onClick: () => handleToggleConvoPinned('group', cv.id) },
+                                            { label: '未读', tone: 'muted', onClick: () => handleMarkConvoUnread('group', cv.id) },
+                                        ]}
                                     >
                                         <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${cv.dissolved ? 'grayscale' : ''}`}>
                                             {cv.avatar ? (
@@ -3764,22 +4194,74 @@ ${attachedImagesNote}
                                         </div>
                                         <div className="flex flex-col items-end gap-1 shrink-0">
                                             <span className="text-[9px] text-slate-300">{formatConvoTime(cv.last?.timestamp)}</span>
+                                            {(() => { try { return localStorage.getItem(`moro_group_unread_${cv.id}`) === '1'; } catch { return false; } })() && (
+                                                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff5a6f] text-white text-[10px] font-black flex items-center justify-center">1</span>
+                                            )}
                                             {cv.dissolved && (
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeleteGroup(cv.id); }}
+                                                    onClick={(e) => { e.stopPropagation(); void handleDeleteConvo('group', cv.id); }}
                                                     className="text-[9px] px-2 py-0.5 rounded-full bg-[#fff4f7] text-[#9c5e74] border border-[#eed6df] hover:bg-[#fff4f7]"
-                                                >删除</button>
+                                                >收起</button>
                                             )}
                                         </div>
-                                    </div>
+                                    </SwipeConvoRow>
+                                );
+                            }
+                            if (cv.kind === 'ambient' && cv.ambient) {
+                                const entry = cv.ambient;
+                                const isAmbientGroup = entry.kind === 'group';
+                                return (
+                                    <SwipeConvoRow
+                                        key={`a-${cv.id}`}
+                                        swipeKey={convoKey('ambient', cv.id)}
+                                        openKey={quickConvoId}
+                                        setOpenKey={setQuickConvoId}
+                                        onOpen={() => openAmbientEntry(entry)}
+                                        style={{ animationDelay: enterDelay }}
+                                        className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
+                                        actions={[
+                                            { label: '收起', tone: 'danger', onClick: () => handleDeleteConvo('ambient', cv.id) },
+                                            { label: cv.starred ? '取消置顶' : '置顶', tone: 'pin', onClick: () => handleToggleConvoPinned('ambient', cv.id) },
+                                            { label: '未读', tone: 'muted', onClick: () => handleMarkConvoUnread('ambient', cv.id) },
+                                        ]}
+                                    >
+                                        <div className={`w-12 h-12 ${isAmbientGroup ? 'rounded-2xl' : 'rounded-full'} bg-slate-100 overflow-hidden border border-[#eed6df] relative shadow-sm shrink-0`}>
+                                            <img src={cv.avatar} className="w-full h-full object-cover" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                {cv.starred && <PushPin size={11} weight="fill" className="text-[#d8a5b7] shrink-0" />}
+                                                <span className="font-bold text-slate-700 truncate text-sm">{cv.name}</span>
+                                                {isAmbientGroup ? (
+                                                    <>
+                                                        <UsersThree size={12} className="text-slate-300 shrink-0" />
+                                                        <span className="text-[9px] text-slate-300 shrink-0">{cv.memberCount}</span>
+                                                    </>
+                                                ) : null}
+                                            </div>
+                                            <div className="text-[11px] text-slate-400 mt-0.5 truncate">{entry.lastMessage}</div>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1 shrink-0">
+                                            <span className="text-[9px] text-slate-300">{formatConvoTime(entry.lastAt)}</span>
+                                            {!!entry.unread && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff5a6f] text-white text-[10px] font-black flex items-center justify-center">{Math.min(99, entry.unread)}</span>}
+                                        </div>
+                                    </SwipeConvoRow>
                                 );
                             }
                             return (
-                                <div
+                                <SwipeConvoRow
                                     key={`c-${cv.id}`}
-                                    onClick={() => openPrivateChat(cv.id)}
+                                    swipeKey={convoKey('char', cv.id)}
+                                    openKey={quickConvoId}
+                                    setOpenKey={setQuickConvoId}
+                                    onOpen={() => openPrivateChat(cv.id)}
                                     style={{ animationDelay: enterDelay }}
-                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
+                                    className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] ${cv.starred ? 'bg-[#fff4f7]' : ''}`}
+                                    actions={[
+                                        { label: '删除', tone: 'danger', onClick: () => handleDeleteConvo('char', cv.id) },
+                                        { label: cv.starred ? '取消置顶' : '置顶', tone: 'pin', onClick: () => handleToggleConvoPinned('char', cv.id) },
+                                        { label: '未读', tone: 'muted', onClick: () => handleMarkConvoUnread('char', cv.id) },
+                                    ]}
                                 >
                                     {cv.lifeStatus ? (
                                         // 「此刻」有动态的角色 = IG story ring（渐变环），一眼看出谁正活跃
@@ -3804,8 +4286,11 @@ ${attachedImagesNote}
                                             </div>
                                         )}
                                     </div>
-                                    <span className="text-[9px] text-slate-300 shrink-0">{formatConvoTime(cv.last?.timestamp)}</span>
-                                </div>
+                                    <div className="flex flex-col items-end gap-1 shrink-0">
+                                        <span className="text-[9px] text-slate-300">{formatConvoTime(cv.last?.timestamp)}</span>
+                                        {!!unreadMessages[cv.id] && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff5a6f] text-white text-[10px] font-black flex items-center justify-center">{Math.min(99, unreadMessages[cv.id])}</span>}
+                                    </div>
+                                </SwipeConvoRow>
                             );
                         })}
                         {convos.length === 0 && (
@@ -3820,8 +4305,48 @@ ${attachedImagesNote}
                 {/* ── 联系人 tab：全部角色 ── */}
                 {hubTab === 'contacts' && (
                     <div className="scrap-list flex-1 p-3 space-y-2 overflow-y-auto">
+                        {groups.length > 0 && (
+                            <div className="px-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">群聊</div>
+                        )}
+                        {groups.map((g, i) => (
+                            <div key={`contact-group-${g.id}`} onClick={() => openGroupChat(g)} style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }} className={`scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in ${g.dissolved ? 'opacity-70' : ''}`}>
+                                <div className={`w-12 h-12 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 relative shadow-sm shrink-0 ${g.dissolved ? 'grayscale' : ''}`}>
+                                    {g.avatar ? (
+                                        <img src={g.avatar} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="grid grid-cols-2 gap-0.5 p-0.5 w-full h-full bg-slate-200">
+                                            {g.members.slice(0, 4).map(mid => {
+                                                const c = characters.find(ch => ch.id === mid);
+                                                return <img key={mid} src={c?.avatar} className="w-full h-full object-cover rounded-sm bg-white" />;
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        {g.pinned && <PushPin size={11} weight="fill" className="text-[#d8a5b7] shrink-0" />}
+                                        <div className={`font-bold truncate text-sm ${g.dissolved ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{g.name}</div>
+                                        <UsersThree size={12} className="text-slate-300 shrink-0" />
+                                        <span className="text-[9px] text-slate-300 shrink-0">{g.members.length}</span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">
+                                        {g.dissolved ? '此群聊已被解散' : `${g.members.slice(0, 4).map(mid => displayNameOf(g, mid)).join('、')}${g.members.length > 4 ? '…' : ''}`}
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setActiveGroup(g); openGroupSettings(g); }}
+                                    className="p-2 rounded-full text-slate-400 hover:text-[#9c5e74] hover:bg-[#fff4f7] transition-colors shrink-0"
+                                    title="群聊设置"
+                                >
+                                    <GearSix size={18} weight="bold" />
+                                </button>
+                            </div>
+                        ))}
+                        {characters.length > 0 && (
+                            <div className="px-2 pt-2 pb-1 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">角色</div>
+                        )}
                         {characters.map((c, i) => (
-                            <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
+                            <div key={c.id} onClick={() => openPrivateChat(c.id)} style={{ animationDelay: `${Math.min(i + groups.length, 14) * 32}ms` }} className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in">
                                 <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-12 h-12 rounded-full object-cover border border-slate-100 shadow-sm shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <div className="font-bold text-slate-700 truncate text-sm">{c.convoSettings?.remarkName?.trim() || c.name}</div>
@@ -3836,8 +4361,35 @@ ${attachedImagesNote}
                                 </button>
                             </div>
                         ))}
-                        {characters.length === 0 && (
-                            <div className="text-center text-slate-400 text-xs py-10">还没有角色</div>
+                        {ambientEntries.length > 0 && (
+                            <div className="pt-2">
+                                <div className="px-2 pb-1.5 text-[10px] font-black tracking-[0.18em] text-[#9c5e74]/70">最近出现</div>
+                                <div className="space-y-2">
+                                    {ambientEntries.map((entry, idx) => {
+                                        const isAmbientGroup = entry.kind === 'group';
+                                        return (
+                                            <div
+                                                key={entry.id}
+                                                onClick={() => openAmbientEntry(entry)}
+                                                style={{ animationDelay: `${Math.min(characters.length + idx, 14) * 32}ms` }}
+                                                className="scrap-card p-3.5 rounded-2xl flex items-center gap-3 active:scale-[0.98] hover:-translate-y-0.5 transition-all cursor-pointer hover:bg-[#f7f4ee] anim-row-in"
+                                            >
+                                                <img src={entry.avatar} className={`w-12 h-12 ${isAmbientGroup ? 'rounded-2xl' : 'rounded-full'} object-cover border border-[#eed6df] shadow-sm shrink-0`} />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="font-bold text-slate-700 truncate text-sm">{entry.name}</span>
+                                                        {isAmbientGroup && <UsersThree size={12} className="text-slate-300 shrink-0" />}
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-400 mt-0.5 truncate">{entry.lastMessage}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        {characters.length === 0 && groups.length === 0 && ambientEntries.length === 0 && (
+                            <div className="text-center text-slate-400 text-xs py-10">名册里还没有角色或群聊</div>
                         )}
                     </div>
                 )}
@@ -3976,7 +4528,25 @@ ${attachedImagesNote}
                                 </ScrapRowBtn>
                             );
                         })}
-                        {characters.length === 0 && (
+                        {ambientEntries.length > 0 && (
+                            <>
+                                <ScrapDivider />
+                                <ScrapLabel en="RECENT">最近出现</ScrapLabel>
+                                {ambientEntries.map(entry => (
+                                    <ScrapRowBtn
+                                        key={entry.id}
+                                        avatar={entry.avatar}
+                                        onClick={() => {
+                                            setModalType('none');
+                                            openAmbientEntry(entry);
+                                        }}
+                                    >
+                                        {entry.name}
+                                    </ScrapRowBtn>
+                                ))}
+                            </>
+                        )}
+                        {characters.length === 0 && ambientEntries.length === 0 && (
                             <ScrapNote center className="py-8">名册还空着，先去「剪影集」捏一个人出来吧。</ScrapNote>
                         )}
                     </div>

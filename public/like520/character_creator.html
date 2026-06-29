@@ -159,6 +159,11 @@
     color: white; border-color: transparent;
     box-shadow: var(--shadow-soft);
   }
+  .pill-btn.source {
+    background: linear-gradient(135deg, #FDF7EF, #EEF3F0);
+    border-color: #E5D8C9;
+    color: #8A6B64;
+  }
 
   .panel {
     flex-shrink: 0;
@@ -376,6 +381,25 @@
     box-shadow: 0 0 0 2px rgba(199, 97, 130, 0.25);
     transform: scale(1.08);
   }
+  .free-color-row {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center;
+    margin: 0 0 10px;
+  }
+  .free-color-row input[type="color"] {
+    width: 34px; height: 28px; border: 2px solid white; border-radius: 10px;
+    padding: 0; background: transparent; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(199, 97, 130, 0.16);
+  }
+  .free-color-row input[type="text"] {
+    min-width: 0; height: 28px; border: 1px solid var(--cream-deep);
+    border-radius: 10px; padding: 0 9px; font-size: 11px;
+    color: var(--text); background: rgba(255,255,255,0.76); outline: none;
+  }
+  .free-color-row button {
+    height: 28px; border: 1px solid var(--cream-deep); border-radius: 10px;
+    padding: 0 9px; background: white; color: var(--text-soft);
+    font-size: 10.5px; cursor: pointer;
+  }
   .slider-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
   .slider-label { font-size: 11px; color: var(--text); font-weight: 500; min-width: 42px; }
   .slider-track { flex: 1; position: relative; height: 28px; display: flex; align-items: center; touch-action: pan-x; }
@@ -397,6 +421,27 @@
     cursor: pointer; box-shadow: 0 1px 3px rgba(199, 97, 130, 0.4);
   }
   .slider-val { font-size: 10px; color: var(--text-soft); min-width: 26px; text-align: right; }
+  .adjust-panel {
+    margin-top: 10px;
+    padding: 10px 12px 12px;
+    background: linear-gradient(135deg, #FFFBF7, #F5F7F3);
+    border: 1px dashed rgba(138, 107, 100, 0.22);
+    border-radius: 14px;
+  }
+  .adjust-panel.inactive {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: saturate(0.6);
+  }
+  .adjust-panel .slider-label { min-width: 36px; }
+  .adjust-quick {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+  }
+  .adjust-quick button {
+    border: 1px solid var(--cream-deep); border-radius: 999px;
+    background: rgba(255,255,255,0.86); color: var(--text-soft);
+    font-size: 10.5px; padding: 4px 9px; cursor: pointer;
+  }
 
   .toast {
     position: fixed; top: 60px; left: 50%;
@@ -480,6 +525,36 @@
     cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
   .cc-cat-group { margin-top: 9px; }
   .cc-cat-title { font-size: 10.5px; color: var(--text-soft); font-weight: 600; margin-bottom: 4px; }
+
+  /* === 外部捏脸源接入 === */
+  .source-modal { max-width: 380px; text-align: left; }
+  .source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+  .source-card {
+    display: flex; flex-direction: column; gap: 5px;
+    min-height: 96px; padding: 12px;
+    border-radius: 16px; text-decoration: none;
+    color: var(--text); background: linear-gradient(135deg, #FFF8F1, #F2F6F2);
+    border: 1px solid #E8DCCF;
+    box-shadow: 0 4px 12px rgba(92, 58, 74, 0.05);
+  }
+  .source-card b { font-size: 13px; color: #7F5961; }
+  .source-card span { font-size: 10.5px; color: var(--text-soft); line-height: 1.45; }
+  .source-card:active { transform: scale(0.98); }
+  .source-preview {
+    width: 100%; min-height: 120px; border-radius: 16px;
+    border: 1.5px dashed #E5D8C9;
+    background:
+      conic-gradient(#F8F8F8 0% 25%, #E8E8E8 25% 50%, #F8F8F8 50% 75%, #E8E8E8 75%) 0 0 / 16px 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-soft); font-size: 11px; text-align: center;
+    overflow: hidden; cursor: pointer;
+  }
+  .source-preview img { width: 100%; height: 100%; max-height: 220px; object-fit: contain; display: block; }
+  .source-note { font-size: 10.5px; color: var(--text-soft); line-height: 1.55; margin: 8px 0; }
+  .layer-external { z-index: 30; }
+  .layer-external img {
+    width: 100%; height: 100%; object-fit: contain; object-position: center; display: block;
+  }
 </style>
 </head>
 <body>
@@ -511,6 +586,7 @@
         <div class="layer layer-eyes-overlay" id="layer-eyes-overlay"></div>
         <div class="layer layer-mouth"        id="layer-mouth"></div>
         <div class="layer layer-decor"        id="layer-decor"></div>
+        <div class="layer layer-external"     id="layer-external"></div>
         <div class="stage-empty-hint" id="emptyHint">
           投币·开始定制 ♥<br>
           <span style="font-size:11px; opacity:0.7;">从下方选个肤色开始～</span>
@@ -522,6 +598,7 @@
   <div class="action-row">
     <button class="pill-btn" id="btnRandom">🎲 随机</button>
     <button class="pill-btn" id="btnReset">↺ 重置</button>
+    <button class="pill-btn source" id="btnExternal">🌐 外部</button>
     <button class="pill-btn" id="btnCustom">➕ 自定义</button>
     <button class="pill-btn primary" id="btnSave">📸 出件</button>
   </div>
@@ -547,6 +624,11 @@
           <button id="hairLinkToggle" class="toggle-mini active" style="display:none;">🔗 跟随前发</button>
         </div>
         <div class="color-picker">
+          <div class="free-color-row">
+            <input type="color" id="freeColorInput" value="#9B9B9B" aria-label="自由选色">
+            <input type="text" id="freeColorText" value="#9B9B9B" aria-label="色值">
+            <button type="button" id="freeColorApply">应用</button>
+          </div>
           <div class="hue-row" id="hueRow"></div>
           <div class="slider-row">
             <span class="slider-label">鲜艳度</span>
@@ -561,6 +643,42 @@
               <input type="range" id="lightSlider" min="-50" max="50" value="0" step="1">
             </div>
             <span class="slider-val" id="lightVal">0</span>
+          </div>
+        </div>
+        <div class="section-label-row">
+          <span class="label">位置</span>
+          <span id="adjustHint" class="focus-hint" style="display:none;"></span>
+        </div>
+        <div class="adjust-panel" id="adjustPanel">
+          <div class="slider-row">
+            <span class="slider-label">左右</span>
+            <div class="slider-track"><input type="range" id="posXSlider" min="-80" max="80" value="0" step="1"></div>
+            <span class="slider-val" id="posXVal">0</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">上下</span>
+            <div class="slider-track"><input type="range" id="posYSlider" min="-80" max="80" value="0" step="1"></div>
+            <span class="slider-val" id="posYVal">0</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">大小</span>
+            <div class="slider-track"><input type="range" id="scaleSlider" min="70" max="140" value="100" step="1"></div>
+            <span class="slider-val" id="scaleVal">100</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">旋转</span>
+            <div class="slider-track"><input type="range" id="rotateSlider" min="-35" max="35" value="0" step="1"></div>
+            <span class="slider-val" id="rotateVal">0</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">透明</span>
+            <div class="slider-track"><input type="range" id="opacitySlider" min="20" max="100" value="100" step="1"></div>
+            <span class="slider-val" id="opacityVal">100</span>
+          </div>
+          <div class="adjust-quick">
+            <button type="button" id="adjustReset">复位当前</button>
+            <button type="button" id="adjustMirror">左右镜像</button>
+            <button type="button" id="adjustBringCenter">居中</button>
           </div>
         </div>
       </div>
@@ -583,6 +701,32 @@
       <button class="pill-btn" onclick="closeModal()">关闭</button>
       <button class="pill-btn" id="btnSavePng" style="display:none">📥 保存 PNG</button>
       <button class="pill-btn primary" id="btnDownload">下载 PNG</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="externalModal">
+  <div class="modal source-modal">
+    <h3 style="text-align:center;">🌐 外部捏脸源</h3>
+    <p style="text-align:center; margin-bottom:10px;">先去外站捏好并保存图片，再导入这里作为当前小人。</p>
+    <div class="source-grid">
+      <a class="source-card" href="https://picrew.me/en/image_maker/679425" target="_blank" rel="noopener noreferrer">
+        <b>Picrew 679425</b>
+        <span>打开指定捏脸器，按作者规则生成后保存图片。</span>
+      </a>
+      <a class="source-card" href="https://www.neka.cc/" target="_blank" rel="noopener noreferrer">
+        <b>Neka</b>
+        <span>打开 Neka 选择喜欢的作品，生成后保存图片。</span>
+      </a>
+    </div>
+    <div class="source-note">外站作品和素材归对应作者/平台规则管理；这里只导入你保存的成品图，不搬运原素材库。</div>
+    <input type="file" id="externalFile" accept="image/png,image/jpeg,image/webp,image/*" style="display:none">
+    <button class="source-preview" id="externalDrop" type="button">点此导入 Picrew / Neka 保存的成品图</button>
+    <input class="cc-input" id="externalUrl" placeholder="或粘贴图片直链 URL（可能受跨域限制）" style="margin-top:8px">
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="pill-btn" type="button" onclick="closeExternalModal()">关闭</button>
+      <button class="pill-btn" type="button" id="btnClearExternal">清除外站图</button>
+      <button class="pill-btn primary" type="button" id="btnUseExternal">导入使用</button>
     </div>
   </div>
 </div>
@@ -1291,9 +1435,11 @@ const state = {
   tintColor: {},   /* 单选部位的颜色：部位key → {hueIdx, sat, light} */
   itemColor: {},   /* 多选部位的颜色：itemId → {hueIdx, sat, light} */
   flipped: {},     /* 翻转状态：部位key（单选）或 itemId（多选）→ true/false */
+  transform: {},   /* 部位key / itemId → {x,y,scale,rotate,opacity} */
   eyeSide: "both",
   hairLinked: { earhair: true, back1: true, back2: true },
   activeItemFocus: {}, /* 多选部位当前调色聚焦的itemId：partKey → itemId */
+  externalImage: "", /* Picrew/Neka 等外部生成的成品图 */
 };
 
 /* 初始化 selected 和 tintColor */
@@ -1366,11 +1512,28 @@ function isEmpty(partKey) {
   if (Array.isArray(sel)) return sel.length === 0;
   return sel === null;
 }
+
+function clearExternalImage(silent = false) {
+  state.externalImage = "";
+  const layer = document.getElementById("layer-external");
+  if (layer) layer.innerHTML = "";
+  document.querySelectorAll(".layer:not(.layer-external)").forEach(el => { el.style.display = ""; });
+  if (!silent) toast("已切回内置捏人");
+}
+
+function setExternalImage(src) {
+  if (!src) return;
+  state.externalImage = src;
+  renderCharacter();
+  toast("已导入外部小人图 ✦");
+}
+
 /* ===== toggleSelect: 多选时点击行为分两种
    - 未选中 → 加入选中，并设为焦点
    - 已选中 → 1次点击：若是当前焦点则取消选中；否则切换焦点
 */
 function toggleSelect(partKey, itemId, part) {
+  clearExternalImage(true);
   const sel = state.selected[partKey];
   if (Array.isArray(sel)) {
     const idx = sel.indexOf(itemId);
@@ -1414,6 +1577,7 @@ function renderPanel() {
   none.className = "opt none" + (isEmpty(part.key) ? " selected" : "");
   none.innerHTML = "无";
   none.onclick = () => {
+    clearExternalImage(true);
     state.selected[part.key] = isMulti ? [] : null;
     if (isMulti) delete state.activeItemFocus[part.key];
     renderPanel(); renderCharacter();
@@ -1517,6 +1681,7 @@ function renderPanel() {
     /* 不活跃时也要清掉 hueRow，免得显示上一次的状态混淆 */
     renderColorPicker(part.key);
   }
+  renderAdjustPanel(part);
 }
 
 /* ===== 取当前部位（或眼睛当前侧）的 tintColor 引用 ===== */
@@ -1557,6 +1722,58 @@ function getFocusedItem(part) {
     if (it && it.tintable) return it;
   }
   return null;
+}
+
+function getTransformTarget(part) {
+  if (!part) return null;
+  const sel = state.selected[part.key];
+  if (Array.isArray(sel)) {
+    const focused = getFocusedItem(part) || (sel.length > 0 ? part.items.find(x => x.id === sel[sel.length - 1]) : null);
+    return focused ? { key: focused.id, label: `${part.label} ${focused.name}` } : null;
+  }
+  if (sel) {
+    const item = part.items.find(x => x.id === sel);
+    return { key: part.key, label: item ? `${part.label} ${item.name}` : part.label };
+  }
+  return null;
+}
+
+function getTransform(key) {
+  if (!state.transform[key]) {
+    state.transform[key] = { x: 0, y: 0, scale: 100, rotate: 0, opacity: 100 };
+  }
+  const t = state.transform[key];
+  if (typeof t.x !== "number") t.x = 0;
+  if (typeof t.y !== "number") t.y = 0;
+  if (typeof t.scale !== "number") t.scale = 100;
+  if (typeof t.rotate !== "number") t.rotate = 0;
+  if (typeof t.opacity !== "number") t.opacity = 100;
+  return t;
+}
+
+function transformCss(key, flipped = false) {
+  const t = getTransform(key);
+  const sx = (flipped ? -1 : 1) * (t.scale / 100);
+  const sy = t.scale / 100;
+  return {
+    transform: `translate(${t.x}px, ${t.y}px) rotate(${t.rotate}deg) scale(${sx}, ${sy})`,
+    opacity: `${Math.max(0.2, Math.min(1, t.opacity / 100))}`,
+  };
+}
+
+function applyTransformToElement(el, key, flipped = false) {
+  if (!el) return;
+  const css = transformCss(key, flipped);
+  el.style.transformOrigin = "center center";
+  el.style.transform = css.transform;
+  el.style.opacity = css.opacity;
+}
+
+function resetElementTransform(el) {
+  if (!el) return;
+  el.style.transform = "";
+  el.style.opacity = "";
+  el.style.transformOrigin = "";
 }
 
 /* ===== 渲染：色板 + 滑块 ===== */
@@ -1606,15 +1823,45 @@ function renderColorPicker(partKey) {
   hueRow.innerHTML = "";
   HUE_PALETTE.forEach((hue, i) => {
     const sw = document.createElement("button");
-    sw.className = "hue-swatch" + (i === c.hueIdx ? " active" : "");
+    sw.className = "hue-swatch" + (!c.customHex && i === c.hueIdx ? " active" : "");
     sw.style.background = hue.hex;
     sw.onclick = () => {
       c.hueIdx = i;
+      delete c.customHex;
       renderColorPicker(partKey);
       onChange();
     };
     hueRow.appendChild(sw);
   });
+
+  const freeColorInput = document.getElementById("freeColorInput");
+  const freeColorText = document.getElementById("freeColorText");
+  const freeColorApply = document.getElementById("freeColorApply");
+  const nowHex = hexForTint(c);
+  if (freeColorInput) freeColorInput.value = nowHex;
+  if (freeColorText) freeColorText.value = nowHex.toUpperCase();
+  const applyFreeColor = () => {
+    const raw = (freeColorText && freeColorText.value) || (freeColorInput && freeColorInput.value) || "";
+    const hex = normalizeHex(raw);
+    if (!hex) { toast("请输入 #RRGGBB 色值"); return; }
+    c.customHex = hex;
+    c.sat = 50;
+    c.light = 0;
+    renderColorPicker(partKey);
+    onChange();
+  };
+  if (freeColorInput) {
+    freeColorInput.oninput = e => {
+      if (freeColorText) freeColorText.value = e.target.value.toUpperCase();
+    };
+    freeColorInput.onchange = applyFreeColor;
+  }
+  if (freeColorText) {
+    freeColorText.onkeydown = e => {
+      if (e.key === "Enter") applyFreeColor();
+    };
+  }
+  if (freeColorApply) freeColorApply.onclick = applyFreeColor;
 
   const satS = document.getElementById("satSlider");
   const lightS = document.getElementById("lightSlider");
@@ -1645,8 +1892,79 @@ function renderColorPicker(partKey) {
   };
 }
 
+function renderAdjustPanel(part) {
+  const panel = document.getElementById("adjustPanel");
+  if (!panel) return;
+  const target = getTransformTarget(part);
+  const hint = document.getElementById("adjustHint");
+  panel.classList.toggle("inactive", !target);
+  if (hint) {
+    hint.style.display = target ? "inline" : "none";
+    hint.textContent = target ? `调整：${target.label}` : "";
+  }
+  const t = target ? getTransform(target.key) : { x: 0, y: 0, scale: 100, rotate: 0, opacity: 100 };
+  const map = [
+    ["posX", "x"],
+    ["posY", "y"],
+    ["scale", "scale"],
+    ["rotate", "rotate"],
+    ["opacity", "opacity"],
+  ];
+  let rafId = null;
+  const schedule = () => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      renderCharacter();
+    });
+  };
+  map.forEach(([id, key]) => {
+    const slider = document.getElementById(id + "Slider");
+    const val = document.getElementById(id + "Val");
+    if (!slider || !val) return;
+    slider.value = t[key];
+    val.textContent = t[key];
+    slider.oninput = e => {
+      if (!target) return;
+      const live = getTransform(target.key);
+      live[key] = parseInt(e.target.value, 10);
+      val.textContent = live[key];
+      schedule();
+    };
+  });
+  const reset = document.getElementById("adjustReset");
+  if (reset) reset.onclick = () => {
+    if (!target) return;
+    state.transform[target.key] = { x: 0, y: 0, scale: 100, rotate: 0, opacity: 100 };
+    renderAdjustPanel(part);
+    renderCharacter();
+  };
+  const mirror = document.getElementById("adjustMirror");
+  if (mirror) mirror.onclick = () => {
+    if (!target) return;
+    state.flipped[target.key] = !state.flipped[target.key];
+    renderFlipButton(part);
+    renderCharacter();
+  };
+  const center = document.getElementById("adjustBringCenter");
+  if (center) center.onclick = () => {
+    if (!target) return;
+    const live = getTransform(target.key);
+    live.x = 0; live.y = 0;
+    renderAdjustPanel(part);
+    renderCharacter();
+  };
+}
+
 /* 计算 hex（同 resolveTint 但返回 hex 用于显示色点） */
 function hexForTint(c) {
+  if (c.customHex) {
+    const rgb = hexToRgb(c.customHex);
+    if (rgb) {
+      const adjusted = adjustRgb(rgb, c.sat, c.light);
+      return `#${adjusted.map(v => v.toString(16).padStart(2, "0")).join("")}`;
+    }
+  }
   const hue = HUE_PALETTE[c.hueIdx];
   let h, s, l;
   if (hue.fixedL !== undefined) {
@@ -1659,6 +1977,46 @@ function hexForTint(c) {
   }
   const rgb = hslToRgb(h, s, l);
   return `#${rgb.map(v => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function normalizeHex(raw) {
+  const v = String(raw || "").trim();
+  const short = v.match(/^#?([0-9a-fA-F]{3})$/);
+  if (short) return "#" + short[1].split("").map(ch => ch + ch).join("").toUpperCase();
+  const full = v.match(/^#?([0-9a-fA-F]{6})$/);
+  if (full) return "#" + full[1].toUpperCase();
+  return "";
+}
+
+function hexToRgb(hex) {
+  const h = normalizeHex(hex);
+  if (!h) return null;
+  return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+}
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h *= 60;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
+
+function adjustRgb(rgb, sat, light) {
+  const hsl = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+  const s = Math.max(0, Math.min(100, hsl.s + (sat - 50) * 0.55));
+  const l = Math.max(5, Math.min(95, hsl.l + light * 0.8));
+  return hslToRgb(hsl.h, s, l);
 }
 
 /* 翻转按钮：单选部位翻转该部位；多选部位翻转 focused item */
@@ -1703,8 +2061,10 @@ function refreshColorDots(partKey) {
   const part = PARTS.find(p => p.key === partKey);
   if (!part || !part.multi) return;
   const buttons = document.querySelectorAll("#options .opt:not(.none)");
-  buttons.forEach((btn, idx) => {
-    const item = part.items[idx];
+  let idx = 0;
+  buttons.forEach((btn) => {
+    let item = part.items[idx++];
+    while (item && item.special && !LIKE520_IS_MORO) item = part.items[idx++];
     if (!item) return;
     const dot = btn.querySelector(".color-dot");
     if (!dot) return;
@@ -1724,6 +2084,14 @@ function hslToRgb(h, s, l) {
 
 /* 解析 tintColor 到 {h, s, lightOffset}（处理自然色 vs 鲜艳色） */
 function resolveTint(c) {
+  if (c.customHex) {
+    const rgb = hexToRgb(c.customHex);
+    if (rgb) {
+      const adjusted = adjustRgb(rgb, c.sat, c.light);
+      const hsl = rgbToHsl(adjusted[0], adjusted[1], adjusted[2]);
+      return { h: hsl.h, s: hsl.s, lightOffset: hsl.l - 50 };
+    }
+  }
   const hue = HUE_PALETTE[c.hueIdx];
   if (hue.fixedL !== undefined) {
     const satOffset = (c.sat - 50) * 0.4;
@@ -1744,6 +2112,18 @@ function isFlipped(partKey, itemId) {
 /* ===== 渲染角色 ===== */
 function renderCharacter() {
   let anySelected = false;
+  const externalLayer = document.getElementById("layer-external");
+  if (state.externalImage) {
+    document.querySelectorAll(".layer:not(.layer-external)").forEach(el => { el.style.display = "none"; });
+    if (externalLayer) {
+      externalLayer.style.display = "";
+      externalLayer.innerHTML = `<img src="${state.externalImage}" alt="外部捏脸成品">`;
+    }
+    document.getElementById("emptyHint").style.display = "none";
+    return;
+  }
+  document.querySelectorAll(".layer:not(.layer-external)").forEach(el => { el.style.display = ""; });
+  if (externalLayer) externalLayer.innerHTML = "";
   PARTS.forEach(part => {
     const sel = state.selected[part.key];
     const layerEl = document.getElementById(`layer-${part.key}`);
@@ -1751,6 +2131,7 @@ function renderCharacter() {
     /* 多选：叠加多个 */
     if (Array.isArray(sel)) {
       layerEl.innerHTML = "";
+      resetElementTransform(layerEl);
       if (sel.length === 0) return;
       anySelected = true;
       sel.forEach(id => {
@@ -1763,7 +2144,7 @@ function renderCharacter() {
         /* 每件用一个子 div 容器 */
         const sub = document.createElement("div");
         sub.style.cssText = "position:absolute;inset:0;";
-        if (isFlipped(part.key, id)) sub.style.transform = "scaleX(-1)";
+        applyTransformToElement(sub, id, isFlipped(part.key, id));
         layerEl.appendChild(sub);
         if (tintable) {
           /* 多选用每件独立颜色 */
@@ -1779,14 +2160,13 @@ function renderCharacter() {
     }
 
     /* 单选 */
-    if (!sel) { layerEl.innerHTML = ""; return; }
+    if (!sel) { layerEl.innerHTML = ""; resetElementTransform(layerEl); return; }
     anySelected = true;
     const item = part.items.find(x => x.id === sel);
     if (!item) { layerEl.innerHTML = ""; return; }
 
     /* 翻转：直接在 layerEl 上加 transform */
-    if (isFlipped(part.key)) layerEl.style.transform = "scaleX(-1)";
-    else layerEl.style.transform = "";
+    applyTransformToElement(layerEl, part.key, isFlipped(part.key));
 
     const noTint = item.noTint === true;
     const tintable = !noTint && (
@@ -1798,7 +2178,7 @@ function renderCharacter() {
     if (part.colorMode === "tint_eyes") {
       /* 眼睛：无论染色与否都要画主层 + overlay */
       const overlayEl = document.getElementById("layer-eyes-overlay");
-      overlayEl.style.transform = isFlipped(part.key) ? "scaleX(-1)" : "";
+      applyTransformToElement(overlayEl, part.key, isFlipped(part.key));
       if (noTint) {
         /* MORO 眼睛：原色，同时画到两层 */
         layerEl.innerHTML  = `<img src="${item.src}" alt="${item.name}">`;
@@ -1817,7 +2197,7 @@ function renderCharacter() {
   const eyesSel = state.selected.eyes;
   if (!eyesSel || (Array.isArray(eyesSel) && eyesSel.length === 0)) {
     document.getElementById("layer-eyes-overlay").innerHTML = "";
-    document.getElementById("layer-eyes-overlay").style.transform = "";
+    resetElementTransform(document.getElementById("layer-eyes-overlay"));
   }
   document.getElementById("emptyHint").style.display = anySelected ? "none" : "block";
 }
@@ -1990,6 +2370,7 @@ function toast(msg) {
 }
 
 function randomizeAll() {
+  clearExternalImage(true);
   PARTS.forEach(part => {
     /* 随机时排除特殊款（MORO） */
     const randomPool = part.items.filter(it => !it.special);
@@ -2022,6 +2403,7 @@ function randomizeAll() {
   Object.keys(state.hairLinked).forEach(k => state.hairLinked[k] = true);
   /* 翻转清空 */
   state.flipped = {};
+  state.transform = {};
   /* 单选部位的颜色随机 */
   Object.keys(state.tintColor).forEach(k => {
     if (k === "eyes") {
@@ -2074,7 +2456,9 @@ document.getElementById("btnReset").onclick = () => {
   Object.keys(state.selected).forEach(k => {
     state.selected[k] = Array.isArray(state.selected[k]) ? [] : null;
   });
+  state.externalImage = "";
   state.flipped = {};
+  state.transform = {};
   state.activeItemFocus = {};
   clearDraft();
   renderPanel();
@@ -2083,7 +2467,7 @@ document.getElementById("btnReset").onclick = () => {
 };
 
 document.getElementById("btnSave").onclick = async () => {
-  const any = Object.values(state.selected).some(v => Array.isArray(v) ? v.length > 0 : v !== null);
+  const any = !!state.externalImage || Object.values(state.selected).some(v => Array.isArray(v) ? v.length > 0 : v !== null);
   if (!any) { toast("先选几个配件再保存哦~"); return; }
   const btn = document.getElementById("btnSave");
   const origText = btn.innerHTML;
@@ -2199,6 +2583,69 @@ function setExportMode(mode) {
 
 function closeModal() {
   document.getElementById("modal").classList.remove("show");
+}
+
+/* ===== 外部捏脸源：Picrew / Neka 成品图导入 ===== */
+let externalPendingSrc = "";
+
+function openExternalModal() {
+  document.getElementById("externalModal").classList.add("show");
+  externalShowPreview(externalPendingSrc || state.externalImage);
+}
+
+function closeExternalModal() {
+  document.getElementById("externalModal").classList.remove("show");
+}
+
+function externalShowPreview(src) {
+  const drop = document.getElementById("externalDrop");
+  if (!drop) return;
+  drop.innerHTML = "";
+  if (!src) {
+    drop.textContent = "点此导入 Picrew / Neka 保存的成品图";
+    return;
+  }
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "外部捏脸预览";
+  drop.appendChild(img);
+}
+
+function externalOnFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    externalPendingSrc = String(reader.result || "");
+    document.getElementById("externalUrl").value = "";
+    externalShowPreview(externalPendingSrc);
+  };
+  reader.readAsDataURL(file);
+}
+
+function externalOnUrl() {
+  const url = document.getElementById("externalUrl").value.trim();
+  externalPendingSrc = url;
+  externalShowPreview(url);
+}
+
+function useExternalImage() {
+  const url = document.getElementById("externalUrl").value.trim();
+  const src = url || externalPendingSrc;
+  if (!src) { toast("先导入或粘贴一张外站成品图"); return; }
+  setExternalImage(src);
+  closeExternalModal();
+}
+
+function clearExternalImport() {
+  externalPendingSrc = "";
+  const file = document.getElementById("externalFile");
+  const url = document.getElementById("externalUrl");
+  if (file) file.value = "";
+  if (url) url.value = "";
+  clearExternalImage(true);
+  externalShowPreview("");
+  renderCharacter();
+  toast("已清除外站图");
 }
 
 /* ===== 自定义部件：界面内上传 / 管理 / 导描线模板 =====
@@ -2387,6 +2834,21 @@ function exportTracingTemplate() {
 }
 
 (function wireCustomUI() {
+  const btnExternal = document.getElementById('btnExternal');
+  if (btnExternal) btnExternal.onclick = openExternalModal;
+  const externalDrop = document.getElementById('externalDrop');
+  const externalFile = document.getElementById('externalFile');
+  if (externalDrop && externalFile) {
+    externalDrop.onclick = () => externalFile.click();
+    externalFile.onchange = e => externalOnFile(e.target.files && e.target.files[0]);
+  }
+  const externalUrl = document.getElementById('externalUrl');
+  if (externalUrl) externalUrl.oninput = externalOnUrl;
+  const btnUseExternal = document.getElementById('btnUseExternal');
+  if (btnUseExternal) btnUseExternal.onclick = useExternalImage;
+  const btnClearExternal = document.getElementById('btnClearExternal');
+  if (btnClearExternal) btnClearExternal.onclick = clearExternalImport;
+
   const btnCustom = document.getElementById('btnCustom');
   if (btnCustom) btnCustom.onclick = openCustomModal;
   const drop = document.getElementById('ccDrop');
@@ -2422,10 +2884,12 @@ function saveDraft() {
         tintColor: state.tintColor,
         itemColor: state.itemColor,
         flipped: state.flipped,
+        transform: state.transform,
         eyeSide: state.eyeSide,
         hairLinked: state.hairLinked,
         activeItemFocus: state.activeItemFocus,
         preserveLineart: state.preserveLineart,
+        externalImage: state.externalImage,
       };
       localStorage.setItem(getDraftKey(), JSON.stringify(payload));
     } catch (e) { console.warn('[520][cc] save draft failed', e); }
@@ -2442,10 +2906,12 @@ function tryLoadDraft() {
     if (d.tintColor) state.tintColor = d.tintColor;
     if (d.itemColor) state.itemColor = d.itemColor;
     if (d.flipped) state.flipped = d.flipped;
+    if (d.transform) state.transform = d.transform;
     if (d.eyeSide) state.eyeSide = d.eyeSide;
     if (d.hairLinked) state.hairLinked = d.hairLinked;
     if (d.activeItemFocus) state.activeItemFocus = d.activeItemFocus;
     if (typeof d.preserveLineart === 'number') state.preserveLineart = d.preserveLineart;
+    if (typeof d.externalImage === 'string') state.externalImage = d.externalImage;
     console.log('[520][cc] 恢复上次草稿');
     return true;
   } catch (e) {

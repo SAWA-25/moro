@@ -47,7 +47,9 @@ export enum AppID {
   Shop = 'shop', // 购物商城 — 虚拟礼物商城：买礼物送角色（聊天里落礼物卡 + 角色回应/感谢信），角色也会自己逛（自购/回赠），查角色购物小票
   Harem = 'harem', // 椒房记 — AI 后宫文游：AI 实时生成后宫恋爱剧情的互动小说，玩家用选择影响好感/信任/嫉妒/记忆/事件flag/结局，含长期记忆·角色独立记忆·多周目
   Forum = 'forum', // 茶话亭 — 可浏览的论坛：板块/帖子/跟帖，用户发帖回帖，角色与匿名网友（副 API）来盖楼/开帖
+  Twitter = 'twitter', // 推特 — 本地 AI 生成的 X/Twitter 式时间线，角色/NPC 自由发推互动
   VideoCall = 'video_call', // 视频通话 — 聊天里发起的视频通话：角色侧用通话立绘，用户侧可自选开/关摄像头（只开一下就关），翻转镜头
+  Xunji = 'xunji', // 循迹 — 角色 Screenlife 演出 + 异地恋式监视/报备模拟，local-first 落库
   Manual = 'manual', // 说明书 — 按 App 分类收纳用户可操作功能说明
 }
 
@@ -1142,12 +1144,30 @@ export interface VRChibi {
     scale?: number;
     /** 垂直微调（px，负数上移，默认 0） */
     offsetY?: number;
+    /** 水平微调（px，负数左移，默认 0） */
+    offsetX?: number;
+    /** 旋转角度（deg，默认 0） */
+    rotate?: number;
+    /** 透明度（0.35~1，默认 1） */
+    opacity?: number;
+    /** 是否显示投影（默认 true） */
+    shadow?: boolean;
+    /** 脚下/身后光环样式 */
+    halo?: 'none' | 'soft' | 'mint' | 'violet' | 'warm';
     /** 是否水平翻转 */
     flip?: boolean;
     /** 房间内姿势/动画（'idle' | 'bob' | 'wiggle' | 'spin' | 'jump' | 'nod'…），驱动小人在世界里更生动。 */
     pose?: string;
     /** 贴纸装饰（emoji，挂在小人头顶），手账拼贴味。 */
     sticker?: string;
+    /** 贴纸水平偏移（px） */
+    stickerX?: number;
+    /** 贴纸垂直偏移（px） */
+    stickerY?: number;
+    /** 贴纸缩放（默认 1） */
+    stickerSize?: number;
+    /** 是否显示在线名牌（默认 true） */
+    nameVisible?: boolean;
     /** 这套形象的命名（换装位标签，选填）。 */
     name?: string;
 }
@@ -2123,6 +2143,200 @@ export interface CharLifeEvent {
   source: 'proactive' | 'catchup';
 }
 
+// =====================================================================
+// 循迹 App — 角色 Screenlife 演出 + 异地恋监视/报备模拟
+// =====================================================================
+
+export type XunjiTab = 'screenlife' | 'monitor' | 'report' | 'settings';
+export type XunjiNetworkType = 'wifi' | 'mobile';
+export type XunjiCallStatus = 'outgoing' | 'incoming' | 'missed' | 'connected';
+export type XunjiBatteryEventType = 'charge_start' | 'charge_end';
+export type XunjiDensity = 'light' | 'standard' | 'detailed';
+export type XunjiTransport = 'walk' | 'bike' | 'car' | 'subway' | 'bus';
+export type XunjiReportSeverity = 'info' | 'notice' | 'warning';
+export type XunjiReportType =
+  | 'unlock_count'
+  | 'network_switch'
+  | 'app_open'
+  | 'app_close'
+  | 'app_hourly'
+  | 'charge_start'
+  | 'charge_end'
+  | 'move_start'
+  | 'stay'
+  | 'transit'
+  | 'arrive'
+  | 'call_start'
+  | 'call_10min'
+  | 'sleep_phone_off'
+  | 'sleep_late_reminder'
+  | 'sleep_5h'
+  | 'sleep_end';
+
+export interface XunjiSocialInference {
+  mood: string;
+  relationshipPulse: string;
+  screenlifeScore: number;
+  intimacySignals: string[];
+  frictionSignals: string[];
+  likelyNeeds: string[];
+  nextConversationSeeds: string[];
+  whisperHooks: string[];
+}
+
+export interface XunjiGeneratedMoment {
+  id: string;
+  time: number;
+  title: string;
+  body: string;
+  tone: 'soft' | 'busy' | 'private' | 'social' | 'alert';
+  relatedApp?: string;
+}
+
+export interface XunjiAppUsageSession {
+  id: string;
+  appName: string;
+  icon?: string;
+  category?: string;
+  startedAt: number;
+  endedAt: number;
+  note?: string;
+}
+
+export interface XunjiNetworkRecord {
+  id: string;
+  type: XunjiNetworkType;
+  name: string;
+  timestamp: number;
+}
+
+export interface XunjiLocationPoint {
+  id: string;
+  label: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+  arrivedAt: number;
+  leftAt?: number;
+  moveMinutes?: number;
+  stayMinutes?: number;
+  transport?: XunjiTransport;
+}
+
+export interface XunjiHealthSnapshot {
+  timestamp: number;
+  stressLabel: string;
+  hrvAvg: number;
+  hrvCurrent: number;
+  hrvTrend: number[];
+  heartRateMin: number;
+  heartRateMax: number;
+  heartRateLatest: number;
+  heartRateTrend: number[];
+  sleepMinutes: number;
+  sleepQuality: string;
+  sleep: {
+    asleepAt: number;
+    awakeAt: number;
+    awakeMinutes: number;
+    remMinutes: number;
+    coreMinutes: number;
+    deepMinutes: number;
+  };
+  steps: number;
+  walkingKm: number;
+  dayStepTrend: number[];
+  weekStepTrend: number[];
+}
+
+export interface XunjiCallRecord {
+  id: string;
+  target: string;
+  startedAt: number;
+  durationMinutes: number;
+  status: XunjiCallStatus;
+}
+
+export interface XunjiBatteryEvent {
+  id: string;
+  type: XunjiBatteryEventType;
+  timestamp: number;
+  level: number;
+}
+
+export interface XunjiScreenlifeRun {
+  id: string;
+  charId: string;
+  createdAt: number;
+  rangeStart: number;
+  rangeEnd: number;
+  density: XunjiDensity;
+  writeBack: boolean;
+  title: string;
+  narrative: string;
+  chats: { id: string; time: number; target: string; summary: string; messages: string[] }[];
+  browsed: { id: string; time: number; appName: string; title: string; summary: string }[];
+  notes: { id: string; time: number; text: string }[];
+  appUsage: XunjiAppUsageSession[];
+  socialInference?: XunjiSocialInference;
+  moments?: XunjiGeneratedMoment[];
+}
+
+export interface XunjiMonitorSnapshot {
+  id: string;
+  charId: string;
+  generatedAt: number;
+  phoneModel: string;
+  batteryLevel: number;
+  isCharging: boolean;
+  unlockCount: number;
+  screenTimeMinutes: number;
+  lockPeriods: { id: string; startedAt: number; endedAt: number }[];
+  appUsage: XunjiAppUsageSession[];
+  networks: XunjiNetworkRecord[];
+  locations: XunjiLocationPoint[];
+  distanceKm: number;
+  health: XunjiHealthSnapshot;
+  calls: XunjiCallRecord[];
+  batteryEvents: XunjiBatteryEvent[];
+}
+
+export interface XunjiReportItem {
+  id: string;
+  charId: string;
+  type: XunjiReportType;
+  timestamp: number;
+  title: string;
+  body: string;
+  severity?: XunjiReportSeverity;
+  relatedApp?: string;
+  acknowledged?: boolean;
+  writtenBack?: boolean;
+}
+
+export interface XunjiSettings {
+  id: 'settings';
+  activeCharId?: string;
+  writeBackToCharacter: boolean;
+  /** 絮语联动：把最新循迹演出 / 监视 / 报备作为角色可感知的近期生活痕迹注入聊天上下文。 */
+  chatContextEnabled?: boolean;
+  /** 点亮过一次后，循迹会按时间为该角色续上新的生活痕迹。默认开启。 */
+  autoTraceEnabled?: boolean;
+  /** per-char 的自动续写水位，避免同一段时间被重复生成。 */
+  autoTraceLastAtByChar?: Record<string, number>;
+  defaultDensity: XunjiDensity;
+  locationSource?: 'character' | 'browser';
+  customLocation?: string;
+  customLocationUpdatedAt?: number;
+  browserLocation?: {
+    lat: number;
+    lng: number;
+    accuracy?: number;
+    capturedAt: number;
+  };
+  reportRules: Record<XunjiReportType, boolean>;
+}
+
 /**
  * 角色真实城市配置（见 utils/charCity.ts）。
  * real：现实世界角色直接选真实城市；virtual：架空角色可选原型城市 + 虚拟程度。
@@ -2871,6 +3085,64 @@ export interface CharacterExportData extends Omit<CharacterProfile, 'id' | 'memo
     embeddedTheme?: ChatTheme;
 }
 
+/** 絮语·用户社交背景：不是正式神经链接角色，而是用户人际关系里的影子联系人/群聊。 */
+export type AmbientSocialRelation =
+    | 'family'
+    | 'relative'
+    | 'friend'
+    | 'bestie'
+    | 'coworker'
+    | 'classmate'
+    | 'neighbor'
+    | 'crush'
+    | 'group';
+
+export interface AmbientSocialContact {
+    id: string;
+    kind: 'contact';
+    name: string;
+    relation: AmbientSocialRelation;
+    relationLabel: string;
+    avatar: string;
+    note: string;
+    lastMessage: string;
+    lastAt: number;
+    unread?: number;
+    pinned?: boolean;
+    hidden?: boolean;
+    /** 转成正式 CharacterProfile 后写入，后续不再当影子联系人显示。 */
+    linkedCharId?: string;
+    createdAt: number;
+}
+
+export interface AmbientSocialGroup {
+    id: string;
+    kind: 'group';
+    name: string;
+    relation: 'group';
+    relationLabel: string;
+    avatar: string;
+    note: string;
+    memberNames: string[];
+    lastMessage: string;
+    lastAt: number;
+    unread?: number;
+    pinned?: boolean;
+    hidden?: boolean;
+    /** 转成正式 GroupProfile 后写入，后续不再当影子群聊显示。 */
+    linkedGroupId?: string;
+    createdAt: number;
+}
+
+export type AmbientSocialEntry = AmbientSocialContact | AmbientSocialGroup;
+
+export interface AmbientSocialState {
+    version: number;
+    entries: AmbientSocialEntry[];
+    seededAt: number;
+    lastGrowthAt?: number;
+}
+
 export interface UserProfile {
     name: string;
     avatar: string;
@@ -2907,6 +3179,8 @@ export interface UserProfile {
      * enabled=false（登出）时，聊天里给角色的"用户在彼方"提示词随之消失。
      */
     vrState?: UserVRState;
+    /** 絮语·用户完整社交关系：随机家人/同事/朋友/亲戚/群聊等背景会话，随剧情时间轻微生长。 */
+    ambientSocial?: AmbientSocialState;
     /** 拍一拍后缀（微信式）：别人「拍了拍 你 的<后缀>」里的后缀。用户自定义，默认「脑袋」。 */
     patSuffix?: string;
 }
@@ -3363,6 +3637,181 @@ export interface SocialPost {
     mentionedCharIds?: string[];
 }
 
+// --- 推特 App（本地 AI 生成 X/Twitter 时间线）---
+
+export type TwitterAuthorType = 'user' | 'character' | 'npc';
+export type TwitterNotificationKind = 'reply' | 'like' | 'retweet' | 'quote' | 'mention' | 'follow' | 'dm';
+
+export interface TwitterTranslation {
+    targetLang: string;
+    text: string;
+    provider?: 'ai' | 'fallback';
+    translatedAt: number;
+}
+
+export interface TwitterReply {
+    id: string;
+    accountId?: string;
+    authorType: TwitterAuthorType;
+    authorName: string;
+    authorHandle: string;
+    authorAvatar?: string;
+    charId?: string;
+    content: string;
+    language?: string;
+    country?: string;
+    location?: string;
+    translations?: Record<string, TwitterTranslation>;
+    likes: number;
+    createdAt: number;
+    replyToReplyId?: string;
+}
+
+export interface TwitterTweet {
+    id: string;
+    accountId?: string;
+    authorType: TwitterAuthorType;
+    authorName: string;
+    authorHandle: string;
+    authorAvatar?: string;
+    charId?: string;
+    authorBio?: string;
+    authorLocation?: string;
+    authorVerified?: boolean;
+    authorFollowers?: number;
+    content: string;
+    language?: string;
+    country?: string;
+    location?: string;
+    translations?: Record<string, TwitterTranslation>;
+    topics: string[];
+    media?: { type: 'image' | 'quote-card'; url?: string; alt?: string; color?: string }[];
+    replies: TwitterReply[];
+    replyCount: number;
+    retweets: number;
+    quotes: number;
+    likes: number;
+    views: number;
+    liked?: boolean;
+    retweeted?: boolean;
+    bookmarked?: boolean;
+    createdAt: number;
+    sourceTweetId?: string;
+    sourceTweet?: {
+        id: string;
+        accountId?: string;
+        authorName: string;
+        authorHandle: string;
+        content: string;
+        language?: string;
+    };
+    quoteNote?: string;
+    threadId?: string;
+    threadIndex?: number;
+    qualityTags?: string[];
+    generated?: boolean;
+}
+
+export interface TwitterTrend {
+    id: string;
+    label: string;
+    posts: number;
+    blurb?: string;
+}
+
+export interface TwitterNotification {
+    id: string;
+    kind: TwitterNotificationKind;
+    tweetId: string;
+    actorType: TwitterAuthorType;
+    actorName: string;
+    actorHandle: string;
+    actorAvatar?: string;
+    actorCharId?: string;
+    snippet: string;
+    createdAt: number;
+    read?: boolean;
+}
+
+export interface TwitterProfile {
+    id: 'me';
+    displayName: string;
+    handle: string;
+    avatar?: string;
+    bannerColor?: string;
+    bio?: string;
+    location?: string;
+    website?: string;
+    birthday?: string;
+    joinedAt: number;
+    language?: string;
+    country?: string;
+    followers: number;
+    following: number;
+    updatedAt: number;
+}
+
+export interface TwitterAccount {
+    id: string;
+    authorType: TwitterAuthorType;
+    charId?: string;
+    displayName: string;
+    handle: string;
+    avatar?: string;
+    bannerColor?: string;
+    bio?: string;
+    location?: string;
+    website?: string;
+    birthday?: string;
+    joinedAt: number;
+    language?: string;
+    country?: string;
+    followers: number;
+    following: number;
+    verified?: boolean;
+    postingWeight?: number;
+    styleTags?: string[];
+    interests?: string[];
+    commonContacts?: string[];
+    followed?: boolean;
+    generated?: boolean;
+    updatedAt: number;
+}
+
+export interface TwitterSearchRecord {
+    id: string;
+    query: string;
+    resultCount?: number;
+    createdAt: number;
+}
+
+export interface TwitterDMMessage {
+    id: string;
+    threadId: string;
+    senderType: 'user' | 'account';
+    accountId?: string;
+    content: string;
+    tweetId?: string;
+    tweetSnapshot?: Pick<TwitterTweet, 'id' | 'authorName' | 'authorHandle' | 'content' | 'topics' | 'replyCount' | 'retweets' | 'likes' | 'language'>;
+    createdAt: number;
+    read?: boolean;
+    status?: 'sent' | 'read' | 'failed';
+}
+
+export interface TwitterDMThread {
+    id: string;
+    accountId: string;
+    accountName: string;
+    accountHandle: string;
+    accountAvatar?: string;
+    participantType: Exclude<TwitterAuthorType, 'user'>;
+    participantCharId?: string;
+    lastMessage: string;
+    updatedAt: number;
+    unreadCount: number;
+    messages: TwitterDMMessage[];
+}
+
 export interface SubAccount {
     id: string;
     handle: string; 
@@ -3494,7 +3943,7 @@ export interface GameSession {
     lastPlayedAt: number;
 }
 
-export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
+export type MessageType = 'text' | 'image' | 'emoji' | 'interaction' | 'transfer' | 'system' | 'social_card' | 'chat_forward' | 'xhs_card' | 'twitter_card' | 'score_card' | 'music_card' | 'mcd_card' | 'html_card' | 'news_card' | 'vr_card' | 'trpg_card' | 'location' | 'voice' | 'call_log' | 'takeout_card' | 'proposal_card' | 'poll_card' | 'relay_card' | 'checkin_card' | 'gift_card';
 
 /** 购物商城：一件礼物（内置目录条目）。 */
 export interface ShopItem {
@@ -3658,6 +4107,7 @@ export interface PhoneCallLog {
     timestamp: number;
     durationSec: number;    // 未接 = 0
     sessionId?: string;     // 关联 CallApp 的 callSessionId（有录音/逐字稿时可跳转）
+    mode?: 'voice' | 'video'; // 默认语音；视频聊天落库时标记为 video
 }
 
 /** 日记社：一篇日记（用户或角色视角） */
@@ -3790,6 +4240,12 @@ export interface FullBackupData {
 
     xhsActivities?: XhsActivityRecord[];
     xhsStockImages?: XhsStockImage[];
+    twitterTweets?: TwitterTweet[];
+    twitterNotifications?: TwitterNotification[];
+    twitterProfile?: TwitterProfile;
+    twitterAccounts?: TwitterAccount[];
+    twitterDMThreads?: TwitterDMThread[];
+    twitterSearchRecords?: TwitterSearchRecord[];
 
     // Study Room settings
     studyApiConfig?: Partial<APIConfig>;

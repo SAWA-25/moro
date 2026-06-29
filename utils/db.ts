@@ -9,12 +9,14 @@ import {
     LifeSimState, HandbookEntry, Tracker, TrackerEntry, HotNewsSnapshot,
     VRWorldNovel, VRNovelAnnotation, CustomCreatorPart, VRMusicRoomState, VRGuestbookState, VRScript, VRStagedPlay, VRLetter,
     PhoneCallLog, ExchangeDiaryBook, InnerVoiceEntry, TavernPreset, Persona, CalendarMark, CharLedgerEntry, CharLifeEvent,
-    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession
+    XunjiMonitorSnapshot, XunjiReportItem, XunjiScreenlifeRun, XunjiSettings,
+    TalkSession, CollectionItem, TakeoutOrder, DivinationCard, WerewolfGame, TruthDareSession,
+    TwitterTweet, TwitterNotification, TwitterProfile, TwitterAccount, TwitterDMThread, TwitterSearchRecord
 } from '../types';
 import { exportPostOfficeLocal, importPostOfficeLocal } from './vrWorld/postOffice';
 
 const DB_NAME = 'AetherOS_Data';
-const DB_VERSION = 75; // Bumped: v75 新增 private_chat_archives（絮语私聊档案）
+const DB_VERSION = 78; // Bumped: v78 推特 v2（账号 / 资料 / 私信 / 搜索）
 
 const STORE_CHARACTERS = 'characters';
 const STORE_MESSAGES = 'messages';
@@ -45,6 +47,12 @@ const STORE_BANK_DATA = 'bank_data';
 const STORE_XHS_STOCK = 'xhs_stock';
 const STORE_XHS_ACTIVITIES = 'xhs_activities';
 const STORE_XHS_FEED = 'xhs_feed_posts';          // 小红书 App 本地生成信息流（角色 + NPC 帖子）
+const STORE_TWITTER_TWEETS = 'twitter_tweets';    // 推特 App 本地 AI 时间线
+const STORE_TWITTER_NOTIFS = 'twitter_notifications'; // 推特 App 通知
+const STORE_TWITTER_PROFILE = 'twitter_profile';  // 推特 App 用户资料单例 id='me'
+const STORE_TWITTER_ACCOUNTS = 'twitter_accounts'; // 推特 App 角色/NPC 账号资料
+const STORE_TWITTER_DM = 'twitter_dm_threads';    // 推特 App 私信线程
+const STORE_TWITTER_SEARCH = 'twitter_search_records'; // 推特 App 搜索历史
 const STORE_SONGS = 'songs';
 const STORE_QUIZZES = 'quizzes';
 const STORE_GUIDEBOOK = 'guidebook';
@@ -71,6 +79,10 @@ const STORE_INNER_VOICES = 'inner_voices';        // 偷看心声历史（per-ch
 const STORE_LLM_PRESETS = 'llm_presets';          // 预设 App：SillyTavern 式 Chat Completion 预设（提示词管理器 + 采样参数）
 const STORE_PERSONAS = 'personas';                // 人设 App：SillyTavern 式用户人设（多套用户身份，可绑定角色/世界书）
 const STORE_CHAR_LIFE_EVENTS = 'char_life_events'; // 来往·角色离线自主生活事件（每条一件小事，攒成离线回顾时间线 + 给主动消息取材）
+const STORE_XUNJI_RUNS = 'xunji_screenlife_runs';  // 循迹·Screenlife 演出记录
+const STORE_XUNJI_SNAPSHOTS = 'xunji_monitor_snapshots'; // 循迹·监视快照
+const STORE_XUNJI_REPORTS = 'xunji_reports';       // 循迹·报备/提醒事件
+const STORE_XUNJI_SETTINGS = 'xunji_settings';     // 循迹·设置单例 id='settings'
 const STORE_TALK_SESSIONS = 'talk_sessions';      // 小剧场·谈心会话（user 与某角色的倾诉/安慰记录，可收录/转发）
 const STORE_WEREWOLF_GAMES = 'werewolf_games';    // 折子戏·狼人杀对局（一桌熟人开局的完整流程，可存档/续局/回看）
 const STORE_TRUTHDARE_SESSIONS = 'truthdare_sessions'; // 折子戏·真心话大冒险（一圈玩家 + 一串回合记录，可存档/回看/续玩）
@@ -470,6 +482,35 @@ export const openDB = (): Promise<IDBDatabase> => {
       }
 
       createStore(STORE_XHS_FEED, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_TWITTER_TWEETS)) {
+          const twStore = db.createObjectStore(STORE_TWITTER_TWEETS, { keyPath: 'id' });
+          twStore.createIndex('createdAt', 'createdAt', { unique: false });
+          twStore.createIndex('charId', 'charId', { unique: false });
+          twStore.createIndex('authorType', 'authorType', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_TWITTER_NOTIFS)) {
+          const tnStore = db.createObjectStore(STORE_TWITTER_NOTIFS, { keyPath: 'id' });
+          tnStore.createIndex('tweetId', 'tweetId', { unique: false });
+          tnStore.createIndex('actorCharId', 'actorCharId', { unique: false });
+          tnStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      createStore(STORE_TWITTER_PROFILE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_TWITTER_ACCOUNTS)) {
+          const taStore = db.createObjectStore(STORE_TWITTER_ACCOUNTS, { keyPath: 'id' });
+          taStore.createIndex('handle', 'handle', { unique: false });
+          taStore.createIndex('charId', 'charId', { unique: false });
+          taStore.createIndex('authorType', 'authorType', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_TWITTER_DM)) {
+          const dmStore = db.createObjectStore(STORE_TWITTER_DM, { keyPath: 'id' });
+          dmStore.createIndex('accountId', 'accountId', { unique: false });
+          dmStore.createIndex('participantCharId', 'participantCharId', { unique: false });
+          dmStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_TWITTER_SEARCH)) {
+          const searchStore = db.createObjectStore(STORE_TWITTER_SEARCH, { keyPath: 'id' });
+          searchStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
 
       createStore(STORE_SONGS, { keyPath: 'id' });
       createStore(STORE_QUIZZES, { keyPath: 'id' });
@@ -611,6 +652,25 @@ export const openDB = (): Promise<IDBDatabase> => {
           leStore.createIndex('charId', 'charId', { unique: false });
           leStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
+
+      // ─── v76: 循迹 App（Screenlife 演出 / 监视快照 / 报备 / 设置） ───
+      if (!db.objectStoreNames.contains(STORE_XUNJI_RUNS)) {
+          const xjRunStore = db.createObjectStore(STORE_XUNJI_RUNS, { keyPath: 'id' });
+          xjRunStore.createIndex('charId', 'charId', { unique: false });
+          xjRunStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_XUNJI_SNAPSHOTS)) {
+          const xjSnapStore = db.createObjectStore(STORE_XUNJI_SNAPSHOTS, { keyPath: 'id' });
+          xjSnapStore.createIndex('charId', 'charId', { unique: false });
+          xjSnapStore.createIndex('generatedAt', 'generatedAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_XUNJI_REPORTS)) {
+          const xjReportStore = db.createObjectStore(STORE_XUNJI_REPORTS, { keyPath: 'id' });
+          xjReportStore.createIndex('charId', 'charId', { unique: false });
+          xjReportStore.createIndex('timestamp', 'timestamp', { unique: false });
+          xjReportStore.createIndex('type', 'type', { unique: false });
+      }
+      createStore(STORE_XUNJI_SETTINGS, { keyPath: 'id' });
 
       // ─── v70: 小剧场·谈心会话 ───
       if (!db.objectStoreNames.contains(STORE_TALK_SESSIONS)) {
@@ -1492,6 +1552,144 @@ export const DB = {
       });
   },
 
+  // ─── 循迹 App（Screenlife 演出 / 监视快照 / 报备）─────────────────
+  saveXunjiRun: async (run: XunjiScreenlifeRun): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_RUNS, 'readwrite');
+      tx.objectStore(STORE_XUNJI_RUNS).put(run);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getXunjiRuns: async (charId?: string, limit?: number): Promise<XunjiScreenlifeRun[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_XUNJI_RUNS, 'readonly');
+          const store = tx.objectStore(STORE_XUNJI_RUNS);
+          const req = charId ? store.index('charId').getAll(charId) : store.getAll();
+          req.onsuccess = () => {
+              const all = ((req.result as XunjiScreenlifeRun[]) || []).sort((a, b) => b.createdAt - a.createdAt);
+              resolve(limit && limit > 0 ? all.slice(0, limit) : all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  deleteXunjiRun: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_RUNS, 'readwrite');
+      tx.objectStore(STORE_XUNJI_RUNS).delete(id);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  saveXunjiSnapshot: async (snapshot: XunjiMonitorSnapshot): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_SNAPSHOTS, 'readwrite');
+      tx.objectStore(STORE_XUNJI_SNAPSHOTS).put(snapshot);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getXunjiSnapshots: async (charId: string, limit?: number): Promise<XunjiMonitorSnapshot[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_XUNJI_SNAPSHOTS, 'readonly');
+          const req = tx.objectStore(STORE_XUNJI_SNAPSHOTS).index('charId').getAll(charId);
+          req.onsuccess = () => {
+              const all = ((req.result as XunjiMonitorSnapshot[]) || []).sort((a, b) => b.generatedAt - a.generatedAt);
+              resolve(limit && limit > 0 ? all.slice(0, limit) : all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getLatestXunjiSnapshot: async (charId: string): Promise<XunjiMonitorSnapshot | undefined> => {
+      const snapshots = await DB.getXunjiSnapshots(charId, 1);
+      return snapshots[0];
+  },
+
+  saveXunjiReports: async (items: XunjiReportItem[]): Promise<void> => {
+      if (items.length === 0) return;
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_REPORTS, 'readwrite');
+      const store = tx.objectStore(STORE_XUNJI_REPORTS);
+      items.forEach(item => store.put(item));
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  getXunjiReports: async (charId: string, limit?: number): Promise<XunjiReportItem[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_XUNJI_REPORTS, 'readonly');
+          const req = tx.objectStore(STORE_XUNJI_REPORTS).index('charId').getAll(charId);
+          req.onsuccess = () => {
+              const all = ((req.result as XunjiReportItem[]) || []).sort((a, b) => b.timestamp - a.timestamp);
+              resolve(limit && limit > 0 ? all.slice(0, limit) : all);
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  updateXunjiReport: async (id: string, updates: Partial<XunjiReportItem>): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_REPORTS, 'readwrite');
+      const store = tx.objectStore(STORE_XUNJI_REPORTS);
+      const req = store.get(id);
+      req.onsuccess = () => {
+          const current = req.result as XunjiReportItem | undefined;
+          if (current) store.put({ ...current, ...updates, id: current.id });
+      };
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
+  clearXunjiForChar: async (charId: string): Promise<number> => {
+      const [runs, snapshots, reports] = await Promise.all([
+          DB.deleteByIndex(STORE_XUNJI_RUNS, 'charId', charId),
+          DB.deleteByIndex(STORE_XUNJI_SNAPSHOTS, 'charId', charId),
+          DB.deleteByIndex(STORE_XUNJI_REPORTS, 'charId', charId),
+      ]);
+      return runs + snapshots + reports;
+  },
+
+  getXunjiSettings: async (): Promise<XunjiSettings | undefined> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_XUNJI_SETTINGS, 'readonly');
+          const req = tx.objectStore(STORE_XUNJI_SETTINGS).get('settings');
+          req.onsuccess = () => resolve(req.result as XunjiSettings | undefined);
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  saveXunjiSettings: async (settings: XunjiSettings): Promise<void> => {
+      const db = await openDB();
+      const tx = db.transaction(STORE_XUNJI_SETTINGS, 'readwrite');
+      tx.objectStore(STORE_XUNJI_SETTINGS).put(settings);
+      return new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+      });
+  },
+
   // ─── 小剧场·谈心会话 ───
   getAllTalkSessions: async (): Promise<TalkSession[]> => {
       const db = await openDB();
@@ -2014,6 +2212,286 @@ export const DB = {
       const db = await openDB();
       const transaction = db.transaction(STORE_XHS_FEED, 'readwrite');
       transaction.objectStore(STORE_XHS_FEED).clear();
+  },
+
+  // --- Twitter Tweets (推特 App 本地 AI 时间线) ---
+  getTwitterTweets: async (): Promise<TwitterTweet[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_TWEETS).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as TwitterTweet[];
+              results.sort((a, b) => b.createdAt - a.createdAt);
+              resolve(results);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterTweet: async (tweet: TwitterTweet): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_TWEETS).put(tweet);
+  },
+
+  saveTwitterTweets: async (tweets: TwitterTweet[]): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
+      const store = transaction.objectStore(STORE_TWITTER_TWEETS);
+      for (const tweet of tweets) store.put(tweet);
+  },
+
+  deleteTwitterTweet: async (id: string): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_TWEETS).delete(id);
+  },
+
+  clearTwitterTweets: async (): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_TWEETS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_TWEETS).clear();
+  },
+
+  getTwitterNotifications: async (): Promise<TwitterNotification[]> => {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_NOTIFS, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_NOTIFS).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as TwitterNotification[];
+              results.sort((a, b) => b.createdAt - a.createdAt);
+              resolve(results);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterNotification: async (notification: TwitterNotification): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_NOTIFS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_NOTIFS).put(notification);
+  },
+
+  saveTwitterNotifications: async (notifications: TwitterNotification[]): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_NOTIFS, 'readwrite');
+      const store = transaction.objectStore(STORE_TWITTER_NOTIFS);
+      for (const notification of notifications) store.put(notification);
+  },
+
+  clearTwitterNotifications: async (): Promise<void> => {
+      const db = await openDB();
+      const transaction = db.transaction(STORE_TWITTER_NOTIFS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_NOTIFS).clear();
+  },
+
+  markTwitterNotificationsRead: async (): Promise<number> => {
+      return DB.updateByCursor(STORE_TWITTER_NOTIFS, (notification: TwitterNotification) => (
+          notification?.read ? false : { ...notification, read: true }
+      ));
+  },
+
+  getTwitterProfile: async (): Promise<TwitterProfile | null> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_PROFILE)) return null;
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_PROFILE, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_PROFILE).get('me');
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterProfile: async (profile: TwitterProfile): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_PROFILE)) return;
+      const transaction = db.transaction(STORE_TWITTER_PROFILE, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_PROFILE).put({ ...profile, id: 'me' });
+  },
+
+  getTwitterAccounts: async (): Promise<TwitterAccount[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_ACCOUNTS)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_ACCOUNTS, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_ACCOUNTS).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as TwitterAccount[];
+              results.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+              resolve(results);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterAccount: async (account: TwitterAccount): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_ACCOUNTS)) return;
+      const transaction = db.transaction(STORE_TWITTER_ACCOUNTS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_ACCOUNTS).put(account);
+  },
+
+  saveTwitterAccounts: async (accounts: TwitterAccount[]): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_ACCOUNTS)) return;
+      const transaction = db.transaction(STORE_TWITTER_ACCOUNTS, 'readwrite');
+      const store = transaction.objectStore(STORE_TWITTER_ACCOUNTS);
+      for (const account of accounts) store.put(account);
+  },
+
+  clearTwitterAccounts: async (): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_ACCOUNTS)) return;
+      const transaction = db.transaction(STORE_TWITTER_ACCOUNTS, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_ACCOUNTS).clear();
+  },
+
+  getTwitterDMThreads: async (): Promise<TwitterDMThread[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_DM)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_DM, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_DM).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as TwitterDMThread[];
+              results.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+              resolve(results);
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterDMThread: async (thread: TwitterDMThread): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_DM)) return;
+      const transaction = db.transaction(STORE_TWITTER_DM, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_DM).put(thread);
+  },
+
+  clearTwitterDMThreads: async (): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_DM)) return;
+      const transaction = db.transaction(STORE_TWITTER_DM, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_DM).clear();
+  },
+
+  markTwitterDMThreadRead: async (threadId: string): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_DM)) return;
+      const transaction = db.transaction(STORE_TWITTER_DM, 'readwrite');
+      const store = transaction.objectStore(STORE_TWITTER_DM);
+      return new Promise((resolve, reject) => {
+          const req = store.get(threadId);
+          req.onsuccess = () => {
+              const thread = req.result as TwitterDMThread | undefined;
+              if (thread) {
+                  store.put({
+                      ...thread,
+                      unreadCount: 0,
+                      messages: (thread.messages || []).map(m => ({ ...m, read: true, status: m.senderType === 'user' ? m.status : 'read' })),
+                  });
+              }
+              resolve();
+          };
+          req.onerror = () => reject(req.error);
+      });
+  },
+
+  getTwitterSearchRecords: async (): Promise<TwitterSearchRecord[]> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_SEARCH)) return [];
+      return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_TWITTER_SEARCH, 'readonly');
+          const request = transaction.objectStore(STORE_TWITTER_SEARCH).getAll();
+          request.onsuccess = () => {
+              const results = (request.result || []) as TwitterSearchRecord[];
+              results.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              resolve(results.slice(0, 20));
+          };
+          request.onerror = () => reject(request.error);
+      });
+  },
+
+  saveTwitterSearchRecord: async (record: TwitterSearchRecord): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_SEARCH)) return;
+      const transaction = db.transaction(STORE_TWITTER_SEARCH, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_SEARCH).put(record);
+  },
+
+  clearTwitterSearchRecords: async (): Promise<void> => {
+      const db = await openDB();
+      if (!db.objectStoreNames.contains(STORE_TWITTER_SEARCH)) return;
+      const transaction = db.transaction(STORE_TWITTER_SEARCH, 'readwrite');
+      transaction.objectStore(STORE_TWITTER_SEARCH).clear();
+  },
+
+  deleteTwitterDataByCharId: async (charId: string): Promise<number> => {
+      const tweetChanged = await DB.updateByCursor(STORE_TWITTER_TWEETS, (tweet: TwitterTweet) => {
+          let changed = false;
+          let next: TwitterTweet = tweet;
+          if (tweet?.authorType === 'character' && tweet.charId === charId) {
+              next = {
+                  ...next,
+                  authorType: 'npc',
+                  charId: undefined,
+                  authorAvatar: undefined,
+                  authorName: `${tweet.authorName || '角色'}（已离线）`,
+              };
+              changed = true;
+          }
+          if (Array.isArray(next?.replies)) {
+              const replies = next.replies.map(r => {
+                  if (r.charId !== charId) return r;
+                  changed = true;
+                  return {
+                      ...r,
+                      authorType: 'npc' as const,
+                      charId: undefined,
+                      authorAvatar: undefined,
+                      authorName: `${r.authorName || '角色'}（已离线）`,
+                  };
+              });
+              if (changed) next = { ...next, replies };
+          }
+          return changed ? next : false;
+      });
+      const notifChanged = await DB.updateByCursor(STORE_TWITTER_NOTIFS, (notification: TwitterNotification) => {
+          if (notification?.actorCharId !== charId) return false;
+          return {
+              ...notification,
+              actorType: 'npc',
+              actorCharId: undefined,
+              actorAvatar: undefined,
+              actorName: `${notification.actorName || '角色'}（已离线）`,
+          };
+      });
+      const accountChanged = await DB.updateByCursor(STORE_TWITTER_ACCOUNTS, (account: TwitterAccount) => {
+          if (account?.charId !== charId) return false;
+          return {
+              ...account,
+              authorType: 'npc',
+              charId: undefined,
+              avatar: undefined,
+              displayName: `${account.displayName || '角色'}（已离线）`,
+              bio: account.bio || '这个账号已经离线。',
+              updatedAt: Date.now(),
+          };
+      });
+      const dmChanged = await DB.updateByCursor(STORE_TWITTER_DM, (thread: TwitterDMThread) => {
+          if (thread?.participantCharId !== charId) return false;
+          return {
+              ...thread,
+              participantType: 'npc',
+              participantCharId: undefined,
+              accountAvatar: undefined,
+              accountName: `${thread.accountName || '角色'}（已离线）`,
+              updatedAt: Date.now(),
+          };
+      });
+      return tweetChanged + notifChanged + accountChanged + dmChanged;
   },
 
   saveScheduledMessage: async (msg: ScheduledMessage): Promise<void> => {
@@ -3330,7 +3808,7 @@ export const DB = {
           });
       };
 
-      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas] = await Promise.all([
+      const [characters, messages, privateChatArchives, themes, emojis, emojiCategories, assets, galleryImages, userProfiles, diaries, tasks, anniversaries, roomTodos, roomNotes, groups, journalStickers, socialPosts, courses, games, worldbooks, novels, bankTx, bankData, xhsActivities, xhsStockImages, twitterTweets, twitterNotifications, twitterProfileRecords, twitterAccounts, twitterDMThreads, twitterSearchRecords, songs, quizzes, guidebookSessions, scheduledMessages, lifeSimStates, handbooks, trackers, trackerEntries, hotNewsSnapshots, vrNovels, vrAnnotations, customCreatorParts, vrMusic, vrGuestbook, vrScripts, vrStagedPlays, vrPresets, vrLetters, vrSettings, phoneCallLogs, exchangeDiaryBooks, innerVoices, llmPresets, personas] = await Promise.all([
           getAllFromStore(STORE_CHARACTERS),
           getAllFromStore(STORE_MESSAGES),
           getAllFromStore(STORE_PRIVATE_CHAT_ARCHIVES),
@@ -3356,6 +3834,12 @@ export const DB = {
           getAllFromStore(STORE_BANK_DATA),
           getAllFromStore(STORE_XHS_ACTIVITIES),
           getAllFromStore(STORE_XHS_STOCK),
+          getAllFromStore(STORE_TWITTER_TWEETS),
+          getAllFromStore(STORE_TWITTER_NOTIFS),
+          getAllFromStore(STORE_TWITTER_PROFILE),
+          getAllFromStore(STORE_TWITTER_ACCOUNTS),
+          getAllFromStore(STORE_TWITTER_DM),
+          getAllFromStore(STORE_TWITTER_SEARCH),
           getAllFromStore(STORE_SONGS),
           getAllFromStore(STORE_QUIZZES),
           getAllFromStore(STORE_GUIDEBOOK),
@@ -3398,6 +3882,12 @@ export const DB = {
           bankTransactions: bankTx,
           xhsActivities,
           xhsStockImages,
+          twitterTweets,
+          twitterNotifications,
+          twitterProfile: twitterProfileRecords[0] || undefined,
+          twitterAccounts,
+          twitterDMThreads,
+          twitterSearchRecords,
           songs,
           quizSessions: quizzes,
           guidebookSessions,
@@ -3448,7 +3938,8 @@ export const DB = {
           STORE_TASKS, STORE_ANNIVERSARIES, STORE_ROOM_TODOS, STORE_ROOM_NOTES,
           STORE_GROUPS, STORE_JOURNAL_STICKERS, STORE_SOCIAL_POSTS, STORE_COURSES, STORE_GAMES, STORE_WORLDBOOKS, STORE_NOVELS, STORE_SONGS,
           STORE_BANK_TX, STORE_BANK_DATA,
-          STORE_XHS_ACTIVITIES, STORE_XHS_STOCK,
+          STORE_XHS_ACTIVITIES, STORE_XHS_STOCK, STORE_TWITTER_TWEETS, STORE_TWITTER_NOTIFS,
+          STORE_TWITTER_PROFILE, STORE_TWITTER_ACCOUNTS, STORE_TWITTER_DM, STORE_TWITTER_SEARCH,
           STORE_QUIZZES,
           STORE_GUIDEBOOK,
           STORE_SCHEDULED,
@@ -3527,6 +4018,12 @@ export const DB = {
           data.bankTransactions !== undefined,
           data.xhsActivities !== undefined,
           data.xhsStockImages !== undefined,
+          data.twitterTweets !== undefined,
+          data.twitterNotifications !== undefined,
+          data.twitterProfile !== undefined,
+          data.twitterAccounts !== undefined,
+          data.twitterDMThreads !== undefined,
+          data.twitterSearchRecords !== undefined,
           data.memoryNodes !== undefined,
           data.memoryVectors !== undefined,
           data.memoryLinks !== undefined,
@@ -3896,6 +4393,30 @@ export const DB = {
           await clearAndAdd(STORE_XHS_STOCK, data.xhsStockImages, '小红书图库', true);
           data.xhsStockImages = undefined as any;
       }, data.xhsStockImages?.length || 0);
+      await runSection('推特时间线', data.twitterTweets !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_TWEETS, data.twitterTweets, '推特时间线', false);
+          data.twitterTweets = undefined as any;
+      }, data.twitterTweets?.length || 0);
+      await runSection('推特通知', data.twitterNotifications !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_NOTIFS, data.twitterNotifications, '推特通知', false);
+          data.twitterNotifications = undefined as any;
+      }, data.twitterNotifications?.length || 0);
+      await runSection('推特个人资料', data.twitterProfile !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_PROFILE, data.twitterProfile ? [{ ...data.twitterProfile, id: 'me' }] : [], '推特个人资料', false);
+          data.twitterProfile = undefined as any;
+      }, data.twitterProfile ? 1 : 0);
+      await runSection('推特账号', data.twitterAccounts !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_ACCOUNTS, data.twitterAccounts, '推特账号', false);
+          data.twitterAccounts = undefined as any;
+      }, data.twitterAccounts?.length || 0);
+      await runSection('推特私信', data.twitterDMThreads !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_DM, data.twitterDMThreads, '推特私信', false);
+          data.twitterDMThreads = undefined as any;
+      }, data.twitterDMThreads?.length || 0);
+      await runSection('推特搜索历史', data.twitterSearchRecords !== undefined, async () => {
+          await clearAndAdd(STORE_TWITTER_SEARCH, data.twitterSearchRecords, '推特搜索历史', false);
+          data.twitterSearchRecords = undefined as any;
+      }, data.twitterSearchRecords?.length || 0);
 
       // Memory Palace (记忆宫殿)
       await runSection('记忆节点', data.memoryNodes !== undefined, async () => {

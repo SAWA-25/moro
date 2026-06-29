@@ -77,6 +77,7 @@ import { rerankDocuments } from './rerank';
 import { MemoryNodeDB, MemoryVectorDB, MemoryLinkDB, AnticipationDB } from './db';
 import { DB } from '../db';
 import { isMessageSemanticallyRelevant, formatMessageForPrompt } from '../messageFormat';
+import { isAuxContextBudgetEnabled, trimTextMiddle } from '../contextBudget';
 
 // ─── 轻量 LLM 配置类型 ───────────────────────────────
 
@@ -90,6 +91,75 @@ export interface LightLLMConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+}
+
+const EXTRACTION_CONTEXT_FIELD_LIMITS = {
+    systemPrompt: 8_000,
+    worldview: 5_000,
+    userBio: 4_000,
+};
+
+function trimExtractionContextField(text: string | undefined, limit: number): string {
+    const raw = (text || '').trim();
+    if (!raw) return '无';
+    if (!isAuxContextBudgetEnabled()) return raw;
+    return trimTextMiddle(raw, limit);
+}
+
+function buildExtractionProfileContext(
+    charName: string,
+    systemPrompt?: string,
+    worldview?: string,
+    userName?: string,
+    userBio?: string,
+    sourceNote?: string,
+): string {
+    let context = `[角色档案]\n`;
+    context += `名字: ${charName}\n`;
+    context += `核心设定:\n${trimExtractionContextField(systemPrompt, EXTRACTION_CONTEXT_FIELD_LIMITS.systemPrompt)}\n`;
+    if (worldview?.trim()) {
+        context += `世界观: ${trimExtractionContextField(worldview, EXTRACTION_CONTEXT_FIELD_LIMITS.worldview)}\n`;
+    }
+    context += `\n[用户档案]\n`;
+    context += `名字: ${userName || '用户'}\n`;
+    if (userBio !== undefined) {
+        context += `设定: ${trimExtractionContextField(userBio, EXTRACTION_CONTEXT_FIELD_LIMITS.userBio)}\n`;
+    }
+    if (sourceNote) context += `\n[来源说明]\n${sourceNote}\n`;
+    context += `\n`;
+    return context;
+}
+
+function estimateExtractionMessageChars(message: Message, charName: string, userName: string): number {
+    return formatMessageForPrompt(message, charName, userName).slice(0, 600).length + 32;
+}
+
+function splitMessagesForExtraction(
+    messages: Message[],
+    charName: string,
+    userName: string,
+    maxChars: number = 90_000,
+    maxMessages: number = 120,
+): Message[][] {
+    const chunks: Message[][] = [];
+    let current: Message[] = [];
+    let currentChars = 0;
+
+    for (const msg of messages) {
+        const msgChars = estimateExtractionMessageChars(msg, charName, userName);
+        const shouldFlush = current.length > 0 && (
+            current.length >= maxMessages || currentChars + msgChars > maxChars
+        );
+        if (shouldFlush) {
+            chunks.push(current);
+            current = [];
+            currentChars = 0;
+        }
+        current.push(msg);
+        currentChars += msgChars;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks;
 }
 
 // ─── 日期区间记忆加载 ────────────────────────────────
@@ -1076,10 +1146,15 @@ export async function ingestDiaryToPalace(
     }
     if (fakeMessages.length === 0) return { status: 'empty_input' };
 
-    // 角色 / 用户档案给 LLM 当上下文
-    let charContext = `[角色档案]\n名字: ${char.name}\n核心设定:\n${char.systemPrompt || '无'}\n`;
-    if (char.worldview?.trim()) charContext += `世界观: ${char.worldview}\n`;
-    charContext += `\n[用户档案]\n名字: ${userName || '用户'}\n\n[来源说明]\n这是来自【交换日记】app 的一次归档，不是普通聊天，是一篇双方各写一页的正式日记。\n`;
+    // 角色 / 用户档案给 LLM 当上下文；只保留提取所需的摘要级信息，避免超长人设撞模型窗口。
+    const charContext = buildExtractionProfileContext(
+        char.name,
+        char.systemPrompt,
+        char.worldview,
+        userName || '用户',
+        undefined,
+        '这是来自【交换日记】app 的一次归档，不是普通聊天，是一篇双方各写一页的正式日记。',
+    );
 
     const extracted = await extractMemoriesFromBuffer(
         fakeMessages,
@@ -1294,20 +1369,21 @@ export async function processNewMessages(
 
             // 5a. 精简角色档案（姓名、设定、世界观）
             if (charProfile) {
-                charContext += `[角色档案]\n`;
-                charContext += `名字: ${charProfile.name}\n`;
-                charContext += `核心设定:\n${charProfile.systemPrompt || '无'}\n`;
-                if (charProfile.worldview?.trim()) {
-                    charContext += `世界观: ${charProfile.worldview}\n`;
-                }
-                charContext += `\n`;
-            }
-
-            // 5b. 精简用户档案（姓名、设定）
-            if (userProfile) {
-                charContext += `[用户档案]\n`;
-                charContext += `名字: ${userProfile.name}\n`;
-                charContext += `设定: ${userProfile.bio || '无'}\n\n`;
+                charContext = buildExtractionProfileContext(
+                    charProfile.name,
+                    charProfile.systemPrompt,
+                    charProfile.worldview,
+                    userProfile?.name || userName || '用户',
+                    userProfile?.bio,
+                );
+            } else if (userProfile) {
+                charContext = buildExtractionProfileContext(
+                    charName,
+                    undefined,
+                    undefined,
+                    userProfile.name,
+                    userProfile.bio,
+                );
             }
 
             // 5c. 向量检索相关已有记忆，用于两个目的：
@@ -1375,15 +1451,21 @@ export async function processNewMessages(
             .filter(n => n.pinnedUntil && n.pinnedUntil > now)
             .map(n => ({ id: n.id, content: n.content.slice(0, 80) }));
 
-        // 7. LLM 提取记忆 — 大缓冲区分批处理（每批 ~250 条消息）
-        //    避免一次喂太多消息导致 LLM 偷懒只提取几条
-        const CHUNK_SIZE = 250;
-        const chunks: Message[][] = [];
-        for (let i = 0; i < toProcess.length; i += CHUNK_SIZE) {
-            chunks.push(toProcess.slice(i, i + CHUNK_SIZE));
-        }
+        // 7. LLM 提取记忆 — 默认按实际 prompt 体积分批。
+        //    关闭文具盒「上下文防爆保护」时回退旧策略，方便调试完整原始请求。
+        const auxContextBudgetEnabled = isAuxContextBudgetEnabled();
+        const chunks = auxContextBudgetEnabled
+            ? splitMessagesForExtraction(toProcess, charName, userName || '用户')
+            : (() => {
+                const legacyChunkSize = 250;
+                const legacyChunks: Message[][] = [];
+                for (let i = 0; i < toProcess.length; i += legacyChunkSize) {
+                    legacyChunks.push(toProcess.slice(i, i + legacyChunkSize));
+                }
+                return legacyChunks;
+            })();
 
-        console.log(`🏰 [Pipeline] 开始提取记忆：${toProcess.length} 条消息，分 ${chunks.length} 批（每批 ~${CHUNK_SIZE} 条）`);
+        console.log(`🏰 [Pipeline] 开始提取记忆：${toProcess.length} 条消息，拆成 ${chunks.length} 批${auxContextBudgetEnabled ? '（按请求体积）' : '（旧版固定条数）'}`);
 
         const allMemories: import('./types').MemoryNode[] = [];
         const allCrossTimeLinks: { newMemoryId: string; existingMemoryId: string }[] = [];

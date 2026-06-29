@@ -6,7 +6,7 @@ import {
     UploadSimple, PencilSimple, FlipHorizontal, CaretLeft, Sparkle,
     CircleNotch, TextAa, Palette, Pause, MusicNotes, Queue, Check, Gear,
     Camera, Shuffle, Sticker, Smiley, Confetti, Heart, Star, MagicWand,
-    ArrowsClockwise, UsersThree, HandWaving, Scissors,
+    ArrowsClockwise, UsersThree, HandWaving,
 } from '@phosphor-icons/react';
 import TheaterPanel from './theater/TheaterPanel';
 import { CreatorIframe, type ChibiResult } from '../components/Like520Event';
@@ -75,41 +75,90 @@ import type { CharacterProfile, UserProfile, VRWorldNovel, VRNovelAnnotation, VR
 // ============ chibi 形象解析（vrState.chibi → 立绘 → 头像） ============
 import { getChibi } from '../utils/vrWorld/chibi';
 
-// ============ 页外 · 拼贴手账主题 ============
-// 整套界面用一种语言：牛皮纸/卡纸 + 墨水手写字 + 胶带/便签/贴纸/邮戳。
-// 全部颜色、字体、基元都收口在这里，组件只取用，不再各自硬编码深色太空风。
-const HAND = `'LXGW WenKai','Kaiti SC','STKaiti','KaiTi','楷体','Noto Serif SC',serif`;
+// ============ 页外 · 社交世界主题 ============
+// 视觉贴近絮语私聊设置：奶油白底、淡玫瑰线、柔和渐变和软糖控件。
+const HAND = `'Inter','SF Pro Display','PingFang SC','Microsoft YaHei','Noto Sans SC',system-ui,sans-serif`;
 const PAPER = {
-    page: '#ece2cd',     // 主页面：暖牛皮纸
-    paper: '#fbf6ea',    // 干净卡纸
-    cream: '#f6efdd',    // 微黄卡纸
-    ink: '#3f3526',      // 墨色正文
-    inkSoft: '#7c6f57',  // 次级墨
-    inkFaint: '#a99d82', // 极淡墨
-    line: '#d8caa9',     // 网格/分隔
-    edge: '#c9b793',     // 卡片描边
-    red: '#c0563f',      // 红印章/马克笔
-    teal: '#2f8a80',     // 青绿点缀
+    page: '#f7f7f5',
+    paper: '#ffffff',
+    cream: '#fffdf8',
+    ink: '#50484c',
+    inkSoft: '#86777e',
+    inkFaint: '#b8adb2',
+    line: 'rgba(132,120,126,.14)',
+    edge: '#e7dde1',
+    red: '#b9909d',
+    teal: '#8aaea1',
+    violet: '#aeb7cf',
+    amber: '#d6bd87',
+    green: '#9ebaa7',
 };
-// 便签纸随机色（拼贴感）
-const NOTE_COLORS = ['#fff3c4', '#ffe1e7', '#d9edd7', '#d7e7f6', '#f1e3cf', '#eadff5', '#ffe9cc'];
-// 胶带（washi tape）半透明色
-const TAPE_COLORS = ['rgba(238,196,110,.66)', 'rgba(150,200,180,.6)', 'rgba(232,158,168,.55)', 'rgba(154,184,222,.55)', 'rgba(198,170,224,.55)'];
-// 每个房间一套拼贴主题（胶带色 / emoji 贴纸 / 墨色 / 卡纸底）
-const ROOM_THEME: Record<VRRoomId, { tape: string; sticker: string; ink: string; paper: string }> = {
-    plaza:      { tape: 'rgba(198,164,228,.62)', sticker: '🎪', ink: '#5b3f7a', paper: '#efe4fb' },
-    library:    { tape: 'rgba(224,180,110,.62)', sticker: '📖', ink: '#7a5326', paper: '#f6ecd6' },
-    music:      { tape: 'rgba(232,150,170,.58)', sticker: '🎧', ink: '#9a3f5e', paper: '#fce3ea' },
-    guestbook:  { tape: 'rgba(150,190,225,.6)',  sticker: '📌', ink: '#2f5f86', paper: '#e2eef9' },
-    gym:        { tape: 'rgba(140,200,160,.6)',  sticker: '🎮', ink: '#2f6b46', paper: '#e1f0e3' },
-    postoffice: { tape: 'rgba(212,182,132,.62)', sticker: '✉️', ink: '#7a5a2b', paper: '#f1e6cf' },
-    theater:    { tape: 'rgba(206,150,200,.56)', sticker: '🎭', ink: '#6b3a66', paper: '#f1e0ee' },
+const VR_PAGE_BG =
+    'radial-gradient(120% 70% at 50% -18%, rgba(185,144,157,.10), transparent 68%),' +
+    'radial-gradient(90% 60% at 100% 8%, rgba(174,183,207,.08), transparent 64%),' +
+    'radial-gradient(90% 70% at 0% 92%, rgba(138,174,161,.08), transparent 62%),' +
+    'linear-gradient(180deg, #f8f8f6 0%, #fbfaf7 56%, #f7faf8 100%)';
+const VR_GRID_BG = 'radial-gradient(circle at 1px 1px, rgba(132,120,126,.08) 1px, transparent 1.8px)';
+const VR_SOFT_SHADOW = '0 1px 2px rgba(80,72,76,0.05), 0 16px 34px -30px rgba(80,72,76,0.24)';
+const VR_CARD_SHADOW = '0 1px 2px rgba(80,72,76,0.05), 0 18px 36px -30px rgba(80,72,76,0.25)';
+const VR_PANEL_SHADOW = '0 24px 64px -38px rgba(80,72,76,0.28)';
+const VR_DIALOG_SHADOW = '0 24px 64px -32px rgba(80,72,76,0.26)';
+const VR_OVERLAY_BG = 'rgba(60,52,56,.22)';
+const VR_BLUSH = '#f8f4f5';
+const VR_DARK_GLASS = '#fffdf8';
+const VR_SUNSET = 'linear-gradient(135deg, #c6aab4 0%, #aeb7cf 100%)';
+const VR_MINT_GRAD = 'linear-gradient(135deg, #f8faf7 0%, #edf4ef 48%, #f6f2f4 100%)';
+const VR_CREAM_GRAD = 'linear-gradient(135deg, #fffdf8 0%, #f8f4f5 58%, #f4f5fa 100%)';
+const NOTE_COLORS = ['#f8f4f5', '#f4f5fa', '#f6faf7', '#fff8ea', '#f3f7fa', '#fffdf8', '#f7f5f3'];
+const ROOM_THEME: Record<VRRoomId, { sticker: string; ink: string; paper: string; wash: string; cover: string }> = {
+    plaza:      { sticker: 'WORLD', ink: '#7b7191', paper: '#f4f5fa', wash: '#aeb7cf', cover: 'linear-gradient(135deg, #f7f4f6 0%, #eceef7 58%, #edf4ef 100%)' },
+    library:    { sticker: 'READ', ink: '#92744b', paper: '#fff8ea', wash: '#d6bd87', cover: 'linear-gradient(135deg, #fff8ea 0%, #f8f4f5 58%, #fffdf8 100%)' },
+    music:      { sticker: 'PLAY', ink: '#9a7580', paper: '#f8f4f5', wash: '#c6aab4', cover: 'linear-gradient(135deg, #f8f4f5 0%, #eee9ee 50%, #f4f5fa 100%)' },
+    guestbook:  { sticker: 'CHAT', ink: '#7184a7', paper: '#f3f7fa', wash: '#b9c8df', cover: 'linear-gradient(135deg, #f3f7fa 0%, #f7f4f6 54%, #f4f5fa 100%)' },
+    gym:        { sticker: 'GAME', ink: '#728d79', paper: '#f6faf7', wash: '#9ebaa7', cover: 'linear-gradient(135deg, #f0f7f2 0%, #f7f4f6 54%, #fffdf8 100%)' },
+    postoffice: { sticker: 'MAIL', ink: '#9b7a4f', paper: '#fff8ea', wash: '#d6bd87', cover: 'linear-gradient(135deg, #fff8ea 0%, #f8f4f5 60%, #f4f5fa 100%)' },
+    theater:    { sticker: 'STAGE', ink: '#83749b', paper: '#f4f5fa', wash: '#aeb7cf', cover: 'linear-gradient(135deg, #f4f5fa 0%, #f8f4f5 60%, #fffdf8 100%)' },
 };
 const roomTheme = (id: VRRoomId) => ROOM_THEME[id] || ROOM_THEME.plaza;
-// 由字符串确定性地取一个便签色 / 一个小倾角，让每张拼贴卡都歪一点、颜色各异
+// 由字符串确定性地取一个柔和头像底色。
 const seedNum = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) & 0xffff; return h; };
 const noteColor = (s: string) => NOTE_COLORS[seedNum(s) % NOTE_COLORS.length];
-const tiltOf = (s: string, amp = 2.4) => (((seedNum(s) % 100) / 100) * 2 - 1) * amp; // -amp..amp 度
+const InsSection: React.FC<{ title: string; en?: string; right?: React.ReactNode; className?: string }> = ({ title, en, right, className }) => (
+    <div className={`flex items-center gap-2 ${className || ''}`}>
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: VR_SUNSET }} />
+        <span className="text-[13px] font-bold tracking-tight" style={{ color: PAPER.ink }}>{title}</span>
+        {en && <span className="text-[8px] tracking-[0.28em] uppercase" style={{ fontFamily: 'var(--font-label)', color: PAPER.inkFaint }}>{en}</span>}
+        <span className="flex-1" />
+        {right}
+    </div>
+);
+const InsCard: React.FC<{
+    children: React.ReactNode; className?: string; style?: React.CSSProperties; onClick?: () => void; edge?: string;
+}> = ({ children, className = '', style, onClick, edge }) => (
+    <div onClick={onClick} className={`relative overflow-hidden ${onClick ? 'press-soft cursor-pointer' : ''} ${className}`}
+        style={{ background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,250,.92))', border: `1px solid ${PAPER.edge}`, borderRadius: 18, boxShadow: VR_CARD_SHADOW, ...style }}>
+        {edge && <span className="absolute left-0 top-0 bottom-0 w-1" style={{ background: edge }} />}
+        {children}
+    </div>
+);
+const StoryAvatar: React.FC<{ src?: string; name: string; size?: number; active?: boolean; className?: string; chibi?: boolean }> = ({ src, name, size = 44, active = true, className = '', chibi = false }) => (
+    <span className={`shrink-0 rounded-full p-[2.5px] ${className}`} style={{ display: 'inline-flex', background: active ? VR_SUNSET : '#e5dde1', boxShadow: active ? '0 8px 16px -12px rgba(80,72,76,.28)' : 'none' }}>
+        <span className="rounded-full overflow-hidden bg-white flex items-center justify-center" style={{ width: size, height: size, border: '2.5px solid #fffdf8' }}>
+            {src ? <img src={src} alt="" className={`w-full h-full ${chibi ? 'object-contain object-bottom' : 'object-cover'}`} /> : <span className="text-[14px] font-bold" style={{ color: PAPER.inkSoft }}>{name.slice(0, 1)}</span>}
+        </span>
+    </span>
+);
+const MiniPolaroid: React.FC<{
+    src?: string; caption: string; rotate?: number; children?: React.ReactNode; style?: React.CSSProperties; className?: string;
+}> = ({ src, caption, rotate = 0, children, style, className = '' }) => (
+    <div className={`relative p-1.5 pb-5 ${className}`} style={{ background: '#fffdf8', borderRadius: 10, border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW, transform: `rotate(${rotate}deg)`, ...style }}>
+        <div className="relative overflow-hidden" style={{ width: 56, height: 56, borderRadius: 5, background: VR_BLUSH }}>
+            {src ? <img src={src} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[20px]" style={{ color: PAPER.violet }}>{caption.slice(0, 1)}</div>}
+            {children}
+        </div>
+        <span className="absolute left-1 right-1 bottom-1 text-center text-[10.5px] font-bold truncate" style={{ fontFamily: 'var(--font-hand)', color: PAPER.inkSoft }}>{caption}</span>
+    </div>
+);
 // 小人姿势 → 动画（世界房间里小人更生动；解析自 LLM 的 <姿势>）
 const POSE_ANIM: Record<string, string> = {
     idle: 'vrfloat 3.4s ease-in-out infinite',
@@ -126,44 +175,62 @@ const POSE_LIST: { key: string; label: string }[] = [
     { key: 'jump', label: '蹦跶' }, { key: 'spin', label: '转圈' }, { key: 'nod', label: '点头' },
 ];
 const STICKER_CHOICES = ['', '⭐', '💛', '🌸', '🍬', '🎀', '☁️', '🔥', '🫧', '✨', '🍀', '🐾'];
+type ChibiHalo = NonNullable<VRChibi['halo']>;
+const HALO_OPTIONS: { key: ChibiHalo; label: string; bg: string }[] = [
+    { key: 'none', label: '无光环', bg: 'transparent' },
+    { key: 'soft', label: '柔光', bg: 'radial-gradient(circle, rgba(255,255,255,.72), rgba(255,255,255,0) 68%)' },
+    { key: 'mint', label: '薄荷', bg: 'radial-gradient(circle, rgba(158,186,167,.34), rgba(158,186,167,0) 70%)' },
+    { key: 'violet', label: '雾蓝', bg: 'radial-gradient(circle, rgba(174,183,207,.36), rgba(174,183,207,0) 70%)' },
+    { key: 'warm', label: '暖米', bg: 'radial-gradient(circle, rgba(214,189,135,.34), rgba(214,189,135,0) 70%)' },
+];
+const haloBg = (halo?: ChibiHalo) => HALO_OPTIONS.find(h => h.key === halo)?.bg || 'transparent';
 
-// —— 拼贴基元 ——
-// 一段胶带（washi tape），贴在卡片顶/角
-const Tape: React.FC<{ color?: string; className?: string; style?: React.CSSProperties; w?: number }> = ({ color, className, style, w = 46 }) => (
-    <span className={`pointer-events-none absolute ${className || ''}`} aria-hidden="true"
-        style={{ width: w, height: 16, background: color || TAPE_COLORS[0], opacity: 0.92, boxShadow: '0 1px 2px rgba(0,0,0,.12)', ...style }} />
-);
-// 图钉
-const Pin: React.FC<{ color?: string; className?: string; style?: React.CSSProperties }> = ({ color = PAPER.red, className, style }) => (
-    <span className={`pointer-events-none absolute rounded-full ${className || ''}`} aria-hidden="true"
-        style={{ width: 9, height: 9, background: `radial-gradient(circle at 35% 30%, #fff7, ${color})`, boxShadow: '0 1.5px 2px rgba(0,0,0,.35)', ...style }} />
-);
-// 一张拼贴卡纸（轻微歪斜 + 纸感阴影 + 描边）
-const Card: React.FC<{ children: React.ReactNode; tilt?: number; color?: string; className?: string; style?: React.CSSProperties; onClick?: () => void }>
-    = ({ children, tilt = 0, color, className, style, onClick }) => (
-    <div onClick={onClick} className={`relative ${className || ''}`}
-        style={{ background: color || PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, transform: tilt ? `rotate(${tilt}deg)` : undefined, boxShadow: '0 3px 0 rgba(120,100,60,.10), 0 8px 18px rgba(80,64,30,.16)', ...style }}>
-        {children}
-    </div>
-);
-// 手写小标签（贴纸/便签标题）
 const InkTag: React.FC<{ children: React.ReactNode; color?: string; className?: string; style?: React.CSSProperties }> = ({ children, color, className, style }) => (
-    <span className={`inline-flex items-center px-2 py-0.5 text-[11px] ${className || ''}`}
-        style={{ fontFamily: HAND, color: PAPER.ink, background: color || '#fff3c4', border: `1px solid ${PAPER.edge}`, borderRadius: 4, boxShadow: '0 1px 2px rgba(80,64,30,.18)', ...style }}>{children}</span>
+    <span className={`inline-flex items-center px-2.5 py-1 text-[10.5px] font-semibold ${className || ''}`}
+        style={{ fontFamily: HAND, color: PAPER.ink, background: color || VR_BLUSH, border: `1px solid ${PAPER.edge}`, borderRadius: 999, boxShadow: '0 6px 14px -12px rgba(80,72,76,.22)', ...style }}>{children}</span>
 );
-// 缝线虚线分隔
 const Stitch: React.FC<{ className?: string; color?: string }> = ({ className, color }) => (
-    <div className={className} style={{ height: 0, borderTop: `1.5px dashed ${color || PAPER.line}` }} />
+    <div className={className} style={{ height: 1, background: color || PAPER.line }} />
 );
-// 纸质按钮（实心马克笔块）
 const InkBtn: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'ink' | 'red' | 'teal' | 'soft' }> = ({ tone = 'ink', className, style, children, ...rest }) => {
-    const bg = tone === 'red' ? PAPER.red : tone === 'teal' ? PAPER.teal : tone === 'soft' ? '#fff3c4' : PAPER.ink;
-    const fg = tone === 'soft' ? PAPER.ink : '#fbf3e0';
+    const bg = tone === 'red'
+        ? 'linear-gradient(135deg, #c6aab4, #b9909d)'
+        : tone === 'teal'
+            ? 'linear-gradient(135deg, #dff2ea, #9cc8a9)'
+            : tone === 'soft'
+                ? VR_CREAM_GRAD
+                : VR_SUNSET;
+    const fg = tone === 'soft' ? PAPER.inkSoft : '#fff';
     return (
         <button {...rest} className={`active:translate-y-px transition-transform disabled:opacity-40 ${className || ''}`}
-            style={{ fontFamily: HAND, background: bg, color: fg, border: `1px solid ${tone === 'soft' ? PAPER.edge : 'rgba(0,0,0,.18)'}`, borderRadius: 8, boxShadow: '0 2px 0 rgba(0,0,0,.18)', ...style }}>{children}</button>
+            style={{ fontFamily: HAND, background: bg, color: fg, border: `1px solid ${tone === 'soft' ? PAPER.edge : 'rgba(255,255,255,.58)'}`, borderRadius: 999, boxShadow: tone === 'soft' ? VR_SOFT_SHADOW : '0 12px 24px -16px rgba(80,72,76,.32)', ...style }}>{children}</button>
     );
 };
+const SoftToggle: React.FC<{ on: boolean; onClick: () => void; ariaLabel?: string }> = ({ on, onClick, ariaLabel }) => (
+    <button aria-label={ariaLabel} onClick={onClick} className="relative w-11 h-6 rounded-full transition-colors"
+        style={{ background: on ? VR_SUNSET : '#f3f1f2', border: `1px solid ${on ? 'rgba(255,255,255,.7)' : PAPER.edge}`, boxShadow: on ? '0 10px 18px -14px rgba(80,72,76,.38)' : 'inset 0 1px 2px rgba(80,72,76,.05)' }}>
+        <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform"
+            style={{ background: '#fffdf8', transform: on ? 'translateX(20px)' : 'none', boxShadow: '0 2px 6px rgba(80,72,76,.14)' }} />
+    </button>
+);
+const softChipStyle = (active: boolean, accent = PAPER.red): React.CSSProperties => ({
+    fontFamily: HAND,
+    fontWeight: 700,
+    background: active ? `linear-gradient(135deg, ${accent}, ${PAPER.violet})` : VR_CREAM_GRAD,
+    color: active ? '#fff' : PAPER.inkSoft,
+    border: `1px solid ${active ? 'rgba(255,255,255,.68)' : PAPER.edge}`,
+    boxShadow: active ? '0 10px 20px -18px rgba(80,72,76,.36)' : 'none',
+});
+const AtelierSlider: React.FC<{
+    label: string; value: number; min: number; max: number; step?: number; unit?: string; onChange: (v: number) => void;
+}> = ({ label, value, min, max, step = 1, unit = '', onChange }) => (
+    <label className="flex items-center gap-2 py-1">
+        <span className="w-12 shrink-0 text-[10.5px]" style={{ color: PAPER.inkSoft }}>{label}</span>
+        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))}
+            className="flex-1 min-w-0" style={{ accentColor: PAPER.red }} />
+        <span className="w-11 text-right text-[10px] tabular-nums" style={{ color: PAPER.inkFaint }}>{Math.round(value * 100) / 100}{unit}</span>
+    </label>
+);
 
 type Tab = 'world' | 'library' | 'settings' | 'api';
 
@@ -392,65 +459,39 @@ const VRWorldApp: React.FC = () => {
 
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden"
-            style={{ color: PAPER.ink, background: PAPER.page }}>
+            style={{ color: PAPER.ink, background: VR_PAGE_BG }}>
             <VRStyleTag />
-            {/* 纸张质感：网格 + 颗粒 + 暖角 */}
+            {/* 暖白 ins 画布：细点纹 + 顶部柔光，不使用半透明胶带装饰。 */}
             <div className="pointer-events-none absolute inset-0" style={{
-                backgroundImage: `linear-gradient(${PAPER.line}55 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}33 1px, transparent 1px)`,
-                backgroundSize: '22px 22px', opacity: 0.5,
+                backgroundImage: VR_GRID_BG,
+                backgroundSize: '16px 16px',
+                opacity: .9,
             }} />
-            <div className="pointer-events-none absolute inset-0" style={{
-                backgroundImage: 'radial-gradient(circle at 20% 18%, rgba(255,255,255,.5), transparent 40%), radial-gradient(circle at 86% 78%, rgba(150,120,70,.10), transparent 45%)',
-            }} />
-            {/* 飘动的小纸片/碎屑 */}
-            <div className="pointer-events-none absolute inset-0 overflow-hidden">
-                <span className="absolute text-[18px]" style={{ top: '14%', left: '8%', animation: 'ywdrift 9s ease-in-out infinite', opacity: .5 }}>✦</span>
-                <span className="absolute text-[14px]" style={{ top: '64%', right: '10%', animation: 'ywdrift 12s ease-in-out infinite reverse', opacity: .45 }}>✿</span>
-                <span className="absolute text-[12px]" style={{ top: '40%', right: '20%', animation: 'ywdrift 11s ease-in-out infinite', opacity: .4 }}>★</span>
-            </div>
 
-            {/* 顶栏 —— 用 --chrome-top 让开安全区 + Moro 状态栏 */}
-            <div className="relative flex items-center gap-2.5 px-4 pb-2 shrink-0 z-10" style={{ paddingTop: VR_TOP }}>
-                <button onClick={closeApp} className="h-8 w-8 -ml-1 flex items-center justify-center rounded-lg active:translate-y-px"
-                    style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}><ArrowLeft size={18} weight="bold" /></button>
-                <div className="relative flex items-center gap-1.5 px-2 py-0.5" style={{ transform: 'rotate(-2deg)' }}>
-                    <Tape color={TAPE_COLORS[0]} w={38} style={{ top: -7, left: 10, transform: 'rotate(-8deg)' }} />
-                    <Scissors size={18} weight="bold" style={{ color: PAPER.red }} />
-                    <span className="text-[25px] leading-none" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink, letterSpacing: '0.06em' }}>页外</span>
+            <div className="relative shrink-0 z-10 px-3.5 pb-2" style={{ paddingTop: VR_TOP }}>
+                <div className="flex items-center gap-2.5 px-2.5 py-2.5" style={{ background: VR_DARK_GLASS, border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_SOFT_SHADOW }}>
+                    <button onClick={closeApp} className="h-9 w-9 flex items-center justify-center rounded-full active:translate-y-px"
+                        style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><ArrowLeft size={18} weight="bold" /></button>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
+                            style={{ background: VR_SUNSET, color: '#fff', boxShadow: '0 8px 16px -12px rgba(80,72,76,.22)' }}>
+                            <Planet size={18} weight="fill" />
+                        </span>
+                        <div className="min-w-0">
+                            <div className="text-[18px] leading-tight font-bold tracking-normal" style={{ fontFamily: HAND, color: PAPER.ink }}>页外</div>
+                            <div className="text-[9px] leading-tight truncate tracking-[0.2em] uppercase" style={{ fontFamily: 'var(--font-label)', color: PAPER.inkSoft }}>Virtual Space</div>
+                        </div>
+                    </div>
+                    <span className="ml-auto text-[10px] px-2.5 py-1 rounded-full whitespace-nowrap" style={{ fontFamily: HAND, color: PAPER.inkSoft, background: VR_BLUSH, border: `1px solid ${PAPER.edge}` }}>
+                        {enabledCount > 0 ? `${enabledCount} 在线` : '未接入'}
+                    </span>
                 </div>
-                <span className="ml-auto text-[10.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>
-                    {enabledCount > 0 ? `${enabledCount} 个小人在场` : '还没人捏小人'}
-                </span>
-            </div>
-
-            {/* Tab — washi 胶带索引页签 */}
-            <div className="relative flex px-4 gap-2 shrink-0 z-10" style={{ marginBottom: -1 }}>
-                {([['world', '世界', '🌎'], ['library', '书库', '📚'], ['settings', '接入', '🔌'], ['api', 'API', '⚙️']] as [Tab, string, string][]).map(([t, label, emo], i) => {
-                    const on = tab === t;
-                    return (
-                        <button key={t} onClick={() => setTab(t)}
-                            className="relative px-3 pt-1.5 pb-2 text-[13px] active:translate-y-px"
-                            style={{
-                                fontFamily: HAND, fontWeight: on ? 700 : 500,
-                                color: on ? PAPER.ink : PAPER.inkFaint,
-                                background: on ? PAPER.paper : 'transparent',
-                                border: on ? `1px solid ${PAPER.edge}` : '1px solid transparent',
-                                borderBottom: on ? `1px solid ${PAPER.paper}` : '1px solid transparent',
-                                borderTopLeftRadius: 9, borderTopRightRadius: 9,
-                                transform: `rotate(${on ? 0 : tiltOf(t, 2)}deg)`,
-                            }}>
-                            {on && <Tape color={TAPE_COLORS[(i + 1) % TAPE_COLORS.length]} w={30} style={{ top: -8, left: '50%', marginLeft: -15, transform: 'rotate(-4deg)' }} />}
-                            <span className="mr-0.5">{emo}</span>{label}
-                        </button>
-                    );
-                })}
-                <div className="absolute bottom-0 left-2 right-2 h-px" style={{ background: PAPER.edge }} />
             </div>
 
             {/* 滚动容器不同于浮动 dock：滚到底时最后一条内容贴 viewport bottom = 屏幕底，必须 + safe-bottom 让位 home 条，否则翻页按钮被压（即原 #158 报的问题）。 */}
             <div className="relative flex-1 overflow-y-auto vr-reader-scroll px-4 z-10" style={{ paddingTop: '1rem', paddingBottom: `calc(1rem + ${VR_SAFE_BOTTOM})` }}>
                 {loading ? (
-                    <div className="text-center text-[13px] py-12" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>正在翻开页外…</div>
+                    <div className="text-center text-[13px] py-12" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>正在接入页外…</div>
                 ) : tab === 'world' ? (
                     <WorldView occupantsByRoom={occupantsByRoom} feed={feed} novelCount={novels.length} poBadge={poBadge}
                         onEnterRoom={setEnterRoom} onGoLibrary={() => setTab('library')} onJump={jumpToAnnotation}
@@ -470,6 +511,32 @@ const VRWorldApp: React.FC = () => {
                 ) : (
                     <VRApiSettings apiPresets={apiPresets} chatApi={auxApi} addToast={addToast} />
                 )}
+            </div>
+
+            <div className="relative shrink-0 z-20 px-4 pt-2" style={{ paddingBottom: vrBottomPad('0.75rem'), background: 'linear-gradient(180deg, rgba(251,250,247,0), rgba(251,250,247,.94) 28%, #fbfaf7 100%)' }}>
+                <div className="grid grid-cols-4 gap-1.5 p-1.5 rounded-[26px]" style={{ background: '#fffdf8', border: `1px solid ${PAPER.edge}`, boxShadow: VR_PANEL_SHADOW }}>
+                {([
+                    ['world', '世界', <Planet size={16} weight="fill" />],
+                    ['library', '书库', <BookOpen size={16} weight="fill" />],
+                    ['settings', '接入', <UsersThree size={16} weight="fill" />],
+                    ['api', 'API', <Gear size={16} weight="fill" />],
+                ] as [Tab, string, React.ReactNode][]).map(([t, label, icon]) => {
+                    const on = tab === t;
+                    return (
+                        <button key={t} onClick={() => setTab(t)}
+                            className="relative h-11 rounded-[22px] text-[11.5px] active:translate-y-px transition-all flex flex-col items-center justify-center gap-0.5"
+                            style={{
+                                fontFamily: HAND, fontWeight: on ? 800 : 600,
+                                color: on ? '#fff' : PAPER.inkSoft,
+                                background: on ? VR_SUNSET : 'transparent',
+                                border: on ? '1px solid rgba(255,255,255,.55)' : '1px solid transparent',
+                                boxShadow: on ? '0 10px 20px -14px rgba(80,72,76,.28)' : 'none',
+                            }}>
+                            {icon}<span>{label}</span>
+                        </button>
+                    );
+                })}
+                </div>
             </div>
 
             {/* 进入房间场景 */}
@@ -524,66 +591,58 @@ const VRWorldApp: React.FC = () => {
     );
 };
 
-// ============ 通用：拼贴纸感房间背景（纯 CSS，按房间取色）============
+// ============ 通用：页外房间背景（纯 CSS，按房间功能色生成空间感）============
 const RoomBackground: React.FC<{ roomId: VRRoomId; className?: string }> = ({ roomId, className }) => {
-    // 一套统一的"贴在手账里的小场景"语言：牛皮纸底 + 房间色卡纸洗 + 网格 +
-    // 一枚淡淡的大 emoji 贴纸 + 几条胶带，地面压一道纸边给小人让位。
     const th = roomTheme(roomId);
     return (
-        <div className={`absolute inset-0 overflow-hidden ${className || ''}`} style={{ background: PAPER.cream }}>
-            {/* 房间色卡纸洗 */}
-            <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, ${th.paper} 0%, ${PAPER.cream} 60%, ${PAPER.page} 100%)` }} />
-            {/* 网格纸纹 */}
+        <div className={`absolute inset-0 overflow-hidden ${className || ''}`} style={{ background: th.cover }}>
             <div className="absolute inset-0" style={{
-                backgroundImage: `linear-gradient(${PAPER.line}66 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}44 1px, transparent 1px)`,
-                backgroundSize: '20px 20px', opacity: 0.5,
+                background: `radial-gradient(70% 58% at 30% 18%, rgba(255,255,255,.62), transparent 62%), radial-gradient(62% 52% at 82% 10%, ${th.paper}ee, transparent 64%), linear-gradient(180deg, rgba(255,255,255,.18), rgba(80,72,76,.05))`,
             }} />
-            {/* 一枚大贴纸（房间符号），淡淡盖在中上方 */}
-            <div className="absolute left-1/2 top-[20%] -translate-x-1/2 select-none" style={{ fontSize: 120, opacity: 0.16, filter: 'saturate(.7)' }}>{th.sticker}</div>
-            {/* 角落几条胶带 */}
-            <Tape color={th.tape} w={64} style={{ top: '8%', left: '-10px', transform: 'rotate(-24deg)' }} />
-            <Tape color={TAPE_COLORS[2]} w={54} style={{ top: '6%', right: '-8px', transform: 'rotate(22deg)' }} />
-            {/* 地面纸边：给小人投影一个落脚处 */}
-            <div className="absolute left-0 right-0 bottom-0 h-[26%]" style={{ background: `linear-gradient(180deg, transparent, ${PAPER.edge}55 40%, ${PAPER.edge}88 100%)` }} />
-            <div className="absolute left-0 right-0 bottom-0 h-[3px]" style={{ background: PAPER.edge }} />
-            {/* 暗角（极淡，纸张边缘自然压暗） */}
-            <div className="absolute inset-0" style={{ background: 'radial-gradient(120% 92% at 50% 40%, transparent 55%, rgba(120,96,50,0.14) 100%)' }} />
+            <div className="absolute inset-0" style={{ backgroundImage: VR_GRID_BG, backgroundSize: '16px 16px', opacity: .24 }} />
+            <div className="absolute left-1/2 top-[20%] -translate-x-1/2 select-none text-[44px] tracking-[0.28em] font-black"
+                style={{ color: 'rgba(255,255,255,.34)', fontFamily: HAND }}>{th.sticker}</div>
+            <div className="absolute left-[12%] right-[12%] bottom-[24%] h-[18%] rounded-[50%]" style={{ background: 'rgba(255,255,255,.34)', filter: 'blur(22px)' }} />
+            <div className="absolute left-6 right-6 bottom-[14%] h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent)' }} />
+            <div className="absolute left-0 right-0 bottom-0 h-[36%]" style={{ background: 'linear-gradient(180deg, transparent, rgba(80,72,76,.05) 56%, rgba(80,72,76,.10) 100%)' }} />
         </div>
     );
 };
 
-// ============ chibi 小人渲染（便签气泡 + 头顶贴纸 + 姿势动画 + 手账名牌）============
+// ============ chibi 小人渲染（空间气泡 + 头顶贴纸 + 姿势动画 + 在线名牌）============
 const Chibi: React.FC<{ char: CharacterProfile; bubble?: string; onTap?: () => void; size?: number; dance?: boolean }> = ({ char, bubble, onTap, size = 96, dance }) => {
     const c = getChibi(char);
     const sticker = char.vrState?.chibi?.sticker;
     const pose = char.vrState?.chibi?.pose;
     const anim = dance ? 'vrdance 0.9s ease-in-out infinite' : poseAnim(pose);
+    const stickerX = c.stickerX;
+    const stickerY = c.stickerY;
+    const stickerScale = c.stickerSize || 1;
     return (
         <div className="absolute flex flex-col items-center" style={{ transform: 'translate(-50%, -100%)' }} onClick={onTap}>
             {bubble && (
                 <div className="relative mb-1 max-w-[124px] px-2.5 py-1 text-[10.5px] leading-snug text-center"
-                    style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffaf0', border: `1px solid ${PAPER.edge}`, borderRadius: 9, boxShadow: '0 3px 8px rgba(80,60,30,.28)', transform: `rotate(${tiltOf(char.id, 2.2)}deg)` }}>
+                    style={{ fontFamily: HAND, color: PAPER.ink, background: '#fff', border: `1px solid ${PAPER.edge}`, borderRadius: 14, boxShadow: VR_SOFT_SHADOW }}>
                     {bubble.length > 22 ? bubble.slice(0, 22) + '…' : bubble}
-                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45" style={{ background: '#fffaf0', borderRight: `1px solid ${PAPER.edge}`, borderBottom: `1px solid ${PAPER.edge}` }} />
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45" style={{ background: '#fff', borderRight: `1px solid ${PAPER.edge}`, borderBottom: `1px solid ${PAPER.edge}` }} />
                 </div>
             )}
-            <div className="relative" style={{ animation: anim, animationDelay: `${(char.id.charCodeAt(0) % 10) * 0.15}s` }}>
-                {sticker && <span className="absolute -top-3 -right-1 text-[15px] z-10" style={{ animation: 'ywbob 2s ease-in-out infinite' }}>{sticker}</span>}
+            <div className="relative" style={{ animation: anim, animationDelay: `${(char.id.charCodeAt(0) % 10) * 0.15}s`, transform: `translateX(${c.offsetX}px)` }}>
+                {c.halo !== 'none' && <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none" style={{ width: size * 0.9, height: size * 0.9, background: haloBg(c.halo), filter: 'blur(2px)' }} />}
+                {sticker && <span className="absolute -top-3 -right-1 text-[15px] z-10" style={{ animation: 'ywbob 2s ease-in-out infinite', transform: `translate(${stickerX}px, ${stickerY}px) scale(${stickerScale})`, transformOrigin: 'center' }}>{sticker}</span>}
                 {c.img ? (
                     <img src={c.img} alt={char.name}
-                        style={{ height: size * c.scale, transform: `scaleX(${c.flip ? -1 : 1}) translateY(${c.offsetY}px)`, filter: 'drop-shadow(0 4px 5px rgba(90,70,40,.4))' }}
+                        style={{ height: size * c.scale, opacity: c.opacity, transform: `scaleX(${c.flip ? -1 : 1}) translateY(${c.offsetY}px) rotate(${c.rotate}deg)`, filter: c.shadow ? 'drop-shadow(0 10px 10px rgba(80,72,76,.18))' : 'none' }}
                         className="object-contain" />
                 ) : (
                     <div className="rounded-full flex items-center justify-center font-bold"
-                        style={{ width: size * 0.55, height: size * 0.55, background: noteColor(char.id), color: PAPER.ink, border: `1.5px solid ${PAPER.edge}`, fontFamily: HAND, fontSize: size * 0.24 }}>
+                        style={{ width: size * 0.55, height: size * 0.55, opacity: c.opacity, transform: `rotate(${c.rotate}deg)`, background: noteColor(char.id), color: PAPER.ink, border: `1.5px solid ${PAPER.edge}`, fontFamily: HAND, fontSize: size * 0.24 }}>
                         {char.name.slice(0, 1)}
                     </div>
                 )}
             </div>
-            {/* 地面投影 */}
-            <div className="rounded-[50%] -mt-1" style={{ width: size * 0.5, height: size * 0.12, background: 'radial-gradient(ellipse,rgba(90,70,40,.4),transparent)' }} />
-            {/* 手账名牌 */}
-            <div className="text-[9px] font-bold mt-0.5 px-1.5 py-px whitespace-nowrap" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}`, borderRadius: 4 }}>{char.name}</div>
+            {c.shadow && <div className="rounded-[50%] -mt-1" style={{ width: size * 0.54, height: size * 0.12, transform: `translateX(${c.offsetX * 0.35}px)`, background: 'radial-gradient(ellipse, rgba(80,72,76,.16), transparent 70%)' }} />}
+            {c.nameVisible && <div className="text-[9px] font-bold mt-0.5 px-2 py-0.5 whitespace-nowrap rounded-full" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fff', border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW }}>{char.name}</div>}
         </div>
     );
 };
@@ -604,10 +663,9 @@ const ConfirmDialog: React.FC<{
 }> = ({ open, title, message, confirmText = '删除', cancelText = '取消', onConfirm, onCancel }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 bg-black/40 backdrop-blur-sm" onClick={onCancel}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-8 backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onCancel}>
             <div className="relative w-full max-w-[300px] p-4 text-center" onClick={e => e.stopPropagation()}
-                style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 14px 40px rgba(60,44,20,.4)', transform: 'rotate(-1.2deg)' }}>
-                <Tape color={TAPE_COLORS[2]} w={56} style={{ top: -9, left: '50%', marginLeft: -28, transform: 'rotate(-3deg)' }} />
+                style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_PANEL_SHADOW }}>
                 <div className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>{title}</div>
                 {message && <p className="text-[11.5px] mt-1.5 leading-relaxed whitespace-pre-wrap" style={{ color: PAPER.inkSoft }}>{message}</p>}
                 <div className="flex gap-2 mt-4">
@@ -627,12 +685,12 @@ const ActionSheet: React.FC<{
 }> = ({ open, title, actions, onClose }) => {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[300] flex items-end justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[300] flex items-end justify-center backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onClose}>
             <div className="w-full max-w-md p-3" style={{ paddingBottom: vrBottomPad('0.75rem') }} onClick={e => e.stopPropagation()}>
-                <div className="overflow-hidden" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 -4px 20px rgba(80,60,30,.25)' }}>
+                <div className="overflow-hidden" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_PANEL_SHADOW }}>
                     {title && <div className="px-4 py-2.5 text-[11px] text-center whitespace-pre-wrap leading-snug" style={{ fontFamily: HAND, color: PAPER.inkSoft, borderBottom: `1.5px dashed ${PAPER.line}` }}>{title}</div>}
                     {actions.map((a, i) => (
-                        <button key={i} onClick={() => { a.onClick(); }} className="w-full py-3 text-[13.5px] active:bg-black/5" style={{ fontFamily: HAND, color: a.danger ? PAPER.red : PAPER.ink, fontWeight: a.danger ? 700 : 500, borderTop: i > 0 ? `1.5px dashed ${PAPER.line}` : undefined }}>{a.label}</button>
+                        <button key={i} onClick={() => { a.onClick(); }} className="w-full py-3 text-[13.5px]" style={{ fontFamily: HAND, color: a.danger ? PAPER.red : PAPER.ink, fontWeight: a.danger ? 700 : 500, borderTop: i > 0 ? `1px solid ${PAPER.line}` : undefined }}>{a.label}</button>
                     ))}
                 </div>
                 <InkBtn tone="soft" onClick={onClose} className="w-full mt-2 py-3 text-[13.5px] font-medium" style={{ borderRadius: 12 }}>取消</InkBtn>
@@ -668,7 +726,7 @@ const PendingLetterRow: React.FC<{ l: VRLetter; onMenu: (l: VRLetter) => void }>
     const over = len > MAX_LETTER_CHARS;
     return (
         <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11.5px] transition-transform ${pressing ? 'scale-[0.98]' : ''}`}
-            style={{ color: PAPER.ink, background: pressing ? '#ffe9cc' : '#fffdf6', border: `1px solid ${over ? PAPER.red : PAPER.edge}` }}>
+            style={{ color: PAPER.ink, background: pressing ? VR_BLUSH : '#fffdf8', border: `1px solid ${over ? PAPER.red : PAPER.edge}` }}>
             <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="font-bold text-[10.5px]" style={{ fontFamily: HAND, color: ROOM_THEME.postoffice.ink }}>{l.pen}</span>
                 <span className="ml-auto text-[9px]" style={{ color: over ? PAPER.red : PAPER.inkFaint, fontWeight: over ? 700 : 400 }}>{over ? `${len}/${MAX_LETTER_CHARS} 超长·需精简` : '长按编辑/删除'}</span>
@@ -683,13 +741,13 @@ const LetterEditModal: React.FC<{ letter: VRLetter; onSave: (pen: string, conten
     const [pen, setPen] = useState(letter.pen);
     const [content, setContent] = useState(letter.content);
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onCancel}>
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: VR_DIALOG_SHADOW }}>
                 <div className="text-[14px] mb-2.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✉️ {title}</div>
                 <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>笔名</label>
-                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                 <label className="text-[10px] flex items-center" style={{ color: PAPER.inkSoft }}>正文<span className="ml-auto" style={{ color: charLen(content) > MAX_LETTER_CHARS ? PAPER.red : PAPER.inkFaint, fontWeight: charLen(content) > MAX_LETTER_CHARS ? 700 : 400 }}>{charLen(content)}/{MAX_LETTER_CHARS}</span></label>
-                <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="写给陌生人的话——碎碎念、日记、困惑、执念都行…" className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${charLen(content) > MAX_LETTER_CHARS ? PAPER.red : PAPER.edge}` }} />
+                <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} placeholder="写给陌生人的话——碎碎念、日记、困惑、执念都行…" className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${charLen(content) > MAX_LETTER_CHARS ? PAPER.red : PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
                     <InkBtn tone="soft" onClick={onCancel} className="flex-1 py-2 text-[12.5px]">取消</InkBtn>
                     <InkBtn tone="ink" onClick={() => onSave(pen, content)} disabled={!content.trim() || charLen(content) > MAX_LETTER_CHARS} className="flex-1 py-2 text-[12.5px] font-semibold">保存</InkBtn>
@@ -709,8 +767,8 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
         try { await navigator.clipboard?.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
     };
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onClose}>
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: VR_DIALOG_SHADOW }}>
                 <div className="text-[14px] mb-1" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🪪 邮局身份</div>
                 <p className="text-[10px] leading-snug mb-2.5" style={{ color: PAPER.inkSoft }}>这串「身份码」代表你在邮局的匿名身份。复制保存，换设备或清数据后导入，就能找回「我寄出的信」和它们的归属。</p>
                 <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>我的身份码</label>
@@ -719,7 +777,7 @@ const IdentityModal: React.FC<{ onImport: (code: string) => void; onClose: () =>
                     <InkBtn tone="ink" onClick={copy} className="shrink-0 self-stretch px-3 text-[11px] font-semibold">{copied ? '已复制' : '复制'}</InkBtn>
                 </div>
                 <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>导入身份码（换回旧身份）</label>
-                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 moropo.… 身份码" className="w-full mt-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                <input value={input} onChange={e => setInput(e.target.value)} placeholder="粘贴 moropo.… 身份码" className="w-full mt-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
                     <InkBtn tone="soft" onClick={onClose} className="flex-1 py-2 text-[12.5px]">关闭</InkBtn>
                     <InkBtn tone="ink" onClick={() => onImport(input)} disabled={!input.trim()} className="flex-1 py-2 text-[12.5px] font-semibold">导入</InkBtn>
@@ -748,12 +806,12 @@ const AdminModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         catch (e: any) { setErr('删除失败：' + (e?.message || '检查网络')); }
     };
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onClose}>
-            <div className="w-full max-w-[400px] max-h-[82vh] flex flex-col rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onClose}>
+            <div className="w-full max-w-[400px] max-h-[82vh] flex flex-col rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: VR_DIALOG_SHADOW }}>
                 <div className="text-[14px] mb-1 shrink-0" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🗄️ 邮局后台</div>
                 <p className="text-[10px] leading-snug mb-2.5 shrink-0" style={{ color: PAPER.inkSoft }}>用 worker 的 <b style={{ color: PAPER.red }}>ADMIN_TOKEN</b> 查看后端全部信件（按踩数、时间倒序，最多 200 条），可逐条删除。token 只存在本机。</p>
                 <div className="flex gap-1.5 mb-3 shrink-0">
-                    <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="ADMIN_TOKEN" className="flex-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                    <input value={token} onChange={e => setToken(e.target.value)} type="password" placeholder="ADMIN_TOKEN" className="flex-1 rounded-lg px-3 py-2 text-[11.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                     <InkBtn tone="ink" onClick={load} disabled={loading} className="shrink-0 px-3.5 text-[11px] font-semibold">{loading ? '…' : (letters ? '刷新' : '拉取')}</InkBtn>
                 </div>
                 {err && <div className="text-[10.5px] mb-2 shrink-0" style={{ color: PAPER.red }}>{err}</div>}
@@ -789,7 +847,7 @@ const InboxLetterRow: React.FC<{ l: VRLetter; onMenu: (l: VRLetter) => void; onL
     const stop = (e: React.SyntheticEvent) => e.stopPropagation();
     return (
         <div {...handlers} className={`rounded-lg p-2 mb-1.5 text-[11px] leading-snug transition-transform ${pressing ? 'scale-[0.98]' : ''}`}
-            style={{ color: PAPER.ink, background: pressing ? '#e2eef9' : '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+            style={{ color: PAPER.ink, background: pressing ? VR_BLUSH : '#fffdf8', border: `1px solid ${PAPER.edge}` }}>
             <div className="flex items-center gap-1.5 mb-0.5"><span className="font-bold text-[10.5px]" style={{ fontFamily: HAND, color: ROOM_THEME.guestbook.ink }}>{l.pen}</span></div>
             <ExpandText text={l.content} limit={90} />
             <div className="flex items-center gap-3 mt-1.5 text-[10px]">
@@ -807,17 +865,17 @@ const ReplyComposeModal: React.FC<{ letter: VRLetter; defaultPen: string; initia
     const [pen, setPen] = useState(defaultPen);
     const [content, setContent] = useState(initialContent);
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 bg-black/55 backdrop-blur-sm" onClick={onCancel}>
-            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: '0 14px 40px rgba(60,44,20,.4)' }}>
+        <div className="fixed inset-0 z-[300] flex items-center justify-center px-6 backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onCancel}>
+            <div className="w-full max-w-[340px] rounded-2xl p-4" onClick={e => e.stopPropagation()} style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, boxShadow: VR_DIALOG_SHADOW }}>
                 <div className="text-[14px] mb-2" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✍️ {title}</div>
                 <div className="rounded-lg px-3 py-2 mb-3 text-[10.5px] leading-snug max-h-24 overflow-y-auto vr-reader-scroll" style={{ color: PAPER.inkSoft, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>
                     原信（{letter.pen}）：{letter.content}
                 </div>
                 <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>你的笔名（寄出时匿名）</label>
-                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                <input value={pen} onChange={e => setPen(e.target.value)} className="w-full mt-1 mb-2.5 rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                 <label className="text-[10px]" style={{ color: PAPER.inkSoft }}>回信正文</label>
                 <textarea value={content} onChange={e => setContent(e.target.value)} rows={5} autoFocus placeholder="写下你想对这位陌生人说的话…"
-                    className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                    className="w-full mt-1 rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none vr-reader-scroll" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                 <div className="flex gap-2 mt-3.5">
                     <InkBtn tone="soft" onClick={onCancel} className="flex-1 py-2 text-[12.5px]">取消</InkBtn>
                     <InkBtn tone="ink" onClick={() => onSave(pen, content)} disabled={!content.trim()} className="flex-1 py-2 text-[12.5px] font-semibold">{cta}</InkBtn>
@@ -858,94 +916,173 @@ const WorldView: React.FC<{
         else shownIds.forEach(id => n.add(id));
         return n;
     });
-    // 房间分页：每页 6 间
-    const ROOMS_PER_PAGE = 6;
-    const [roomPage, setRoomPage] = useState(0);
-    const roomTotalPages = Math.max(1, Math.ceil(VR_ROOMS.length / ROOMS_PER_PAGE));
-    const curRoomPage = Math.min(roomPage, roomTotalPages - 1);
-    const shownRooms = VR_ROOMS.slice(curRoomPage * ROOMS_PER_PAGE, curRoomPage * ROOMS_PER_PAGE + ROOMS_PER_PAGE);
+    const liveRooms = VR_ROOMS.map(room => ({ room, occupants: occupantsByRoom[room.id] || [] }));
+    const totalOnline = liveRooms.reduce((sum, r) => sum + r.occupants.length, 0);
+    const activeRooms = liveRooms.filter(r => r.occupants.length > 0).length;
+    const focus = liveRooms
+        .slice()
+        .sort((a, b) => b.occupants.length - a.occupants.length || (a.room.id === 'plaza' ? -1 : 1))[0] || liveRooms[0];
+    const roomRailRef = useRef<HTMLDivElement | null>(null);
+    const roomDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
+    const roomSuppressClickRef = useRef(false);
+    const startRoomRailDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.pointerType === 'touch' || e.button !== 0) return;
+        const el = roomRailRef.current;
+        if (!el) return;
+        roomDragRef.current = { active: true, startX: e.clientX, scrollLeft: el.scrollLeft, moved: false };
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    };
+    const moveRoomRailDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = roomDragRef.current;
+        const el = roomRailRef.current;
+        if (!drag.active || !el) return;
+        const dx = e.clientX - drag.startX;
+        if (Math.abs(dx) < 3) return;
+        drag.moved = true;
+        roomSuppressClickRef.current = true;
+        el.scrollLeft = drag.scrollLeft - dx;
+        e.preventDefault();
+    };
+    const endRoomRailDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = roomDragRef.current;
+        if (!drag.active) return;
+        drag.active = false;
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+        if (drag.moved) window.setTimeout(() => { roomSuppressClickRef.current = false; }, 120);
+    };
+    const enterRoomFromRail = (roomId: VRRoomId, implemented: boolean) => {
+        if (roomSuppressClickRef.current) {
+            roomSuppressClickRef.current = false;
+            return;
+        }
+        if (implemented) onEnterRoom(roomId);
+    };
+    const latest = feed[0];
+    const roomStats = [
+        { label: '在线', value: totalOnline },
+        { label: '房间', value: activeRooms },
+        { label: '动态', value: feed.length },
+    ];
     return (
-    <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3.5 pt-1">
-            {shownRooms.map((room, ri) => {
-                const occupants = occupantsByRoom[room.id] || [];
-                const th = roomTheme(room.id);
-                return (
-                    <button key={room.id} onClick={() => room.implemented && onEnterRoom(room.id)}
-                        className={`relative h-40 text-left active:translate-y-px transition-transform ${room.implemented ? '' : 'opacity-80'}`}
-                        style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 4px 0 rgba(120,100,60,.12), 0 9px 16px rgba(80,64,30,.18)', transform: `rotate(${tiltOf(room.id, 2)}deg)` }}>
-                        {/* 拍立得照片窗 */}
-                        <div className="absolute left-1.5 right-1.5 top-1.5 bottom-7 overflow-hidden rounded-[7px]" style={{ border: `1px solid ${PAPER.edge}` }}>
-                            <RoomBackground roomId={room.id} />
-                        </div>
-                        {/* washi 胶带压住照片顶 */}
-                        <Tape color={th.tape} w={48} style={{ top: -6, left: '50%', marginLeft: -24, transform: `rotate(${ri % 2 ? 5 : -5}deg)`, zIndex: 5 }} />
-                        {/* 房间名手账标签 */}
-                        <span className="absolute top-2 left-2 z-[6]" style={{ transform: 'rotate(-3deg)' }}>
-                            <InkTag color={th.paper}><span style={{ color: th.ink }}>{th.sticker} {room.name}</span></InkTag>
-                        </span>
-                        {!room.implemented && <span className="absolute top-2 right-2 z-[6]"><InkTag color="#eee" style={{ fontSize: 8 }}>筹备中</InkTag></span>}
-                        {room.id === 'postoffice' && (poBadge.toCollect > 0 || poBadge.toSend > 0) && (
-                            <div className="absolute top-7 right-1.5 z-[6] flex flex-col items-end gap-1">
-                                {poBadge.toCollect > 0 && <span className="text-[8.5px] font-bold px-1.5 py-0.5 leading-none rounded-sm" style={{ fontFamily: HAND, background: PAPER.red, color: '#fff', transform: 'rotate(5deg)' }}>{poBadge.toCollect} 封回信</span>}
-                                {poBadge.toSend > 0 && <span className="text-[8.5px] font-bold px-1.5 py-0.5 leading-none rounded-sm" style={{ fontFamily: HAND, background: '#fff3c4', color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{poBadge.toSend} 待寄</span>}
-                            </div>
-                        )}
-                        {!room.implemented && (
-                            <div className="absolute inset-x-0 top-[42%] flex items-center justify-center z-[6]">
-                                <span className="text-[11px]" style={{ fontFamily: HAND, color: '#fff', background: 'rgba(90,70,40,.55)', padding: '2px 8px', borderRadius: 6 }}>蒸笼预热中…</span>
-                            </div>
-                        )}
-                        {/* 底边：在场小人缩影 + 进入 */}
-                        <div className="absolute bottom-1 left-2 right-2 flex items-end justify-between z-[6]">
-                            <div className="flex -space-x-1.5">
-                                {occupants.slice(0, 4).map(c => {
-                                    const ch = getChibi(c);
-                                    return ch.img
-                                        ? <img key={c.id} src={ch.img} className="h-8 w-8 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})`, filter: 'drop-shadow(0 2px 2px rgba(90,70,40,.4))' }} />
-                                        : <div key={c.id} className="h-6 w-6 rounded-full flex items-center justify-center text-[9px]" style={{ background: noteColor(c.id), color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{c.name.slice(0, 1)}</div>;
-                                })}
-                            </div>
-                            {room.implemented && <span className="text-[10px] font-bold flex items-center gap-0.5" style={{ fontFamily: HAND, color: th.ink }}>翻进去 <CaretRight size={10} weight="bold" /></span>}
-                        </div>
-                    </button>
-                );
-            })}
-        </div>
-        {roomTotalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 -mt-1">
-                <button onClick={() => setRoomPage(p => Math.max(0, p - 1))} disabled={curRoomPage === 0}
-                    className="h-7 w-7 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretLeft size={13} weight="bold" /></button>
-                <span className="text-[10.5px] tabular-nums" style={{ color: PAPER.inkSoft, fontFamily: HAND }}>{curRoomPage + 1} / {roomTotalPages}</span>
-                <button onClick={() => setRoomPage(p => Math.min(roomTotalPages - 1, p + 1))} disabled={curRoomPage >= roomTotalPages - 1}
-                    className="h-7 w-7 rounded-md flex items-center justify-center disabled:opacity-25 active:translate-y-px" style={{ color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }}><CaretRight size={13} weight="bold" /></button>
+    <div className="space-y-5">
+        <InsCard className="p-4">
+            <div className="flex items-start gap-3">
+                <div className="h-14 w-14 rounded-[18px] flex items-center justify-center shrink-0" style={{ background: VR_SUNSET, color: '#fff', boxShadow: '0 12px 24px -16px rgba(80,72,76,.30)' }}>
+                    <Planet size={26} weight="fill" />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="text-[19px] font-extrabold leading-tight" style={{ color: PAPER.ink }}>今日页外</div>
+                    <div className="text-[11px] mt-1 leading-relaxed" style={{ color: PAPER.inkSoft }}>
+                        {latest ? `${latest.charName} 刚在「${getRoom(latest.meta.room).name}」留下了新动态` : totalOnline ? '小人们已经接入，等下一次登录就会留下动态' : '还没有角色在线，去「接入」点亮几个小人'}
+                    </div>
+                </div>
             </div>
-        )}
+            <div className="grid grid-cols-3 gap-2 mt-4">
+                {roomStats.map(s => (
+                    <div key={s.label} className="rounded-2xl px-3 py-2 text-center" style={{ background: 'linear-gradient(135deg, #fffdf8, #f8f4f5)', border: `1px solid ${PAPER.edge}` }}>
+                        <div className="text-[17px] font-black tabular-nums" style={{ color: PAPER.ink }}>{s.value}</div>
+                        <div className="text-[9px]" style={{ color: PAPER.inkFaint }}>{s.label}</div>
+                    </div>
+                ))}
+            </div>
+        </InsCard>
+
+        <div className="relative -mx-4">
+            <div ref={roomRailRef}
+                className="px-4 overflow-x-auto no-scrollbar select-none"
+                onPointerDown={startRoomRailDrag}
+                onPointerMove={moveRoomRailDrag}
+                onPointerUp={endRoomRailDrag}
+                onPointerCancel={endRoomRailDrag}
+                onPointerLeave={endRoomRailDrag}
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain', cursor: 'grab', scrollSnapType: 'x proximity' }}>
+            <div className="flex gap-3 pb-1 min-w-max">
+                {liveRooms.map(({ room, occupants }) => (
+                    <button key={room.id} type="button" onClick={() => enterRoomFromRail(room.id, room.implemented)} className="w-[72px] shrink-0 active:translate-y-px text-center" style={{ scrollSnapAlign: 'start' }}>
+                        <div className="relative mx-auto h-[66px] w-[66px] rounded-[24px] p-[2px]" style={{ background: occupants.length ? roomTheme(room.id).cover : '#eadbe2', boxShadow: occupants.length ? '0 10px 18px -14px rgba(80,72,76,.26)' : 'none' }}>
+                            <div className="relative h-full w-full rounded-[22px] overflow-hidden" style={{ background: '#fffdf8' }}>
+                                <RoomBackground roomId={room.id} />
+                                <div className="absolute inset-x-0 bottom-1 flex justify-center -space-x-1">
+                                    {occupants.slice(0, 2).map(c => {
+                                        const ch = getChibi(c);
+                                        return ch.img
+                                            ? <span key={c.id} className="h-7 w-7 rounded-full bg-white flex items-end justify-center overflow-hidden" style={{ border: '2px solid #fff' }}><img src={ch.img} className="h-7 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})` }} /></span>
+                                            : <span key={c.id} className="h-7 w-7 rounded-full flex items-center justify-center text-[9px]" style={{ background: noteColor(c.id), color: PAPER.ink, border: '2px solid #fff' }}>{c.name.slice(0, 1)}</span>;
+                                    })}
+                                </div>
+                                {room.id === 'postoffice' && (poBadge.toCollect > 0 || poBadge.toSend > 0) && <span className="absolute top-1 right-1 h-3 w-3 rounded-full" style={{ background: PAPER.red, boxShadow: '0 0 0 2px #fff' }} />}
+                            </div>
+                        </div>
+                        <div className="mt-1 text-[10.5px] font-bold truncate" style={{ color: PAPER.ink }}>{room.name}</div>
+                        <div className="text-[8.5px]" style={{ color: occupants.length ? roomTheme(room.id).ink : PAPER.inkFaint }}>{occupants.length ? `${occupants.length} 在线` : '空闲'}</div>
+                    </button>
+                ))}
+            </div>
+            </div>
+            <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8" style={{ background: 'linear-gradient(90deg, rgba(251,250,247,0), rgba(251,250,247,.92))' }} />
+        </div>
+
+        {focus && (() => {
+            const room = focus.room;
+            const occupants = focus.occupants;
+            const th = roomTheme(room.id);
+            return (
+                <button onClick={() => room.implemented && onEnterRoom(room.id)} className="w-full text-left active:translate-y-px">
+                    <div className="relative p-2 pb-4" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,250,.92))', border: `1px solid ${PAPER.edge}`, borderRadius: 18, boxShadow: VR_CARD_SHADOW }}>
+                        <div className="relative h-44 overflow-hidden rounded-xl">
+                            <RoomBackground roomId={room.id} />
+                            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,.08), transparent 36%, rgba(80,72,76,.12) 100%)' }} />
+                            <div className="absolute top-3 left-3 right-3 flex items-start gap-2">
+                                <span className="text-[8px] font-black tracking-[0.2em] px-2 py-1 rounded-full" style={{ color: th.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }}>{th.sticker}</span>
+                                <span className="ml-auto text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: '#fffdf8', color: th.ink, border: `1px solid ${PAPER.edge}` }}>{occupants.length ? `${occupants.length} 在线` : '安静待机'}</span>
+                            </div>
+                            <div className="absolute left-4 right-4 bottom-3 flex items-end gap-2">
+                                <div className="flex -space-x-2">
+                                    {occupants.slice(0, 5).map(c => {
+                                        const ch = getChibi(c);
+                                        return ch.img
+                                            ? <span key={c.id} className="h-11 w-11 rounded-full bg-white flex items-end justify-center overflow-hidden" style={{ border: '2px solid #fff', boxShadow: '0 10px 18px -12px rgba(80,72,76,.24)' }}><img src={ch.img} className="h-11 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})` }} /></span>
+                                            : <span key={c.id} className="h-11 w-11 rounded-full flex items-center justify-center text-[12px] font-bold" style={{ background: noteColor(c.id), color: PAPER.ink, border: '2px solid #fff' }}>{c.name.slice(0, 1)}</span>;
+                                    })}
+                                </div>
+                                {occupants.length > 5 && <span className="text-[10px] font-bold rounded-full px-2 py-1" style={{ background: '#fff', color: th.ink }}>+{occupants.length - 5}</span>}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 px-1 pt-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[16px] font-extrabold truncate" style={{ color: PAPER.ink }}>{room.name}</div>
+                                <div className="text-[10.5px] mt-0.5 overflow-hidden" style={{ color: PAPER.inkSoft, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{room.blurb}</div>
+                            </div>
+                            <span className="h-9 w-9 rounded-full flex items-center justify-center shrink-0" style={{ color: '#fff', background: `linear-gradient(135deg, ${th.wash}, ${th.ink})`, boxShadow: '0 10px 18px -14px rgba(80,72,76,.30)' }}><CaretRight size={16} weight="bold" /></span>
+                        </div>
+                    </div>
+                </button>
+            );
+        })()}
 
         {novelCount === 0 && (
             <button onClick={onGoLibrary} className="w-full py-3 text-[12px] active:translate-y-px"
-                style={{ fontFamily: HAND, color: PAPER.inkSoft, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 10, background: PAPER.cream }}>
-                📚 书库还空着 · 贴一本小说进去，角色就能在图书馆翻到它 →
+                style={{ fontFamily: HAND, color: ROOM_THEME.library.ink, border: `1px solid ${PAPER.edge}`, borderRadius: 18, background: 'linear-gradient(135deg, #fff7e8, #f8f4f5)', boxShadow: VR_SOFT_SHADOW }}>
+                书库还空着 · 导入一本小说，角色就能在图书馆读到它 →
             </button>
         )}
 
         <div>
             <div className="flex items-center gap-2 mb-3 mt-1">
-                {feed.length > 0 && <span className="w-7 shrink-0" aria-hidden="true" />}
-                <Stitch className="flex-1" />
-                <span className="text-[13px] px-2" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink, transform: 'rotate(-1.5deg)' }}>✂ 贴回来的动态</span>
-                <Stitch className="flex-1" />
+                <InsSection title="空间动态" en="Feed" className="flex-1" />
                 {feed.length > 0 && (
                     <button onClick={() => manageMode ? exitManage() : setManageMode(true)}
                         aria-label={manageMode ? '退出整理' : '整理动态'}
-                        className="shrink-0 h-7 w-7 rounded-md flex items-center justify-center active:translate-y-px"
-                        style={{ border: `1px solid ${PAPER.edge}`, background: manageMode ? PAPER.red : PAPER.paper, color: manageMode ? '#fff' : PAPER.ink }}>
-                        {manageMode ? <X size={13} weight="bold" /> : <Scissors size={14} weight="bold" />}
+                        className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center active:translate-y-px"
+                        style={{ border: `1px solid ${manageMode ? PAPER.red : PAPER.edge}`, background: manageMode ? PAPER.red : '#fff', color: manageMode ? '#fff' : PAPER.inkSoft, boxShadow: VR_SOFT_SHADOW }}>
+                        {manageMode ? <X size={13} weight="bold" /> : <Trash size={14} weight="bold" />}
                     </button>
                 )}
             </div>
             {feed.length === 0 ? (
-                <p className="text-[11px] py-5 text-center leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>这一页还空着。<br />去「接入」点亮角色，ta 们到点会自己溜进来贴动态。</p>
+                <InsCard className="p-6 text-center">
+                    <p className="text-[11px] leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>暂时没有空间动态。<br />去「接入」点亮角色，ta 们到点会自己登录页外。</p>
+                </InsCard>
             ) : (
                 <>
                     {totalPages > 1 && (
@@ -962,10 +1099,10 @@ const WorldView: React.FC<{
                             <InkBtn tone="soft" onClick={toggleSelectPage} className="text-[11px] px-3 py-1.5">{allShownSelected ? '取消本页' : '选择本页'}</InkBtn>
                             <span className="text-[10.5px] tabular-nums" style={{ color: PAPER.inkSoft, fontFamily: HAND }}>已选 {selectedIds.size} 张</span>
                             <InkBtn tone="red" onClick={() => { if (selectedIds.size > 0) setConfirmBatch(true); }} disabled={selectedIds.size === 0}
-                                className="ml-auto text-[11px] font-semibold px-4 py-1.5">撕掉{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</InkBtn>
+                                className="ml-auto text-[11px] font-semibold px-4 py-1.5">删除{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}</InkBtn>
                         </div>
                     ) : (
-                        <p className="text-[9px] text-center mb-2" style={{ color: PAPER.inkFaint, fontFamily: HAND }}>长按可撕掉一张 · 点剪刀可多选整理</p>
+                        <p className="text-[9px] text-center mb-2" style={{ color: PAPER.inkFaint, fontFamily: HAND }}>长按可删除一条 · 点右侧按钮可多选整理</p>
                     )}
                     <div className="space-y-2.5">
                         {shown.map(item => <FeedCard key={item.msgId} item={item} onJump={onJump} onRequestDelete={setConfirmDel}
@@ -990,28 +1127,29 @@ const FeedCard: React.FC<{ item: FeedItem; onJump: (novelId: string | undefined,
     const th = roomTheme(item.meta.room);
     return (
         <div {...cardHandlers}
-            className={`relative p-3 pl-3.5 flex gap-3 transition-transform ${pressing ? 'scale-[0.98]' : ''} ${manageMode ? 'cursor-pointer' : ''} ${item.hidden && !selected ? 'opacity-60' : ''}`}
-            style={{ background: selected ? '#fff0c0' : pressing ? '#ffe1d6' : PAPER.paper, border: `1px solid ${selected ? PAPER.red : PAPER.edge}`, borderRadius: 9, boxShadow: '0 2px 0 rgba(120,100,60,.1), 0 6px 12px rgba(80,64,30,.14)', transform: `rotate(${tiltOf(String(item.msgId), 1.1)}deg)` }}>
-            {/* 左侧房间色书脊 */}
-            <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full" style={{ background: th.ink, opacity: .5 }} />
-            <Tape color={th.tape} w={26} style={{ top: -7, right: 14, transform: 'rotate(8deg)' }} />
-            {manageMode && (
-                <div className="self-center shrink-0 h-5 w-5 rounded-md flex items-center justify-center" style={{ border: `1.5px solid ${selected ? PAPER.red : PAPER.edge}`, background: selected ? PAPER.red : 'transparent' }}>
-                    {selected && <Check size={12} weight="bold" className="text-white" />}
+            className={`relative p-3.5 transition-transform ${pressing ? 'scale-[0.98]' : ''} ${manageMode ? 'cursor-pointer' : ''} ${item.hidden && !selected ? 'opacity-60' : ''}`}
+            style={{ background: selected ? th.paper : 'rgba(255,255,255,.94)', border: `1px solid ${selected ? th.wash : PAPER.edge}`, borderRadius: 18, boxShadow: selected ? '0 14px 30px -20px rgba(80,72,76,.24)' : VR_CARD_SHADOW }}>
+            <div className="flex items-center gap-2.5">
+                {manageMode && (
+                    <div className="shrink-0 h-5 w-5 rounded-full flex items-center justify-center" style={{ border: `1.5px solid ${selected ? PAPER.violet : PAPER.edge}`, background: selected ? PAPER.violet : 'transparent' }}>
+                        {selected && <Check size={12} weight="bold" className="text-white" />}
+                    </div>
+                )}
+                <StoryAvatar src={item.avatar} name={item.charName} size={40} active={!item.hidden} />
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[12.5px] font-extrabold truncate" style={{ color: PAPER.ink }}>{item.charName}</span>
+                        {item.hidden && <span className="text-[8px] px-1.5 py-[1px] leading-none shrink-0 rounded-full" style={{ color: PAPER.inkSoft, border: `1px solid ${PAPER.edge}`, background: PAPER.cream }}>已收起</span>}
+                    </div>
+                    <div className="text-[9.5px] truncate" style={{ color: PAPER.inkFaint }}>{new Date(item.timestamp).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
-            )}
-            {item.avatar ? <img src={item.avatar} className="h-8 w-8 rounded-full object-cover shrink-0" style={{ border: `1px solid ${PAPER.edge}` }} alt="" /> : <div className="h-8 w-8 rounded-full shrink-0" style={{ background: noteColor(item.charId), border: `1px solid ${PAPER.edge}` }} />}
-            <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 text-[11px]">
-                    <span className="font-bold" style={{ fontFamily: HAND, color: PAPER.ink }}>{item.charName}</span>
-                    <span style={{ fontFamily: HAND, color: th.ink }}>{th.sticker}{room.name}</span>
-                    {item.hidden && <span className="text-[8px] px-1.5 py-[1px] leading-none shrink-0 rounded-sm" style={{ color: PAPER.inkSoft, border: `1px solid ${PAPER.edge}`, background: PAPER.cream }}>已收起</span>}
-                    <span className="ml-auto text-[9px] shrink-0" style={{ color: PAPER.inkFaint }}>{new Date(item.timestamp).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <p className="text-[11.5px] mt-0.5 leading-snug" style={{ color: PAPER.ink }}>{stripSelfName(item.meta.activity, item.charName)}</p>
+                <span className="text-[10px] px-2 py-1 rounded-full shrink-0" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, background: th.paper, border: `1px solid ${PAPER.edge}` }}>{room.name}</span>
+            </div>
+            <div className="mt-3 rounded-2xl px-3 py-2.5" style={{ background: 'linear-gradient(135deg, #fffdf8 0%, #f8f4f5 100%)', border: `1px solid ${PAPER.edge}` }}>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: PAPER.ink }}>{stripSelfName(item.meta.activity, item.charName)}</p>
                 {item.meta.behavior && <p className="text-[10.5px] mt-1 leading-snug" style={{ color: PAPER.teal }}>{stripSelfName(item.meta.behavior, item.charName)}</p>}
                 {item.meta.annotationRefs && item.meta.annotationRefs.length > 0 ? (
-                    <div className="mt-1 space-y-0.5">
+                    <div className="mt-2 space-y-1">
                         {item.meta.annotationRefs.slice(0, 3).map((ref, i) => (
                             <button key={i} onClick={() => { if (manageMode) { onToggleSelect?.(item.msgId); return; } onJump(item.meta.novelId, ref.segIdx); }}
                                 className="block w-full text-left text-[10.5px] pl-2 leading-snug active:opacity-60" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88` }}>
@@ -1020,14 +1158,14 @@ const FeedCard: React.FC<{ item: FeedItem; onJump: (novelId: string | undefined,
                         ))}
                     </div>
                 ) : item.meta.annotationExcerpts && item.meta.annotationExcerpts.length > 0 ? (
-                    <div className="mt-1 space-y-0.5">
+                    <div className="mt-2 space-y-1">
                         {item.meta.annotationExcerpts.slice(0, 2).map((ex, i) => (
                             <div key={i} className="text-[10.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.edge}` }}>{stripLeakedAttrs(ex)}</div>
                         ))}
                     </div>
                 ) : null}
                 {item.meta.room === 'postoffice' && item.meta.letterExcerpt && (
-                    <div className="mt-1 text-[10.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88`, fontStyle: 'italic' }}>
+                    <div className="mt-2 text-[10.5px] pl-2 leading-snug" style={{ color: PAPER.inkSoft, borderLeft: `2px solid ${PAPER.red}88`, fontStyle: 'italic' }}>
                         「{item.meta.letterExcerpt.length > 70 ? item.meta.letterExcerpt.slice(0, 70) + '…' : item.meta.letterExcerpt}」
                     </div>
                 )}
@@ -1262,14 +1400,14 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
     const statLine = (remoteId?: string) => {
         const s = remoteId ? myStats[remoteId] : undefined;
         if (!s) return null;
-        return <div className="text-[9.5px] text-[#a99d82] mt-1">赞 {s.likes}　踩 {s.dislikes}　阅 {s.views}　回 {s.reply_count}</div>;
+        return <div className="text-[9.5px] text-[#b8adb2] mt-1">赞 {s.likes}　踩 {s.dislikes}　阅 {s.views}　回 {s.reply_count}</div>;
     };
 
     return (
         <div className="absolute left-3 right-3 z-20 overflow-hidden flex flex-col"
-            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 8px 22px rgba(80,64,30,.3)' }}>
+            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('0.75rem'), background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,250,.92))', border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_PANEL_SHADOW }}>
             {/* 动作行 */}
-            <div className="flex items-center gap-1.5 px-3 py-2 shrink-0" style={{ borderBottom: `1.5px dashed ${PAPER.line}` }}>
+            <div className="flex items-center gap-1.5 px-3 py-2 shrink-0" style={{ borderBottom: `1px solid ${PAPER.line}` }}>
                 <span className="text-[12px] mr-auto" style={{ fontFamily: HAND, fontWeight: 700, color: ROOM_THEME.postoffice.ink }}>✉️ 邮局</span>
                 <InkBtn tone="soft" onClick={refreshInbox} disabled={!!busy} className="text-[10.5px] px-2.5 py-1">{busy === 'inbox' ? '…' : '刷新收件箱'}</InkBtn>
                 <InkBtn tone="soft" onClick={collectReplies} disabled={!!busy} className="text-[10.5px] px-2.5 py-1">{busy === 'collect' ? '…' : '收取回复'}</InkBtn>
@@ -1280,7 +1418,7 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
 
             <div className="flex-1 flex min-h-0">
                 {/* 左侧分类栏 */}
-                <div className="w-[76px] shrink-0 overflow-y-auto vr-reader-scroll py-2 px-1.5 space-y-1" style={{ borderRight: `1.5px dashed ${PAPER.line}` }}>
+                <div className="w-[76px] shrink-0 overflow-y-auto vr-reader-scroll py-2 px-1.5 space-y-1" style={{ borderRight: `1px solid ${PAPER.line}`, background: 'rgba(255,244,247,.5)' }}>
                     {([
                         { key: 'outbox', label: '待寄出', count: outQueued.length, tone: ROOM_THEME.postoffice.ink },
                         { key: 'reply', label: '待发送', count: replyQueued.length, tone: ROOM_THEME.postoffice.ink },
@@ -1292,8 +1430,8 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         const active = tab === t.key;
                         return (
                             <button key={t.key} onClick={() => setTab(t.key)}
-                                className="w-full rounded-md px-1.5 py-2 text-left transition-colors"
-                                style={{ background: active ? '#fff0c0' : 'transparent', border: `1px solid ${active ? PAPER.edge : 'transparent'}` }}>
+                                className="w-full rounded-2xl px-1.5 py-2 text-left transition-colors"
+                                style={{ background: active ? VR_CREAM_GRAD : 'transparent', border: `1px solid ${active ? PAPER.edge : 'transparent'}` }}>
                                 <div className="flex items-center gap-1">
                                     <span className="h-2.5 w-[3px] rounded-full shrink-0" style={{ background: active ? t.tone : 'transparent' }} />
                                     <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: active ? 700 : 500, color: active ? PAPER.ink : PAPER.inkSoft }}>{t.label}</span>
@@ -1312,17 +1450,17 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         return (
                             <>
                                 {/* 寄信额度：5 封/5 小时（与后端一致），常驻显示 */}
-                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: '#f6efdd' }}>
-                                    <span className="text-[#7c6f57]">已寄 <b className={full ? 'text-[#c0563f]' : 'text-[#7a5a2b]'}>{q.count}</b><span className="text-[#a99d82]"> / {PO_SEND_QUOTA.limit}（每 {PO_SEND_QUOTA.windowMs / 3600_000} 小时）</span></span>
-                                    {q.count > 0 && <span className="text-[#a99d82]">约 {quotaResetHours(q.windowStart, PO_SEND_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
+                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: VR_BLUSH }}>
+                                    <span className="text-[#86777e]">已寄 <b className={full ? 'text-[#b9909d]' : 'text-[#b08055]'}>{q.count}</b><span className="text-[#b8adb2]"> / {PO_SEND_QUOTA.limit}（每 {PO_SEND_QUOTA.windowMs / 3600_000} 小时）</span></span>
+                                    {q.count > 0 && <span className="text-[#b8adb2]">约 {quotaResetHours(q.windowStart, PO_SEND_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
                                 </div>
-                                {outQueued.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">角色在邮局写的漂流信会排在这里，你确认后一键寄出。也可以自己写一封。寄出时笔名会自动匿名。</p> : (
+                                {outQueued.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">角色在邮局写的漂流信会排在这里，你确认后一键寄出。也可以自己写一封。寄出时笔名会自动匿名。</p> : (
                                     <>
                                         <PagedList items={outQueued} perPage={6} render={l => <PendingLetterRow key={l.id} l={l} onMenu={setMenuFor} />} />
-                                        <button onClick={sendOutbox} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fbf3e0] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'send' ? '寄出中…' : full ? `寄信已到上限（${PO_SEND_QUOTA.limit} 封/${PO_SEND_QUOTA.windowMs / 3600_000}h）` : `一键寄出（${outQueued.length}）`}</button>
+                                        <button onClick={sendOutbox} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fffdf8] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'send' ? '寄出中…' : full ? `寄信已到上限（${PO_SEND_QUOTA.limit} 封/${PO_SEND_QUOTA.windowMs / 3600_000}h）` : `一键寄出（${outQueued.length}）`}</button>
                                     </>
                                 )}
-                                <button onClick={startCompose} className="w-full mt-1.5 rounded-full py-1.5 text-[11px] text-[#3f3526]" style={{ border: '1px solid #c9b793' }}>自己写一封新漂流信</button>
+                                <button onClick={startCompose} className="w-full mt-1.5 rounded-full py-1.5 text-[11px] text-[#50484c]" style={{ border: '1px solid #e7dde1' }}>自己写一封新漂流信</button>
                             </>
                         );
                     })()}
@@ -1333,24 +1471,24 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                         return (
                             <>
                                 {/* 回信日额度：常驻显示，用完锁发送 */}
-                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: '#f6efdd' }}>
-                                    <span className="text-[#7c6f57]">今日已回 <b className={full ? 'text-[#c0563f]' : 'text-[#7a5a2b]'}>{rq.count}</b><span className="text-[#a99d82]"> / {PO_REPLY_QUOTA.limit}</span></span>
-                                    {rq.count > 0 && <span className="text-[#a99d82]">约 {quotaResetHours(rq.windowStart, PO_REPLY_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
+                                <div className="flex items-center justify-between gap-2 text-[10px] mb-2.5 px-2 py-1.5 rounded-lg" style={{ background: VR_BLUSH }}>
+                                    <span className="text-[#86777e]">今日已回 <b className={full ? 'text-[#b9909d]' : 'text-[#b08055]'}>{rq.count}</b><span className="text-[#b8adb2]"> / {PO_REPLY_QUOTA.limit}</span></span>
+                                    {rq.count > 0 && <span className="text-[#b8adb2]">约 {quotaResetHours(rq.windowStart, PO_REPLY_QUOTA.windowMs)} 小时后{full ? '恢复' : '归零'}</span>}
                                 </div>
-                                {replyQueued.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">你亲自写好、还没发出的回信会排在这里。</p> : (
+                                {replyQueued.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">你亲自写好、还没发出的回信会排在这里。</p> : (
                                     <>
                                         <PagedList items={replyQueued} perPage={6} render={l => (
-                                            <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: '#f6efdd' }}>
+                                            <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: VR_BLUSH }}>
                                                 <div className="flex items-start gap-1.5 mb-1">
-                                                    <p className="flex-1 min-w-0 text-[10.5px] text-[#7c6f57] leading-snug">原信（{l.pen}）：<ExpandText text={l.content} limit={80} /></p>
-                                                    <button onClick={() => setReplyMenu(l)} className="shrink-0 text-[#a99d82] text-[14px] leading-none px-1 -mt-0.5 active:text-[#3f3526]">···</button>
+                                                    <p className="flex-1 min-w-0 text-[10.5px] text-[#86777e] leading-snug">原信（{l.pen}）：<ExpandText text={l.content} limit={80} /></p>
+                                                    <button onClick={() => setReplyMenu(l)} className="shrink-0 text-[#b8adb2] text-[14px] leading-none px-1 -mt-0.5 active:text-[#50484c]">···</button>
                                                 </div>
-                                                <p className="text-[11.5px] text-[#3f3526] leading-snug whitespace-pre-wrap">回信（{l.reply!.pen}）：{l.reply!.content}</p>
+                                                <p className="text-[11.5px] text-[#50484c] leading-snug whitespace-pre-wrap">回信（{l.reply!.pen}）：{l.reply!.content}</p>
                                                 <input value={l.reply!.userNote || ''} onChange={e => setUserNote(l, e.target.value)} placeholder="想补充几句一起回？（选填）"
-                                                    className="w-full mt-1.5 rounded-md bg-[#fffdf6] px-2 py-1 text-[11px] text-[#3f3526] placeholder-[#a99d82] outline-none" />
+                                                    className="w-full mt-1.5 rounded-md bg-[#fffdf8] px-2 py-1 text-[11px] text-[#50484c] placeholder-[#b8adb2] outline-none" />
                                             </div>
                                         )} />
-                                        <button onClick={sendReplies} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fbf3e0] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'reply' ? '发送中…' : full ? `今日已回满 ${PO_REPLY_QUOTA.limit} 封` : `一键发送回信（${replyQueued.length}）`}</button>
+                                        <button onClick={sendReplies} disabled={!!busy || full} className="w-full mt-1 rounded-full py-2 text-[12px] font-semibold text-[#fffdf8] disabled:opacity-40" style={{ background: PAPER.ink }}>{busy === 'reply' ? '发送中…' : full ? `今日已回满 ${PO_REPLY_QUOTA.limit} 封` : `一键发送回信（${replyQueued.length}）`}</button>
                                     </>
                                 )}
                             </>
@@ -1358,38 +1496,38 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                     })()}
 
                     {tab === 'replied' && (
-                        repliedSent.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">已经发出去的回信会归档在这里（连同原来的陌生来信）。本地留存，可随设备备份导出/导入。</p> : (
+                        repliedSent.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">已经发出去的回信会归档在这里（连同原来的陌生来信）。本地留存，可随设备备份导出/导入。</p> : (
                             <PagedList items={repliedSent} perPage={6} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: '#f6efdd' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5" style={{ background: VR_BLUSH }}>
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <span className="text-[#2f5f86] text-[9.5px]">来自 {l.pen}</span>
-                                        <span className="text-[8px] text-[#2f8a80] border border-emerald-300/30 rounded-full px-1.5 leading-tight">已发出</span>
+                                        <span className="text-[#6f8bbd] text-[9.5px]">来自 {l.pen}</span>
+                                        <span className="text-[8px] text-[#8bbca2] rounded-full px-1.5 leading-tight" style={{ border: `1px solid ${PAPER.edge}` }}>已发出</span>
                                     </div>
-                                    <p className="text-[10.5px] text-[#7c6f57] leading-snug mb-1">原信：<ExpandText text={l.content} limit={80} /></p>
-                                    <p className="text-[11.5px] text-[#3f3526] leading-snug whitespace-pre-wrap pl-2 border-l-2 border-amber-300/40">回信（{l.reply!.pen}）：{l.reply!.content}{l.reply!.userNote ? `\n——\n${l.reply!.userNote}` : ''}</p>
+                                    <p className="text-[10.5px] text-[#86777e] leading-snug mb-1">原信：<ExpandText text={l.content} limit={80} /></p>
+                                    <p className="text-[11.5px] text-[#50484c] leading-snug whitespace-pre-wrap pl-2" style={{ borderLeft: `2px solid ${PAPER.edge}` }}>回信（{l.reply!.pen}）：{l.reply!.content}{l.reply!.userNote ? `\n——\n${l.reply!.userNote}` : ''}</p>
                                 </div>
                             )} />
                         )
                     )}
 
                     {tab === 'inbox' && (
-                        inboxWaiting.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">点上方「刷新收件箱」捞陌生人寄来的信。收到后长按某封，指定角色去回、或你亲自回。</p> : (
+                        inboxWaiting.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">点上方「刷新收件箱」捞陌生人寄来的信。收到后长按某封，指定角色去回、或你亲自回。</p> : (
                             <>
-                                <p className="text-[9.5px] text-[#a99d82] mb-1.5 leading-snug">陌生人寄来的信。等角色逛到邮局会自己回，也可以<b className="text-[#2f5f86]">长按某封信</b>，指定角色去回、或你亲自回。</p>
+                                <p className="text-[9.5px] text-[#b8adb2] mb-1.5 leading-snug">陌生人寄来的信。等角色逛到邮局会自己回，也可以<b className="text-[#6f8bbd]">长按某封信</b>，指定角色去回、或你亲自回。</p>
                                 <PagedList items={inboxWaiting} perPage={7} render={l => <InboxLetterRow key={l.id} l={l} onMenu={setInboxMenu} onLike={onLike} onDislike={onDislike} />} />
                             </>
                         )
                     )}
 
                     {tab === 'drift' && (
-                        sentAwaiting.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">已寄出、还在等陌生人回信的漂流信会显示在这里。</p> : (
+                        sentAwaiting.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">已寄出、还在等陌生人回信的漂流信会显示在这里。</p> : (
                             <PagedList items={sentAwaiting} perPage={7} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: '#f6efdd' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: VR_BLUSH }}>
                                     <div className="flex items-start gap-1.5">
-                                        <div className="flex-1 min-w-0 text-[#3f3526] leading-snug"><ExpandText text={l.content} limit={70} /></div>
-                                        <button onClick={() => setSentMenu(l)} className="shrink-0 text-[#a99d82] text-[14px] leading-none px-1 -mt-0.5 active:text-[#3f3526]">···</button>
+                                        <div className="flex-1 min-w-0 text-[#50484c] leading-snug"><ExpandText text={l.content} limit={70} /></div>
+                                        <button onClick={() => setSentMenu(l)} className="shrink-0 text-[#b8adb2] text-[14px] leading-none px-1 -mt-0.5 active:text-[#50484c]">···</button>
                                     </div>
-                                    {l.released && <span className="inline-block mt-1 text-[8px] text-[#a99d82] border border-[#c9b793] rounded-full px-1.5 leading-tight">已停止传播</span>}
+                                    {l.released && <span className="inline-block mt-1 text-[8px] text-[#b8adb2] border border-[#e7dde1] rounded-full px-1.5 leading-tight">已停止传播</span>}
                                     {statLine(l.remoteId)}
                                 </div>
                             )} />
@@ -1397,22 +1535,22 @@ const PostOfficePanel: React.FC<{ addToast?: (m: string, t?: any) => void; chara
                     )}
 
                     {tab === 'box' && (
-                        archived.length === 0 ? <p className="text-[10.5px] text-[#a99d82] leading-relaxed">收到陌生人回信、被角色读过封存的信会留档在这里。</p> : (
+                        archived.length === 0 ? <p className="text-[10.5px] text-[#b8adb2] leading-relaxed">收到陌生人回信、被角色读过封存的信会留档在这里。</p> : (
                             <PagedList items={archived} perPage={5} render={l => (
-                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: '#f6efdd' }}>
+                                <div key={l.id} className="rounded-lg p-2 mb-1.5 text-[11px]" style={{ background: VR_BLUSH }}>
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <span className="text-[#7a5a2b] text-[9.5px]">{l.pen}的信</span>
-                                        {l.status === 'sealed' && <span className="text-[8px] text-[#7c6f57] border border-amber-300/30 rounded-full px-1.5 leading-tight">已封存</span>}
-                                        {l.released && <span className="text-[8px] text-[#a99d82] border border-[#c9b793] rounded-full px-1.5 leading-tight">已停止传播</span>}
-                                        <button onClick={() => setSentMenu(l)} className="ml-auto shrink-0 text-[#a99d82] text-[14px] leading-none px-1 active:text-[#3f3526]">···</button>
+                                        <span className="text-[#b08055] text-[9.5px]">{l.pen}的信</span>
+                                        {l.status === 'sealed' && <span className="text-[8px] text-[#86777e] rounded-full px-1.5 leading-tight" style={{ border: `1px solid ${PAPER.edge}` }}>已封存</span>}
+                                        {l.released && <span className="text-[8px] text-[#b8adb2] border border-[#e7dde1] rounded-full px-1.5 leading-tight">已停止传播</span>}
+                                        <button onClick={() => setSentMenu(l)} className="ml-auto shrink-0 text-[#b8adb2] text-[14px] leading-none px-1 active:text-[#50484c]">···</button>
                                     </div>
-                                    <div className="text-[#3f3526] leading-snug mb-1"><ExpandText text={l.content} limit={70} /></div>
+                                    <div className="text-[#50484c] leading-snug mb-1"><ExpandText text={l.content} limit={70} /></div>
                                     {statLine(l.remoteId)}
                                     {(l.repliesReceived || []).map((r, i) => (
-                                        <div key={i} className="text-[11px] text-[#3f3526] pl-2 border-l-2 border-amber-300/40 leading-snug mt-1"><span className="font-bold">{r.pen}</span> 回：<ExpandText text={r.content} limit={120} /></div>
+                                        <div key={i} className="text-[11px] text-[#50484c] pl-2 leading-snug mt-1" style={{ borderLeft: `2px solid ${PAPER.edge}` }}><span className="font-bold">{r.pen}</span> 回：<ExpandText text={r.content} limit={120} /></div>
                                     ))}
                                     {l.reaction?.content && (
-                                        <div className="text-[10.5px] text-[#2f8a80] mt-1.5 pl-2 border-l-2 border-pink-300/40 leading-snug">读后：{l.reaction.content}</div>
+                                        <div className="text-[10.5px] text-[#8bbca2] mt-1.5 pl-2 leading-snug" style={{ borderLeft: `2px solid ${PAPER.red}66` }}>读后：{l.reaction.content}</div>
                                     )}
                                 </div>
                             )} />
@@ -1584,31 +1722,30 @@ const RoomScene: React.FC<{
     }, []);
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: PAPER.page }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: VR_PAGE_BG }}>
             <VRStyleTag />
             <div className="relative flex-1 overflow-hidden">
                 <RoomBackground roomId={roomId} />
-                {/* 顶栏（纸条 + 胶带） */}
+                {/* 顶栏 */}
                 <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-3 pb-3 z-[120]"
                     style={{ paddingTop: VR_TOP }}>
-                    <button onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}><CaretLeft size={18} weight="bold" /></button>
-                    <span className="relative px-2.5 py-1 text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 7, transform: 'rotate(-1.5deg)' }}>
-                        <Tape color={th.tape} w={34} style={{ top: -7, left: 8, transform: 'rotate(-7deg)' }} />
-                        {th.sticker} {room.name}
+                    <button onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-full active:translate-y-px" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: VR_SOFT_SHADOW }}><CaretLeft size={18} weight="bold" /></button>
+                    <span className="px-3 py-1.5 text-[14px] rounded-full" style={{ fontFamily: HAND, fontWeight: 800, color: th.ink, background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW }}>
+                        {room.name}
                     </span>
                     <div className="ml-auto flex items-center gap-1.5">
                         {isPlaza && occupants.length > 0 && (
-                            <button onClick={() => setPhotoOpen(true)} className="flex items-center gap-1 text-[10.5px] px-2.5 py-1.5 rounded-lg active:translate-y-px" style={{ fontFamily: HAND, background: '#fff3c4', border: `1px solid ${PAPER.edge}`, color: PAPER.ink, boxShadow: '0 2px 0 rgba(0,0,0,.12)' }}>
+                            <button onClick={() => setPhotoOpen(true)} className="flex items-center gap-1 text-[10.5px] px-2.5 py-1.5 rounded-full active:translate-y-px" style={{ fontFamily: HAND, background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, color: th.ink, boxShadow: VR_SOFT_SHADOW }}>
                                 <Camera size={13} weight="bold" /> 合影
                             </button>
                         )}
                         {occupants.length > 0 && (
                             <button onClick={() => setHideChibi(h => !h)} title={hideChibi ? '显示小人' : '隐藏小人（避免挡住文字）'}
-                                className="text-[10.5px] px-2.5 py-1.5 rounded-lg active:translate-y-px" style={{ fontFamily: HAND, background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}>
+                                className="text-[10.5px] px-2.5 py-1.5 rounded-full active:translate-y-px" style={{ fontFamily: HAND, background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, color: PAPER.inkSoft, boxShadow: VR_SOFT_SHADOW }}>
                                 {hideChibi ? '显示' : '藏起小人'}
                             </button>
                         )}
-                        <span className="text-[10px] px-1.5 py-1 rounded" style={{ fontFamily: HAND, color: PAPER.inkSoft, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{occupants.length} 在场</span>
+                        <span className="text-[10px] px-2 py-1 rounded-full" style={{ fontFamily: HAND, color: '#fff', background: `linear-gradient(135deg, ${th.wash}, ${th.ink})`, border: '1px solid rgba(255,255,255,.65)', boxShadow: '0 10px 18px -14px rgba(80,72,76,.24)' }}>{occupants.length} 在线</span>
                     </div>
                 </div>
 
@@ -1617,8 +1754,7 @@ const RoomScene: React.FC<{
                     <div className="absolute left-3 right-3 z-20" style={{ top: VR_ROOM_PANEL_TOP }}>
                         {np ? (
                             <div className="relative p-2.5 flex items-center gap-3"
-                                style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 6px 16px rgba(80,64,30,.22)', transform: 'rotate(-1deg)' }}>
-                                <Tape color={th.tape} w={40} style={{ top: -7, left: 18, transform: 'rotate(-6deg)' }} />
+                                style={{ background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,250,.9))', border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_PANEL_SHADOW }}>
                                 {np.song.albumPic
                                     ? <img src={np.song.albumPic} className="h-14 w-14 rounded-lg object-cover" style={{ border: `2px solid ${PAPER.edge}`, animation: npPlaying ? 'spin 8s linear infinite' : undefined }} alt="" />
                                     : <div className="h-14 w-14 rounded-lg flex items-center justify-center" style={{ background: th.paper, border: `2px solid ${PAPER.edge}` }}><MusicNotes size={22} weight="fill" style={{ color: th.ink }} /></div>}
@@ -1627,18 +1763,18 @@ const RoomScene: React.FC<{
                                     <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>{np.song.name}</div>
                                     <div className="text-[10.5px] truncate" style={{ color: PAPER.inkSoft }}>{np.song.artists}</div>
                                 </div>
-                                <button onClick={playNow} className="h-10 w-10 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0" style={{ background: th.ink }}>
+                                <button onClick={playNow} className="h-10 w-10 rounded-full flex items-center justify-center active:scale-90 transition-transform shrink-0" style={{ background: `linear-gradient(135deg, ${th.wash}, ${th.ink})`, boxShadow: '0 12px 22px -14px rgba(80,72,76,.30)' }}>
                                     {npPlaying ? <Pause size={18} weight="fill" className="text-white" /> : <Play size={18} weight="fill" className="text-white ml-0.5" />}
                                 </button>
                             </div>
                         ) : (
-                            <div className="relative p-3 text-center" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 4px 12px rgba(80,64,30,.18)' }}>
+                            <div className="relative p-3 text-center" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 20, boxShadow: VR_CARD_SHADOW }}>
                                 <p className="text-[11px]" style={{ fontFamily: HAND, color: PAPER.ink }}>磁带机还空着。让有音乐人格的角色逛进来，ta 就会点一首。</p>
                                 <p className="text-[9.5px] mt-1" style={{ color: PAPER.inkSoft }}>没有音乐人格？去「音乐」App 给角色生成一个网易云档案。</p>
                             </div>
                         )}
                         {musicState?.queue && musicState.queue.length > 0 && (
-                            <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 overflow-x-auto no-scrollbar" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 8 }}>
+                            <div className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1.5 overflow-x-auto no-scrollbar" style={{ background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, borderRadius: 16 }}>
                                 <Queue size={12} weight="bold" className="shrink-0" style={{ color: th.ink }} />
                                 {musicState.queue.slice(0, 6).map((q, i) => (
                                     <span key={i} className="text-[9.5px] whitespace-nowrap shrink-0" style={{ color: PAPER.inkSoft }}>《{q.song.name}》<span style={{ color: PAPER.inkFaint }}>·{q.charName}</span>{i < Math.min(5, musicState.queue.length - 1) ? ' ·' : ''}</span>
@@ -1660,11 +1796,11 @@ const RoomScene: React.FC<{
                     }
                     return (
                         <div className="absolute left-3 right-3 z-20 overflow-hidden flex flex-col"
-                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 8px 22px rgba(80,64,30,.28)' }}>
-                            <div className="px-3 py-2 text-[12px]" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, borderBottom: `1.5px dashed ${PAPER.line}` }}>📌 便签留言墙</div>
+                            style={{ top: VR_ROOM_PANEL_TOP, bottom: vrBottomPad('4rem'), background: 'linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,253,250,.92))', border: `1px solid ${PAPER.edge}`, borderRadius: 24, boxShadow: VR_PANEL_SHADOW }}>
+                            <div className="px-3 py-2 text-[12px]" style={{ fontFamily: HAND, fontWeight: 700, color: th.ink, borderBottom: `1px solid ${PAPER.line}` }}>留言频道</div>
                             <div className="flex-1 overflow-y-auto vr-reader-scroll px-3 py-3 space-y-3">
                                 {groups.length === 0 ? (
-                                    <p className="text-[11px] text-center py-6" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>这面墙还空着。贴上第一张便签，或等角色们来开帖。</p>
+                                    <p className="text-[11px] text-center py-6" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>频道还空着。发送第一条消息，或等角色们来开聊。</p>
                                 ) : groups.map(g => {
                                     const head = g[0];
                                     const isUser = head.authorId === 'user';
@@ -1682,7 +1818,7 @@ const RoomScene: React.FC<{
                                                 </div>
                                                 <div className="mt-1 space-y-1">
                                                     {g.map((m, mi) => (
-                                                        <div key={m.id} className="text-[12.5px] leading-relaxed px-2.5 py-1.5 w-fit max-w-full" style={{ color: PAPER.ink, background: noteColor(head.authorId + mi), border: `1px solid ${PAPER.edge}`, borderRadius: 6, transform: `rotate(${tiltOf(m.id, 1.4)}deg)` }}>
+                                                        <div key={m.id} className="text-[12.5px] leading-relaxed px-2.5 py-1.5 w-fit max-w-full" style={{ color: PAPER.ink, background: noteColor(head.authorId + mi), border: `1px solid ${PAPER.edge}`, borderRadius: 12 }}>
                                                             {m.replyToName && <span className="text-[10px] mr-1" style={{ color: PAPER.red }}>↩{m.replyToName}</span>}
                                                             {m.content}
                                                         </div>
@@ -1724,14 +1860,14 @@ const RoomScene: React.FC<{
                 {/* 留言簿：用户发言（广播给所有接入角色） */}
                 {isGuestbook && (
                     <div className="absolute left-0 right-0 z-30 flex items-center gap-2 px-3 py-2.5"
-                        style={{ bottom: vrBottomPad('0px'), background: `linear-gradient(0deg, ${PAPER.page}, transparent)` }}>
+                        style={{ bottom: vrBottomPad('0px'), background: 'linear-gradient(0deg, rgba(255,248,251,.96), rgba(255,248,251,.78), transparent)' }}>
                         <input value={postText} onChange={e => setPostText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') submitPost(); }}
-                            placeholder={`以 ${userName} 的身份贴一张便签…`}
-                            className="flex-1 rounded-lg px-4 py-2 text-[12.5px] outline-none"
-                            style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.paper, border: `1px solid ${PAPER.edge}` }} />
+                            placeholder={`以 ${userName} 的身份发一条消息…`}
+                            className="flex-1 rounded-full px-4 py-2 text-[12.5px] outline-none"
+                            style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.cream, border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW }} />
                         <InkBtn tone="ink" onClick={submitPost} disabled={!postText.trim() || posting} className="h-9 px-4 text-[12px] font-semibold shrink-0">
-                            {posting ? '…' : '贴上'}
+                            {posting ? '…' : '发送'}
                         </InkBtn>
                     </div>
                 )}
@@ -1745,17 +1881,17 @@ const RoomScene: React.FC<{
                 const cyclePose = () => { const idx = POSE_LIST.findIndex(p => p.key === curPose); patchChibi(detail, { pose: POSE_LIST[(idx + 1) % POSE_LIST.length].key }); };
                 const cycleSticker = () => { const idx = STICKER_CHOICES.indexOf(cur?.sticker || ''); patchChibi(detail, { sticker: STICKER_CHOICES[(idx + 1) % STICKER_CHOICES.length] }); };
                 return (
-                <div className="absolute inset-0 flex items-end bg-black/40" style={{ zIndex: 200 }} onClick={() => setDetail(null)}>
-                    <div className="w-full rounded-t-2xl p-4" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+                <div className="absolute inset-0 flex items-end backdrop-blur-sm" style={{ zIndex: 200, background: VR_OVERLAY_BG }} onClick={() => setDetail(null)}>
+                    <div className="w-full rounded-t-[28px] p-4" style={{ background: PAPER.paper, borderTop: `1px solid ${PAPER.edge}`, boxShadow: '0 -22px 60px -26px rgba(80,72,76,.24)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-2 mb-2.5">
-                            {detail.avatar ? <img src={detail.avatar} className="h-9 w-9 rounded-full object-cover" style={{ border: `1px solid ${PAPER.edge}` }} alt="" /> : <div className="h-9 w-9 rounded-full" style={{ background: noteColor(detail.id), border: `1px solid ${PAPER.edge}` }} />}
+                            <StoryAvatar src={detail.avatar} name={detail.name} size={36} active />
                             <span className="font-bold text-[15px]" style={{ fontFamily: HAND, color: PAPER.ink }}>{detail.name}</span>
-                            {detail.id === 'user' && <InkTag color="#d7e7f6" style={{ fontSize: 9 }}>就是你</InkTag>}
-                            <button onClick={() => setDetail(null)} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>
+                            {detail.id === 'user' && <InkTag color="#f3f8ff" style={{ fontSize: 9 }}>就是你</InkTag>}
+                            <button onClick={() => setDetail(null)} className="ml-auto h-7 w-7 flex items-center justify-center rounded-full" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>
                         </div>
                         {/* 捏小人动作行 */}
                         <div className="flex flex-wrap gap-1.5 mb-3">
-                            <InkBtn tone="soft" onClick={() => dressUp(detail)} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Scissors size={12} weight="bold" /> 换装</InkBtn>
+                            <InkBtn tone="soft" onClick={() => dressUp(detail)} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><MagicWand size={12} weight="bold" /> 换装</InkBtn>
                             <InkBtn tone="soft" onClick={cyclePose} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><HandWaving size={12} weight="bold" /> 摆姿势 · {POSE_LIST.find(p => p.key === curPose)?.label}</InkBtn>
                             <InkBtn tone="soft" onClick={cycleSticker} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Sticker size={12} weight="bold" /> 贴纸 {cur?.sticker || '＋'}</InkBtn>
                             <InkBtn tone="soft" onClick={() => poke(detail)} className="text-[11px] px-2.5 py-1.5 flex items-center gap-1"><Smiley size={12} weight="bold" /> 逗ta</InkBtn>
@@ -1787,26 +1923,25 @@ const RoomScene: React.FC<{
                 );
             })()}
 
-            {/* 世界房间 · 合影（拍立得） */}
+            {/* 世界房间 · 合影 */}
             {photoOpen && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/55 px-4" style={{ zIndex: 240 }} onClick={() => setPhotoOpen(false)}>
-                    <div className="relative w-full max-w-[340px] p-3 pb-10" onClick={e => e.stopPropagation()}
-                        style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}`, borderRadius: 4, boxShadow: '0 18px 50px rgba(0,0,0,.5)', transform: 'rotate(-1.5deg)' }}>
-                        <Tape color={th.tape} w={80} style={{ top: -12, left: '50%', marginLeft: -40, transform: 'rotate(-3deg)' }} />
-                        <button onClick={() => setPhotoOpen(false)} className="absolute top-1 right-1 h-7 w-7 flex items-center justify-center rounded-lg z-10" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={15} weight="bold" /></button>
-                        <div className="relative h-52 overflow-hidden rounded-[3px]" style={{ border: `1px solid ${PAPER.edge}` }}>
+                <div className="absolute inset-0 flex items-center justify-center px-4 backdrop-blur-sm" style={{ zIndex: 240, background: VR_OVERLAY_BG }} onClick={() => setPhotoOpen(false)}>
+                    <div className="relative w-full max-w-[340px] p-3 pb-12 animate-develop" onClick={e => e.stopPropagation()}
+                        style={{ ['--pl-rot' as any]: '-1.2deg', background: '#fff', borderRadius: 12, boxShadow: VR_DIALOG_SHADOW }}>
+                        <button onClick={() => setPhotoOpen(false)} className="absolute top-2 right-2 h-7 w-7 flex items-center justify-center rounded-full z-10" style={{ background: 'rgba(255,255,255,.92)', border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={15} weight="bold" /></button>
+                        <div className="relative h-52 overflow-hidden rounded-md">
                             <RoomBackground roomId={roomId} />
                             <div className="absolute inset-x-0 bottom-1 flex items-end justify-center gap-0.5 px-2">
                                 {occupants.slice(0, 8).map(c => {
                                     const ch = getChibi(liveOf(c));
                                     return ch.img
-                                        ? <img key={c.id} src={ch.img} className="h-20 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})`, filter: 'drop-shadow(0 3px 3px rgba(90,70,40,.45))' }} />
+                                        ? <img key={c.id} src={ch.img} className="h-20 object-contain object-bottom" alt="" style={{ transform: `scaleX(${ch.flip ? -1 : 1})`, filter: 'drop-shadow(0 6px 7px rgba(80,72,76,.20))' }} />
                                         : <div key={c.id} className="h-10 w-10 rounded-full flex items-center justify-center text-[11px]" style={{ background: noteColor(c.id), color: PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{c.name.slice(0, 1)}</div>;
                                 })}
                             </div>
                         </div>
-                        <div className="text-center text-[13px] mt-2" style={{ fontFamily: HAND, color: PAPER.ink }}>页外 · 世界房间合影 ☆</div>
-                        <div className="text-center text-[9.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>{new Date().toLocaleDateString('zh-CN')} · {occupants.length} 个小人 · 截图留念</div>
+                        <div className="absolute left-3 right-3 bottom-5 text-center text-[13px]" style={{ fontFamily: 'var(--font-hand)', color: PAPER.ink }}>页外 · 世界房间合影</div>
+                        <div className="absolute left-3 right-3 bottom-2 text-center text-[9.5px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>{new Date().toLocaleDateString('zh-CN')} · {occupants.length} 个小人 · 截图留念</div>
                     </div>
                 </div>
             )}
@@ -1820,17 +1955,18 @@ const LibraryView: React.FC<{
     onOpen: (n: VRWorldNovel) => void; onAdd: () => void; onDelete: (id: string) => void;
 }> = ({ novels, characters, onOpen, onAdd, onDelete }) => (
     <div className="space-y-3">
-        <InkBtn tone="ink" onClick={onAdd} className="w-full py-2.5 text-[13px] font-bold flex items-center justify-center gap-1.5" style={{ borderRadius: 10 }}>
-            <Plus size={16} weight="bold" /> 贴一本小说进来（.txt）
+        <InsSection title="页外书库" en="Library" />
+        <InkBtn tone="ink" onClick={onAdd} className="w-full py-2.5 text-[13px] font-bold flex items-center justify-center gap-1.5">
+            <Plus size={16} weight="bold" /> 导入小说（.txt）
         </InkBtn>
         {novels.length === 0 ? (
-            <p className="text-[11px] py-6 text-center leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>书架还空着。贴进来的小说是所有角色共享的读物，每个角色各自留批注、各自记书签。</p>
+            <InsCard className="p-6 text-center">
+                <p className="text-[11px] leading-relaxed" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>书库还空着。导入的小说是所有角色共享的读物，每个角色各自留批注、各自记书签。</p>
+            </InsCard>
         ) : novels.map(novel => {
             const readers = characters.filter(c => getBookmark(c.vrState?.novelBookmarks, novel.id) > 0);
             return (
-                <div key={novel.id} className="relative p-3.5 pl-4" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 10, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(novel.id, 0.8)}deg)` }}>
-                    <span className="absolute left-0 top-3 bottom-3 w-[4px] rounded-full" style={{ background: ROOM_THEME.library.ink, opacity: .55 }} />
-                    <Tape color={ROOM_THEME.library.tape} w={30} style={{ top: -7, right: 18, transform: 'rotate(7deg)' }} />
+                <InsCard key={novel.id} className="p-3.5 pl-4" edge={ROOM_THEME.library.ink}>
                     <div className="flex items-start gap-2">
                         <BookOpen size={18} weight="fill" className="mt-0.5 shrink-0" style={{ color: ROOM_THEME.library.ink }} />
                         <div className="flex-1 min-w-0">
@@ -1849,8 +1985,8 @@ const LibraryView: React.FC<{
                             })}
                         </div>
                     )}
-                    <button onClick={() => onOpen(novel)} className="mt-2 text-[11px] font-semibold flex items-center gap-0.5 active:opacity-70" style={{ fontFamily: HAND, color: ROOM_THEME.library.ink }}>翻开读 / 看批注 <CaretRight size={12} weight="bold" /></button>
-                </div>
+                    <button onClick={() => onOpen(novel)} className="mt-2 text-[11px] font-semibold flex items-center gap-0.5 active:opacity-70" style={{ fontFamily: HAND, color: ROOM_THEME.library.ink }}>打开阅读 / 看批注 <CaretRight size={12} weight="bold" /></button>
+                </InsCard>
             );
         })}
     </div>
@@ -1996,7 +2132,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
         <div className="fixed inset-0 z-50 flex flex-col" style={{ background: theme.bg }}>
             {/* 顶栏 */}
             <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ borderBottom: `1px solid ${theme.accent}22`, paddingTop: VR_TOP }}>
-                <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:bg-black/5" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
+                <button onClick={onClose} className="p-1.5 -ml-1.5 rounded-full active:opacity-60" style={{ color: theme.text }}><X size={20} weight="bold" /></button>
                 <div className="min-w-0 flex-1">
                     <div className="text-[14px] font-bold truncate" style={{ color: theme.text }}>{novel.title}</div>
                     <div className="text-[10px]" style={{ color: theme.sub }}>
@@ -2005,7 +2141,7 @@ const ReaderModal: React.FC<{ novel: VRWorldNovel; characters: CharacterProfile[
                             : `读到第 ${topSeg + 1} 段 / 共 ${total} 段 · ${Math.round((topSeg / Math.max(1, total)) * 100)}%`}
                     </div>
                 </div>
-                <button onClick={() => setShowCtl(s => !s)} className="p-1.5 rounded-full active:bg-black/5" style={{ color: theme.accent }}><Palette size={18} weight="bold" /></button>
+                <button onClick={() => setShowCtl(s => !s)} className="p-1.5 rounded-full active:opacity-60" style={{ color: theme.accent }}><Palette size={18} weight="bold" /></button>
             </div>
 
             {peek && (
@@ -2175,22 +2311,22 @@ const UploadModal: React.FC<{
         }
     };
 
-    const inkInput = { fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` } as React.CSSProperties;
+    const inkInput = { fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` } as React.CSSProperties;
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45" onClick={busy ? undefined : onClose}>
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={busy ? undefined : onClose}>
+            <div className="w-full max-w-md rounded-t-[28px] p-4 max-h-[88vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `1px solid ${PAPER.edge}`, boxShadow: '0 -22px 60px -26px rgba(80,72,76,.24)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-3">
-                    <span className="text-[15px] font-bold" style={{ fontFamily: HAND, color: PAPER.ink }}>📚 贴一本小说进来</span>
+                    <span className="text-[15px] font-bold" style={{ fontFamily: HAND, color: PAPER.ink }}>📚 导入一本小说</span>
                     {!busy && <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>}
                 </div>
 
                 <input ref={fileRef} type="file" accept=".txt,text/plain" className="hidden" onChange={e => onFile(e.target.files?.[0])} />
                 {reading ? (
-                    <div className="w-full py-5 mb-3 flex items-center justify-center gap-2" style={{ fontFamily: HAND, color: PAPER.ink, border: `1px dashed ${PAPER.edge}`, borderRadius: 10 }}>
+                    <div className="w-full py-5 mb-3 flex items-center justify-center gap-2" style={{ fontFamily: HAND, color: PAPER.ink, border: `1px solid ${PAPER.edge}`, background: VR_CREAM_GRAD, borderRadius: 18 }}>
                         <CircleNotch size={18} weight="bold" className="animate-spin" /> 读取并识别编码中…
                     </div>
                 ) : fileInfo ? (
-                    <div className="p-3 mb-3" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 10 }}>
+                    <div className="p-3 mb-3" style={{ background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, borderRadius: 18 }}>
                         <div className="flex items-center gap-2">
                             <BookOpen size={16} weight="fill" className="shrink-0" style={{ color: ROOM_THEME.library.ink }} />
                             <span className="text-[12.5px] font-semibold truncate flex-1" style={{ color: PAPER.ink }}>{fileInfo.name}</span>
@@ -2203,7 +2339,7 @@ const UploadModal: React.FC<{
                             <div className="flex items-center gap-1.5 mt-2">
                                 <span className="text-[9.5px] shrink-0" style={{ color: PAPER.inkSoft }}>乱码？换编码</span>
                                 <select value={chosenEncoding} onChange={e => redecode(e.target.value)}
-                                    className="flex-1 text-[10px] rounded px-1.5 py-1 outline-none" style={{ color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+                                    className="flex-1 text-[10px] rounded px-1.5 py-1 outline-none" style={{ color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }}>
                                     <option value="auto">自动识别</option>
                                     <option value="utf-8">UTF-8</option>
                                     <option value="gb18030">简体中文 · GB18030 / GBK</option>
@@ -2216,7 +2352,7 @@ const UploadModal: React.FC<{
                     </div>
                 ) : (
                     <button onClick={() => fileRef.current?.click()}
-                        className="w-full py-3 mb-3 text-[12.5px] flex items-center justify-center gap-2 active:translate-y-px" style={{ fontFamily: HAND, color: PAPER.ink, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 10, background: PAPER.cream }}>
+                        className="w-full py-3 mb-3 text-[12.5px] flex items-center justify-center gap-2 active:translate-y-px" style={{ fontFamily: HAND, color: PAPER.ink, border: `1px solid ${PAPER.edge}`, borderRadius: 18, background: VR_CREAM_GRAD, boxShadow: VR_SOFT_SHADOW }}>
                         <UploadSimple size={16} weight="bold" /> 选个 .txt 文件（大文件也 OK）
                     </button>
                 )}
@@ -2244,7 +2380,7 @@ const UploadModal: React.FC<{
                     </div>
                 ) : (
                     <InkBtn tone="ink" onClick={handleSave} disabled={!canSave} className="w-full mt-3 py-2.5 text-[13px] font-bold" style={{ borderRadius: 10 }}>
-                        贴上书架
+                        加入书库
                     </InkBtn>
                 )}
             </div>
@@ -2253,7 +2389,11 @@ const UploadModal: React.FC<{
 };
 
 // ============ chibi 形象编辑器（复用特别时光的捏人系统） ============
-type ChibiSave = { img: string; state?: any; scale: number; offsetY: number; flip: boolean; pose?: string; sticker?: string; name?: string };
+type ChibiSave = {
+    img: string; state?: any; scale: number; offsetY: number; offsetX: number; rotate: number; opacity: number;
+    shadow: boolean; halo: ChibiHalo; flip: boolean; pose?: string; sticker?: string; stickerX: number;
+    stickerY: number; stickerSize: number; nameVisible: boolean; name?: string;
+};
 
 // 捏小人工作台：捏人器 + 微调（大小/翻转/姿势/贴纸）+ 换装夹（多套形象一键切换）。角色与用户共用。
 const ChibiAtelier: React.FC<{
@@ -2273,28 +2413,60 @@ const ChibiAtelier: React.FC<{
     const [state, setState] = useState<any>(existing?.state);
     const [scale, setScale] = useState<number>(existing?.scale ?? 1);
     const [offsetY, setOffsetY] = useState<number>(existing?.offsetY ?? 0);
+    const [offsetX, setOffsetX] = useState<number>(existing?.offsetX ?? 0);
+    const [rotate, setRotate] = useState<number>(existing?.rotate ?? 0);
+    const [opacity, setOpacity] = useState<number>(existing?.opacity ?? 1);
+    const [shadow, setShadow] = useState<boolean>(existing?.shadow ?? true);
+    const [halo, setHalo] = useState<ChibiHalo>(existing?.halo || 'none');
     const [flip, setFlip] = useState<boolean>(!!existing?.flip);
     const [pose, setPose] = useState<string>(existing?.pose || 'idle');
     const [sticker, setSticker] = useState<string>(existing?.sticker || '');
-    const [looks, setLooks] = useState<ChibiSave[]>((existingLooks || []).map(l => ({ img: l.img, state: l.state, scale: l.scale ?? 1, offsetY: l.offsetY ?? 0, flip: !!l.flip, pose: l.pose, sticker: l.sticker, name: l.name })));
+    const [stickerX, setStickerX] = useState<number>(existing?.stickerX ?? 0);
+    const [stickerY, setStickerY] = useState<number>(existing?.stickerY ?? 0);
+    const [stickerSize, setStickerSize] = useState<number>(existing?.stickerSize ?? 1);
+    const [nameVisible, setNameVisible] = useState<boolean>(existing?.nameVisible ?? true);
+    const [lookName, setLookName] = useState<string>(existing?.name || '');
+    const normalizeLook = (l: VRChibi): ChibiSave => ({
+        img: l.img, state: l.state, scale: l.scale ?? 1, offsetY: l.offsetY ?? 0, offsetX: l.offsetX ?? 0,
+        rotate: l.rotate ?? 0, opacity: l.opacity ?? 1, shadow: l.shadow ?? true, halo: l.halo || 'none',
+        flip: !!l.flip, pose: l.pose, sticker: l.sticker, stickerX: l.stickerX ?? 0, stickerY: l.stickerY ?? 0,
+        stickerSize: l.stickerSize ?? 1, nameVisible: l.nameVisible ?? true, name: l.name,
+    });
+    const [looks, setLooks] = useState<ChibiSave[]>((existingLooks || []).map(normalizeLook));
 
     const presets = state?.selected || existing?.state?.selected || (isMoro ? { skin: 'skin_1', fronthair: 'fronthair_99', eyes: 'eyes_99' } : undefined);
-    const cur = (): ChibiSave => ({ img, state, scale, offsetY, flip, pose, sticker });
-    const onConfirm = (r: ChibiResult) => { setImg(r.transparentDataUrl); setState(r.state); setScale(1); setOffsetY(0); setFlip(false); setCreating(false); };
-    const loadLook = (l: ChibiSave) => { setImg(l.img); setState(l.state); setScale(l.scale); setOffsetY(l.offsetY); setFlip(l.flip); setPose(l.pose || 'idle'); setSticker(l.sticker || ''); };
-    const stashLook = () => { if (!img) return; setLooks(ls => [...ls.filter(l => l.img !== img), cur()].slice(-8)); };
+    const cur = (): ChibiSave => ({ img, state, scale, offsetY, offsetX, rotate, opacity, shadow, halo, flip, pose, sticker, stickerX, stickerY, stickerSize, nameVisible, name: lookName.trim() || undefined });
+    const onConfirm = (r: ChibiResult) => {
+        setImg(r.transparentDataUrl); setState(r.state); setScale(1); setOffsetY(0); setOffsetX(0); setRotate(0);
+        setOpacity(1); setShadow(true); setHalo('none'); setFlip(false); setStickerX(0); setStickerY(0); setStickerSize(1);
+        setNameVisible(true); setCreating(false);
+    };
+    const loadLook = (l: ChibiSave) => {
+        setImg(l.img); setState(l.state); setScale(l.scale); setOffsetY(l.offsetY); setOffsetX(l.offsetX);
+        setRotate(l.rotate); setOpacity(l.opacity); setShadow(l.shadow); setHalo(l.halo); setFlip(l.flip);
+        setPose(l.pose || 'idle'); setSticker(l.sticker || ''); setStickerX(l.stickerX); setStickerY(l.stickerY);
+        setStickerSize(l.stickerSize); setNameVisible(l.nameVisible); setLookName(l.name || '');
+    };
+    const resetFineTune = () => { setScale(1); setOffsetX(0); setOffsetY(0); setRotate(0); setOpacity(1); setShadow(true); setHalo('none'); setStickerX(0); setStickerY(0); setStickerSize(1); setNameVisible(true); };
+    const applyLookPreset = (preset: 'tiny' | 'close' | 'float' | 'soft') => {
+        if (preset === 'tiny') { setScale(0.78); setOffsetX(0); setOffsetY(8); setRotate(0); setOpacity(1); setShadow(true); setHalo('none'); setNameVisible(true); }
+        if (preset === 'close') { setScale(1.28); setOffsetX(0); setOffsetY(-6); setRotate(0); setOpacity(1); setShadow(true); setHalo('soft'); setNameVisible(true); }
+        if (preset === 'float') { setScale(1); setOffsetX(0); setOffsetY(-20); setRotate(-4); setOpacity(0.92); setShadow(false); setHalo('violet'); setNameVisible(false); }
+        if (preset === 'soft') { setScale(1.05); setOffsetX(0); setOffsetY(-2); setRotate(3); setOpacity(0.82); setShadow(true); setHalo('mint'); setNameVisible(true); }
+    };
+    const stashLook = () => { if (!img) return; setLooks(ls => [...ls, cur()].slice(-12)); };
     const dropLook = (i: number) => setLooks(ls => ls.filter((_, k) => k !== i));
 
     if (creating) {
         return (
-            <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: PAPER.page }}>
-                <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ paddingTop: VR_TOP, borderBottom: `1.5px dashed ${PAPER.line}` }}>
-                    <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="h-8 w-8 flex items-center justify-center rounded-lg active:translate-y-px" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><CaretLeft size={18} weight="bold" /></button>
-                    <span className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>✂ 捏 {name} 的小人</span>
+            <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: VR_PAGE_BG }}>
+                <div className="flex items-center gap-2 px-4 pb-2 shrink-0" style={{ paddingTop: VR_TOP, borderBottom: `1px solid ${PAPER.edge}`, background: '#fff', boxShadow: VR_SOFT_SHADOW }}>
+                    <button onClick={() => existing?.img ? setCreating(false) : onClose()} className="h-8 w-8 flex items-center justify-center rounded-full active:translate-y-px" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><CaretLeft size={18} weight="bold" /></button>
+                    <span className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>捏 {name} 的小人</span>
                 </div>
                 <div className="flex-1 min-h-0">
                     <CreatorIframe mode={mode} charName={name} isMoro={isMoro} presets={presets}
-                        draftKey={draftKey} title={`捏一个小人 · ${name}`} subtitle="页外 · 拼贴小人"
+                        draftKey={draftKey} title={`捏一个小人 · ${name}`} subtitle="页外 · 虚拟化身"
                         onConfirm={onConfirm} />
                 </div>
             </div>
@@ -2302,33 +2474,65 @@ const ChibiAtelier: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/45" onClick={onClose}>
+        <div className="fixed inset-0 z-[60] flex items-end justify-center backdrop-blur-sm" style={{ background: VR_OVERLAY_BG }} onClick={onClose}>
             <VRStyleTag />
-            <div className="w-full max-w-md rounded-t-2xl p-4 max-h-[92vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `2px solid ${PAPER.edge}`, paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-md rounded-t-[28px] p-4 max-h-[92vh] overflow-y-auto vr-reader-scroll" style={{ background: PAPER.paper, borderTop: `1px solid ${PAPER.edge}`, boxShadow: '0 -22px 60px -26px rgba(80,72,76,.24)', paddingBottom: vrBottomPad('1rem') }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center mb-1">
                     <span className="text-[15px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>{name} 的页外小人</span>
                     <button onClick={onClose} className="ml-auto h-7 w-7 flex items-center justify-center rounded-lg" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, color: PAPER.ink }}><X size={16} weight="bold" /></button>
                 </div>
                 <p className="text-[10.5px] mb-3" style={{ color: PAPER.inkSoft }}>{blurb}</p>
 
-                {/* 拍立得预览 */}
-                <div className="relative h-48 mb-3 flex items-end justify-center overflow-hidden" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}`, borderRadius: 8 }}>
-                    <Tape color={TAPE_COLORS[0]} w={56} style={{ top: -8, left: '50%', marginLeft: -28, transform: 'rotate(-4deg)' }} />
-                    <div className="absolute inset-0" style={{ backgroundImage: `linear-gradient(${PAPER.line}55 1px, transparent 1px), linear-gradient(90deg, ${PAPER.line}44 1px, transparent 1px)`, backgroundSize: '18px 18px', opacity: .5 }} />
-                    {sticker && <span className="absolute top-3 right-4 text-[22px]" style={{ animation: 'ywbob 2s ease-in-out infinite' }}>{sticker}</span>}
-                    {img && <img src={img} alt="" className="object-contain mb-3 relative" style={{ height: 140 * scale, transform: `scaleX(${flip ? -1 : 1}) translateY(${offsetY}px)`, filter: 'drop-shadow(0 4px 6px rgba(90,70,40,.4))', animation: poseAnim(pose) }} />}
-                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[50%]" style={{ width: 76, height: 16, background: 'radial-gradient(ellipse,rgba(90,70,40,.4),transparent)' }} />
+                <div className="relative h-56 mb-3 flex items-end justify-center overflow-hidden" style={{ background: 'linear-gradient(135deg, #f8f4f5 0%, #f4f5fa 52%, #f6faf7 100%)', border: `1px solid ${PAPER.edge}`, borderRadius: 22, boxShadow: VR_SOFT_SHADOW }}>
+                    <div className="absolute inset-0" style={{ backgroundImage: VR_GRID_BG, backgroundSize: '16px 16px', opacity: .8 }} />
+                    <div className="absolute left-10 right-10 bottom-8 h-16 rounded-[50%]" style={{ background: 'rgba(255,255,255,.55)', filter: 'blur(18px)' }} />
+                    {halo !== 'none' && <span className="absolute left-1/2 bottom-16 -translate-x-1/2 rounded-full pointer-events-none" style={{ width: 132, height: 132, background: haloBg(halo), filter: 'blur(2px)' }} />}
+                    {sticker && <span className="absolute left-1/2 top-9 text-[22px] z-20" style={{ animation: 'ywbob 2s ease-in-out infinite', transform: `translate(calc(-50% + ${44 + stickerX}px), ${stickerY}px) scale(${stickerSize})`, transformOrigin: 'center' }}>{sticker}</span>}
+                    {img && <img src={img} alt="" className="object-contain mb-4 relative z-10" style={{ height: 148 * scale, opacity, transform: `translateX(${offsetX}px) scaleX(${flip ? -1 : 1}) translateY(${offsetY}px) rotate(${rotate}deg)`, filter: shadow ? 'drop-shadow(0 8px 10px rgba(80,72,76,.18))' : 'none', animation: poseAnim(pose) }} />}
+                    {shadow && <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-[50%]" style={{ width: 76, height: 16, transform: `translateX(${offsetX * 0.35}px)`, background: 'radial-gradient(ellipse, rgba(80,72,76,.14), transparent 70%)' }} />}
+                    {nameVisible && <span className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full z-20" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fff', border: `1px solid ${PAPER.edge}`, boxShadow: VR_SOFT_SHADOW }}>{name}</span>}
                 </div>
 
                 <InkBtn tone="soft" onClick={() => setCreating(true)} className="w-full py-2 mb-3 text-[12px] flex items-center justify-center gap-1.5">
                     <PencilSimple size={14} weight="bold" /> 重新捏 / 改五官衣服
                 </InkBtn>
 
-                {/* 大小 + 翻转 */}
-                <div className="flex items-center gap-2 mb-2.5">
-                    <span className="text-[11px] flex items-center gap-1" style={{ color: PAPER.inkSoft }}><UploadSimple size={13} className="rotate-90" /> 大小</span>
-                    <input type="range" min={0.5} max={1.6} step={0.05} value={scale} onChange={e => setScale(Number(e.target.value))} className="flex-1" style={{ accentColor: PAPER.red }} />
-                    <button onClick={() => setFlip(f => !f)} className="text-[11px] px-2.5 py-1 rounded-md flex items-center gap-1" style={{ fontFamily: HAND, background: flip ? PAPER.red : PAPER.cream, color: flip ? '#fff' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}><FlipHorizontal size={12} /> 翻转</button>
+                <div className="mb-3 p-2.5" style={{ background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, borderRadius: 18 }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[11px] font-bold flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.ink }}><Sparkle size={12} weight="bold" /> 细调</span>
+                        <button onClick={resetFineTune} className="ml-auto text-[10px] px-2 py-1 rounded-full" style={{ color: PAPER.inkSoft, border: `1px solid ${PAPER.edge}`, background: PAPER.cream }}>重置</button>
+                    </div>
+                    <AtelierSlider label="大小" min={0.45} max={1.9} step={0.05} value={scale} onChange={setScale} />
+                    <AtelierSlider label="左右" min={-44} max={44} value={offsetX} unit="px" onChange={setOffsetX} />
+                    <AtelierSlider label="上下" min={-48} max={48} value={offsetY} unit="px" onChange={setOffsetY} />
+                    <AtelierSlider label="旋转" min={-24} max={24} value={rotate} unit="°" onChange={setRotate} />
+                    <AtelierSlider label="透明" min={0.35} max={1} step={0.05} value={opacity} onChange={setOpacity} />
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                        <button onClick={() => setFlip(f => !f)} className="text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1" style={softChipStyle(flip)}><FlipHorizontal size={12} /> 翻转</button>
+                        <button onClick={() => setShadow(s => !s)} className="text-[11px] px-2.5 py-1 rounded-full" style={softChipStyle(shadow)}>投影</button>
+                        <button onClick={() => setNameVisible(v => !v)} className="text-[11px] px-2.5 py-1 rounded-full" style={softChipStyle(nameVisible)}>名牌</button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                        {([
+                            ['tiny', '小只'] as const,
+                            ['close', '近景'] as const,
+                            ['float', '漂浮'] as const,
+                            ['soft', '淡影'] as const,
+                        ]).map(([key, label]) => (
+                            <button key={key} onClick={() => applyLookPreset(key)} className="text-[10.5px] px-2.5 py-1 rounded-full" style={{ color: PAPER.inkSoft, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{label}</button>
+                        ))}
+                    </div>
+                    <input value={lookName} onChange={e => setLookName(e.target.value)} placeholder="给这套造型起名（选填）"
+                        className="w-full mt-2 rounded-full px-3 py-1.5 text-[11px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }} />
+                </div>
+
+                <div className="mb-2.5">
+                    <div className="text-[10px] mb-1.5 flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.inkSoft }}><Star size={12} weight="bold" /> 光环</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {HALO_OPTIONS.map(h => (
+                            <button key={h.key} onClick={() => setHalo(h.key)} className="text-[11px] px-2.5 py-1 rounded-full" style={softChipStyle(halo === h.key, h.key === 'mint' ? PAPER.teal : h.key === 'warm' ? PAPER.amber : PAPER.violet)}>{h.label}</button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* 姿势 */}
@@ -2336,7 +2540,7 @@ const ChibiAtelier: React.FC<{
                     <div className="text-[10px] mb-1.5 flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.inkSoft }}><HandWaving size={12} weight="bold" /> 姿势（在世界里怎么动）</div>
                     <div className="flex flex-wrap gap-1.5">
                         {POSE_LIST.map(p => (
-                            <button key={p.key} onClick={() => setPose(p.key)} className="text-[11px] px-2.5 py-1 rounded-md" style={{ fontFamily: HAND, background: pose === p.key ? PAPER.ink : PAPER.cream, color: pose === p.key ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>{p.label}</button>
+                            <button key={p.key} onClick={() => setPose(p.key)} className="text-[11px] px-2.5 py-1 rounded-full" style={softChipStyle(pose === p.key, PAPER.red)}>{p.label}</button>
                         ))}
                     </div>
                 </div>
@@ -2346,13 +2550,20 @@ const ChibiAtelier: React.FC<{
                     <div className="text-[10px] mb-1.5 flex items-center gap-1" style={{ fontFamily: HAND, color: PAPER.inkSoft }}><Sticker size={12} weight="bold" /> 头顶贴纸</div>
                     <div className="flex flex-wrap gap-1.5">
                         {STICKER_CHOICES.map((s, i) => (
-                            <button key={i} onClick={() => setSticker(s)} className="h-7 w-7 flex items-center justify-center rounded-md text-[14px]" style={{ background: sticker === s ? '#fff0c0' : PAPER.cream, border: `1px solid ${sticker === s ? PAPER.red : PAPER.edge}` }}>{s || '∅'}</button>
+                            <button key={i} onClick={() => setSticker(s)} className="h-7 w-7 flex items-center justify-center rounded-full text-[14px]" style={{ background: sticker === s ? VR_BLUSH : PAPER.cream, border: `1px solid ${sticker === s ? PAPER.red : PAPER.edge}` }}>{s || '∅'}</button>
                         ))}
                     </div>
+                    {sticker && (
+                        <div className="mt-2 p-2 rounded-2xl" style={{ background: 'rgba(255,255,255,.58)', border: `1px solid ${PAPER.edge}` }}>
+                            <AtelierSlider label="贴纸X" min={-44} max={44} value={stickerX} unit="px" onChange={setStickerX} />
+                            <AtelierSlider label="贴纸Y" min={-36} max={36} value={stickerY} unit="px" onChange={setStickerY} />
+                            <AtelierSlider label="贴纸" min={0.65} max={1.8} step={0.05} value={stickerSize} onChange={setStickerSize} />
+                        </div>
+                    )}
                 </div>
 
                 {/* 换装夹：多套形象 */}
-                <div className="mb-3 p-2.5" style={{ background: PAPER.cream, border: `1.5px dashed ${PAPER.edge}`, borderRadius: 8 }}>
+                <div className="mb-3 p-2.5" style={{ background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}`, borderRadius: 18 }}>
                     <div className="flex items-center mb-1.5">
                         <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>👗 换装夹 · 存多套随时换</span>
                         <InkBtn tone="soft" onClick={stashLook} disabled={!img} className="ml-auto text-[10.5px] px-2 py-1 flex items-center gap-1"><Plus size={11} weight="bold" /> 存当前</InkBtn>
@@ -2363,8 +2574,9 @@ const ChibiAtelier: React.FC<{
                         <div className="flex flex-wrap gap-2">
                             {looks.map((l, i) => (
                                 <div key={i} className="relative">
-                                    <button onClick={() => loadLook(l)} className="h-14 w-12 flex items-end justify-center overflow-hidden rounded-md active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${l.img === img ? PAPER.red : PAPER.edge}` }}>
-                                        <img src={l.img} alt="" className="h-12 object-contain object-bottom" style={{ transform: `scaleX(${l.flip ? -1 : 1})` }} />
+                                    <button onClick={() => loadLook(l)} className="h-16 w-14 flex flex-col items-center justify-end overflow-hidden rounded-xl active:translate-y-px pb-1" style={{ background: '#fffdf8', border: `1px solid ${l.img === img ? PAPER.red : PAPER.edge}` }}>
+                                        <img src={l.img} alt="" className="h-11 object-contain object-bottom" style={{ transform: `translateX(${l.offsetX * 0.12}px) scaleX(${l.flip ? -1 : 1}) rotate(${l.rotate}deg)`, opacity: l.opacity }} />
+                                        <span className="text-[8px] max-w-full px-1 truncate" style={{ color: PAPER.inkFaint }}>{l.name || `造型${i + 1}`}</span>
                                     </button>
                                     <button onClick={() => dropLook(i)} className="absolute -top-1.5 -right-1.5 h-4 w-4 flex items-center justify-center rounded-full" style={{ background: PAPER.red, color: '#fff' }}><X size={9} weight="bold" /></button>
                                 </div>
@@ -2441,17 +2653,10 @@ const UserVRPanel: React.FC<{
         updateUserProfile({ vrState: { ...(uv || {}), enabled: true, currentRoom: room, activity: activity.trim(), updatedAt: Date.now() } });
         void onBroadcast(room, activity.trim());
     };
-    const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
-        <button onClick={onClick} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: on ? PAPER.red : '#d8ccaf', border: `1px solid ${PAPER.edge}` }}>
-            <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform" style={{ background: '#fffdf6', transform: on ? 'translateX(20px)' : 'none', boxShadow: '0 1px 2px rgba(0,0,0,.3)' }} />
-        </button>
-    );
-
     return (
-        <div className="relative p-3.5" style={{ background: '#eef1f8', border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)' }}>
-            <Tape color={TAPE_COLORS[3]} w={50} style={{ top: -8, left: 18, transform: 'rotate(-6deg)' }} />
+        <InsCard className="p-3.5">
             <div className="flex items-center gap-2.5">
-                <button onClick={onEditChibi} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+                <button onClick={onEditChibi} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf8', border: `1px solid ${PAPER.edge}` }}>
                     {chibi?.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg mb-2" style={{ color: PAPER.inkFaint }}>＋</span>}
                     <span className="absolute bottom-0 right-0 rounded-tl-md p-0.5" style={{ background: PAPER.red }}><PencilSimple size={9} weight="bold" className="text-white" /></span>
                 </button>
@@ -2459,14 +2664,14 @@ const UserVRPanel: React.FC<{
                     <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>就是你 · {userProfile?.name || '我'}</div>
                     <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>{enabled ? '已接入页外 · 角色能看到你在这儿' : chibi?.img ? '已捏形象 · 未接入' : '捏个自己的小人，接入页外'}</div>
                 </div>
-                <Toggle on={enabled} onClick={enabled ? logout : join} />
+                <SoftToggle on={enabled} onClick={enabled ? logout : join} ariaLabel={enabled ? '登出页外' : '接入页外'} />
             </div>
             {enabled && (
                 <>
                     <div className="mt-3 text-[10px] mb-1.5" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>你挂在哪个房间</div>
                     <div className="flex flex-wrap gap-1.5">
                         {ROOMS.map(([rid, label]) => (
-                            <button key={rid} onClick={() => setRoom(rid)} className="text-[10.5px] rounded-md px-2.5 py-1" style={{ fontFamily: HAND, fontWeight: 600, background: room === rid ? PAPER.ink : '#fffdf6', color: room === rid ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>
+                            <button key={rid} onClick={() => setRoom(rid)} className="text-[10.5px] rounded-full px-2.5 py-1" style={softChipStyle(room === rid, roomTheme(rid).wash)}>
                                 {label}
                             </button>
                         ))}
@@ -2474,10 +2679,10 @@ const UserVRPanel: React.FC<{
                     <div className="mt-3 text-[10px] mb-1.5" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>你在干嘛（角色会看到）</div>
                     <input value={activity} onChange={e => setActivity(e.target.value)}
                         placeholder="例：在世界房间晃悠 / 在看小说 / 单纯挂机…"
-                        className="w-full rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }} />
+                        className="w-full rounded-lg px-3 py-2 text-[12.5px] outline-none" style={{ fontFamily: HAND, color: PAPER.ink, background: '#fffdf8', border: `1px solid ${PAPER.edge}` }} />
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {USER_VR_PRESETS.map(p => (
-                            <button key={p} onClick={() => setActivity(p)} className="text-[10px] rounded-full px-2 py-0.5 active:translate-y-px" style={{ color: PAPER.inkSoft, background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>{p}</button>
+                            <button key={p} onClick={() => setActivity(p)} className="text-[10px] rounded-full px-2 py-0.5 active:translate-y-px" style={{ color: PAPER.inkSoft, background: VR_CREAM_GRAD, border: `1px solid ${PAPER.edge}` }}>{p}</button>
                         ))}
                     </div>
                     <InkBtn tone="ink" onClick={saveBroadcast} className="mt-3 w-full py-2 text-[12.5px] font-bold" style={{ borderRadius: 10 }}>
@@ -2486,7 +2691,7 @@ const UserVRPanel: React.FC<{
                     <p className="text-[9.5px] mt-2 leading-relaxed" style={{ color: PAPER.inkFaint }}>角色聊天里会知道"你此刻在页外做什么"，但已明确告知 ta：这只是虚拟空间挂机、你本人不一定在线，一切以聊天记录为准。</p>
                 </>
             )}
-        </div>
+        </InsCard>
     );
 };
 
@@ -2520,39 +2725,39 @@ const SettingsView: React.FC<{
 
     return (
         <div className="space-y-3">
-            <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
-                打开开关，角色就会按设定的间隔自己翻进「页外」溜达——碰头、读书、贴便签、写信。每次活动会剪成一张动态贴回 ta 的聊天，也会被记忆收进去。
-                {novelCount === 0 && <span style={{ color: PAPER.red }}> 书库还空着，想用图书馆先去贴一本。</span>}
-            </p>
-            {characters.length === 0 && <p className="text-[11px] py-4 text-center" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>还没有角色。</p>}
+            <InsSection title="角色接入" en="Access" />
+            <InsCard className="p-3.5">
+                <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
+                    打开开关，角色会按设定间隔登录「页外」活动：碰头、读书、留言、写信。每次活动会生成一条空间动态，也会被记忆收进去。
+                    {novelCount === 0 && <span style={{ color: PAPER.red }}> 书库还空着，想用图书馆先导入一本。</span>}
+                </p>
+            </InsCard>
+            {characters.length === 0 && <InsCard className="p-4 text-center"><p className="text-[11px]" style={{ fontFamily: HAND, color: PAPER.inkSoft }}>还没有角色。</p></InsCard>}
             {characters.map(char => {
                 const st = char.vrState;
                 const enabled = !!st?.enabled;
                 const interval = st?.intervalMinutes || VR_DEFAULT_INTERVAL_MIN;
                 const chibi = getChibi(char);
                 return (
-                    <div key={char.id} className="relative p-3.5" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)', transform: `rotate(${tiltOf(char.id, 0.7)}deg)` }}>
+                    <InsCard key={char.id} className="p-3.5" edge={enabled ? PAPER.violet : undefined}>
                         <div className="flex items-center gap-2.5">
                             {/* chibi 缩略 */}
-                            <button onClick={() => onEditChibi(char)} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf6', border: `1px solid ${PAPER.edge}` }}>
+                            <button onClick={() => onEditChibi(char)} className="relative h-12 w-12 rounded-lg overflow-hidden flex items-end justify-center shrink-0 active:translate-y-px" style={{ background: '#fffdf8', border: `1px solid ${PAPER.edge}` }}>
                                 {chibi.img ? <img src={chibi.img} className="h-11 object-contain object-bottom" style={{ transform: `scaleX(${chibi.flip ? -1 : 1})` }} alt="" /> : <span className="text-lg mb-2" style={{ color: PAPER.inkFaint }}>？</span>}
                                 <span className="absolute bottom-0 right-0 rounded-tl-md p-0.5" style={{ background: PAPER.red }}><PencilSimple size={9} weight="bold" className="text-white" /></span>
                             </button>
                             <div className="flex-1 min-w-0">
                                 <div className="text-[13px] font-bold truncate" style={{ fontFamily: HAND, color: PAPER.ink }}>{char.name}</div>
-                                {enabled ? <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>每 {interval >= 60 ? `${interval / 60} 小时` : `${interval} 分`}翻进去一次</div>
+                                {enabled ? <div className="text-[10px]" style={{ color: PAPER.inkSoft }}>每 {interval >= 60 ? `${interval / 60} 小时` : `${interval} 分`}登录一次</div>
                                     : <div className="text-[10px]" style={{ color: PAPER.inkFaint }}>{chibi.isFallback ? '未捏小人 · 未接入' : '未接入'}</div>}
                             </div>
-                            <button onClick={() => enabled ? disable(char) : onRequestEnable(char)}
-                                className="relative w-11 h-6 rounded-full transition-colors" style={{ background: enabled ? PAPER.red : '#d8ccaf', border: `1px solid ${PAPER.edge}` }}>
-                                <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full transition-transform" style={{ background: '#fffdf6', transform: enabled ? 'translateX(20px)' : 'none', boxShadow: '0 1px 2px rgba(0,0,0,.3)' }} />
-                            </button>
+                            <SoftToggle on={enabled} onClick={() => enabled ? disable(char) : onRequestEnable(char)} ariaLabel={enabled ? `关闭${char.name}接入` : `开启${char.name}接入`} />
                         </div>
                         {enabled && (
                             <>
                                 <div className="flex flex-wrap gap-1.5 mt-2.5">
                                     {INTERVAL_OPTIONS.map(opt => (
-                                        <button key={opt} onClick={() => setInterval(char, opt)} className="text-[10.5px] rounded-md px-2.5 py-1" style={{ fontFamily: HAND, fontWeight: 600, background: interval === opt ? PAPER.ink : '#fffdf6', color: interval === opt ? '#fbf3e0' : PAPER.ink, border: `1px solid ${PAPER.edge}` }}>
+                                        <button key={opt} onClick={() => setInterval(char, opt)} className="text-[10.5px] rounded-full px-2.5 py-1" style={softChipStyle(interval === opt, PAPER.violet)}>
                                             {opt >= 60 ? `${opt / 60}h` : `${opt}min`}
                                         </button>
                                     ))}
@@ -2562,17 +2767,17 @@ const SettingsView: React.FC<{
                                 </button>
                             </>
                         )}
-                    </div>
+                    </InsCard>
                 );
             })}
-            <ActionSheet open={!!pickFor} title={pickFor ? `让 ${pickFor.name} 现在翻去哪个房间？` : ''}
+            <ActionSheet open={!!pickFor} title={pickFor ? `让 ${pickFor.name} 现在进入哪个房间？` : ''}
                 actions={[
                     { label: '🎲 随机一个房间', onClick: () => go() },
                     { label: '🎪 世界房间 · 碰头合影', onClick: () => go('plaza') },
                     ...(novelCount > 0 ? [{ label: '📖 图书馆 · 读书写批注', onClick: () => go('library') }] : []),
                     { label: '🎭 剧院 · 写剧本投稿', onClick: () => go('theater') },
                     { label: '🎧 听歌房 · 点歌锐评', onClick: () => go('music') },
-                    { label: '📌 留言簿 · 贴便签版聊', onClick: () => go('guestbook') },
+                    { label: '📌 留言簿 · 频道聊天', onClick: () => go('guestbook') },
                     { label: '🎮 娱乐室 · 放开玩', onClick: () => go('gym') },
                     { label: '✉️ 邮局 · 写漂流信', onClick: () => go('postoffice') },
                 ]} onClose={() => setPickFor(null)} />
@@ -2625,13 +2830,15 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
 
     return (
         <div className="space-y-3">
-            <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
-                页外里的角色会自主、按间隔翻进去触发模型调用，比较费 API。你可以在这里给页外<b style={{ color: PAPER.red }}>单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
-            </p>
+            <InsSection title="页外 API" en="Model" />
+            <InsCard className="p-3.5">
+                <p className="text-[11px] leading-relaxed" style={{ color: PAPER.inkSoft }}>
+                    页外里的角色会自主、按间隔登录并触发模型调用，比较费 API。你可以在这里给页外<b style={{ color: PAPER.red }}>单独指定一份 API</b>（和「文具盒」里保存的预设共用同一批），不设则跟随聊天默认。
+                </p>
+            </InsCard>
 
             {/* 当前生效 */}
-            <div className="relative p-3.5" style={{ background: PAPER.paper, border: `1px solid ${PAPER.edge}`, borderRadius: 12, boxShadow: '0 3px 0 rgba(120,100,60,.1)' }}>
-                <Tape color={TAPE_COLORS[1]} w={44} style={{ top: -8, left: 16, transform: 'rotate(-5deg)' }} />
+            <InsCard className="p-3.5" edge={PAPER.teal}>
                 <div className="text-[11px] mb-1.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>📍 当前生效</div>
                 <div className="text-[12.5px] font-semibold" style={{ color: PAPER.ink }}>{effective?.model || '未配置'}</div>
                 <div className="text-[10px] mt-0.5" style={{ color: PAPER.inkSoft }}>{host(effective?.baseUrl)} · {follow ? '跟随聊天默认' : '页外独立'}</div>
@@ -2639,14 +2846,14 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                     {testing ? '测试中…' : '测试连接'}
                 </InkBtn>
                 {testResult && <div className="mt-2 text-[10.5px] px-2.5 py-1.5 rounded-lg leading-snug" style={{ color: testResult.startsWith('连接成功') ? PAPER.teal : PAPER.red, background: PAPER.cream, border: `1px solid ${PAPER.edge}` }}>{testResult}</div>}
-            </div>
+            </InsCard>
 
             {/* 选择 API */}
             <div>
                 <div className="text-[11px] mb-1.5 px-0.5" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>选择页外 API</div>
                 <button onClick={() => choose(null)}
                     className="w-full flex items-center gap-2 p-3 mb-1.5 text-left active:translate-y-px"
-                    style={{ background: follow ? '#fff0c0' : PAPER.paper, border: `1px solid ${follow ? PAPER.red : PAPER.edge}`, borderRadius: 10 }}>
+                    style={{ background: follow ? VR_BLUSH : PAPER.paper, border: `1px solid ${follow ? PAPER.red : PAPER.edge}`, borderRadius: 18, boxShadow: follow ? '0 12px 24px -18px rgba(80,72,76,.22)' : VR_SOFT_SHADOW }}>
                     <div className="flex-1 min-w-0">
                         <div className="text-[12px] font-semibold" style={{ color: PAPER.ink }}>跟随聊天默认</div>
                         <div className="text-[10px] truncate" style={{ color: PAPER.inkSoft }}>{chatApi?.model || '未配置'} · {host(chatApi?.baseUrl)}</div>
@@ -2664,7 +2871,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 mb-1.5 text-left active:translate-y-px"
                                 style={{ border: `1px solid ${PAPER.edge}`, borderRadius: 8, background: PAPER.cream }}>
                                 <span className="text-[10.5px]" style={{ color: PAPER.inkSoft }}>保存的预设</span>
-                                <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}` }}>{apiPresets.length}</span>
+                                <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: VR_BLUSH, border: `1px solid ${PAPER.edge}` }}>{apiPresets.length}</span>
                                 {!presetsOpen && activePreset && <span className="text-[9.5px] truncate" style={{ color: PAPER.red }}>当前 · {activePreset.name}</span>}
                                 <span className="ml-auto text-[10px]" style={{ color: PAPER.inkSoft }}>{presetsOpen ? '收起' : '展开'}</span>
                             </button>
@@ -2673,7 +2880,7 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                                 return (
                                     <button key={p.id} onClick={() => choose(p.config)}
                                         className="w-full flex items-center gap-2 p-3 mb-1.5 text-left active:translate-y-px"
-                                        style={{ background: on ? '#fff0c0' : PAPER.paper, border: `1px solid ${on ? PAPER.red : PAPER.edge}`, borderRadius: 10 }}>
+                                        style={{ background: on ? VR_BLUSH : PAPER.paper, border: `1px solid ${on ? PAPER.red : PAPER.edge}`, borderRadius: 18, boxShadow: on ? '0 12px 24px -18px rgba(80,72,76,.22)' : VR_SOFT_SHADOW }}>
                                         <div className="flex-1 min-w-0">
                                             <div className="text-[12px] font-semibold truncate" style={{ color: PAPER.ink }}>{p.name}</div>
                                             <div className="text-[10px] truncate" style={{ color: PAPER.inkSoft }}>{p.config.model} · {host(p.config.baseUrl)}</div>
@@ -2688,10 +2895,10 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
             </div>
 
             {/* 调用记录 */}
-            <div className="p-3" style={{ background: PAPER.cream, border: `1px solid ${PAPER.edge}`, borderRadius: 12 }}>
+            <InsCard className="p-3">
                 <div className="flex items-center gap-1.5 mb-2">
                     <span className="text-[11px]" style={{ fontFamily: HAND, fontWeight: 700, color: PAPER.ink }}>🧾 调用记录</span>
-                    <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: '#fff3c4', border: `1px solid ${PAPER.edge}` }}>{log.length}{log.length ? ` · 成功${okCount}` : ''}</span>
+                    <span className="text-[9.5px] rounded-full px-1.5 leading-tight" style={{ color: PAPER.ink, background: VR_BLUSH, border: `1px solid ${PAPER.edge}` }}>{log.length}{log.length ? ` · 成功${okCount}` : ''}</span>
                     {log.length > 0 && <button onClick={() => { void clearVRApiLog(); setLog([]); }} className="ml-auto text-[10px]" style={{ color: PAPER.red }}>清空</button>}
                 </div>
                 {log.length === 0 ? (
@@ -2709,12 +2916,12 @@ const VRApiSettings: React.FC<{ apiPresets: ApiPreset[]; chatApi: APIConfig; add
                         ))}
                     </div>
                 )}
-            </div>
+            </InsCard>
         </div>
     );
 };
 
-// ============ 动画关键帧 + 拼贴质感 ============
+// ============ 动画关键帧 + 页外空间质感 ============
 const VRStyleTag: React.FC = () => (
     <style>{`
         @keyframes vrfloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -2730,11 +2937,12 @@ const VRStyleTag: React.FC = () => (
         @keyframes ywpop { 0%{transform:scale(.8);opacity:0} 60%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
         @keyframes ywdrift { 0%{transform:translateY(0) rotate(0)} 50%{transform:translateY(8px) rotate(8deg)} 100%{transform:translateY(0) rotate(0)} }
         .yw-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
-        .yw-scroll::-webkit-scrollbar-thumb { background: rgba(150,130,90,.4); border-radius: 6px; }
+        .yw-scroll::-webkit-scrollbar-thumb { background: rgba(132,120,126,.24); border-radius: 6px; }
         .yw-scroll::-webkit-scrollbar-track { background: transparent; }
         .vr-reader-scroll::-webkit-scrollbar { width: 7px; height: 7px; }
-        .vr-reader-scroll::-webkit-scrollbar-thumb { background: rgba(150,130,90,.4); border-radius: 6px; }
+        .vr-reader-scroll::-webkit-scrollbar-thumb { background: rgba(132,120,126,.24); border-radius: 6px; }
     `}</style>
 );
 
 export default VRWorldApp;
+

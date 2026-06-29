@@ -120,7 +120,7 @@ export interface CreatorIframeProps {
     onConfirm: (result: ChibiResult) => void;
 }
 
-const CHAR_CREATOR_URL = (((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/');
+const CHAR_CREATOR_URL = `${(((import.meta as any).env?.BASE_URL ?? '/') + 'like520/character_creator.html').replace(/\/+/g, '/')}?v=20260629-adjust`;
 
 export const CreatorIframe: React.FC<CreatorIframeProps> = ({ mode, charName, presets, isMoro, draftKey, title, subtitle, onConfirm }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);

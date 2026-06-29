@@ -274,7 +274,7 @@ interface OSContextType {
 
   // Groups
   groups: GroupProfile[];
-  createGroup: (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }) => void;
+  createGroup: (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }) => Promise<GroupProfile>;
   deleteGroup: (id: string) => void;
   updateGroup: (id: string, updates: Partial<GroupProfile>) => Promise<GroupProfile | null>;
 
@@ -340,6 +340,7 @@ interface OSContextType {
   lastMsgTimestamp: number; // New: Signal for Chat to refresh
   unreadMessages: Record<string, number>; // New: Track unread counts per character
   clearUnread: (charId: string) => void; // New: Method to clear unread
+  markUnread: (charId: string, count?: number) => void;
 
   // Set of charIds whose proactive AI generation is currently in flight.
   // Chat UI subscribes to this to render a soft "正在送达消息…" indicator
@@ -415,6 +416,8 @@ const defaultAuxApiConfig: AuxApiConfig = {
   apiKey: '',
   model: '',
 };
+
+const normalizeUnreadIncrement = (count?: number): number => Math.max(1, Math.floor(Number(count)) || 1);
 
 const generateAvatar = (seed: string) => {
     const colors = ['FF9AA2', 'FFB7B2', 'FFDAC1', 'E2F0CB', 'B5EAD7', 'C7CEEA', 'e2e8f0', 'fcd34d', 'fca5a5'];
@@ -697,6 +700,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const [lastMsgTimestamp, setLastMsgTimestamp] = useState<number>(0);
   const [unreadMessages, setUnreadMessages] = useState<Record<string, number>>({});
   const [proactiveComposingChars, setProactiveComposingChars] = useState<Record<string, true>>({});
+  const incrementUnread = useCallback((charId: string, count: number = 1) => {
+      const inc = normalizeUnreadIncrement(count);
+      setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
+  }, []);
   
   // LOGS
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
@@ -1389,7 +1396,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                               const chatting = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === char.id;
                               setLastMsgTimestamp(now);
                               if (!chatting) {
-                                  setUnreadMessages(prev => ({ ...prev, [char.id]: (prev[char.id] || 0) + 1 }));
+                                  incrementUnread(char.id);
                                   addToast(`${char.name} 申请解除拉黑`, 'info');
                               }
                           } catch { /* 生成失败下次再试 */ } finally {
@@ -1425,6 +1432,12 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       });
   }, []);
 
+  const markUnread = useCallback((charId: string, count: number = 1) => {
+      const inc = normalizeUnreadIncrement(count);
+      setUnreadMessages(prev => ({ ...prev, [charId]: Math.max(prev[charId] || 0, inc) }));
+      setLastMsgTimestamp(Date.now());
+  }, []);
+
   // Listen for proactive messages to show unread red dot
   useEffect(() => {
       let awayProactiveCount = 0;
@@ -1436,7 +1449,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setLastMsgTimestamp(Date.now());
 
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
-          const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
+          const inc = normalizeUnreadIncrement(count ?? (Array.isArray(bodies) ? bodies.length : 1));
           const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
           const isVisible = document.visibilityState === 'visible';
           // 「后台回复通知」（自律代理）：普通聊天发出后切后台，回复落定时若页面仍不可见，
@@ -1457,7 +1470,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               } else {
                   awayProactiveCount += inc;
               }
-              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
+              incrementUnread(charId, inc);
           }
 
           // 系统通知 / 原生通知：
@@ -1528,7 +1541,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   setLastMsgTimestamp(Date.now());
                   const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === c.id;
                   if (!isChattingWithThisChar) {
-                      setUnreadMessages(prev => ({ ...prev, [c.id]: (prev[c.id] || 0) + 1 }));
+                      incrementUnread(c.id);
                   }
                   addToast(`${c.name} 把你移出了黑名单`, 'info');
               }
@@ -1552,7 +1565,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       const bumpUnread = (charId: string) => {
           setLastMsgTimestamp(Date.now());
           const chatting = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
-          if (!chatting) setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + 1 }));
+          if (!chatting) incrementUnread(charId);
       };
 
       // 关系决定性变更（[[REL:stage|label]]：表白成功 / 分手 / 决裂…）
@@ -1702,7 +1715,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
           setErrorDialog(prev => (prev && /Instant Push|发送失败|发送错误/.test(prev.title)) ? null : prev);
 
           // 未读按本轮气泡条数累加（count 优先，退而数 bodies），每个消息气泡算一条
-          const inc = Math.max(1, Math.floor(Number(count)) || (Array.isArray(bodies) ? bodies.length : 1));
+          const inc = normalizeUnreadIncrement(count ?? (Array.isArray(bodies) ? bodies.length : 1));
           const isChattingWithThisChar = activeAppRef.current === AppID.Chat && activeCharIdScheduleRef.current === charId;
           if (!isChattingWithThisChar) {
               const isVisible = document.visibilityState === 'visible';
@@ -1711,7 +1724,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               } else {
                   awayActiveMsgCount += inc;
               }
-              setUnreadMessages(prev => ({ ...prev, [charId]: (prev[charId] || 0) + inc }));
+              incrementUnread(charId, inc);
               const preview = (body || `${charName} sent an active message`).replace(/\s+/g, ' ').trim() || `${charName} sent an active message`;
               void sendProactiveNativeNotification(charId, charName, preview);
               // SW push handler 已经 fire 过系统通知（不在前台时露出真实内容、在前台时
@@ -2793,7 +2806,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
   const deleteCharacter = async (id: string) => { setCharacters(prev => { const remaining = prev.filter(c => c.id !== id); if (remaining.length > 0 && activeCharacterId === id) { setActiveCharacterId(remaining[0].id); } return remaining; }); await DB.deleteCharacter(id); };
   
   // Group Methods
-  const createGroup = async (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }) => {
+  const createGroup = async (name: string, members: string[], opts?: { ownerId?: string; adminIds?: string[] }): Promise<GroupProfile> => {
       const newGroup: GroupProfile = {
           id: `group-${Date.now()}`,
           name,
@@ -2805,6 +2818,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       };
       await DB.saveGroup(newGroup);
       setGroups(prev => [...prev, newGroup]);
+      return newGroup;
   };
 
   const deleteGroup = async (id: string) => {
@@ -4302,6 +4316,7 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     lastMsgTimestamp,
     unreadMessages,
     clearUnread,
+    markUnread,
     proactiveComposingChars,
     cloudBackupConfig,
     updateCloudBackupConfig,

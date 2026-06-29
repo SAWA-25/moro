@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Phone, PhoneOutgoing, PhoneIncoming, PhoneX, PhoneDisconnect,
     Backspace, Play, Pause, Trash, CaretDown, CaretUp,
-    AddressBook, Receipt, GridNine, VinylRecord, Waveform,
+    AddressBook, Receipt, GridNine, VinylRecord,
 } from '@phosphor-icons/react';
 import type { Icon as PhosphorIcon } from '@phosphor-icons/react';
 import { useOS } from '../context/OSContext';
@@ -13,7 +13,7 @@ import ConfirmDialog from '../components/os/ConfirmDialog';
 
 // 回声亭 App（原「电话」）— 拨号键盘 / 通话存根（拨出·接起·漏接）/ 留声片逐字稿 / 名片夹。
 // 真实语音通话由 CallApp 承担：拨给已知角色时通过 sessionStorage 握手跳转过去。
-// 界面风格：黑白拼贴手账（纸张底 + 胶带 + 邮戳 + 硬阴影），完全原创布局。
+// 界面风格：黑白拼贴手账（纸张底 + 邮戳 + 黑框 + 硬阴影），完全原创布局。
 
 type PhoneTab = 'contacts' | 'logs' | 'dial' | 'recordings';
 
@@ -23,6 +23,7 @@ type RecordingSession = {
     charId: string;
     charName: string;
     charAvatar?: string;
+    mode?: 'voice' | 'video';
     startTs: number;
     durationSec: number;
     lines: { id: string; role: 'user' | 'assistant'; text: string; time: string; audioUrl?: string }[];
@@ -81,20 +82,12 @@ const stripVoiceTag = (text: string): string => {
 
 /* ─────────────── 黑白拼贴手账 视觉零件 ─────────────── */
 
-const PAPER_BG = '#f7f5f2';
+const PAPER_BG = '#efece3';
 const INK = '#26242a';
-
-/** 一截斜贴的胶带 */
-const Tape: React.FC<{ className?: string; style?: React.CSSProperties }> = ({ className = '', style }) => (
-    <span
-        className={`pointer-events-none absolute block ${className}`}
-        style={{ background: 'rgba(27,26,23,0.10)', backdropFilter: 'blur(1px)', boxShadow: 'inset 0 0 0 1px rgba(27,26,23,0.06)', ...style }}
-    />
-);
 
 /** 邮戳式标题徽记 */
 const Postmark: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-    <span className={`inline-flex items-center justify-center border border-black/10 rounded-2xl px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] ${className}`}>
+    <span className={`inline-flex items-center justify-center border-2 border-black bg-white px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.25em] ${className}`}>
         {children}
     </span>
 );
@@ -103,8 +96,8 @@ const Postmark: React.FC<{ children: React.ReactNode; className?: string }> = ({
 const Avatar: React.FC<{ name: string; src?: string; sizeClass?: string; tilt?: string }> = ({ name, src, sizeClass = 'w-12 h-12 text-base', tilt = '-rotate-2' }) => (
     <div className={`relative shrink-0 ${tilt}`}>
         {src
-            ? <img src={src} alt={name} className={`${sizeClass} object-cover border border-black/10 rounded-xl`} style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }} />
-            : <div className={`${sizeClass} border border-black/10 rounded-xl bg-white flex items-center justify-center font-serif font-bold text-black`} style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }}>{name[0] || '某'}</div>}
+            ? <img src={src} alt={name} className={`${sizeClass} object-cover border-2 border-black bg-white`} style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.28)' }} />
+            : <div className={`${sizeClass} border-2 border-black bg-white flex items-center justify-center font-serif font-bold text-black`} style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.28)' }}>{name[0] || '某'}</div>}
         {/* 左上照片角 */}
         <span className="absolute -top-1 -left-1 w-2.5 h-2.5 border-t-2 border-l-2 border-black" />
         <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-black" />
@@ -169,7 +162,7 @@ const PhoneApp: React.FC = () => {
 
     const switchTab = (next: PhoneTab) => {
         setTab(next);
-        if (next === 'logs') markLogsViewed();
+        if (next === 'logs' || next === 'dial') markLogsViewed();
     };
 
     const saveLog = async (log: Omit<PhoneCallLog, 'id'>) => {
@@ -283,6 +276,7 @@ const PhoneApp: React.FC = () => {
                 const callMsgs = msgs
                     .filter(m => m.metadata?.source === 'call' && m.metadata?.callSessionId)
                     .sort((a, b) => a.timestamp - b.timestamp);
+                const callSummaries = msgs.filter(m => m.metadata?.source === 'call-end-popup' && m.metadata?.callSessionId);
                 const grouped = new Map<string, Message[]>();
                 callMsgs.forEach(m => {
                     const sid = String(m.metadata?.callSessionId);
@@ -292,13 +286,16 @@ const PhoneApp: React.FC = () => {
                 grouped.forEach((list, sessionId) => {
                     const start = list[0]?.timestamp || Date.now();
                     const end = list[list.length - 1]?.timestamp || start;
+                    const summary = callSummaries.find(m => String(m.metadata?.callSessionId) === sessionId);
+                    const summaryDuration = Number(summary?.metadata?.durationSec || 0);
                     sessions.push({
                         sessionId,
                         charId: char.id,
                         charName: char.name,
                         charAvatar: char.avatar,
+                        mode: summary?.metadata?.callMode === 'video' || list.some(m => m.metadata?.callMode === 'video') ? 'video' : 'voice',
                         startTs: start,
-                        durationSec: Math.max(1, Math.floor((end - start) / 1000)),
+                        durationSec: Math.max(1, summaryDuration || Math.floor((end - start) / 1000)),
                         lines: list.map(m => ({
                             id: `rec-${m.id}`,
                             role: m.role === 'user' ? 'user' as const : 'assistant' as const,
@@ -338,6 +335,11 @@ const PhoneApp: React.FC = () => {
 
     // --- 拨号键盘：长按 0 输出 '+' ---
     const appendKey = (k: string) => setDialInput(prev => (prev.length >= MAX_DIAL_LEN ? prev : prev + k));
+    const fillDialNumber = (number: string) => {
+        const compact = number.trim().startsWith('+') ? `+${digitsOnly(number)}` : digitsOnly(number);
+        setDialInput((compact || number.replace(/\s/g, '')).slice(0, MAX_DIAL_LEN));
+        switchTab('dial');
+    };
     const handleZeroDown = () => {
         zeroLongPressedRef.current = false;
         zeroTimerRef.current = window.setTimeout(() => {
@@ -390,13 +392,49 @@ const PhoneApp: React.FC = () => {
         }
     };
 
+    const renderLogRow = (log: PhoneCallLog, i: number, variant: 'full' | 'dial' = 'full') => {
+        const { Icon, label, dashed } = directionMeta(log.direction);
+        const missed = log.direction === 'missed';
+        const compact = variant === 'dial';
+        return (
+            <div key={log.id} className={`relative bg-white ${compact ? 'px-3 py-2.5' : 'px-3.5 py-3'} ${dashed ? 'border-2 border-dashed' : 'border-2'} border-black ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: compact ? '3px 3px 0 rgba(27,26,23,0.22)' : '3px 3px 0 #000' }}>
+                <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#efece3] border-2 border-black rounded-full -ml-2" />
+                <div className="flex items-center gap-3">
+                    <button onClick={() => fillDialNumber(log.number)} className="flex items-center gap-3 flex-1 min-w-0 text-left press-soft">
+                        <div className="w-8 h-8 border-2 border-black flex items-center justify-center shrink-0 bg-white">
+                            <Icon size={16} weight="bold" className="text-black" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className={`text-sm font-serif font-bold truncate text-black ${missed ? 'line-through decoration-1' : ''}`}>{log.name}</div>
+                            <div className="text-[11px] text-neutral-500 mt-0.5 font-mono truncate">
+                                <span className="uppercase tracking-widest">{label}</span>
+                                {log.mode === 'video' && <span> · 视频</span>}
+                                {log.name !== log.number && <span> · {log.number}</span>}
+                                {log.durationSec > 0 && <span> · {formatDuration(log.durationSec)}</span>}
+                            </div>
+                        </div>
+                        <div className="text-[10px] text-neutral-500 shrink-0 font-mono text-right leading-tight">{formatLogTime(log.timestamp)}</div>
+                    </button>
+                    <button onClick={() => redial(log)} className="p-1.5 text-black/45 hover:text-black active:scale-90 transition" title="回拨">
+                        <Phone size={compact ? 16 : 15} weight="fill" />
+                    </button>
+                    {!compact && (
+                        <button onClick={() => deleteLog(log)} className="p-1.5 text-black/40 hover:text-black active:scale-90 transition" title="撕掉这张存根">
+                            <Trash size={15} weight="bold" />
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     // ---------------- 各 Tab 渲染 ----------------
 
     const renderContacts = () => (
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!characters.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border border-black/10 rounded-2xl p-5 -rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
+                    <div className="border-2 border-dashed border-black p-5 -rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
                         <AddressBook size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">名片夹空空如也</p>
@@ -405,10 +443,9 @@ const PhoneApp: React.FC = () => {
             )}
             <div className="space-y-3.5">
                 {characters.map((char, i) => (
-                    <div key={char.id} className={`relative bg-white border border-black/10 rounded-xl px-3.5 py-3 ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
-                        <Tape className="w-12 h-5 -top-2.5 left-6 rotate-[-4deg]" />
+                    <div key={char.id} className={`relative bg-white border-2 border-black px-3.5 py-3 ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
                         <div className="flex items-center gap-3.5">
-                            <button onClick={() => callCharacter(char)} className="flex items-center gap-3.5 flex-1 min-w-0 text-left press-soft">
+                            <button onClick={() => fillDialNumber(charPhoneNumber(char.id))} className="flex items-center gap-3.5 flex-1 min-w-0 text-left press-soft" title="填入拨号盘">
                                 <Avatar name={char.name} src={char.avatar} tilt={i % 2 ? 'rotate-2' : '-rotate-2'} />
                                 <div className="min-w-0">
                                     <div className="text-sm font-serif font-bold text-black truncate">{char.name}</div>
@@ -417,14 +454,14 @@ const PhoneApp: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => callCharacter(char)}
-                                className="w-9 h-9 border border-black/10 rounded-xl bg-[#26242a] text-white flex items-center justify-center press-soft"
+                                className="w-9 h-9 border-2 border-black bg-[#26242a] text-white flex items-center justify-center press-soft"
                                 title={`拨给 ${char.name}`}
                             >
                                 <Phone size={16} weight="fill" />
                             </button>
                             <button
                                 onClick={() => triggerIncoming(char)}
-                                className="w-9 h-9 border border-black/10 rounded-xl bg-white text-black flex items-center justify-center press-soft"
+                                className="w-9 h-9 border-2 border-black bg-white text-black flex items-center justify-center press-soft"
                                 title="让 TA 摇一通电话给我"
                             >
                                 <PhoneIncoming size={16} weight="bold" />
@@ -445,7 +482,7 @@ const PhoneApp: React.FC = () => {
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!logs.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border border-black/10 rounded-2xl p-5 rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
+                    <div className="border-2 border-dashed border-black p-5 rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
                         <Receipt size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">还没有存根</p>
@@ -453,43 +490,36 @@ const PhoneApp: React.FC = () => {
                 </div>
             )}
             <div className="space-y-3">
-                {logs.map((log, i) => {
-                    const { Icon, label, dashed } = directionMeta(log.direction);
-                    const missed = log.direction === 'missed';
-                    return (
-                        <div key={log.id} className={`relative bg-white px-3.5 py-3 ${dashed ? 'border-2 border-dashed' : 'border-2'} border-black ${i % 2 ? 'rotate-[0.3deg]' : '-rotate-[0.3deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
-                            {/* 左侧票根锯齿缺口 */}
-                            <span className="absolute -left-[2px] top-1/2 -translate-y-1/2 w-2 h-4 bg-[#f7f5f2] border border-black/10 rounded-xl rounded-full -ml-2" />
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => redial(log)} className="flex items-center gap-3 flex-1 min-w-0 text-left press-soft">
-                                    <div className="w-8 h-8 border border-black/10 rounded-xl flex items-center justify-center shrink-0 bg-white">
-                                        <Icon size={16} weight="bold" className="text-black" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <div className={`text-sm font-serif font-bold truncate text-black ${missed ? 'line-through decoration-1' : ''}`}>{log.name}</div>
-                                        <div className="text-[11px] text-neutral-500 mt-0.5 font-mono">
-                                            <span className="uppercase tracking-widest">{label}</span>
-                                            {log.name !== log.number && <span> · {log.number}</span>}
-                                            {log.durationSec > 0 && <span> · {formatDuration(log.durationSec)}</span>}
-                                        </div>
-                                    </div>
-                                    <div className="text-[10px] text-neutral-500 shrink-0 font-mono text-right leading-tight">{formatLogTime(log.timestamp)}</div>
-                                </button>
-                                <button onClick={() => deleteLog(log)} className="p-1.5 text-black/40 hover:text-black active:scale-90 transition" title="撕掉这张存根">
-                                    <Trash size={15} weight="bold" />
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
+                {logs.map((log, i) => renderLogRow(log, i, 'full'))}
             </div>
         </div>
     );
 
     const renderDialPad = () => (
         <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                    <div className="text-[11px] font-mono uppercase tracking-[0.22em] text-neutral-500">最近通话</div>
+                    <button
+                        onClick={() => switchTab('logs')}
+                        className="text-[11px] font-mono text-black underline decoration-dashed underline-offset-2 active:scale-95"
+                    >
+                        全部
+                    </button>
+                </div>
+                {logs.length ? (
+                    <div className="space-y-2 pr-0.5 pb-2">
+                        {logs.slice(0, 3).map((log, i) => renderLogRow(log, i, 'dial'))}
+                    </div>
+                ) : (
+                    <div className="border-2 border-dashed border-black bg-white px-3 py-3 text-center">
+                        <div className="text-xs font-serif font-bold text-black">还没有通话记录</div>
+                        <div className="text-[11px] text-neutral-500 mt-1">拨出或接起后会显示在这里</div>
+                    </div>
+                )}
+            </div>
             {/* 号码显示区 — 仿账本横线 */}
-            <div className="flex-1 flex flex-col items-center justify-end px-6 pb-3 min-h-[88px]">
+            <div className="shrink-0 flex flex-col items-center justify-end px-6 pt-3 pb-2 min-h-[80px]">
                 <div className="w-full max-w-[280px] border-b-2 border-black pb-1.5 text-center">
                     <div className="text-3xl font-serif text-black tracking-[0.15em] tabular-nums break-all min-h-[40px] flex items-center justify-center">
                         {formatDialDisplay(dialInput) || <span className="text-black/30 text-lg font-mono tracking-widest">拨个号码</span>}
@@ -510,8 +540,8 @@ const PhoneApp: React.FC = () => {
                                 onPointerUp={handleZeroUp}
                                 onPointerLeave={handleZeroCancel}
                                 onContextMenu={e => e.preventDefault()}
-                                className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-white flex flex-col items-center justify-center press-soft select-none touch-none"
-                                style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
+                                className="w-[64px] h-[64px] border-2 border-black bg-white flex flex-col items-center justify-center press-soft select-none touch-none"
+                                style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.18)' }}
                             >
                                 <span className="text-2xl font-serif text-black leading-none">0</span>
                                 <span className="text-[10px] text-neutral-500 mt-0.5 tracking-widest font-mono">+</span>
@@ -520,8 +550,8 @@ const PhoneApp: React.FC = () => {
                             <button
                                 key={key}
                                 onClick={() => appendKey(key)}
-                                className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-white flex flex-col items-center justify-center press-soft select-none"
-                                style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
+                                className="w-[64px] h-[64px] border-2 border-black bg-white flex flex-col items-center justify-center press-soft select-none"
+                                style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.18)' }}
                             >
                                 <span className="text-2xl font-serif text-black leading-none">{key}</span>
                                 <span className="text-[10px] text-neutral-500 mt-0.5 tracking-widest h-[12px] font-mono">{sub}</span>
@@ -542,8 +572,8 @@ const PhoneApp: React.FC = () => {
                     </button>
                     <button
                         onClick={() => handleDial()}
-                        className="w-[64px] h-[64px] border border-black/10 rounded-xl bg-[#26242a] text-white flex items-center justify-center press-soft"
-                        style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}
+                        className="w-[64px] h-[64px] border-2 border-black bg-[#26242a] text-white flex items-center justify-center press-soft"
+                        style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.35)' }}
                         title="拨号"
                     >
                         <Phone size={26} weight="fill" />
@@ -558,12 +588,12 @@ const PhoneApp: React.FC = () => {
         <div className="flex-1 overflow-y-auto min-h-0 px-4 py-4">
             {!recordingsLoaded && (
                 <div className="flex items-center justify-center py-20">
-                    <div className="w-6 h-6 border border-black/10 rounded-xl border-t-transparent rounded-full animate-spin" />
+                    <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
                 </div>
             )}
             {recordingsLoaded && !recordings.length && (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <div className="border border-black/10 rounded-2xl p-5 -rotate-2 bg-white" style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
+                    <div className="border-2 border-dashed border-black p-5 -rotate-2 bg-white" style={{ boxShadow: '3px 3px 0 #000' }}>
                         <VinylRecord size={30} className="text-black" />
                     </div>
                     <p className="text-sm font-serif font-bold text-black mt-4">还没有留声片</p>
@@ -574,7 +604,7 @@ const PhoneApp: React.FC = () => {
                 {recordings.map((rec, i) => {
                     const expanded = expandedSessionId === rec.sessionId;
                     return (
-                        <div key={`${rec.charId}-${rec.sessionId}`} className={`relative bg-white border border-black/10 rounded-xl ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '0 12px 24px -14px rgba(38,36,42,0.4)' }}>
+                        <div key={`${rec.charId}-${rec.sessionId}`} className={`relative bg-white border-2 border-black ${i % 2 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'}`} style={{ boxShadow: '3px 3px 0 #000' }}>
                             <button
                                 onClick={() => { setExpandedSessionId(expanded ? null : rec.sessionId); if (expanded) stopPlayback(); }}
                                 className="w-full flex items-center gap-3.5 px-3.5 py-3 text-left press-soft"
@@ -583,10 +613,10 @@ const PhoneApp: React.FC = () => {
                                 <div className="min-w-0 flex-1">
                                     <div className="text-sm font-serif font-bold text-black truncate">{rec.charName}</div>
                                     <div className="text-[11px] text-neutral-500 mt-0.5 font-mono">
-                                        {new Date(rec.startTs).toLocaleString('zh-CN')} · {formatDuration(rec.durationSec)} · {rec.lines.length} 句
+                                        {rec.mode === 'video' ? '视频' : '语音'} · {new Date(rec.startTs).toLocaleString('zh-CN')} · {formatDuration(rec.durationSec)} · {rec.lines.length} 句
                                     </div>
                                 </div>
-                                <div className="w-7 h-7 border border-black/10 rounded-xl flex items-center justify-center shrink-0">
+                                <div className="w-7 h-7 border-2 border-black flex items-center justify-center shrink-0">
                                     {expanded ? <CaretUp size={14} weight="bold" className="text-black" /> : <CaretDown size={14} weight="bold" className="text-black" />}
                                 </div>
                             </button>
@@ -599,7 +629,7 @@ const PhoneApp: React.FC = () => {
                                             {!!line.audioUrl && (
                                                 <button
                                                     onClick={() => playLine(line.id, line.audioUrl)}
-                                                    className={`mt-2 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 border border-black/10 rounded-xl font-mono transition active:scale-95 ${playingLineId === line.id ? 'bg-[#26242a] text-white' : 'bg-white text-black'}`}
+                                                    className={`mt-2 inline-flex items-center gap-1 text-[11px] px-2 py-0.5 border-2 border-black font-mono transition active:scale-95 ${playingLineId === line.id ? 'bg-[#26242a] text-white' : 'bg-white text-black'}`}
                                                 >
                                                     {playingLineId === line.id ? <><Pause size={11} weight="fill" /> 停</> : <><Play size={11} weight="fill" /> 放</>}
                                                 </button>
@@ -626,9 +656,9 @@ const PhoneApp: React.FC = () => {
     return (
         <div className="h-full w-full flex flex-col relative overflow-hidden" style={{ background: PAPER_BG, color: INK }}>
             {/* 顶部封面条 */}
-            <div className="shrink-0 px-4 pt-3 pb-2 border-b-2 border-black bg-[#f7f5f2] z-10">
+            <div className="shrink-0 px-4 pt-3 pb-2 border-b-2 border-black bg-[#efece3] z-10">
                 <div className="flex items-center gap-2">
-                    <button onClick={closeApp} className="w-9 h-9 border border-black/10 rounded-xl bg-white flex items-center justify-center press-soft" style={{ boxShadow: '0 8px 18px -12px rgba(38,36,42,0.4)' }} title="收起">
+                    <button onClick={closeApp} className="w-9 h-9 border-2 border-black bg-white flex items-center justify-center press-soft" style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.18)' }} title="收起">
                         <span className="text-lg font-serif leading-none text-black">‹</span>
                     </button>
                     <div className="flex-1 flex items-center gap-2">
@@ -638,14 +668,13 @@ const PhoneApp: React.FC = () => {
                     {tab === 'logs' && !!logs.length && (
                         <button onClick={() => setConfirmClearAll(true)} className="text-[11px] font-mono text-black underline decoration-dashed underline-offset-2 px-1 py-1 active:scale-95 transition">清空存根</button>
                     )}
-                    {/* 语音通话已整合进回声亭：从这里进入实时语音通话（选角色 / 语音通话记录） */}
                     <button
-                        onClick={() => openApp(AppID.Call)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 border border-black/10 rounded-xl bg-[#26242a] text-white text-xs font-mono uppercase tracking-wider press-soft"
-                        style={{ boxShadow: '2px 2px 0 rgba(27,26,23,0.35)' }}
+                        onClick={() => switchTab('dial')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-black bg-[#26242a] text-white text-xs font-mono uppercase tracking-wider press-soft"
+                        style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.35)' }}
                     >
-                        <Waveform size={14} weight="bold" />
-                        拨通
+                        <GridNine size={14} weight="bold" />
+                        键盘
                     </button>
                 </div>
 
@@ -657,12 +686,12 @@ const PhoneApp: React.FC = () => {
                             <button
                                 key={id}
                                 onClick={() => switchTab(id)}
-                                className={`relative flex items-center gap-1.5 px-3 pt-1.5 pb-2 border border-black/10 rounded-xl border-b-0 transition-transform ${active ? 'bg-[#26242a] text-white -translate-y-0.5' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.5deg]' : '-rotate-[0.5deg]'}`}
+                                className={`relative flex items-center gap-1.5 px-3 pt-1.5 pb-2 border-2 border-black border-b-0 transition-transform ${active ? 'bg-[#26242a] text-white -translate-y-0.5' : 'bg-white text-black'} ${i % 2 ? 'rotate-[0.5deg]' : '-rotate-[0.5deg]'}`}
                             >
                                 <Icon size={15} weight={active ? 'fill' : 'bold'} />
                                 <span className="text-[11px] font-mono tracking-wide">{label}</span>
                                 {id === 'logs' && missedBadge > 0 && (
-                                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 border border-black/10 rounded-xl bg-white text-black text-[9px] font-bold flex items-center justify-center rotate-6">
+                                    <span className="absolute -top-2 -right-2 min-w-[16px] h-4 px-1 border-2 border-black bg-white text-black text-[9px] font-bold flex items-center justify-center rotate-6">
                                         {missedBadge > 9 ? '9+' : missedBadge}
                                     </span>
                                 )}
@@ -673,7 +702,7 @@ const PhoneApp: React.FC = () => {
             </div>
 
             {/* 内容区（顶在索引标签下，露出标签底边） */}
-            <div className="flex-1 min-h-0 flex flex-col border-t-2 border-black bg-[#f7f5f2]">
+            <div className="flex-1 min-h-0 flex flex-col border-t-2 border-black bg-[#efece3]">
                 {tab === 'contacts' && renderContacts()}
                 {tab === 'logs' && renderLogs()}
                 {tab === 'dial' && renderDialPad()}
@@ -694,7 +723,7 @@ const PhoneApp: React.FC = () => {
                     </div>
                     <button
                         onClick={() => endFakeOutgoing(false)}
-                        className="w-16 h-16 border-2 border-white bg-[#f7f5f2] flex items-center justify-center active:scale-95 transition relative"
+                        className="w-16 h-16 border-2 border-white bg-[#efece3] flex items-center justify-center active:scale-95 transition relative"
                         title="挂断"
                     >
                         <PhoneDisconnect size={28} weight="fill" className="text-black" />
@@ -729,7 +758,7 @@ const PhoneApp: React.FC = () => {
                         <div className="flex flex-col items-center gap-2">
                             <button
                                 onClick={acceptIncoming}
-                                className="w-16 h-16 border-2 border-white bg-[#f7f5f2] flex items-center justify-center active:scale-95 transition animate-bounce"
+                                className="w-16 h-16 border-2 border-white bg-[#efece3] flex items-center justify-center active:scale-95 transition animate-bounce"
                             >
                                 <Phone size={28} weight="fill" className="text-black" />
                             </button>

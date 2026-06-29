@@ -25,6 +25,12 @@ import { PresetRuntime } from '../utils/presets';
 import { DB } from '../utils/db';
 import { AppID } from '../types';
 import { getLockPasscode, setLockPasscode, isLockPasscodeEnabled, setLockPasscodeEnabled, DEFAULT_LOCK_PASSCODE } from '../utils/lockScreenSettings';
+import {
+    isAuxContextBudgetEnabled,
+    isMainContextBudgetEnabled,
+    setAuxContextBudgetEnabled,
+    setMainContextBudgetEnabled,
+} from '../utils/contextBudget';
 
 // hot_news（orz.ai）可选热榜平台。key 必须与 API 的 ?platform= 完全一致。
 const HOTNEWS_PLATFORM_OPTIONS: { key: string; label: string }[] = [
@@ -339,6 +345,7 @@ const Settings: React.FC = () => {
   const [localTemperature, setLocalTemperature] = useState<number>(
     typeof apiConfig.temperature === 'number' ? apiConfig.temperature : 0.85
   );
+  const [mainContextBudgetOn, setMainContextBudgetOn] = useState<boolean>(() => isMainContextBudgetEnabled());
   const [localMiniMaxKey, setLocalMiniMaxKey] = useState(apiConfig.minimaxApiKey || '');
   const [localMiniMaxGroupId, setLocalMiniMaxGroupId] = useState(apiConfig.minimaxGroupId || '');
   const [localMiniMaxRegion, setLocalMiniMaxRegion] = useState<'domestic' | 'overseas'>(
@@ -352,6 +359,7 @@ const Settings: React.FC = () => {
   const [localAuxUrl, setLocalAuxUrl] = useState(auxApiConfig.baseUrl);
   const [localAuxKey, setLocalAuxKey] = useState(auxApiConfig.apiKey);
   const [localAuxModel, setLocalAuxModel] = useState(auxApiConfig.model);
+  const [auxContextBudgetOn, setAuxContextBudgetOn] = useState<boolean>(() => isAuxContextBudgetEnabled());
   const [auxAvailableModels, setAuxAvailableModels] = useState<string[]>(() => {
       try {
           const saved = localStorage.getItem(AUX_MODELS_STORAGE_KEY);
@@ -730,6 +738,18 @@ const Settings: React.FC = () => {
       setModelPickerTarget(target);
       setModelFilter('');
       setShowModelModal(true);
+  };
+
+  const handleMainContextBudgetToggle = (next: boolean) => {
+      setMainContextBudgetOn(next);
+      setMainContextBudgetEnabled(next);
+      addToast(next ? '主 API 上下文防爆保护已开启' : '主 API 上下文防爆保护已关闭', 'success');
+  };
+
+  const handleAuxContextBudgetToggle = (next: boolean) => {
+      setAuxContextBudgetOn(next);
+      setAuxContextBudgetEnabled(next);
+      addToast(next ? '副 API 上下文防爆保护已开启' : '副 API 上下文防爆保护已关闭', 'success');
   };
 
   const fetchModels = async (
@@ -1479,6 +1499,16 @@ const Settings: React.FC = () => {
                     <input type="password" value={localKey} onChange={(e) => setLocalKey(e.target.value)} placeholder="输入 API Key" className={`${FIELD} font-mono`} />
                 </div>
 
+                <div className="rounded-[16px] border border-[#e7e1d6] bg-[#fffdf8] px-3 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-[11px] font-black text-[#2f3437]">上下文防爆保护</div>
+                        <p className="text-[10px] text-[#69716d] mt-0.5 leading-relaxed">
+                            开启时，发送前会自动压缩旧图片和过大的旧上下文，避免模型返回 token 上限 400。
+                        </p>
+                    </div>
+                    <InkSwitch on={mainContextBudgetOn} onChange={handleMainContextBudgetToggle} title="上下文防爆保护" />
+                </div>
+
                 {/* 高级（流式 / 温度）— 默认折叠，灰色低调，明确写"不建议修改" */}
                 <div className="pt-1">
                     <button
@@ -1640,6 +1670,16 @@ const Settings: React.FC = () => {
                 <div className="group">
                     <label className={LABEL}>API KEY · 密钥</label>
                     <input type="password" value={localAuxKey} onChange={(e) => setLocalAuxKey(e.target.value)} placeholder="输入 API Key" className={`${FIELD} font-mono`} />
+                </div>
+
+                <div className="rounded-[16px] border border-[#e7e1d6] bg-[#fffdf8] px-3 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <div className="text-[11px] font-black text-[#2f3437]">上下文防爆保护</div>
+                        <p className="text-[10px] text-[#69716d] mt-0.5 leading-relaxed">
+                            副 API 的情绪评估、记忆整理等后台请求使用这条保护，独立于主 API。
+                        </p>
+                    </div>
+                    <InkSwitch on={auxContextBudgetOn} onChange={handleAuxContextBudgetToggle} title="上下文防爆保护" />
                 </div>
 
                 <div className="group">

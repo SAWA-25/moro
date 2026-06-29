@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, Wind, X } from '@phosphor-icons/react';
+import { ArrowBendUpRight, BookBookmark, CalendarCheck, Camera, CassetteTape, Coins, Detective, EnvelopeOpen, EnvelopeSimple, Eraser, ForkKnife, Hamburger, HandHeart, HandTap, Heart, ImageSquare, Lightbulb, Lock, MapTrifold, Microphone, PaintBrush, Paperclip, PencilSimple, PhoneOutgoing, Scissors, Scroll, StopCircle, Sticker, Trash, VideoCamera, Wind, X } from '@phosphor-icons/react';
 import { EmojiCategory, Emoji, OSTheme } from '../../types';
 import { isIOSStandaloneWebApp } from '../../utils/iosStandalone';
 import { inputAnimationSrc } from '../../utils/inputAnimationSvg';
@@ -36,6 +36,7 @@ interface ChatInputAreaProps {
     mcdActivated?: boolean;    // 当前会话已发"麦请求"
     // 思考过程展示（会话级）
     showThinkingChain?: boolean;
+    parallelReplyActive?: boolean;
     /** 求婚可用：角色满好感且感情到位（控制「求婚」是否可点） */
     canPropose?: boolean;
     // Input style
@@ -93,6 +94,7 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     mcdConfigured = false,
     mcdActivated = false,
     showThinkingChain = false,
+    parallelReplyActive = false,
     canPropose = false,
     inputStyle = 'default',
     sendButtonStyle = 'circle',
@@ -773,6 +775,14 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
                             {/* 语音通话：用户主动拨语音电话，角色按人设决定接不接 */}
                             <ActionStrip label="拨过去" hint="现在就想听 TA 说话" dark={isDiscordStyle} onClick={() => onPanelAction('voice-call')}>
                                 <PhoneOutgoing className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="视频聊天" hint="可开关摄像头，也能只文字回应" dark={isDiscordStyle} onClick={() => onPanelAction('video-call')}>
+                                <VideoCamera className="w-5 h-5" weight="bold" />
+                            </ActionStrip>
+
+                            <ActionStrip label="并发回复" hint="选中的私聊同时各自接一句" dark={isDiscordStyle} active={parallelReplyActive} onClick={() => onPanelAction('parallel-reply')}>
+                                <EnvelopeSimple className="w-5 h-5" weight="bold" />
                             </ActionStrip>
 
                             {/* 赴约：用户主动发起线下模式（原桌面独立「见面」App 并入此处，与聊天设置「自动线下」共用线下模式） */}

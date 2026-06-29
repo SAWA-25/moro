@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useOS } from '../context/OSContext';
-import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate } from '@phosphor-icons/react';
+import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, CameraRotate, PaperPlaneRight } from '@phosphor-icons/react';
+import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { ContextBuilder } from '../utils/context';
+import { synthesizeSpeechDetailed, cleanTextForTts } from '../utils/minimaxTts';
+import { resolveMiniMaxApiKey } from '../utils/minimaxApiKey';
+import { videoCallPromptBody } from '../utils/laiwangPrompts';
+import { DB } from '../utils/db';
 
 /**
  * 视频通话 —— 从聊天发起的视频通话页。
@@ -11,30 +17,126 @@ import { VideoCamera, VideoCameraSlash, Microphone, MicrophoneSlash, PhoneX, Cam
  */
 
 const fmt = (s: number): string => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+type VideoChatLine = { id: string; role: 'user' | 'char'; text: string; timestamp: number };
+
+const charPhoneNumber = (charId: string): string => {
+    let hash = 0;
+    for (let i = 0; i < charId.length; i++) hash = (hash * 31 + charId.charCodeAt(i)) >>> 0;
+    const digits = String(hash % 100000000).padStart(8, '0');
+    return `010-${digits.slice(0, 4)}-${digits.slice(4)}`;
+};
+
+const summarizeKeepsakeLine = (lines: VideoChatLine[], charName: string) => {
+    const charLine = [...lines].reverse().find(item => item.role === 'char' && item.text.trim());
+    if (!charLine) return `这通视频我会悄悄收藏，下次也记得来找我。 —— ${charName}`;
+    const normalized = charLine.text.replace(/\s+/g, ' ').trim();
+    const cutAt = normalized.search(/[。！？!?]/);
+    const sentence = cutAt >= 0 ? normalized.slice(0, cutAt + 1) : normalized.slice(0, 42);
+    const polished = sentence.length > 48 ? `${sentence.slice(0, 48)}...` : sentence;
+    return `“${polished}” —— ${charName}`;
+};
 
 const VideoCallApp: React.FC = () => {
-    const { closeApp, characters, activeCharacterId, userProfile, addToast } = useOS();
+    const { closeApp, characters, activeCharacterId, userProfile, addToast, apiConfig } = useOS();
     const char = useMemo(() => characters.find(c => c.id === activeCharacterId) || null, [characters, activeCharacterId]);
 
     const [secs, setSecs] = useState(0);
     const [camOn, setCamOn] = useState(false);
     const [micOn, setMicOn] = useState(true);
     const [facing, setFacing] = useState<'user' | 'environment'>('user');
+    const [chatLines, setChatLines] = useState<VideoChatLine[]>([]);
+    const [textInput, setTextInput] = useState('');
+    const [replying, setReplying] = useState(false);
     const streamRef = useRef<MediaStream | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const chatLinesRef = useRef<VideoChatLine[]>([]);
+    const secsRef = useRef(0);
+    const endedRef = useRef(false);
+    const sessionIdRef = useRef(`video-call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
 
     // 通话计时
     useEffect(() => { const t = setInterval(() => setSecs(s => s + 1), 1000); return () => clearInterval(t); }, []);
     // 离开时停掉摄像头
-    useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); }, []);
+    useEffect(() => () => { streamRef.current?.getTracks().forEach(t => t.stop()); audioRef.current?.pause(); }, []);
+    useEffect(() => { chatLinesRef.current = chatLines; }, [chatLines]);
+    useEffect(() => { secsRef.current = secs; }, [secs]);
 
-    const stopCam = () => {
+    const hasVoiceOutput = !!(char?.voiceProfile?.voiceId || char?.voiceProfile?.timberWeights?.length) && !!resolveMiniMaxApiKey(apiConfig);
+
+    const playReplyVoice = async (reply: string) => {
+        if (!char || !hasVoiceOutput || endedRef.current) return;
+        try {
+            const audio = await synthesizeSpeechDetailed(cleanTextForTts(reply), char, apiConfig);
+            if (endedRef.current) return;
+            audioRef.current?.pause();
+            audioRef.current = new Audio(audio.url);
+            void audioRef.current.play();
+        } catch {
+            addToast('语音没生成出来，先用文字聊吧', 'info');
+        }
+    };
+
+    const requestCharReply = async (params: { userText?: string; eventLabel?: string; fallback: string; cameraOn?: boolean }) => {
+        if (!char || replying || endedRef.current) return;
+        const nextCameraOn = params.cameraOn ?? camOn;
+        const text = params.userText?.trim();
+        const userLine = text ? { id: `u-${Date.now()}`, role: 'user' as const, text, timestamp: Date.now() } : null;
+        if (userLine) setChatLines(prev => [...prev, userLine]);
+        setReplying(true);
+        try {
+            if (!apiConfig.baseUrl || !apiConfig.apiKey) {
+                if (endedRef.current) return;
+                setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: params.fallback, timestamp: Date.now() }]);
+                return;
+            }
+            const recentLines = [...chatLinesRef.current, ...(userLine ? [userLine] : [])];
+            const recent = recentLines
+                .slice(-8)
+                .map(line => `${line.role === 'user' ? userProfile.name || '用户' : char.name}: ${line.text}`)
+                .join('\n');
+            const prompt = `${ContextBuilder.buildCoreContext(char, userProfile, true)}
+
+${videoCallPromptBody({
+                userName: userProfile.name || '用户',
+                charName: char.name,
+                recent,
+                userText: text,
+                eventLabel: params.eventLabel,
+                cameraOn: nextCameraOn,
+                micOn,
+                hasVoice: hasVoiceOutput,
+            })}`;
+            const response = await fetch(`${apiConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.apiKey}` },
+                body: JSON.stringify({
+                    model: apiConfig.model,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature: 0.85,
+                }),
+            });
+            if (!response.ok) throw new Error(`API ${response.status}`);
+            const data = await safeResponseJson(response);
+            const reply = (extractContent(data) || '').trim() || params.fallback;
+            if (endedRef.current) return;
+            setChatLines(prev => [...prev, { id: `c-${Date.now()}`, role: 'char', text: reply, timestamp: Date.now() }]);
+            void playReplyVoice(reply);
+        } catch (err: any) {
+            if (!endedRef.current) addToast(`视频聊天回复失败：${err?.message || '未知错误'}`, 'error');
+        } finally {
+            if (!endedRef.current) setReplying(false);
+        }
+    };
+
+    const stopCam = (notify = true) => {
         streamRef.current?.getTracks().forEach(t => t.stop());
         streamRef.current = null;
         if (videoRef.current) videoRef.current.srcObject = null;
         setCamOn(false);
+        if (notify) void requestCharReply({ eventLabel: '用户关闭了摄像头', fallback: '好，我看不到你了。没事，你打字我也在听。', cameraOn: false });
     };
-    const startCam = async (mode: 'user' | 'environment') => {
+    const startCam = async (mode: 'user' | 'environment', notify = true) => {
         if (!navigator.mediaDevices?.getUserMedia) { addToast('此环境不支持摄像头', 'error'); return; }
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode }, audio: false });
@@ -42,14 +144,83 @@ const VideoCallApp: React.FC = () => {
             streamRef.current = stream;
             if (videoRef.current) videoRef.current.srcObject = stream;
             setCamOn(true);
+            if (notify) void requestCharReply({ eventLabel: '用户打开了摄像头，你现在能看见 TA 的画面', fallback: '看见你了。这样聊天好像近一点。', cameraOn: true });
         } catch {
             addToast('打不开摄像头（权限被拒或没有可用设备）', 'error');
             setCamOn(false);
         }
     };
-    const toggleCam = () => { camOn ? stopCam() : startCam(facing); };
-    const flip = () => { const next = facing === 'user' ? 'environment' : 'user'; setFacing(next); if (camOn) startCam(next); };
-    const hangUp = () => { stopCam(); closeApp(); };
+    const toggleCam = () => { camOn ? stopCam(true) : startCam(facing, true); };
+    const flip = () => { const next = facing === 'user' ? 'environment' : 'user'; setFacing(next); if (camOn) startCam(next, false); };
+    const finishVideoCall = async () => {
+        if (!char || endedRef.current) return;
+        endedRef.current = true;
+        stopCam(false);
+        audioRef.current?.pause();
+
+        const endedAt = Date.now();
+        const durationSec = Math.max(1, secsRef.current);
+        const lines = chatLinesRef.current;
+        const userTurns = lines.filter(line => line.role === 'user').length;
+        const keepsakeLine = summarizeKeepsakeLine(lines, charName);
+        const sessionId = sessionIdRef.current;
+
+        try {
+            for (const [index, line] of lines.entries()) {
+                await DB.saveMessage({
+                    charId: char.id,
+                    role: line.role === 'user' ? 'user' : 'assistant',
+                    type: 'text',
+                    content: line.text,
+                    timestamp: line.timestamp || (endedAt - Math.max(1, lines.length - index) * 1000),
+                    metadata: { source: 'call', callSessionId: sessionId, callMode: 'video' },
+                });
+            }
+
+            await DB.saveMessage({
+                charId: char.id,
+                role: 'system',
+                type: 'system',
+                content: `视频通话结束 · ${charName}｜${fmt(durationSec)}｜${Math.max(1, userTurns)}轮对话`,
+                metadata: {
+                    source: 'call-end-popup',
+                    callSessionId: sessionId,
+                    callMode: 'video',
+                    characterId: char.id,
+                    characterName: charName,
+                    characterAvatar: char.avatar,
+                    durationSec,
+                    turnCount: userTurns,
+                    keepsakeLine,
+                    endedAt,
+                },
+            });
+
+            await DB.savePhoneCallLog({
+                id: `pcl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                charId: char.id,
+                name: charName,
+                number: charPhoneNumber(char.id),
+                direction: 'outgoing',
+                timestamp: endedAt,
+                durationSec,
+                sessionId,
+                mode: 'video',
+            });
+            addToast('视频通话记录已保存', 'success');
+        } catch (err: any) {
+            addToast(`视频通话记录保存失败：${err?.message || '未知错误'}`, 'error');
+        } finally {
+            closeApp();
+        }
+    };
+    const hangUp = () => { void finishVideoCall(); };
+    const sendText = async () => {
+        const text = textInput.trim();
+        if (!char || !text || replying) return;
+        setTextInput('');
+        void requestCharReply({ userText: text, fallback: '嗯，我在听。' });
+    };
 
     const charImg = char?.convoSettings?.callSprites?.['默认']
         || char?.convoSettings?.spriteImage
@@ -59,79 +230,148 @@ const VideoCallApp: React.FC = () => {
 
     if (!char) {
         return (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-[#15131a] text-white gap-3">
-                <VideoCameraSlash size={40} weight="thin" className="opacity-60" />
-                <p className="text-sm opacity-70">没有可通话的对象</p>
-                <button onClick={closeApp} className="mt-2 px-5 py-2 rounded-full bg-white/10 text-sm">返回</button>
+            <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-black" style={{ background: '#efece3' }}>
+                <div className="border-2 border-dashed border-black bg-white p-5 -rotate-2" style={{ boxShadow: '3px 3px 0 #000' }}>
+                    <VideoCameraSlash size={34} weight="bold" />
+                </div>
+                <p className="text-sm font-serif font-bold">没有可通话的对象</p>
+                <button onClick={closeApp} className="mt-2 px-5 py-2 border-2 border-black bg-white text-sm font-mono active:translate-x-px active:translate-y-px transition-transform">返回</button>
             </div>
         );
     }
 
     return (
-        <div className="h-full w-full relative overflow-hidden bg-black select-none">
-            {/* 对方画面（通话立绘 / 头像） */}
-            {charImg
-                ? <>
-                    <img src={charImg} className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-50" aria-hidden />
-                    <img src={charImg} className="absolute inset-0 w-full h-full object-contain" />
-                </>
-                : <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'radial-gradient(circle at 50% 35%,#3a3550,#15131a)' }}>
-                    <div className="w-32 h-32 rounded-full bg-white/10 flex items-center justify-center text-[52px]">🙂</div>
-                </div>}
-
-            {/* 顶部：名字 + 计时 */}
-            <div className="absolute top-0 inset-x-0 pt-[calc(var(--safe-top)+12px)] pb-10 px-5 bg-gradient-to-b from-black/55 to-transparent text-white text-center">
-                <div className="text-[19px] font-bold drop-shadow">{charName}</div>
-                <div className="text-[12px] opacity-80 mt-0.5 tracking-wide drop-shadow">视频通话中 · {fmt(secs)}</div>
-            </div>
-
-            {/* 自己的画面 PiP */}
-            <div className="absolute right-4 top-[calc(var(--safe-top)+64px)] w-24 h-36 rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-white/15 bg-[#22202a]">
-                <video
-                    ref={videoRef} autoPlay playsInline muted
-                    className="w-full h-full object-cover"
-                    style={{ transform: facing === 'user' ? 'scaleX(-1)' : undefined, display: camOn ? 'block' : 'none' }}
+        <div className="h-full w-full relative text-black flex flex-col overflow-hidden select-none" style={{ background: '#efece3' }}>
+            {charImg && (
+                <div
+                    className="absolute inset-0 bg-cover bg-center scale-125 blur-2xl opacity-20"
+                    style={{ backgroundImage: `url(${charImg})` }}
                 />
-                {!camOn && (
-                    <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-white/55">
-                        {userProfile.avatar
-                            ? <img src={userProfile.avatar} className="w-9 h-9 rounded-full object-cover opacity-70" />
-                            : <VideoCameraSlash size={20} weight="bold" />}
-                        <span className="text-[9px]">摄像头已关</span>
-                    </div>
-                )}
-                {camOn && (
-                    <button onClick={flip} className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-black/45 text-white flex items-center justify-center active:scale-90" title="翻转镜头">
-                        <CameraRotate size={13} weight="bold" />
-                    </button>
-                )}
-            </div>
+            )}
+            <div className="absolute inset-0 opacity-[0.06] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#1b1a17 1px, transparent 1px)', backgroundSize: '7px 7px' }} />
+            <div className="absolute inset-0 bg-gradient-to-b from-[#efece3]/72 via-[#efece3]/88 to-[#efece3]" />
 
-            {/* 底部控制条 */}
-            <div className="absolute bottom-0 inset-x-0 pb-[calc(env(safe-area-inset-bottom)+22px)] pt-12 px-8 bg-gradient-to-t from-black/60 to-transparent">
-                <div className="flex items-center justify-center gap-5">
-                    <CtrlBtn active={!micOn} onClick={() => setMicOn(v => !v)} label={micOn ? '静音' : '已静音'}
-                        icon={micOn ? <Microphone size={24} weight="fill" /> : <MicrophoneSlash size={24} weight="fill" />} />
-                    <CtrlBtn active={!camOn} onClick={toggleCam} label={camOn ? '关摄像头' : '开摄像头'}
-                        icon={camOn ? <VideoCamera size={24} weight="fill" /> : <VideoCameraSlash size={24} weight="fill" />} />
-                    <button onClick={hangUp} className="flex flex-col items-center gap-1">
-                        <span className="w-[60px] h-[60px] rounded-full bg-[#ef4444] text-white flex items-center justify-center shadow-xl shadow-red-900/40 active:scale-90 transition-transform">
-                            <PhoneX size={26} weight="fill" />
-                        </span>
-                        <span className="text-[10px] text-white/80">挂断</span>
+            <div className="relative z-10 flex flex-col h-full">
+                <div className="px-4 pt-10 pb-3 border-b-2 border-black flex items-center justify-between">
+                    <button onClick={hangUp} className="w-8 h-8 border-2 border-black bg-white flex items-center justify-center active:translate-x-px active:translate-y-px transition-transform" title="挂断">
+                        <PhoneX size={15} weight="bold" />
                     </button>
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 border-2 border-black flex items-center justify-center text-xs font-serif font-bold overflow-hidden -rotate-2 bg-white">
+                            {char?.avatar ? <img src={char.avatar} alt="" className="w-full h-full object-cover" /> : charName[0]}
+                        </div>
+                        <div className="text-sm font-serif font-bold truncate max-w-[150px]">{charName}</div>
+                    </div>
+                    <div className="text-sm tabular-nums font-mono border-2 border-black bg-white px-1.5 py-0.5">{fmt(secs)}</div>
+                </div>
+
+                <div className="px-4 pt-2.5">
+                    <div className="inline-flex items-center gap-2 border-2 border-black bg-white px-3 py-1 text-xs font-mono uppercase tracking-widest">
+                        <span>{replying ? '回应中' : '视频接通'}</span>
+                        <div className="flex items-end gap-1 h-3" aria-hidden>
+                            {[10, 18, 13, 16].map((h, idx) => (
+                                <span
+                                    key={`${h}-${idx}`}
+                                    className={`w-1 bg-black ${replying ? 'animate-pulse' : 'opacity-55'}`}
+                                    style={{ height: `${replying ? h : 6}px`, animationDelay: `${idx * 90}ms` }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="px-5 pt-4">
+                    <div className="relative mx-auto w-full max-w-[320px] h-[38vh] min-h-[240px] max-h-[390px] border-2 border-black bg-white p-2 -rotate-[0.4deg]" style={{ boxShadow: '4px 4px 0 #000' }}>
+                        <div className="relative w-full h-full overflow-hidden bg-[#efece3] border-2 border-black">
+                            {charImg
+                                ? <img src={charImg} className="w-full h-full object-contain" alt={charName} />
+                                : <div className="w-full h-full flex items-center justify-center text-4xl font-serif font-black">{charName[0]}</div>}
+                            <div className="absolute left-2 top-2 border-2 border-black bg-white px-2 py-0.5 text-[10px] font-mono tracking-widest">LIVE</div>
+                            <div className="absolute right-2 bottom-2 w-24 h-32 border-2 border-black bg-[#efece3] overflow-hidden rotate-[1deg]" style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.35)' }}>
+                                <video
+                                    ref={videoRef} autoPlay playsInline muted
+                                    className="w-full h-full object-cover"
+                                    style={{ transform: facing === 'user' ? 'scaleX(-1)' : undefined, display: camOn ? 'block' : 'none' }}
+                                />
+                                {!camOn && (
+                                    <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-black/55 bg-white">
+                                        {userProfile.avatar
+                                            ? <img src={userProfile.avatar} className="w-9 h-9 border-2 border-black object-cover bg-white" />
+                                            : <VideoCameraSlash size={20} weight="bold" />}
+                                        <span className="text-[9px] font-mono">摄像头已关</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <span className="absolute z-20 -top-1 -left-1 w-3 h-3 border-t-2 border-l-2 border-black" />
+                        <span className="absolute z-20 -bottom-1 -right-1 w-3 h-3 border-b-2 border-r-2 border-black" />
+                    </div>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-6 py-3 space-y-2.5">
+                    {!chatLines.length && (
+                        <div className="flex flex-col items-center justify-center py-4 text-center">
+                            <p className="text-base font-serif font-bold">线已接通</p>
+                            <p className="text-sm text-neutral-600 mt-2">{charName}在屏幕那头等你开口……</p>
+                        </div>
+                    )}
+                    {chatLines.slice(-8).map((line, index) => {
+                        const fromBottom = chatLines.length - 1 - index;
+                        const opacity = Math.max(0.38, 1 - fromBottom * 0.12);
+                        return (
+                            <div key={line.id} style={{ opacity }} className={`px-1 py-1 ${line.role === 'user' ? 'text-right' : ''}`}>
+                                <div className="text-[10px] text-neutral-500 mb-1 font-mono uppercase tracking-wider">{line.role === 'user' ? '我' : charName}</div>
+                                <div className={`whitespace-pre-wrap leading-relaxed ${line.role === 'user' ? 'text-neutral-600 text-sm' : 'text-black text-[15px]'}`}>
+                                    {line.text}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {replying && <div className="text-center text-[11px] text-neutral-500 font-mono uppercase tracking-widest animate-pulse">请稍等</div>}
+                </div>
+
+                <div className="px-4 pb-2">
+                    <div className="border-2 border-black bg-white p-2 flex gap-2" style={{ boxShadow: '3px 3px 0 #000' }}>
+                        <input
+                            value={textInput}
+                            onChange={e => setTextInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') void sendText(); }}
+                            placeholder={`想对${charName}说些什么？`}
+                            className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-neutral-400"
+                        />
+                        <button onClick={() => void sendText()} disabled={!textInput.trim() || replying} className="px-3 py-2 border-2 border-black bg-black text-white disabled:opacity-40 flex items-center justify-center active:scale-95">
+                            <PaperPlaneRight size={16} weight="fill" />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="px-5 pb-5 pt-1.5">
+                    <div className="border-2 border-black bg-white px-5 py-3 flex items-center justify-between" style={{ boxShadow: '4px 4px 0 #000' }}>
+                        <CtrlBtn active={!micOn} onClick={() => setMicOn(v => !v)} label={micOn ? '静音' : '已静音'}
+                            icon={micOn ? <Microphone size={22} weight="fill" /> : <MicrophoneSlash size={22} weight="fill" />} />
+                        <CtrlBtn active={!camOn} onClick={toggleCam} label={camOn ? '关摄像头' : '开摄像头'}
+                            icon={camOn ? <VideoCamera size={22} weight="fill" /> : <VideoCameraSlash size={22} weight="fill" />} />
+                        <CtrlBtn active={false} onClick={flip} label="翻转"
+                            icon={<CameraRotate size={22} weight="bold" />} disabled={!camOn} />
+                        <button onClick={hangUp} className="flex flex-col items-center gap-1">
+                            <span className="w-14 h-14 border-2 border-black bg-black text-white flex items-center justify-center transition active:translate-x-px active:translate-y-px" style={{ boxShadow: '3px 3px 0 rgba(27,26,23,0.35)' }}>
+                                <PhoneX size={24} weight="fill" />
+                            </span>
+                            <span className="text-[10px] text-neutral-600 font-mono">收线</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
 
-const CtrlBtn: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string }> = ({ active, onClick, icon, label }) => (
-    <button onClick={onClick} className="flex flex-col items-center gap-1">
-        <span className={`w-[52px] h-[52px] rounded-full flex items-center justify-center transition-all active:scale-90 ${active ? 'bg-white text-[#22202a]' : 'bg-white/15 text-white backdrop-blur-sm'}`}>
+const CtrlBtn: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; disabled?: boolean }> = ({ active, onClick, icon, label, disabled = false }) => (
+    <button onClick={onClick} disabled={disabled} className="flex flex-col items-center gap-1 disabled:opacity-35">
+        <span className={`w-12 h-12 border-2 border-black flex items-center justify-center transition active:translate-x-px active:translate-y-px ${active ? 'bg-black text-white' : 'bg-white text-black'}`}>
             {icon}
         </span>
-        <span className="text-[10px] text-white/80">{label}</span>
+        <span className="text-[10px] text-neutral-600 font-mono">{label}</span>
     </button>
 );
 

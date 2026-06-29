@@ -9,6 +9,7 @@ import { ScheduleHomeWidget, ScheduleFullscreenViewer } from '../components/sche
 import NowPlayingSquareWidget from '../components/os/NowPlayingSquareWidget';
 import WeatherWidget from '../components/os/WeatherWidget';
 import { isImageWallpaper } from '../utils/defaultWallpapers';
+import { getLatestPrivateMessage, previewForMessage } from '../utils/messageNotifications';
 
 // --- Isolated Components to prevent full re-renders ---
 
@@ -884,6 +885,7 @@ const Launcher: React.FC = () => {
   }, [activePageIndex, totalPages]);
 
   useEffect(() => {
+      let cancelled = false;
       const loadData = async () => {
           // SAFEGUARD: If characters array is empty, reset widget char
           if (!characters || characters.length === 0) {
@@ -892,33 +894,46 @@ const Launcher: React.FC = () => {
               return;
           }
 
-          const targetChar = characters.find(c => c.id === activeCharacterId) || characters[0];
-          setWidgetChar(targetChar);
+          const unreadEntries = Object.entries(unreadMessages)
+              .filter(([, count]) => (count || 0) > 0);
+          const fallbackChar = characters.find(c => c.id === activeCharacterId) || characters[0];
+          let targetChar = fallbackChar;
+          let latestMessage: Awaited<ReturnType<typeof getLatestPrivateMessage>> | undefined;
 
           try {
-              const msgs = await DB.getMessagesByCharId(targetChar.id);
-
-              if (msgs.length > 0) {
-                  const visibleMsgs = msgs.filter(m => m.role !== 'system');
-                  if (visibleMsgs.length > 0) {
-                      const last = visibleMsgs[visibleMsgs.length - 1];
-                      const cleanContent = last.content.replace(/\[.*?\]/g, '').trim();
-                      setLastMessage(cleanContent || (last.type === 'image' ? '[一张相片]' : '[一封新信]'));
-                  } else {
-                      setLastMessage(targetChar.description || "System Ready.");
+              let best: { char: CharacterProfile; count: number; timestamp: number; message: typeof latestMessage } | null = null;
+              for (const [charId, rawCount] of unreadEntries) {
+                  const candidate = characters.find(c => c.id === charId);
+                  if (!candidate) continue;
+                  const message = await getLatestPrivateMessage(candidate.id);
+                  const timestamp = message?.timestamp || 0;
+                  const count = rawCount || 0;
+                  if (!best || timestamp > best.timestamp || (timestamp === best.timestamp && count > best.count)) {
+                      best = { char: candidate, count, timestamp, message };
                   }
-              } else {
-                  setLastMessage(targetChar.description || "System Ready.");
               }
+              if (best) {
+                  targetChar = best.char;
+                  latestMessage = best.message;
+              }
+              const last = latestMessage || await getLatestPrivateMessage(targetChar.id);
+              if (cancelled) return;
+              setWidgetChar(targetChar);
+              setLastMessage(last ? previewForMessage(last, '[一封新信]') : (targetChar.description || "System Ready."));
           } catch (e) {
               console.error(e);
+              if (!cancelled) {
+                  setWidgetChar(targetChar);
+                  setLastMessage(targetChar.description || "System Ready.");
+              }
           }
       };
 
       if (isDataLoaded) {
-          loadData();
+          void loadData();
       }
-  }, [activeCharacterId, lastMsgTimestamp, isDataLoaded, characters]); // Trigger on characters change
+      return () => { cancelled = true; };
+  }, [activeCharacterId, lastMsgTimestamp, isDataLoaded, characters, unreadMessages]); // Trigger on characters change
 
   // Schedule widget data loading
   const scheduleChar = useMemo(() => {

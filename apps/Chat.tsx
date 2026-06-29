@@ -7,10 +7,10 @@ import { nextAppealDelayMs } from '../utils/unblockAppeal';
 import { applyAffectionEval, sanitizeRelationshipUpdate, buildRelationshipState, isRelationshipStage, defaultRelationship, STAGE_DEFAULT_LABEL, canPropose as canProposeNow, createMarriageState } from '../utils/relationship';
 import ProposalOverlay from '../components/chat/ProposalOverlay';
 import { processImage } from '../utils/file';
-import { safeResponseJson, extractContent } from '../utils/safeApi';
+import { safeFetchJson, safeResponseJson, extractContent } from '../utils/safeApi';
 import { generateDailyScheduleForChar, isScheduleFeatureOn, reconcileScheduleWithChat, chatHasScheduleSignal } from '../utils/scheduleGenerator';
 import { runRecenter, RECENTER_DEFAULT_TURNS, type RecenterResult } from '../utils/recenter';
-import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody } from '../utils/laiwangPrompts';
+import { proposalResultHint, innerVoicePromptBody, phoneLockAttemptPromptBody, phoneLockChatPromptBody, parallelReplyPromptBody } from '../utils/laiwangPrompts';
 import { isAuxApiOn, resolveAuxApi } from '../utils/auxApi';
 import { formatMessageWithTime } from '../utils/messageFormat';
 import { XhsMcpClient, extractNotesFromMcpData, normalizeNote } from '../utils/xhsMcpClient';
@@ -32,6 +32,7 @@ import { CHAR_USER_REMARK_EVENT, type UserRemarkEventDetail } from '../utils/use
 import { CHAR_AVATAR_FROM_USER_IMAGE_EVENT, type CharAvatarEventDetail } from '../utils/charAvatarSystem';
 import { applyRegexToText, REGEX_SCRIPTS_UPDATED_EVENT } from '../utils/regex/store';
 import { regex_placement } from '../utils/regex/engine';
+import { ChatParser } from '../utils/chatParser';
 import McdMiniApp from '../components/mcd/McdMiniApp';
 import { PRESET_THEMES, DEFAULT_ARCHIVE_PROMPTS } from '../components/chat/ChatConstants';
 import ChatHeader from '../components/chat/ChatHeaderShell';
@@ -70,9 +71,11 @@ type InstantToolUiStatus = {
 };
 
 const PRIVATE_CHAT_ARCHIVE_EXPORT_TYPE = 'moro_private_chat_archive';
+const PARALLEL_REPLY_ENABLED_KEY = 'moro_parallel_reply_enabled_v1';
+const PARALLEL_REPLY_TARGETS_KEY = 'moro_parallel_reply_targets_v1';
 const KNOWN_MESSAGE_TYPES = new Set<MessageType>([
     'text', 'image', 'emoji', 'interaction', 'transfer', 'system', 'social_card', 'chat_forward',
-    'xhs_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
+    'xhs_card', 'twitter_card', 'score_card', 'music_card', 'mcd_card', 'html_card', 'news_card', 'vr_card',
     'trpg_card', 'location', 'voice', 'call_log', 'takeout_card', 'proposal_card', 'poll_card',
     'relay_card', 'checkin_card', 'gift_card',
 ]);
@@ -525,6 +528,21 @@ const Chat: React.FC = () => {
     const [showSystemCmdModal, setShowSystemCmdModal] = useState(false);
     const [systemCmdInput, setSystemCmdInput] = useState('');
 
+    // ── 并发回复：用户发给当前角色后，系统内部让选中的其它私聊同时各自生成一条 ──
+    const [showParallelReplyModal, setShowParallelReplyModal] = useState(false);
+    const [parallelReplyEnabled, setParallelReplyEnabled] = useState(() => {
+        try { return localStorage.getItem(PARALLEL_REPLY_ENABLED_KEY) === 'true'; } catch { return false; }
+    });
+    const [parallelReplyTargetIds, setParallelReplyTargetIds] = useState<Set<string>>(() => {
+        try {
+            const parsed = JSON.parse(localStorage.getItem(PARALLEL_REPLY_TARGETS_KEY) || '[]');
+            return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []);
+        } catch {
+            return new Set();
+        }
+    });
+    const [parallelReplyBusyIds, setParallelReplyBusyIds] = useState<Set<string>>(new Set());
+
     // ── 锁机：回形针里的独立情侣互动。用户远程锁住 TA 的手机，输入/答题由角色完成。──
     const [showPhoneLockModal, setShowPhoneLockModal] = useState(false);
     const [phoneLockPreset, setPhoneLockPreset] = useState<PhoneLockPresetId>('miss');
@@ -581,6 +599,140 @@ const Chat: React.FC = () => {
 
     const char = characters.find(c => c.id === activeCharacterId) || characters[0];
     charRef.current = char; // Keep ref in sync for async callbacks
+    const parallelReplyTargets = useMemo(
+        () => characters.filter(c => c.id !== activeCharacterId && parallelReplyTargetIds.has(c.id)),
+        [characters, activeCharacterId, parallelReplyTargetIds],
+    );
+
+    useEffect(() => {
+        try { localStorage.setItem(PARALLEL_REPLY_ENABLED_KEY, parallelReplyEnabled ? 'true' : 'false'); } catch { /* ignore */ }
+    }, [parallelReplyEnabled]);
+
+    useEffect(() => {
+        const liveIds = new Set(characters.map(c => c.id));
+        let changed = false;
+        const next = new Set<string>();
+        parallelReplyTargetIds.forEach(id => {
+            if (liveIds.has(id)) next.add(id);
+            else changed = true;
+        });
+        if (changed) setParallelReplyTargetIds(next);
+        try { localStorage.setItem(PARALLEL_REPLY_TARGETS_KEY, JSON.stringify(Array.from(changed ? next : parallelReplyTargetIds))); } catch { /* ignore */ }
+    }, [characters, parallelReplyTargetIds]);
+
+    const toggleParallelReplyTarget = (id: string) => {
+        setParallelReplyTargetIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const runParallelRepliesForTargets = async (sourceChar: CharacterProfile, userText: string) => {
+        const trimmed = userText.trim();
+        if (!trimmed || !parallelReplyEnabled || parallelReplyTargets.length === 0) return;
+        const replyApi = resolveAuxApi(auxApiConfig, apiConfig);
+        if (!replyApi.baseUrl || !replyApi.apiKey || !replyApi.model) {
+            addToast('并发回复需要先在「文具盒」配置 API', 'info');
+            return;
+        }
+
+        const targets = parallelReplyTargets
+            .filter(target => target.id !== sourceChar.id)
+            .filter(target => !target.blacklisted && !target.charBlock?.active);
+        if (!targets.length) return;
+
+        setParallelReplyBusyIds(prev => {
+            const next = new Set(prev);
+            targets.forEach(target => next.add(target.id));
+            return next;
+        });
+
+        const runOneConcurrentReply = async (target: CharacterProfile): Promise<'sent' | 'empty'> => {
+            try {
+                const recentMessages = await DB.getRecentMessagesByCharId(target.id, target.contextLimit || 80);
+                const recent = recentMessages
+                    .slice(-24)
+                    .map(m => formatMessageWithTime(m, target.name, userProfile.name || '我', formatTime))
+                    .join('\n');
+                const prompt = `${ContextBuilder.buildCoreContext(target, userProfile, true)}
+
+${parallelReplyPromptBody({
+                    userName: userProfile.name || '用户',
+                    charName: target.name,
+                    sourceCharName: sourceChar.name,
+                    userText: trimmed,
+                    recent,
+                })}`;
+                const data = await safeFetchJson(`${replyApi.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${replyApi.apiKey}` },
+                    body: JSON.stringify({
+                        model: replyApi.model,
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.85,
+                        max_tokens: 800,
+                        stream: false,
+                    }),
+                }, 1, 45000, {
+                    appId: AppID.Chat,
+                    appName: '絮语',
+                    charId: target.id,
+                    charName: target.name,
+                    purpose: '并发回复',
+                    apiRole: isAuxApiOn(auxApiConfig) ? 'aux' : 'main',
+                });
+                const cleaned = ChatParser.sanitize((extractContent(data) || '').trim());
+                if (!ChatParser.hasDisplayContent(cleaned)) return 'empty';
+                const chunks = (target.convoSettings?.bubbleStyleMode === 'whole' ? [cleaned] : ChatParser.chunkText(cleaned))
+                    .map(chunk => ChatParser.sanitize(chunk).trim())
+                    .filter(chunk => ChatParser.hasDisplayContent(chunk));
+                if (!chunks.length) return 'empty';
+                for (const chunk of chunks) {
+                    await DB.saveMessage({
+                        charId: target.id,
+                        role: 'assistant',
+                        type: 'text',
+                        content: chunk,
+                        metadata: {
+                            parallelReply: true,
+                            sourceCharId: sourceChar.id,
+                            sourceCharName: sourceChar.name,
+                            sourceUserText: trimmed.slice(0, 200),
+                        },
+                    } as any);
+                }
+                window.dispatchEvent(new CustomEvent('proactive-message-sent', {
+                    detail: {
+                        charId: target.id,
+                        charName: target.name,
+                        body: chunks.join(' ').replace(/\s+/g, ' ').trim().slice(0, 120),
+                        bodies: chunks.slice(0, 8),
+                        count: chunks.length,
+                        avatarUrl: target.avatar,
+                    },
+                }));
+                return 'sent';
+            } catch (err) {
+                console.warn('[ParallelReply] failed:', target.name, err);
+                throw err;
+            } finally {
+                setParallelReplyBusyIds(prev => {
+                    const next = new Set(prev);
+                    next.delete(target.id);
+                    return next;
+                });
+            }
+        };
+
+        const results = await Promise.allSettled(targets.map(target => runOneConcurrentReply(target)));
+        const okCount = results.filter(result => result.status === 'fulfilled' && result.value === 'sent').length;
+        const failCount = results.filter(result => result.status === 'rejected').length;
+
+        if (okCount > 0) addToast(`并发回复已送达 ${okCount} 个私聊`, 'success');
+        if (okCount === 0 && failCount > 0) addToast('并发回复暂时没生成出来', 'error');
+    };
 
     // ── 正则脚本：全局脚本变更时刷新显示层（displayMessages 依赖 regexVersion 重算）──
     const [regexVersion, setRegexVersion] = useState(0);
@@ -1608,6 +1760,10 @@ const Chat: React.FC = () => {
         await reloadMessages(visibleCountRef.current);
         setShowPanel('none');
 
+        if (!customContent && type === 'text') {
+            void runParallelRepliesForTargets(char, text);
+        }
+
         // Instant Push 模式：发完文本自动触发 AI（响应在 worker 端跑、后台 push 回写聊天页）。
         // 本地模式仍维持手动触发以保留现有 UX。triggerAI 内部会从 DB 拉完整历史，
         // 闭包里的 messages 还没包含刚写入的 user msg 也没关系。
@@ -2098,7 +2254,7 @@ ${recent || '（你们相处了很久）'}
     // ── 已读回执：聊天页打开着时实时翻转双勾（Telegram 式）──
     //  · 角色消息：用户正在看 → 标记为已读（清未读态）。
     //  · 用户消息：其后只要出现过角色消息（= 角色已回复 = 已读），就把「已发出」升级为
-    //    「已读」。这一步覆盖所有回复路径——同步回复(useChatAI)、后台 instant push、主动
+    //    「已读」。这一步覆盖所有回复路径——并发回复(useChatAI)、后台 instant push、主动
     //    消息——保证不论角色的回复怎么来的，打开着的聊天页里用户消息的双勾都实时翻转，
     //    而不是只在本端 useChatAI 走完同步流程时才更新。
     useEffect(() => {
@@ -2706,6 +2862,14 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
             case 'image-gen': setShowPanel('none'); setShowImageGenModal(true); break;
             case 'voice-record-denied': addToast('无法访问麦克风，请检查浏览器权限', 'error'); break;
             case 'voice-call': void startVoiceCall(); break;
+            case 'video-call':
+                setShowPanel('none');
+                openApp(AppID.VideoCall);
+                break;
+            case 'parallel-reply':
+                setShowPanel('none');
+                setShowParallelReplyModal(true);
+                break;
             case 'system-command': setShowPanel('none'); setShowSystemCmdModal(true); break;
             case 'takeout': {
                 // 回形针「点外卖」：带着「给当前角色点」的意图跳到外卖 App
@@ -3611,6 +3775,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 DB.deleteLifeEventsForChar(char.id),
                 DB.deleteSocialPostsByChar(char.id),
                 DB.deleteXhsFeedPostsByCharId(char.id),
+                DB.deleteTwitterDataByCharId(char.id),
                 DB.deleteTakeoutOrdersByCharId(char.id),
                 DB.deleteInnerVoicesByCharId(char.id),
                 DB.deleteScheduledMessagesByCharId(char.id),
@@ -4460,7 +4625,10 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
     const allVisibleEmojis = useMemo(() => emojis.filter(e => !(e.categoryId && hiddenCategoryIds.has(e.categoryId))), [emojis, hiddenCategoryIds]);
 
     // Memoize ChatInputArea callbacks
-    const handleSendCallback = useCallback(() => handleSendText(), [char, input, replyTarget]);
+    const handleSendCallback = useCallback(
+        () => handleSendText(),
+        [char, input, replyTarget, parallelReplyEnabled, parallelReplyTargets, auxApiConfig, apiConfig, userProfile],
+    );
 
     // ── 会话设置（聊天设置面板）派生值：备注名 / 头像覆盖 / 时间戳等 ──
     const convo = char?.convoSettings;
@@ -6136,6 +6304,7 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                     mcdConfigured={mcdConfiguredFlag}
                     mcdActivated={mcdActivated}
                     showThinkingChain={!!(char as any).showThinkingChain}
+                    parallelReplyActive={parallelReplyEnabled && parallelReplyTargets.length > 0}
                     canPropose={!!char && canProposeNow(char)}
                     inputStyle={osTheme.chatInputStyle || 'rounded'}
                     sendButtonStyle={osTheme.chatSendButtonStyle}
@@ -6145,6 +6314,75 @@ ${userProfile.name} 此刻正在给你拨语音电话。根据你的人设、你
                 />
             </div>
 
+
+            {/* 并发回复设置：内部同时生成其它私聊回复，不把角色塞进聊天列表 */}
+            <Modal
+                isOpen={showParallelReplyModal}
+                title="并发回复"
+                en="PARALLEL REPLIES"
+                onClose={() => setShowParallelReplyModal(false)}
+                footer={
+                    <>
+                        <ScrapBtn variant="paper" onClick={() => setShowParallelReplyModal(false)}>收好</ScrapBtn>
+                        <ScrapBtn onClick={() => {
+                            setParallelReplyEnabled(parallelReplyTargets.length > 0 ? true : parallelReplyEnabled);
+                            setShowParallelReplyModal(false);
+                        }}>完成</ScrapBtn>
+                    </>
+                }
+            >
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3 p-3 rounded-2xl" style={{ background: '#fffdfa', border: `1px solid ${INK_SOFT}33` }}>
+                        <div className="min-w-0">
+                            <div className="text-sm font-black" style={{ color: INK }}>多角色并发回复</div>
+                            <div className="text-[10.5px] leading-snug mt-0.5" style={{ color: INK_SOFT }}>
+                                发给当前角色的下一条文字，会同时触发选中的私聊各自生成回复。
+                            </div>
+                        </div>
+                        <ScrapChip selected={parallelReplyEnabled} onClick={() => setParallelReplyEnabled(v => !v)}>
+                            {parallelReplyEnabled ? '已开启' : '已关闭'}
+                        </ScrapChip>
+                    </div>
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar pr-1">
+                        {characters.filter(c => c.id !== activeCharacterId).map(c => {
+                            const selected = parallelReplyTargetIds.has(c.id);
+                            const busy = parallelReplyBusyIds.has(c.id);
+                            const blocked = !!(c.blacklisted || c.charBlock?.active);
+                            return (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    disabled={blocked}
+                                    onClick={() => toggleParallelReplyTarget(c.id)}
+                                    className="w-full flex items-center gap-3 p-3 rounded-2xl text-left active:scale-[0.98] transition-transform disabled:opacity-45"
+                                    style={{
+                                        background: selected ? '#fff4f7' : '#fffdfa',
+                                        border: `1px solid ${selected ? '#d8a5b7' : '#eed6df'}`,
+                                    }}
+                                >
+                                    <img src={c.convoSettings?.charAvatarOverride || c.avatar} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold truncate" style={{ color: INK }}>{c.convoSettings?.remarkName?.trim() || c.name}</div>
+                                        <div className="text-[10.5px] truncate" style={{ color: INK_SOFT }}>
+                                            {blocked ? '拉黑状态不可参与' : busy ? '并发生成中…' : selected ? '会并发生成回复' : '暂不参与并发'}
+                                        </div>
+                                    </div>
+                                    <span
+                                        className="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-black shrink-0"
+                                        style={selected ? { background: '#d8a5b7', color: '#fff' } : { background: '#fff', color: INK_SOFT, border: '1px solid #eed6df' }}
+                                    >
+                                        {selected ? '✓' : ''}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                        {characters.filter(c => c.id !== activeCharacterId).length === 0 && (
+                            <ScrapNote center className="py-8">还没有别的私聊对象。</ScrapNote>
+                        )}
+                    </div>
+                </div>
+            </Modal>
 
             {/* Proactive Settings Modal */}
             {char && (

@@ -6,6 +6,7 @@ import { WorldbookRuntime } from './worldbookRuntime';
 import { MARRIAGE_STAGE_LABEL } from './relationship';
 import { buildCoupleSpacePromptBlock } from './coupleSpace';
 import { relationshipBlock, coreText, lifeProfileIntro, recenterCalibrationBlock, softDevotionBlock, convoLines } from './laiwangPrompts';
+import { readTwitterContextSummary } from './twitterFeed';
 
 /**
  * 来往·关系系统 / 好感 / 婚事 的提示词块。
@@ -235,6 +236,13 @@ export const ContextBuilder = {
             context += `### 互动对象 (User)\n`;
             context += `- 名字: ${user.name}\n`;
             context += `- 设定/备注: ${user.bio || '无'}\n\n`;
+        }
+
+        const twitterRecent = readTwitterContextSummary(char.id, 5);
+        if (twitterRecent) {
+            context += `### 最近推特动态 (Recent X/Twitter)\n`;
+            context += `以下是虚拟手机「推特」里最近几条与当前角色或用户相关的公开动态，只当作轻量近况参考，不要逐字复述。\n`;
+            context += `${twitterRecent}\n\n`;
         }
 
         // 3b. 会话设定 (Conversation Settings) — 聊天设置面板里的本会话行为配置
